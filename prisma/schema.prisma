@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AdminRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum DeviceType {
+  RASPBERRY_PI
+  SHELLY
+}
+
+enum TicketStatus {
+  VALID
+  INVALID
+  PROTECTED
+}
+
+enum ScanResult {
+  GRANTED
+  DENIED
+  PROTECTED
+}
+
+enum ApiProvider {
+  ANNY
+  WAKESYS
+  BINARYTEC
+  EMP_CONTROL
+}
+
+model Account {
+  id         Int         @id @default(autoincrement())
+  subdomain  String      @unique
+  name       String
+  apiToken   String      @unique @default(cuid())
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  admins     Admin[]
+  devices    Device[]
+  tickets    Ticket[]
+  scans      Scan[]
+  areas      AccessArea[]
+  apiConfigs ApiConfig[]
+}
+
+model Admin {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  password  String
+  name      String
+  role      AdminRole @default(USER)
+  lastLogin DateTime?
+  accountId Int?
+  account   Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([email])
+}
+
+model Device {
+  id            Int        @id @default(autoincrement())
+  name          String
+  type          DeviceType
+  ipAddress     String?
+  shellyId      String?
+  shellyAuthKey String?
+  isActive      Boolean    @default(true)
+  task          Int        @default(0)
+  accessIn      Int?
+  accessOut     Int?
+  allowReentry  Boolean    @default(false)
+  firmware      String?
+  lastUpdate    DateTime?
+  accountId     Int
+  account       Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  scans         Scan[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([accountId])
+}
+
+model Ticket {
+  id             Int          @id @default(autoincrement())
+  name           String
+  qrCode         String?
+  rfidCode       String?
+  startDate      DateTime?
+  endDate        DateTime?
+  accessAreaId   Int?
+  status         TicketStatus @default(VALID)
+  version        Int          @default(0)
+  uuid           String?      @unique
+  barcode        String?      @unique
+  firstName      String?
+  lastName       String?
+  ticketTypeName String?
+  source         ApiProvider?
+  accountId      Int
+  account        Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accessArea     AccessArea?  @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
+  scans          Scan[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([accountId])
+  @@index([rfidCode])
+  @@index([qrCode])
+  @@index([barcode])
+  @@index([accessAreaId])
+  @@index([status])
+}
+
+model Scan {
+  id        Int        @id @default(autoincrement())
+  code      String
+  deviceId  Int
+  scanTime  DateTime   @default(now())
+  result    ScanResult
+  ticketId  Int?
+  accountId Int
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  device    Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  ticket    Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  createdAt DateTime   @default(now())
+
+  @@index([accountId])
+  @@index([deviceId])
+  @@index([scanTime])
+  @@index([code])
+  @@index([ticketId])
+}
+
+model AccessArea {
+  id           Int          @id @default(autoincrement())
+  name         String
+  parentId     Int?
+  allowReentry Boolean      @default(false)
+  personLimit  Int?
+  accountId    Int
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  parent       AccessArea?  @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children     AccessArea[] @relation("AreaHierarchy")
+  tickets      Ticket[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([accountId])
+  @@index([parentId])
+}
+
+model ApiConfig {
+  id             Int         @id @default(autoincrement())
+  provider       ApiProvider
+  token          String
+  eventId        String?
+  baseUrl        String?
+  extraConfig    String?
+  lastUpdate     DateTime?
+  lastPostUpdate DateTime?
+  accountId      Int
+  account        Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([accountId])
+  @@index([provider])
+}

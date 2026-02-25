@@ -1,0 +1,14 @@
+{
+  "regions": ["fra1"],
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 10
+    },
+    "src/app/api/monitor/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/integrations/**/*.ts": {
+      "maxDuration": 30
+    }
+  }
+}
