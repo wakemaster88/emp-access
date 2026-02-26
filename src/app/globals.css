@@ -142,3 +142,17 @@
 .animate-scan-flash {
   animation: scan-flash 0.5s ease-out;
 }
+
+.monitor-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.monitor-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.monitor-scrollbar::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0 0 / 20%);
+  border-radius: 4px;
+}
+.monitor-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0 0 / 40%);
+}
