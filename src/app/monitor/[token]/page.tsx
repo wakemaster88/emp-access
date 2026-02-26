@@ -51,6 +51,7 @@ interface TicketInfo {
 }
 
 interface ScanGroup {
+  groupKey: string;
   ticketId: number | null;
   ticketName: string;
   personName: string;
@@ -125,15 +126,13 @@ export default function PublicMonitorPage({ params }: Props) {
     for (const scan of scans) {
       const lastGroup = groups[groups.length - 1];
       const ticketId = scan.ticket?.id ?? null;
-      if (
-        lastGroup &&
-        ticketId != null &&
-        lastGroup.ticketId === ticketId &&
-        lastGroup.result === scan.result
-      ) {
+      const key = ticketId != null ? `t:${ticketId}` : `c:${scan.code}`;
+
+      if (lastGroup && lastGroup.groupKey === key && lastGroup.result === scan.result) {
         lastGroup.scans.push(scan);
       } else {
         groups.push({
+          groupKey: key,
           ticketId,
           ticketName: scan.ticket?.name || scan.code,
           personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || "",
@@ -295,15 +294,17 @@ export default function PublicMonitorPage({ params }: Props) {
             </div>
           </div>
 
-          {/* Right Side: Tickets + Clock */}
+          {/* Right Side: Clock + Tickets */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2 mb-1">
+            <LiveClock />
+
+            <div className="flex items-center gap-2">
               <Ticket className="h-4 w-4 text-slate-400" />
               <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wider">Gültige Tickets</h2>
               <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-500 ml-auto">{tickets.length}</Badge>
             </div>
 
-            <div className="space-y-1.5 max-h-[calc(100vh-16rem)] overflow-y-auto pr-1">
+            <div className="space-y-1.5 max-h-[calc(100vh-20rem)] overflow-y-auto pr-1">
               {tickets.length === 0 && (
                 <p className="text-sm text-slate-500 text-center py-4">Keine aktiven Tickets</p>
               )}
@@ -346,8 +347,6 @@ export default function PublicMonitorPage({ params }: Props) {
                 </div>
               ))}
             </div>
-
-            <LiveClock />
           </div>
         </div>
       </div>
