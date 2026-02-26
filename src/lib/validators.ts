@@ -44,6 +44,7 @@ export const ticketCreateSchema = z.object({
   firstName: z.string().optional().nullable(),
   lastName: z.string().optional().nullable(),
   ticketTypeName: z.string().optional().nullable(),
+  profileImage: z.string().optional().nullable(),
 });
 
 export const ticketUpdateSchema = ticketCreateSchema.partial();

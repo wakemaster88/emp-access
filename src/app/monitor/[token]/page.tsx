@@ -28,6 +28,7 @@ interface Scan {
     validityType?: string;
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
+    profileImage?: string | null;
   } | null;
 }
 
@@ -201,7 +202,11 @@ export default function PublicMonitorPage({ params }: Props) {
                     )}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <Icon className={cn("h-5 w-5 shrink-0", style.text)} />
+                      {scan.ticket?.profileImage ? (
+                        <img src={scan.ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0 ring-2 ring-slate-700" />
+                      ) : (
+                        <Icon className={cn("h-5 w-5 shrink-0", style.text)} />
+                      )}
                       <div className="min-w-0">
                         <p className="font-medium text-slate-100 text-sm truncate">
                           {scan.ticket?.name || scan.code}

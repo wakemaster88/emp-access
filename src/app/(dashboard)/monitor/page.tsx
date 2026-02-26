@@ -21,6 +21,7 @@ interface MonitorScan {
     validityType?: string;
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
+    profileImage?: string | null;
   } | null;
 }
 
@@ -195,17 +196,21 @@ export default function MonitorPage() {
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <Badge
-                        className={
-                          scan.result === "GRANTED"
-                            ? "bg-emerald-500 text-white"
-                            : scan.result === "DENIED"
-                              ? "bg-rose-500 text-white"
-                              : "bg-amber-500 text-white"
-                        }
-                      >
-                        {scan.result === "GRANTED" ? "✓" : scan.result === "DENIED" ? "✕" : "⚠"}
-                      </Badge>
+                      {scan.ticket?.profileImage ? (
+                        <img src={scan.ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <Badge
+                          className={
+                            scan.result === "GRANTED"
+                              ? "bg-emerald-500 text-white"
+                              : scan.result === "DENIED"
+                                ? "bg-rose-500 text-white"
+                                : "bg-amber-500 text-white"
+                          }
+                        >
+                          {scan.result === "GRANTED" ? "✓" : scan.result === "DENIED" ? "✕" : "⚠"}
+                        </Badge>
+                      )}
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                           {scan.ticket?.name || scan.code}

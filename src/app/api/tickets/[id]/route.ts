@@ -43,6 +43,7 @@ export async function PUT(
       ...(data.slotStart !== undefined && { slotStart: data.slotStart }),
       ...(data.slotEnd !== undefined && { slotEnd: data.slotEnd }),
       ...(data.validityDurationMinutes !== undefined && { validityDurationMinutes: data.validityDurationMinutes }),
+      ...(data.profileImage !== undefined && { profileImage: data.profileImage }),
       startDate: data.startDate ? new Date(data.startDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,
       version: { increment: 1 },

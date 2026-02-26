@@ -124,11 +124,16 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
               onClick={() => !readonly && setSelected(ticket)}
             >
               <TableCell>
-                <div>
-                  <p className="font-medium text-slate-900 dark:text-slate-100">{ticket.name}</p>
-                  {ticket.ticketTypeName && (
-                    <p className="text-xs text-slate-400">{ticket.ticketTypeName}</p>
-                  )}
+                <div className="flex items-center gap-2.5">
+                  {ticket.profileImage ? (
+                    <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                  ) : null}
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-slate-100">{ticket.name}</p>
+                    {ticket.ticketTypeName && (
+                      <p className="text-xs text-slate-400">{ticket.ticketTypeName}</p>
+                    )}
+                  </div>
                 </div>
               </TableCell>
               <TableCell className="text-sm text-slate-500">

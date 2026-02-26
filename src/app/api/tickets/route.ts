@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
       slotStart: data.slotStart,
       slotEnd: data.slotEnd,
       validityDurationMinutes: data.validityDurationMinutes,
+      profileImage: data.profileImage,
       accountId: accountId!,
     },
   });
