@@ -89,7 +89,7 @@ export function Sidebar({ userName, role, onSignOut }: SidebarProps) {
     >
       <div className="flex items-center justify-between p-4">
         {!collapsed && (
-          <Link href="/" className="flex items-center gap-2">
+          <Link href={isSuperAdmin ? "/admin" : "/"} className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
               <Shield className="h-5 w-5 text-white" />
             </div>
@@ -109,23 +109,14 @@ export function Sidebar({ userName, role, onSignOut }: SidebarProps) {
       <Separator className="bg-slate-800" />
 
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
-          <NavLink key={item.href} {...item} />
-        ))}
-
-        {isSuperAdmin && (
-          <>
-            <Separator className="bg-slate-800 my-3" />
-            {!collapsed && (
-              <p className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Superadmin
-              </p>
-            )}
-            {adminItems.map((item) => (
+        {isSuperAdmin
+          ? adminItems.map((item) => (
               <NavLink key={item.href} {...item} />
-            ))}
-          </>
-        )}
+            ))
+          : navItems.map((item) => (
+              <NavLink key={item.href} {...item} />
+            ))
+        }
       </nav>
 
       <Separator className="bg-slate-800" />
