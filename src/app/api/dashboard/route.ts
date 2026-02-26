@@ -228,6 +228,9 @@ export async function GET(request: NextRequest) {
     return ticketTypeName.startsWith(resourceName);
   }
 
+  // Collect subscription ticket IDs for separation
+  const subTicketIds = new Set(subscriptionTickets.map((t) => t.id));
+
   // Build structured area responses
   const structuredAreas = areas.map((area) => {
     const areaResources = areaResourceMap[area.id] || [];
@@ -238,6 +241,10 @@ export async function GET(request: NextRequest) {
     const enrichedTickets = [...directTickets, ...mergedSubTickets];
     const totalCount = area._count.tickets + mergedSubTickets.length;
 
+    // Separate subscription tickets from regular tickets
+    const regularTickets = enrichedTickets.filter((t) => !subTicketIds.has(t.id));
+    const aboTickets = enrichedTickets.filter((t) => subTicketIds.has(t.id));
+
     if (areaResources.length === 0) {
       return {
         id: area.id,
@@ -246,7 +253,8 @@ export async function GET(request: NextRequest) {
         allowReentry: area.allowReentry,
         openingHours: area.openingHours,
         resources: [],
-        otherTickets: enrichedTickets,
+        otherTickets: regularTickets,
+        aboTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -275,9 +283,9 @@ export async function GET(request: NextRequest) {
           })
           .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-        // Match tickets: check all mapped names for this area (resources + services)
+        // Match tickets: only match regular (non-abo) tickets
         const namesForArea = areaAllNames[area.id] || [];
-        const resTickets = enrichedTickets.filter((t) => {
+        const resTickets = regularTickets.filter((t) => {
           if (matched.has(t.id)) return false;
           for (const name of namesForArea) {
             if (ticketMatchesResource(t.ticketTypeName, name)) {
@@ -296,7 +304,7 @@ export async function GET(request: NextRequest) {
         return aTime.localeCompare(bTime);
       });
 
-    const otherTickets = enrichedTickets.filter((t) => !matched.has(t.id));
+    const otherTickets = regularTickets.filter((t) => !matched.has(t.id));
 
     // If there's only one resource with same/similar name as area, merge inline
     const isSingleMatch = resources.length === 1 &&
@@ -318,6 +326,7 @@ export async function GET(request: NextRequest) {
         openingHours: inlineHours,
         resources: [],
         otherTickets: [...r.tickets, ...otherTickets],
+        aboTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -330,6 +339,7 @@ export async function GET(request: NextRequest) {
       openingHours: area.openingHours,
       resources,
       otherTickets,
+      aboTickets,
       _count: { tickets: totalCount },
     };
   });
@@ -346,6 +356,7 @@ export async function GET(request: NextRequest) {
       openingHours: null,
       resources: [],
       otherTickets: unassignedTickets.map(enrichTicket),
+      aboTickets: [],
       _count: { tickets: unassignedTickets.length },
     },
   });
