@@ -36,9 +36,15 @@ interface BookingGroup {
   firstName: string;
   lastName: string;
   serviceName: string | null;
+  resourceName: string | null;
   startDate: Date | null;
   endDate: Date | null;
   statuses: string[];
+}
+
+interface AnnyMapping {
+  mappings?: Record<string, number>;
+  services?: string[];
 }
 
 function mapGroupStatus(statuses: string[]): "VALID" | "INVALID" | "REDEEMED" {
@@ -111,8 +117,16 @@ export async function POST() {
       page++;
     }
 
+    // Parse area mapping from extraConfig
+    let annyConfig: AnnyMapping = {};
+    try {
+      if (config.extraConfig) annyConfig = JSON.parse(config.extraConfig);
+    } catch { /* ignore invalid JSON */ }
+    const areaMappings = annyConfig.mappings || {};
+
     // Group bookings by customer + service/resource
     const groups = new Map<string, BookingGroup>();
+    const discoveredServices = new Set<string>();
 
     for (const booking of allBookings) {
       const customerId = booking.customer?.id ?? "unknown";
@@ -122,6 +136,11 @@ export async function POST() {
       const customer = booking.customer;
       const customerName = customer?.full_name || customer?.name || "";
       const nameParts = customerName.split(/\s+/);
+
+      const serviceName = booking.service?.name || null;
+      const resourceName = booking.resource?.name || null;
+      if (serviceName) discoveredServices.add(serviceName);
+      if (resourceName) discoveredServices.add(resourceName);
 
       const startDate = booking.start_date ? new Date(booking.start_date) : null;
       const endDate = booking.end_date ? new Date(booking.end_date) : null;
@@ -143,7 +162,8 @@ export async function POST() {
           customerName,
           firstName: customer?.first_name || nameParts[0] || "",
           lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
-          serviceName: booking.service?.name || booking.resource?.name || null,
+          serviceName,
+          resourceName,
           startDate,
           endDate,
           statuses: booking.status ? [booking.status] : [],
@@ -161,9 +181,18 @@ export async function POST() {
       activeUuids.push(uuid);
       const count = group.bookingIds.length;
 
-      let typeName = group.serviceName || null;
+      const displayName = group.serviceName || group.resourceName || null;
+      let typeName = displayName;
       if (typeName && count > 1) {
         typeName = `${typeName} (${count} Termine)`;
+      }
+
+      // Resolve access area from mapping (try service name first, then resource name)
+      let accessAreaId: number | null = null;
+      if (group.serviceName && areaMappings[group.serviceName]) {
+        accessAreaId = areaMappings[group.serviceName];
+      } else if (group.resourceName && areaMappings[group.resourceName]) {
+        accessAreaId = areaMappings[group.resourceName];
       }
 
       const ticketData = {
@@ -176,6 +205,7 @@ export async function POST() {
         ticketTypeName: typeName,
         qrCode: group.bookingIds.join(","),
         source: "ANNY" as const,
+        accessAreaId,
       };
 
       try {
@@ -211,9 +241,18 @@ export async function POST() {
       data: { status: "INVALID" },
     });
 
+    // Persist discovered service/resource names (keep existing mappings)
+    const updatedConfig: AnnyMapping = {
+      ...annyConfig,
+      services: [...discoveredServices].sort(),
+    };
+
     await db.apiConfig.update({
       where: { id: config.id },
-      data: { lastUpdate: new Date() },
+      data: {
+        lastUpdate: new Date(),
+        extraConfig: JSON.stringify(updatedConfig),
+      },
     });
 
     return NextResponse.json({
