@@ -32,6 +32,12 @@ enum TicketStatus {
   PROTECTED
 }
 
+enum ValidityType {
+  DATE_RANGE
+  TIME_SLOT
+  DURATION
+}
+
 enum ScanResult {
   GRANTED
   DENIED
@@ -106,27 +112,32 @@ model Device {
 }
 
 model Ticket {
-  id             Int          @id @default(autoincrement())
-  name           String
-  qrCode         String?
-  rfidCode       String?
-  startDate      DateTime?
-  endDate        DateTime?
-  accessAreaId   Int?
-  status         TicketStatus @default(VALID)
-  version        Int          @default(0)
-  uuid           String?      @unique
-  barcode        String?      @unique
-  firstName      String?
-  lastName       String?
-  ticketTypeName String?
-  source         ApiProvider?
-  accountId      Int
-  account        Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accessArea     AccessArea?  @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
-  scans          Scan[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                      Int          @id @default(autoincrement())
+  name                    String
+  qrCode                  String?
+  rfidCode                String?
+  startDate               DateTime?
+  endDate                 DateTime?
+  validityType            ValidityType @default(DATE_RANGE)
+  slotStart               String?      // HH:mm for TIME_SLOT
+  slotEnd                 String?      // HH:mm for TIME_SLOT
+  validityDurationMinutes Int?         // minutes for DURATION
+  firstScanAt             DateTime?    // auto-set on first GRANTED scan for DURATION
+  accessAreaId            Int?
+  status                  TicketStatus @default(VALID)
+  version                 Int          @default(0)
+  uuid                    String?      @unique
+  barcode                 String?      @unique
+  firstName               String?
+  lastName                String?
+  ticketTypeName          String?
+  source                  ApiProvider?
+  accountId               Int
+  account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accessArea              AccessArea?  @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
+  scans                   Scan[]
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
 
   @@index([accountId])
   @@index([rfidCode])

@@ -36,6 +36,11 @@ export interface TicketData {
   accessAreaId: number | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
+  validityType: string;
+  slotStart: string | null;
+  slotEnd: string | null;
+  validityDurationMinutes: number | null;
+  firstScanAt: Date | string | null;
   source: string | null;
   _count: { scans: number };
 }
@@ -80,6 +85,10 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
     accessAreaId: "none",
     startDate: "",
     endDate: "",
+    validityType: "DATE_RANGE",
+    slotStart: "",
+    slotEnd: "",
+    validityDurationMinutes: "",
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -101,6 +110,10 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         accessAreaId: ticket.accessAreaId ? String(ticket.accessAreaId) : "none",
         startDate: toDateInput(ticket.startDate),
         endDate: toDateInput(ticket.endDate),
+        validityType: ticket.validityType ?? "DATE_RANGE",
+        slotStart: ticket.slotStart ?? "",
+        slotEnd: ticket.slotEnd ?? "",
+        validityDurationMinutes: ticket.validityDurationMinutes ? String(ticket.validityDurationMinutes) : "",
       });
       setError("");
       setTab("edit");
@@ -141,6 +154,11 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
       accessAreaId: form.accessAreaId && form.accessAreaId !== "none" ? Number(form.accessAreaId) : null,
       startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
       endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
+      validityType: form.validityType,
+      slotStart: form.validityType === "TIME_SLOT" && form.slotStart ? form.slotStart : null,
+      slotEnd: form.validityType === "TIME_SLOT" && form.slotEnd ? form.slotEnd : null,
+      validityDurationMinutes: form.validityType === "DURATION" && form.validityDurationMinutes
+        ? Number(form.validityDurationMinutes) : null,
     };
 
     try {
@@ -313,6 +331,18 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label>Gültigkeitstyp</Label>
+              <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DATE_RANGE">Zeitraum (Tage)</SelectItem>
+                  <SelectItem value="TIME_SLOT">Zeitslot (Uhrzeit)</SelectItem>
+                  <SelectItem value="DURATION">Dauer ab 1. Scan</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="e-start">Gültig ab</Label>
@@ -323,6 +353,38 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
                 <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} />
               </div>
             </div>
+
+            {form.validityType === "TIME_SLOT" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="e-slot-start">Slot von</Label>
+                  <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="e-slot-end">Slot bis</Label>
+                  <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {form.validityType === "DURATION" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="e-duration">Gültigkeitsdauer (Minuten)</Label>
+                <Input
+                  id="e-duration"
+                  type="number"
+                  min="1"
+                  placeholder="z.B. 120 für 2 Stunden"
+                  value={form.validityDurationMinutes}
+                  onChange={(e) => set("validityDurationMinutes", e.target.value)}
+                />
+                {ticket?.firstScanAt && (
+                  <p className="text-xs text-slate-500">
+                    Erster Scan: {fmtDateTime(ticket.firstScanAt)}
+                  </p>
+                )}
+              </div>
+            )}
 
             {error && (
               <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">

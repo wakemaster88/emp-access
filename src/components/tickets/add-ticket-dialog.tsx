@@ -42,6 +42,10 @@ const EMPTY = {
   status: "VALID",
   startDate: "",
   endDate: "",
+  validityType: "DATE_RANGE",
+  slotStart: "",
+  slotEnd: "",
+  validityDurationMinutes: "",
 };
 
 export function AddTicketDialog({ areas }: AddTicketDialogProps) {
@@ -64,6 +68,7 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
     const payload: Record<string, unknown> = {
       name: form.name,
       status: form.status,
+      validityType: form.validityType,
     };
     if (form.firstName) payload.firstName = form.firstName;
     if (form.lastName) payload.lastName = form.lastName;
@@ -74,6 +79,13 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
     if (form.accessAreaId && form.accessAreaId !== "none") payload.accessAreaId = Number(form.accessAreaId);
     if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
     if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
+    if (form.validityType === "TIME_SLOT") {
+      if (form.slotStart) payload.slotStart = form.slotStart;
+      if (form.slotEnd) payload.slotEnd = form.slotEnd;
+    }
+    if (form.validityType === "DURATION" && form.validityDurationMinutes) {
+      payload.validityDurationMinutes = Number(form.validityDurationMinutes);
+    }
 
     try {
       const res = await fetch("/api/tickets", {
@@ -225,6 +237,19 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
             </div>
           </div>
 
+          {/* Validity Type */}
+          <div className="space-y-1.5">
+            <Label>Gültigkeitstyp</Label>
+            <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="DATE_RANGE">Zeitraum (Tage)</SelectItem>
+                <SelectItem value="TIME_SLOT">Zeitslot (Uhrzeit)</SelectItem>
+                <SelectItem value="DURATION">Dauer ab 1. Scan</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -246,6 +271,45 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
               />
             </div>
           </div>
+
+          {/* Time Slot */}
+          {form.validityType === "TIME_SLOT" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="t-slot-start">Slot von</Label>
+                <Input
+                  id="t-slot-start"
+                  type="time"
+                  value={form.slotStart}
+                  onChange={(e) => set("slotStart", e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-slot-end">Slot bis</Label>
+                <Input
+                  id="t-slot-end"
+                  type="time"
+                  value={form.slotEnd}
+                  onChange={(e) => set("slotEnd", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Duration */}
+          {form.validityType === "DURATION" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="t-duration">Gültigkeitsdauer (Minuten)</Label>
+              <Input
+                id="t-duration"
+                type="number"
+                min="1"
+                placeholder="z.B. 120 für 2 Stunden"
+                value={form.validityDurationMinutes}
+                onChange={(e) => set("validityDurationMinutes", e.target.value)}
+              />
+            </div>
+          )}
 
           {error && (
             <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">

@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EditTicketDialog, type TicketData } from "./edit-ticket-dialog";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, fmtDateTime } from "@/lib/utils";
 
 interface Area {
   id: number;
@@ -39,6 +39,51 @@ function statusBadge(status: string) {
   }
 }
 
+function ValidityInfo({ ticket }: { ticket: TicketData }) {
+  const ext = ticket as TicketData & {
+    validityType?: string;
+    slotStart?: string | null;
+    slotEnd?: string | null;
+    validityDurationMinutes?: number | null;
+    firstScanAt?: string | null;
+  };
+  const vt = ext.validityType ?? "DATE_RANGE";
+
+  const dateRange = (ticket.startDate || ticket.endDate)
+    ? `${ticket.startDate ? fmtDate(ticket.startDate) : "∞"} – ${ticket.endDate ? fmtDate(ticket.endDate) : "∞"}`
+    : null;
+
+  if (vt === "TIME_SLOT" && ext.slotStart && ext.slotEnd) {
+    return (
+      <div className="space-y-0.5">
+        {dateRange && <p>{dateRange}</p>}
+        <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
+          {ext.slotStart}–{ext.slotEnd} Uhr
+        </p>
+      </div>
+    );
+  }
+
+  if (vt === "DURATION" && ext.validityDurationMinutes) {
+    const hrs = Math.floor(ext.validityDurationMinutes / 60);
+    const mins = ext.validityDurationMinutes % 60;
+    const label = hrs > 0 ? `${hrs}h${mins > 0 ? ` ${mins}min` : ""}` : `${mins}min`;
+    return (
+      <div className="space-y-0.5">
+        {dateRange && <p>{dateRange}</p>}
+        <p className="text-xs font-medium text-violet-600 dark:text-violet-400">
+          {label} ab 1. Scan
+        </p>
+        {ext.firstScanAt && (
+          <p className="text-xs text-slate-400">Start: {fmtDateTime(ext.firstScanAt)}</p>
+        )}
+      </div>
+    );
+  }
+
+  return <span>{dateRange ?? "–"}</span>;
+}
+
 export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
 
@@ -52,15 +97,14 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
             <TableHead>Code</TableHead>
             <TableHead>Bereich</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Gültig ab</TableHead>
-            <TableHead>Gültig bis</TableHead>
+            <TableHead>Gültigkeit</TableHead>
             <TableHead className="text-right">Scans</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {tickets.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-slate-500 py-12">
+              <TableCell colSpan={7} className="text-center text-slate-500 py-12">
                 Keine Tickets vorhanden
               </TableCell>
             </TableRow>
@@ -96,10 +140,7 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
               </TableCell>
               <TableCell>{statusBadge(ticket.status)}</TableCell>
               <TableCell className="text-sm text-slate-500">
-                {ticket.startDate ? fmtDate(ticket.startDate) : "–"}
-              </TableCell>
-              <TableCell className="text-sm text-slate-500">
-                {ticket.endDate ? fmtDate(ticket.endDate) : "–"}
+                <ValidityInfo ticket={ticket} />
               </TableCell>
               <TableCell className="text-right font-medium">{ticket._count.scans}</TableCell>
             </TableRow>

@@ -68,8 +68,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ticket gesperrt" });
   }
 
-  // Date range check (dates are day-level: startDate = start of day, endDate = end of day)
   const now = new Date();
+  const vType = ticket.validityType ?? "DATE_RANGE";
+
+  // --- Date range check (all types use startDate/endDate as outer bounds) ---
   if (ticket.startDate) {
     const start = new Date(ticket.startDate);
     start.setUTCHours(0, 0, 0, 0);
@@ -89,6 +91,39 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ granted: false, message: "Ticket abgelaufen" });
     }
+  }
+
+  // --- TIME_SLOT: check current time is within slotStart–slotEnd (Europe/Berlin) ---
+  if (vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
+    const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
+    const currentMinutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
+    const [sh, sm] = ticket.slotStart.split(":").map(Number);
+    const [eh, em] = ticket.slotEnd.split(":").map(Number);
+    const slotStartMin = sh * 60 + sm;
+    const slotEndMin = eh * 60 + em;
+    if (currentMinutes < slotStartMin || currentMinutes > slotEndMin) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({
+        granted: false,
+        message: `Zeitslot ${ticket.slotStart}–${ticket.slotEnd} Uhr`,
+      });
+    }
+  }
+
+  // --- DURATION: check if within X minutes after first scan ---
+  if (vType === "DURATION" && ticket.validityDurationMinutes) {
+    if (ticket.firstScanAt) {
+      const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
+      if (now > expiresAt) {
+        await db.scan.create({
+          data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        });
+        return NextResponse.json({ granted: false, message: "Zeitgültigkeit abgelaufen" });
+      }
+    }
+    // firstScanAt will be set below on first GRANTED scan
   }
 
   // Access area check (only if device has areas configured)
@@ -120,11 +155,15 @@ export async function POST(request: NextRequest) {
     data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId },
   });
 
-  // Mark ticket as redeemed on first successful scan
+  // First successful scan: set REDEEMED + firstScanAt for DURATION tickets
   if (ticket.status === "VALID") {
+    const updateData: Record<string, unknown> = { status: "REDEEMED" };
+    if (vType === "DURATION" && !ticket.firstScanAt) {
+      updateData.firstScanAt = now;
+    }
     await db.ticket.update({
       where: { id: ticket.id },
-      data: { status: "REDEEMED" },
+      data: updateData,
     });
   }
 
