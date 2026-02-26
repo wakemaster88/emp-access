@@ -42,7 +42,25 @@ export default function MonitorPage() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const playAlertSound = useCallback(() => {
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      osc.frequency.setValueAtTime(600, ctx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(400, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.45);
+    } catch {}
+  }, []);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -63,10 +81,14 @@ export default function MonitorPage() {
       const msg = JSON.parse(event.data);
 
       if (msg.type === "scans" && msg.data.length > 0) {
-        setScans((prev) => [...msg.data, ...prev].slice(0, 100));
+        setScans((prev) => {
+          const existing = new Set(prev.map((s) => s.id));
+          const newScans = (msg.data as MonitorScan[]).filter((s) => !existing.has(s.id));
+          return [...newScans, ...prev].slice(0, 100);
+        });
 
         if (soundEnabled && msg.data.some((s: MonitorScan) => s.result === "DENIED")) {
-          audioRef.current?.play().catch(() => {});
+          playAlertSound();
         }
       }
       if (msg.type === "counts") setCounts(msg.data);
@@ -74,7 +96,7 @@ export default function MonitorPage() {
     };
 
     return () => eventSource.close();
-  }, [isPaused, soundEnabled]);
+  }, [isPaused, soundEnabled, playAlertSound]);
 
   useEffect(() => {
     if (feedRef.current) {
@@ -86,7 +108,6 @@ export default function MonitorPage() {
 
   return (
     <div ref={containerRef} className="bg-slate-50 dark:bg-slate-950 min-h-screen">
-      <audio ref={audioRef} src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ==" preload="auto" />
 
       <Header title="Live Monitor" />
 

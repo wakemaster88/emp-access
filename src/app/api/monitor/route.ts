@@ -39,12 +39,12 @@ export async function GET(request: NextRequest) {
             where: scanWhere,
             include: { device: true, ticket: true },
             orderBy: { id: "desc" },
-            take: 20,
+            take: lastScanId === 0 ? 100 : 20,
           });
 
           if (scans.length > 0) {
             lastScanId = Math.max(...scans.map((s) => s.id));
-            sendEvent({ type: "scans", data: scans.reverse() });
+            sendEvent({ type: "scans", data: scans });
           }
 
           if (areaIds?.length) {
