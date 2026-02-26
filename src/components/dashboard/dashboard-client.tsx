@@ -14,6 +14,7 @@ import {
   MapPin,
   Clock,
   CreditCard,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
@@ -51,6 +52,7 @@ interface AreaData {
   resources: ResourceBlock[];
   otherTickets: TicketEntry[];
   aboTickets: TicketEntry[];
+  serviceTickets?: TicketEntry[];
   _count: { tickets: number };
 }
 
@@ -165,11 +167,40 @@ function AboSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicke
   );
 }
 
+function ServiceSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicket: (id: number) => void }) {
+  const [open, setOpen] = useState(false);
+
+  if (tickets.length === 0) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-t transition-colors"
+      >
+        <Package className="h-2.5 w-2.5 text-indigo-400 shrink-0" />
+        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Services</span>
+        <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-0.5">{tickets.length}</Badge>
+        <ChevronDown className={cn("h-3 w-3 text-slate-400 ml-auto transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="pl-0.5">
+          {tickets.map((ticket) => (
+            <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: number) => void }) {
   const hasResources = area.resources.length > 0;
   const hasOther = area.otherTickets.length > 0;
   const hasAbos = area.aboTickets.length > 0;
-  const isEmpty = !hasResources && !hasOther && !hasAbos;
+  const hasServices = (area.serviceTickets?.length ?? 0) > 0;
+  const isEmpty = !hasResources && !hasOther && !hasAbos && !hasServices;
 
   return (
     <Card
@@ -256,6 +287,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
           )}
 
           <AboSection tickets={area.aboTickets} openTicket={openTicket} />
+          <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} />
         </CardContent>
       )}
 

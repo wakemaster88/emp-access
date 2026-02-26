@@ -262,9 +262,10 @@ export async function GET(request: NextRequest) {
     const enrichedTickets = [...directTickets, ...mergedSubTickets, ...mergedSvcTickets];
     const totalCount = area._count.tickets + mergedSubTickets.length + mergedSvcTickets.length;
 
-    // Separate subscription/service tickets from regular tickets
+    // Separate subscription tickets (Abos) and service tickets (Services) from regular tickets
     const regularTickets = enrichedTickets.filter((t) => !subTicketIds.has(t.id) && !svcTicketIds.has(t.id));
-    const aboTickets = enrichedTickets.filter((t) => subTicketIds.has(t.id) || svcTicketIds.has(t.id));
+    const aboTickets = enrichedTickets.filter((t) => subTicketIds.has(t.id));
+    const serviceTickets = enrichedTickets.filter((t) => svcTicketIds.has(t.id));
 
     if (areaResources.length === 0) {
       return {
@@ -276,6 +277,7 @@ export async function GET(request: NextRequest) {
         resources: [],
         otherTickets: regularTickets,
         aboTickets,
+        serviceTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -349,6 +351,7 @@ export async function GET(request: NextRequest) {
         resources: [],
         otherTickets: [...r.tickets, ...otherTickets],
         aboTickets,
+        serviceTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -371,6 +374,7 @@ export async function GET(request: NextRequest) {
         resources: rest,
         otherTickets: [...primary.tickets, ...otherTickets],
         aboTickets,
+        serviceTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -384,6 +388,7 @@ export async function GET(request: NextRequest) {
       resources,
       otherTickets,
       aboTickets,
+      serviceTickets,
       _count: { tickets: totalCount },
     };
   });
@@ -401,6 +406,7 @@ export async function GET(request: NextRequest) {
       resources: [],
       otherTickets: unassignedTickets.map(enrichTicket),
       aboTickets: [],
+      serviceTickets: [],
       _count: { tickets: unassignedTickets.length },
     },
   });

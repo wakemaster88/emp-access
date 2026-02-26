@@ -10,13 +10,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Loader2, Trash2, Save, Settings2, Link2, MapPin, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+function toDateInput(val: string | Date | null | undefined): string {
+  if (!val) return "";
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
+}
 
 export interface SubscriptionData {
   id: number;
   name: string;
   annyNames: string | null;
+  defaultValidityType?: string | null;
+  defaultStartDate?: string | Date | null;
+  defaultEndDate?: string | Date | null;
+  defaultSlotStart?: string | null;
+  defaultSlotEnd?: string | null;
+  defaultValidityDurationMinutes?: number | null;
 }
 
 interface AreaRef {
@@ -95,6 +110,12 @@ export function SubscriptionDialog({
   const [name, setName] = useState("");
   const [selectedAnny, setSelectedAnny] = useState<Set<string>>(new Set());
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set());
+  const [defaultValidityType, setDefaultValidityType] = useState<string>("none");
+  const [defaultStartDate, setDefaultStartDate] = useState("");
+  const [defaultEndDate, setDefaultEndDate] = useState("");
+  const [defaultSlotStart, setDefaultSlotStart] = useState("");
+  const [defaultSlotEnd, setDefaultSlotEnd] = useState("");
+  const [defaultValidityDurationMinutes, setDefaultValidityDurationMinutes] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -112,10 +133,22 @@ export function SubscriptionDialog({
           : [];
         setSelectedAnny(new Set(parsed));
         setSelectedAreas(new Set(initialAreaIds.map(String)));
+        setDefaultValidityType(subscription.defaultValidityType ?? "none");
+        setDefaultStartDate(toDateInput(subscription.defaultStartDate));
+        setDefaultEndDate(toDateInput(subscription.defaultEndDate));
+        setDefaultSlotStart(subscription.defaultSlotStart ?? "");
+        setDefaultSlotEnd(subscription.defaultSlotEnd ?? "");
+        setDefaultValidityDurationMinutes(subscription.defaultValidityDurationMinutes != null ? String(subscription.defaultValidityDurationMinutes) : "");
       } else {
         setName("");
         setSelectedAnny(new Set());
         setSelectedAreas(new Set());
+        setDefaultValidityType("none");
+        setDefaultStartDate("");
+        setDefaultEndDate("");
+        setDefaultSlotStart("");
+        setDefaultSlotEnd("");
+        setDefaultValidityDurationMinutes("");
       }
     }
   }, [open, subscription, initialAreaIds]);
@@ -140,11 +173,30 @@ export function SubscriptionDialog({
     setSaving(true);
     setError("");
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: name.trim(),
         annyNames: [...selectedAnny],
         areaIds: [...selectedAreas].map(Number),
       };
+      if (defaultValidityType && defaultValidityType !== "none") {
+        payload.defaultValidityType = defaultValidityType;
+        if (defaultValidityType === "DATE_RANGE") {
+          if (defaultStartDate) payload.defaultStartDate = new Date(defaultStartDate).toISOString();
+          if (defaultEndDate) payload.defaultEndDate = new Date(defaultEndDate).toISOString();
+        } else if (defaultValidityType === "TIME_SLOT") {
+          payload.defaultSlotStart = defaultSlotStart || null;
+          payload.defaultSlotEnd = defaultSlotEnd || null;
+        } else if (defaultValidityType === "DURATION" && defaultValidityDurationMinutes) {
+          payload.defaultValidityDurationMinutes = Number(defaultValidityDurationMinutes);
+        }
+      } else {
+        payload.defaultValidityType = null;
+        payload.defaultStartDate = null;
+        payload.defaultEndDate = null;
+        payload.defaultSlotStart = null;
+        payload.defaultSlotEnd = null;
+        payload.defaultValidityDurationMinutes = null;
+      }
       const url = isNew ? "/api/subscriptions" : `/api/subscriptions/${subscription!.id}`;
       const method = isNew ? "POST" : "PUT";
       const res = await fetch(url, {
@@ -231,6 +283,52 @@ export function SubscriptionDialog({
                 autoFocus
                 className="h-9"
               />
+            </div>
+
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-2">
+              <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400">Standard-Gültigkeit für neue Tickets</p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Gültigkeitstyp</Label>
+                <Select value={defaultValidityType} onValueChange={setDefaultValidityType}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Standard" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Kein Standard</SelectItem>
+                    <SelectItem value="DATE_RANGE">Zeitraum (Tage)</SelectItem>
+                    <SelectItem value="TIME_SLOT">Zeitslot (Uhrzeit)</SelectItem>
+                    <SelectItem value="DURATION">Dauer ab 1. Scan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {defaultValidityType === "DATE_RANGE" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Gültig ab</Label>
+                    <Input type="date" className="h-9 text-xs" value={defaultStartDate} onChange={(e) => setDefaultStartDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Gültig bis</Label>
+                    <Input type="date" className="h-9 text-xs" value={defaultEndDate} onChange={(e) => setDefaultEndDate(e.target.value)} />
+                  </div>
+                </div>
+              )}
+              {defaultValidityType === "TIME_SLOT" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Slot von</Label>
+                    <Input type="time" className="h-9 text-xs" value={defaultSlotStart} onChange={(e) => setDefaultSlotStart(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Slot bis</Label>
+                    <Input type="time" className="h-9 text-xs" value={defaultSlotEnd} onChange={(e) => setDefaultSlotEnd(e.target.value)} />
+                  </div>
+                </div>
+              )}
+              {defaultValidityType === "DURATION" && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Dauer (Minuten)</Label>
+                  <Input type="number" min={1} className="h-9 text-xs" placeholder="z.B. 120" value={defaultValidityDurationMinutes} onChange={(e) => setDefaultValidityDurationMinutes(e.target.value)} />
+                </div>
+              )}
             </div>
 
             {subscription && (

@@ -30,12 +30,22 @@ export async function POST(request: NextRequest) {
   const areaIds: number[] = Array.isArray(body.areaIds) ? body.areaIds.map(Number) : [];
   const annyNames: string[] = Array.isArray(body.annyNames) ? body.annyNames : [];
 
+  const defaultValidityType = ["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(body.defaultValidityType)
+    ? body.defaultValidityType
+    : null;
+
   const sub = await db.subscription.create({
     data: {
       name: body.name.trim(),
       annyNames: annyNames.length > 0 ? JSON.stringify(annyNames) : null,
       accountId: accountId!,
       areas: areaIds.length > 0 ? { connect: areaIds.map((id) => ({ id })) } : undefined,
+      defaultValidityType,
+      defaultStartDate: body.defaultStartDate ? new Date(body.defaultStartDate) : null,
+      defaultEndDate: body.defaultEndDate ? new Date(body.defaultEndDate) : null,
+      defaultSlotStart: body.defaultSlotStart ?? null,
+      defaultSlotEnd: body.defaultSlotEnd ?? null,
+      defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null,
     },
     include: {
       areas: { select: { id: true, name: true } },

@@ -27,14 +27,29 @@ interface Area {
   name: string;
 }
 
-interface Sub {
+interface DefaultValidity {
+  defaultValidityType?: string | null;
+  defaultStartDate?: string | Date | null;
+  defaultEndDate?: string | Date | null;
+  defaultSlotStart?: string | null;
+  defaultSlotEnd?: string | null;
+  defaultValidityDurationMinutes?: number | null;
+}
+
+interface Sub extends DefaultValidity {
   id: number;
   name: string;
 }
 
-interface Svc {
+interface Svc extends DefaultValidity {
   id: number;
   name: string;
+}
+
+function toDateInput(val: string | Date | null | undefined): string {
+  if (!val) return "";
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 }
 
 interface AddTicketDialogProps {
@@ -71,6 +86,30 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
 
   function set(key: keyof typeof EMPTY, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function applyDefaultValidity(def: DefaultValidity | undefined) {
+    if (!def?.defaultValidityType) return;
+    set("validityType", def.defaultValidityType);
+    if (def.defaultValidityType === "DATE_RANGE") {
+      set("startDate", toDateInput(def.defaultStartDate));
+      set("endDate", toDateInput(def.defaultEndDate));
+      set("slotStart", "");
+      set("slotEnd", "");
+      set("validityDurationMinutes", "");
+    } else if (def.defaultValidityType === "TIME_SLOT") {
+      set("startDate", "");
+      set("endDate", "");
+      set("slotStart", def.defaultSlotStart ?? "");
+      set("slotEnd", def.defaultSlotEnd ?? "");
+      set("validityDurationMinutes", "");
+    } else if (def.defaultValidityType === "DURATION") {
+      set("startDate", "");
+      set("endDate", "");
+      set("slotStart", "");
+      set("slotEnd", "");
+      set("validityDurationMinutes", def.defaultValidityDurationMinutes != null ? String(def.defaultValidityDurationMinutes) : "");
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -224,7 +263,10 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
                   if (v !== "none") {
                     set("accessAreaId", "none");
                     const svc = services.find((s) => String(s.id) === v);
-                    if (svc) set("ticketTypeName", svc.name);
+                    if (svc) {
+                      set("ticketTypeName", svc.name);
+                      applyDefaultValidity(svc);
+                    }
                   } else {
                     set("ticketTypeName", "");
                   }
@@ -275,7 +317,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
                     <Label>Abo</Label>
                     <Select value={form.subscriptionId} onValueChange={(v) => {
                       set("subscriptionId", v);
-                      if (v !== "none") set("accessAreaId", "none");
+                      if (v !== "none") {
+                        set("accessAreaId", "none");
+                        const sub = subscriptions.find((s) => String(s.id) === v);
+                        if (sub) applyDefaultValidity(sub);
+                      }
                     }}>
                       <SelectTrigger>
                         <SelectValue placeholder="Kein Abo" />

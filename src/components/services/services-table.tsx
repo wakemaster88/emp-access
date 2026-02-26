@@ -33,7 +33,17 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
   const [addOpen, setAddOpen] = useState(false);
 
   function openEdit(svc: SvcRow) {
-    setSelected({ id: svc.id, name: svc.name, annyNames: svc.annyNames });
+    setSelected({
+      id: svc.id,
+      name: svc.name,
+      annyNames: svc.annyNames,
+      defaultValidityType: svc.defaultValidityType ?? undefined,
+      defaultStartDate: svc.defaultStartDate ?? undefined,
+      defaultEndDate: svc.defaultEndDate ?? undefined,
+      defaultSlotStart: svc.defaultSlotStart ?? undefined,
+      defaultSlotEnd: svc.defaultSlotEnd ?? undefined,
+      defaultValidityDurationMinutes: svc.defaultValidityDurationMinutes ?? undefined,
+    });
     setSelectedAreas(svc.areas.map((a) => a.id));
   }
 

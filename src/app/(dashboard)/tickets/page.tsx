@@ -45,12 +45,30 @@ export default async function TicketsPage({ searchParams }: Props) {
     db.subscription.findMany({
       where: baseWhere,
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        defaultValidityType: true,
+        defaultStartDate: true,
+        defaultEndDate: true,
+        defaultSlotStart: true,
+        defaultSlotEnd: true,
+        defaultValidityDurationMinutes: true,
+      },
     }),
     db.service.findMany({
       where: baseWhere,
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        defaultValidityType: true,
+        defaultStartDate: true,
+        defaultEndDate: true,
+        defaultSlotStart: true,
+        defaultSlotEnd: true,
+        defaultValidityDurationMinutes: true,
+      },
     }),
     showInactive
       ? Promise.resolve(0)

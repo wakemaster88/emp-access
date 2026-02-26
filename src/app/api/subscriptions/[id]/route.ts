@@ -45,6 +45,10 @@ export async function PUT(
 
   const areaIds: number[] | undefined = Array.isArray(body.areaIds) ? body.areaIds.map(Number) : undefined;
   const annyNames: string[] | undefined = Array.isArray(body.annyNames) ? body.annyNames : undefined;
+  const defaultValidityType =
+    body.defaultValidityType !== undefined
+      ? (["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(body.defaultValidityType) ? body.defaultValidityType : null)
+      : undefined;
 
   const sub = await db.subscription.update({
     where: { id: subId },
@@ -56,6 +60,12 @@ export async function PUT(
       areas: areaIds !== undefined
         ? { set: areaIds.map((id) => ({ id })) }
         : undefined,
+      ...(defaultValidityType !== undefined && { defaultValidityType }),
+      ...(body.defaultStartDate !== undefined && { defaultStartDate: body.defaultStartDate ? new Date(body.defaultStartDate) : null }),
+      ...(body.defaultEndDate !== undefined && { defaultEndDate: body.defaultEndDate ? new Date(body.defaultEndDate) : null }),
+      ...(body.defaultSlotStart !== undefined && { defaultSlotStart: body.defaultSlotStart || null }),
+      ...(body.defaultSlotEnd !== undefined && { defaultSlotEnd: body.defaultSlotEnd || null }),
+      ...(body.defaultValidityDurationMinutes !== undefined && { defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null }),
     },
     include: {
       areas: { select: { id: true, name: true } },

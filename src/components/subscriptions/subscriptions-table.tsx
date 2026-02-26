@@ -34,7 +34,17 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
   const [addOpen, setAddOpen] = useState(false);
 
   function openEdit(sub: SubRow) {
-    setSelected({ id: sub.id, name: sub.name, annyNames: sub.annyNames });
+    setSelected({
+      id: sub.id,
+      name: sub.name,
+      annyNames: sub.annyNames,
+      defaultValidityType: sub.defaultValidityType ?? undefined,
+      defaultStartDate: sub.defaultStartDate ?? undefined,
+      defaultEndDate: sub.defaultEndDate ?? undefined,
+      defaultSlotStart: sub.defaultSlotStart ?? undefined,
+      defaultSlotEnd: sub.defaultSlotEnd ?? undefined,
+      defaultValidityDurationMinutes: sub.defaultValidityDurationMinutes ?? undefined,
+    });
     setSelectedAreas(sub.areas.map((a) => a.id));
   }
 

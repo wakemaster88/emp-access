@@ -199,29 +199,41 @@ model AccessArea {
 }
 
 model Subscription {
-  id        Int          @id @default(autoincrement())
-  name      String
-  annyNames String?
-  accountId Int
-  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  areas     AccessArea[]
-  tickets   Ticket[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                          Int          @id @default(autoincrement())
+  name                        String
+  annyNames                   String?
+  defaultValidityType         ValidityType?
+  defaultStartDate            DateTime?
+  defaultEndDate              DateTime?
+  defaultSlotStart            String?      // HH:mm
+  defaultSlotEnd              String?      // HH:mm
+  defaultValidityDurationMinutes Int?
+  accountId                   Int
+  account                     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  areas                       AccessArea[]
+  tickets                     Ticket[]
+  createdAt                   DateTime     @default(now())
+  updatedAt                   DateTime     @updatedAt
 
   @@index([accountId])
 }
 
 model Service {
-  id        Int          @id @default(autoincrement())
-  name      String
-  annyNames String?
-  accountId Int
-  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  areas     AccessArea[]
-  tickets   Ticket[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                          Int          @id @default(autoincrement())
+  name                        String
+  annyNames                   String?
+  defaultValidityType         ValidityType?
+  defaultStartDate            DateTime?
+  defaultEndDate              DateTime?
+  defaultSlotStart            String?      // HH:mm
+  defaultSlotEnd              String?      // HH:mm
+  defaultValidityDurationMinutes Int?
+  accountId                   Int
+  account                     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  areas                       AccessArea[]
+  tickets                     Ticket[]
+  createdAt                   DateTime     @default(now())
+  updatedAt                   DateTime     @updatedAt
 
   @@index([accountId])
 }
