@@ -79,9 +79,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
     firstName: "",
     lastName: "",
     ticketTypeName: "",
-    barcode: "",
-    qrCode: "",
-    rfidCode: "",
+    code: "",
     status: "VALID",
     accessAreaId: "none",
     startDate: "",
@@ -105,9 +103,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         firstName: ticket.firstName ?? "",
         lastName: ticket.lastName ?? "",
         ticketTypeName: ticket.ticketTypeName ?? "",
-        barcode: ticket.barcode ?? "",
-        qrCode: ticket.qrCode ?? "",
-        rfidCode: ticket.rfidCode ?? "",
+        code: ticket.barcode || ticket.qrCode || ticket.rfidCode || "",
         status: ticket.status,
         accessAreaId: ticket.accessAreaId ? String(ticket.accessAreaId) : "none",
         startDate: toDateInput(ticket.startDate),
@@ -152,9 +148,9 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
       firstName: form.firstName || null,
       lastName: form.lastName || null,
       ticketTypeName: form.ticketTypeName || null,
-      barcode: form.barcode || null,
-      qrCode: form.qrCode || null,
-      rfidCode: form.rfidCode || null,
+      barcode: form.code || null,
+      qrCode: form.code || null,
+      rfidCode: form.code || null,
       accessAreaId: form.accessAreaId && form.accessAreaId !== "none" ? Number(form.accessAreaId) : null,
       startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
       endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
@@ -326,21 +322,18 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
             </div>
 
             <div className="space-y-1.5">
-              <Label>Code</Label>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <span className="text-xs text-slate-500">Barcode</span>
-                  <Input value={form.barcode} onChange={(e) => set("barcode", e.target.value)} className="font-mono text-xs" placeholder="123456789" />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-xs text-slate-500">QR-Code</span>
-                  <Input value={form.qrCode} onChange={(e) => set("qrCode", e.target.value)} className="font-mono text-xs" placeholder="QR..." />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-xs text-slate-500">RFID</span>
-                  <Input value={form.rfidCode} onChange={(e) => set("rfidCode", e.target.value)} className="font-mono text-xs" placeholder="RFID..." />
-                </div>
-              </div>
+              <Label htmlFor="e-code" className="flex items-center gap-1.5">
+                <ScanLine className="h-3.5 w-3.5 text-slate-400" />
+                Code
+              </Label>
+              <Input
+                id="e-code"
+                value={form.code}
+                onChange={(e) => set("code", e.target.value)}
+                className="font-mono text-sm"
+                placeholder="Code scannen oder eingeben…"
+                autoComplete="off"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">

@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Loader2, Camera } from "lucide-react";
+import { Plus, Loader2, Camera, ScanLine } from "lucide-react";
 import { CameraCapture } from "./camera-capture";
 
 interface Area {
@@ -35,9 +35,7 @@ const EMPTY = {
   firstName: "",
   lastName: "",
   ticketTypeName: "",
-  barcode: "",
-  qrCode: "",
-  rfidCode: "",
+  code: "",
   accessAreaId: "none",
   status: "VALID",
   startDate: "",
@@ -76,9 +74,11 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
     if (form.firstName) payload.firstName = form.firstName;
     if (form.lastName) payload.lastName = form.lastName;
     if (form.ticketTypeName) payload.ticketTypeName = form.ticketTypeName;
-    if (form.barcode) payload.barcode = form.barcode;
-    if (form.qrCode) payload.qrCode = form.qrCode;
-    if (form.rfidCode) payload.rfidCode = form.rfidCode;
+    if (form.code) {
+      payload.barcode = form.code;
+      payload.qrCode = form.code;
+      payload.rfidCode = form.code;
+    }
     if (form.accessAreaId && form.accessAreaId !== "none") payload.accessAreaId = Number(form.accessAreaId);
     if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
     if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
@@ -201,38 +201,20 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
             />
           </div>
 
-          {/* Codes */}
+          {/* Code */}
           <div className="space-y-1.5">
-            <Label>Code</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <span className="text-xs text-slate-500">Barcode</span>
-                <Input
-                  placeholder="123456789"
-                  value={form.barcode}
-                  onChange={(e) => set("barcode", e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs text-slate-500">QR-Code</span>
-                <Input
-                  placeholder="QR..."
-                  value={form.qrCode}
-                  onChange={(e) => set("qrCode", e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs text-slate-500">RFID</span>
-                <Input
-                  placeholder="RFID..."
-                  value={form.rfidCode}
-                  onChange={(e) => set("rfidCode", e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
-            </div>
+            <Label htmlFor="t-code" className="flex items-center gap-1.5">
+              <ScanLine className="h-3.5 w-3.5 text-slate-400" />
+              Code
+            </Label>
+            <Input
+              id="t-code"
+              value={form.code}
+              onChange={(e) => set("code", e.target.value)}
+              className="font-mono text-sm"
+              placeholder="Code scannen oder eingeben…"
+              autoComplete="off"
+            />
           </div>
 
           {/* Area + Status */}
