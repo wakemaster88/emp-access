@@ -53,7 +53,7 @@ export async function GET(
             where: scanWhere,
             include: {
               device: { select: { id: true, name: true } },
-              ticket: { select: { name: true, firstName: true, lastName: true, validityType: true, validityDurationMinutes: true, firstScanAt: true, profileImage: true } },
+              ticket: { select: { id: true, name: true, firstName: true, lastName: true, validityType: true, validityDurationMinutes: true, firstScanAt: true, profileImage: true } },
             },
             orderBy: { id: "desc" },
             take: lastScanId === 0 ? 50 : 20,
@@ -67,19 +67,49 @@ export async function GET(
           const today = new Date();
           today.setHours(0, 0, 0, 0);
 
-          const [granted, denied, total] = await Promise.all([
-            prisma.scan.count({ where: { accountId, scanTime: { gte: today }, result: "GRANTED", ...(deviceIds.length ? { deviceId: { in: deviceIds } } : {}) } }),
-            prisma.scan.count({ where: { accountId, scanTime: { gte: today }, result: "DENIED", ...(deviceIds.length ? { deviceId: { in: deviceIds } } : {}) } }),
-            prisma.scan.count({ where: { accountId, scanTime: { gte: today }, ...(deviceIds.length ? { deviceId: { in: deviceIds } } : {}) } }),
-          ]);
-
-          send({ type: "stats", data: { granted, denied, total } });
-
-          const updatedDevices = await prisma.device.findMany({
+          // Collect area IDs from monitored devices
+          const monitoredDevices = await prisma.device.findMany({
             where: { accountId, ...(deviceIds.length ? { id: { in: deviceIds } } : {}) },
-            select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true },
+            select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true, accessIn: true, accessOut: true },
           });
-          send({ type: "devices", data: updatedDevices });
+          send({ type: "devices", data: monitoredDevices });
+
+          const areaIds = [...new Set(
+            monitoredDevices.flatMap((d) => [d.accessIn, d.accessOut].filter((id): id is number => id != null))
+          )];
+
+          const ticketWhere: Record<string, unknown> = {
+            accountId,
+            status: { in: ["VALID", "REDEEMED"] },
+          };
+          if (areaIds.length > 0) {
+            ticketWhere.OR = [
+              { accessAreaId: { in: areaIds } },
+              { accessAreaId: null },
+            ];
+          }
+
+          const tickets = await prisma.ticket.findMany({
+            where: ticketWhere,
+            select: {
+              id: true,
+              name: true,
+              firstName: true,
+              lastName: true,
+              ticketTypeName: true,
+              status: true,
+              profileImage: true,
+              validityType: true,
+              validityDurationMinutes: true,
+              firstScanAt: true,
+              startDate: true,
+              endDate: true,
+              slotStart: true,
+              slotEnd: true,
+            },
+            orderBy: { name: "asc" },
+          });
+          send({ type: "tickets", data: tickets });
         } catch {
           // db error — continue polling
         }
