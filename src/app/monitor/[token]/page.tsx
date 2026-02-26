@@ -156,91 +156,91 @@ export default function PublicMonitorPage({ params }: Props) {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
 
   const styles = dark ? {
-    page: "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100",
-    header: "border-slate-800/60 bg-slate-900/50 backdrop-blur-xl",
+    page: "bg-slate-950 text-white",
+    header: "border-slate-800 bg-slate-900",
     headerTitle: "text-white",
-    headerSub: "text-slate-400",
-    deviceDot: "bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.5)]",
-    deviceDotOff: "bg-slate-600",
-    deviceText: "text-slate-400",
-    liveBadge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
-    connectBadge: "bg-slate-800 text-slate-400",
-    sectionLabel: "text-slate-500",
-    emptyBg: "border-slate-800/50 bg-slate-900/30 text-slate-600",
-    scanGranted: "bg-emerald-500/8 border-emerald-500/15 hover:bg-emerald-500/12",
-    scanDenied: "bg-rose-500/8 border-rose-500/15 hover:bg-rose-500/12",
-    scanProtected: "bg-amber-500/8 border-amber-500/15 hover:bg-amber-500/12",
-    scanName: "text-slate-50",
-    scanSub: "text-slate-400",
-    scanTime: "text-slate-500",
-    scanCountBg: "bg-white/5 text-slate-300",
-    imgRing: "ring-slate-700/60",
-    clockBg: "bg-gradient-to-br from-indigo-600/20 via-violet-600/15 to-purple-600/10 border-indigo-500/20",
+    headerSub: "text-slate-300",
+    deviceDot: "bg-emerald-400 shadow-[0_0_10px_3px_rgba(52,211,153,0.6)]",
+    deviceDotOff: "bg-red-500",
+    deviceText: "text-slate-200",
+    liveBadge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+    connectBadge: "bg-slate-800 text-slate-300",
+    sectionLabel: "text-slate-300",
+    emptyBg: "border-slate-700 bg-slate-900 text-slate-400",
+    scanGranted: "bg-emerald-950 border-emerald-700/50",
+    scanDenied: "bg-rose-950 border-rose-700/50",
+    scanProtected: "bg-amber-950 border-amber-700/50",
+    scanName: "text-white",
+    scanSub: "text-slate-300",
+    scanTime: "text-slate-300",
+    scanCountBg: "bg-white/10 text-white",
+    imgRing: "ring-slate-700",
+    clockBg: "bg-indigo-950 border-indigo-700/50",
     clockText: "text-white",
-    clockSub: "text-indigo-300/60",
-    ticketBg: "border-slate-800/50 bg-slate-900/40 hover:bg-slate-800/50",
-    ticketName: "text-slate-100",
-    ticketSub: "text-slate-500",
-    ticketAvatarBg: "bg-slate-800/80",
-    ticketAvatarIcon: "text-slate-600",
-    ticketCountBorder: "border-slate-700/50 text-slate-500",
-    ringOffset: "ring-offset-slate-950",
-    modeBtnBg: "bg-slate-800/60 hover:bg-slate-700/60 text-slate-400",
-  } : {
-    page: "bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900",
-    header: "border-slate-200/80 bg-white/70 backdrop-blur-xl",
-    headerTitle: "text-slate-900",
-    headerSub: "text-slate-500",
-    deviceDot: "bg-emerald-500 shadow-[0_0_8px_2px_rgba(16,185,129,0.4)]",
-    deviceDotOff: "bg-slate-300",
-    deviceText: "text-slate-500",
-    liveBadge: "bg-emerald-50 text-emerald-600 border-emerald-200",
-    connectBadge: "bg-slate-100 text-slate-400",
-    sectionLabel: "text-slate-400",
-    emptyBg: "border-slate-200 bg-slate-50 text-slate-400",
-    scanGranted: "bg-emerald-50/80 border-emerald-200/60 hover:bg-emerald-50",
-    scanDenied: "bg-rose-50/80 border-rose-200/60 hover:bg-rose-50",
-    scanProtected: "bg-amber-50/80 border-amber-200/60 hover:bg-amber-50",
-    scanName: "text-slate-900",
-    scanSub: "text-slate-500",
-    scanTime: "text-slate-400",
-    scanCountBg: "bg-slate-200/60 text-slate-600",
-    imgRing: "ring-slate-200",
-    clockBg: "bg-gradient-to-br from-indigo-500/10 via-violet-500/8 to-purple-500/5 border-indigo-200/60",
-    clockText: "text-slate-900",
-    clockSub: "text-indigo-400/70",
-    ticketBg: "border-slate-200/80 bg-white/60 hover:bg-white",
-    ticketName: "text-slate-900",
-    ticketSub: "text-slate-400",
-    ticketAvatarBg: "bg-slate-100",
+    clockSub: "text-indigo-300",
+    ticketBg: "border-slate-700/60 bg-slate-900",
+    ticketName: "text-white",
+    ticketSub: "text-slate-300",
+    ticketAvatarBg: "bg-slate-800",
     ticketAvatarIcon: "text-slate-400",
-    ticketCountBorder: "border-slate-200 text-slate-400",
+    ticketCountBorder: "border-slate-600 text-slate-300",
+    ringOffset: "ring-offset-slate-950",
+    modeBtnBg: "bg-slate-800 hover:bg-slate-700 text-slate-200",
+  } : {
+    page: "bg-white text-slate-950",
+    header: "border-slate-300 bg-slate-50",
+    headerTitle: "text-slate-950",
+    headerSub: "text-slate-600",
+    deviceDot: "bg-emerald-600 shadow-[0_0_10px_3px_rgba(16,185,129,0.5)]",
+    deviceDotOff: "bg-red-500",
+    deviceText: "text-slate-700",
+    liveBadge: "bg-emerald-100 text-emerald-800 border-emerald-300",
+    connectBadge: "bg-slate-200 text-slate-600",
+    sectionLabel: "text-slate-600",
+    emptyBg: "border-slate-300 bg-slate-100 text-slate-500",
+    scanGranted: "bg-emerald-50 border-emerald-300",
+    scanDenied: "bg-rose-50 border-rose-300",
+    scanProtected: "bg-amber-50 border-amber-300",
+    scanName: "text-slate-950",
+    scanSub: "text-slate-600",
+    scanTime: "text-slate-600",
+    scanCountBg: "bg-slate-200 text-slate-800",
+    imgRing: "ring-slate-300",
+    clockBg: "bg-indigo-50 border-indigo-300",
+    clockText: "text-slate-950",
+    clockSub: "text-indigo-700",
+    ticketBg: "border-slate-300 bg-slate-50",
+    ticketName: "text-slate-950",
+    ticketSub: "text-slate-600",
+    ticketAvatarBg: "bg-slate-200",
+    ticketAvatarIcon: "text-slate-500",
+    ticketCountBorder: "border-slate-400 text-slate-600",
     ringOffset: "ring-offset-white",
-    modeBtnBg: "bg-slate-100 hover:bg-slate-200 text-slate-500",
+    modeBtnBg: "bg-slate-200 hover:bg-slate-300 text-slate-700",
   };
 
   const resultConfig = {
     GRANTED: {
       icon: CheckCircle2,
       label: "Erlaubt",
-      text: dark ? "text-emerald-400" : "text-emerald-600",
-      badge: dark ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-700",
+      text: dark ? "text-emerald-400" : "text-emerald-700",
+      badge: dark ? "bg-emerald-500/25 text-emerald-200 font-bold" : "bg-emerald-200 text-emerald-900 font-bold",
       ring: "ring-emerald-400",
       bg: styles.scanGranted,
     },
     DENIED: {
       icon: XCircle,
       label: "Abgelehnt",
-      text: dark ? "text-rose-400" : "text-rose-600",
-      badge: dark ? "bg-rose-500/20 text-rose-300" : "bg-rose-100 text-rose-700",
+      text: dark ? "text-rose-400" : "text-rose-700",
+      badge: dark ? "bg-rose-500/25 text-rose-200 font-bold" : "bg-rose-200 text-rose-900 font-bold",
       ring: "ring-rose-400",
       bg: styles.scanDenied,
     },
     PROTECTED: {
       icon: Clock,
       label: "Geschützt",
-      text: dark ? "text-amber-400" : "text-amber-600",
-      badge: dark ? "bg-amber-500/20 text-amber-300" : "bg-amber-100 text-amber-700",
+      text: dark ? "text-amber-400" : "text-amber-700",
+      badge: dark ? "bg-amber-500/25 text-amber-200 font-bold" : "bg-amber-200 text-amber-900 font-bold",
       ring: "ring-amber-400",
       bg: styles.scanProtected,
     },
@@ -303,8 +303,8 @@ export default function PublicMonitorPage({ params }: Props) {
           {/* Scan Feed */}
           <div className="lg:col-span-2 flex flex-col">
             <div className="flex items-center gap-2 mb-3">
-              <ScanLine className={cn("h-4 w-4", styles.sectionLabel)} />
-              <h2 className={cn("text-xs font-semibold uppercase tracking-widest", styles.sectionLabel)}>Letzte Scans</h2>
+              <ScanLine className={cn("h-5 w-5", styles.sectionLabel)} />
+              <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>Letzte Scans</h2>
             </div>
             {scans.length === 0 && (
               <div className={cn("rounded-2xl border p-12 text-center text-sm", styles.emptyBg)}>
@@ -333,15 +333,15 @@ export default function PublicMonitorPage({ params }: Props) {
                       {group.profileImage ? (
                         <img src={group.profileImage} alt="" className="h-16 w-16 object-cover shrink-0" />
                       ) : (
-                        <div className={cn("h-10 w-10 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/5" : "bg-slate-100")}>
-                          <Icon className={cn("h-5 w-5", rc.text)} />
+                        <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
+                          <Icon className={cn("h-6 w-6", rc.text)} />
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className={cn("font-semibold text-sm truncate", styles.scanName)}>
+                        <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
                           {group.personName || group.ticketName}
                         </p>
-                        <p className={cn("text-xs truncate", styles.scanSub)}>
+                        <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
                           {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device.name}
                         </p>
                       </div>
@@ -355,14 +355,14 @@ export default function PublicMonitorPage({ params }: Props) {
                         />
                       )}
                       {scanCount > 1 && (
-                        <span className={cn("text-[11px] font-mono font-medium px-2 py-0.5 rounded-lg tabular-nums", styles.scanCountBg)}>
+                        <span className={cn("text-xs font-mono font-bold px-2.5 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>
                           ×{scanCount}
                         </span>
                       )}
-                      <span className={cn("text-[11px] font-medium px-2.5 py-1 rounded-lg", rc.badge)}>
+                      <span className={cn("text-xs font-bold px-3 py-1 rounded-lg", rc.badge)}>
                         {rc.label}
                       </span>
-                      <span className={cn("text-xs tabular-nums font-mono", styles.scanTime)}>
+                      <span className={cn("text-sm tabular-nums font-mono font-semibold", styles.scanTime)}>
                         {fmtTime(group.latestScanTime)}
                       </span>
                     </div>
@@ -377,9 +377,9 @@ export default function PublicMonitorPage({ params }: Props) {
             <LiveClock dark={dark} styles={styles} />
 
             <div className="flex items-center gap-2">
-              <Ticket className={cn("h-4 w-4", styles.sectionLabel)} />
-              <h2 className={cn("text-xs font-semibold uppercase tracking-widest", styles.sectionLabel)}>Gültige Tickets</h2>
-              <span className={cn("text-[10px] font-mono border rounded-md px-1.5 py-0.5 ml-auto", styles.ticketCountBorder)}>{tickets.length}</span>
+              <Ticket className={cn("h-5 w-5", styles.sectionLabel)} />
+              <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>Gültige Tickets</h2>
+              <span className={cn("text-xs font-mono font-bold border rounded-lg px-2 py-0.5 ml-auto", styles.ticketCountBorder)}>{tickets.length}</span>
             </div>
 
             <div className="space-y-1.5 max-h-[calc(100vh-18rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
@@ -399,19 +399,19 @@ export default function PublicMonitorPage({ params }: Props) {
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className={cn("text-sm font-semibold truncate", styles.ticketName)}>
+                    <p className={cn("text-sm font-bold truncate", styles.ticketName)}>
                       {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
                     </p>
-                    <p className={cn("text-xs truncate", styles.ticketSub)}>
+                    <p className={cn("text-xs font-medium truncate", styles.ticketSub)}>
                       {ticket.ticketTypeName || ticket.name}
                     </p>
                   </div>
                   <div className="shrink-0 flex flex-col items-end gap-0.5">
                     <Badge className={cn(
-                      "text-[10px] px-1.5 py-0 font-medium",
+                      "text-[11px] px-2 py-0.5 font-bold",
                       ticket.status === "VALID"
-                        ? dark ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : dark ? "bg-sky-500/15 text-sky-400 border-sky-500/25" : "bg-sky-50 text-sky-700 border-sky-200"
+                        ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                        : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
                     )}>
                       {ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
                     </Badge>
@@ -459,10 +459,10 @@ function DurationCountdown({ firstScanAt, durationMinutes, dark }: { firstScanAt
 
   return (
     <span className={cn(
-      "text-xs font-mono px-2 py-0.5 rounded-lg tabular-nums font-medium",
+      "text-xs font-mono px-2.5 py-1 rounded-lg tabular-nums font-bold",
       expired
-        ? dark ? "bg-rose-500/20 text-rose-300" : "bg-rose-100 text-rose-600"
-        : dark ? "bg-violet-500/20 text-violet-300" : "bg-violet-100 text-violet-600"
+        ? dark ? "bg-rose-500/25 text-rose-200" : "bg-rose-200 text-rose-900"
+        : dark ? "bg-violet-500/25 text-violet-200" : "bg-violet-200 text-violet-900"
     )}>
       {remaining}
     </span>
@@ -483,8 +483,8 @@ function LiveClock({ dark, styles }: { dark: boolean; styles: Record<string, str
   }, []);
   return (
     <div className={cn("rounded-2xl border px-5 py-4 text-center transition-colors duration-300", styles.clockBg)}>
-      <p className={cn("text-4xl font-mono font-bold tracking-tight tabular-nums", styles.clockText)}>{time}</p>
-      <p className={cn("text-xs mt-1 font-medium", styles.clockSub)}>{date}</p>
+      <p className={cn("text-4xl font-mono font-black tracking-tight tabular-nums", styles.clockText)}>{time}</p>
+      <p className={cn("text-sm mt-1 font-bold", styles.clockSub)}>{date}</p>
     </div>
   );
 }
