@@ -140,7 +140,7 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
               <TableCell className="text-xs font-mono text-slate-500">
                 {ticket.source === "ANNY" ? (
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 font-normal">
-                    anny #{(ticket.qrCode || ticket.uuid || "").split(",")[0]}
+                    anny
                   </Badge>
                 ) : (
                   ticket.barcode || ticket.qrCode || ticket.rfidCode || "–"

@@ -29,9 +29,16 @@ interface AnnyBooking {
   };
 }
 
+interface BookingEntry {
+  id: string;
+  start: string | null;
+  end: string | null;
+  status: string | null;
+}
+
 interface BookingGroup {
   key: string;
-  bookingIds: string[];
+  entries: BookingEntry[];
   customerName: string;
   firstName: string;
   lastName: string;
@@ -145,9 +152,16 @@ export async function POST() {
       const startDate = booking.start_date ? new Date(booking.start_date) : null;
       const endDate = booking.end_date ? new Date(booking.end_date) : null;
 
+      const entry: BookingEntry = {
+        id: String(booking.id),
+        start: booking.start_date || null,
+        end: booking.end_date || null,
+        status: booking.status || null,
+      };
+
       const existing = groups.get(key);
       if (existing) {
-        existing.bookingIds.push(String(booking.id));
+        existing.entries.push(entry);
         if (startDate && (!existing.startDate || startDate < existing.startDate)) {
           existing.startDate = startDate;
         }
@@ -158,7 +172,7 @@ export async function POST() {
       } else {
         groups.set(key, {
           key,
-          bookingIds: [String(booking.id)],
+          entries: [entry],
           customerName,
           firstName: customer?.first_name || nameParts[0] || "",
           lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
@@ -179,7 +193,14 @@ export async function POST() {
     for (const group of groups.values()) {
       const uuid = group.key;
       activeUuids.push(uuid);
-      const count = group.bookingIds.length;
+      const count = group.entries.length;
+
+      // Sort entries by start date
+      group.entries.sort((a, b) => {
+        if (!a.start) return 1;
+        if (!b.start) return -1;
+        return new Date(a.start).getTime() - new Date(b.start).getTime();
+      });
 
       const displayName = group.serviceName || group.resourceName || null;
       let typeName = displayName;
@@ -187,7 +208,6 @@ export async function POST() {
         typeName = `${typeName} (${count} Termine)`;
       }
 
-      // Resolve access area from mapping (try service name first, then resource name)
       let accessAreaId: number | null = null;
       if (group.serviceName && areaMappings[group.serviceName]) {
         accessAreaId = areaMappings[group.serviceName];
@@ -196,14 +216,14 @@ export async function POST() {
       }
 
       const ticketData = {
-        name: group.customerName || `Buchung ${group.bookingIds[0]}`,
+        name: group.customerName || `Buchung ${group.entries[0].id}`,
         firstName: group.firstName || null,
         lastName: group.lastName || null,
         startDate: group.startDate,
         endDate: group.endDate,
         status: mapGroupStatus(group.statuses),
         ticketTypeName: typeName,
-        qrCode: group.bookingIds.join(","),
+        qrCode: JSON.stringify(group.entries),
         source: "ANNY" as const,
         accessAreaId,
       };

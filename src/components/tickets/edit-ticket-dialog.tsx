@@ -20,8 +20,59 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera } from "lucide-react";
+import { Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, CalendarDays } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils";
+
+interface AnnyBookingEntry {
+  id: string;
+  start: string | null;
+  end: string | null;
+  status: string | null;
+}
+
+function parseAnnyEntries(qrCode: string | null): AnnyBookingEntry[] {
+  if (!qrCode) return [];
+  try {
+    const parsed = JSON.parse(qrCode);
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* not JSON */ }
+  return [];
+}
+
+function fmtBookingDate(iso: string | null): string {
+  if (!iso) return "–";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "–";
+  return d.toLocaleDateString("de-DE", {
+    timeZone: "Europe/Berlin",
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function fmtBookingTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("de-DE", {
+    timeZone: "Europe/Berlin",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function annyStatusLabel(status: string | null): { label: string; color: string } {
+  if (!status) return { label: "–", color: "text-slate-400" };
+  const s = status.toLowerCase();
+  if (s === "confirmed" || s === "pending") return { label: "Bestätigt", color: "text-emerald-600 dark:text-emerald-400" };
+  if (s === "checked_in") return { label: "Eingecheckt", color: "text-sky-600 dark:text-sky-400" };
+  if (s === "checked_out" || s === "completed") return { label: "Abgeschlossen", color: "text-slate-500" };
+  if (s === "cancelled" || s === "canceled") return { label: "Storniert", color: "text-rose-600 dark:text-rose-400" };
+  if (s === "no_show") return { label: "Nicht erschienen", color: "text-amber-600 dark:text-amber-400" };
+  return { label: status, color: "text-slate-500" };
+}
 import { CameraCapture } from "./camera-capture";
 
 export interface TicketData {
@@ -75,7 +126,7 @@ function toDateInput(val: Date | string | null | undefined): string {
 
 export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<"edit" | "scans">("edit");
+  const [tab, setTab] = useState<"edit" | "bookings" | "scans">("edit");
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -104,7 +155,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         firstName: ticket.firstName ?? "",
         lastName: ticket.lastName ?? "",
         ticketTypeName: ticket.ticketTypeName ?? "",
-        code: ticket.barcode || ticket.qrCode || ticket.rfidCode || "",
+        code: ticket.barcode || (ticket.source !== "ANNY" ? ticket.qrCode : null) || ticket.rfidCode || "",
         status: ticket.status,
         accessAreaId: ticket.accessAreaId ? String(ticket.accessAreaId) : "none",
         startDate: toDateInput(ticket.startDate),
@@ -143,6 +194,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
     setError("");
 
     const fullName = `${form.firstName} ${form.lastName}`.trim() || "Ticket";
+    const isAnny = ticket.source === "ANNY";
     const payload: Record<string, unknown> = {
       name: fullName,
       status: form.status,
@@ -150,7 +202,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
       lastName: form.lastName || null,
       ticketTypeName: form.ticketTypeName || null,
       barcode: form.code || null,
-      qrCode: form.code || null,
+      ...(!isAnny && { qrCode: form.code || null }),
       rfidCode: form.code || null,
       accessAreaId: form.accessAreaId && form.accessAreaId !== "none" ? Number(form.accessAreaId) : null,
       startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
@@ -240,32 +292,35 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         </DialogHeader>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-          <button
-            type="button"
-            onClick={() => setTab("edit")}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === "edit"
+        {(() => {
+          const isAnny = ticket?.source === "ANNY";
+          const annyEntries = isAnny ? parseAnnyEntries(ticket?.qrCode ?? null) : [];
+          const tabClass = (active: boolean) =>
+            `flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              active
                 ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
                 : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-            }`}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Bearbeiten
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("scans")}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === "scans"
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-            }`}
-          >
-            <ScanLine className="h-3.5 w-3.5" />
-            Scan-Historie ({ticket?._count.scans ?? 0})
-          </button>
-        </div>
+            }`;
+
+          return (
+            <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+              <button type="button" onClick={() => setTab("edit")} className={tabClass(tab === "edit")}>
+                <Pencil className="h-3.5 w-3.5" />
+                Bearbeiten
+              </button>
+              {isAnny && annyEntries.length > 0 && (
+                <button type="button" onClick={() => setTab("bookings")} className={tabClass(tab === "bookings")}>
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Buchungen ({annyEntries.length})
+                </button>
+              )}
+              <button type="button" onClick={() => setTab("scans")} className={tabClass(tab === "scans")}>
+                <ScanLine className="h-3.5 w-3.5" />
+                Scans ({ticket?._count.scans ?? 0})
+              </button>
+            </div>
+          );
+        })()}
 
         {tab === "edit" && (
           <form onSubmit={handleSave} className="space-y-4">
@@ -442,6 +497,42 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
             </div>
           </form>
         )}
+
+        {tab === "bookings" && ticket?.source === "ANNY" && (() => {
+          const entries = parseAnnyEntries(ticket.qrCode);
+          return (
+            <div className="space-y-1">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[400px] overflow-y-auto">
+                {entries.map((entry, i) => {
+                  const st = annyStatusLabel(entry.status);
+                  const startTime = fmtBookingTime(entry.start);
+                  const endTime = fmtBookingTime(entry.end);
+                  const timeRange = startTime && endTime ? `${startTime} – ${endTime}` : startTime || endTime || "";
+
+                  return (
+                    <div key={entry.id || i} className="flex items-center gap-3 py-2.5 px-1">
+                      <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400">{i + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          {fmtBookingDate(entry.start)}
+                        </p>
+                        {timeRange && (
+                          <p className="text-xs text-slate-500 font-mono">{timeRange} Uhr</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-xs font-medium ${st.color}`}>{st.label}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">#{entry.id}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {tab === "scans" && (
           <div className="space-y-2">
