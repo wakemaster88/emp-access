@@ -4,12 +4,13 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
 User=root
 WorkingDirectory=/opt/emp-scanner/raspberry-pi
 ExecStart=/opt/emp-scanner/venv/bin/python -m emp_scanner.main
 Restart=always
 RestartSec=5
+WatchdogSec=120
 StandardOutput=journal
 StandardError=journal
 Environment=PYTHONUNBUFFERED=1

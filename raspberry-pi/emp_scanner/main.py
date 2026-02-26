@@ -4,10 +4,11 @@ EMP Access – Raspberry Pi Scanner Main Loop
 Workflow:
 1. Load config (or wait for config QR)
 2. Play startup sound
-3. Start scanner input (USB HID / Camera / stdin)
-4. On scan → beep → validate with server → relay + valid/invalid sound
+3. Start scanner input (USB HID)
+4. On scan -> beep -> validate with server -> relay + valid/invalid sound
 5. Background: heartbeat + task polling every 30s
 6. Background: auto-update check every 5 min
+7. Background: systemd watchdog ping every 30s
 """
 
 import signal
@@ -15,6 +16,7 @@ import sys
 import time
 import logging
 import threading
+import os
 
 from emp_scanner import VERSION
 from emp_scanner.config import Config
@@ -29,6 +31,22 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("emp.main")
+
+
+def _sd_notify(state: str):
+    """Send notification to systemd (if running under systemd)."""
+    try:
+        addr = os.environ.get("NOTIFY_SOCKET")
+        if not addr:
+            return
+        import socket
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        if addr.startswith("@"):
+            addr = "\0" + addr[1:]
+        sock.sendto(state.encode(), addr)
+        sock.close()
+    except Exception:
+        pass
 
 
 class EmpScanner:
@@ -59,12 +77,12 @@ class EmpScanner:
             duration=self.config.relay_duration,
         )
 
-        # Startup sound
         self.relay.startup_sound()
         time.sleep(1)
 
         if not self.config.is_configured:
             logger.info("Keine Konfiguration – warte auf Konfigurations-QR-Code...")
+            _sd_notify("READY=1")
             self._wait_for_config()
 
         if not self.config.is_configured:
@@ -81,13 +99,12 @@ class EmpScanner:
         logger.info("Server: %s", self.config.server_url)
         logger.info("Gerät:  #%d", self.config.device_id)
 
-        # Test connection
         if self.api.test_connection():
             logger.info("Serververbindung OK")
         else:
             logger.warning("Server nicht erreichbar – starte trotzdem")
 
-        # Start scanner input (USB HID – QR + RFID über ein Gerät)
+        # Start scanner input
         self.scanner = ScannerInput(
             on_scan=self._handle_scan,
             device_path=self.config.scanner_device,
@@ -95,9 +112,13 @@ class EmpScanner:
         self.scanner.start()
         logger.info("Scanner bereit – warte auf Scans...")
 
+        # Tell systemd we're ready
+        _sd_notify("READY=1")
+
         # Background threads
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         threading.Thread(target=self._update_loop, daemon=True).start()
+        threading.Thread(target=self._watchdog_loop, daemon=True).start()
 
         # Main thread keeps running
         try:
@@ -109,8 +130,6 @@ class EmpScanner:
             self._cleanup()
 
     def _handle_scan(self, code: str):
-        """Called by scanner thread when a complete code is read."""
-        # Prevent overlapping scan handling
         if not self._scan_lock.acquire(blocking=False):
             return
         try:
@@ -121,54 +140,48 @@ class EmpScanner:
     def _process_scan(self, code: str):
         logger.info("Scan: %s", code[:40] + ("..." if len(code) > 40 else ""))
 
-        # Scan acknowledgement beep
         if self.relay:
             self.relay.scan_beep()
             time.sleep(0.5)
 
-        # Check for config QR (JSON with url/token/id)
         if code.startswith("{") and self.config.apply_qr_config(code):
             logger.info("Neue Konfiguration übernommen – Neustart...")
             self._cleanup()
-            sys.exit(0)  # systemd will restart us
+            sys.exit(0)
 
         if not self.api:
             logger.warning("Nicht konfiguriert – Scan ignoriert")
             return
 
-        # Emergency open mode – all scans bypass validation
         if self._current_task == 2:
             logger.info("NOT-AUF aktiv – Zutritt ohne Prüfung")
             if self.relay:
                 self.relay.grant()
             return
 
-        # Device deactivated
         if self._current_task == 3:
             logger.info("Gerät gesperrt – Scan abgelehnt")
             if self.relay:
                 self.relay.deny()
             return
 
-        # Validate with server
         result = self.api.validate_scan(code)
         granted = result.get("granted", False)
         message = result.get("message", "")
 
         if granted:
-            logger.info("✓ GRANTED: %s", message)
+            logger.info("GRANTED: %s", message)
             ticket = result.get("ticket", {})
             if ticket.get("firstName") or ticket.get("lastName"):
                 logger.info("  Ticket: %s %s", ticket.get("firstName", ""), ticket.get("lastName", ""))
             if self.relay:
                 self.relay.grant()
         else:
-            logger.info("✗ DENIED: %s", message)
+            logger.info("DENIED: %s", message)
             if self.relay:
                 self.relay.deny()
 
     def _heartbeat_loop(self):
-        """Periodically send heartbeat and check for task changes."""
         while self._running:
             try:
                 if self.api:
@@ -190,11 +203,9 @@ class EmpScanner:
                 time.sleep(1)
 
     def _apply_task(self, task: int):
-        """Apply a task command from the server."""
         self._current_task = task
         if not self.relay:
             return
-
         if task == 1:
             logger.info("Task: Einmal öffnen")
             self.relay.grant()
@@ -210,7 +221,6 @@ class EmpScanner:
             self.relay.close()
 
     def _update_loop(self):
-        """Periodically check for software updates."""
         time.sleep(60)
         while self._running:
             try:
@@ -226,8 +236,13 @@ class EmpScanner:
                     return
                 time.sleep(1)
 
+    def _watchdog_loop(self):
+        """Ping systemd watchdog every 30s to prove we're alive."""
+        while self._running:
+            _sd_notify("WATCHDOG=1")
+            time.sleep(30)
+
     def _wait_for_config(self):
-        """Start scanner in setup mode – wait for config QR code (no timeout)."""
         setup_scanner = ScannerInput(
             on_scan=self._setup_scan,
             device_path=self.config.scanner_device,
@@ -235,12 +250,12 @@ class EmpScanner:
         setup_scanner.start()
 
         while not self.config.is_configured and self._running:
+            _sd_notify("WATCHDOG=1")
             time.sleep(1)
 
         setup_scanner.stop()
 
     def _setup_scan(self, code: str):
-        """Handle scans during setup mode."""
         self.config.apply_qr_config(code)
 
     def _shutdown(self, signum, frame):

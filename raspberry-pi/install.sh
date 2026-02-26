@@ -54,6 +54,29 @@ python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install -q --upgrade pip
 "$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/raspberry-pi/requirements.txt"
 
+# ─── Hardware Watchdog ────────────────────────────────────────────────────────
+
+echo "→ Hardware-Watchdog aktivieren..."
+if ! grep -q "dtparam=watchdog=on" /boot/firmware/config.txt 2>/dev/null && \
+   ! grep -q "dtparam=watchdog=on" /boot/config.txt 2>/dev/null; then
+    BOOT_CFG="/boot/firmware/config.txt"
+    [ ! -f "$BOOT_CFG" ] && BOOT_CFG="/boot/config.txt"
+    echo "dtparam=watchdog=on" >> "$BOOT_CFG"
+    echo "  Hardware-Watchdog in $BOOT_CFG aktiviert"
+fi
+
+if [ ! -f /etc/watchdog.conf ] || ! grep -q "^watchdog-device" /etc/watchdog.conf; then
+    apt-get install -y -qq watchdog
+    cat > /etc/watchdog.conf << 'WDCONF'
+watchdog-device = /dev/watchdog
+watchdog-timeout = 15
+max-load-1 = 24
+WDCONF
+    systemctl enable watchdog
+    systemctl start watchdog
+    echo "  System-Watchdog konfiguriert (15s Timeout)"
+fi
+
 # ─── Systemd services ────────────────────────────────────────────────────────
 
 echo "→ Systemd-Services installieren..."
