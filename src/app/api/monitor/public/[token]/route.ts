@@ -53,7 +53,7 @@ export async function GET(
             where: scanWhere,
             include: {
               device: { select: { id: true, name: true } },
-              ticket: { select: { id: true, name: true, firstName: true, lastName: true, validityType: true, validityDurationMinutes: true, firstScanAt: true, profileImage: true } },
+              ticket: { select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true, validityType: true, validityDurationMinutes: true, firstScanAt: true, profileImage: true } },
             },
             orderBy: { id: "desc" },
             take: lastScanId === 0 ? 50 : 20,

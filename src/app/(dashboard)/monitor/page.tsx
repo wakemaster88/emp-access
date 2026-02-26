@@ -18,6 +18,7 @@ interface MonitorScan {
     name: string;
     firstName?: string | null;
     lastName?: string | null;
+    ticketTypeName?: string | null;
     validityType?: string;
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
@@ -216,7 +217,7 @@ export default function MonitorPage() {
                           {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.ticket?.name || scan.code}
                         </p>
                         <p className="text-xs text-slate-500 truncate">
-                          {scan.ticket?.name ? `${scan.ticket.name} · ` : ""}{scan.device.name}
+                          {scan.ticket?.ticketTypeName ? `${scan.ticket.ticketTypeName} · ` : ""}{scan.device.name}
                         </p>
                       </div>
                     </div>

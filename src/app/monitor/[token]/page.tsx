@@ -26,6 +26,7 @@ interface Scan {
     name: string;
     firstName?: string | null;
     lastName?: string | null;
+    ticketTypeName?: string | null;
     validityType?: string;
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
@@ -55,6 +56,7 @@ interface ScanGroup {
   ticketId: number | null;
   ticketName: string;
   personName: string;
+  ticketTypeName: string;
   profileImage: string | null;
   result: "GRANTED" | "DENIED" | "PROTECTED";
   scans: Scan[];
@@ -136,6 +138,7 @@ export default function PublicMonitorPage({ params }: Props) {
           ticketId,
           ticketName: scan.ticket?.name || scan.code,
           personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || "",
+          ticketTypeName: scan.ticket?.ticketTypeName || "",
           profileImage: scan.ticket?.profileImage ?? null,
           result: scan.result,
           scans: [scan],
@@ -265,7 +268,7 @@ export default function PublicMonitorPage({ params }: Props) {
                           {group.personName || group.ticketName}
                         </p>
                         <p className="text-xs text-slate-400 truncate">
-                          {group.personName ? `${group.ticketName} · ` : ""}{group.scans[0].device.name}
+                          {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device.name}
                         </p>
                       </div>
                     </div>
