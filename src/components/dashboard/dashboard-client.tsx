@@ -14,7 +14,6 @@ import {
   MapPin,
   Clock,
   CreditCard,
-  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
@@ -172,15 +171,9 @@ function ServiceSection({ tickets, openTicket }: { tickets: TicketEntry[]; openT
 
   return (
     <div className="mt-2">
-      <div className="flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800">
-        <Package className="h-2.5 w-2.5 text-indigo-400 shrink-0" />
-        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Services</span>
-      </div>
-      <div className="pl-0.5">
-        {tickets.map((ticket) => (
-          <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
-        ))}
-      </div>
+      {tickets.map((ticket) => (
+        <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
+      ))}
     </div>
   );
 }
@@ -200,41 +193,30 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
       )}
     >
       <CardHeader className="py-2.5 px-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm flex items-center gap-1.5 min-w-0 truncate">
-            <MapPin className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-            {area.name}
-          </CardTitle>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {area.openingHours && (
-              <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
-                {area.openingHours}
-              </span>
-            )}
-            {area.personLimit != null && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-1.5 py-0 font-mono",
-                  area._count.tickets > area.personLimit
-                    ? "border-rose-300 text-rose-600"
-                    : "border-slate-300 text-slate-500"
-                )}
-              >
-                {area._count.tickets}/{area.personLimit}
-              </Badge>
-            )}
+        <div className="flex justify-end gap-1.5">
+          {area.personLimit != null && (
             <Badge
+              variant="outline"
               className={cn(
-                "text-[10px] px-1.5 py-0 tabular-nums",
-                area._count.tickets > 0
-                  ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                  : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+                "text-[10px] px-1.5 py-0 font-mono",
+                area._count.tickets > area.personLimit
+                  ? "border-rose-300 text-rose-600"
+                  : "border-slate-300 text-slate-500"
               )}
             >
-              {area._count.tickets}
+              {area._count.tickets}/{area.personLimit}
             </Badge>
-          </div>
+          )}
+          <Badge
+            className={cn(
+              "text-[10px] px-1.5 py-0 tabular-nums",
+              area._count.tickets > 0
+                ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+            )}
+          >
+            {area._count.tickets}
+          </Badge>
         </div>
       </CardHeader>
 
