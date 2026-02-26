@@ -227,17 +227,14 @@ class EmpScanner:
                 time.sleep(1)
 
     def _wait_for_config(self):
-        """Start scanner in setup mode – wait for config QR code."""
+        """Start scanner in setup mode – wait for config QR code (no timeout)."""
         setup_scanner = ScannerInput(
             on_scan=self._setup_scan,
             device_path=self.config.scanner_device,
         )
         setup_scanner.start()
 
-        timeout = 120
-        for _ in range(timeout):
-            if self.config.is_configured or not self._running:
-                break
+        while not self.config.is_configured and self._running:
             time.sleep(1)
 
         setup_scanner.stop()
