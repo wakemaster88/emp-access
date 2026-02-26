@@ -6,7 +6,8 @@ export async function POST(request: NextRequest) {
   if ("error" in auth) return auth.error;
 
   const body = await request.json();
-  const code = String(body.code ?? "").trim();
+  const rawCode = String(body.code ?? "").trim();
+  const code = rawCode.replace(/\s+/g, "");
   const deviceId = Number(body.deviceId);
 
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
@@ -23,23 +24,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Gerät deaktiviert" });
   }
 
-  // Task 3 = device deactivated by admin
   if (device.task === 3) {
     return NextResponse.json({ granted: false, message: "Gerät gesperrt" });
   }
 
-  // Find ticket by code across all code fields
-  const ticket = await db.ticket.findFirst({
-    where: {
-      accountId,
-      OR: [
-        { qrCode: code },
-        { rfidCode: code },
-        { barcode: code },
-        { uuid: code },
-      ],
-    },
-  });
+  // Find ticket by code (try with and without spaces)
+  const codesToTry = [code, rawCode];
+  let ticket = null;
+  for (const c of codesToTry) {
+    ticket = await db.ticket.findFirst({
+      where: {
+        accountId,
+        OR: [
+          { qrCode: c },
+          { rfidCode: c },
+          { barcode: c },
+          { uuid: c },
+        ],
+      },
+    });
+    if (ticket) break;
+  }
 
   if (!ticket) {
     await db.scan.create({
