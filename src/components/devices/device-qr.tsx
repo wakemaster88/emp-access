@@ -34,13 +34,17 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
   }, [value, size]);
 
   useEffect(() => {
-    if (open && dialogCanvasRef.current) {
-      QRCode.toCanvas(dialogCanvasRef.current, value, {
-        width: 280,
-        margin: 2,
-        color: { dark: "#1e293b", light: "#ffffff" },
-      });
-    }
+    if (!open) return;
+    const timer = setTimeout(() => {
+      if (dialogCanvasRef.current) {
+        QRCode.toCanvas(dialogCanvasRef.current, value, {
+          width: 280,
+          margin: 2,
+          color: { dark: "#1e293b", light: "#ffffff" },
+        });
+      }
+    }, 50);
+    return () => clearTimeout(timer);
   }, [open, value]);
 
   const installCmd = "curl -sSL https://raw.githubusercontent.com/wakemaster88/emp-access/main/raspberry-pi/install.sh | sudo bash";
