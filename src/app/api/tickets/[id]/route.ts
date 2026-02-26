@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSessionWithDb();
+  if ("error" in session) return session.error;
+
+  const { id } = await params;
+  const ticketId = Number(id);
+  if (isNaN(ticketId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
+
+  const { db, accountId } = session;
+  const ticket = await db.ticket.findFirst({
+    where: { id: ticketId, accountId: accountId! },
+    include: { _count: { select: { scans: true } } },
+  });
+  if (!ticket) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+
+  return NextResponse.json(ticket);
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

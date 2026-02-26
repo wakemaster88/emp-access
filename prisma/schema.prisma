@@ -169,18 +169,20 @@ model Scan {
 }
 
 model AccessArea {
-  id           Int          @id @default(autoincrement())
-  name         String
-  parentId     Int?
-  allowReentry Boolean      @default(false)
-  personLimit  Int?
-  accountId    Int
-  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  parent       AccessArea?  @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children     AccessArea[] @relation("AreaHierarchy")
-  tickets      Ticket[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id              Int          @id @default(autoincrement())
+  name            String
+  parentId        Int?
+  allowReentry    Boolean      @default(false)
+  personLimit     Int?
+  showOnDashboard Boolean      @default(true)
+  openingHours    String?
+  accountId       Int
+  account         Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  parent          AccessArea?  @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children        AccessArea[] @relation("AreaHierarchy")
+  tickets         Ticket[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   @@index([accountId])
   @@index([parentId])

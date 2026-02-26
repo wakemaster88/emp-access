@@ -21,12 +21,13 @@ export async function GET(request: NextRequest) {
 
   const [areas, scansToday, unassignedTickets] = await Promise.all([
     db.accessArea.findMany({
-      where,
+      where: { ...where, showOnDashboard: true },
       select: {
         id: true,
         name: true,
         personLimit: true,
         allowReentry: true,
+        openingHours: true,
         tickets: {
           where: {
             status: { in: ["VALID", "REDEEMED"] },
@@ -119,6 +120,7 @@ export async function GET(request: NextRequest) {
       name: "Ohne Bereich",
       personLimit: null,
       allowReentry: false,
+      openingHours: null,
       tickets: unassignedTickets,
       _count: { tickets: unassignedTickets.length },
     },

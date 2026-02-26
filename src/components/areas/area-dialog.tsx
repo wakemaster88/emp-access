@@ -21,6 +21,8 @@ export interface AreaData {
   parentId: number | null;
   allowReentry: boolean;
   personLimit: number | null;
+  showOnDashboard: boolean;
+  openingHours: string | null;
 }
 
 interface AreaDialogProps {
@@ -35,6 +37,8 @@ const EMPTY = {
   parentId: "none",
   allowReentry: false,
   personLimit: "",
+  showOnDashboard: true,
+  openingHours: "",
 };
 
 export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
@@ -54,6 +58,8 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
           parentId: area.parentId ? String(area.parentId) : "none",
           allowReentry: area.allowReentry,
           personLimit: area.personLimit != null ? String(area.personLimit) : "",
+          showOnDashboard: area.showOnDashboard,
+          openingHours: area.openingHours ?? "",
         });
       } else {
         setForm(EMPTY);
@@ -75,6 +81,8 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
         parentId: form.parentId && form.parentId !== "none" ? form.parentId : null,
         allowReentry: form.allowReentry,
         personLimit: form.personLimit ? Number(form.personLimit) : null,
+        showOnDashboard: form.showOnDashboard,
+        openingHours: form.openingHours.trim() || null,
       };
       const url = isNew ? "/api/areas" : `/api/areas/${area!.id}`;
       const method = isNew ? "POST" : "PUT";
@@ -169,6 +177,27 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
             <Switch
               checked={form.allowReentry}
               onCheckedChange={(v) => set("allowReentry", v)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div>
+              <p className="text-sm font-medium">Im Dashboard anzeigen</p>
+              <p className="text-xs text-slate-500">Bereich auf der Dashboard-Übersicht zeigen</p>
+            </div>
+            <Switch
+              checked={form.showOnDashboard}
+              onCheckedChange={(v) => set("showOnDashboard", v)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="a-hours">Öffnungszeiten</Label>
+            <Input
+              id="a-hours"
+              value={form.openingHours}
+              onChange={(e) => set("openingHours", e.target.value)}
+              placeholder="z.B. Mo-Fr 09:00-18:00, Sa 10:00-16:00"
             />
           </div>
 

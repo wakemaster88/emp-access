@@ -29,6 +29,8 @@ export async function POST(request: NextRequest) {
       parentId: body.parentId ? Number(body.parentId) : null,
       allowReentry: body.allowReentry ?? false,
       personLimit: body.personLimit ? Number(body.personLimit) : null,
+      showOnDashboard: body.showOnDashboard ?? true,
+      openingHours: body.openingHours || null,
       accountId: accountId!,
     },
   });

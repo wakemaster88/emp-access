@@ -15,7 +15,7 @@ interface DeviceRef {
 }
 
 interface AreaRow extends AreaData {
-  parent: AreaData | null;
+  parent: (AreaData & { showOnDashboard?: boolean; openingHours?: string | null }) | null;
   devicesIn: DeviceRef[];
   devicesOut: DeviceRef[];
   _count: { tickets: number; children: number };
@@ -36,6 +36,8 @@ export function AreasTable({ areas, readonly }: AreasTableProps) {
     parentId: a.parentId,
     allowReentry: a.allowReentry,
     personLimit: a.personLimit,
+    showOnDashboard: a.showOnDashboard,
+    openingHours: a.openingHours,
   }));
 
   return (
@@ -83,6 +85,8 @@ export function AreasTable({ areas, readonly }: AreasTableProps) {
                 parentId: area.parentId,
                 allowReentry: area.allowReentry,
                 personLimit: area.personLimit,
+                showOnDashboard: area.showOnDashboard,
+                openingHours: area.openingHours,
               })}
             >
               <TableCell className="text-slate-400 text-sm">{i + 1}</TableCell>

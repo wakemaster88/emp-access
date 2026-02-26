@@ -27,6 +27,8 @@ export async function PUT(
       parentId: body.parentId !== undefined ? (body.parentId ? Number(body.parentId) : null) : existing.parentId,
       allowReentry: body.allowReentry ?? existing.allowReentry,
       personLimit: body.personLimit !== undefined ? (body.personLimit ? Number(body.personLimit) : null) : existing.personLimit,
+      showOnDashboard: body.showOnDashboard !== undefined ? body.showOnDashboard : existing.showOnDashboard,
+      openingHours: body.openingHours !== undefined ? (body.openingHours || null) : existing.openingHours,
     },
   });
   return NextResponse.json(area);

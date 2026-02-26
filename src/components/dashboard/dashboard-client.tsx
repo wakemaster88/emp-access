@@ -13,8 +13,10 @@ import {
   ScanLine,
   Loader2,
   MapPin,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 
 interface TicketEntry {
   id: number;
@@ -37,6 +39,7 @@ interface AreaData {
   name: string;
   personLimit: number | null;
   allowReentry: boolean;
+  openingHours: string | null;
   tickets: TicketEntry[];
   _count: { tickets: number };
 }
@@ -46,6 +49,11 @@ interface DashboardData {
   scansToday: number;
   areas: AreaData[];
   unassigned: AreaData;
+}
+
+interface AreaOption {
+  id: number;
+  name: string;
 }
 
 function toLocaleDateStr(d: Date): string {
@@ -77,6 +85,9 @@ export function DashboardClient() {
   const [date, setDate] = useState(toLocaleDateStr(new Date()));
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [areas, setAreas] = useState<AreaOption[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
+  const [ticketLoading, setTicketLoading] = useState(false);
 
   const fetchData = useCallback(async (d: string) => {
     setLoading(true);
@@ -93,6 +104,25 @@ export function DashboardClient() {
   useEffect(() => {
     fetchData(date);
   }, [date, fetchData]);
+
+  useEffect(() => {
+    fetch("/api/areas")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setAreas(d); })
+      .catch(() => {});
+  }, []);
+
+  async function openTicket(ticketId: number) {
+    setTicketLoading(true);
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`);
+      if (res.ok) {
+        const ticket = await res.json();
+        setSelectedTicket(ticket);
+      }
+    } catch { /* ignore */ }
+    setTicketLoading(false);
+  }
 
   function shiftDate(days: number) {
     const d = new Date(date + "T12:00:00");
@@ -135,7 +165,7 @@ export function DashboardClient() {
         )}
 
         <div className="ml-auto flex items-center gap-3">
-          {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
+          {(loading || ticketLoading) && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
           <Badge variant="secondary" className="gap-1.5 text-sm py-1 px-3">
             <Users className="h-3.5 w-3.5" />
             {totalTickets} Tickets
@@ -206,6 +236,12 @@ export function DashboardClient() {
                   </Badge>
                 </div>
               </div>
+              {area.openingHours && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Clock className="h-3 w-3 text-slate-400" />
+                  <span className="text-xs text-slate-500">{area.openingHours}</span>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="pt-0">
               {area.tickets.length === 0 ? (
@@ -213,7 +249,11 @@ export function DashboardClient() {
               ) : (
                 <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[320px] overflow-y-auto -mx-1 px-1">
                   {area.tickets.map((ticket) => (
-                    <div key={ticket.id} className="flex items-center gap-2.5 py-2">
+                    <div
+                      key={ticket.id}
+                      className="flex items-center gap-2.5 py-2 cursor-pointer rounded-md px-1 -mx-1 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                      onClick={() => openTicket(ticket.id)}
+                    >
                       {ticket.profileImage ? (
                         <img
                           src={ticket.profileImage}
@@ -267,6 +307,15 @@ export function DashboardClient() {
           </Card>
         ))}
       </div>
+
+      <EditTicketDialog
+        ticket={selectedTicket}
+        areas={areas}
+        onClose={() => {
+          setSelectedTicket(null);
+          fetchData(date);
+        }}
+      />
     </div>
   );
 }
