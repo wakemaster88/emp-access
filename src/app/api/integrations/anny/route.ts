@@ -27,6 +27,11 @@ interface AnnyBooking {
     id?: string | number;
     name?: string;
   };
+  subscription?: {
+    id?: string | number;
+    name?: string;
+    title?: string;
+  };
 }
 
 interface BookingEntry {
@@ -44,6 +49,7 @@ interface BookingGroup {
   lastName: string;
   serviceName: string | null;
   resourceName: string | null;
+  subscriptionName: string | null;
   startDate: Date | null;
   endDate: Date | null;
   statuses: string[];
@@ -98,7 +104,7 @@ export async function POST() {
 
     while (true) {
       const params = new URLSearchParams({
-        include: "customer,resource,service",
+        include: "customer,resource,service,subscription",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
@@ -225,6 +231,9 @@ export async function POST() {
       const customer = booking.customer;
       const customerId = customer?.id;
 
+      const subName = booking.subscription?.name || booking.subscription?.title || null;
+      if (subName) discoveredSubscriptionNames.add(subName);
+
       // Skip resource reservations without customer (e.g. Ferienkurs blocking lifts)
       if (!customerId) {
         const serviceName = booking.service?.name || null;
@@ -283,6 +292,7 @@ export async function POST() {
           lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
           serviceName,
           resourceName,
+          subscriptionName: subName,
           startDate,
           endDate,
           statuses: booking.status ? [booking.status] : [],
@@ -332,7 +342,9 @@ export async function POST() {
       let subscriptionId: number | null = null;
       let accessAreaId: number | null = null;
 
-      if (group.serviceName && subNameMap.has(group.serviceName)) {
+      if (group.subscriptionName && subNameMap.has(group.subscriptionName)) {
+        subscriptionId = subNameMap.get(group.subscriptionName)!;
+      } else if (group.serviceName && subNameMap.has(group.serviceName)) {
         subscriptionId = subNameMap.get(group.serviceName)!;
       } else if (group.resourceName && subNameMap.has(group.resourceName)) {
         subscriptionId = subNameMap.get(group.resourceName)!;
