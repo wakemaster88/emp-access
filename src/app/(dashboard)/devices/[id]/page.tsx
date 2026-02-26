@@ -66,7 +66,7 @@ export default async function DeviceDetailPage({ params }: Props) {
   const ticketCount = await db.ticket.count({
     where: {
       accountId: session.user.accountId,
-      status: "VALID",
+      status: { in: ["VALID", "REDEEMED"] },
       ...(deviceAreaIds.length > 0 ? { accessAreaId: { in: deviceAreaIds } } : {}),
     },
   });

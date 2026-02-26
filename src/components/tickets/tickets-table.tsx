@@ -28,6 +28,8 @@ function statusBadge(status: string) {
   switch (status) {
     case "VALID":
       return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Gültig</Badge>;
+    case "REDEEMED":
+      return <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">Eingelöst</Badge>;
     case "INVALID":
       return <Badge variant="destructive">Ungültig</Badge>;
     case "PROTECTED":

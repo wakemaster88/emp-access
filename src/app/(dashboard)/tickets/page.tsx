@@ -27,7 +27,7 @@ export default async function TicketsPage({ searchParams }: Props) {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
 
   const baseWhere = isSuperAdmin ? {} : { accountId: session.user.accountId! };
-  const statusFilter = showInactive ? {} : { status: "VALID" as const };
+  const statusFilter = showInactive ? {} : { status: { in: ["VALID" as const, "REDEEMED" as const] } };
   const areaFilter = areaId ? { accessAreaId: areaId } : {};
 
   const [tickets, areas, inactiveCount] = await Promise.all([
@@ -44,7 +44,7 @@ export default async function TicketsPage({ searchParams }: Props) {
     }),
     showInactive
       ? Promise.resolve(0)
-      : db.ticket.count({ where: { ...baseWhere, ...areaFilter, status: { not: "VALID" } } }),
+      : db.ticket.count({ where: { ...baseWhere, ...areaFilter, status: { notIn: ["VALID", "REDEEMED"] } } }),
   ]);
 
   const filterArea = areaId ? areas.find((a) => a.id === areaId) : null;

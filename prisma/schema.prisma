@@ -27,6 +27,7 @@ enum DeviceCategory {
 
 enum TicketStatus {
   VALID
+  REDEEMED
   INVALID
   PROTECTED
 }

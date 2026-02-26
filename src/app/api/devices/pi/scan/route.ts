@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ticket nicht gefunden" });
   }
 
-  // Ticket status check
+  // Ticket status check (VALID and REDEEMED are both accepted)
   if (ticket.status === "INVALID") {
     await db.scan.create({
       data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
@@ -119,6 +119,14 @@ export async function POST(request: NextRequest) {
   await db.scan.create({
     data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId },
   });
+
+  // Mark ticket as redeemed on first successful scan
+  if (ticket.status === "VALID") {
+    await db.ticket.update({
+      where: { id: ticket.id },
+      data: { status: "REDEEMED" },
+    });
+  }
 
   return NextResponse.json({
     granted: true,

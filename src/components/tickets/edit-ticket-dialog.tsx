@@ -180,6 +180,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
 
   const statusColor = {
     VALID: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    REDEEMED: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400",
     INVALID: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
     PROTECTED: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
   }[ticket?.status ?? "VALID"] ?? "";
@@ -207,7 +208,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
                 <Badge variant="secondary" className="text-xs">{ticket.source}</Badge>
               )}
               <Badge className={`text-xs ${statusColor}`}>
-                {ticket?.status === "VALID" ? "Gültig" : ticket?.status === "INVALID" ? "Ungültig" : "Geschützt"}
+                {ticket?.status === "VALID" ? "Gültig" : ticket?.status === "REDEEMED" ? "Eingelöst" : ticket?.status === "INVALID" ? "Ungültig" : "Geschützt"}
               </Badge>
               <Badge variant="outline" className="text-xs font-mono">
                 {ticket?._count.scans} Scans
@@ -304,6 +305,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="VALID">Gültig</SelectItem>
+                    <SelectItem value="REDEEMED">Eingelöst</SelectItem>
                     <SelectItem value="INVALID">Ungültig</SelectItem>
                     <SelectItem value="PROTECTED">Geschützt</SelectItem>
                   </SelectContent>
