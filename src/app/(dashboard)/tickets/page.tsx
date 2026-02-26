@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AddTicketDialog } from "@/components/tickets/add-ticket-dialog";
 import { TicketsTable } from "@/components/tickets/tickets-table";
+import { AreaFilter } from "@/components/tickets/area-filter";
 import { Eye, EyeOff } from "lucide-react";
 
 interface Props {
@@ -66,16 +67,11 @@ export default async function TicketsPage({ searchParams }: Props) {
                   + {inactiveCount} inaktive
                 </Badge>
               )}
-              {filterArea && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs">{filterArea.name}</Badge>
-                  <a href={showInactive ? "/tickets?showAll=1" : "/tickets"} className="text-xs text-indigo-600 hover:underline">
-                    Filter entfernen
-                  </a>
-                </div>
-              )}
             </div>
             <div className="flex items-center gap-2">
+              {areas.length > 0 && (
+                <AreaFilter areas={areas} current={area} />
+              )}
               <Button asChild variant="outline" size="sm" className={showInactive ? "border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400" : ""}>
                 <Link href={toggleHref}>
                   {showInactive
