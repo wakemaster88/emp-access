@@ -3,6 +3,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 
 interface AnnyMapping {
   mappings?: Record<string, number>;
+  resources?: string[];
   resourceIds?: Record<string, string>;
 }
 
@@ -161,6 +162,7 @@ export async function GET(request: NextRequest) {
   // Parse anny mapping
   let mappings: Record<string, number> = {};
   let resourceIds: Record<string, string> = {};
+  let knownResources: Set<string> = new Set();
   let annyAvailability: Record<string, AvailabilityPeriod[]> = {};
 
   if (annyConfig?.token && annyConfig.extraConfig) {
@@ -168,6 +170,7 @@ export async function GET(request: NextRequest) {
       const parsed: AnnyMapping = JSON.parse(annyConfig.extraConfig);
       mappings = parsed.mappings || {};
       resourceIds = parsed.resourceIds || {};
+      if (parsed.resources) parsed.resources.forEach((r) => knownResources.add(r));
 
       const allResIds = [...new Set(Object.values(resourceIds))];
       if (allResIds.length > 0) {
@@ -177,21 +180,16 @@ export async function GET(request: NextRequest) {
     } catch { /* ignore */ }
   }
 
-  // Build: areaId → [{ resourceName, resourceId }]
+  // Build: areaId → [{ resourceName, resourceId }] — only actual resources, not services
   const areaResourceMap: Record<number, { name: string; resourceId: string }[]> = {};
   for (const [name, areaId] of Object.entries(mappings)) {
     const resId = resourceIds[name];
-    if (resId) {
+    const isResource = knownResources.size === 0 || knownResources.has(name);
+    if (resId && isResource) {
       if (!areaResourceMap[areaId]) areaResourceMap[areaId] = [];
-      const exists = areaResourceMap[areaId].some((r) => r.resourceId === resId && r.name === name);
+      const exists = areaResourceMap[areaId].some((r) => r.resourceId === resId);
       if (!exists) areaResourceMap[areaId].push({ name, resourceId: resId });
     }
-  }
-
-  // Build reverse: resourceId → name
-  const resIdToName: Record<string, string> = {};
-  for (const [name, resId] of Object.entries(resourceIds)) {
-    resIdToName[resId] = name;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -236,9 +234,16 @@ export async function GET(request: NextRequest) {
     const resources = uniqueResources
       .map((res) => {
         const periods = annyAvailability[res.resourceId] || [];
+        const seenSlots = new Set<string>();
         const slots = periods
           .map((p) => ({ startTime: fmtTime(p.start), endTime: fmtTime(p.end) }))
-          .filter((s) => s.startTime && s.endTime)
+          .filter((s) => {
+            if (!s.startTime || !s.endTime) return false;
+            const key = `${s.startTime}-${s.endTime}`;
+            if (seenSlots.has(key)) return false;
+            seenSlots.add(key);
+            return true;
+          })
           .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
         // Match tickets: check all names that map to this area (resource name and service names)
@@ -269,8 +274,9 @@ export async function GET(request: NextRequest) {
 
     if (isSingleMatch) {
       const r = resources[0];
-      const inlineHours = r.slots.length > 0
-        ? r.slots.map((s) => `${s.startTime}–${s.endTime}`).join(" · ")
+      const uniqueSlotStrs = [...new Set(r.slots.map((s) => `${s.startTime}–${s.endTime}`))];
+      const inlineHours = uniqueSlotStrs.length > 0
+        ? uniqueSlotStrs.join(" · ")
         : area.openingHours;
       return {
         id: area.id,
