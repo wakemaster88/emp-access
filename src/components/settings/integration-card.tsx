@@ -7,14 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, MapPin } from "lucide-react";
+import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 
 export interface ApiConfigData {
@@ -85,18 +78,12 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   },
 };
 
-interface AreaOption {
-  id: number;
-  name: string;
-}
-
 interface IntegrationCardProps {
   provider: string;
   initialData: ApiConfigData | null;
-  areas?: AreaOption[];
 }
 
-export function IntegrationCard({ provider, initialData, areas }: IntegrationCardProps) {
+export function IntegrationCard({ provider, initialData }: IntegrationCardProps) {
   const meta = PROVIDER_META[provider];
   const [open, setOpen] = useState(!!initialData);
   const [data, setData] = useState<ApiConfigData>(
@@ -110,28 +97,6 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
   const [error, setError] = useState("");
 
   const isConfigured = !!initialData?.token;
-
-  // Parse anny service→area mapping from extraConfig
-  const parsedExtra = (() => {
-    try {
-      if (data.extraConfig) return JSON.parse(data.extraConfig) as { mappings?: Record<string, number>; services?: string[]; resources?: string[] };
-    } catch { /* ignore */ }
-    return { mappings: {}, services: [] as string[], resources: [] as string[] };
-  })();
-  const annyResources = parsedExtra.resources || [];
-  const annyServiceNames = (parsedExtra.services || []).filter((s) => !annyResources.includes(s));
-  const annyMappings = parsedExtra.mappings || {};
-
-  function updateMapping(serviceName: string, areaId: number | null) {
-    const newMappings = { ...annyMappings };
-    if (areaId === null) {
-      delete newMappings[serviceName];
-    } else {
-      newMappings[serviceName] = areaId;
-    }
-    const updated = { ...parsedExtra, mappings: newMappings };
-    setData({ ...data, extraConfig: JSON.stringify(updated) });
-  }
 
   async function handleSave() {
     setSaving(true);
@@ -320,50 +285,6 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
                   className="font-mono text-xs"
                 />
               </div>
-            )}
-
-            {provider === "ANNY" && isConfigured && areas && areas.length > 0 && annyServiceNames.length > 0 && (
-              <>
-                <Separator className="dark:bg-slate-800" />
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-slate-500" />
-                    <Label className="text-sm font-semibold">Service-Zuordnung</Label>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Ordne anny Services einer Resource zu. Nach dem Speichern werden beim nächsten Sync die Tickets automatisch zugeordnet. Die Zuordnung von anny Ressourcen erfolgt im Menüpunkt „Resourcen".
-                  </p>
-                  <div className="space-y-2">
-                    {annyServiceNames.map((svc) => (
-                      <div key={svc} className="flex items-center gap-3">
-                        <span className="text-sm text-slate-700 dark:text-slate-300 min-w-0 flex-1 truncate">{svc}</span>
-                        <Select
-                          value={annyMappings[svc] != null ? String(annyMappings[svc]) : "__none__"}
-                          onValueChange={(v) => updateMapping(svc, v === "__none__" ? null : Number(v))}
-                        >
-                          <SelectTrigger className="w-48 h-8 text-xs">
-                            <SelectValue placeholder="Keine Resource" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">– Keine Resource –</SelectItem>
-                            {areas.map((area) => (
-                              <SelectItem key={area.id} value={String(area.id)}>
-                                {area.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {provider === "ANNY" && isConfigured && annyServiceNames.length === 0 && (
-              <p className="text-xs text-slate-400 italic">
-                Erst synchronisieren, um anny Services zu erkennen und Resourcen zuzuordnen.
-              </p>
             )}
 
             {error && (

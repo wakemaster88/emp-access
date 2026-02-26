@@ -7,6 +7,7 @@ import { AreasTable } from "@/components/areas/areas-table";
 
 interface AnnyExtra {
   mappings?: Record<string, number>;
+  services?: string[];
   resources?: string[];
 }
 
@@ -44,13 +45,17 @@ export default async function AreasPage() {
     devicesOut: devices.filter((d) => d.accessOut === area.id).map((d) => ({ id: d.id, name: d.name })),
   }));
 
-  // Parse anny resource mapping
-  let annyResources: string[] = [];
+  // Parse anny mapping – combine services + resources for full list
+  let annyItems: string[] = [];
   let annyMappings: Record<string, number> = {};
   if (annyConfig?.extraConfig) {
     try {
       const parsed: AnnyExtra = JSON.parse(annyConfig.extraConfig);
-      annyResources = parsed.resources || [];
+      const all = new Set<string>([
+        ...(parsed.services || []),
+        ...(parsed.resources || []),
+      ]);
+      annyItems = [...all].sort();
       annyMappings = parsed.mappings || {};
     } catch { /* ignore */ }
   }
@@ -67,7 +72,7 @@ export default async function AreasPage() {
             <AreasTable
               areas={areaRows as never}
               readonly={isSuperAdmin}
-              annyResources={isSuperAdmin ? undefined : annyResources}
+              annyResources={isSuperAdmin ? undefined : annyItems}
               annyMappings={isSuperAdmin ? undefined : annyMappings}
             />
           </CardContent>

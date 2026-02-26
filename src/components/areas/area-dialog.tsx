@@ -244,7 +244,7 @@ export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = 
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5">
                 <Link2 className="h-3.5 w-3.5 text-violet-500" />
-                anny Ressource
+                anny Verknüpfung
               </Label>
               <Select value={selectedAnnyResource} onValueChange={setSelectedAnnyResource}>
                 <SelectTrigger>

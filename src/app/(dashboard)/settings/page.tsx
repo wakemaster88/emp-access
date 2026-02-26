@@ -20,7 +20,7 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [apiConfigs, account, areas, allAreas, monitors, devices, shellyDevices] = await Promise.all([
+  const [apiConfigs, account, areas, monitors, devices, shellyDevices] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
     db.account.findUnique({ where: { id: session.user.accountId } }),
     db.accessArea.findMany({
@@ -28,11 +28,6 @@ export default async function SettingsPage() {
       orderBy: [{ parentId: "asc" }, { name: "asc" }],
       include: { parent: true },
       take: 5,
-    }),
-    db.accessArea.findMany({
-      where: { accountId: session.user.accountId },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
     }),
     db.monitorConfig.findMany({
       where: { accountId: session.user.accountId },
@@ -212,7 +207,6 @@ export default async function SettingsPage() {
                 key={provider}
                 provider={provider}
                 initialData={configByProvider[provider] ?? null}
-                areas={provider === "ANNY" ? allAreas : undefined}
               />
             ))}
           </div>
