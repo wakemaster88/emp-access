@@ -126,7 +126,7 @@ export default async function DeviceDetailPage({ params }: Props) {
               {device.type === "RASPBERRY_PI" && (
                 <div className="shrink-0 flex flex-col items-center gap-2">
                   <DeviceQr value={configUrl} size={110} />
-                  <p className="text-xs text-slate-400 text-center">Konfigurations-QR</p>
+                  <p className="text-xs text-indigo-500 text-center cursor-pointer hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">Konfigurations-QR</p>
                 </div>
               )}
 
