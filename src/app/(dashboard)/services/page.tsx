@@ -23,7 +23,7 @@ export default async function ServicesPage() {
     db.service.findMany({
       where: accountFilter,
       include: {
-        areas: { select: { id: true, name: true } },
+        serviceAreas: { include: { area: { select: { id: true, name: true } } } },
         _count: { select: { tickets: true } },
       },
       orderBy: { name: "asc" },
