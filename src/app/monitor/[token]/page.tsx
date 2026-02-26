@@ -203,20 +203,16 @@ export default function PublicMonitorPage({ params }: Props) {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {scan.ticket?.profileImage ? (
-                        <img src={scan.ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0 ring-2 ring-slate-700" />
+                        <img src={scan.ticket.profileImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-slate-700" />
                       ) : (
                         <Icon className={cn("h-5 w-5 shrink-0", style.text)} />
                       )}
                       <div className="min-w-0">
                         <p className="font-medium text-slate-100 text-sm truncate">
-                          {scan.ticket?.name || scan.code}
+                          {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.ticket?.name || scan.code}
                         </p>
                         <p className="text-xs text-slate-400 truncate">
-                          {[
-                            scan.ticket?.firstName,
-                            scan.ticket?.lastName,
-                          ].filter(Boolean).join(" ") || scan.device.name}
-                          {scan.ticket?.firstName || scan.ticket?.lastName ? ` · ${scan.device.name}` : ""}
+                          {scan.ticket?.name ? `${scan.ticket.name} · ` : ""}{scan.device.name}
                         </p>
                       </div>
                     </div>

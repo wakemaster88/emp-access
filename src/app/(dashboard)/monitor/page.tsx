@@ -197,7 +197,7 @@ export default function MonitorPage() {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {scan.ticket?.profileImage ? (
-                        <img src={scan.ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                        <img src={scan.ticket.profileImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-slate-200 dark:ring-slate-700" />
                       ) : (
                         <Badge
                           className={
@@ -213,11 +213,10 @@ export default function MonitorPage() {
                       )}
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
-                          {scan.ticket?.name || scan.code}
+                          {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.ticket?.name || scan.code}
                         </p>
                         <p className="text-xs text-slate-500 truncate">
-                          {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.device.name}
-                          {(scan.ticket?.firstName || scan.ticket?.lastName) ? ` · ${scan.device.name}` : ` · ${scan.code}`}
+                          {scan.ticket?.name ? `${scan.ticket.name} · ` : ""}{scan.device.name}
                         </p>
                       </div>
                     </div>
