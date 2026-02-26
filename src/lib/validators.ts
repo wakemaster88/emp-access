@@ -24,7 +24,7 @@ export const piStatusSchema = z.array(
     pis_id: z.coerce.number().int(),
     pis_task: z.coerce.number().int(),
     pis_update: z.coerce.number().int(),
-    system_info: z.record(z.unknown()).optional(),
+    system_info: z.record(z.string(), z.unknown()).optional(),
   })
 );
 
