@@ -271,51 +271,47 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
 
   return (
     <Dialog open={!!ticket} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-start justify-between gap-3 pr-8">
-            <DialogTitle className="leading-tight">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="pb-0">
+          <div className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle className="text-base leading-tight truncate">
               {[ticket?.firstName, ticket?.lastName].filter(Boolean).join(" ") || ticket?.name}
             </DialogTitle>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               {ticket?.source && (
-                <Badge variant="secondary" className="text-xs">{ticket.source}</Badge>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{ticket.source}</Badge>
               )}
-              <Badge className={`text-xs ${statusColor}`}>
+              <Badge className={`text-[10px] px-1.5 py-0 ${statusColor}`}>
                 {ticket?.status === "VALID" ? "Gültig" : ticket?.status === "REDEEMED" ? "Eingelöst" : ticket?.status === "INVALID" ? "Ungültig" : "Geschützt"}
-              </Badge>
-              <Badge variant="outline" className="text-xs font-mono">
-                {ticket?._count.scans} Scans
               </Badge>
             </div>
           </div>
         </DialogHeader>
 
-        {/* Tabs */}
         {(() => {
           const isAnny = ticket?.source === "ANNY";
           const annyEntries = isAnny ? parseAnnyEntries(ticket?.qrCode ?? null) : [];
           const tabClass = (active: boolean) =>
-            `flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            `flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
               active
                 ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
                 : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
             }`;
 
           return (
-            <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+            <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
               <button type="button" onClick={() => setTab("edit")} className={tabClass(tab === "edit")}>
-                <Pencil className="h-3.5 w-3.5" />
+                <Pencil className="h-3 w-3" />
                 Bearbeiten
               </button>
               {isAnny && annyEntries.length > 0 && (
                 <button type="button" onClick={() => setTab("bookings")} className={tabClass(tab === "bookings")}>
-                  <CalendarDays className="h-3.5 w-3.5" />
+                  <CalendarDays className="h-3 w-3" />
                   Buchungen ({annyEntries.length})
                 </button>
               )}
               <button type="button" onClick={() => setTab("scans")} className={tabClass(tab === "scans")}>
-                <ScanLine className="h-3.5 w-3.5" />
+                <ScanLine className="h-3 w-3" />
                 Scans ({ticket?._count.scans ?? 0})
               </button>
             </div>
@@ -323,46 +319,32 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         })()}
 
         {tab === "edit" && (
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="flex gap-4 items-start">
-              <div className="shrink-0">
-                <div
-                  className="relative group h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-colors"
-                  onClick={() => setCameraOpen(true)}
-                >
-                  {profileImage ? (
-                    <>
-                      <img src={profileImage} alt="" className="h-full w-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Camera className="h-4 w-4 text-white" />
-                      </div>
-                    </>
-                  ) : (
-                    <Camera className="h-5 w-5 text-slate-400" />
-                  )}
-                </div>
-                {profileImage && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setProfileImage(null); }}
-                    className="mt-1 text-[10px] text-slate-400 hover:text-rose-500 transition-colors w-full text-center"
-                  >
-                    Entfernen
-                  </button>
+          <form onSubmit={handleSave} className="space-y-3">
+            <div className="flex gap-3 items-center">
+              <div
+                className="relative group h-11 w-11 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-colors shrink-0"
+                onClick={() => setCameraOpen(true)}
+              >
+                {profileImage ? (
+                  <>
+                    <img src={profileImage} alt="" className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Camera className="h-3.5 w-3.5 text-white" />
+                    </div>
+                  </>
+                ) : (
+                  <Camera className="h-4 w-4 text-slate-400" />
                 )}
               </div>
-              <div className="flex-1 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="e-first">Vorname <span className="text-rose-500">*</span></Label>
-                    <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Max" required autoFocus />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="e-last">Nachname <span className="text-rose-500">*</span></Label>
-                    <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Mustermann" required />
-                  </div>
-                </div>
+              <div className="grid grid-cols-2 gap-2 flex-1">
+                <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Vorname *" required autoFocus className="h-9" />
+                <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Nachname *" required className="h-9" />
               </div>
+              {profileImage && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); setProfileImage(null); }} className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors shrink-0">
+                  ✕
+                </button>
+              )}
             </div>
 
             {cameraOpen && (
@@ -372,43 +354,36 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
               />
             )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="e-type">Ticket-Typ</Label>
-              <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="e-type" className="text-xs">Ticket-Typ</Label>
+                <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" className="h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="e-code" className="text-xs flex items-center gap-1">
+                  <ScanLine className="h-3 w-3 text-slate-400" />Code
+                </Label>
+                <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-xs h-9" placeholder="Scannen / eingeben" autoComplete="off" />
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="e-code" className="flex items-center gap-1.5">
-                <ScanLine className="h-3.5 w-3.5 text-slate-400" />
-                Code
-              </Label>
-              <Input
-                id="e-code"
-                value={form.code}
-                onChange={(e) => set("code", e.target.value)}
-                className="font-mono text-sm"
-                placeholder="Code scannen oder eingeben…"
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Resource</Label>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Resource</Label>
                 <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
-                  <SelectTrigger><SelectValue placeholder="Alle Resourcen" /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Keine" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Alle Resourcen</SelectItem>
+                    <SelectItem value="none">Keine Resource</SelectItem>
                     {areas.map((a) => (
                       <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label>Status</Label>
+              <div className="space-y-1">
+                <Label className="text-xs">Status</Label>
                 <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="VALID">Gültig</SelectItem>
                     <SelectItem value="REDEEMED">Eingelöst</SelectItem>
@@ -417,81 +392,69 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Gültigkeitstyp</Label>
-              <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DATE_RANGE">Zeitraum (Tage)</SelectItem>
-                  <SelectItem value="TIME_SLOT">Zeitslot (Uhrzeit)</SelectItem>
-                  <SelectItem value="DURATION">Dauer ab 1. Scan</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="e-start">Gültig ab</Label>
-                <Input id="e-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} />
+              <div className="space-y-1">
+                <Label className="text-xs">Gültigkeit</Label>
+                <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DATE_RANGE">Zeitraum</SelectItem>
+                    <SelectItem value="TIME_SLOT">Zeitslot</SelectItem>
+                    <SelectItem value="DURATION">Dauer</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="e-end">Gültig bis</Label>
-                <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="e-start" className="text-xs">Gültig ab</Label>
+                <Input id="e-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} className="h-9 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="e-end" className="text-xs">Gültig bis</Label>
+                <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} className="h-9 text-xs" />
               </div>
             </div>
 
             {form.validityType === "TIME_SLOT" && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="e-slot-start">Slot von</Label>
-                  <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="e-slot-start" className="text-xs">Slot von</Label>
+                  <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} className="h-9 text-xs" />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="e-slot-end">Slot bis</Label>
-                  <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} />
+                <div className="space-y-1">
+                  <Label htmlFor="e-slot-end" className="text-xs">Slot bis</Label>
+                  <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} className="h-9 text-xs" />
                 </div>
               </div>
             )}
 
             {form.validityType === "DURATION" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="e-duration">Gültigkeitsdauer (Minuten)</Label>
-                <Input
-                  id="e-duration"
-                  type="number"
-                  min="1"
-                  placeholder="z.B. 120 für 2 Stunden"
-                  value={form.validityDurationMinutes}
-                  onChange={(e) => set("validityDurationMinutes", e.target.value)}
-                />
+              <div className="space-y-1">
+                <Label htmlFor="e-duration" className="text-xs">Dauer (Minuten)</Label>
+                <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className="h-9" />
                 {ticket?.firstScanAt && (
-                  <p className="text-xs text-slate-500">
-                    Erster Scan: {fmtDateTime(ticket.firstScanAt)}
-                  </p>
+                  <p className="text-[11px] text-slate-500">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
                 )}
               </div>
             )}
 
             {error && (
-              <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
-                {error}
-              </p>
+              <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
             )}
 
             <Separator className="dark:bg-slate-800" />
 
             <div className="flex items-center justify-between">
               <Button type="button" variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || saving}
-                className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20">
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
+                className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs">
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
                 Löschen
               </Button>
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting}>Abbrechen</Button>
-                <Button type="submit" disabled={saving || deleting || (!form.firstName.trim() && !form.lastName.trim())} className="bg-indigo-600 hover:bg-indigo-700 min-w-28">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4 mr-1.5" />Speichern</>}
+                <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-8">Abbrechen</Button>
+                <Button type="submit" size="sm" disabled={saving || deleting || (!form.firstName.trim() && !form.lastName.trim())} className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8">
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Save className="h-3.5 w-3.5 mr-1" />Speichern</>}
                 </Button>
               </div>
             </div>
@@ -501,70 +464,61 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         {tab === "bookings" && ticket?.source === "ANNY" && (() => {
           const entries = parseAnnyEntries(ticket.qrCode);
           return (
-            <div className="space-y-1">
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[400px] overflow-y-auto">
-                {entries.map((entry, i) => {
-                  const st = annyStatusLabel(entry.status);
-                  const startTime = fmtBookingTime(entry.start);
-                  const endTime = fmtBookingTime(entry.end);
-                  const timeRange = startTime && endTime ? `${startTime} – ${endTime}` : startTime || endTime || "";
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[350px] overflow-y-auto">
+              {entries.map((entry, i) => {
+                const st = annyStatusLabel(entry.status);
+                const startTime = fmtBookingTime(entry.start);
+                const endTime = fmtBookingTime(entry.end);
+                const timeRange = startTime && endTime ? `${startTime}–${endTime}` : startTime || endTime || "";
 
-                  return (
-                    <div key={entry.id || i} className="flex items-center gap-3 py-2.5 px-1">
-                      <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400">{i + 1}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                          {fmtBookingDate(entry.start)}
-                        </p>
-                        {timeRange && (
-                          <p className="text-xs text-slate-500 font-mono">{timeRange} Uhr</p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className={`text-xs font-medium ${st.color}`}>{st.label}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">#{entry.id}</p>
-                      </div>
+                return (
+                  <div key={entry.id || i} className="flex items-center gap-2.5 py-2 px-1">
+                    <div className="h-6 w-6 rounded bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                      <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400">{i + 1}</span>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {fmtBookingDate(entry.start)}
+                        {timeRange && <span className="text-slate-400 font-mono ml-1.5">{timeRange}</span>}
+                      </p>
+                    </div>
+                    <span className={`text-[11px] font-medium shrink-0 ${st.color}`}>{st.label}</span>
+                  </div>
+                );
+              })}
             </div>
           );
         })()}
 
         {tab === "scans" && (
-          <div className="space-y-2">
+          <>
             {scansLoading && (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
               </div>
             )}
             {!scansLoading && scans.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-8">Keine Scans vorhanden</p>
+              <p className="text-xs text-slate-400 text-center py-6">Keine Scans vorhanden</p>
             )}
             {!scansLoading && scans.length > 0 && (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[400px] overflow-y-auto">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[350px] overflow-y-auto">
                 {scans.map((scan) => (
-                  <div key={scan.id} className="flex items-center gap-3 py-2.5 px-1">
+                  <div key={scan.id} className="flex items-center gap-2.5 py-2 px-1">
                     {resultIcon(scan.result)}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
                         {resultLabel(scan.result)}
+                        {scan.device?.name && <span className="text-slate-400 ml-1.5">· {scan.device.name}</span>}
                       </p>
-                      {scan.device?.name && (
-                        <p className="text-xs text-slate-400 truncate">{scan.device.name}</p>
-                      )}
                     </div>
-                    <span className="text-xs text-slate-400 font-mono shrink-0">
+                    <span className="text-[11px] text-slate-400 font-mono shrink-0">
                       {fmtDateTime(scan.scanTime)}
                     </span>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </>
         )}
       </DialogContent>
     </Dialog>
