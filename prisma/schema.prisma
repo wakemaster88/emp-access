@@ -190,7 +190,7 @@ model AccessArea {
   children        AccessArea[] @relation("AreaHierarchy")
   tickets         Ticket[]
   subscriptions   Subscription[]
-  services        Service[]
+  serviceAreas    ServiceArea[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -218,22 +218,40 @@ model Subscription {
   @@index([accountId])
 }
 
+model ServiceArea {
+  id                             Int          @id @default(autoincrement())
+  serviceId                      Int
+  accessAreaId                   Int
+  defaultValidityType            ValidityType?
+  defaultStartDate               DateTime?
+  defaultEndDate                 DateTime?
+  defaultSlotStart               String?      // HH:mm
+  defaultSlotEnd                 String?      // HH:mm
+  defaultValidityDurationMinutes Int?
+  service                        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  area                           AccessArea   @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, accessAreaId])
+  @@index([serviceId])
+  @@index([accessAreaId])
+}
+
 model Service {
-  id                          Int          @id @default(autoincrement())
+  id                          Int           @id @default(autoincrement())
   name                        String
   annyNames                   String?
   defaultValidityType         ValidityType?
   defaultStartDate            DateTime?
   defaultEndDate              DateTime?
-  defaultSlotStart            String?      // HH:mm
-  defaultSlotEnd              String?      // HH:mm
+  defaultSlotStart            String?       // HH:mm
+  defaultSlotEnd              String?       // HH:mm
   defaultValidityDurationMinutes Int?
   accountId                   Int
-  account                     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  areas                       AccessArea[]
+  account                     Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  serviceAreas                ServiceArea[]
   tickets                     Ticket[]
-  createdAt                   DateTime     @default(now())
-  updatedAt                   DateTime     @updatedAt
+  createdAt                   DateTime      @default(now())
+  updatedAt                   DateTime      @updatedAt
 
   @@index([accountId])
 }

@@ -39,9 +39,31 @@ interface AreaRef {
   name: string;
 }
 
+export interface ServiceAreaEntry {
+  areaId: number;
+  areaName: string;
+  defaultValidityType: string;
+  defaultStartDate: string;
+  defaultEndDate: string;
+  defaultSlotStart: string;
+  defaultSlotEnd: string;
+  defaultValidityDurationMinutes: string;
+}
+
+export type InitialServiceAreaInput = {
+  areaId: number;
+  areaName: string;
+  defaultValidityType?: string | null;
+  defaultStartDate?: string | Date | null;
+  defaultEndDate?: string | Date | null;
+  defaultSlotStart?: string | null;
+  defaultSlotEnd?: string | null;
+  defaultValidityDurationMinutes?: number | null;
+};
+
 interface ServiceDialogProps {
   service: ServiceData | null;
-  initialAreaIds: number[];
+  initialServiceAreas: InitialServiceAreaInput[];
   areas: AreaRef[];
   annyServices: string[];
   annyResources: string[];
@@ -98,8 +120,21 @@ function CheckList({
   );
 }
 
+function toServiceAreaEntry(areaId: number, areaName: string, defaults?: Partial<ServiceAreaEntry>): ServiceAreaEntry {
+  return {
+    areaId,
+    areaName,
+    defaultValidityType: defaults?.defaultValidityType ?? "none",
+    defaultStartDate: defaults?.defaultStartDate ?? "",
+    defaultEndDate: defaults?.defaultEndDate ?? "",
+    defaultSlotStart: defaults?.defaultSlotStart ?? "",
+    defaultSlotEnd: defaults?.defaultSlotEnd ?? "",
+    defaultValidityDurationMinutes: defaults?.defaultValidityDurationMinutes ?? "",
+  };
+}
+
 export function ServiceDialog({
-  service, initialAreaIds,
+  service, initialServiceAreas,
   areas, annyServices, annyResources,
   open, onClose,
 }: ServiceDialogProps) {
@@ -108,7 +143,7 @@ export function ServiceDialog({
   const [tab, setTab] = useState<TabId>("settings");
   const [name, setName] = useState("");
   const [selectedAnny, setSelectedAnny] = useState<Set<string>>(new Set());
-  const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set());
+  const [serviceAreas, setServiceAreas] = useState<ServiceAreaEntry[]>([]);
   const [defaultValidityType, setDefaultValidityType] = useState<string>("none");
   const [defaultStartDate, setDefaultStartDate] = useState("");
   const [defaultEndDate, setDefaultEndDate] = useState("");
@@ -131,7 +166,14 @@ export function ServiceDialog({
           ? (() => { try { return JSON.parse(service.annyNames); } catch { return []; } })()
           : [];
         setSelectedAnny(new Set(parsed));
-        setSelectedAreas(new Set(initialAreaIds.map(String)));
+        setServiceAreas(initialServiceAreas.map((sa) => toServiceAreaEntry(sa.areaId, sa.areaName, {
+          defaultValidityType: sa.defaultValidityType ?? "none",
+          defaultStartDate: typeof sa.defaultStartDate === "string" ? sa.defaultStartDate : toDateInput(sa.defaultStartDate),
+          defaultEndDate: typeof sa.defaultEndDate === "string" ? sa.defaultEndDate : toDateInput(sa.defaultEndDate),
+          defaultSlotStart: sa.defaultSlotStart ?? "",
+          defaultSlotEnd: sa.defaultSlotEnd ?? "",
+          defaultValidityDurationMinutes: sa.defaultValidityDurationMinutes != null ? String(sa.defaultValidityDurationMinutes) : "",
+        })));
         setDefaultValidityType(service.defaultValidityType ?? "none");
         setDefaultStartDate(toDateInput(service.defaultStartDate));
         setDefaultEndDate(toDateInput(service.defaultEndDate));
@@ -141,7 +183,7 @@ export function ServiceDialog({
       } else {
         setName("");
         setSelectedAnny(new Set());
-        setSelectedAreas(new Set());
+        setServiceAreas([]);
         setDefaultValidityType("none");
         setDefaultStartDate("");
         setDefaultEndDate("");
@@ -150,7 +192,7 @@ export function ServiceDialog({
         setDefaultValidityDurationMinutes("");
       }
     }
-  }, [open, service, initialAreaIds]);
+  }, [open, service, initialServiceAreas]);
 
   function toggleAnny(key: string) {
     setSelectedAnny((prev) => {
@@ -160,12 +202,20 @@ export function ServiceDialog({
     });
   }
 
-  function toggleArea(key: string) {
-    setSelectedAreas((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
+  function addServiceArea(areaId: number) {
+    const area = areas.find((a) => a.id === areaId);
+    if (!area || serviceAreas.some((sa) => sa.areaId === areaId)) return;
+    setServiceAreas((prev) => [...prev, toServiceAreaEntry(area.id, area.name)]);
+  }
+
+  function removeServiceArea(areaId: number) {
+    setServiceAreas((prev) => prev.filter((sa) => sa.areaId !== areaId));
+  }
+
+  function updateServiceArea(areaId: number, updates: Partial<ServiceAreaEntry>) {
+    setServiceAreas((prev) =>
+      prev.map((sa) => (sa.areaId === areaId ? { ...sa, ...updates } : sa))
+    );
   }
 
   async function handleSave() {
@@ -175,7 +225,29 @@ export function ServiceDialog({
       const payload: Record<string, unknown> = {
         name: name.trim(),
         annyNames: [...selectedAnny],
-        areaIds: [...selectedAreas].map(Number),
+        areas: serviceAreas.map((sa) => {
+          const out: Record<string, unknown> = { areaId: sa.areaId };
+          if (sa.defaultValidityType && sa.defaultValidityType !== "none") {
+            out.defaultValidityType = sa.defaultValidityType;
+            if (sa.defaultValidityType === "DATE_RANGE") {
+              if (sa.defaultStartDate) out.defaultStartDate = new Date(sa.defaultStartDate).toISOString();
+              if (sa.defaultEndDate) out.defaultEndDate = new Date(sa.defaultEndDate).toISOString();
+            } else if (sa.defaultValidityType === "TIME_SLOT") {
+              out.defaultSlotStart = sa.defaultSlotStart || null;
+              out.defaultSlotEnd = sa.defaultSlotEnd || null;
+            } else if (sa.defaultValidityType === "DURATION" && sa.defaultValidityDurationMinutes) {
+              out.defaultValidityDurationMinutes = Number(sa.defaultValidityDurationMinutes);
+            }
+          } else {
+            out.defaultValidityType = null;
+            out.defaultStartDate = null;
+            out.defaultEndDate = null;
+            out.defaultSlotStart = null;
+            out.defaultSlotEnd = null;
+            out.defaultValidityDurationMinutes = null;
+          }
+          return out;
+        }),
       };
       if (defaultValidityType && defaultValidityType !== "none") {
         payload.defaultValidityType = defaultValidityType;
@@ -236,6 +308,7 @@ export function ServiceDialog({
     ...annyResources.map((n) => ({ key: n, label: `${n} (Resource)` })),
   ];
   const areaItems = areas.map((a) => ({ key: String(a.id), label: a.name }));
+  const availableAreasToAdd = areas.filter((a) => !serviceAreas.some((sa) => sa.areaId === a.id));
 
   const tabClass = (active: boolean) =>
     `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
@@ -264,7 +337,7 @@ export function ServiceDialog({
           )}
           <button type="button" onClick={() => setTab("areas")} className={tabClass(tab === "areas")}>
             <MapPin className="h-3 w-3" />
-            Resourcen{selectedAreas.size > 0 && ` (${selectedAreas.size})`}
+            Resourcen{serviceAreas.length > 0 && ` (${serviceAreas.length})`}
           </button>
         </div>
 
@@ -324,7 +397,13 @@ export function ServiceDialog({
               {defaultValidityType === "DURATION" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Dauer (Minuten)</Label>
-                  <Input type="number" min={1} className="h-9 text-xs" placeholder="z.B. 120" value={defaultValidityDurationMinutes} onChange={(e) => setDefaultValidityDurationMinutes(e.target.value)} />
+                  <div className="flex gap-2 items-center">
+                    <Input type="number" min={1} className="h-9 text-xs flex-1" placeholder="z.B. 120" value={defaultValidityDurationMinutes} onChange={(e) => setDefaultValidityDurationMinutes(e.target.value)} />
+                    <Button type="button" variant="outline" size="sm" className="h-9 text-xs shrink-0" onClick={() => setDefaultValidityDurationMinutes("1440")}>
+                      1 Tag
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-slate-400">1 Tag = 1440 Minuten</p>
                 </div>
               )}
             </div>
@@ -338,12 +417,12 @@ export function ServiceDialog({
                       {selectedAnny.size} anny {selectedAnny.size === 1 ? "Verknüpfung" : "Verknüpfungen"}
                     </Badge>
                   )}
-                  {selectedAreas.size > 0 && (
+                  {serviceAreas.length > 0 && (
                     <Badge variant="outline" className="text-[10px]">
-                      {selectedAreas.size} {selectedAreas.size === 1 ? "Resource" : "Resourcen"}
+                      {serviceAreas.length} {serviceAreas.length === 1 ? "Resource" : "Resourcen"}
                     </Badge>
                   )}
-                  {selectedAnny.size === 0 && selectedAreas.size === 0 && (
+                  {selectedAnny.size === 0 && serviceAreas.length === 0 && (
                     <span className="text-[10px] text-slate-400">Keine Verknüpfungen</span>
                   )}
                 </div>
@@ -379,26 +458,135 @@ export function ServiceDialog({
         )}
 
         {tab === "areas" && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-[11px] text-slate-500">
-              Wähle die Resourcen, zu denen dieser Service Zugang gewährt. Service-Tickets erscheinen im Dashboard in allen ausgewählten Resourcen.
+              Resourcen hinzufügen und pro Resource die Gültigkeit für Service-Tickets einstellen. Tickets erscheinen im Dashboard in allen zugeordneten Resourcen.
             </p>
-            <CheckList
-              items={areaItems}
-              selected={selectedAreas}
-              onToggle={toggleArea}
-              emptyText="Keine Resourcen vorhanden."
-            />
-            {selectedAreas.size > 0 && (
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px]">{selectedAreas.size} ausgewählt</Badge>
-                <button
-                  type="button"
-                  onClick={() => setSelectedAreas(new Set())}
-                  className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors"
+            {availableAreasToAdd.length > 0 && (
+              <div className="flex gap-2 items-center">
+                <Select
+                  value=""
+                  onValueChange={(v) => { const id = Number(v); if (id) addServiceArea(id); }}
                 >
-                  Alle abwählen
-                </button>
+                  <SelectTrigger className="h-9 text-xs flex-1">
+                    <SelectValue placeholder="Resource hinzufügen …" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableAreasToAdd.map((a) => (
+                      <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {serviceAreas.length === 0 ? (
+              <p className="text-[11px] text-slate-400 py-4 text-center rounded-lg border border-dashed border-slate-200 dark:border-slate-700">
+                Noch keine Resourcen zugeordnet. Resource oben hinzufügen.
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-[320px] overflow-y-auto">
+                {serviceAreas.map((sa) => (
+                  <div
+                    key={sa.areaId}
+                    className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{sa.areaName}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                        onClick={() => removeServiceArea(sa.areaId)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-slate-500">Gültigkeit für diese Resource</Label>
+                      <Select
+                        value={sa.defaultValidityType}
+                        onValueChange={(v) => updateServiceArea(sa.areaId, { defaultValidityType: v })}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Kein Standard</SelectItem>
+                          <SelectItem value="DATE_RANGE">Zeitraum (Tage)</SelectItem>
+                          <SelectItem value="TIME_SLOT">Zeitslot (Uhrzeit)</SelectItem>
+                          <SelectItem value="DURATION">Dauer ab 1. Scan</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {sa.defaultValidityType === "DATE_RANGE" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Gültig ab</Label>
+                          <Input
+                            type="date"
+                            className="h-8 text-xs"
+                            value={sa.defaultStartDate}
+                            onChange={(e) => updateServiceArea(sa.areaId, { defaultStartDate: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Gültig bis</Label>
+                          <Input
+                            type="date"
+                            className="h-8 text-xs"
+                            value={sa.defaultEndDate}
+                            onChange={(e) => updateServiceArea(sa.areaId, { defaultEndDate: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {sa.defaultValidityType === "TIME_SLOT" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Slot von</Label>
+                          <Input
+                            type="time"
+                            className="h-8 text-xs"
+                            value={sa.defaultSlotStart}
+                            onChange={(e) => updateServiceArea(sa.areaId, { defaultSlotStart: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px]">Slot bis</Label>
+                          <Input
+                            type="time"
+                            className="h-8 text-xs"
+                            value={sa.defaultSlotEnd}
+                            onChange={(e) => updateServiceArea(sa.areaId, { defaultSlotEnd: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {sa.defaultValidityType === "DURATION" && (
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px]">Dauer (Minuten)</Label>
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            type="number"
+                            min={1}
+                            className="h-8 text-xs flex-1"
+                            placeholder="z.B. 120"
+                            value={sa.defaultValidityDurationMinutes}
+                            onChange={(e) => updateServiceArea(sa.areaId, { defaultValidityDurationMinutes: e.target.value })}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs shrink-0"
+                            onClick={() => updateServiceArea(sa.areaId, { defaultValidityDurationMinutes: "1440" })}
+                          >
+                            1 Tag
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>

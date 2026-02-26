@@ -494,7 +494,13 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
             {form.validityType === "DURATION" && (
               <div className="space-y-1">
                 <Label htmlFor="e-duration" className="text-xs">Dauer (Minuten)</Label>
-                <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className="h-9" />
+                <div className="flex gap-2 items-center">
+                  <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className="h-9 flex-1" />
+                  <Button type="button" variant="outline" size="sm" className="h-9 text-xs shrink-0" onClick={() => set("validityDurationMinutes", "1440")}>
+                    1 Tag
+                  </Button>
+                </div>
+                <p className="text-[10px] text-slate-400">1 Tag = 1440 Minuten</p>
                 {ticket?.firstScanAt && (
                   <p className="text-[11px] text-slate-500">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
                 )}

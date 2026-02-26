@@ -16,7 +16,9 @@ export async function GET(
   const service = await db.service.findFirst({
     where: { id: svcId, accountId: accountId! },
     include: {
-      areas: { select: { id: true, name: true } },
+      serviceAreas: {
+        include: { area: { select: { id: true, name: true } } },
+      },
       _count: { select: { tickets: true } },
     },
   });
@@ -43,12 +45,30 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  const areaIds: number[] | undefined = Array.isArray(body.areaIds) ? body.areaIds.map(Number) : undefined;
+  const areasPayload: { areaId: number; defaultValidityType?: string; defaultStartDate?: string; defaultEndDate?: string; defaultSlotStart?: string; defaultSlotEnd?: string; defaultValidityDurationMinutes?: number }[] | undefined = Array.isArray(body.areas) ? body.areas : undefined;
   const annyNames: string[] | undefined = Array.isArray(body.annyNames) ? body.annyNames : undefined;
   const defaultValidityType =
     body.defaultValidityType !== undefined
       ? (["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(body.defaultValidityType) ? body.defaultValidityType : null)
       : undefined;
+
+  if (areasPayload !== undefined) {
+    await db.serviceArea.deleteMany({ where: { serviceId: svcId } });
+    if (areasPayload.length > 0) {
+      await db.serviceArea.createMany({
+        data: areasPayload.map((a) => ({
+          serviceId: svcId,
+          accessAreaId: a.areaId,
+          defaultValidityType: ["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(a.defaultValidityType ?? "") ? a.defaultValidityType : null,
+          defaultStartDate: a.defaultStartDate ? new Date(a.defaultStartDate) : null,
+          defaultEndDate: a.defaultEndDate ? new Date(a.defaultEndDate) : null,
+          defaultSlotStart: a.defaultSlotStart ?? null,
+          defaultSlotEnd: a.defaultSlotEnd ?? null,
+          defaultValidityDurationMinutes: a.defaultValidityDurationMinutes != null ? a.defaultValidityDurationMinutes : null,
+        })),
+      });
+    }
+  }
 
   const service = await db.service.update({
     where: { id: svcId },
@@ -57,9 +77,6 @@ export async function PUT(
       annyNames: annyNames !== undefined
         ? (annyNames.length > 0 ? JSON.stringify(annyNames) : null)
         : existing.annyNames,
-      areas: areaIds !== undefined
-        ? { set: areaIds.map((id) => ({ id })) }
-        : undefined,
       ...(defaultValidityType !== undefined && { defaultValidityType }),
       ...(body.defaultStartDate !== undefined && { defaultStartDate: body.defaultStartDate ? new Date(body.defaultStartDate) : null }),
       ...(body.defaultEndDate !== undefined && { defaultEndDate: body.defaultEndDate ? new Date(body.defaultEndDate) : null }),
@@ -68,7 +85,7 @@ export async function PUT(
       ...(body.defaultValidityDurationMinutes !== undefined && { defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null }),
     },
     include: {
-      areas: { select: { id: true, name: true } },
+      serviceAreas: { include: { area: { select: { id: true, name: true } } } },
       _count: { select: { tickets: true } },
     },
   });

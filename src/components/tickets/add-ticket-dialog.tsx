@@ -431,14 +431,21 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
           {form.validityType === "DURATION" && (
             <div className="space-y-1.5">
               <Label htmlFor="t-duration">Gültigkeitsdauer (Minuten)</Label>
-              <Input
-                id="t-duration"
-                type="number"
-                min="1"
-                placeholder="z.B. 120 für 2 Stunden"
-                value={form.validityDurationMinutes}
-                onChange={(e) => set("validityDurationMinutes", e.target.value)}
-              />
+              <div className="flex gap-2 items-center">
+                <Input
+                  id="t-duration"
+                  type="number"
+                  min="1"
+                  placeholder="z.B. 120 für 2 Stunden"
+                  value={form.validityDurationMinutes}
+                  onChange={(e) => set("validityDurationMinutes", e.target.value)}
+                  className="flex-1"
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => set("validityDurationMinutes", "1440")}>
+                  1 Tag
+                </Button>
+              </div>
+              <p className="text-xs text-slate-400">1 Tag = 1440 Minuten</p>
             </div>
           )}
 

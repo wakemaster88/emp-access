@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
       where: { ...where, serviceId: { not: null }, ...ticketDateFilter },
       select: {
         ...ticketSelect,
-        service: { select: { areas: { select: { id: true } } } },
+        service: { select: { serviceAreas: { select: { area: { select: { id: true } } } } } },
       },
       orderBy: { name: "asc" },
     }),
@@ -189,10 +189,13 @@ export async function GET(request: NextRequest) {
   // Build: areaId → service tickets
   const svcTicketsByArea = new Map<number, typeof serviceTickets>();
   for (const ticket of serviceTickets) {
-    const svcAreas = ticket.service?.areas || [];
-    for (const sa of svcAreas) {
-      if (!svcTicketsByArea.has(sa.id)) svcTicketsByArea.set(sa.id, []);
-      svcTicketsByArea.get(sa.id)!.push(ticket);
+    const serviceAreas = ticket.service?.serviceAreas || [];
+    for (const sa of serviceAreas) {
+      const areaId = sa.area?.id;
+      if (areaId != null) {
+        if (!svcTicketsByArea.has(areaId)) svcTicketsByArea.set(areaId, []);
+        svcTicketsByArea.get(areaId)!.push(ticket);
+      }
     }
   }
 

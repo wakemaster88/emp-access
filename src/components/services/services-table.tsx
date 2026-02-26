@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ServiceDialog, type ServiceData } from "./service-dialog";
+import { ServiceDialog, type ServiceData, type InitialServiceAreaInput } from "./service-dialog";
 import { Plus } from "lucide-react";
 
 interface AreaRef {
@@ -14,8 +14,18 @@ interface AreaRef {
   name: string;
 }
 
+interface ServiceAreaRef {
+  area: AreaRef;
+  defaultValidityType?: string | null;
+  defaultStartDate?: string | Date | null;
+  defaultEndDate?: string | Date | null;
+  defaultSlotStart?: string | null;
+  defaultSlotEnd?: string | null;
+  defaultValidityDurationMinutes?: number | null;
+}
+
 interface SvcRow extends ServiceData {
-  areas: AreaRef[];
+  serviceAreas?: ServiceAreaRef[];
   _count: { tickets: number };
 }
 
@@ -29,7 +39,7 @@ interface ServicesTableProps {
 
 export function ServicesTable({ services, areas, annyServices, annyResources, readonly }: ServicesTableProps) {
   const [selected, setSelected] = useState<ServiceData | null>(null);
-  const [selectedAreas, setSelectedAreas] = useState<number[]>([]);
+  const [initialServiceAreas, setInitialServiceAreas] = useState<InitialServiceAreaInput[]>([]);
   const [addOpen, setAddOpen] = useState(false);
 
   function openEdit(svc: SvcRow) {
@@ -44,7 +54,16 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
       defaultSlotEnd: svc.defaultSlotEnd ?? undefined,
       defaultValidityDurationMinutes: svc.defaultValidityDurationMinutes ?? undefined,
     });
-    setSelectedAreas(svc.areas.map((a) => a.id));
+    setInitialServiceAreas((svc.serviceAreas ?? []).map((sa) => ({
+      areaId: sa.area.id,
+      areaName: sa.area.name,
+      defaultValidityType: sa.defaultValidityType ?? undefined,
+      defaultStartDate: sa.defaultStartDate ?? undefined,
+      defaultEndDate: sa.defaultEndDate ?? undefined,
+      defaultSlotStart: sa.defaultSlotStart ?? undefined,
+      defaultSlotEnd: sa.defaultSlotEnd ?? undefined,
+      defaultValidityDurationMinutes: sa.defaultValidityDurationMinutes ?? undefined,
+    })));
   }
 
   return (
@@ -52,7 +71,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
       {!readonly && (
         <div className="flex justify-end mb-4">
           <Button
-            onClick={() => { setSelected(null); setSelectedAreas([]); setAddOpen(true); }}
+            onClick={() => { setSelected(null); setInitialServiceAreas([]); setAddOpen(true); }}
             className="bg-indigo-600 hover:bg-indigo-700 gap-2"
           >
             <Plus className="h-4 w-4" />
@@ -106,12 +125,12 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                   )}
                 </TableCell>
                 <TableCell>
-                  {svc.areas.length === 0 ? (
+                  {(svc.serviceAreas?.length ?? 0) === 0 ? (
                     <span className="text-slate-400 text-sm">–</span>
                   ) : (
                     <div className="flex flex-wrap gap-1">
-                      {svc.areas.map((a) => (
-                        <Badge key={a.id} variant="outline" className="text-[10px] px-1.5 py-0">{a.name}</Badge>
+                      {(svc.serviceAreas ?? []).map((sa) => (
+                        <Badge key={sa.area.id} variant="outline" className="text-[10px] px-1.5 py-0">{sa.area.name}</Badge>
                       ))}
                     </div>
                   )}
@@ -125,7 +144,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
 
       <ServiceDialog
         service={null}
-        initialAreaIds={[]}
+        initialServiceAreas={[]}
         areas={areas}
         annyServices={annyServices}
         annyResources={annyResources}
@@ -135,7 +154,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
 
       <ServiceDialog
         service={selected}
-        initialAreaIds={selectedAreas}
+        initialServiceAreas={initialServiceAreas}
         areas={areas}
         annyServices={annyServices}
         annyResources={annyResources}

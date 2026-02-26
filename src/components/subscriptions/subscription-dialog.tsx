@@ -326,7 +326,13 @@ export function SubscriptionDialog({
               {defaultValidityType === "DURATION" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Dauer (Minuten)</Label>
-                  <Input type="number" min={1} className="h-9 text-xs" placeholder="z.B. 120" value={defaultValidityDurationMinutes} onChange={(e) => setDefaultValidityDurationMinutes(e.target.value)} />
+                  <div className="flex gap-2 items-center">
+                    <Input type="number" min={1} className="h-9 text-xs flex-1" placeholder="z.B. 120" value={defaultValidityDurationMinutes} onChange={(e) => setDefaultValidityDurationMinutes(e.target.value)} />
+                    <Button type="button" variant="outline" size="sm" className="h-9 text-xs shrink-0" onClick={() => setDefaultValidityDurationMinutes("1440")}>
+                      1 Tag
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-slate-400">1 Tag = 1440 Minuten</p>
                 </div>
               )}
             </div>
