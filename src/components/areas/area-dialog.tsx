@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Trash2, Save, Settings2, Link2, Check } from "lucide-react";
+import { Loader2, Trash2, Save, Settings2, Link2, Package, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface AreaData {
@@ -31,6 +31,7 @@ interface AreaDialogProps {
   area: AreaData | null;
   allAreas: AreaData[];
   annyResources?: string[];
+  annyServices?: string[];
   annyMappings?: Record<string, number>;
   open: boolean;
   onClose: () => void;
@@ -45,17 +46,90 @@ const EMPTY = {
   openingHours: "",
 };
 
-export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = {}, open, onClose }: AreaDialogProps) {
+type TabId = "settings" | "resources" | "services";
+
+function CheckList({
+  items,
+  selected,
+  onToggle,
+  mappings,
+  areaId,
+  allAreas,
+  emptyText,
+}: {
+  items: string[];
+  selected: Set<string>;
+  onToggle: (name: string) => void;
+  mappings: Record<string, number>;
+  areaId: number | null;
+  allAreas: AreaData[];
+  emptyText: string;
+}) {
+  if (items.length === 0) {
+    return <p className="text-[11px] text-slate-400 py-4 text-center">{emptyText}</p>;
+  }
+
+  return (
+    <div className="max-h-[320px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 dark:border-slate-800 p-1">
+      {items.map((name) => {
+        const isSelected = selected.has(name);
+        const usedBy = mappings[name];
+        const isSelf = areaId != null && usedBy === areaId;
+        const isUsedElsewhere = usedBy != null && !isSelf && !isSelected;
+        const usedAreaName = isUsedElsewhere ? allAreas.find((a) => a.id === usedBy)?.name : null;
+
+        return (
+          <button
+            key={name}
+            type="button"
+            onClick={() => !isUsedElsewhere && onToggle(name)}
+            disabled={isUsedElsewhere}
+            className={cn(
+              "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+              isSelected
+                ? "bg-violet-50 dark:bg-violet-900/20"
+                : "hover:bg-slate-50 dark:hover:bg-slate-800/50",
+              isUsedElsewhere && "opacity-40 cursor-not-allowed"
+            )}
+          >
+            <div className={cn(
+              "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+              isSelected
+                ? "bg-violet-500 border-violet-500"
+                : "border-slate-300 dark:border-slate-600"
+            )}>
+              {isSelected && <Check className="h-3 w-3 text-white" />}
+            </div>
+            <span className="text-xs text-slate-700 dark:text-slate-300 truncate flex-1">{name}</span>
+            {isUsedElsewhere && usedAreaName && (
+              <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">→ {usedAreaName}</Badge>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function AreaDialog({
+  area, allAreas,
+  annyResources = [], annyServices = [], annyMappings = {},
+  open, onClose,
+}: AreaDialogProps) {
   const router = useRouter();
   const isNew = !area;
-  const [tab, setTab] = useState<"settings" | "anny">("settings");
+  const [tab, setTab] = useState<TabId>("settings");
   const [form, setForm] = useState(EMPTY);
   const [selectedAnny, setSelectedAnny] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
 
-  const hasAnny = annyResources.length > 0;
+  const hasAnny = annyResources.length > 0 || annyServices.length > 0;
+  const allAnnyItems = [...annyResources, ...annyServices];
+
+  const selectedResCount = annyResources.filter((r) => selectedAnny.has(r)).length;
+  const selectedSvcCount = annyServices.filter((s) => selectedAnny.has(s)).length;
 
   useEffect(() => {
     if (open) {
@@ -72,7 +146,9 @@ export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = 
         });
         const linked = new Set<string>();
         for (const [name, areaId] of Object.entries(annyMappings)) {
-          if (areaId === area.id && annyResources.includes(name)) linked.add(name);
+          if (areaId === area.id && (annyResources.includes(name) || annyServices.includes(name))) {
+            linked.add(name);
+          }
         }
         setSelectedAnny(linked);
       } else {
@@ -80,7 +156,7 @@ export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = 
         setSelectedAnny(new Set());
       }
     }
-  }, [open, area, annyMappings, annyResources]);
+  }, [open, area, annyMappings, annyResources, annyServices]);
 
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -136,7 +212,7 @@ export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = 
               try { if (annyConfig.extraConfig) extra = JSON.parse(annyConfig.extraConfig); } catch { /* ignore */ }
               const mappings = (extra.mappings as Record<string, number>) || {};
 
-              for (const name of annyResources) {
+              for (const name of allAnnyItems) {
                 if (mappings[name] === areaId) delete mappings[name];
               }
               for (const name of selectedAnny) {
@@ -185,7 +261,7 @@ export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = 
   const parentOptions = allAreas.filter((a) => !area || a.id !== area.id);
 
   const tabClass = (active: boolean) =>
-    `flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+    `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
       active
         ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
         : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
@@ -204,9 +280,13 @@ export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = 
               <Settings2 className="h-3 w-3" />
               Einstellungen
             </button>
-            <button type="button" onClick={() => setTab("anny")} className={tabClass(tab === "anny")}>
+            <button type="button" onClick={() => setTab("resources")} className={tabClass(tab === "resources")}>
               <Link2 className="h-3 w-3" />
-              anny ({selectedAnny.size})
+              Ressourcen{selectedResCount > 0 && ` (${selectedResCount})`}
+            </button>
+            <button type="button" onClick={() => setTab("services")} className={tabClass(tab === "services")}>
+              <Package className="h-3 w-3" />
+              Services{selectedSvcCount > 0 && ` (${selectedSvcCount})`}
             </button>
           </div>
         )}
@@ -284,63 +364,37 @@ export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = 
           </div>
         )}
 
-        {tab === "anny" && (
+        {tab === "resources" && (
           <div className="space-y-2">
             <p className="text-[11px] text-slate-500">
-              Wähle anny Services und Ressourcen, die dieser Resource zugeordnet werden sollen. Tickets werden beim Sync automatisch zugewiesen.
+              Verknüpfe anny Ressourcen mit dieser Resource. Die Verfügbarkeiten werden im Dashboard angezeigt.
             </p>
-            <div className="max-h-[340px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 dark:border-slate-800 p-1">
-              {annyResources.map((name) => {
-                const isSelected = selectedAnny.has(name);
-                const usedBy = annyMappings[name];
-                const isSelf = area && usedBy === area.id;
-                const isUsedElsewhere = usedBy != null && !isSelf && !isSelected;
-                const usedAreaName = isUsedElsewhere ? allAreas.find((a) => a.id === usedBy)?.name : null;
+            <CheckList
+              items={annyResources}
+              selected={selectedAnny}
+              onToggle={toggleAnny}
+              mappings={annyMappings}
+              areaId={area?.id ?? null}
+              allAreas={allAreas}
+              emptyText="Keine anny Ressourcen gefunden. Bitte erst synchronisieren."
+            />
+          </div>
+        )}
 
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => !isUsedElsewhere && toggleAnny(name)}
-                    disabled={isUsedElsewhere}
-                    className={cn(
-                      "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                      isSelected
-                        ? "bg-violet-50 dark:bg-violet-900/20"
-                        : "hover:bg-slate-50 dark:hover:bg-slate-800/50",
-                      isUsedElsewhere && "opacity-40 cursor-not-allowed"
-                    )}
-                  >
-                    <div className={cn(
-                      "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
-                      isSelected
-                        ? "bg-violet-500 border-violet-500"
-                        : "border-slate-300 dark:border-slate-600"
-                    )}>
-                      {isSelected && <Check className="h-3 w-3 text-white" />}
-                    </div>
-                    <span className="text-xs text-slate-700 dark:text-slate-300 truncate flex-1">{name}</span>
-                    {isUsedElsewhere && usedAreaName && (
-                      <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">→ {usedAreaName}</Badge>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px]">
-                {selectedAnny.size} ausgewählt
-              </Badge>
-              {selectedAnny.size > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedAnny(new Set())}
-                  className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors"
-                >
-                  Alle abwählen
-                </button>
-              )}
-            </div>
+        {tab === "services" && (
+          <div className="space-y-2">
+            <p className="text-[11px] text-slate-500">
+              Verknüpfe anny Services mit dieser Resource. Tickets werden beim Sync automatisch zugewiesen.
+            </p>
+            <CheckList
+              items={annyServices}
+              selected={selectedAnny}
+              onToggle={toggleAnny}
+              mappings={annyMappings}
+              areaId={area?.id ?? null}
+              allAreas={allAreas}
+              emptyText="Keine anny Services gefunden. Bitte erst synchronisieren."
+            />
           </div>
         )}
 

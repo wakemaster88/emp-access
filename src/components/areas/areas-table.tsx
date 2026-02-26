@@ -25,10 +25,11 @@ interface AreasTableProps {
   areas: AreaRow[];
   readonly?: boolean;
   annyResources?: string[];
+  annyServices?: string[];
   annyMappings?: Record<string, number>;
 }
 
-export function AreasTable({ areas, readonly, annyResources, annyMappings }: AreasTableProps) {
+export function AreasTable({ areas, readonly, annyResources, annyServices, annyMappings }: AreasTableProps) {
   const [selected, setSelected] = useState<AreaData | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
@@ -144,6 +145,7 @@ export function AreasTable({ areas, readonly, annyResources, annyMappings }: Are
         area={null}
         allAreas={allAreaData}
         annyResources={annyResources}
+        annyServices={annyServices}
         annyMappings={annyMappings}
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -153,6 +155,7 @@ export function AreasTable({ areas, readonly, annyResources, annyMappings }: Are
         area={selected}
         allAreas={allAreaData}
         annyResources={annyResources}
+        annyServices={annyServices}
         annyMappings={annyMappings}
         open={!!selected}
         onClose={() => setSelected(null)}
