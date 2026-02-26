@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EditTicketDialog, type TicketData } from "./edit-ticket-dialog";
+import { fmtDate } from "@/lib/utils";
 
 interface Area {
   id: number;
@@ -93,10 +94,10 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
               </TableCell>
               <TableCell>{statusBadge(ticket.status)}</TableCell>
               <TableCell className="text-sm text-slate-500">
-                {ticket.startDate ? new Date(ticket.startDate).toLocaleDateString("de-DE") : "–"}
+                {ticket.startDate ? fmtDate(ticket.startDate) : "–"}
               </TableCell>
               <TableCell className="text-sm text-slate-500">
-                {ticket.endDate ? new Date(ticket.endDate).toLocaleDateString("de-DE") : "–"}
+                {ticket.endDate ? fmtDate(ticket.endDate) : "–"}
               </TableCell>
               <TableCell className="text-right font-medium">{ticket._count.scans}</TableCell>
             </TableRow>

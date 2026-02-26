@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { fmtTime } from "@/lib/utils";
 
 export default async function DashboardPage() {
   const session = await safeAuth();
@@ -76,7 +77,7 @@ export default async function DashboardPage() {
                     </div>
                   </div>
                   <span className="text-xs text-slate-400">
-                    {scan.scanTime.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                    {fmtTime(scan.scanTime, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                   </span>
                 </div>
               ))}

@@ -6,7 +6,7 @@ import {
   Thermometer, Cpu, HardDrive, MemoryStick, Clock, Wifi,
   Server, AlertTriangle, Zap, Activity,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, fmtDateTime } from "@/lib/utils";
 
 interface SystemInfoCardProps {
   systemInfo: Record<string, unknown>;
@@ -78,7 +78,7 @@ export function SystemInfoCard({ systemInfo, lastUpdate }: SystemInfoCardProps) 
           </CardTitle>
           {lastUpdate && (
             <span className="text-xs text-slate-400">
-              Letzter Bericht: {new Date(lastUpdate).toLocaleString("de-DE")}
+              Letzter Bericht: {fmtDateTime(lastUpdate)}
             </span>
           )}
         </div>

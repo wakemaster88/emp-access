@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { fmtDateTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -240,7 +241,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               {/* Letzte Aktivität */}
               <TableCell className="text-xs text-slate-400 whitespace-nowrap">
                 {lastUpd
-                  ? lastUpd.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                  ? fmtDateTime(lastUpd, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
                   : <span className="text-slate-300">–</span>}
               </TableCell>
 

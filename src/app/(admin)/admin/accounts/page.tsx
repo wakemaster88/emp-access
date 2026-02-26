@@ -2,6 +2,7 @@ import { safeAuth } from "@/lib/auth";
 import { superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { fmtDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -70,7 +71,7 @@ export default async function AccountsPage() {
                     <TableCell className="text-right">{acc._count.tickets}</TableCell>
                     <TableCell className="text-right">{acc._count.scans}</TableCell>
                     <TableCell className="text-sm text-slate-500">
-                      {acc.createdAt.toLocaleDateString("de-DE")}
+                      {fmtDate(acc.createdAt)}
                     </TableCell>
                   </TableRow>
                 ))}

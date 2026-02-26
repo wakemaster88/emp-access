@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Maximize, Minimize, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { fmtTime } from "@/lib/utils";
 
 interface MonitorScan {
   id: number;
@@ -173,7 +174,7 @@ export default function MonitorPage() {
                       </div>
                     </div>
                     <span className="text-xs text-slate-400 font-mono">
-                      {new Date(scan.scanTime).toLocaleTimeString("de-DE")}
+                      {fmtTime(scan.scanTime)}
                     </span>
                   </div>
                 ))}

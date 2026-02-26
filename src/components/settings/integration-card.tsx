@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, fmtDate } from "@/lib/utils";
 
 export interface ApiConfigData {
   id?: number;
@@ -157,7 +157,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
             {initialData?.lastUpdate && (
               <span className="text-xs hidden sm:flex items-center gap-1">
                 <RefreshCw className="h-3 w-3" />
-                {new Date(initialData.lastUpdate).toLocaleDateString("de-DE")}
+                {fmtDate(initialData.lastUpdate)}
               </span>
             )}
             {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}

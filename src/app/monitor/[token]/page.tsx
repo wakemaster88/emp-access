@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Wifi, WifiOff, CheckCircle2, XCircle, Clock, ScanLine } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, fmtTime, fmtDate } from "@/lib/utils";
 
 interface Device {
   id: number;
@@ -193,7 +193,7 @@ export default function PublicMonitorPage({ params }: Props) {
                         {style.label}
                       </span>
                       <span className="text-xs text-slate-500 tabular-nums">
-                        {new Date(scan.scanTime).toLocaleTimeString("de-DE")}
+                        {fmtTime(scan.scanTime)}
                       </span>
                     </div>
                   </div>

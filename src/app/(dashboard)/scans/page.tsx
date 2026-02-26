@@ -2,6 +2,7 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { fmtDateTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -70,7 +71,7 @@ export default async function ScansPage() {
                 {scans.map((scan) => (
                   <TableRow key={scan.id}>
                     <TableCell className="text-sm">
-                      {scan.scanTime.toLocaleString("de-DE")}
+                      {fmtDateTime(scan.scanTime)}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-slate-500">{scan.code}</TableCell>
                     <TableCell>{scan.ticket?.name || "–"}</TableCell>

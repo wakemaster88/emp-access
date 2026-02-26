@@ -15,6 +15,7 @@ import {
   Ticket, ScanLine, CheckCircle2, XCircle, AlertTriangle,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
 } from "lucide-react";
+import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
 import { ScheduleCard } from "@/components/devices/schedule-card";
 import { SystemInfoCard } from "@/components/devices/system-info-card";
@@ -268,7 +269,7 @@ export default async function DeviceDetailPage({ params }: Props) {
         {/* Last update – nur wenn keine SystemInfo-Card angezeigt wird */}
         {device.lastUpdate && !(device.type === "RASPBERRY_PI" && device.systemInfo) && (
           <p className="text-xs text-slate-400 text-right">
-            Letztes Update: {device.lastUpdate.toLocaleString("de-DE")}
+            Letztes Update: {fmtDateTime(device.lastUpdate)}
           </p>
         )}
 
