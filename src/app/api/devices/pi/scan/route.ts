@@ -68,19 +68,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ticket gesperrt" });
   }
 
-  // Date range check
+  // Date range check (dates are day-level: startDate = start of day, endDate = end of day)
   const now = new Date();
-  if (ticket.startDate && now < ticket.startDate) {
-    await db.scan.create({
-      data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
-    });
-    return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig" });
+  if (ticket.startDate) {
+    const start = new Date(ticket.startDate);
+    start.setUTCHours(0, 0, 0, 0);
+    if (now < start) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig" });
+    }
   }
-  if (ticket.endDate && now > ticket.endDate) {
-    await db.scan.create({
-      data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
-    });
-    return NextResponse.json({ granted: false, message: "Ticket abgelaufen" });
+  if (ticket.endDate) {
+    const end = new Date(ticket.endDate);
+    end.setUTCHours(23, 59, 59, 999);
+    if (now > end) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({ granted: false, message: "Ticket abgelaufen" });
+    }
   }
 
   // Access area check (only if device has areas configured)
