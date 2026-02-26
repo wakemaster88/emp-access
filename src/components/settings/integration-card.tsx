@@ -32,15 +32,21 @@ interface ProviderMeta {
   };
 }
 
+const SYNC_ENDPOINTS: Record<string, { method: string; url: string }> = {
+  ANNY: { method: "POST", url: "/api/integrations/anny" },
+  BINARYTEC: { method: "POST", url: "/api/integrations/binarytec" },
+  EMP_CONTROL: { method: "GET", url: "/api/integrations/emp-control" },
+};
+
 const PROVIDER_META: Record<string, ProviderMeta> = {
   ANNY: {
     label: "anny.co",
-    description: "Ticketing & Event-Management Plattform",
+    description: "Buchungsplattform – synchronisiert Buchungen als Tickets",
     color: "bg-violet-500",
     fields: {
-      token: "API Token",
-      eventId: "Event-ID",
-      baseUrl: "Base URL (optional)",
+      token: "Access Token",
+      baseUrl: "Base URL (optional, Standard: b.anny.co)",
+      extraConfig: "Region (co / eu / staging)",
     },
   },
   WAKESYS: {
@@ -86,6 +92,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
@@ -111,6 +119,33 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       setError("Netzwerkfehler");
     } finally {
       setSaving(false);
+    }
+  }
+
+  const syncEndpoint = SYNC_ENDPOINTS[provider];
+
+  async function handleSync() {
+    if (!syncEndpoint) return;
+    setSyncing(true);
+    setError("");
+    setSyncResult(null);
+    try {
+      const res = await fetch(syncEndpoint.url, { method: syncEndpoint.method });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || "Sync fehlgeschlagen");
+      } else {
+        const parts: string[] = [];
+        if (json.created) parts.push(`${json.created} neu`);
+        if (json.updated) parts.push(`${json.updated} aktualisiert`);
+        if (json.skipped) parts.push(`${json.skipped} übersprungen`);
+        setSyncResult(parts.length ? parts.join(", ") : "Keine neuen Daten");
+        setTimeout(() => setSyncResult(null), 5000);
+      }
+    } catch {
+      setError("Netzwerkfehler beim Sync");
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -225,6 +260,12 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               </p>
             )}
 
+            {syncResult && (
+              <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg">
+                Sync abgeschlossen: {syncResult}
+              </p>
+            )}
+
             <div className="flex items-center justify-between pt-1">
               <Button
                 variant="ghost"
@@ -236,23 +277,37 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Trash2 className="h-4 w-4 mr-1.5" />
                 Entfernen
               </Button>
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={saving || !data.token}
-                className={cn(
-                  "min-w-24",
-                  saved ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600 hover:bg-indigo-700"
+              <div className="flex items-center gap-2">
+                {syncEndpoint && isConfigured && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSync}
+                    disabled={syncing}
+                    className="min-w-24"
+                  >
+                    <RefreshCw className={cn("h-4 w-4 mr-1.5", syncing && "animate-spin")} />
+                    {syncing ? "Synchronisiere..." : "Jetzt synchronisieren"}
+                  </Button>
                 )}
-              >
-                {saving ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                ) : saved ? (
-                  <><CheckCircle2 className="h-4 w-4 mr-1.5" />Gespeichert</>
-                ) : (
-                  <><Save className="h-4 w-4 mr-1.5" />Speichern</>
-                )}
-              </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={saving || !data.token}
+                  className={cn(
+                    "min-w-24",
+                    saved ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600 hover:bg-indigo-700"
+                  )}
+                >
+                  {saving ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : saved ? (
+                    <><CheckCircle2 className="h-4 w-4 mr-1.5" />Gespeichert</>
+                  ) : (
+                    <><Save className="h-4 w-4 mr-1.5" />Speichern</>
+                  )}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </>
