@@ -10,7 +10,8 @@ import sys
 
 logger = logging.getLogger("emp.updater")
 
-PROJECT_DIR = os.path.dirname(os.path.dirname(__file__))
+PACKAGE_DIR = os.path.dirname(os.path.dirname(__file__))
+PROJECT_DIR = os.path.dirname(PACKAGE_DIR)  # git root (/opt/emp-scanner)
 
 
 def get_current_hash() -> str:
@@ -54,17 +55,17 @@ def check_and_update() -> bool:
 
         logger.info("Update verfügbar: %s → %s", local_hash[:8], remote_hash[:8])
 
-        # Pull changes
-        pull = subprocess.run(
-            ["git", "pull", "--ff-only", "origin", "main"],
-            capture_output=True, text=True, cwd=PROJECT_DIR, timeout=60,
+        # Hard reset to remote (avoids merge conflicts from local changes)
+        reset = subprocess.run(
+            ["git", "reset", "--hard", "origin/main"],
+            capture_output=True, text=True, cwd=PROJECT_DIR, timeout=30,
         )
-        if pull.returncode != 0:
-            logger.error("git pull fehlgeschlagen: %s", pull.stderr.strip())
+        if reset.returncode != 0:
+            logger.error("git reset fehlgeschlagen: %s", reset.stderr.strip())
             return False
 
         # Install updated dependencies
-        req_file = os.path.join(PROJECT_DIR, "requirements.txt")
+        req_file = os.path.join(PACKAGE_DIR, "requirements.txt")
         if os.path.exists(req_file):
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "-q", "-r", req_file],

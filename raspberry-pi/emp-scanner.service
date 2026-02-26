@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/emp-scanner
+WorkingDirectory=/opt/emp-scanner/raspberry-pi
 ExecStart=/opt/emp-scanner/venv/bin/python -m emp_scanner.main
 Restart=always
 RestartSec=5

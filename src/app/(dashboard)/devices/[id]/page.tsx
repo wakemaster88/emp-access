@@ -71,8 +71,14 @@ export default async function DeviceDetailPage({ params }: Props) {
   const totalScans = device._count.scans;
 
   // QR config value for Pi devices: JSON with API token + device ID
+  const serverUrl =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.AUTH_URL ?? "http://localhost:3000";
   const configUrl = JSON.stringify({
-    url: process.env.AUTH_URL ?? "http://localhost:3000",
+    url: serverUrl,
     token: account?.apiToken ?? "",
     id: device.id,
   });
