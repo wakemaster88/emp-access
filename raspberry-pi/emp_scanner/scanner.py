@@ -24,12 +24,14 @@ KEY_MAP = {
     2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7", 9: "8", 10: "9", 11: "0",
     12: "-", 13: "=", 16: "q", 17: "w", 18: "e", 19: "r", 20: "t", 21: "y", 22: "u",
     23: "i", 24: "o", 25: "p", 26: "[", 27: "]", 30: "a", 31: "s", 32: "d", 33: "f",
-    34: "g", 35: "h", 36: "j", 37: "k", 38: "l", 39: ";", 40: "'", 44: "z", 45: "x",
-    46: "c", 47: "v", 48: "b", 49: "n", 50: "m", 51: ",", 52: ".", 53: "/",
+    34: "g", 35: "h", 36: "j", 37: "k", 38: "l", 39: ";", 40: "'", 41: "`", 43: "\\",
+    44: "z", 45: "x", 46: "c", 47: "v", 48: "b", 49: "n", 50: "m", 51: ",", 52: ".", 53: "/",
+    57: " ",
 }
 KEY_MAP_SHIFT = {
     2: "!", 3: "@", 4: "#", 5: "$", 6: "%", 7: "^", 8: "&", 9: "*", 10: "(", 11: ")",
-    12: "_", 13: "+",
+    12: "_", 13: "+", 26: "{", 27: "}", 39: ":", 40: '"', 41: "~", 43: "|", 51: "<",
+    52: ">", 53: "?",
 }
 
 
@@ -50,9 +52,12 @@ def find_scanner_device() -> Optional[str]:
             if any(kw in name_lower for kw in scanner_keywords):
                 logger.info("Scanner gefunden: %s (%s)", dev.name, path)
                 return path
-            # USB-HID-Geräte mit wenigen Keys = wahrscheinlich Scanner
+            # Mäuse ausschließen (haben EV_REL für Bewegung)
+            if ecodes.EV_REL in caps:
+                continue
+            # USB-HID-Tastaturgerät ohne Mausbewegung = wahrscheinlich Scanner
             key_caps = caps.get(ecodes.EV_KEY, [])
-            if len(key_caps) < 100 and dev.info.bustype == 3:
+            if len(key_caps) >= 10 and dev.info.bustype == 3:
                 logger.info("USB-HID als Scanner erkannt: %s (%s)", dev.name, path)
                 return path
         except Exception:
