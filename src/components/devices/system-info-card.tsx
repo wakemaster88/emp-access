@@ -11,6 +11,7 @@ import { cn, fmtDateTime } from "@/lib/utils";
 interface SystemInfoCardProps {
   systemInfo: Record<string, unknown>;
   lastUpdate: string | null;
+  latestVersion?: string;
 }
 
 function ProgressBar({ value, max = 100, color }: { value: number; max?: number; color: string }) {
@@ -52,7 +53,7 @@ function barColor(pct: number): string {
   return "bg-indigo-500";
 }
 
-export function SystemInfoCard({ systemInfo, lastUpdate }: SystemInfoCardProps) {
+export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: SystemInfoCardProps) {
   const info = systemInfo;
 
   const cpuTemp = info.cpu_temp as number | undefined;
@@ -100,7 +101,25 @@ export function SystemInfoCard({ systemInfo, lastUpdate }: SystemInfoCardProps) 
             <InfoRow icon={Server} label="Modell" value={model} />
           )}
           {scannerVersion && (
-            <InfoRow icon={Activity} label="Scanner-Version" value={`v${scannerVersion}`} />
+            <InfoRow
+              icon={Activity}
+              label="Scanner-Version"
+              value={
+                <span className="flex items-center gap-2">
+                  v{scannerVersion}
+                  {latestVersion && scannerVersion === latestVersion && (
+                    <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300 dark:border-emerald-800 dark:text-emerald-400">
+                      aktuell
+                    </Badge>
+                  )}
+                  {latestVersion && scannerVersion !== latestVersion && (
+                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 dark:border-amber-800 dark:text-amber-400">
+                      Update v{latestVersion}
+                    </Badge>
+                  )}
+                </span>
+              }
+            />
           )}
         </div>
 

@@ -19,6 +19,7 @@ import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
 import { ScheduleCard } from "@/components/devices/schedule-card";
 import { SystemInfoCard } from "@/components/devices/system-info-card";
+import { LATEST_PI_VERSION } from "@/lib/pi-version";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -225,6 +226,7 @@ export default async function DeviceDetailPage({ params }: Props) {
           <SystemInfoCard
             systemInfo={device.systemInfo as Record<string, unknown>}
             lastUpdate={device.lastUpdate?.toISOString() ?? null}
+            latestVersion={LATEST_PI_VERSION}
           />
         )}
 
