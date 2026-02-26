@@ -146,8 +146,13 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
         const parts: string[] = [];
         if (json.created) parts.push(`${json.created} neu`);
         if (json.updated) parts.push(`${json.updated} aktualisiert`);
+        if (json.invalidated) parts.push(`${json.invalidated} invalidiert`);
         if (json.skipped) parts.push(`${json.skipped} übersprungen`);
-        if (json.total !== undefined) parts.push(`${json.total} gesamt`);
+        if (json.total !== undefined && json.groups !== undefined) {
+          parts.push(`${json.total} Buchungen → ${json.groups} Tickets`);
+        } else if (json.total !== undefined) {
+          parts.push(`${json.total} gesamt`);
+        }
         setSyncResult(parts.length ? parts.join(", ") : "Keine neuen Daten");
         setTimeout(() => setSyncResult(null), 8000);
       }

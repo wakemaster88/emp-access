@@ -43,6 +43,7 @@ export interface TicketData {
   validityDurationMinutes: number | null;
   firstScanAt: Date | string | null;
   profileImage: string | null;
+  uuid: string | null;
   source: string | null;
   _count: { scans: number };
 }

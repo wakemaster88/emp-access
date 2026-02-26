@@ -138,7 +138,13 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
                 </div>
               </TableCell>
               <TableCell className="text-xs font-mono text-slate-500">
-                {ticket.barcode || ticket.qrCode || ticket.rfidCode || "–"}
+                {ticket.source === "ANNY" ? (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 font-normal">
+                    anny #{(ticket.qrCode || ticket.uuid || "").split(",")[0]}
+                  </Badge>
+                ) : (
+                  ticket.barcode || ticket.qrCode || ticket.rfidCode || "–"
+                )}
               </TableCell>
               <TableCell className="text-sm">
                 {(ticket as TicketData & { accessArea?: { name: string } | null }).accessArea?.name || "–"}

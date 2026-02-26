@@ -29,11 +29,30 @@ interface AnnyBooking {
   };
 }
 
-function mapAnnyStatus(status?: string): "VALID" | "INVALID" | "REDEEMED" {
-  if (!status) return "VALID";
-  const s = status.toLowerCase();
-  if (s === "cancelled" || s === "canceled" || s === "rejected" || s === "no_show") return "INVALID";
-  if (s === "checked_out" || s === "completed") return "REDEEMED";
+interface BookingGroup {
+  key: string;
+  bookingIds: string[];
+  customerName: string;
+  firstName: string;
+  lastName: string;
+  serviceName: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  statuses: string[];
+}
+
+function mapGroupStatus(statuses: string[]): "VALID" | "INVALID" | "REDEEMED" {
+  const normalized = statuses.map((s) => s.toLowerCase());
+  const allCancelled = normalized.every((s) =>
+    s === "cancelled" || s === "canceled" || s === "rejected" || s === "no_show"
+  );
+  if (allCancelled) return "INVALID";
+
+  const allDone = normalized.every((s) =>
+    s === "checked_out" || s === "completed" || s === "cancelled" || s === "canceled"
+  );
+  if (allDone) return "REDEEMED";
+
   return "VALID";
 }
 
@@ -54,7 +73,7 @@ export async function POST() {
   }
 
   try {
-    const baseUrl = (config.baseUrl?.replace(/\/+$/, "") || DEFAULT_BASE_URL);
+    const baseUrl = config.baseUrl?.replace(/\/+$/, "") || DEFAULT_BASE_URL;
     const apiBase = `${baseUrl}/api/v1`;
 
     let allBookings: AnnyBooking[] = [];
@@ -92,36 +111,83 @@ export async function POST() {
       page++;
     }
 
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
+    // Group bookings by customer + service/resource
+    const groups = new Map<string, BookingGroup>();
 
     for (const booking of allBookings) {
-      const uuid = String(booking.id);
+      const customerId = booking.customer?.id ?? "unknown";
+      const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
+      const key = `anny:${customerId}:${serviceId}`;
+
       const customer = booking.customer;
       const customerName = customer?.full_name || customer?.name || "";
       const nameParts = customerName.split(/\s+/);
-      const firstName = customer?.first_name || nameParts[0] || "";
-      const lastName = customer?.last_name || nameParts.slice(1).join(" ") || "";
+
+      const startDate = booking.start_date ? new Date(booking.start_date) : null;
+      const endDate = booking.end_date ? new Date(booking.end_date) : null;
+
+      const existing = groups.get(key);
+      if (existing) {
+        existing.bookingIds.push(String(booking.id));
+        if (startDate && (!existing.startDate || startDate < existing.startDate)) {
+          existing.startDate = startDate;
+        }
+        if (endDate && (!existing.endDate || endDate > existing.endDate)) {
+          existing.endDate = endDate;
+        }
+        if (booking.status) existing.statuses.push(booking.status);
+      } else {
+        groups.set(key, {
+          key,
+          bookingIds: [String(booking.id)],
+          customerName,
+          firstName: customer?.first_name || nameParts[0] || "",
+          lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
+          serviceName: booking.service?.name || booking.resource?.name || null,
+          startDate,
+          endDate,
+          statuses: booking.status ? [booking.status] : [],
+        });
+      }
+    }
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const activeUuids: string[] = [];
+
+    for (const group of groups.values()) {
+      const uuid = group.key;
+      activeUuids.push(uuid);
+      const count = group.bookingIds.length;
+
+      let typeName = group.serviceName || null;
+      if (typeName && count > 1) {
+        typeName = `${typeName} (${count} Termine)`;
+      }
 
       const ticketData = {
-        name: customerName || `Buchung #${booking.number || uuid}`,
-        firstName: firstName || null,
-        lastName: lastName || null,
-        startDate: booking.start_date ? new Date(booking.start_date) : null,
-        endDate: booking.end_date ? new Date(booking.end_date) : null,
-        status: mapAnnyStatus(booking.status),
-        ticketTypeName: booking.service?.name || booking.resource?.name || null,
+        name: group.customerName || `Buchung ${group.bookingIds[0]}`,
+        firstName: group.firstName || null,
+        lastName: group.lastName || null,
+        startDate: group.startDate,
+        endDate: group.endDate,
+        status: mapGroupStatus(group.statuses),
+        ticketTypeName: typeName,
+        qrCode: group.bookingIds.join(","),
         source: "ANNY" as const,
       };
 
       try {
-        const existing = await db.ticket.findFirst({
+        const existingTicket = await db.ticket.findFirst({
           where: { uuid, accountId: accountId! },
         });
 
-        if (existing) {
-          await db.ticket.update({ where: { id: existing.id }, data: ticketData });
+        if (existingTicket) {
+          await db.ticket.update({
+            where: { id: existingTicket.id },
+            data: ticketData,
+          });
           updated++;
         } else {
           await db.ticket.create({
@@ -134,12 +200,30 @@ export async function POST() {
       }
     }
 
+    // Mark anny tickets that no longer exist as INVALID
+    const orphaned = await db.ticket.updateMany({
+      where: {
+        accountId: accountId!,
+        source: "ANNY",
+        uuid: { notIn: activeUuids },
+        status: { not: "INVALID" },
+      },
+      data: { status: "INVALID" },
+    });
+
     await db.apiConfig.update({
       where: { id: config.id },
       data: { lastUpdate: new Date() },
     });
 
-    return NextResponse.json({ created, updated, skipped, total: allBookings.length });
+    return NextResponse.json({
+      created,
+      updated,
+      skipped,
+      invalidated: orphaned.count,
+      total: allBookings.length,
+      groups: groups.size,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";
     console.error("[anny sync error]", msg);
