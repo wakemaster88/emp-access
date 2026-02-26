@@ -306,13 +306,14 @@ export async function GET(request: NextRequest) {
 
     const otherTickets = regularTickets.filter((t) => !matched.has(t.id));
 
-    // If there's only one resource with same/similar name as area, merge inline
-    const isSingleMatch = resources.length === 1 &&
-      (resources[0].resourceName === area.name ||
-       area.name.startsWith(resources[0].resourceName) ||
-       resources[0].resourceName.startsWith(area.name));
+    function namesMatch(resName: string, areaName: string): boolean {
+      const rLow = resName.toLowerCase();
+      const aLow = areaName.toLowerCase();
+      return rLow === aLow || rLow.includes(aLow) || aLow.includes(rLow);
+    }
 
-    if (isSingleMatch) {
+    // Single resource matching area name → merge time into header
+    if (resources.length === 1 && namesMatch(resources[0].resourceName, area.name)) {
       const r = resources[0];
       const uniqueSlotStrs = [...new Set(r.slots.map((s) => `${s.startTime}–${s.endTime}`))];
       const inlineHours = uniqueSlotStrs.length > 0
@@ -326,6 +327,28 @@ export async function GET(request: NextRequest) {
         openingHours: inlineHours,
         resources: [],
         otherTickets: [...r.tickets, ...otherTickets],
+        aboTickets,
+        _count: { tickets: totalCount },
+      };
+    }
+
+    // Multiple resources → find primary (name matches area), promote its time to header
+    const primaryIdx = resources.findIndex((r) => namesMatch(r.resourceName, area.name));
+    if (primaryIdx >= 0) {
+      const primary = resources[primaryIdx];
+      const rest = resources.filter((_, i) => i !== primaryIdx);
+      const uniqueSlotStrs = [...new Set(primary.slots.map((s) => `${s.startTime}–${s.endTime}`))];
+      const inlineHours = uniqueSlotStrs.length > 0
+        ? uniqueSlotStrs.join(" · ")
+        : area.openingHours;
+      return {
+        id: area.id,
+        name: area.name,
+        personLimit: area.personLimit,
+        allowReentry: area.allowReentry,
+        openingHours: inlineHours,
+        resources: rest,
+        otherTickets: [...primary.tickets, ...otherTickets],
         aboTickets,
         _count: { tickets: totalCount },
       };
