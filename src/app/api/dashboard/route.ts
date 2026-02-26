@@ -224,8 +224,16 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    // Deduplicate resources by resourceId
+    const seenResIds = new Set<string>();
+    const uniqueResources = areaResources.filter((r) => {
+      if (seenResIds.has(r.resourceId)) return false;
+      seenResIds.add(r.resourceId);
+      return true;
+    });
+
     const matched = new Set<number>();
-    const resources = areaResources
+    const resources = uniqueResources
       .map((res) => {
         const periods = annyAvailability[res.resourceId] || [];
         const slots = periods
@@ -233,6 +241,7 @@ export async function GET(request: NextRequest) {
           .filter((s) => s.startTime && s.endTime)
           .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
+        // Match tickets: check all names that map to this area (resource name and service names)
         const resTickets = enrichedTickets.filter((t) => {
           if (matched.has(t.id)) return false;
           if (ticketMatchesResource(t.ticketTypeName, res.name)) {
@@ -251,6 +260,29 @@ export async function GET(request: NextRequest) {
       });
 
     const otherTickets = enrichedTickets.filter((t) => !matched.has(t.id));
+
+    // If there's only one resource with same/similar name as area, merge inline
+    const isSingleMatch = resources.length === 1 &&
+      (resources[0].resourceName === area.name ||
+       area.name.startsWith(resources[0].resourceName) ||
+       resources[0].resourceName.startsWith(area.name));
+
+    if (isSingleMatch) {
+      const r = resources[0];
+      const inlineHours = r.slots.length > 0
+        ? r.slots.map((s) => `${s.startTime}–${s.endTime}`).join(" · ")
+        : area.openingHours;
+      return {
+        id: area.id,
+        name: area.name,
+        personLimit: area.personLimit,
+        allowReentry: area.allowReentry,
+        openingHours: inlineHours,
+        resources: [],
+        otherTickets: [...r.tickets, ...otherTickets],
+        _count: area._count,
+      };
+    }
 
     return {
       id: area.id,

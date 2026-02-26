@@ -200,9 +200,8 @@ export async function POST() {
       if (resourceName) discoveredServices.add(resourceName);
 
       const resId = booking.resource?.id;
-      if (resId) {
-        if (serviceName) discoveredResourceIds[serviceName] = String(resId);
-        if (resourceName) discoveredResourceIds[resourceName] = String(resId);
+      if (resId && resourceName) {
+        discoveredResourceIds[resourceName] = String(resId);
       }
 
       const startDate = booking.start_date ? new Date(booking.start_date) : null;
