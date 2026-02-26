@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Trash2, Save, Settings2, Link2, MapPin, Check } from "lucide-react";
+import { Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface SubscriptionData {
@@ -95,16 +95,16 @@ export function SubscriptionDialog({
   const [name, setName] = useState("");
   const [selectedAnny, setSelectedAnny] = useState<Set<string>>(new Set());
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set());
+  const [customAnnyName, setCustomAnnyName] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
-
-  const hasAnny = annyServices.length > 0 || annyResources.length > 0 || annySubscriptions.length > 0;
 
   useEffect(() => {
     if (open) {
       setError("");
       setTab("settings");
+      setCustomAnnyName("");
       if (subscription) {
         setName(subscription.name);
         const parsed: string[] = subscription.annyNames
@@ -180,12 +180,21 @@ export function SubscriptionDialog({
     }
   }
 
+  const knownAnnyNames = new Set([...annySubscriptions, ...annyResources, ...annyServices]);
+  const customEntries = [...selectedAnny].filter((n) => !knownAnnyNames.has(n));
   const annyItems = [
     ...annySubscriptions.map((n) => ({ key: n, label: `${n} (Subscription)` })),
     ...annyResources.map((n) => ({ key: n, label: `${n} (Resource)` })),
     ...annyServices.map((n) => ({ key: n, label: `${n} (Service)` })),
   ];
   const areaItems = areas.map((a) => ({ key: String(a.id), label: a.name }));
+
+  function addCustomAnnyName() {
+    const trimmed = customAnnyName.trim();
+    if (!trimmed) return;
+    setSelectedAnny((prev) => new Set([...prev, trimmed]));
+    setCustomAnnyName("");
+  }
 
   const tabClass = (active: boolean) =>
     `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
@@ -206,12 +215,10 @@ export function SubscriptionDialog({
             <Settings2 className="h-3 w-3" />
             Einstellungen
           </button>
-          {hasAnny && (
-            <button type="button" onClick={() => setTab("anny")} className={tabClass(tab === "anny")}>
-              <Link2 className="h-3 w-3" />
-              anny{selectedAnny.size > 0 && ` (${selectedAnny.size})`}
-            </button>
-          )}
+          <button type="button" onClick={() => setTab("anny")} className={tabClass(tab === "anny")}>
+            <Link2 className="h-3 w-3" />
+            anny{selectedAnny.size > 0 && ` (${selectedAnny.size})`}
+          </button>
           <button type="button" onClick={() => setTab("areas")} className={tabClass(tab === "areas")}>
             <MapPin className="h-3 w-3" />
             Resourcen{selectedAreas.size > 0 && ` (${selectedAreas.size})`}
@@ -257,27 +264,62 @@ export function SubscriptionDialog({
         )}
 
         {tab === "anny" && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-[11px] text-slate-500">
-              Wähle anny Subscriptions, Services und Ressourcen, die diesem Abo zugeordnet werden. Tickets mit diesen Namen werden beim Sync automatisch verknüpft.
+              Verknüpfe anny-Namen mit diesem Abo. Tickets mit diesen Namen werden beim Sync automatisch zugeordnet.
             </p>
-            <CheckList
-              items={annyItems}
-              selected={selectedAnny}
-              onToggle={toggleAnny}
-              emptyText="Keine anny Services/Ressourcen gefunden. Bitte erst synchronisieren."
-            />
+
+            <div className="flex gap-1.5">
+              <Input
+                value={customAnnyName}
+                onChange={(e) => setCustomAnnyName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomAnnyName(); } }}
+                placeholder="anny-Name eingeben…"
+                className="h-8 text-xs flex-1"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addCustomAnnyName}
+                disabled={!customAnnyName.trim()}
+                className="h-8 px-2"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
             {selectedAnny.size > 0 && (
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px]">{selectedAnny.size} ausgewählt</Badge>
-                <button
-                  type="button"
-                  onClick={() => setSelectedAnny(new Set())}
-                  className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors"
-                >
-                  Alle abwählen
-                </button>
+              <div className="space-y-1">
+                <p className="text-[10px] text-slate-400 font-medium">Zugeordnete Namen ({selectedAnny.size})</p>
+                <div className="flex flex-wrap gap-1">
+                  {[...selectedAnny].sort().map((n) => (
+                    <Badge
+                      key={n}
+                      variant="secondary"
+                      className="text-[10px] px-1.5 py-0.5 gap-1 cursor-pointer hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 transition-colors"
+                      onClick={() => toggleAnny(n)}
+                    >
+                      {n}
+                      {customEntries.includes(n) && <span className="text-[8px] text-slate-400">manuell</span>}
+                      <X className="h-2.5 w-2.5" />
+                    </Badge>
+                  ))}
+                </div>
               </div>
+            )}
+
+            {annyItems.length > 0 && (
+              <>
+                <Separator className="dark:bg-slate-800" />
+                <p className="text-[10px] text-slate-400 font-medium">Aus anny bekannt</p>
+                <CheckList
+                  items={annyItems}
+                  selected={selectedAnny}
+                  onToggle={toggleAnny}
+                  emptyText=""
+                />
+              </>
             )}
           </div>
         )}
