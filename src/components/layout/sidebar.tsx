@@ -28,11 +28,12 @@ const navItems = [
   { href: "/areas", label: "Bereiche", icon: MapPin },
   { href: "/scans", label: "Scans", icon: ScanLine },
   { href: "/monitor", label: "Live Monitor", icon: Monitor },
+  { href: "/settings", label: "Einstellungen", icon: Settings },
 ];
 
 const adminItems = [
   { href: "/admin", label: "Admin Dashboard", icon: Shield },
-  { href: "/admin/accounts", label: "Mandanten", icon: Settings },
+  { href: "/admin/accounts", label: "Mandanten", icon: LayoutDashboard },
 ];
 
 interface SidebarProps {

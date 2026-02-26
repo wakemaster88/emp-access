@@ -1,0 +1,9 @@
+[Unit]
+Description=EMP Access Auto-Updater
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/emp-scanner
+ExecStart=/opt/emp-scanner/venv/bin/python -c "from emp_scanner.updater import run_update_check; run_update_check()"

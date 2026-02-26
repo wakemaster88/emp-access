@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 
 export default async function ScansPage() {
-  const session = await auth();
+  const session = await safeAuth();
   if (!session?.user) redirect("/login");
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";

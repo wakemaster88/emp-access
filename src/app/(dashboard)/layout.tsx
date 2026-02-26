@@ -5,9 +5,20 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { SessionProvider } from "next-auth/react";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
-  if (!session?.user) return null;
+  if (status === "loading") {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated" || !session?.user) {
+    if (typeof window !== "undefined") window.location.href = "/login";
+    return null;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">

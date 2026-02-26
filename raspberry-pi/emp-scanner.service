@@ -1,0 +1,18 @@
+[Unit]
+Description=EMP Access Scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/emp-scanner
+ExecStart=/opt/emp-scanner/venv/bin/python -m emp_scanner.main
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { type Session } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { prisma } from "./prisma";
@@ -67,3 +67,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   session: { strategy: "jwt" },
 });
+
+export async function safeAuth(): Promise<Session | null> {
+  try {
+    return await auth();
+  } catch {
+    return null;
+  }
+}

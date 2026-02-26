@@ -47,12 +47,16 @@ export async function POST(request: NextRequest) {
   const results = [];
 
   for (const update of parsed.data) {
+    const data: Record<string, unknown> = {
+      task: update.pis_task,
+      lastUpdate: new Date(update.pis_update * 1000),
+    };
+    if (update.system_info) {
+      data.systemInfo = update.system_info;
+    }
     const device = await db.device.updateMany({
       where: { id: update.pis_id, type: "RASPBERRY_PI" },
-      data: {
-        task: update.pis_task,
-        lastUpdate: new Date(update.pis_update * 1000),
-      },
+      data,
     });
     results.push({ pis_id: update.pis_id, updated: device.count > 0 });
   }

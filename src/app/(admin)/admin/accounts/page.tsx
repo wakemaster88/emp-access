@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { safeAuth } from "@/lib/auth";
 import { superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 
 export default async function AccountsPage() {
-  const session = await auth();
+  const session = await safeAuth();
   if (!session?.user || session.user.role !== "SUPER_ADMIN") redirect("/");
 
   const accounts = await superAdminClient.account.findMany({

@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Ticket, ScanLine, HardDrive, MapPin } from "lucide-react";
@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default async function DashboardPage() {
-  const session = await auth();
+  const session = await safeAuth();
   if (!session?.user) redirect("/login");
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";

@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { safeAuth } from "@/lib/auth";
 import { superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Building2, Users, HardDrive, ScanLine } from "lucide-react";
 
 export default async function AdminDashboardPage() {
-  const session = await auth();
+  const session = await safeAuth();
   if (!session?.user || session.user.role !== "SUPER_ADMIN") redirect("/");
 
   const db = superAdminClient;

@@ -17,6 +17,14 @@ enum DeviceType {
   SHELLY
 }
 
+enum DeviceCategory {
+  DREHKREUZ
+  TUER
+  SENSOR
+  SCHALTER
+  BELEUCHTUNG
+}
+
 enum TicketStatus {
   VALID
   INVALID
@@ -34,6 +42,7 @@ enum ApiProvider {
   WAKESYS
   BINARYTEC
   EMP_CONTROL
+  SHELLY
 }
 
 model Account {
@@ -50,6 +59,7 @@ model Account {
   scans      Scan[]
   areas      AccessArea[]
   apiConfigs ApiConfig[]
+  monitors   MonitorConfig[]
 }
 
 model Admin {
@@ -69,18 +79,21 @@ model Admin {
 }
 
 model Device {
-  id            Int        @id @default(autoincrement())
+  id            Int             @id @default(autoincrement())
   name          String
   type          DeviceType
+  category      DeviceCategory?
   ipAddress     String?
   shellyId      String?
   shellyAuthKey String?
-  isActive      Boolean    @default(true)
-  task          Int        @default(0)
+  isActive      Boolean         @default(true)
+  task          Int             @default(0)
   accessIn      Int?
   accessOut     Int?
-  allowReentry  Boolean    @default(false)
+  allowReentry  Boolean         @default(false)
   firmware      String?
+  schedule      Json?
+  systemInfo    Json?
   lastUpdate    DateTime?
   accountId     Int
   account       Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -158,6 +171,21 @@ model AccessArea {
 
   @@index([accountId])
   @@index([parentId])
+}
+
+model MonitorConfig {
+  id        Int      @id @default(autoincrement())
+  name      String
+  token     String   @unique @default(cuid())
+  deviceIds Json     @default("[]")
+  isActive  Boolean  @default(true)
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([token])
 }
 
 model ApiConfig {
