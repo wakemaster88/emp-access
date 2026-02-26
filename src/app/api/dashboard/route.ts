@@ -3,6 +3,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 
 interface AnnyMapping {
   mappings?: Record<string, number>;
+  services?: string[];
   resources?: string[];
   resourceIds?: Record<string, string>;
 }
@@ -182,7 +183,12 @@ export async function GET(request: NextRequest) {
 
   // Build: areaId → [{ resourceName, resourceId }] — only actual resources, not services
   const areaResourceMap: Record<number, { name: string; resourceId: string }[]> = {};
+  // Build: areaId → all mapped names (resources + services) for ticket matching
+  const areaAllNames: Record<number, string[]> = {};
   for (const [name, areaId] of Object.entries(mappings)) {
+    if (!areaAllNames[areaId]) areaAllNames[areaId] = [];
+    areaAllNames[areaId].push(name);
+
     const resId = resourceIds[name];
     const isResource = knownResources.size === 0 || knownResources.has(name);
     if (resId && isResource) {
@@ -246,12 +252,15 @@ export async function GET(request: NextRequest) {
           })
           .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-        // Match tickets: check all names that map to this area (resource name and service names)
+        // Match tickets: check all mapped names for this area (resources + services)
+        const namesForArea = areaAllNames[area.id] || [];
         const resTickets = enrichedTickets.filter((t) => {
           if (matched.has(t.id)) return false;
-          if (ticketMatchesResource(t.ticketTypeName, res.name)) {
-            matched.add(t.id);
-            return true;
+          for (const name of namesForArea) {
+            if (ticketMatchesResource(t.ticketTypeName, name)) {
+              matched.add(t.id);
+              return true;
+            }
           }
           return false;
         });

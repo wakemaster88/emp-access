@@ -90,12 +90,14 @@ function personName(t: TicketEntry): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
 }
 
-function TicketRow({ ticket, onClick }: { ticket: TicketEntry; onClick: () => void }) {
-  const time = ticket.bookingStart
-    ? `${ticket.bookingStart}${ticket.bookingEnd ? `–${ticket.bookingEnd}` : ""}`
-    : ticket.slotStart && ticket.slotEnd
-      ? `${ticket.slotStart}–${ticket.slotEnd}`
-      : null;
+function TicketRow({ ticket, onClick, inSlot }: { ticket: TicketEntry; onClick: () => void; inSlot?: boolean }) {
+  const time = !inSlot
+    ? (ticket.bookingStart
+        ? `${ticket.bookingStart}${ticket.bookingEnd ? `–${ticket.bookingEnd}` : ""}`
+        : ticket.slotStart && ticket.slotEnd
+          ? `${ticket.slotStart}–${ticket.slotEnd}`
+          : null)
+    : null;
 
   return (
     <div
@@ -114,7 +116,7 @@ function TicketRow({ ticket, onClick }: { ticket: TicketEntry; onClick: () => vo
       <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1 min-w-0">
         {personName(ticket)}
       </span>
-      {ticket.ticketTypeName && (
+      {!inSlot && ticket.ticketTypeName && (
         <span className="text-[10px] text-slate-400 truncate max-w-[90px] hidden sm:inline">{ticket.ticketTypeName}</span>
       )}
       {time && (
@@ -306,7 +308,7 @@ export function DashboardClient() {
                       {res.tickets.length > 0 && (
                         <div className="pl-0.5">
                           {res.tickets.map((ticket) => (
-                            <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
+                            <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} inSlot={res.slots.length > 0} />
                           ))}
                         </div>
                       )}
