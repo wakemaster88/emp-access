@@ -199,7 +199,7 @@ export async function POST() {
     const groups = new Map<string, BookingGroup>();
 
     for (const booking of uniqueBookings) {
-      const customerId = booking.customer?.id ?? "unknown";
+      const customerId = booking.customer?.id ?? `b-${booking.id}`;
       const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
       const key = `anny:${customerId}:${serviceId}`;
 
