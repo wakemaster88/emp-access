@@ -185,6 +185,27 @@ export async function POST() {
       }
     } catch { /* non-critical */ }
 
+    // GET /api/v1/plans (offered plans / subscriptions)
+    try {
+      let planPage = 1;
+      while (planPage <= 20) {
+        const pParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(planPage) });
+        const pRes = await fetch(`${apiBase}/plans?${pParams}`, {
+          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!pRes.ok) break;
+        const pJson = await pRes.json();
+        const plans = Array.isArray(pJson) ? pJson : pJson.data || [];
+        for (const p of plans) {
+          const name = p.name || p.title;
+          if (name) discoveredSubscriptionNames.add(name);
+        }
+        if (plans.length < 50) break;
+        planPage++;
+      }
+    } catch { /* non-critical */ }
+
     // Deduplicate bookings by ID
     const seenBookingIds = new Set<string>();
     const uniqueBookings: AnnyBooking[] = [];
