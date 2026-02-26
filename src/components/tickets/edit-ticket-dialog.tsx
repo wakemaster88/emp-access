@@ -34,7 +34,14 @@ function parseAnnyEntries(qrCode: string | null): AnnyBookingEntry[] {
   if (!qrCode) return [];
   try {
     const parsed = JSON.parse(qrCode);
-    if (Array.isArray(parsed)) return parsed;
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    return parsed.filter((e: AnnyBookingEntry) => {
+      const key = e.id || `${e.start}|${e.end}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   } catch { /* not JSON */ }
   return [];
 }

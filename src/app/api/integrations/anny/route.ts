@@ -177,6 +177,17 @@ export async function POST() {
       }
     } catch { /* non-critical */ }
 
+    // Deduplicate bookings by ID
+    const seenBookingIds = new Set<string>();
+    const uniqueBookings: AnnyBooking[] = [];
+    for (const b of allBookings) {
+      const bid = String(b.id);
+      if (!seenBookingIds.has(bid)) {
+        seenBookingIds.add(bid);
+        uniqueBookings.push(b);
+      }
+    }
+
     // Parse area mapping from extraConfig
     let annyConfig: AnnyMapping = {};
     try {
@@ -187,7 +198,7 @@ export async function POST() {
     // Group bookings by customer + service/resource
     const groups = new Map<string, BookingGroup>();
 
-    for (const booking of allBookings) {
+    for (const booking of uniqueBookings) {
       const customerId = booking.customer?.id ?? "unknown";
       const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
       const key = `anny:${customerId}:${serviceId}`;
@@ -218,7 +229,9 @@ export async function POST() {
 
       const existing = groups.get(key);
       if (existing) {
-        existing.entries.push(entry);
+        if (!existing.entries.some((e) => e.id === entry.id)) {
+          existing.entries.push(entry);
+        }
         if (startDate && (!existing.startDate || startDate < existing.startDate)) {
           existing.startDate = startDate;
         }
