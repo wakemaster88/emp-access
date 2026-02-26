@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AreasTable } from "@/components/areas/areas-table";
-import { AnnyResourceMapping } from "@/components/areas/anny-resource-mapping";
 
 interface AnnyExtra {
   mappings?: Record<string, number>;
@@ -48,39 +47,31 @@ export default async function AreasPage() {
   // Parse anny resource mapping
   let annyResources: string[] = [];
   let annyMappings: Record<string, number> = {};
-  let annyExtraConfig = "";
   if (annyConfig?.extraConfig) {
     try {
       const parsed: AnnyExtra = JSON.parse(annyConfig.extraConfig);
       annyResources = parsed.resources || [];
       annyMappings = parsed.mappings || {};
-      annyExtraConfig = annyConfig.extraConfig;
     } catch { /* ignore */ }
   }
-
-  const areaOptions = areas.map((a) => ({ id: a.id, name: a.name }));
 
   return (
     <>
       <Header title="Resourcen" accountName={session.user.accountName} />
-      <div className="p-6 space-y-6">
+      <div className="p-6">
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader>
             <CardTitle>Alle Resourcen ({areas.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            <AreasTable areas={areaRows as never} readonly={isSuperAdmin} />
+            <AreasTable
+              areas={areaRows as never}
+              readonly={isSuperAdmin}
+              annyResources={isSuperAdmin ? undefined : annyResources}
+              annyMappings={isSuperAdmin ? undefined : annyMappings}
+            />
           </CardContent>
         </Card>
-
-        {!isSuperAdmin && annyResources.length > 0 && (
-          <AnnyResourceMapping
-            areas={areaOptions}
-            annyResources={annyResources}
-            mappings={annyMappings}
-            extraConfig={annyExtraConfig}
-          />
-        )}
       </div>
     </>
   );

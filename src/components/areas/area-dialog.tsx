@@ -13,7 +13,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Trash2, Save } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Trash2, Save, Link2 } from "lucide-react";
 
 export interface AreaData {
   id: number;
@@ -26,8 +27,10 @@ export interface AreaData {
 }
 
 interface AreaDialogProps {
-  area: AreaData | null;        // null = new area
+  area: AreaData | null;
   allAreas: AreaData[];
+  annyResources?: string[];
+  annyMappings?: Record<string, number>;
   open: boolean;
   onClose: () => void;
 }
@@ -41,10 +44,11 @@ const EMPTY = {
   openingHours: "",
 };
 
-export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
+export function AreaDialog({ area, allAreas, annyResources = [], annyMappings = {}, open, onClose }: AreaDialogProps) {
   const router = useRouter();
   const isNew = !area;
   const [form, setForm] = useState(EMPTY);
+  const [selectedAnnyResource, setSelectedAnnyResource] = useState("__none__");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -61,11 +65,16 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
           showOnDashboard: area.showOnDashboard,
           openingHours: area.openingHours ?? "",
         });
+        const mapped = Object.entries(annyMappings).find(
+          ([name, areaId]) => areaId === area.id && annyResources.includes(name)
+        );
+        setSelectedAnnyResource(mapped ? mapped[0] : "__none__");
       } else {
         setForm(EMPTY);
+        setSelectedAnnyResource("__none__");
       }
     }
-  }, [open, area]);
+  }, [open, area, annyMappings, annyResources]);
 
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -94,10 +103,50 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
       if (!res.ok) {
         const data = await res.json();
         setError(data.error ?? "Fehler beim Speichern");
-      } else {
-        onClose();
-        router.refresh();
+        return;
       }
+
+      const savedArea = await res.json();
+      const areaId = savedArea.id ?? area?.id;
+
+      if (annyResources.length > 0 && areaId) {
+        try {
+          const cfgRes = await fetch("/api/settings/integrations");
+          if (cfgRes.ok) {
+            const configs = await cfgRes.json();
+            const annyConfig = Array.isArray(configs)
+              ? configs.find((c: { provider: string }) => c.provider === "ANNY")
+              : null;
+            if (annyConfig) {
+              let extra: Record<string, unknown> = {};
+              try { if (annyConfig.extraConfig) extra = JSON.parse(annyConfig.extraConfig); } catch { /* ignore */ }
+              const mappings = (extra.mappings as Record<string, number>) || {};
+
+              for (const name of annyResources) {
+                if (mappings[name] === areaId) delete mappings[name];
+              }
+              if (selectedAnnyResource !== "__none__") {
+                mappings[selectedAnnyResource] = areaId;
+              }
+
+              extra.mappings = mappings;
+              await fetch("/api/settings/integrations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  provider: "ANNY",
+                  token: annyConfig.token,
+                  baseUrl: annyConfig.baseUrl || "",
+                  extraConfig: JSON.stringify(extra),
+                }),
+              });
+            }
+          }
+        } catch { /* anny mapping update is best-effort */ }
+      }
+
+      onClose();
+      router.refresh();
     } catch {
       setError("Netzwerkfehler");
     } finally {
@@ -190,6 +239,39 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
               onCheckedChange={(v) => set("showOnDashboard", v)}
             />
           </div>
+
+          {annyResources.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Link2 className="h-3.5 w-3.5 text-violet-500" />
+                anny Ressource
+              </Label>
+              <Select value={selectedAnnyResource} onValueChange={setSelectedAnnyResource}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Keine Verknüpfung" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">– Keine Verknüpfung –</SelectItem>
+                  {annyResources.map((r) => {
+                    const usedBy = annyMappings[r];
+                    const isSelf = area && usedBy === area.id;
+                    const isUsed = usedBy != null && !isSelf;
+                    const usedAreaName = isUsed ? allAreas.find((a) => a.id === usedBy)?.name : null;
+                    return (
+                      <SelectItem key={r} value={r} disabled={isUsed}>
+                        <span className="flex items-center gap-1.5">
+                          {r}
+                          {isUsed && usedAreaName && (
+                            <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">→ {usedAreaName}</Badge>
+                          )}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="a-hours">Öffnungszeiten</Label>

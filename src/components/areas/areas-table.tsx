@@ -24,9 +24,11 @@ interface AreaRow extends AreaData {
 interface AreasTableProps {
   areas: AreaRow[];
   readonly?: boolean;
+  annyResources?: string[];
+  annyMappings?: Record<string, number>;
 }
 
-export function AreasTable({ areas, readonly }: AreasTableProps) {
+export function AreasTable({ areas, readonly, annyResources, annyMappings }: AreasTableProps) {
   const [selected, setSelected] = useState<AreaData | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
@@ -138,18 +140,20 @@ export function AreasTable({ areas, readonly }: AreasTableProps) {
         </TableBody>
       </Table>
 
-      {/* Add dialog */}
       <AreaDialog
         area={null}
         allAreas={allAreaData}
+        annyResources={annyResources}
+        annyMappings={annyMappings}
         open={addOpen}
         onClose={() => setAddOpen(false)}
       />
 
-      {/* Edit dialog */}
       <AreaDialog
         area={selected}
         allAreas={allAreaData}
+        annyResources={annyResources}
+        annyMappings={annyMappings}
         open={!!selected}
         onClose={() => setSelected(null)}
       />
