@@ -322,7 +322,8 @@ export default function PublicMonitorPage({ params }: Props) {
                   <div
                     key={group.scans[0].id}
                     className={cn(
-                      "flex items-center justify-between rounded-2xl border px-4 py-3 transition-all duration-200",
+                      "flex items-center justify-between rounded-2xl border overflow-hidden transition-all duration-200",
+                      group.profileImage ? "pl-0 pr-4 py-0" : "px-4 py-3",
                       rc.bg,
                       isNew && `animate-scan-flash ring-2 ring-offset-1 ${styles.ringOffset}`,
                       isNew && rc.ring,
@@ -330,7 +331,7 @@ export default function PublicMonitorPage({ params }: Props) {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       {group.profileImage ? (
-                        <img src={group.profileImage} alt="" className={cn("h-12 w-12 rounded-2xl object-cover shrink-0 ring-2", styles.imgRing)} />
+                        <img src={group.profileImage} alt="" className="h-16 w-16 object-cover shrink-0" />
                       ) : (
                         <div className={cn("h-10 w-10 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/5" : "bg-slate-100")}>
                           <Icon className={cn("h-5 w-5", rc.text)} />
