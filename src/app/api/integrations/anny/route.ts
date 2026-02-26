@@ -125,6 +125,56 @@ export async function POST() {
       page++;
     }
 
+    // Fetch all resources and services from anny API
+    const discoveredServices = new Set<string>();
+    const discoveredResourceIds: Record<string, string> = {};
+
+    // GET /api/v1/resources
+    try {
+      let resPage = 1;
+      while (resPage <= 20) {
+        const rParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(resPage) });
+        const rRes = await fetch(`${apiBase}/resources?${rParams}`, {
+          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!rRes.ok) break;
+        const rJson = await rRes.json();
+        const resources = Array.isArray(rJson) ? rJson : rJson.data || [];
+        for (const r of resources) {
+          const name = r.name || r.title;
+          const id = r.id;
+          if (name && id) {
+            discoveredServices.add(name);
+            discoveredResourceIds[name] = String(id);
+          }
+        }
+        if (resources.length < 50) break;
+        resPage++;
+      }
+    } catch { /* non-critical */ }
+
+    // GET /api/v1/services
+    try {
+      let svcPage = 1;
+      while (svcPage <= 20) {
+        const sParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(svcPage) });
+        const sRes = await fetch(`${apiBase}/services?${sParams}`, {
+          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!sRes.ok) break;
+        const sJson = await sRes.json();
+        const services = Array.isArray(sJson) ? sJson : sJson.data || [];
+        for (const s of services) {
+          const name = s.name || s.title;
+          if (name) discoveredServices.add(name);
+        }
+        if (services.length < 50) break;
+        svcPage++;
+      }
+    } catch { /* non-critical */ }
+
     // Parse area mapping from extraConfig
     let annyConfig: AnnyMapping = {};
     try {
@@ -134,8 +184,6 @@ export async function POST() {
 
     // Group bookings by customer + service/resource
     const groups = new Map<string, BookingGroup>();
-    const discoveredServices = new Set<string>();
-    const discoveredResourceIds: Record<string, string> = {};
 
     for (const booking of allBookings) {
       const customerId = booking.customer?.id ?? "unknown";
@@ -291,6 +339,8 @@ export async function POST() {
       invalidated: orphaned.count,
       total: allBookings.length,
       groups: groups.size,
+      resources: Object.keys(discoveredResourceIds).length,
+      services: discoveredServices.size,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";

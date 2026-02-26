@@ -182,6 +182,7 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
         if (json.updated) parts.push(`${json.updated} aktualisiert`);
         if (json.invalidated) parts.push(`${json.invalidated} invalidiert`);
         if (json.skipped) parts.push(`${json.skipped} übersprungen`);
+        if (json.resources) parts.push(`${json.resources} Ressourcen`);
         if (json.total !== undefined && json.groups !== undefined) {
           parts.push(`${json.total} Buchungen → ${json.groups} Tickets`);
         } else if (json.total !== undefined) {
@@ -189,6 +190,20 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
         }
         setSyncResult(parts.length ? parts.join(", ") : "Keine neuen Daten");
         setTimeout(() => setSyncResult(null), 8000);
+
+        // Reload config to show newly discovered services/resources
+        try {
+          const cfgRes = await fetch("/api/settings/integrations");
+          if (cfgRes.ok) {
+            const configs = await cfgRes.json();
+            const updated = Array.isArray(configs)
+              ? configs.find((c: ApiConfigData) => c.provider === provider)
+              : null;
+            if (updated) {
+              setData(updated);
+            }
+          }
+        } catch { /* ignore */ }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "unbekannt";
