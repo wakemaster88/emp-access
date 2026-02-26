@@ -39,43 +39,47 @@ function statusBadge(status: string) {
   }
 }
 
+function formatDuration(minutes: number) {
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return hrs > 0 ? `${hrs}h${mins > 0 ? ` ${mins}min` : ""}` : `${mins}min`;
+}
+
 function ValidityInfo({ ticket }: { ticket: TicketData }) {
-  const ext = ticket as TicketData & {
-    validityType?: string;
-    slotStart?: string | null;
-    slotEnd?: string | null;
-    validityDurationMinutes?: number | null;
-    firstScanAt?: string | null;
-  };
-  const vt = ext.validityType ?? "DATE_RANGE";
+  const vt = ticket.validityType ?? "DATE_RANGE";
 
   const dateRange = (ticket.startDate || ticket.endDate)
     ? `${ticket.startDate ? fmtDate(ticket.startDate) : "∞"} – ${ticket.endDate ? fmtDate(ticket.endDate) : "∞"}`
     : null;
 
-  if (vt === "TIME_SLOT" && ext.slotStart && ext.slotEnd) {
+  if (vt === "TIME_SLOT") {
     return (
       <div className="space-y-0.5">
         {dateRange && <p>{dateRange}</p>}
-        <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
-          {ext.slotStart}–{ext.slotEnd} Uhr
-        </p>
+        {ticket.slotStart && ticket.slotEnd ? (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400">
+            {ticket.slotStart}–{ticket.slotEnd} Uhr
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400">
+            Zeitslot
+          </Badge>
+        )}
       </div>
     );
   }
 
-  if (vt === "DURATION" && ext.validityDurationMinutes) {
-    const hrs = Math.floor(ext.validityDurationMinutes / 60);
-    const mins = ext.validityDurationMinutes % 60;
-    const label = hrs > 0 ? `${hrs}h${mins > 0 ? ` ${mins}min` : ""}` : `${mins}min`;
+  if (vt === "DURATION") {
     return (
       <div className="space-y-0.5">
         {dateRange && <p>{dateRange}</p>}
-        <p className="text-xs font-medium text-violet-600 dark:text-violet-400">
-          {label} ab 1. Scan
-        </p>
-        {ext.firstScanAt && (
-          <p className="text-xs text-slate-400">Start: {fmtDateTime(ext.firstScanAt)}</p>
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400">
+          {ticket.validityDurationMinutes
+            ? `${formatDuration(ticket.validityDurationMinutes)} ab Scan`
+            : "Dauer ab Scan"}
+        </Badge>
+        {ticket.firstScanAt && (
+          <p className="text-xs text-slate-400">Start: {fmtDateTime(ticket.firstScanAt)}</p>
         )}
       </div>
     );
