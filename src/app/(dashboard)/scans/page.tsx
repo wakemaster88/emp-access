@@ -24,7 +24,9 @@ export default async function ScansPage({ searchParams }: Props) {
 
   const { device, result } = await searchParams;
   const deviceId = device ? Number(device) : undefined;
-  const resultFilter = result && ["GRANTED", "DENIED", "PROTECTED"].includes(result) ? result : undefined;
+  const resultFilter = result && ["GRANTED", "DENIED", "PROTECTED"].includes(result)
+    ? (result as "GRANTED" | "DENIED" | "PROTECTED")
+    : undefined;
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
