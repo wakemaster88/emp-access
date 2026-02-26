@@ -14,7 +14,14 @@ interface MonitorScan {
   scanTime: string;
   result: "GRANTED" | "DENIED" | "PROTECTED";
   device: { name: string; type: string };
-  ticket?: { name: string } | null;
+  ticket?: {
+    name: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    validityType?: string;
+    validityDurationMinutes?: number | null;
+    firstScanAt?: string | null;
+  } | null;
 }
 
 interface AreaCount {
@@ -187,7 +194,7 @@ export default function MonitorPage() {
                       isNew ? "ring-amber-400" : ""
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <Badge
                         className={
                           scan.result === "GRANTED"
@@ -199,18 +206,27 @@ export default function MonitorPage() {
                       >
                         {scan.result === "GRANTED" ? "✓" : scan.result === "DENIED" ? "✕" : "⚠"}
                       </Badge>
-                      <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
                           {scan.ticket?.name || scan.code}
                         </p>
-                        <p className="text-xs text-slate-500">
-                          {scan.device.name} • {scan.code}
+                        <p className="text-xs text-slate-500 truncate">
+                          {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.device.name}
+                          {(scan.ticket?.firstName || scan.ticket?.lastName) ? ` · ${scan.device.name}` : ` · ${scan.code}`}
                         </p>
                       </div>
                     </div>
-                    <span className="text-xs text-slate-400 font-mono">
-                      {fmtTime(scan.scanTime)}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {scan.ticket?.validityType === "DURATION" && scan.ticket.validityDurationMinutes && scan.ticket.firstScanAt && (
+                        <InternalCountdown
+                          firstScanAt={scan.ticket.firstScanAt}
+                          durationMinutes={scan.ticket.validityDurationMinutes}
+                        />
+                      )}
+                      <span className="text-xs text-slate-400 font-mono">
+                        {fmtTime(scan.scanTime)}
+                      </span>
+                    </div>
                   </div>
                   );
                 })}
@@ -243,5 +259,42 @@ export default function MonitorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function InternalCountdown({ firstScanAt, durationMinutes }: { firstScanAt: string; durationMinutes: number }) {
+  const [remaining, setRemaining] = useState("");
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    const expiresAt = new Date(firstScanAt).getTime() + durationMinutes * 60_000;
+
+    const tick = () => {
+      const diff = expiresAt - Date.now();
+      if (diff <= 0) {
+        setRemaining("abgelaufen");
+        setExpired(true);
+        return;
+      }
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      setRemaining(h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`);
+      setExpired(false);
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [firstScanAt, durationMinutes]);
+
+  return (
+    <span className={`text-xs font-mono px-1.5 py-0.5 rounded tabular-nums ${
+      expired
+        ? "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
+        : "bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
+    }`}>
+      {remaining}
+    </span>
   );
 }

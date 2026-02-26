@@ -21,7 +21,14 @@ interface Scan {
   result: "GRANTED" | "DENIED" | "PROTECTED";
   scanTime: string;
   device: { id: number; name: string };
-  ticket: { name: string } | null;
+  ticket: {
+    name: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    validityType?: string;
+    validityDurationMinutes?: number | null;
+    firstScanAt?: string | null;
+  } | null;
 }
 
 interface Stats {
@@ -193,16 +200,28 @@ export default function PublicMonitorPage({ params }: Props) {
                       isNew && scan.result === "PROTECTED" && "ring-amber-400",
                     )}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <Icon className={cn("h-5 w-5 shrink-0", style.text)} />
-                      <div>
-                        <p className="font-medium text-slate-100 text-sm">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-100 text-sm truncate">
                           {scan.ticket?.name || scan.code}
                         </p>
-                        <p className="text-xs text-slate-400">{scan.device.name}</p>
+                        <p className="text-xs text-slate-400 truncate">
+                          {[
+                            scan.ticket?.firstName,
+                            scan.ticket?.lastName,
+                          ].filter(Boolean).join(" ") || scan.device.name}
+                          {scan.ticket?.firstName || scan.ticket?.lastName ? ` · ${scan.device.name}` : ""}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
+                      {scan.ticket?.validityType === "DURATION" && scan.ticket.validityDurationMinutes && scan.ticket.firstScanAt && (
+                        <DurationCountdown
+                          firstScanAt={scan.ticket.firstScanAt}
+                          durationMinutes={scan.ticket.validityDurationMinutes}
+                        />
+                      )}
                       <span className={cn("text-xs px-2 py-0.5 rounded-full", style.badge)}>
                         {style.label}
                       </span>
@@ -263,6 +282,44 @@ export default function PublicMonitorPage({ params }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+function DurationCountdown({ firstScanAt, durationMinutes }: { firstScanAt: string; durationMinutes: number }) {
+  const [remaining, setRemaining] = useState("");
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    const expiresAt = new Date(firstScanAt).getTime() + durationMinutes * 60_000;
+
+    const tick = () => {
+      const diff = expiresAt - Date.now();
+      if (diff <= 0) {
+        setRemaining("abgelaufen");
+        setExpired(true);
+        return;
+      }
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      setRemaining(h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`);
+      setExpired(false);
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [firstScanAt, durationMinutes]);
+
+  return (
+    <span className={cn(
+      "text-xs font-mono px-2 py-0.5 rounded-full tabular-nums",
+      expired
+        ? "bg-rose-500/20 text-rose-300"
+        : "bg-violet-500/20 text-violet-300"
+    )}>
+      {remaining}
+    </span>
   );
 }
 

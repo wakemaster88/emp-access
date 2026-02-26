@@ -51,7 +51,10 @@ export async function GET(
 
           const scans = await prisma.scan.findMany({
             where: scanWhere,
-            include: { device: { select: { id: true, name: true } }, ticket: { select: { name: true } } },
+            include: {
+              device: { select: { id: true, name: true } },
+              ticket: { select: { name: true, firstName: true, lastName: true, validityType: true, validityDurationMinutes: true, firstScanAt: true } },
+            },
             orderBy: { id: "desc" },
             take: lastScanId === 0 ? 50 : 20,
           });
