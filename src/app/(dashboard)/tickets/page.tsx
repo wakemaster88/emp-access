@@ -11,25 +11,27 @@ import { TicketsTable } from "@/components/tickets/tickets-table";
 import { Eye, EyeOff } from "lucide-react";
 
 interface Props {
-  searchParams: Promise<{ showAll?: string }>;
+  searchParams: Promise<{ showAll?: string; area?: string }>;
 }
 
 export default async function TicketsPage({ searchParams }: Props) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
 
-  const { showAll } = await searchParams;
+  const { showAll, area } = await searchParams;
   const showInactive = showAll === "1";
+  const areaId = area ? Number(area) : undefined;
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
 
   const baseWhere = isSuperAdmin ? {} : { accountId: session.user.accountId! };
   const statusFilter = showInactive ? {} : { status: "VALID" as const };
+  const areaFilter = areaId ? { accessAreaId: areaId } : {};
 
   const [tickets, areas, inactiveCount] = await Promise.all([
     db.ticket.findMany({
-      where: { ...baseWhere, ...statusFilter },
+      where: { ...baseWhere, ...statusFilter, ...areaFilter },
       include: { accessArea: true, _count: { select: { scans: true } } },
       orderBy: { updatedAt: "desc" },
       take: 500,
@@ -41,10 +43,13 @@ export default async function TicketsPage({ searchParams }: Props) {
     }),
     showInactive
       ? Promise.resolve(0)
-      : db.ticket.count({ where: { ...baseWhere, status: { not: "VALID" } } }),
+      : db.ticket.count({ where: { ...baseWhere, ...areaFilter, status: { not: "VALID" } } }),
   ]);
 
-  const toggleHref = showInactive ? "/tickets" : "/tickets?showAll=1";
+  const filterArea = areaId ? areas.find((a) => a.id === areaId) : null;
+  const toggleHref = showInactive
+    ? `/tickets${area ? `?area=${area}` : ""}`
+    : `/tickets?showAll=1${area ? `&area=${area}` : ""}`;
 
   return (
     <>
@@ -60,6 +65,14 @@ export default async function TicketsPage({ searchParams }: Props) {
                 <Badge variant="secondary" className="text-xs font-normal">
                   + {inactiveCount} inaktive
                 </Badge>
+              )}
+              {filterArea && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-xs">{filterArea.name}</Badge>
+                  <a href={showInactive ? "/tickets?showAll=1" : "/tickets"} className="text-xs text-indigo-600 hover:underline">
+                    Filter entfernen
+                  </a>
+                </div>
               )}
             </div>
             <div className="flex items-center gap-2">

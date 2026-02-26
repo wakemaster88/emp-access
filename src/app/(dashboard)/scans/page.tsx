@@ -14,19 +14,35 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export default async function ScansPage() {
+interface Props {
+  searchParams: Promise<{ device?: string; result?: string }>;
+}
+
+export default async function ScansPage({ searchParams }: Props) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
+
+  const { device, result } = await searchParams;
+  const deviceId = device ? Number(device) : undefined;
+  const resultFilter = result && ["GRANTED", "DENIED", "PROTECTED"].includes(result) ? result : undefined;
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
 
   const scans = await db.scan.findMany({
-    where: isSuperAdmin ? {} : { accountId: session.user.accountId! },
+    where: {
+      ...(isSuperAdmin ? {} : { accountId: session.user.accountId! }),
+      ...(deviceId ? { deviceId } : {}),
+      ...(resultFilter ? { result: resultFilter } : {}),
+    },
     include: { device: true, ticket: true },
     orderBy: { scanTime: "desc" },
     take: 200,
   });
+
+  const filterDevice = deviceId
+    ? await db.device.findFirst({ where: { id: deviceId }, select: { name: true } })
+    : null;
 
   const resultBadge = (result: string) => {
     switch (result) {
@@ -46,8 +62,23 @@ export default async function ScansPage() {
       <Header title="Scan-Historie" accountName={session.user.accountName} />
       <div className="p-6">
         <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle>Letzte Scans</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <CardTitle>Letzte Scans ({scans.length})</CardTitle>
+              {(filterDevice || resultFilter) && (
+                <div className="flex items-center gap-2">
+                  {filterDevice && (
+                    <Badge variant="secondary" className="text-xs">{filterDevice.name}</Badge>
+                  )}
+                  {resultFilter && (
+                    <Badge variant="outline" className="text-xs">
+                      {resultFilter === "GRANTED" ? "Erlaubt" : resultFilter === "DENIED" ? "Abgelehnt" : "Geschützt"}
+                    </Badge>
+                  )}
+                  <a href="/scans" className="text-xs text-indigo-600 hover:underline">Filter entfernen</a>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
