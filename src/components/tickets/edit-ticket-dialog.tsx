@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -20,8 +20,9 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, X } from "lucide-react";
+import { Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils";
+import { CameraCapture } from "./camera-capture";
 
 export interface TicketData {
   id: number;
@@ -75,7 +76,6 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
   const router = useRouter();
   const [tab, setTab] = useState<"edit" | "scans">("edit");
   const [form, setForm] = useState({
-    name: "",
     firstName: "",
     lastName: "",
     ticketTypeName: "",
@@ -92,7 +92,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
     validityDurationMinutes: "",
   });
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -102,7 +102,6 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
   useEffect(() => {
     if (ticket) {
       setForm({
-        name: ticket.name,
         firstName: ticket.firstName ?? "",
         lastName: ticket.lastName ?? "",
         ticketTypeName: ticket.ticketTypeName ?? "",
@@ -146,8 +145,9 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
     setSaving(true);
     setError("");
 
+    const fullName = `${form.firstName} ${form.lastName}`.trim() || "Ticket";
     const payload: Record<string, unknown> = {
-      name: form.name,
+      name: fullName,
       status: form.status,
       firstName: form.firstName || null,
       lastName: form.lastName || null,
@@ -225,7 +225,9 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-start justify-between gap-3 pr-8">
-            <DialogTitle className="leading-tight">{ticket?.name}</DialogTitle>
+            <DialogTitle className="leading-tight">
+              {[ticket?.firstName, ticket?.lastName].filter(Boolean).join(" ") || ticket?.name}
+            </DialogTitle>
             <div className="flex items-center gap-2 shrink-0">
               {ticket?.source && (
                 <Badge variant="secondary" className="text-xs">{ticket.source}</Badge>
@@ -271,43 +273,10 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         {tab === "edit" && (
           <form onSubmit={handleSave} className="space-y-4">
             <div className="flex gap-4 items-start">
-              {/* Profilbild */}
               <div className="shrink-0">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (file.size > 500_000) { setError("Bild max. 500 KB"); return; }
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const img = new Image();
-                      img.onload = () => {
-                        const canvas = document.createElement("canvas");
-                        const max = 200;
-                        let w = img.width, h = img.height;
-                        if (w > max || h > max) {
-                          const ratio = Math.min(max / w, max / h);
-                          w = Math.round(w * ratio);
-                          h = Math.round(h * ratio);
-                        }
-                        canvas.width = w;
-                        canvas.height = h;
-                        canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-                        setProfileImage(canvas.toDataURL("image/jpeg", 0.8));
-                      };
-                      img.src = reader.result as string;
-                    };
-                    reader.readAsDataURL(file);
-                    e.target.value = "";
-                  }}
-                />
                 <div
                   className="relative group h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => setCameraOpen(true)}
                 >
                   {profileImage ? (
                     <>
@@ -331,22 +300,25 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
                 )}
               </div>
               <div className="flex-1 space-y-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="e-name">Name <span className="text-rose-500">*</span></Label>
-                  <Input id="e-name" value={form.name} onChange={(e) => set("name", e.target.value)} required autoFocus />
-                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="e-first">Vorname</Label>
-                    <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Max" />
+                    <Label htmlFor="e-first">Vorname <span className="text-rose-500">*</span></Label>
+                    <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Max" required autoFocus />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="e-last">Nachname</Label>
-                    <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Mustermann" />
+                    <Label htmlFor="e-last">Nachname <span className="text-rose-500">*</span></Label>
+                    <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Mustermann" required />
                   </div>
                 </div>
               </div>
             </div>
+
+            {cameraOpen && (
+              <CameraCapture
+                onCapture={(dataUrl) => { setProfileImage(dataUrl); setCameraOpen(false); }}
+                onClose={() => setCameraOpen(false)}
+              />
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="e-type">Ticket-Typ</Label>
@@ -469,7 +441,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
               </Button>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting}>Abbrechen</Button>
-                <Button type="submit" disabled={saving || deleting || !form.name.trim()} className="bg-indigo-600 hover:bg-indigo-700 min-w-28">
+                <Button type="submit" disabled={saving || deleting || (!form.firstName.trim() && !form.lastName.trim())} className="bg-indigo-600 hover:bg-indigo-700 min-w-28">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4 mr-1.5" />Speichern</>}
                 </Button>
               </div>

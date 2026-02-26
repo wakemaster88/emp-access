@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Loader2, Camera } from "lucide-react";
+import { CameraCapture } from "./camera-capture";
 
 interface Area {
   id: number;
@@ -31,7 +32,6 @@ interface AddTicketDialogProps {
 }
 
 const EMPTY = {
-  name: "",
   firstName: "",
   lastName: "",
   ticketTypeName: "",
@@ -53,7 +53,7 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -63,12 +63,13 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    if (!form.firstName.trim() && !form.lastName.trim()) return;
     setLoading(true);
     setError("");
 
+    const fullName = `${form.firstName} ${form.lastName}`.trim() || "Ticket";
     const payload: Record<string, unknown> = {
-      name: form.name,
+      name: fullName,
       status: form.status,
       validityType: form.validityType,
     };
@@ -129,43 +130,10 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="flex gap-4 items-start">
-            {/* Profilbild */}
             <div className="shrink-0">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (file.size > 500_000) { setError("Bild max. 500 KB"); return; }
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const img = new Image();
-                    img.onload = () => {
-                      const canvas = document.createElement("canvas");
-                      const max = 200;
-                      let w = img.width, h = img.height;
-                      if (w > max || h > max) {
-                        const ratio = Math.min(max / w, max / h);
-                        w = Math.round(w * ratio);
-                        h = Math.round(h * ratio);
-                      }
-                      canvas.width = w;
-                      canvas.height = h;
-                      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-                      setProfileImage(canvas.toDataURL("image/jpeg", 0.8));
-                    };
-                    img.src = reader.result as string;
-                  };
-                  reader.readAsDataURL(file);
-                  e.target.value = "";
-                }}
-              />
               <div
                 className="relative group h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => setCameraOpen(true)}
               >
                 {profileImage ? (
                   <>
@@ -189,39 +157,38 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
               )}
             </div>
             <div className="flex-1 space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="t-name">Name / Bezeichnung <span className="text-rose-500">*</span></Label>
-                <Input
-                  id="t-name"
-                  placeholder="z.B. Tageskarte Erwachsene"
-                  value={form.name}
-                  onChange={(e) => set("name", e.target.value)}
-                  required
-                  autoFocus
-                />
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="t-first">Vorname</Label>
+                  <Label htmlFor="t-first">Vorname <span className="text-rose-500">*</span></Label>
                   <Input
                     id="t-first"
                     placeholder="Max"
                     value={form.firstName}
                     onChange={(e) => set("firstName", e.target.value)}
+                    required
+                    autoFocus
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="t-last">Nachname</Label>
+                  <Label htmlFor="t-last">Nachname <span className="text-rose-500">*</span></Label>
                   <Input
                     id="t-last"
                     placeholder="Mustermann"
                     value={form.lastName}
                     onChange={(e) => set("lastName", e.target.value)}
+                    required
                   />
                 </div>
               </div>
             </div>
           </div>
+
+          {cameraOpen && (
+            <CameraCapture
+              onCapture={(dataUrl) => { setProfileImage(dataUrl); setCameraOpen(false); }}
+              onClose={() => setCameraOpen(false)}
+            />
+          )}
 
           {/* Ticket Type */}
           <div className="space-y-1.5">
@@ -387,7 +354,7 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
             </Button>
             <Button
               type="submit"
-              disabled={loading || !form.name.trim()}
+              disabled={loading || (!form.firstName.trim() && !form.lastName.trim())}
               className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Ticket erstellen"}

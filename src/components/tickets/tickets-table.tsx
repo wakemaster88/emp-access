@@ -97,7 +97,6 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Person</TableHead>
             <TableHead>Code</TableHead>
             <TableHead>Bereich</TableHead>
             <TableHead>Status</TableHead>
@@ -108,7 +107,7 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
         <TableBody>
           {tickets.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-slate-500 py-12">
+              <TableCell colSpan={6} className="text-center text-slate-500 py-12">
                 Keine Tickets vorhanden
               </TableCell>
             </TableRow>
@@ -129,17 +128,14 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
                     <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
                   ) : null}
                   <div>
-                    <p className="font-medium text-slate-900 dark:text-slate-100">{ticket.name}</p>
+                    <p className="font-medium text-slate-900 dark:text-slate-100">
+                      {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                    </p>
                     {ticket.ticketTypeName && (
                       <p className="text-xs text-slate-400">{ticket.ticketTypeName}</p>
                     )}
                   </div>
                 </div>
-              </TableCell>
-              <TableCell className="text-sm text-slate-500">
-                {ticket.firstName || ticket.lastName
-                  ? `${ticket.firstName ?? ""} ${ticket.lastName ?? ""}`.trim()
-                  : "–"}
               </TableCell>
               <TableCell className="text-xs font-mono text-slate-500">
                 {ticket.barcode || ticket.qrCode || ticket.rfidCode || "–"}
