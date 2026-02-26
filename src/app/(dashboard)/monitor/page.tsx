@@ -157,7 +157,7 @@ export default function MonitorPage() {
             {counts.map((c) => (
               <Card key={c.areaId} className="border-slate-200 dark:border-slate-800">
                 <CardContent className="p-4">
-                  <p className="text-sm text-slate-500">Bereich {c.areaId}</p>
+                  <p className="text-sm text-slate-500">Resource {c.areaId}</p>
                   <p className="text-4xl font-bold text-slate-900 dark:text-white mt-1">{c.current}</p>
                   <div className="flex gap-4 mt-2 text-xs text-slate-400">
                     <span className="text-emerald-600">↑ {c.entries} rein</span>

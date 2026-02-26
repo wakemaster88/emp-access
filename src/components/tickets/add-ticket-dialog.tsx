@@ -220,13 +220,13 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
           {/* Area + Status */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Zugangsbereich</Label>
+              <Label>Resource</Label>
               <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Alle Bereiche" />
+                  <SelectValue placeholder="Alle Resourcen" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Alle Bereiche</SelectItem>
+                  <SelectItem value="none">Alle Resourcen</SelectItem>
                   {areas.map((a) => (
                     <SelectItem key={a.id} value={String(a.id)}>
                       {a.name}

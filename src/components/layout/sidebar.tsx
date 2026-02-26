@@ -25,7 +25,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tickets", label: "Tickets", icon: Ticket },
   { href: "/devices", label: "Geräte", icon: HardDrive },
-  { href: "/areas", label: "Bereiche", icon: MapPin },
+  { href: "/areas", label: "Resourcen", icon: MapPin },
   { href: "/scans", label: "Scans", icon: ScanLine },
   { href: "/monitor", label: "Live Monitor", icon: Monitor },
   { href: "/settings", label: "Einstellungen", icon: Settings },

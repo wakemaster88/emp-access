@@ -37,11 +37,11 @@ export default async function AreasPage() {
 
   return (
     <>
-      <Header title="Zugangsbereiche" accountName={session.user.accountName} />
+      <Header title="Resourcen" accountName={session.user.accountName} />
       <div className="p-6">
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader>
-            <CardTitle>Alle Bereiche ({areas.length})</CardTitle>
+            <CardTitle>Alle Resourcen ({areas.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <AreasTable areas={areaRows as never} readonly={isSuperAdmin} />

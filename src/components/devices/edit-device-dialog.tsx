@@ -206,14 +206,14 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
           {/* Zugangsbereiche – nur Drehkreuz & Tür */}
           {CAT_HAS_ACCESS.has(form.category) && (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Zugangsbereiche</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Resourcen</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Eingang</Label>
                   <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
-                    <SelectTrigger><SelectValue placeholder="Kein Bereich" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Kein Bereich</SelectItem>
+                      <SelectItem value="none">Keine Resource</SelectItem>
                       {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -221,9 +221,9 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
                 <div className="space-y-1.5">
                   <Label className="text-xs">Ausgang</Label>
                   <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
-                    <SelectTrigger><SelectValue placeholder="Kein Bereich" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Kein Bereich</SelectItem>
+                      <SelectItem value="none">Keine Resource</SelectItem>
                       {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
                     </SelectContent>
                   </Select>

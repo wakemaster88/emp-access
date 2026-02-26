@@ -143,16 +143,16 @@ export default async function SettingsPage() {
           <div className="flex items-center gap-2">
             <MapPin className="h-5 w-5 text-slate-500" />
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Zugangsbereiche
+              Resourcen
             </h2>
             <Badge variant="secondary" className="ml-auto text-xs">
-              {areas.length} Bereiche
+              {areas.length} Resourcen
             </Badge>
           </div>
           <Card className="border-slate-200 dark:border-slate-800">
             <CardContent className="pt-4 pb-4 space-y-1">
               {areas.length === 0 && (
-                <p className="text-sm text-slate-500 py-2">Noch keine Bereiche angelegt.</p>
+                <p className="text-sm text-slate-500 py-2">Noch keine Resourcen angelegt.</p>
               )}
               {areas.map((area) => (
                 <div key={area.id} className="flex items-center justify-between py-1.5">
@@ -180,13 +180,13 @@ export default async function SettingsPage() {
                 <Button asChild variant="outline" size="sm" className="flex-1">
                   <Link href="/areas">
                     <ChevronRight className="h-4 w-4 mr-1.5" />
-                    Alle Bereiche verwalten
+                    Alle Resourcen verwalten
                   </Link>
                 </Button>
                 <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-700">
                   <Link href="/areas">
                     <Plus className="h-4 w-4 mr-1.5" />
-                    Neuer Bereich
+                    Neue Resource
                   </Link>
                 </Button>
               </div>

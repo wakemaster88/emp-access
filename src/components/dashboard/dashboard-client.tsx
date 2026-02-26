@@ -248,7 +248,7 @@ export function DashboardClient() {
       {!loading && allAreas.length === 0 && (
         <div className="text-center py-16 text-slate-400">
           <MapPin className="h-10 w-10 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">Keine Bereiche mit Tickets für dieses Datum</p>
+          <p className="text-sm">Keine Resourcen mit Tickets für dieses Datum</p>
         </div>
       )}
 

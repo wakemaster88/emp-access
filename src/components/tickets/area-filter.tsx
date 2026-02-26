@@ -33,10 +33,10 @@ export function AreaFilter({ areas, current }: { areas: Area[]; current?: string
     <Select value={current ?? "all"} onValueChange={handleChange}>
       <SelectTrigger className="w-[180px] h-9 text-sm">
         <MapPin className="h-3.5 w-3.5 mr-1.5 text-slate-400" />
-        <SelectValue placeholder="Alle Bereiche" />
+        <SelectValue placeholder="Alle Resourcen" />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="all">Alle Bereiche</SelectItem>
+        <SelectItem value="all">Alle Resourcen</SelectItem>
         {areas.map((a) => (
           <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
         ))}

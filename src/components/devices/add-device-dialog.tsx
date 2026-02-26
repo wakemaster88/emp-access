@@ -232,7 +232,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                   onChange={(e) => set("name", e.target.value)}
                   placeholder={
                     cat === "DREHKREUZ" ? "z.B. Drehkreuz Haupteingang" :
-                    cat === "TUER"      ? "z.B. Tür VIP-Bereich" :
+                    cat === "TUER"      ? "z.B. Tür VIP-Resource" :
                     cat === "SENSOR"    ? "z.B. Temperatur Eingang" :
                     cat === "SCHALTER"  ? "z.B. Pumpe Becken A" :
                                           "z.B. Flutlicht Feld 1"
@@ -285,14 +285,14 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
               {/* Zugangsbereiche – nur für Drehkreuz & Tür */}
               {CAT_HAS_ACCESS.has(cat) && (
                 <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Zugangsbereiche</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Resourcen</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs">Eingang</Label>
                       <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
-                        <SelectTrigger><SelectValue placeholder="Kein Bereich" /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">Kein Bereich</SelectItem>
+                          <SelectItem value="none">Keine Resource</SelectItem>
                           {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
@@ -300,9 +300,9 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                     <div className="space-y-1.5">
                       <Label className="text-xs">Ausgang</Label>
                       <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
-                        <SelectTrigger><SelectValue placeholder="Kein Bereich" /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">Kein Bereich</SelectItem>
+                          <SelectItem value="none">Keine Resource</SelectItem>
                           {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
                         </SelectContent>
                       </Select>

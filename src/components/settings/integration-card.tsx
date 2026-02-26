@@ -327,10 +327,10 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-slate-500" />
-                    <Label className="text-sm font-semibold">Bereichs-Zuordnung</Label>
+                    <Label className="text-sm font-semibold">Resource-Zuordnung</Label>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Ordne anny Services/Ressourcen einem Zugangsbereich zu. Nach dem Speichern werden beim nächsten Sync die Tickets automatisch zugeordnet.
+                    Ordne anny Services/Ressourcen einer Resource zu. Nach dem Speichern werden beim nächsten Sync die Tickets automatisch zugeordnet.
                   </p>
                   <div className="space-y-2">
                     {annyServices.map((svc) => (
@@ -341,10 +341,10 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
                           onValueChange={(v) => updateMapping(svc, v === "__none__" ? null : Number(v))}
                         >
                           <SelectTrigger className="w-48 h-8 text-xs">
-                            <SelectValue placeholder="Kein Bereich" />
+                            <SelectValue placeholder="Keine Resource" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="__none__">– Kein Bereich –</SelectItem>
+                            <SelectItem value="__none__">– Keine Resource –</SelectItem>
                             {areas.map((area) => (
                               <SelectItem key={area.id} value={String(area.id)}>
                                 {area.name}
@@ -361,7 +361,7 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
 
             {provider === "ANNY" && isConfigured && annyServices.length === 0 && (
               <p className="text-xs text-slate-400 italic">
-                Erst synchronisieren, um anny Services zu erkennen und Bereichen zuzuordnen.
+                Erst synchronisieren, um anny Services zu erkennen und Resourcen zuzuordnen.
               </p>
             )}
 

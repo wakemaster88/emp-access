@@ -91,7 +91,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           <TableHead className="w-[260px]">Gerät</TableHead>
           <TableHead className="w-[140px]">Funktion</TableHead>
           <TableHead className="w-[130px]">IP-Adresse</TableHead>
-          <TableHead>Bereiche</TableHead>
+          <TableHead>Resourcen</TableHead>
           <TableHead className="w-[180px]">Status</TableHead>
           <TableHead className="w-[110px]">Letzte Aktivität</TableHead>
           <TableHead className="w-[70px] text-right">Scans</TableHead>

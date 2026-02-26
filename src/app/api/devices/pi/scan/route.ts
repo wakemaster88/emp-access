@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
-      return NextResponse.json({ granted: false, message: "Bereich nicht erlaubt" });
+      return NextResponse.json({ granted: false, message: "Resource nicht erlaubt" });
     }
   }
 

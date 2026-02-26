@@ -106,7 +106,7 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
   }
 
   async function handleDelete() {
-    if (!area || !confirm(`Bereich "${area.name}" wirklich löschen?`)) return;
+    if (!area || !confirm(`Resource "${area.name}" wirklich löschen?`)) return;
     setDeleting(true);
     try {
       await fetch(`/api/areas/${area.id}`, { method: "DELETE" });
@@ -126,7 +126,7 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{isNew ? "Neuen Bereich anlegen" : "Bereich bearbeiten"}</DialogTitle>
+          <DialogTitle>{isNew ? "Neue Resource anlegen" : "Resource bearbeiten"}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSave} className="space-y-4">
@@ -143,13 +143,13 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Übergeordneter Bereich</Label>
+            <Label>Übergeordnete Resource</Label>
             <Select value={form.parentId} onValueChange={(v) => set("parentId", v)}>
               <SelectTrigger>
-                <SelectValue placeholder="Kein (Hauptbereich)" />
+                <SelectValue placeholder="Keine (Hauptresource)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Kein (Hauptbereich)</SelectItem>
+                <SelectItem value="none">Keine (Hauptresource)</SelectItem>
                 {parentOptions.map((a) => (
                   <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
                 ))}
@@ -183,7 +183,7 @@ export function AreaDialog({ area, allAreas, open, onClose }: AreaDialogProps) {
           <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
             <div>
               <p className="text-sm font-medium">Im Dashboard anzeigen</p>
-              <p className="text-xs text-slate-500">Bereich auf der Dashboard-Übersicht zeigen</p>
+              <p className="text-xs text-slate-500">Resource auf der Dashboard-Übersicht zeigen</p>
             </div>
             <Switch
               checked={form.showOnDashboard}

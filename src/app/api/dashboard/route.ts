@@ -270,7 +270,7 @@ export async function GET(request: NextRequest) {
     areas: structuredAreas,
     unassigned: {
       id: null,
-      name: "Ohne Bereich",
+      name: "Ohne Resource",
       personLimit: null,
       allowReentry: false,
       openingHours: null,

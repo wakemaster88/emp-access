@@ -49,7 +49,7 @@ export function AreasTable({ areas, readonly }: AreasTableProps) {
             className="bg-indigo-600 hover:bg-indigo-700 gap-2"
           >
             <Plus className="h-4 w-4" />
-            Bereich anlegen
+            Resource anlegen
           </Button>
         </div>
       )}
@@ -59,7 +59,7 @@ export function AreasTable({ areas, readonly }: AreasTableProps) {
           <TableRow>
             <TableHead className="w-8">#</TableHead>
             <TableHead>Name</TableHead>
-            <TableHead>Im Bereich</TableHead>
+            <TableHead>In Resource</TableHead>
             <TableHead>Geräte Einlass</TableHead>
             <TableHead>Geräte Auslass</TableHead>
             <TableHead>Wiedereinlass</TableHead>
@@ -71,7 +71,7 @@ export function AreasTable({ areas, readonly }: AreasTableProps) {
           {areas.length === 0 && (
             <TableRow>
               <TableCell colSpan={8} className="text-center text-slate-500 py-12">
-                Noch keine Bereiche angelegt
+                Noch keine Resourcen angelegt
               </TableCell>
             </TableRow>
           )}

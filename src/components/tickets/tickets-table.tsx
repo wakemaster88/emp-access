@@ -98,7 +98,7 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Code</TableHead>
-            <TableHead>Bereich</TableHead>
+            <TableHead>Resource</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Gültigkeit</TableHead>
             <TableHead className="text-right">Scans</TableHead>
