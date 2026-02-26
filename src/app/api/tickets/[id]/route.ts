@@ -61,6 +61,7 @@ export async function PUT(
       ...(data.status !== undefined && { status: data.status }),
       ...(data.accessAreaId !== undefined && { accessAreaId: data.accessAreaId }),
       ...(data.subscriptionId !== undefined && { subscriptionId: data.subscriptionId }),
+      ...(data.serviceId !== undefined && { serviceId: data.serviceId }),
       ...(data.validityType !== undefined && { validityType: data.validityType }),
       ...(data.slotStart !== undefined && { slotStart: data.slotStart }),
       ...(data.slotEnd !== undefined && { slotEnd: data.slotEnd }),

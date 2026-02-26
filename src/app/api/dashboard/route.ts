@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
     qrCode: true,
   };
 
-  const [areas, scansToday, unassignedTickets, subscriptionTickets, annyConfig] = await Promise.all([
+  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, annyConfig] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: {
@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
       where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
     }),
     db.ticket.findMany({
-      where: { ...where, accessAreaId: null, subscriptionId: null, ...ticketDateFilter },
+      where: { ...where, accessAreaId: null, subscriptionId: null, serviceId: null, ...ticketDateFilter },
       select: ticketSelect,
       orderBy: { name: "asc" },
     }),
@@ -159,6 +159,14 @@ export async function GET(request: NextRequest) {
       select: {
         ...ticketSelect,
         subscription: { select: { areas: { select: { id: true } } } },
+      },
+      orderBy: { name: "asc" },
+    }),
+    db.ticket.findMany({
+      where: { ...where, serviceId: { not: null }, ...ticketDateFilter },
+      select: {
+        ...ticketSelect,
+        service: { select: { areas: { select: { id: true } } } },
       },
       orderBy: { name: "asc" },
     }),
@@ -175,6 +183,16 @@ export async function GET(request: NextRequest) {
     for (const sa of subAreas) {
       if (!subTicketsByArea.has(sa.id)) subTicketsByArea.set(sa.id, []);
       subTicketsByArea.get(sa.id)!.push(ticket);
+    }
+  }
+
+  // Build: areaId → service tickets
+  const svcTicketsByArea = new Map<number, typeof serviceTickets>();
+  for (const ticket of serviceTickets) {
+    const svcAreas = ticket.service?.areas || [];
+    for (const sa of svcAreas) {
+      if (!svcTicketsByArea.has(sa.id)) svcTicketsByArea.set(sa.id, []);
+      svcTicketsByArea.get(sa.id)!.push(ticket);
     }
   }
 
@@ -228,22 +246,25 @@ export async function GET(request: NextRequest) {
     return ticketTypeName.startsWith(resourceName);
   }
 
-  // Collect subscription ticket IDs for separation
+  // Collect subscription + service ticket IDs for separation
   const subTicketIds = new Set(subscriptionTickets.map((t) => t.id));
+  const svcTicketIds = new Set(serviceTickets.map((t) => t.id));
 
   // Build structured area responses
   const structuredAreas = areas.map((area) => {
     const areaResources = areaResourceMap[area.id] || [];
     const areaSubTickets = (subTicketsByArea.get(area.id) || []).map(enrichTicket);
+    const areaSvcTickets = (svcTicketsByArea.get(area.id) || []).map(enrichTicket);
     const directTickets = area.tickets.map(enrichTicket);
     const seenIds = new Set(directTickets.map((t) => t.id));
     const mergedSubTickets = areaSubTickets.filter((t) => !seenIds.has(t.id));
-    const enrichedTickets = [...directTickets, ...mergedSubTickets];
-    const totalCount = area._count.tickets + mergedSubTickets.length;
+    const mergedSvcTickets = areaSvcTickets.filter((t) => !seenIds.has(t.id) && !mergedSubTickets.some((s) => s.id === t.id));
+    const enrichedTickets = [...directTickets, ...mergedSubTickets, ...mergedSvcTickets];
+    const totalCount = area._count.tickets + mergedSubTickets.length + mergedSvcTickets.length;
 
-    // Separate subscription tickets from regular tickets
-    const regularTickets = enrichedTickets.filter((t) => !subTicketIds.has(t.id));
-    const aboTickets = enrichedTickets.filter((t) => subTicketIds.has(t.id));
+    // Separate subscription/service tickets from regular tickets
+    const regularTickets = enrichedTickets.filter((t) => !subTicketIds.has(t.id) && !svcTicketIds.has(t.id));
+    const aboTickets = enrichedTickets.filter((t) => subTicketIds.has(t.id) || svcTicketIds.has(t.id));
 
     if (areaResources.length === 0) {
       return {

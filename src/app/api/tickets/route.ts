@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       endDate: data.endDate ? new Date(data.endDate) : undefined,
       accessAreaId: data.accessAreaId,
       subscriptionId: data.subscriptionId,
+      serviceId: data.serviceId,
       status: data.status ?? "VALID",
       barcode: data.barcode,
       firstName: data.firstName,

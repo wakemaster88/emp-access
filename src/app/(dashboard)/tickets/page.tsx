@@ -30,10 +30,10 @@ export default async function TicketsPage({ searchParams }: Props) {
   const statusFilter = showInactive ? {} : { status: { in: ["VALID" as const, "REDEEMED" as const] } };
   const areaFilter = areaId ? { accessAreaId: areaId } : {};
 
-  const [tickets, areas, subscriptions, inactiveCount] = await Promise.all([
+  const [tickets, areas, subscriptions, services, inactiveCount] = await Promise.all([
     db.ticket.findMany({
       where: { ...baseWhere, ...statusFilter, ...areaFilter },
-      include: { accessArea: true, subscription: true, _count: { select: { scans: true } } },
+      include: { accessArea: true, subscription: true, service: true, _count: { select: { scans: true } } },
       orderBy: { updatedAt: "desc" },
       take: 500,
     }),
@@ -43,6 +43,11 @@ export default async function TicketsPage({ searchParams }: Props) {
       select: { id: true, name: true },
     }),
     db.subscription.findMany({
+      where: baseWhere,
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    db.service.findMany({
       where: baseWhere,
       orderBy: { name: "asc" },
       select: { id: true, name: true },
@@ -84,7 +89,7 @@ export default async function TicketsPage({ searchParams }: Props) {
                     : <><Eye className="h-4 w-4 mr-1.5" />Auch inaktive</>}
                 </Link>
               </Button>
-              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subscriptions} />}
+              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subscriptions} services={services} />}
             </div>
           </CardHeader>
           <CardContent>
@@ -92,6 +97,7 @@ export default async function TicketsPage({ searchParams }: Props) {
               tickets={tickets as never}
               areas={areas}
               subscriptions={subscriptions}
+              services={services}
               readonly={isSuperAdmin}
             />
           </CardContent>

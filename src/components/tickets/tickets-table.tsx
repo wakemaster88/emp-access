@@ -23,10 +23,16 @@ interface Sub {
   name: string;
 }
 
+interface Svc {
+  id: number;
+  name: string;
+}
+
 interface TicketsTableProps {
   tickets: TicketData[];
   areas: Area[];
   subscriptions?: Sub[];
+  services?: Svc[];
   readonly?: boolean;
 }
 
@@ -94,7 +100,7 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
   return <span>{dateRange ?? "–"}</span>;
 }
 
-export function TicketsTable({ tickets, areas, subscriptions = [], readonly }: TicketsTableProps) {
+export function TicketsTable({ tickets, areas, subscriptions = [], services = [], readonly }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
 
   return (
@@ -170,6 +176,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], readonly }: T
           ticket={selected}
           areas={areas}
           subscriptions={subscriptions}
+          services={services}
           onClose={() => setSelected(null)}
         />
       )}

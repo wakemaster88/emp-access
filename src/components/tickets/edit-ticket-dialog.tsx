@@ -94,6 +94,7 @@ export interface TicketData {
   status: string;
   accessAreaId: number | null;
   subscriptionId: number | null;
+  serviceId: number | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
   validityType: string;
@@ -117,6 +118,11 @@ interface Sub {
   name: string;
 }
 
+interface Svc {
+  id: number;
+  name: string;
+}
+
 interface ScanRecord {
   id: number;
   code: string;
@@ -129,6 +135,7 @@ interface EditTicketDialogProps {
   ticket: TicketData | null;
   areas: Area[];
   subscriptions?: Sub[];
+  services?: Svc[];
   onClose: () => void;
 }
 
@@ -138,7 +145,7 @@ function toDateInput(val: Date | string | null | undefined): string {
   return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 }
 
-export function EditTicketDialog({ ticket, areas, subscriptions = [], onClose }: EditTicketDialogProps) {
+export function EditTicketDialog({ ticket, areas, subscriptions = [], services = [], onClose }: EditTicketDialogProps) {
   const router = useRouter();
   const [tab, setTab] = useState<"edit" | "bookings" | "scans">("edit");
   const [form, setForm] = useState({
@@ -149,6 +156,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], onClose }:
     status: "VALID",
     accessAreaId: "none",
     subscriptionId: "none",
+    serviceId: "none",
     startDate: "",
     endDate: "",
     validityType: "DATE_RANGE",
@@ -174,6 +182,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], onClose }:
         status: ticket.status,
         accessAreaId: ticket.accessAreaId ? String(ticket.accessAreaId) : "none",
         subscriptionId: ticket.subscriptionId ? String(ticket.subscriptionId) : "none",
+        serviceId: ticket.serviceId ? String(ticket.serviceId) : "none",
         startDate: toDateInput(ticket.startDate),
         endDate: toDateInput(ticket.endDate),
         validityType: ticket.validityType ?? "DATE_RANGE",
@@ -216,7 +225,10 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], onClose }:
       status: form.status,
       firstName: form.firstName || null,
       lastName: form.lastName || null,
-      ticketTypeName: form.ticketTypeName || null,
+      serviceId: form.serviceId && form.serviceId !== "none" ? Number(form.serviceId) : null,
+      ticketTypeName: form.serviceId && form.serviceId !== "none"
+        ? (services.find((s) => String(s.id) === form.serviceId)?.name ?? form.ticketTypeName ?? null)
+        : (form.ticketTypeName || null),
       barcode: form.code || null,
       ...(!isAnny && { qrCode: form.code || null }),
       rfidCode: form.code || null,
@@ -373,8 +385,26 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], onClose }:
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label htmlFor="e-type" className="text-xs">Ticket-Typ</Label>
-                <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" className="h-9" />
+                <Label className="text-xs">Ticket-Typ</Label>
+                {services.length > 0 ? (
+                  <Select value={form.serviceId} onValueChange={(v) => {
+                    set("serviceId", v);
+                    if (v !== "none") {
+                      const svc = services.find((s) => String(s.id) === v);
+                      if (svc) set("ticketTypeName", svc.name);
+                    }
+                  }}>
+                    <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Service" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Kein Service</SelectItem>
+                      {services.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" className="h-9" />
+                )}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="e-code" className="text-xs flex items-center gap-1">

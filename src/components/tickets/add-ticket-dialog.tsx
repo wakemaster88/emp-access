@@ -32,9 +32,15 @@ interface Sub {
   name: string;
 }
 
+interface Svc {
+  id: number;
+  name: string;
+}
+
 interface AddTicketDialogProps {
   areas: Area[];
   subscriptions?: Sub[];
+  services?: Svc[];
 }
 
 const EMPTY = {
@@ -44,6 +50,7 @@ const EMPTY = {
   code: "",
   accessAreaId: "none",
   subscriptionId: "none",
+  serviceId: "none",
   status: "VALID",
   startDate: "",
   endDate: "",
@@ -53,7 +60,7 @@ const EMPTY = {
   validityDurationMinutes: "",
 };
 
-export function AddTicketDialog({ areas, subscriptions = [] }: AddTicketDialogProps) {
+export function AddTicketDialog({ areas, subscriptions = [], services = [] }: AddTicketDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -80,7 +87,13 @@ export function AddTicketDialog({ areas, subscriptions = [] }: AddTicketDialogPr
     };
     if (form.firstName) payload.firstName = form.firstName;
     if (form.lastName) payload.lastName = form.lastName;
-    if (form.ticketTypeName) payload.ticketTypeName = form.ticketTypeName;
+    if (form.serviceId && form.serviceId !== "none") {
+      payload.serviceId = Number(form.serviceId);
+      const svc = services.find((s) => String(s.id) === form.serviceId);
+      if (svc) payload.ticketTypeName = svc.name;
+    } else if (form.ticketTypeName) {
+      payload.ticketTypeName = form.ticketTypeName;
+    }
     if (form.code) {
       payload.barcode = form.code;
       payload.qrCode = form.code;
@@ -201,16 +214,39 @@ export function AddTicketDialog({ areas, subscriptions = [] }: AddTicketDialogPr
             />
           )}
 
-          {/* Ticket Type + Code */}
+          {/* Service / Ticket Type + Code */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="t-type">Ticket-Typ</Label>
-              <Input
-                id="t-type"
-                placeholder="z.B. Tageskarte"
-                value={form.ticketTypeName}
-                onChange={(e) => set("ticketTypeName", e.target.value)}
-              />
+              <Label>Ticket-Typ</Label>
+              {services.length > 0 ? (
+                <Select value={form.serviceId} onValueChange={(v) => {
+                  set("serviceId", v);
+                  if (v !== "none") {
+                    set("accessAreaId", "none");
+                    const svc = services.find((s) => String(s.id) === v);
+                    if (svc) set("ticketTypeName", svc.name);
+                  } else {
+                    set("ticketTypeName", "");
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Kein Service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Kein Service</SelectItem>
+                    {services.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="t-type"
+                  placeholder="z.B. Tageskarte"
+                  value={form.ticketTypeName}
+                  onChange={(e) => set("ticketTypeName", e.target.value)}
+                />
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="t-code" className="flex items-center gap-1.5">
@@ -229,56 +265,62 @@ export function AddTicketDialog({ areas, subscriptions = [] }: AddTicketDialogPr
           </div>
 
           {/* Abo + Resource/Status */}
-          <div className={`grid gap-3 ${form.subscriptionId !== "none" ? "grid-cols-2" : "grid-cols-3"}`}>
-            {subscriptions.length > 0 && (
-              <div className="space-y-1.5">
-                <Label>Abo</Label>
-                <Select value={form.subscriptionId} onValueChange={(v) => {
-                  set("subscriptionId", v);
-                  if (v !== "none") set("accessAreaId", "none");
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Kein Abo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Kein Abo</SelectItem>
-                    {subscriptions.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {(() => {
+            const hideResource = form.subscriptionId !== "none" || form.serviceId !== "none";
+            const cols = subscriptions.length > 0 ? (hideResource ? 2 : 3) : (hideResource ? 1 : 2);
+            return (
+              <div className={`grid gap-3 grid-cols-${cols}`}>
+                {subscriptions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label>Abo</Label>
+                    <Select value={form.subscriptionId} onValueChange={(v) => {
+                      set("subscriptionId", v);
+                      if (v !== "none") set("accessAreaId", "none");
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Kein Abo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Kein Abo</SelectItem>
+                        {subscriptions.map((s) => (
+                          <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {!hideResource && (
+                  <div className="space-y-1.5">
+                    <Label>Resource</Label>
+                    <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Keine" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Keine</SelectItem>
+                        {areas.map((a) => (
+                          <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label>Status</Label>
+                  <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="VALID">Gültig</SelectItem>
+                      <SelectItem value="INVALID">Ungültig</SelectItem>
+                      <SelectItem value="PROTECTED">Geschützt</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            )}
-            {form.subscriptionId === "none" && (
-              <div className="space-y-1.5">
-                <Label>Resource</Label>
-                <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Keine" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Keine</SelectItem>
-                    {areas.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="VALID">Gültig</SelectItem>
-                  <SelectItem value="INVALID">Ungültig</SelectItem>
-                  <SelectItem value="PROTECTED">Geschützt</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Validity Type */}
           <div className="space-y-1.5">

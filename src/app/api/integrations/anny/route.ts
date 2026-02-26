@@ -312,6 +312,21 @@ export async function POST() {
       }
     }
 
+    // Load services for anny name matching
+    const servicesList = await db.service.findMany({
+      where: { accountId: accountId! },
+      select: { id: true, annyNames: true },
+    });
+    const svcNameMap = new Map<string, number>();
+    for (const svc of servicesList) {
+      if (svc.annyNames) {
+        try {
+          const names: string[] = JSON.parse(svc.annyNames);
+          for (const n of names) svcNameMap.set(n, svc.id);
+        } catch { /* ignore */ }
+      }
+    }
+
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -337,6 +352,7 @@ export async function POST() {
 
       // Priority 1: Match against subscription annyNames
       let subscriptionId: number | null = null;
+      let serviceId: number | null = null;
       let accessAreaId: number | null = null;
 
       if (group.subscriptionName && subNameMap.has(group.subscriptionName)) {
@@ -347,8 +363,17 @@ export async function POST() {
         subscriptionId = subNameMap.get(group.resourceName)!;
       }
 
-      // Priority 2: Direct area mapping (only if no subscription match)
+      // Priority 2: Match against service annyNames (only if no subscription match)
       if (!subscriptionId) {
+        if (group.serviceName && svcNameMap.has(group.serviceName)) {
+          serviceId = svcNameMap.get(group.serviceName)!;
+        } else if (group.resourceName && svcNameMap.has(group.resourceName)) {
+          serviceId = svcNameMap.get(group.resourceName)!;
+        }
+      }
+
+      // Priority 3: Direct area mapping (only if no subscription or service match)
+      if (!subscriptionId && !serviceId) {
         if (group.serviceName && areaMappings[group.serviceName]) {
           accessAreaId = areaMappings[group.serviceName];
         } else if (group.resourceName && areaMappings[group.resourceName]) {
@@ -368,6 +393,7 @@ export async function POST() {
         source: "ANNY" as const,
         accessAreaId,
         subscriptionId,
+        serviceId,
       };
 
       try {

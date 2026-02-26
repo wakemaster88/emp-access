@@ -68,6 +68,7 @@ model Account {
   apiConfigs    ApiConfig[]
   monitors      MonitorConfig[]
   subscriptions Subscription[]
+  services      Service[]
 }
 
 model Admin {
@@ -126,6 +127,7 @@ model Ticket {
   firstScanAt             DateTime?    // auto-set on first GRANTED scan for DURATION
   accessAreaId            Int?
   subscriptionId          Int?
+  serviceId               Int?
   status                  TicketStatus @default(VALID)
   version                 Int          @default(0)
   uuid                    String?      @unique
@@ -139,6 +141,7 @@ model Ticket {
   account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accessArea              AccessArea?  @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
   subscription            Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  service                 Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   scans                   Scan[]
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
@@ -149,6 +152,7 @@ model Ticket {
   @@index([barcode])
   @@index([accessAreaId])
   @@index([subscriptionId])
+  @@index([serviceId])
   @@index([status])
 }
 
@@ -186,6 +190,7 @@ model AccessArea {
   children        AccessArea[] @relation("AreaHierarchy")
   tickets         Ticket[]
   subscriptions   Subscription[]
+  services        Service[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -194,6 +199,20 @@ model AccessArea {
 }
 
 model Subscription {
+  id        Int          @id @default(autoincrement())
+  name      String
+  annyNames String?
+  accountId Int
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  areas     AccessArea[]
+  tickets   Ticket[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([accountId])
+}
+
+model Service {
   id        Int          @id @default(autoincrement())
   name      String
   annyNames String?

@@ -40,6 +40,7 @@ export const ticketCreateSchema = z.object({
   validityDurationMinutes: z.coerce.number().int().min(1).optional().nullable(),
   accessAreaId: z.coerce.number().int().optional().nullable(),
   subscriptionId: z.coerce.number().int().optional().nullable(),
+  serviceId: z.coerce.number().int().optional().nullable(),
   status: z.enum(["VALID", "REDEEMED", "INVALID", "PROTECTED"]).optional(),
   barcode: z.string().optional().nullable(),
   firstName: z.string().optional().nullable(),
