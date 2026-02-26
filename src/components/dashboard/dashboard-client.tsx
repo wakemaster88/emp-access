@@ -193,30 +193,41 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
       )}
     >
       <CardHeader className="py-2.5 px-3.5">
-        <div className="flex justify-end gap-1.5">
-          {area.personLimit != null && (
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm flex items-center gap-1.5 min-w-0 truncate">
+            <MapPin className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+            {area.name}
+          </CardTitle>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {area.openingHours && (
+              <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+                {area.openingHours}
+              </span>
+            )}
+            {area.personLimit != null && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0 font-mono",
+                  area._count.tickets > area.personLimit
+                    ? "border-rose-300 text-rose-600"
+                    : "border-slate-300 text-slate-500"
+                )}
+              >
+                {area._count.tickets}/{area.personLimit}
+              </Badge>
+            )}
             <Badge
-              variant="outline"
               className={cn(
-                "text-[10px] px-1.5 py-0 font-mono",
-                area._count.tickets > area.personLimit
-                  ? "border-rose-300 text-rose-600"
-                  : "border-slate-300 text-slate-500"
+                "text-[10px] px-1.5 py-0 tabular-nums",
+                area._count.tickets > 0
+                  ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                  : "bg-slate-100 text-slate-500 dark:bg-slate-800"
               )}
             >
-              {area._count.tickets}/{area.personLimit}
+              {area._count.tickets}
             </Badge>
-          )}
-          <Badge
-            className={cn(
-              "text-[10px] px-1.5 py-0 tabular-nums",
-              area._count.tickets > 0
-                ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                : "bg-slate-100 text-slate-500 dark:bg-slate-800"
-            )}
-          >
-            {area._count.tickets}
-          </Badge>
+          </div>
         </div>
       </CardHeader>
 
