@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
       firstName: data.firstName,
       lastName: data.lastName,
       ticketTypeName: data.ticketTypeName,
+      validityType: data.validityType ?? "DATE_RANGE",
+      slotStart: data.slotStart,
+      slotEnd: data.slotEnd,
+      validityDurationMinutes: data.validityDurationMinutes,
       accountId: accountId!,
     },
   });
