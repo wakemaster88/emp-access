@@ -199,11 +199,23 @@ export async function POST() {
     const groups = new Map<string, BookingGroup>();
 
     for (const booking of uniqueBookings) {
-      const customerId = booking.customer?.id ?? `b-${booking.id}`;
+      const customer = booking.customer;
+      const customerId = customer?.id;
+
+      // Skip resource reservations without customer (e.g. Ferienkurs blocking lifts)
+      if (!customerId) {
+        const serviceName = booking.service?.name || null;
+        const resourceName = booking.resource?.name || null;
+        if (serviceName) discoveredServiceNames.add(serviceName);
+        if (resourceName) discoveredResourceNames.add(resourceName);
+        const resId = booking.resource?.id;
+        if (resId && resourceName) discoveredResourceIds[resourceName] = String(resId);
+        continue;
+      }
+
       const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
       const key = `anny:${customerId}:${serviceId}`;
 
-      const customer = booking.customer;
       const customerName = customer?.full_name || customer?.name || "";
       const nameParts = customerName.split(/\s+/);
 
