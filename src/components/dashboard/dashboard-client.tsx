@@ -40,6 +40,7 @@ interface AreaData {
   personLimit: number | null;
   allowReentry: boolean;
   openingHours: string | null;
+  availability: string[] | null;
   tickets: TicketEntry[];
   _count: { tickets: number };
 }
@@ -236,10 +237,14 @@ export function DashboardClient() {
                   </Badge>
                 </div>
               </div>
-              {area.openingHours && (
+              {(area.availability || area.openingHours) && (
                 <div className="flex items-center gap-1.5 mt-1">
                   <Clock className="h-3 w-3 text-slate-400" />
-                  <span className="text-xs text-slate-500">{area.openingHours}</span>
+                  <span className="text-xs text-slate-500">
+                    {area.availability
+                      ? area.availability.join(" · ")
+                      : area.openingHours}
+                  </span>
                 </div>
               )}
             </CardHeader>

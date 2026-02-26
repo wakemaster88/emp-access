@@ -52,41 +52,8 @@ interface BookingGroup {
 interface AnnyMapping {
   mappings?: Record<string, number>;
   services?: string[];
+  resourceIds?: Record<string, string>;
 }
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function extractOpeningHours(service: any): string | null {
-  if (!service) return null;
-
-  // Try common fields for schedule/availability
-  if (service.opening_hours && typeof service.opening_hours === "string") {
-    return service.opening_hours;
-  }
-  if (service.schedule && typeof service.schedule === "string") {
-    return service.schedule;
-  }
-
-  // Try to extract from availabilities relation
-  const avails = service.availabilities || service.availability;
-  if (Array.isArray(avails) && avails.length > 0) {
-    const times = avails
-      .filter((a: any) => a.start_time && a.end_time)
-      .map((a: any) => {
-        const day = a.weekday || a.day || "";
-        return day ? `${day} ${a.start_time}–${a.end_time}` : `${a.start_time}–${a.end_time}`;
-      });
-    if (times.length > 0) return times.join(", ");
-  }
-
-  // Try description field for hints
-  if (service.description && typeof service.description === "string") {
-    const match = service.description.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
-    if (match) return `${match[1]}–${match[2]}`;
-  }
-
-  return null;
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 function mapGroupStatus(statuses: string[]): "VALID" | "INVALID" | "REDEEMED" {
   const normalized = statuses.map((s) => s.toLowerCase());
@@ -168,6 +135,7 @@ export async function POST() {
     // Group bookings by customer + service/resource
     const groups = new Map<string, BookingGroup>();
     const discoveredServices = new Set<string>();
+    const discoveredResourceIds: Record<string, string> = {};
 
     for (const booking of allBookings) {
       const customerId = booking.customer?.id ?? "unknown";
@@ -182,6 +150,12 @@ export async function POST() {
       const resourceName = booking.resource?.name || null;
       if (serviceName) discoveredServices.add(serviceName);
       if (resourceName) discoveredServices.add(resourceName);
+
+      const resId = booking.resource?.id;
+      if (resId) {
+        if (serviceName) discoveredResourceIds[serviceName] = String(resId);
+        if (resourceName) discoveredResourceIds[resourceName] = String(resId);
+      }
 
       const startDate = booking.start_date ? new Date(booking.start_date) : null;
       const endDate = booking.end_date ? new Date(booking.end_date) : null;
@@ -295,10 +269,11 @@ export async function POST() {
       data: { status: "INVALID" },
     });
 
-    // Persist discovered service/resource names (keep existing mappings)
+    // Persist discovered service/resource names + resource IDs
     const updatedConfig: AnnyMapping = {
       ...annyConfig,
       services: [...discoveredServices].sort(),
+      resourceIds: { ...(annyConfig.resourceIds || {}), ...discoveredResourceIds },
     };
 
     await db.apiConfig.update({
@@ -308,38 +283,6 @@ export async function POST() {
         extraConfig: JSON.stringify(updatedConfig),
       },
     });
-
-    // Fetch anny service details and update opening hours on mapped areas
-    const serviceIdMap = new Map<string, string>();
-    for (const booking of allBookings) {
-      const svcName = booking.service?.name || booking.resource?.name;
-      const svcId = booking.service?.id ?? booking.resource?.id;
-      if (svcName && svcId && areaMappings[svcName]) {
-        serviceIdMap.set(String(svcId), svcName);
-      }
-    }
-
-    for (const [svcId, svcName] of serviceIdMap) {
-      const areaId = areaMappings[svcName];
-      if (!areaId) continue;
-      try {
-        const svcRes = await fetch(`${apiBase}/services/${svcId}?include=availabilities`, {
-          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (svcRes.ok) {
-          const svcJson = await svcRes.json();
-          const svc = svcJson.data ?? svcJson;
-          const hours = extractOpeningHours(svc);
-          if (hours) {
-            await db.accessArea.updateMany({
-              where: { id: areaId, accountId: accountId! },
-              data: { openingHours: hours },
-            });
-          }
-        }
-      } catch { /* non-critical, skip */ }
-    }
 
     return NextResponse.json({
       created,
