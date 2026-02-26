@@ -32,6 +32,14 @@ interface TicketEntry {
   slotEnd: string | null;
   profileImage: string | null;
   source: string | null;
+  bookingStart: string | null;
+  bookingEnd: string | null;
+}
+
+interface ResourceBlock {
+  resourceName: string;
+  slots: { startTime: string; endTime: string }[];
+  tickets: TicketEntry[];
 }
 
 interface AreaData {
@@ -40,8 +48,8 @@ interface AreaData {
   personLimit: number | null;
   allowReentry: boolean;
   openingHours: string | null;
-  availability: string[] | null;
-  tickets: TicketEntry[];
+  resources: ResourceBlock[];
+  otherTickets: TicketEntry[];
   _count: { tickets: number };
 }
 
@@ -82,6 +90,62 @@ function personName(t: TicketEntry): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
 }
 
+function TicketRow({ ticket, onClick }: { ticket: TicketEntry; onClick: () => void }) {
+  return (
+    <div
+      className="flex items-center gap-2.5 py-2 cursor-pointer rounded-md px-1 -mx-1 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+      onClick={onClick}
+    >
+      {ticket.profileImage ? (
+        <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+      ) : (
+        <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+          <span className="text-xs font-bold text-slate-400">
+            {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
+          </span>
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+          {personName(ticket)}
+        </p>
+        <div className="flex items-center gap-1.5">
+          {ticket.ticketTypeName && (
+            <span className="text-xs text-slate-400 truncate">{ticket.ticketTypeName}</span>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 flex items-center gap-1.5">
+        {ticket.bookingStart && (
+          <span className="text-[11px] text-indigo-500 font-mono">
+            {ticket.bookingStart}{ticket.bookingEnd ? `–${ticket.bookingEnd}` : ""}
+          </span>
+        )}
+        {!ticket.bookingStart && ticket.slotStart && ticket.slotEnd && (
+          <span className="text-[11px] text-indigo-500 font-mono">
+            {ticket.slotStart}–{ticket.slotEnd}
+          </span>
+        )}
+        {ticket.source === "ANNY" && (
+          <Badge variant="outline" className="text-[10px] px-1 py-0 border-violet-300 text-violet-500">
+            anny
+          </Badge>
+        )}
+        <div
+          className={cn(
+            "h-2 w-2 rounded-full",
+            ticket.status === "VALID"
+              ? "bg-emerald-500"
+              : ticket.status === "REDEEMED"
+                ? "bg-sky-500"
+                : "bg-slate-300"
+          )}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function DashboardClient() {
   const [date, setDate] = useState(toLocaleDateStr(new Date()));
   const [data, setData] = useState<DashboardData | null>(null);
@@ -94,17 +158,12 @@ export function DashboardClient() {
     setLoading(true);
     try {
       const res = await fetch(`/api/dashboard?date=${d}`);
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
+      if (res.ok) setData(await res.json());
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchData(date);
-  }, [date, fetchData]);
+  useEffect(() => { fetchData(date); }, [date, fetchData]);
 
   useEffect(() => {
     fetch("/api/areas")
@@ -117,10 +176,7 @@ export function DashboardClient() {
     setTicketLoading(true);
     try {
       const res = await fetch(`/api/tickets/${ticketId}`);
-      if (res.ok) {
-        const ticket = await res.json();
-        setSelectedTicket(ticket);
-      }
+      if (res.ok) setSelectedTicket(await res.json());
     } catch { /* ignore */ }
     setTicketLoading(false);
   }
@@ -197,120 +253,120 @@ export function DashboardClient() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-        {allAreas.map((area) => (
-          <Card
-            key={area.id ?? "unassigned"}
-            className={cn(
-              "border-slate-200 dark:border-slate-800 overflow-hidden",
-              area.id === null && "border-dashed"
-            )}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-indigo-500" />
-                  {area.name}
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  {area.personLimit && (
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-xs font-mono",
-                        area._count.tickets > area.personLimit
-                          ? "border-rose-300 text-rose-600 dark:border-rose-700 dark:text-rose-400"
-                          : "border-slate-300 text-slate-500"
-                      )}
-                    >
-                      {area._count.tickets}/{area.personLimit}
-                    </Badge>
-                  )}
-                  <Badge
-                    className={cn(
-                      "text-xs tabular-nums",
-                      area._count.tickets > 0
-                        ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                        : "bg-slate-100 text-slate-500 dark:bg-slate-800"
-                    )}
-                  >
-                    {area._count.tickets}
-                  </Badge>
-                </div>
-              </div>
-              {(area.availability || area.openingHours) && (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Clock className="h-3 w-3 text-slate-400" />
-                  <span className="text-xs text-slate-500">
-                    {area.availability
-                      ? area.availability.join(" · ")
-                      : area.openingHours}
-                  </span>
-                </div>
+        {allAreas.map((area) => {
+          const hasResources = area.resources.length > 0;
+          const hasOther = area.otherTickets.length > 0;
+          const isEmpty = !hasResources && !hasOther;
+
+          return (
+            <Card
+              key={area.id ?? "unassigned"}
+              className={cn(
+                "border-slate-200 dark:border-slate-800 overflow-hidden",
+                area.id === null && "border-dashed"
               )}
-            </CardHeader>
-            <CardContent className="pt-0">
-              {area.tickets.length === 0 ? (
-                <p className="text-xs text-slate-400 py-3">Keine Tickets</p>
-              ) : (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[320px] overflow-y-auto -mx-1 px-1">
-                  {area.tickets.map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      className="flex items-center gap-2.5 py-2 cursor-pointer rounded-md px-1 -mx-1 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                      onClick={() => openTicket(ticket.id)}
-                    >
-                      {ticket.profileImage ? (
-                        <img
-                          src={ticket.profileImage}
-                          alt=""
-                          className="h-8 w-8 rounded-full object-cover shrink-0"
-                        />
-                      ) : (
-                        <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                          <span className="text-xs font-bold text-slate-400">
-                            {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
-                          {personName(ticket)}
-                        </p>
-                        <div className="flex items-center gap-1.5">
-                          {ticket.ticketTypeName && (
-                            <span className="text-xs text-slate-400 truncate">{ticket.ticketTypeName}</span>
-                          )}
-                          {ticket.slotStart && ticket.slotEnd && (
-                            <span className="text-xs text-indigo-500 font-mono">
-                              {ticket.slotStart}–{ticket.slotEnd}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="shrink-0 flex items-center gap-1.5">
-                        {ticket.source === "ANNY" && (
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 border-violet-300 text-violet-500">
-                            anny
-                          </Badge>
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-indigo-500" />
+                    {area.name}
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    {area.personLimit && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs font-mono",
+                          area._count.tickets > area.personLimit
+                            ? "border-rose-300 text-rose-600 dark:border-rose-700 dark:text-rose-400"
+                            : "border-slate-300 text-slate-500"
                         )}
-                        <div
-                          className={cn(
-                            "h-2 w-2 rounded-full",
-                            ticket.status === "VALID"
-                              ? "bg-emerald-500"
-                              : ticket.status === "REDEEMED"
-                                ? "bg-sky-500"
-                                : "bg-slate-300"
-                          )}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                      >
+                        {area._count.tickets}/{area.personLimit}
+                      </Badge>
+                    )}
+                    <Badge
+                      className={cn(
+                        "text-xs tabular-nums",
+                        area._count.tickets > 0
+                          ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                          : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+                      )}
+                    >
+                      {area._count.tickets}
+                    </Badge>
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                {!hasResources && area.openingHours && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Clock className="h-3 w-3 text-slate-400" />
+                    <span className="text-xs text-slate-500">{area.openingHours}</span>
+                  </div>
+                )}
+              </CardHeader>
+
+              <CardContent className="pt-0 max-h-[400px] overflow-y-auto">
+                {isEmpty && <p className="text-xs text-slate-400 py-3">Keine Tickets</p>}
+
+                {/* Resource sections */}
+                {area.resources.map((res, ri) => (
+                  <div key={res.resourceName} className={cn(ri > 0 && "mt-3")}>
+                    {/* Resource header */}
+                    <div className="flex items-center gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800">
+                      <Clock className="h-3 w-3 text-indigo-400 shrink-0" />
+                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 truncate">
+                        {res.resourceName}
+                      </span>
+                      {res.slots.length > 0 && (
+                        <span className="text-[11px] text-slate-400 font-mono shrink-0 ml-auto">
+                          {res.slots.map((s) => `${s.startTime}–${s.endTime}`).join(" · ")}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Resource tickets */}
+                    {res.tickets.length > 0 ? (
+                      <div className="divide-y divide-slate-50 dark:divide-slate-800/50 pl-1">
+                        {res.tickets.map((ticket) => (
+                          <TicketRow
+                            key={ticket.id}
+                            ticket={ticket}
+                            onClick={() => openTicket(ticket.id)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-300 dark:text-slate-600 py-1.5 pl-5">
+                        Keine Buchungen
+                      </p>
+                    )}
+                  </div>
+                ))}
+
+                {/* Other tickets (not matched to a resource) */}
+                {hasOther && (
+                  <div className={cn(hasResources && "mt-3")}>
+                    {hasResources && (
+                      <div className="flex items-center gap-2 py-1.5 border-b border-slate-100 dark:border-slate-800">
+                        <span className="text-xs font-semibold text-slate-400">Sonstige</span>
+                      </div>
+                    )}
+                    <div className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                      {area.otherTickets.map((ticket) => (
+                        <TicketRow
+                          key={ticket.id}
+                          ticket={ticket}
+                          onClick={() => openTicket(ticket.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <EditTicketDialog

@@ -34,7 +34,6 @@ async function fetchAnnyAvailability(
     });
     if (!res.ok) return {};
     const json = await res.json();
-    // Response: { "resourceId": [{ start, end, ... }, ...], ... }
     const result: Record<string, AvailabilityPeriod[]> = {};
     for (const [rid, periods] of Object.entries(json)) {
       if (Array.isArray(periods)) {
@@ -59,6 +58,23 @@ function fmtTime(iso: string): string {
   } catch { return ""; }
 }
 
+function getBookingTimeForDate(qrCode: string | null, dateStr: string): { start: string; end: string } | null {
+  if (!qrCode) return null;
+  try {
+    const entries = JSON.parse(qrCode);
+    if (!Array.isArray(entries)) return null;
+    for (const entry of entries) {
+      if (entry.start && entry.start.includes(dateStr)) {
+        return {
+          start: fmtTime(entry.start),
+          end: entry.end ? fmtTime(entry.end) : "",
+        };
+      }
+    }
+  } catch { /* not JSON */ }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
@@ -79,6 +95,35 @@ export async function GET(request: NextRequest) {
 
   const dateStr = dayStart.toISOString().split("T")[0];
 
+  const ticketDateFilter = {
+    status: { in: ["VALID", "REDEEMED"] as ("VALID" | "REDEEMED")[] },
+    OR: [
+      { startDate: null, endDate: null },
+      { startDate: { lte: dayEnd }, endDate: null },
+      { startDate: null, endDate: { gte: dayStart } },
+      { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
+    ],
+  };
+
+  const ticketSelect = {
+    id: true,
+    name: true,
+    firstName: true,
+    lastName: true,
+    ticketTypeName: true,
+    status: true,
+    startDate: true,
+    endDate: true,
+    validityType: true,
+    slotStart: true,
+    slotEnd: true,
+    validityDurationMinutes: true,
+    firstScanAt: true,
+    profileImage: true,
+    source: true,
+    qrCode: true,
+  };
+
   const [areas, scansToday, unassignedTickets, annyConfig] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
@@ -89,48 +134,12 @@ export async function GET(request: NextRequest) {
         allowReentry: true,
         openingHours: true,
         tickets: {
-          where: {
-            status: { in: ["VALID", "REDEEMED"] },
-            OR: [
-              { startDate: null, endDate: null },
-              { startDate: { lte: dayEnd }, endDate: null },
-              { startDate: null, endDate: { gte: dayStart } },
-              { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-            ],
-          },
-          select: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            ticketTypeName: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-            validityType: true,
-            slotStart: true,
-            slotEnd: true,
-            validityDurationMinutes: true,
-            firstScanAt: true,
-            profileImage: true,
-            source: true,
-          },
+          where: ticketDateFilter,
+          select: ticketSelect,
           orderBy: { name: "asc" },
         },
         _count: {
-          select: {
-            tickets: {
-              where: {
-                status: { in: ["VALID", "REDEEMED"] },
-                OR: [
-                  { startDate: null, endDate: null },
-                  { startDate: { lte: dayEnd }, endDate: null },
-                  { startDate: null, endDate: { gte: dayStart } },
-                  { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-                ],
-              },
-            },
-          },
+          select: { tickets: { where: ticketDateFilter } },
         },
       },
       orderBy: { name: "asc" },
@@ -139,34 +148,8 @@ export async function GET(request: NextRequest) {
       where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
     }),
     db.ticket.findMany({
-      where: {
-        ...where,
-        accessAreaId: null,
-        status: { in: ["VALID", "REDEEMED"] },
-        OR: [
-          { startDate: null, endDate: null },
-          { startDate: { lte: dayEnd }, endDate: null },
-          { startDate: null, endDate: { gte: dayStart } },
-          { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        ticketTypeName: true,
-        status: true,
-        startDate: true,
-        endDate: true,
-        validityType: true,
-        slotStart: true,
-        slotEnd: true,
-        validityDurationMinutes: true,
-        firstScanAt: true,
-        profileImage: true,
-        source: true,
-      },
+      where: { ...where, accessAreaId: null, ...ticketDateFilter },
+      select: ticketSelect,
       orderBy: { name: "asc" },
     }),
     db.apiConfig.findFirst({
@@ -175,72 +158,124 @@ export async function GET(request: NextRequest) {
     }),
   ]);
 
-  // Build anny resource → area mapping and fetch availability
-  let areaAvailability: Record<number, string[]> = {};
+  // Parse anny mapping
+  let mappings: Record<string, number> = {};
+  let resourceIds: Record<string, string> = {};
+  let annyAvailability: Record<string, AvailabilityPeriod[]> = {};
 
   if (annyConfig?.token && annyConfig.extraConfig) {
     try {
       const parsed: AnnyMapping = JSON.parse(annyConfig.extraConfig);
-      const mappings = parsed.mappings || {};
-      const resourceIds = parsed.resourceIds || {};
+      mappings = parsed.mappings || {};
+      resourceIds = parsed.resourceIds || {};
 
-      // Build reverse map: areaId → resourceId(s)
-      const areaToResources: Record<number, string[]> = {};
-      const allResourceIds: string[] = [];
-
-      for (const [name, areaId] of Object.entries(mappings)) {
-        const resId = resourceIds[name];
-        if (resId) {
-          if (!areaToResources[areaId]) areaToResources[areaId] = [];
-          if (!areaToResources[areaId].includes(resId)) {
-            areaToResources[areaId].push(resId);
-          }
-          if (!allResourceIds.includes(resId)) allResourceIds.push(resId);
-        }
-      }
-
-      if (allResourceIds.length > 0) {
+      const allResIds = [...new Set(Object.values(resourceIds))];
+      if (allResIds.length > 0) {
         const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
-        const periods = await fetchAnnyAvailability(baseUrl, annyConfig.token, allResourceIds, dateStr);
-
-        for (const [areaId, resIds] of Object.entries(areaToResources)) {
-          const slots: string[] = [];
-          for (const resId of resIds) {
-            const resPeriods = periods[resId];
-            if (resPeriods && resPeriods.length > 0) {
-              for (const p of resPeriods) {
-                const start = fmtTime(p.start);
-                const end = fmtTime(p.end);
-                if (start && end) slots.push(`${start}–${end}`);
-              }
-            }
-          }
-          if (slots.length > 0) {
-            areaAvailability[Number(areaId)] = slots;
-          }
-        }
+        annyAvailability = await fetchAnnyAvailability(baseUrl, annyConfig.token, allResIds, dateStr);
       }
-    } catch { /* ignore parse errors */ }
+    } catch { /* ignore */ }
   }
 
-  // Merge availability into areas
-  const areasWithAvailability = areas.map((area) => ({
-    ...area,
-    availability: areaAvailability[area.id] || null,
-  }));
+  // Build: areaId → [{ resourceName, resourceId }]
+  const areaResourceMap: Record<number, { name: string; resourceId: string }[]> = {};
+  for (const [name, areaId] of Object.entries(mappings)) {
+    const resId = resourceIds[name];
+    if (resId) {
+      if (!areaResourceMap[areaId]) areaResourceMap[areaId] = [];
+      const exists = areaResourceMap[areaId].some((r) => r.resourceId === resId && r.name === name);
+      if (!exists) areaResourceMap[areaId].push({ name, resourceId: resId });
+    }
+  }
+
+  // Build reverse: resourceId → name
+  const resIdToName: Record<string, string> = {};
+  for (const [name, resId] of Object.entries(resourceIds)) {
+    resIdToName[resId] = name;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function enrichTicket(ticket: any) {
+    const bt = ticket.source === "ANNY" ? getBookingTimeForDate(ticket.qrCode, dateStr) : null;
+    const { qrCode: _, ...rest } = ticket;
+    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null };
+  }
+
+  function ticketMatchesResource(ticketTypeName: string | null, resourceName: string): boolean {
+    if (!ticketTypeName) return false;
+    return ticketTypeName.startsWith(resourceName);
+  }
+
+  // Build structured area responses
+  const structuredAreas = areas.map((area) => {
+    const areaResources = areaResourceMap[area.id] || [];
+    const enrichedTickets = area.tickets.map(enrichTicket);
+
+    if (areaResources.length === 0) {
+      return {
+        id: area.id,
+        name: area.name,
+        personLimit: area.personLimit,
+        allowReentry: area.allowReentry,
+        openingHours: area.openingHours,
+        resources: [],
+        otherTickets: enrichedTickets,
+        _count: area._count,
+      };
+    }
+
+    const matched = new Set<number>();
+    const resources = areaResources
+      .map((res) => {
+        const periods = annyAvailability[res.resourceId] || [];
+        const slots = periods
+          .map((p) => ({ startTime: fmtTime(p.start), endTime: fmtTime(p.end) }))
+          .filter((s) => s.startTime && s.endTime)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+        const resTickets = enrichedTickets.filter((t) => {
+          if (matched.has(t.id)) return false;
+          if (ticketMatchesResource(t.ticketTypeName, res.name)) {
+            matched.add(t.id);
+            return true;
+          }
+          return false;
+        });
+
+        return { resourceName: res.name, slots, tickets: resTickets };
+      })
+      .sort((a, b) => {
+        const aTime = a.slots[0]?.startTime || "99:99";
+        const bTime = b.slots[0]?.startTime || "99:99";
+        return aTime.localeCompare(bTime);
+      });
+
+    const otherTickets = enrichedTickets.filter((t) => !matched.has(t.id));
+
+    return {
+      id: area.id,
+      name: area.name,
+      personLimit: area.personLimit,
+      allowReentry: area.allowReentry,
+      openingHours: area.openingHours,
+      resources,
+      otherTickets,
+      _count: area._count,
+    };
+  });
 
   return NextResponse.json({
     date: dateStr,
     scansToday,
-    areas: areasWithAvailability,
+    areas: structuredAreas,
     unassigned: {
       id: null,
       name: "Ohne Bereich",
       personLimit: null,
       allowReentry: false,
       openingHours: null,
-      availability: null,
-      tickets: unassignedTickets,
+      resources: [],
+      otherTickets: unassignedTickets.map(enrichTicket),
       _count: { tickets: unassignedTickets.length },
     },
   });
