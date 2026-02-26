@@ -1,0 +1,72 @@
+import { safeAuth } from "@/lib/auth";
+import { tenantClient, superAdminClient } from "@/lib/prisma";
+import { redirect } from "next/navigation";
+import { Header } from "@/components/layout/header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SubscriptionsTable } from "@/components/subscriptions/subscriptions-table";
+
+interface AnnyExtra {
+  services?: string[];
+  resources?: string[];
+}
+
+export default async function SubscriptionsPage() {
+  const session = await safeAuth();
+  if (!session?.user) redirect("/login");
+
+  const isSuperAdmin = session.user.role === "SUPER_ADMIN";
+  const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
+  const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
+
+  const [subscriptions, areas, annyConfig] = await Promise.all([
+    db.subscription.findMany({
+      where: accountFilter,
+      include: {
+        areas: { select: { id: true, name: true } },
+        _count: { select: { tickets: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
+    db.accessArea.findMany({
+      where: accountFilter,
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.apiConfig.findFirst({
+      where: { ...accountFilter, provider: "ANNY" },
+      select: { extraConfig: true },
+    }).catch(() => null),
+  ]);
+
+  let annyServices: string[] = [];
+  let annyResources: string[] = [];
+  if (annyConfig?.extraConfig) {
+    try {
+      const parsed: AnnyExtra = JSON.parse(annyConfig.extraConfig);
+      annyServices = (parsed.services || []).sort();
+      annyResources = (parsed.resources || []).sort();
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <>
+      <Header title="Abos" accountName={session.user.accountName} />
+      <div className="p-6">
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader>
+            <CardTitle>Alle Abos ({subscriptions.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SubscriptionsTable
+              subscriptions={subscriptions}
+              areas={areas}
+              annyServices={isSuperAdmin ? [] : annyServices}
+              annyResources={isSuperAdmin ? [] : annyResources}
+              readonly={isSuperAdmin}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}

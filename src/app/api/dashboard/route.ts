@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
     qrCode: true,
   };
 
-  const [areas, scansToday, unassignedTickets, annyConfig] = await Promise.all([
+  const [areas, scansToday, unassignedTickets, subscriptionTickets, annyConfig] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: {
@@ -150,8 +150,16 @@ export async function GET(request: NextRequest) {
       where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
     }),
     db.ticket.findMany({
-      where: { ...where, accessAreaId: null, ...ticketDateFilter },
+      where: { ...where, accessAreaId: null, subscriptionId: null, ...ticketDateFilter },
       select: ticketSelect,
+      orderBy: { name: "asc" },
+    }),
+    db.ticket.findMany({
+      where: { ...where, subscriptionId: { not: null }, ...ticketDateFilter },
+      select: {
+        ...ticketSelect,
+        subscription: { select: { areas: { select: { id: true } } } },
+      },
       orderBy: { name: "asc" },
     }),
     db.apiConfig.findFirst({
@@ -159,6 +167,16 @@ export async function GET(request: NextRequest) {
       select: { token: true, baseUrl: true, extraConfig: true },
     }),
   ]);
+
+  // Build: areaId → subscription tickets
+  const subTicketsByArea = new Map<number, typeof subscriptionTickets>();
+  for (const ticket of subscriptionTickets) {
+    const subAreas = ticket.subscription?.areas || [];
+    for (const sa of subAreas) {
+      if (!subTicketsByArea.has(sa.id)) subTicketsByArea.set(sa.id, []);
+      subTicketsByArea.get(sa.id)!.push(ticket);
+    }
+  }
 
   // Parse anny mapping
   let mappings: Record<string, number> = {};
@@ -213,7 +231,12 @@ export async function GET(request: NextRequest) {
   // Build structured area responses
   const structuredAreas = areas.map((area) => {
     const areaResources = areaResourceMap[area.id] || [];
-    const enrichedTickets = area.tickets.map(enrichTicket);
+    const areaSubTickets = (subTicketsByArea.get(area.id) || []).map(enrichTicket);
+    const directTickets = area.tickets.map(enrichTicket);
+    const seenIds = new Set(directTickets.map((t) => t.id));
+    const mergedSubTickets = areaSubTickets.filter((t) => !seenIds.has(t.id));
+    const enrichedTickets = [...directTickets, ...mergedSubTickets];
+    const totalCount = area._count.tickets + mergedSubTickets.length;
 
     if (areaResources.length === 0) {
       return {
@@ -224,7 +247,7 @@ export async function GET(request: NextRequest) {
         openingHours: area.openingHours,
         resources: [],
         otherTickets: enrichedTickets,
-        _count: area._count,
+        _count: { tickets: totalCount },
       };
     }
 
@@ -295,7 +318,7 @@ export async function GET(request: NextRequest) {
         openingHours: inlineHours,
         resources: [],
         otherTickets: [...r.tickets, ...otherTickets],
-        _count: area._count,
+        _count: { tickets: totalCount },
       };
     }
 
@@ -307,7 +330,7 @@ export async function GET(request: NextRequest) {
       openingHours: area.openingHours,
       resources,
       otherTickets,
-      _count: area._count,
+      _count: { tickets: totalCount },
     };
   });
 

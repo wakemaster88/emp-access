@@ -267,6 +267,21 @@ export async function POST() {
       }
     }
 
+    // Load subscriptions for anny name matching
+    const subscriptions = await db.subscription.findMany({
+      where: { accountId: accountId! },
+      select: { id: true, annyNames: true },
+    });
+    const subNameMap = new Map<string, number>();
+    for (const sub of subscriptions) {
+      if (sub.annyNames) {
+        try {
+          const names: string[] = JSON.parse(sub.annyNames);
+          for (const n of names) subNameMap.set(n, sub.id);
+        } catch { /* ignore */ }
+      }
+    }
+
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -290,11 +305,23 @@ export async function POST() {
         typeName = `${typeName} (${count} Termine)`;
       }
 
+      // Priority 1: Match against subscription annyNames
+      let subscriptionId: number | null = null;
       let accessAreaId: number | null = null;
-      if (group.serviceName && areaMappings[group.serviceName]) {
-        accessAreaId = areaMappings[group.serviceName];
-      } else if (group.resourceName && areaMappings[group.resourceName]) {
-        accessAreaId = areaMappings[group.resourceName];
+
+      if (group.serviceName && subNameMap.has(group.serviceName)) {
+        subscriptionId = subNameMap.get(group.serviceName)!;
+      } else if (group.resourceName && subNameMap.has(group.resourceName)) {
+        subscriptionId = subNameMap.get(group.resourceName)!;
+      }
+
+      // Priority 2: Direct area mapping (only if no subscription match)
+      if (!subscriptionId) {
+        if (group.serviceName && areaMappings[group.serviceName]) {
+          accessAreaId = areaMappings[group.serviceName];
+        } else if (group.resourceName && areaMappings[group.resourceName]) {
+          accessAreaId = areaMappings[group.resourceName];
+        }
       }
 
       const ticketData = {
@@ -308,6 +335,7 @@ export async function POST() {
         qrCode: JSON.stringify(group.entries),
         source: "ANNY" as const,
         accessAreaId,
+        subscriptionId,
       };
 
       try {

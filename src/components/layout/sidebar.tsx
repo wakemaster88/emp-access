@@ -15,6 +15,7 @@ import {
   Shield,
   LogOut,
   Settings,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tickets", label: "Tickets", icon: Ticket },
+  { href: "/subscriptions", label: "Abos", icon: CreditCard },
   { href: "/devices", label: "Geräte", icon: HardDrive },
   { href: "/areas", label: "Resourcen", icon: MapPin },
   { href: "/scans", label: "Scans", icon: ScanLine },
