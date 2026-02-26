@@ -24,10 +24,11 @@ interface SubscriptionsTableProps {
   areas: AreaRef[];
   annyServices: string[];
   annyResources: string[];
+  annySubscriptions?: string[];
   readonly?: boolean;
 }
 
-export function SubscriptionsTable({ subscriptions, areas, annyServices, annyResources, readonly }: SubscriptionsTableProps) {
+export function SubscriptionsTable({ subscriptions, areas, annyServices, annyResources, annySubscriptions = [], readonly }: SubscriptionsTableProps) {
   const [selected, setSelected] = useState<SubscriptionData | null>(null);
   const [selectedAreas, setSelectedAreas] = useState<number[]>([]);
   const [addOpen, setAddOpen] = useState(false);
@@ -119,6 +120,7 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
         areas={areas}
         annyServices={annyServices}
         annyResources={annyResources}
+        annySubscriptions={annySubscriptions}
         open={addOpen}
         onClose={() => setAddOpen(false)}
       />
@@ -129,6 +131,7 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
         areas={areas}
         annyServices={annyServices}
         annyResources={annyResources}
+        annySubscriptions={annySubscriptions}
         open={!!selected}
         onClose={() => setSelected(null)}
       />

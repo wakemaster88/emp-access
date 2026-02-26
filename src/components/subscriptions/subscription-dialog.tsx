@@ -30,6 +30,7 @@ interface SubscriptionDialogProps {
   areas: AreaRef[];
   annyServices: string[];
   annyResources: string[];
+  annySubscriptions?: string[];
   open: boolean;
   onClose: () => void;
 }
@@ -85,7 +86,7 @@ function CheckList({
 
 export function SubscriptionDialog({
   subscription, initialAreaIds,
-  areas, annyServices, annyResources,
+  areas, annyServices, annyResources, annySubscriptions = [],
   open, onClose,
 }: SubscriptionDialogProps) {
   const router = useRouter();
@@ -98,7 +99,7 @@ export function SubscriptionDialog({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
 
-  const hasAnny = annyServices.length > 0 || annyResources.length > 0;
+  const hasAnny = annyServices.length > 0 || annyResources.length > 0 || annySubscriptions.length > 0;
 
   useEffect(() => {
     if (open) {
@@ -180,6 +181,7 @@ export function SubscriptionDialog({
   }
 
   const annyItems = [
+    ...annySubscriptions.map((n) => ({ key: n, label: `${n} (Subscription)` })),
     ...annyResources.map((n) => ({ key: n, label: `${n} (Resource)` })),
     ...annyServices.map((n) => ({ key: n, label: `${n} (Service)` })),
   ];
@@ -257,7 +259,7 @@ export function SubscriptionDialog({
         {tab === "anny" && (
           <div className="space-y-2">
             <p className="text-[11px] text-slate-500">
-              Wähle anny Services und Ressourcen, die diesem Abo zugeordnet werden. Tickets mit diesen Namen werden beim Sync automatisch verknüpft.
+              Wähle anny Subscriptions, Services und Ressourcen, die diesem Abo zugeordnet werden. Tickets mit diesen Namen werden beim Sync automatisch verknüpft.
             </p>
             <CheckList
               items={annyItems}

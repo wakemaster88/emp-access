@@ -53,6 +53,7 @@ interface AnnyMapping {
   mappings?: Record<string, number>;
   services?: string[];
   resources?: string[];
+  subscriptions?: string[];
   resourceIds?: Record<string, string>;
 }
 
@@ -126,9 +127,10 @@ export async function POST() {
       page++;
     }
 
-    // Fetch all resources and services from anny API (stored separately)
+    // Fetch all resources, services & subscriptions from anny API
     const discoveredServiceNames = new Set<string>();
     const discoveredResourceNames = new Set<string>();
+    const discoveredSubscriptionNames = new Set<string>();
     const discoveredResourceIds: Record<string, string> = {};
 
     // GET /api/v1/resources
@@ -174,6 +176,27 @@ export async function POST() {
         }
         if (services.length < 50) break;
         svcPage++;
+      }
+    } catch { /* non-critical */ }
+
+    // GET /api/v1/subscriptions
+    try {
+      let subPage = 1;
+      while (subPage <= 20) {
+        const subParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(subPage) });
+        const subRes = await fetch(`${apiBase}/subscriptions?${subParams}`, {
+          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!subRes.ok) break;
+        const subJson = await subRes.json();
+        const subs = Array.isArray(subJson) ? subJson : subJson.data || [];
+        for (const s of subs) {
+          const name = s.name || s.title;
+          if (name) discoveredSubscriptionNames.add(name);
+        }
+        if (subs.length < 50) break;
+        subPage++;
       }
     } catch { /* non-critical */ }
 
@@ -371,11 +394,12 @@ export async function POST() {
       data: { status: "INVALID" },
     });
 
-    // Persist discovered service/resource names + resource IDs (separated)
+    // Persist discovered service/resource/subscription names + resource IDs
     const updatedConfig: AnnyMapping = {
       ...annyConfig,
       services: [...discoveredServiceNames].sort(),
       resources: [...discoveredResourceNames].sort(),
+      subscriptions: [...discoveredSubscriptionNames].sort(),
       resourceIds: { ...(annyConfig.resourceIds || {}), ...discoveredResourceIds },
     };
 
@@ -396,6 +420,7 @@ export async function POST() {
       groups: groups.size,
       resources: discoveredResourceNames.size,
       services: discoveredServiceNames.size,
+      subscriptions: discoveredSubscriptionNames.size,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";

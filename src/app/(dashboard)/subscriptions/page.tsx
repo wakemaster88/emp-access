@@ -8,6 +8,7 @@ import { SubscriptionsTable } from "@/components/subscriptions/subscriptions-tab
 interface AnnyExtra {
   services?: string[];
   resources?: string[];
+  subscriptions?: string[];
 }
 
 export default async function SubscriptionsPage() {
@@ -40,11 +41,13 @@ export default async function SubscriptionsPage() {
 
   let annyServices: string[] = [];
   let annyResources: string[] = [];
+  let annySubscriptions: string[] = [];
   if (annyConfig?.extraConfig) {
     try {
       const parsed: AnnyExtra = JSON.parse(annyConfig.extraConfig);
       annyServices = (parsed.services || []).sort();
       annyResources = (parsed.resources || []).sort();
+      annySubscriptions = (parsed.subscriptions || []).sort();
     } catch { /* ignore */ }
   }
 
@@ -62,6 +65,7 @@ export default async function SubscriptionsPage() {
               areas={areas}
               annyServices={isSuperAdmin ? [] : annyServices}
               annyResources={isSuperAdmin ? [] : annyResources}
+              annySubscriptions={isSuperAdmin ? [] : annySubscriptions}
               readonly={isSuperAdmin}
             />
           </CardContent>
