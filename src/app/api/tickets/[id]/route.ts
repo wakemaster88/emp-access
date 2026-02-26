@@ -60,6 +60,7 @@ export async function PUT(
       ...(data.rfidCode !== undefined && { rfidCode: data.rfidCode }),
       ...(data.status !== undefined && { status: data.status }),
       ...(data.accessAreaId !== undefined && { accessAreaId: data.accessAreaId }),
+      ...(data.subscriptionId !== undefined && { subscriptionId: data.subscriptionId }),
       ...(data.validityType !== undefined && { validityType: data.validityType }),
       ...(data.slotStart !== undefined && { slotStart: data.slotStart }),
       ...(data.slotEnd !== undefined && { slotEnd: data.slotEnd }),

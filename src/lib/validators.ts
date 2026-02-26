@@ -39,6 +39,7 @@ export const ticketCreateSchema = z.object({
   slotEnd: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
   validityDurationMinutes: z.coerce.number().int().min(1).optional().nullable(),
   accessAreaId: z.coerce.number().int().optional().nullable(),
+  subscriptionId: z.coerce.number().int().optional().nullable(),
   status: z.enum(["VALID", "REDEEMED", "INVALID", "PROTECTED"]).optional(),
   barcode: z.string().optional().nullable(),
   firstName: z.string().optional().nullable(),

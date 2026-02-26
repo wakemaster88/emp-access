@@ -18,9 +18,15 @@ interface Area {
   name: string;
 }
 
+interface Sub {
+  id: number;
+  name: string;
+}
+
 interface TicketsTableProps {
   tickets: TicketData[];
   areas: Area[];
+  subscriptions?: Sub[];
   readonly?: boolean;
 }
 
@@ -88,7 +94,7 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
   return <span>{dateRange ?? "–"}</span>;
 }
 
-export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
+export function TicketsTable({ tickets, areas, subscriptions = [], readonly }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
 
   return (
@@ -163,6 +169,7 @@ export function TicketsTable({ tickets, areas, readonly }: TicketsTableProps) {
         <EditTicketDialog
           ticket={selected}
           areas={areas}
+          subscriptions={subscriptions}
           onClose={() => setSelected(null)}
         />
       )}

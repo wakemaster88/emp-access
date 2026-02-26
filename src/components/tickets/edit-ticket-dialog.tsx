@@ -93,6 +93,7 @@ export interface TicketData {
   rfidCode: string | null;
   status: string;
   accessAreaId: number | null;
+  subscriptionId: number | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
   validityType: string;
@@ -111,6 +112,11 @@ interface Area {
   name: string;
 }
 
+interface Sub {
+  id: number;
+  name: string;
+}
+
 interface ScanRecord {
   id: number;
   code: string;
@@ -122,6 +128,7 @@ interface ScanRecord {
 interface EditTicketDialogProps {
   ticket: TicketData | null;
   areas: Area[];
+  subscriptions?: Sub[];
   onClose: () => void;
 }
 
@@ -131,7 +138,7 @@ function toDateInput(val: Date | string | null | undefined): string {
   return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 }
 
-export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogProps) {
+export function EditTicketDialog({ ticket, areas, subscriptions = [], onClose }: EditTicketDialogProps) {
   const router = useRouter();
   const [tab, setTab] = useState<"edit" | "bookings" | "scans">("edit");
   const [form, setForm] = useState({
@@ -141,6 +148,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
     code: "",
     status: "VALID",
     accessAreaId: "none",
+    subscriptionId: "none",
     startDate: "",
     endDate: "",
     validityType: "DATE_RANGE",
@@ -165,6 +173,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
         code: ticket.barcode || (ticket.source !== "ANNY" ? ticket.qrCode : null) || ticket.rfidCode || "",
         status: ticket.status,
         accessAreaId: ticket.accessAreaId ? String(ticket.accessAreaId) : "none",
+        subscriptionId: ticket.subscriptionId ? String(ticket.subscriptionId) : "none",
         startDate: toDateInput(ticket.startDate),
         endDate: toDateInput(ticket.endDate),
         validityType: ticket.validityType ?? "DATE_RANGE",
@@ -212,6 +221,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
       ...(!isAnny && { qrCode: form.code || null }),
       rfidCode: form.code || null,
       accessAreaId: form.accessAreaId && form.accessAreaId !== "none" ? Number(form.accessAreaId) : null,
+      subscriptionId: form.subscriptionId && form.subscriptionId !== "none" ? Number(form.subscriptionId) : null,
       startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
       endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
       validityType: form.validityType,
@@ -374,7 +384,7 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">Resource</Label>
                 <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
@@ -387,6 +397,21 @@ export function EditTicketDialog({ ticket, areas, onClose }: EditTicketDialogPro
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Abo</Label>
+                <Select value={form.subscriptionId} onValueChange={(v) => set("subscriptionId", v)}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Abo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Kein Abo</SelectItem>
+                    {subscriptions.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">Status</Label>
                 <Select value={form.status} onValueChange={(v) => set("status", v)}>

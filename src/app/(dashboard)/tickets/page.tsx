@@ -30,14 +30,19 @@ export default async function TicketsPage({ searchParams }: Props) {
   const statusFilter = showInactive ? {} : { status: { in: ["VALID" as const, "REDEEMED" as const] } };
   const areaFilter = areaId ? { accessAreaId: areaId } : {};
 
-  const [tickets, areas, inactiveCount] = await Promise.all([
+  const [tickets, areas, subscriptions, inactiveCount] = await Promise.all([
     db.ticket.findMany({
       where: { ...baseWhere, ...statusFilter, ...areaFilter },
-      include: { accessArea: true, _count: { select: { scans: true } } },
+      include: { accessArea: true, subscription: true, _count: { select: { scans: true } } },
       orderBy: { updatedAt: "desc" },
       take: 500,
     }),
     db.accessArea.findMany({
+      where: baseWhere,
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    db.subscription.findMany({
       where: baseWhere,
       orderBy: { name: "asc" },
       select: { id: true, name: true },
@@ -86,6 +91,7 @@ export default async function TicketsPage({ searchParams }: Props) {
             <TicketsTable
               tickets={tickets as never}
               areas={areas}
+              subscriptions={subscriptions}
               readonly={isSuperAdmin}
             />
           </CardContent>

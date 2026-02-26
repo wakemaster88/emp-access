@@ -141,6 +141,7 @@ export function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [areas, setAreas] = useState<AreaOption[]>([]);
+  const [subs, setSubs] = useState<{ id: number; name: string }[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
   const [ticketLoading, setTicketLoading] = useState(false);
 
@@ -159,6 +160,10 @@ export function DashboardClient() {
     fetch("/api/areas")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setAreas(d); })
+      .catch(() => {});
+    fetch("/api/subscriptions")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setSubs(d); })
       .catch(() => {});
   }, []);
 
@@ -343,6 +348,7 @@ export function DashboardClient() {
       <EditTicketDialog
         ticket={selectedTicket}
         areas={areas}
+        subscriptions={subs}
         onClose={() => {
           setSelectedTicket(null);
           fetchData(date);
