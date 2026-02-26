@@ -30,16 +30,16 @@ export const piStatusSchema = z.array(
 
 export const ticketCreateSchema = z.object({
   name: z.string().min(1),
-  qrCode: z.string().optional(),
-  rfidCode: z.string().optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-  accessAreaId: z.coerce.number().int().optional(),
+  qrCode: z.string().optional().nullable(),
+  rfidCode: z.string().optional().nullable(),
+  startDate: z.string().datetime().optional().nullable(),
+  endDate: z.string().datetime().optional().nullable(),
+  accessAreaId: z.coerce.number().int().optional().nullable(),
   status: z.enum(["VALID", "INVALID", "PROTECTED"]).optional(),
-  barcode: z.string().optional(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  ticketTypeName: z.string().optional(),
+  barcode: z.string().optional().nullable(),
+  firstName: z.string().optional().nullable(),
+  lastName: z.string().optional().nullable(),
+  ticketTypeName: z.string().optional().nullable(),
 });
 
 export const ticketUpdateSchema = ticketCreateSchema.partial();
