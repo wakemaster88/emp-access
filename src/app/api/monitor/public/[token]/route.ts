@@ -52,8 +52,8 @@ export async function GET(
           const scans = await prisma.scan.findMany({
             where: scanWhere,
             include: { device: { select: { id: true, name: true } }, ticket: { select: { name: true } } },
-            orderBy: { id: "asc" },
-            take: 20,
+            orderBy: { id: "desc" },
+            take: lastScanId === 0 ? 50 : 20,
           });
 
           if (scans.length > 0) {

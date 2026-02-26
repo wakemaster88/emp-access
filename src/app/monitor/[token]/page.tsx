@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Wifi, WifiOff, CheckCircle2, XCircle, Clock, ScanLine } from "lucide-react";
@@ -39,10 +39,12 @@ export default function PublicMonitorPage({ params }: Props) {
   const [monitorName, setMonitorName] = useState<string>("");
   const [devices, setDevices] = useState<Device[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
+  const [newIds, setNewIds] = useState<Set<number>>(new Set());
   const [stats, setStats] = useState<Stats>({ granted: 0, denied: 0, total: 0 });
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const esRef = useRef<EventSource | null>(null);
+  const isFirstLoad = useRef(true);
 
   useEffect(() => {
     function connect() {
@@ -62,9 +64,16 @@ export default function PublicMonitorPage({ params }: Props) {
           setMonitorName(msg.data.name);
           setDevices(msg.data.devices);
         } else if (msg.type === "scans") {
+          const incoming = msg.data as Scan[];
           setScans((prev) => {
-            const combined = [...msg.data.reverse(), ...prev];
-            return combined.slice(0, 50);
+            const existing = new Set(prev.map((s) => s.id));
+            const fresh = incoming.filter((s) => !existing.has(s.id));
+            if (!isFirstLoad.current && fresh.length > 0) {
+              setNewIds(new Set(fresh.map((s) => s.id)));
+              setTimeout(() => setNewIds(new Set()), 1500);
+            }
+            isFirstLoad.current = false;
+            return [...fresh, ...prev].slice(0, 50);
           });
         } else if (msg.type === "stats") {
           setStats(msg.data);
@@ -171,12 +180,17 @@ export default function PublicMonitorPage({ params }: Props) {
               {scans.map((scan) => {
                 const style = resultStyle[scan.result];
                 const Icon = style.icon;
+                const isNew = newIds.has(scan.id);
                 return (
                   <div
                     key={scan.id}
                     className={cn(
                       "flex items-center justify-between rounded-xl border px-4 py-3 transition-all",
-                      style.bg
+                      style.bg,
+                      isNew && "animate-scan-flash ring-2 ring-offset-1 ring-offset-slate-950",
+                      isNew && scan.result === "GRANTED" && "ring-emerald-400",
+                      isNew && scan.result === "DENIED" && "ring-rose-400",
+                      isNew && scan.result === "PROTECTED" && "ring-amber-400",
                     )}
                   >
                     <div className="flex items-center gap-3">

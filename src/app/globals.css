@@ -124,3 +124,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes scan-flash {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(0) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-scan-flash {
+  animation: scan-flash 0.5s ease-out;
+}

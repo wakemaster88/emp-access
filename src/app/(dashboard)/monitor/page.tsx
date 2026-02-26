@@ -35,6 +35,7 @@ interface DeviceStatus {
 
 export default function MonitorPage() {
   const [scans, setScans] = useState<MonitorScan[]>([]);
+  const [newIds, setNewIds] = useState<Set<number>>(new Set());
   const [counts, setCounts] = useState<AreaCount[]>([]);
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -43,6 +44,7 @@ export default function MonitorPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const isFirstLoad = useRef(true);
 
   const playAlertSound = useCallback(() => {
     try {
@@ -81,13 +83,19 @@ export default function MonitorPage() {
       const msg = JSON.parse(event.data);
 
       if (msg.type === "scans" && msg.data.length > 0) {
+        const incoming = msg.data as MonitorScan[];
         setScans((prev) => {
           const existing = new Set(prev.map((s) => s.id));
-          const newScans = (msg.data as MonitorScan[]).filter((s) => !existing.has(s.id));
-          return [...newScans, ...prev].slice(0, 100);
+          const fresh = incoming.filter((s) => !existing.has(s.id));
+          if (!isFirstLoad.current && fresh.length > 0) {
+            setNewIds(new Set(fresh.map((s) => s.id)));
+            setTimeout(() => setNewIds(new Set()), 1500);
+          }
+          isFirstLoad.current = false;
+          return [...fresh, ...prev].slice(0, 100);
         });
 
-        if (soundEnabled && msg.data.some((s: MonitorScan) => s.result === "DENIED")) {
+        if (soundEnabled && incoming.some((s) => s.result === "DENIED")) {
           playAlertSound();
         }
       }
@@ -162,7 +170,9 @@ export default function MonitorPage() {
                 {scans.length === 0 && (
                   <p className="text-center text-slate-500 py-12">Warte auf Scans...</p>
                 )}
-                {scans.map((scan) => (
+                {scans.map((scan) => {
+                  const isNew = newIds.has(scan.id);
+                  return (
                   <div
                     key={scan.id}
                     className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
@@ -171,6 +181,10 @@ export default function MonitorPage() {
                         : scan.result === "DENIED"
                           ? "bg-rose-50 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50"
                           : "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50"
+                    } ${isNew ? "animate-scan-flash ring-2 ring-offset-1" : ""} ${
+                      isNew && scan.result === "GRANTED" ? "ring-emerald-400" :
+                      isNew && scan.result === "DENIED" ? "ring-rose-400" :
+                      isNew ? "ring-amber-400" : ""
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -198,7 +212,8 @@ export default function MonitorPage() {
                       {fmtTime(scan.scanTime)}
                     </span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
