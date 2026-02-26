@@ -1,11 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 
-const ANNY_REGIONS: Record<string, string> = {
-  co: "https://b.anny.co",
-  eu: "https://b.anny.eu",
-  staging: "https://b.staging.anny.co",
-};
+const DEFAULT_BASE_URL = "https://b.anny.co";
 
 interface AnnyBooking {
   id: string | number;
@@ -41,7 +37,9 @@ function mapAnnyStatus(status?: string): "VALID" | "INVALID" | "REDEEMED" {
   return "VALID";
 }
 
-export async function POST(request: NextRequest) {
+export const maxDuration = 60;
+
+export async function POST() {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
 
@@ -56,33 +54,32 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const region = config.extraConfig || "co";
-    const baseUrl = config.baseUrl?.replace(/\/+$/, "") || ANNY_REGIONS[region] || ANNY_REGIONS.co;
+    const baseUrl = (config.baseUrl?.replace(/\/+$/, "") || DEFAULT_BASE_URL);
+    const apiBase = `${baseUrl}/api/v1`;
 
     let allBookings: AnnyBooking[] = [];
     let page = 1;
     const pageSize = 30;
-    let hasMore = true;
 
-    while (hasMore) {
+    while (true) {
       const params = new URLSearchParams({
-        "include": "customer,resource,service",
+        include: "customer,resource,service",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
 
-      const res = await fetch(`${baseUrl}/api/v1/bookings?${params}`, {
+      const res = await fetch(`${apiBase}/bookings?${params}`, {
         headers: {
           Authorization: `Bearer ${config.token}`,
           Accept: "application/json",
         },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(15000),
       });
 
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         return NextResponse.json(
-          { error: `anny.co API Fehler: ${res.status} – ${body.slice(0, 200)}` },
+          { error: `anny.co API Fehler: ${res.status} – ${body.slice(0, 300)}` },
           { status: 502 }
         );
       }
@@ -91,12 +88,8 @@ export async function POST(request: NextRequest) {
       const bookings: AnnyBooking[] = Array.isArray(json) ? json : json.data || [];
       allBookings = allBookings.concat(bookings);
 
-      if (bookings.length < pageSize) {
-        hasMore = false;
-      } else {
-        page++;
-        if (page > 100) break;
-      }
+      if (bookings.length < pageSize || page >= 50) break;
+      page++;
     }
 
     let created = 0;
@@ -146,15 +139,12 @@ export async function POST(request: NextRequest) {
       data: { lastUpdate: new Date() },
     });
 
-    return NextResponse.json({
-      created,
-      updated,
-      skipped,
-      total: allBookings.length,
-    });
+    return NextResponse.json({ created, updated, skipped, total: allBookings.length });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : "unbekannt";
+    console.error("[anny sync error]", msg);
     return NextResponse.json(
-      { error: `Sync fehlgeschlagen: ${err instanceof Error ? err.message : "unbekannt"}` },
+      { error: `Sync fehlgeschlagen: ${msg}` },
       { status: 500 }
     );
   }

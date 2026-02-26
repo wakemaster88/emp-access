@@ -45,8 +45,7 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
     color: "bg-violet-500",
     fields: {
       token: "Access Token",
-      baseUrl: "Base URL (optional, Standard: b.anny.co)",
-      extraConfig: "Region (co / eu / staging)",
+      baseUrl: "Base URL (optional, Standard: https://b.anny.co)",
     },
   },
   WAKESYS: {
@@ -130,20 +129,35 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     setError("");
     setSyncResult(null);
     try {
-      const res = await fetch(syncEndpoint.url, { method: syncEndpoint.method });
-      const json = await res.json();
+      const res = await fetch(syncEndpoint.url, {
+        method: syncEndpoint.method,
+        signal: AbortSignal.timeout(120000),
+      });
+      let json;
+      try {
+        json = await res.json();
+      } catch {
+        setError(`Server-Fehler: ${res.status} ${res.statusText}`);
+        return;
+      }
       if (!res.ok) {
-        setError(json.error || "Sync fehlgeschlagen");
+        setError(json.error || `Sync fehlgeschlagen (${res.status})`);
       } else {
         const parts: string[] = [];
         if (json.created) parts.push(`${json.created} neu`);
         if (json.updated) parts.push(`${json.updated} aktualisiert`);
         if (json.skipped) parts.push(`${json.skipped} übersprungen`);
+        if (json.total !== undefined) parts.push(`${json.total} gesamt`);
         setSyncResult(parts.length ? parts.join(", ") : "Keine neuen Daten");
-        setTimeout(() => setSyncResult(null), 5000);
+        setTimeout(() => setSyncResult(null), 8000);
       }
-    } catch {
-      setError("Netzwerkfehler beim Sync");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "unbekannt";
+      if (msg.includes("abort") || msg.includes("timeout")) {
+        setError("Sync-Timeout – bitte erneut versuchen");
+      } else {
+        setError(`Netzwerkfehler: ${msg}`);
+      }
     } finally {
       setSyncing(false);
     }
@@ -233,8 +247,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Label htmlFor={`${provider}-baseUrl`}>{meta.fields.baseUrl}</Label>
                 <Input
                   id={`${provider}-baseUrl`}
-                  type="url"
-                  placeholder="https://api.example.com"
+                  placeholder={provider === "ANNY" ? "https://b.anny.co" : "https://api.example.com"}
                   value={data.baseUrl ?? ""}
                   onChange={(e) => setData({ ...data, baseUrl: e.target.value })}
                 />
@@ -246,7 +259,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Label htmlFor={`${provider}-extra`}>{meta.fields.extraConfig}</Label>
                 <Input
                   id={`${provider}-extra`}
-                  placeholder='{"key": "value"}'
+                  placeholder={provider === "EMP_CONTROL" ? '{"key": "value"}' : ""}
                   value={data.extraConfig ?? ""}
                   onChange={(e) => setData({ ...data, extraConfig: e.target.value })}
                   className="font-mono text-xs"
