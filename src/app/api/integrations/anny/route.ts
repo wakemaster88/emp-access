@@ -104,7 +104,7 @@ export async function POST() {
 
     while (true) {
       const params = new URLSearchParams({
-        include: "customer,resource,service,subscription",
+        include: "customer,resource,service",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
@@ -185,26 +185,29 @@ export async function POST() {
       }
     } catch { /* non-critical */ }
 
-    // GET /api/v1/subscriptions
-    try {
-      let subPage = 1;
-      while (subPage <= 20) {
-        const subParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(subPage) });
-        const subRes = await fetch(`${apiBase}/subscriptions?${subParams}`, {
-          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
-          signal: AbortSignal.timeout(10000),
-        });
-        if (!subRes.ok) break;
-        const subJson = await subRes.json();
-        const subs = Array.isArray(subJson) ? subJson : subJson.data || [];
-        for (const s of subs) {
-          const name = s.name || s.title;
-          if (name) discoveredSubscriptionNames.add(name);
+    // GET /api/v1/subscriptions (try multiple endpoint variants)
+    for (const subPath of ["subscriptions", "subscription-plans"]) {
+      try {
+        let subPage = 1;
+        while (subPage <= 20) {
+          const subParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(subPage) });
+          const subRes = await fetch(`${apiBase}/${subPath}?${subParams}`, {
+            headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!subRes.ok) break;
+          const subJson = await subRes.json();
+          const subs = Array.isArray(subJson) ? subJson : subJson.data || [];
+          for (const s of subs) {
+            const name = s.name || s.title;
+            if (name) discoveredSubscriptionNames.add(name);
+          }
+          if (subs.length < 50) break;
+          subPage++;
         }
-        if (subs.length < 50) break;
-        subPage++;
-      }
-    } catch { /* non-critical */ }
+        if (discoveredSubscriptionNames.size > 0) break;
+      } catch { /* non-critical */ }
+    }
 
     // Deduplicate bookings by ID
     const seenBookingIds = new Set<string>();
@@ -230,9 +233,6 @@ export async function POST() {
     for (const booking of uniqueBookings) {
       const customer = booking.customer;
       const customerId = customer?.id;
-
-      const subName = booking.subscription?.name || booking.subscription?.title || null;
-      if (subName) discoveredSubscriptionNames.add(subName);
 
       // Skip resource reservations without customer (e.g. Ferienkurs blocking lifts)
       if (!customerId) {
@@ -292,7 +292,7 @@ export async function POST() {
           lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
           serviceName,
           resourceName,
-          subscriptionName: subName,
+          subscriptionName: null,
           startDate,
           endDate,
           statuses: booking.status ? [booking.status] : [],
