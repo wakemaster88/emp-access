@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ValidityType } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
+
+const VALIDITY_TYPES: ValidityType[] = ["DATE_RANGE", "TIME_SLOT", "DURATION"];
+function toValidityType(v: string | null | undefined): ValidityType | null {
+  return v && VALIDITY_TYPES.includes(v as ValidityType) ? (v as ValidityType) : null;
+}
 
 export async function GET(
   _request: NextRequest,
@@ -59,7 +65,7 @@ export async function PUT(
         data: areasPayload.map((a) => ({
           serviceId: svcId,
           accessAreaId: a.areaId,
-          defaultValidityType: ["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(a.defaultValidityType ?? "") ? a.defaultValidityType : null,
+          defaultValidityType: toValidityType(a.defaultValidityType),
           defaultStartDate: a.defaultStartDate ? new Date(a.defaultStartDate) : null,
           defaultEndDate: a.defaultEndDate ? new Date(a.defaultEndDate) : null,
           defaultSlotStart: a.defaultSlotStart ?? null,
