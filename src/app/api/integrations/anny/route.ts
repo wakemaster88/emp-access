@@ -52,6 +52,7 @@ interface BookingGroup {
 interface AnnyMapping {
   mappings?: Record<string, number>;
   services?: string[];
+  resources?: string[];
   resourceIds?: Record<string, string>;
 }
 
@@ -125,8 +126,9 @@ export async function POST() {
       page++;
     }
 
-    // Fetch all resources and services from anny API
-    const discoveredServices = new Set<string>();
+    // Fetch all resources and services from anny API (stored separately)
+    const discoveredServiceNames = new Set<string>();
+    const discoveredResourceNames = new Set<string>();
     const discoveredResourceIds: Record<string, string> = {};
 
     // GET /api/v1/resources
@@ -145,7 +147,7 @@ export async function POST() {
           const name = r.name || r.title;
           const id = r.id;
           if (name && id) {
-            discoveredServices.add(name);
+            discoveredResourceNames.add(name);
             discoveredResourceIds[name] = String(id);
           }
         }
@@ -168,7 +170,7 @@ export async function POST() {
         const services = Array.isArray(sJson) ? sJson : sJson.data || [];
         for (const s of services) {
           const name = s.name || s.title;
-          if (name) discoveredServices.add(name);
+          if (name) discoveredServiceNames.add(name);
         }
         if (services.length < 50) break;
         svcPage++;
@@ -196,8 +198,8 @@ export async function POST() {
 
       const serviceName = booking.service?.name || null;
       const resourceName = booking.resource?.name || null;
-      if (serviceName) discoveredServices.add(serviceName);
-      if (resourceName) discoveredServices.add(resourceName);
+      if (serviceName) discoveredServiceNames.add(serviceName);
+      if (resourceName) discoveredResourceNames.add(resourceName);
 
       const resId = booking.resource?.id;
       if (resId && resourceName) {
@@ -316,10 +318,11 @@ export async function POST() {
       data: { status: "INVALID" },
     });
 
-    // Persist discovered service/resource names + resource IDs
+    // Persist discovered service/resource names + resource IDs (separated)
     const updatedConfig: AnnyMapping = {
       ...annyConfig,
-      services: [...discoveredServices].sort(),
+      services: [...discoveredServiceNames].sort(),
+      resources: [...discoveredResourceNames].sort(),
       resourceIds: { ...(annyConfig.resourceIds || {}), ...discoveredResourceIds },
     };
 
@@ -338,8 +341,8 @@ export async function POST() {
       invalidated: orphaned.count,
       total: allBookings.length,
       groups: groups.size,
-      resources: Object.keys(discoveredResourceIds).length,
-      services: discoveredServices.size,
+      resources: discoveredResourceNames.size,
+      services: discoveredServiceNames.size,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";

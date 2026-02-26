@@ -4,6 +4,12 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AreasTable } from "@/components/areas/areas-table";
+import { AnnyResourceMapping } from "@/components/areas/anny-resource-mapping";
+
+interface AnnyExtra {
+  mappings?: Record<string, number>;
+  resources?: string[];
+}
 
 export default async function AreasPage() {
   const session = await safeAuth();
@@ -13,7 +19,7 @@ export default async function AreasPage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [areas, devices] = await Promise.all([
+  const [areas, devices, annyConfig] = await Promise.all([
     db.accessArea.findMany({
       where: accountFilter,
       include: {
@@ -26,6 +32,10 @@ export default async function AreasPage() {
       where: accountFilter,
       select: { id: true, name: true, accessIn: true, accessOut: true },
     }),
+    db.apiConfig.findFirst({
+      where: { ...accountFilter, provider: "ANNY" },
+      select: { extraConfig: true },
+    }).catch(() => null),
   ]);
 
   // Map devices to areas
@@ -35,10 +45,25 @@ export default async function AreasPage() {
     devicesOut: devices.filter((d) => d.accessOut === area.id).map((d) => ({ id: d.id, name: d.name })),
   }));
 
+  // Parse anny resource mapping
+  let annyResources: string[] = [];
+  let annyMappings: Record<string, number> = {};
+  let annyExtraConfig = "";
+  if (annyConfig?.extraConfig) {
+    try {
+      const parsed: AnnyExtra = JSON.parse(annyConfig.extraConfig);
+      annyResources = parsed.resources || [];
+      annyMappings = parsed.mappings || {};
+      annyExtraConfig = annyConfig.extraConfig;
+    } catch { /* ignore */ }
+  }
+
+  const areaOptions = areas.map((a) => ({ id: a.id, name: a.name }));
+
   return (
     <>
       <Header title="Resourcen" accountName={session.user.accountName} />
-      <div className="p-6">
+      <div className="p-6 space-y-6">
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader>
             <CardTitle>Alle Resourcen ({areas.length})</CardTitle>
@@ -47,6 +72,15 @@ export default async function AreasPage() {
             <AreasTable areas={areaRows as never} readonly={isSuperAdmin} />
           </CardContent>
         </Card>
+
+        {!isSuperAdmin && annyResources.length > 0 && (
+          <AnnyResourceMapping
+            areas={areaOptions}
+            annyResources={annyResources}
+            mappings={annyMappings}
+            extraConfig={annyExtraConfig}
+          />
+        )}
       </div>
     </>
   );

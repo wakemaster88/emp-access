@@ -114,11 +114,12 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
   // Parse anny service→area mapping from extraConfig
   const parsedExtra = (() => {
     try {
-      if (data.extraConfig) return JSON.parse(data.extraConfig) as { mappings?: Record<string, number>; services?: string[] };
+      if (data.extraConfig) return JSON.parse(data.extraConfig) as { mappings?: Record<string, number>; services?: string[]; resources?: string[] };
     } catch { /* ignore */ }
-    return { mappings: {}, services: [] as string[] };
+    return { mappings: {}, services: [] as string[], resources: [] as string[] };
   })();
-  const annyServices = parsedExtra.services || [];
+  const annyResources = parsedExtra.resources || [];
+  const annyServiceNames = (parsedExtra.services || []).filter((s) => !annyResources.includes(s));
   const annyMappings = parsedExtra.mappings || {};
 
   function updateMapping(serviceName: string, areaId: number | null) {
@@ -321,19 +322,19 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
               </div>
             )}
 
-            {provider === "ANNY" && isConfigured && areas && areas.length > 0 && annyServices.length > 0 && (
+            {provider === "ANNY" && isConfigured && areas && areas.length > 0 && annyServiceNames.length > 0 && (
               <>
                 <Separator className="dark:bg-slate-800" />
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-slate-500" />
-                    <Label className="text-sm font-semibold">Resource-Zuordnung</Label>
+                    <Label className="text-sm font-semibold">Service-Zuordnung</Label>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Ordne anny Services/Ressourcen einer Resource zu. Nach dem Speichern werden beim nächsten Sync die Tickets automatisch zugeordnet.
+                    Ordne anny Services einer Resource zu. Nach dem Speichern werden beim nächsten Sync die Tickets automatisch zugeordnet. Die Zuordnung von anny Ressourcen erfolgt im Menüpunkt „Resourcen".
                   </p>
                   <div className="space-y-2">
-                    {annyServices.map((svc) => (
+                    {annyServiceNames.map((svc) => (
                       <div key={svc} className="flex items-center gap-3">
                         <span className="text-sm text-slate-700 dark:text-slate-300 min-w-0 flex-1 truncate">{svc}</span>
                         <Select
@@ -359,7 +360,7 @@ export function IntegrationCard({ provider, initialData, areas }: IntegrationCar
               </>
             )}
 
-            {provider === "ANNY" && isConfigured && annyServices.length === 0 && (
+            {provider === "ANNY" && isConfigured && annyServiceNames.length === 0 && (
               <p className="text-xs text-slate-400 italic">
                 Erst synchronisieren, um anny Services zu erkennen und Resourcen zuzuordnen.
               </p>
