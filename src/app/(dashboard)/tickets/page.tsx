@@ -84,7 +84,7 @@ export default async function TicketsPage({ searchParams }: Props) {
                     : <><Eye className="h-4 w-4 mr-1.5" />Auch inaktive</>}
                 </Link>
               </Button>
-              {!isSuperAdmin && <AddTicketDialog areas={areas} />}
+              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subscriptions} />}
             </div>
           </CardHeader>
           <CardContent>

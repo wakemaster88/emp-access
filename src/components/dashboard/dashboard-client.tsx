@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  CalendarDays,
   Users,
   ScanLine,
   Loader2,
@@ -322,50 +320,87 @@ export function DashboardClient() {
 
   const totalTickets = allAreas.reduce((sum, a) => sum + a._count.tickets, 0);
 
+  const weekDays = (() => {
+    const current = new Date(date + "T12:00:00");
+    const dayOfWeek = current.getDay();
+    const monday = new Date(current);
+    monday.setDate(current.getDate() - ((dayOfWeek + 6) % 7));
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return {
+        date: toLocaleDateStr(d),
+        dayName: d.toLocaleDateString("de-DE", { weekday: "short" }),
+        dayNum: d.getDate(),
+        isToday: toLocaleDateStr(d) === toLocaleDateStr(new Date()),
+        isSelected: toLocaleDateStr(d) === date,
+      };
+    });
+  })();
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-0.5">
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftDate(-1)}>
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Button>
-          <div className="relative">
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => e.target.value && setDate(e.target.value)}
-              className="w-40 h-8 text-xs font-medium pl-8"
-            />
-            <CalendarDays className="h-3.5 w-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => shiftDate(-7)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <button
+              type="button"
+              onClick={() => setDate(toLocaleDateStr(new Date()))}
+              className={cn(
+                "h-8 px-3 rounded-md text-xs font-semibold transition-colors",
+                isToday(date)
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+              )}
+            >
+              Heute
+            </button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => shiftDate(7)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftDate(1)}>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
+
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            {fmtDisplayDate(date)}
+          </span>
+
+          <div className="ml-auto flex items-center gap-2">
+            {(loading || ticketLoading) && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            <Badge variant="secondary" className="gap-1 text-xs py-0.5 px-2">
+              <Users className="h-3 w-3" />
+              {totalTickets}
+            </Badge>
+            {data && (
+              <Badge variant="secondary" className="gap-1 text-xs py-0.5 px-2">
+                <ScanLine className="h-3 w-3" />
+                {data.scansToday}
+              </Badge>
+            )}
+          </div>
         </div>
 
-        {!isToday(date) && (
-          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setDate(toLocaleDateStr(new Date()))}>
-            Heute
-          </Button>
-        )}
-
-        <span className="text-sm font-medium text-slate-600 dark:text-slate-400 hidden sm:inline">
-          {fmtDisplayDate(date)}
-          {isToday(date) && <span className="ml-1 text-slate-400 font-normal">· heute</span>}
-        </span>
-
-        <div className="ml-auto flex items-center gap-2">
-          {(loading || ticketLoading) && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-          <Badge variant="secondary" className="gap-1 text-xs py-0.5 px-2">
-            <Users className="h-3 w-3" />
-            {totalTickets}
-          </Badge>
-          {data && (
-            <Badge variant="secondary" className="gap-1 text-xs py-0.5 px-2">
-              <ScanLine className="h-3 w-3" />
-              {data.scansToday}
-            </Badge>
-          )}
+        <div className="grid grid-cols-7 gap-1">
+          {weekDays.map((wd) => (
+            <button
+              key={wd.date}
+              type="button"
+              onClick={() => setDate(wd.date)}
+              className={cn(
+                "flex flex-col items-center py-1.5 rounded-lg text-center transition-all",
+                wd.isSelected
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : wd.isToday
+                    ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-950/50"
+                    : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+              )}
+            >
+              <span className="text-[10px] font-medium uppercase">{wd.dayName}</span>
+              <span className={cn("text-base font-bold leading-tight", wd.isSelected ? "text-white" : "")}>{wd.dayNum}</span>
+            </button>
+          ))}
         </div>
       </div>
 

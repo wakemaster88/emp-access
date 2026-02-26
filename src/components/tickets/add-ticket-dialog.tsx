@@ -27,8 +27,14 @@ interface Area {
   name: string;
 }
 
+interface Sub {
+  id: number;
+  name: string;
+}
+
 interface AddTicketDialogProps {
   areas: Area[];
+  subscriptions?: Sub[];
 }
 
 const EMPTY = {
@@ -37,6 +43,7 @@ const EMPTY = {
   ticketTypeName: "",
   code: "",
   accessAreaId: "none",
+  subscriptionId: "none",
   status: "VALID",
   startDate: "",
   endDate: "",
@@ -46,7 +53,7 @@ const EMPTY = {
   validityDurationMinutes: "",
 };
 
-export function AddTicketDialog({ areas }: AddTicketDialogProps) {
+export function AddTicketDialog({ areas, subscriptions = [] }: AddTicketDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -79,7 +86,11 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
       payload.qrCode = form.code;
       payload.rfidCode = form.code;
     }
-    if (form.accessAreaId && form.accessAreaId !== "none") payload.accessAreaId = Number(form.accessAreaId);
+    if (form.subscriptionId && form.subscriptionId !== "none") {
+      payload.subscriptionId = Number(form.subscriptionId);
+    } else if (form.accessAreaId && form.accessAreaId !== "none") {
+      payload.accessAreaId = Number(form.accessAreaId);
+    }
     if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
     if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
     if (form.validityType === "TIME_SLOT") {
@@ -190,51 +201,70 @@ export function AddTicketDialog({ areas }: AddTicketDialogProps) {
             />
           )}
 
-          {/* Ticket Type */}
-          <div className="space-y-1.5">
-            <Label htmlFor="t-type">Ticket-Typ</Label>
-            <Input
-              id="t-type"
-              placeholder="z.B. Tageskarte, Saisonkarte"
-              value={form.ticketTypeName}
-              onChange={(e) => set("ticketTypeName", e.target.value)}
-            />
-          </div>
-
-          {/* Code */}
-          <div className="space-y-1.5">
-            <Label htmlFor="t-code" className="flex items-center gap-1.5">
-              <ScanLine className="h-3.5 w-3.5 text-slate-400" />
-              Code
-            </Label>
-            <Input
-              id="t-code"
-              value={form.code}
-              onChange={(e) => set("code", e.target.value)}
-              className="font-mono text-sm"
-              placeholder="Code scannen oder eingeben…"
-              autoComplete="off"
-            />
-          </div>
-
-          {/* Area + Status */}
+          {/* Ticket Type + Code */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Resource</Label>
-              <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Alle Resourcen" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Alle Resourcen</SelectItem>
-                  {areas.map((a) => (
-                    <SelectItem key={a.id} value={String(a.id)}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="t-type">Ticket-Typ</Label>
+              <Input
+                id="t-type"
+                placeholder="z.B. Tageskarte"
+                value={form.ticketTypeName}
+                onChange={(e) => set("ticketTypeName", e.target.value)}
+              />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="t-code" className="flex items-center gap-1.5">
+                <ScanLine className="h-3.5 w-3.5 text-slate-400" />
+                Code
+              </Label>
+              <Input
+                id="t-code"
+                value={form.code}
+                onChange={(e) => set("code", e.target.value)}
+                className="font-mono text-sm"
+                placeholder="Scannen / eingeben"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          {/* Abo + Resource/Status */}
+          <div className={`grid gap-3 ${form.subscriptionId !== "none" ? "grid-cols-2" : "grid-cols-3"}`}>
+            {subscriptions.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Abo</Label>
+                <Select value={form.subscriptionId} onValueChange={(v) => {
+                  set("subscriptionId", v);
+                  if (v !== "none") set("accessAreaId", "none");
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Kein Abo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Kein Abo</SelectItem>
+                    {subscriptions.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {form.subscriptionId === "none" && (
+              <div className="space-y-1.5">
+                <Label>Resource</Label>
+                <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Keine" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Keine</SelectItem>
+                    {areas.map((a) => (
+                      <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Status</Label>
               <Select value={form.status} onValueChange={(v) => set("status", v)}>
