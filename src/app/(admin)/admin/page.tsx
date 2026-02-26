@@ -6,6 +6,7 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2, Users, HardDrive, ScanLine } from "lucide-react";
+import Link from "next/link";
 
 export default async function AdminDashboardPage() {
   const session = await safeAuth();
@@ -46,7 +47,8 @@ export default async function AdminDashboardPage() {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {accounts.map((acc) => (
-                <Card key={acc.id} className="border-slate-200 dark:border-slate-800">
+                <Link key={acc.id} href="/admin/accounts">
+                <Card className="border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors cursor-pointer">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold text-slate-900 dark:text-slate-100">{acc.name}</h3>
@@ -63,6 +65,7 @@ export default async function AdminDashboardPage() {
                     </div>
                   </CardContent>
                 </Card>
+                </Link>
               ))}
             </div>
           </CardContent>
