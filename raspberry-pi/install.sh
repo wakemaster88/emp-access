@@ -27,13 +27,17 @@ apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig bui
     echo ""
     echo "Fehler: Paketinstallation fehlgeschlagen."
     echo ""
-    echo "Bei Raspberry Pi OS Buster (404 / „Release-Datei mehr“) zuerst Repo-Quellen auf Legacy umstellen:"
+    echo "Bei Raspberry Pi OS Buster (404) zuerst Repo-Quellen umstellen, dann install.sh erneut ausführen."
     echo ""
-    echo "  # Raspbian: auf legacy.raspbian.org umstellen"
-    echo "  echo 'deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi' | sudo tee /etc/apt/sources.list"
-    echo "  echo 'deb http://archive.raspberrypi.org/debian buster main' | sudo tee /etc/apt/sources.list.d/raspi.list"
-    echo "  sudo apt-get update"
-    echo "  sudo bash install.sh"
+    echo "--- Einmal komplett kopieren und einfügen (Achtung: Schrägstrich in .../raspbian/ nicht vergessen): ---"
+    echo ""
+    printf '%s\n' \
+      "echo 'deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi' | sudo tee /etc/apt/sources.list" \
+      "echo 'deb http://archive.raspberrypi.org/debian buster main' | sudo tee /etc/apt/sources.list.d/raspi.list" \
+      "sudo apt-get update" \
+      "cd \"\$HOME/emp-access/raspberry-pi\" && sudo bash install.sh"
+    echo ""
+    echo "--- (Falls das Repo woanders liegt, im letzten Befehl den Pfad anpassen.) ---"
     echo ""
     echo "Weitere Ursachen: TeamViewer-Repo entfernen (siehe README Fehlerbehebung)."
     exit 1
