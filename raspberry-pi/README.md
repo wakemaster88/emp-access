@@ -155,14 +155,20 @@ Falls ein anderes Repo (z. B. TeamViewer) den Update blockiert:
 - **Oder GPG-Schlüssel hinzufügen** (Beispiel TeamViewer):  
   `sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys EF9DBDC7387D1A07`
 
-### „command 'swig' failed“ / „Failed building wheel for lgpio“
+### „command 'swig' failed“ / „Failed building wheel for lgpio“ / „-llgpio nicht gefunden“
 
-Das Paket `lgpio` wird aus Quellcode gebaut und braucht **swig** sowie Build-Tools. Das Install-Skript installiert diese mittlerweile automatisch. Falls du die Installation manuell nachziehst:
+Das Paket `lgpio` wird aus Quellcode gebaut und braucht **swig**, Build-Tools und die **liblgpio**-C-Bibliothek. Das Install-Skript installiert automatisch:
+- `swig`, `build-essential`, `python3-dev`
+- `liblgpio-dev` (falls im Repo); unter Buster wird die lg-Bibliothek ggf. aus Quellcode (abyz.me.uk/lg) gebaut.
+
+Falls du die Installation manuell nachziehst:
 
 ```bash
-sudo apt-get install -y swig build-essential python3-dev
+sudo apt-get install -y swig build-essential python3-dev liblgpio-dev
 # danach im Repo: pip install -r raspberry-pi/requirements.txt
 ```
+
+Unter Buster, wenn `liblgpio-dev` fehlt: `install.sh` baut die lg-Bibliothek automatisch aus Quellcode.
 
 ## Entwicklung (ohne Hardware)
 

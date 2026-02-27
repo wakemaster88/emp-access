@@ -46,12 +46,13 @@ if ! apt-get update -qq 2>/dev/null; then
     fi
 fi
 
-if ! apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig build-essential 2>/dev/null; then
+PACKAGES="python3 python3-venv python3-pip python3-dev git swig build-essential"
+if ! apt-get install -y -qq $PACKAGES 2>/dev/null; then
     echo "  Paketinstallation fehlgeschlagen, versuche automatische Repo-Korrektur für Buster..."
     if fix_buster_sources; then
         echo "  apt-get update und erneute Paketinstallation..."
         apt-get update -qq
-        apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig build-essential || {
+        apt-get install -y -qq $PACKAGES || {
             echo ""
             echo "Fehler: Paketinstallation fehlgeschlagen (auch nach Repo-Umstellung)."
             echo "TeamViewer-Repo ggf. entfernen: sudo rm /etc/apt/sources.list.d/teamviewer.list"
@@ -65,6 +66,23 @@ if ! apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swi
         echo "Weitere Ursachen: TeamViewer-Repo entfernen (siehe README Fehlerbehebung)."
         exit 1
     fi
+fi
+
+# liblgpio für Python-Paket lgpio (Build braucht -llgpio); unter Buster ggf. nicht verfügbar
+if ! apt-get install -y -qq liblgpio-dev 2>/dev/null; then
+    # Fallback: lg-Bibliothek aus Quellcode bauen (z.B. Buster ohne liblgpio-dev)
+    if ! ldconfig -p 2>/dev/null | grep -q liblgpio; then
+        echo "  liblgpio-dev nicht verfügbar, baue lg-Bibliothek aus Quellcode..."
+        BUILD_DIR=$(mktemp -d)
+        if ( apt-get install -y -qq wget unzip 2>/dev/null && \
+             wget -q -O "$BUILD_DIR/lg.zip" "http://abyz.me.uk/lg/lg.zip" && \
+             unzip -q -o "$BUILD_DIR/lg.zip" -d "$BUILD_DIR" && \
+             cd "$BUILD_DIR/lg" && make && make install ) 2>/dev/null; then
+            ldconfig 2>/dev/null || true
+            echo "  lg-Bibliothek installiert."
+        fi
+        rm -rf "$BUILD_DIR"
+      fi
 fi
 
 # ─── Detect repo URL from parent git ─────────────────────────────────────────
