@@ -44,6 +44,8 @@ cd emp-access/raspberry-pi
 sudo bash install.sh
 ```
 
+**Update (erneut ausführen):** Einfach `sudo bash install.sh` nochmal aus dem gleichen Ordner starten – das Skript aktualisiert dann `/opt/emp-scanner`. Falls der Ordner blockiert ist, werden Scanner und Updater kurz gestoppt und der alte Stand ggf. nach `/opt/emp-scanner.old` verschoben.
+
 ## Ersteinrichtung
 
 1. Im EMP Access Dashboard ein Raspberry-Pi-Gerät anlegen

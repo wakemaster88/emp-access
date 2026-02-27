@@ -49,11 +49,25 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     echo "→ Bestehendes Repository aktualisieren..."
     cd "$INSTALL_DIR"
     git remote set-url origin "$REPO_URL"
-    git fetch origin
-    git reset --hard origin/main
+    if git fetch origin && git reset --hard origin/main; then
+        : # Update OK
+    else
+        echo "  Update fehlgeschlagen, versuche Neuinstallation..."
+        systemctl stop emp-scanner 2>/dev/null || true
+        systemctl stop emp-updater.timer 2>/dev/null || true
+        cd /
+        rm -rf "$INSTALL_DIR"
+        git clone "$REPO_URL" "$INSTALL_DIR"
+    fi
 else
     echo "→ Repository klonen..."
-    rm -rf "$INSTALL_DIR"
+    systemctl stop emp-scanner 2>/dev/null || true
+    systemctl stop emp-updater.timer 2>/dev/null || true
+    rm -rf "$INSTALL_DIR" 2>/dev/null || true
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "  Ordner wird belegt, verschiebe nach ${INSTALL_DIR}.old..."
+        mv "$INSTALL_DIR" "${INSTALL_DIR}.old"
+    fi
     git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
