@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import QRCode from "qrcode";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -155,8 +156,13 @@ function MonitorDialog({
         {!isNew && (
           <div className="space-y-1.5">
             <Label>Monitor-URL</Label>
-            <CopyUrl url={monitorUrl} />
-            <p className="text-xs text-slate-400">Diese URL ist öffentlich zugänglich — kein Login erforderlich.</p>
+            <div className="flex items-start gap-4 flex-wrap">
+              <MonitorUrlQr url={monitorUrl} />
+              <div className="flex-1 min-w-0 space-y-1">
+                <CopyUrl url={monitorUrl} />
+                <p className="text-xs text-slate-400">Diese URL ist öffentlich zugänglich — kein Login erforderlich. QR-Code mit dem Handy scannen, um den Monitor zu öffnen.</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -174,6 +180,28 @@ function MonitorDialog({
         </div>
       </form>
     </DialogContent>
+  );
+}
+
+const QR_SIZE = 96;
+
+function MonitorUrlQr({ url }: { url: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!url || !canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, url, {
+      width: QR_SIZE,
+      margin: 1,
+      color: { dark: "#1e293b", light: "#ffffff" },
+    });
+  }, [url]);
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <canvas ref={canvasRef} width={QR_SIZE} height={QR_SIZE} className="rounded border border-slate-200 dark:border-slate-700 bg-white" aria-hidden />
+      <span className="text-xs text-slate-500">Link zum Scannen</span>
+    </div>
   );
 }
 
@@ -259,7 +287,12 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
                     </div>
                   )}
 
-                  <CopyUrl url={url} />
+                  <div className="flex items-start gap-4 flex-wrap">
+                    <MonitorUrlQr url={url} />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <CopyUrl url={url} />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-1 shrink-0">

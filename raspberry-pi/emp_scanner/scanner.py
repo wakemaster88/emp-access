@@ -86,6 +86,11 @@ class ScannerInput:
                 self._thread = threading.Thread(target=self._evdev_loop, args=(path,), daemon=True)
                 self._thread.start()
                 return
+            if self.device_path == "auto":
+                # Scanner beim Boot nicht angesteckt? Warte auf Gerät (z. B. nachträglich einstecken).
+                self._thread = threading.Thread(target=self._wait_and_evdev_loop, daemon=True)
+                self._thread.start()
+                return
             logger.warning("Kein USB-Scanner gefunden – verwende stdin")
 
         self._thread = threading.Thread(target=self._stdin_loop, daemon=True)
@@ -94,8 +99,25 @@ class ScannerInput:
     def stop(self):
         self._running = False
 
+    def _wait_and_evdev_loop(self):
+        """Wartet auf USB-Scanner (z. B. nachträglich einstecken) und startet dann _evdev_loop."""
+        wait_sec = 5
+        while self._running:
+            path = find_scanner_device()
+            if path:
+                logger.info("USB-Scanner erkannt, starte Lesen.")
+                self._evdev_loop(path)
+                return
+            logger.info("Kein USB-Scanner – erneute Prüfung in %d s (Scanner einstecken)", wait_sec)
+            for _ in range(wait_sec):
+                if not self._running:
+                    return
+                time.sleep(1)
+
     def _evdev_loop(self, path: str):
-        """Read from USB HID device with auto-reconnect on disconnect."""
+        """Read from USB HID device with auto-reconnect on disconnect/replug."""
+        use_auto_path = self.device_path == "auto"
+
         while self._running:
             try:
                 dev = InputDevice(path)
@@ -134,6 +156,11 @@ class ScannerInput:
             except OSError:
                 logger.warning("Scanner getrennt – warte auf Wiederverbindung...")
                 time.sleep(2)
+                if use_auto_path:
+                    # Nach Abziehen erscheint das Gerät oft unter neuem /dev/input/eventX
+                    new_path = find_scanner_device()
+                    if new_path:
+                        path = new_path
             except Exception as e:
                 logger.error("Scanner-Fehler: %s", e)
                 time.sleep(1)

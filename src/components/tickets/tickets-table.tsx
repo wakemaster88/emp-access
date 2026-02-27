@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -34,6 +34,8 @@ interface TicketsTableProps {
   subscriptions?: Sub[];
   services?: Svc[];
   readonly?: boolean;
+  /** Bei Code-Suche: wenn genau ein Ticket gefunden, Bearbeiten-Dialog automatisch öffnen */
+  searchCode?: string;
 }
 
 function statusBadge(status: string) {
@@ -100,8 +102,20 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
   return <span>{dateRange ?? "–"}</span>;
 }
 
-export function TicketsTable({ tickets, areas, subscriptions = [], services = [], readonly }: TicketsTableProps) {
+export function TicketsTable({ tickets, areas, subscriptions = [], services = [], readonly, searchCode }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
+  const openedForCodeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!searchCode) {
+      openedForCodeRef.current = null;
+      return;
+    }
+    if (readonly || tickets.length !== 1) return;
+    if (openedForCodeRef.current === searchCode) return;
+    openedForCodeRef.current = searchCode;
+    setSelected(tickets[0]);
+  }, [searchCode, readonly, tickets]);
 
   return (
     <>
@@ -120,7 +134,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
           {tickets.length === 0 && (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-slate-500 py-12">
-                Keine Tickets vorhanden
+                {searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
               </TableCell>
             </TableRow>
           )}

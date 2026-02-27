@@ -8,20 +8,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AddTicketDialog } from "@/components/tickets/add-ticket-dialog";
 import { TicketsTable } from "@/components/tickets/tickets-table";
+import { TicketCodeSearch } from "@/components/tickets/ticket-code-search";
 import { AreaFilter } from "@/components/tickets/area-filter";
 import { Eye, EyeOff } from "lucide-react";
 
 interface Props {
-  searchParams: Promise<{ showAll?: string; area?: string }>;
+  searchParams: Promise<{ showAll?: string; area?: string; code?: string }>;
 }
 
 export default async function TicketsPage({ searchParams }: Props) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
 
-  const { showAll, area } = await searchParams;
+  const { showAll, area, code } = await searchParams;
   const showInactive = showAll === "1";
   const areaId = area ? Number(area) : undefined;
+  const codeTrim = (code ?? "").trim();
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
@@ -29,10 +31,13 @@ export default async function TicketsPage({ searchParams }: Props) {
   const baseWhere = isSuperAdmin ? {} : { accountId: session.user.accountId! };
   const statusFilter = showInactive ? {} : { status: { in: ["VALID" as const, "REDEEMED" as const] } };
   const areaFilter = areaId ? { accessAreaId: areaId } : {};
+  const codeFilter = codeTrim
+    ? { OR: [{ barcode: codeTrim }, { qrCode: codeTrim }, { rfidCode: codeTrim }] as const }
+    : {};
 
   const [tickets, areas, subscriptions, services, inactiveCount] = await Promise.all([
     db.ticket.findMany({
-      where: { ...baseWhere, ...statusFilter, ...areaFilter },
+      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...codeFilter },
       include: { accessArea: true, subscription: true, service: true, _count: { select: { scans: true } } },
       orderBy: { updatedAt: "desc" },
       take: 500,
@@ -110,13 +115,19 @@ export default async function TicketsPage({ searchParams }: Props) {
               {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subscriptions} services={services} />}
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <TicketCodeSearch
+              currentCode={codeTrim || undefined}
+              currentArea={area}
+              currentShowAll={showInactive}
+            />
             <TicketsTable
               tickets={tickets as never}
               areas={areas}
               subscriptions={subscriptions}
               services={services}
               readonly={isSuperAdmin}
+              searchCode={codeTrim || undefined}
             />
           </CardContent>
         </Card>

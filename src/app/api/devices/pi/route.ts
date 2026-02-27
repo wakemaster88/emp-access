@@ -47,12 +47,20 @@ export async function POST(request: NextRequest) {
   const results = [];
 
   for (const update of parsed.data) {
+    // Task nur vom Dashboard setzen; beim Pi nur lastUpdate/systemInfo aktualisieren.
+    // Ausnahme: Task 1 (Einmal öffnen) zurücksetzen, wenn Pi bestätigt (pis_task: 0).
     const data: Record<string, unknown> = {
-      task: update.pis_task,
       lastUpdate: new Date(update.pis_update * 1000),
     };
     if (update.system_info) {
       data.systemInfo = update.system_info;
+    }
+    const current = await db.device.findFirst({
+      where: { id: update.pis_id, type: "RASPBERRY_PI" },
+      select: { task: true },
+    });
+    if (current?.task === 1 && update.pis_task === 0) {
+      data.task = 0;
     }
     const device = await db.device.updateMany({
       where: { id: update.pis_id, type: "RASPBERRY_PI" },
