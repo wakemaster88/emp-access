@@ -68,6 +68,9 @@ class EmpScanner:
         signal.signal(signal.SIGTERM, self._shutdown)
         signal.signal(signal.SIGINT, self._shutdown)
 
+        # systemd Type=notify: sofort READY melden, damit der Dienst nicht als fehlgeschlagen gilt
+        _sd_notify("READY=1")
+
         # Init relay/buzzer/LEDs
         self.relay = RelayController(
             relay_pin=self.config.relay_pin,
