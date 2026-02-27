@@ -181,12 +181,12 @@ cp "$INSTALL_DIR/raspberry-pi/emp-scanner.service" /etc/systemd/system/
 cp "$INSTALL_DIR/raspberry-pi/emp-updater.service" /etc/systemd/system/
 cp "$INSTALL_DIR/raspberry-pi/emp-updater.timer" /etc/systemd/system/
 
-# Typo-Korrektur: vesu→venv, -n→-m (falls alte Service-Datei)
+# ExecStart sicherstellen: vesu→venv, -n→-m (immer anwenden)
 SVC="/etc/systemd/system/emp-scanner.service"
-if ! grep -q 'venv/bin/python -m emp_scanner.main' "$SVC" 2>/dev/null; then
-    sed -i 's|/vesu/|/venv/|g; s| -n emp_scanner| -m emp_scanner|g' "$SVC"
-    echo "  emp-scanner.service ExecStart angepasst (venv, -m)"
-fi
+sed -i 's|/vesu/|/venv/|g; s| -n emp_scanner| -m emp_scanner|g; s|-n emp_scanner|-m emp_scanner|g' "$SVC"
+grep -q 'venv/bin/python -m emp_scanner.main' "$SVC" || {
+    echo "  Warnung: ExecStart in emp-scanner.service prüfen (sollte .../venv/bin/python -m emp_scanner.main sein)"
+}
 
 systemctl daemon-reload
 systemctl enable emp-scanner
