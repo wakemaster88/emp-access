@@ -144,10 +144,6 @@ class EmpScanner:
     def _process_scan(self, code: str):
         logger.info("Scan: %s", code[:40] + ("..." if len(code) > 40 else ""))
 
-        if self.relay:
-            self.relay.scan_beep()
-            time.sleep(0.5)
-
         if code.startswith("{") and self.config.apply_qr_config(code):
             logger.info("Neue Konfiguration übernommen – Neustart...")
             self._cleanup()
