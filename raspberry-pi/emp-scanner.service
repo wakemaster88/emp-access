@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=notify
+Type=simple
 User=root
 WorkingDirectory=/opt/emp-scanner/raspberry-pi
 ExecStart=/opt/emp-scanner/venv/bin/python -m emp_scanner.main
