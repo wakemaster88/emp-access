@@ -23,7 +23,7 @@ if ! apt-get update -qq 2>/dev/null; then
     echo "  Warnung: apt-get update fehlgeschlagen (z.B. veraltete Repos oder fehlender GPG-Schlüssel)."
     echo "  Siehe README Abschnitt 'Fehlerbehebung'. Versuche Installation mit vorhandenen Paketlisten..."
 fi
-apt-get install -y -qq python3 python3-venv python3-pip git || {
+apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig build-essential || {
     echo ""
     echo "Fehler: Paketinstallation fehlgeschlagen. Häufige Ursachen:"
     echo "  • Raspberry Pi OS Buster: Bitte auf Bullseye/Bookworm upgraden oder /etc/apt/sources.list auf Archive umstellen."

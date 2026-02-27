@@ -154,6 +154,15 @@ Falls ein anderes Repo (z. B. TeamViewer) den Update blockiert:
 - **Oder GPG-Schlüssel hinzufügen** (Beispiel TeamViewer):  
   `sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys EF9DBDC7387D1A07`
 
+### „command 'swig' failed“ / „Failed building wheel for lgpio“
+
+Das Paket `lgpio` wird aus Quellcode gebaut und braucht **swig** sowie Build-Tools. Das Install-Skript installiert diese mittlerweile automatisch. Falls du die Installation manuell nachziehst:
+
+```bash
+sudo apt-get install -y swig build-essential python3-dev
+# danach im Repo: pip install -r raspberry-pi/requirements.txt
+```
+
 ## Entwicklung (ohne Hardware)
 
 ```bash
