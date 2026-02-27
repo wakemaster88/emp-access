@@ -10,6 +10,7 @@ Workflow:
 6. Background: auto-update check every 5 min
 7. Background: systemd watchdog ping every 30s
 """
+from __future__ import annotations
 
 import signal
 import sys

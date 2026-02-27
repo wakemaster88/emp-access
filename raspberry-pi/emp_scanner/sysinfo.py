@@ -2,6 +2,7 @@
 Collect Raspberry Pi system information for heartbeat reports.
 All values are read from /proc and /sys – no external dependencies needed.
 """
+from __future__ import annotations
 
 import os
 import time

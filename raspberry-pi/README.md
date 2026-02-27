@@ -44,6 +44,8 @@ cd emp-access/raspberry-pi
 sudo bash install.sh
 ```
 
+Das Skript installiert die System-Pakete (u. a. Python, swig, liblgpio-dev), aktualisiert die Python-Pakete (python3, python3-venv, …) auf die neueste im Repo verfügbare Version und richtet den Scanner ein. Eine höhere Python-Version (z. B. 3.9+) erfordert ein neueres Raspberry Pi OS (Bullseye/Bookworm).
+
 **Update (erneut ausführen):** Einfach `sudo bash install.sh` nochmal aus dem gleichen Ordner starten – das Skript aktualisiert dann `/opt/emp-scanner`. Falls der Ordner blockiert ist, werden Scanner und Updater kurz gestoppt und der alte Stand ggf. nach `/opt/emp-scanner.old` verschoben.
 
 **Raspberry Pi OS Buster (ältere Version):** Wenn `apt-get update` oder die Paketinstallation mit 404/„Release-Datei“ fehlschlägt, zuerst die Repo-Quellen auf **legacy.raspbian.org** umstellen (siehe Abschnitt „Fehlerbehebung“ unten), dann `sudo apt-get update` und `sudo bash install.sh` erneut ausführen.

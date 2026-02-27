@@ -14,6 +14,7 @@ Buzzer patterns (from pi-alt):
   valid:    1000 → 1500 → 2000 Hz (0.2s each)
   invalid:  2000 → 1500 → 1000 Hz (0.2s each)
 """
+from __future__ import annotations
 
 import threading
 import logging

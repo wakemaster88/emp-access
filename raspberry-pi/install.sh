@@ -85,6 +85,10 @@ if ! apt-get install -y -qq liblgpio-dev 2>/dev/null; then
       fi
 fi
 
+# Python-Pakete auf neueste Version aus dem Repo upgraden (nur Patch-Updates, keine Major-Version)
+echo "  Python-Pakete aktualisieren..."
+apt-get install -y -qq --only-upgrade python3 python3-venv python3-pip python3-dev 2>/dev/null || true
+
 # ─── Detect repo URL from parent git ─────────────────────────────────────────
 
 REPO_URL=""
