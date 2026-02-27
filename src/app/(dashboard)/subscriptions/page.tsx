@@ -56,8 +56,8 @@ export default async function SubscriptionsPage() {
       <Header title="Abos" accountName={session.user.accountName} />
       <div className="p-6">
         <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle>Alle Abos ({subscriptions.length})</CardTitle>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl">Alle Abos ({subscriptions.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <SubscriptionsTable

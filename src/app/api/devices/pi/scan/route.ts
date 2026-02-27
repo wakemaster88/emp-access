@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Gerät gesperrt" });
   }
 
-  // Find ticket by code (try with and without spaces)
+  // Find ticket by code (try with and without spaces); include service for allowReentry
   const codesToTry = [code, rawCode];
   let ticket = null;
   for (const c of codesToTry) {
@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
           { uuid: c },
         ],
       },
+      include: { service: { select: { allowReentry: true } } },
     });
     if (ticket) break;
   }
@@ -155,11 +156,23 @@ export async function POST(request: NextRequest) {
     data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId },
   });
 
-  // First successful scan: set REDEEMED + firstScanAt for DURATION tickets
+  const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
+
   if (ticket.status === "VALID") {
+    // Erster Zutritt: auf REDEEMED setzen, ggf. firstScanAt für DURATION
     const updateData: Record<string, unknown> = { status: "REDEEMED" };
     if (vType === "DURATION" && !ticket.firstScanAt) {
       updateData.firstScanAt = now;
+    }
+    await db.ticket.update({
+      where: { id: ticket.id },
+      data: updateData,
+    });
+  } else if (ticket.status === "REDEEMED" && isExitScan && ticket.service?.allowReentry) {
+    // Ausgangsscan + Service erlaubt Wiedereinlass: Gültigkeit zurücksetzen
+    const updateData: Record<string, unknown> = { status: "VALID" };
+    if (vType === "DURATION") {
+      updateData.firstScanAt = null;
     }
     await db.ticket.update({
       where: { id: ticket.id },

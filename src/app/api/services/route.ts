@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
       defaultSlotStart: body.defaultSlotStart ?? null,
       defaultSlotEnd: body.defaultSlotEnd ?? null,
       defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null,
+      allowReentry: !!body.allowReentry,
       serviceAreas: areasPayload.length > 0 ? {
         create: areasPayload.map((a) => ({
           accessAreaId: a.areaId,

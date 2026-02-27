@@ -63,8 +63,8 @@ export default async function AreasPage() {
       <Header title="Resourcen" accountName={session.user.accountName} />
       <div className="p-6">
         <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle>Alle Resourcen ({areas.length})</CardTitle>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl">Alle Resourcen ({areas.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <AreasTable

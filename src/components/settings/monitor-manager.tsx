@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
-  Loader2, Pencil, Wifi, WifiOff,
+  Loader2, Pencil, Wifi, WifiOff, QrCode,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -156,11 +156,11 @@ function MonitorDialog({
         {!isNew && (
           <div className="space-y-1.5">
             <Label>Monitor-URL</Label>
-            <div className="flex items-start gap-4 flex-wrap">
-              <MonitorUrlQr url={monitorUrl} />
+            <div className="flex items-start gap-2 flex-wrap">
+              <MonitorQrButton url={monitorUrl} />
               <div className="flex-1 min-w-0 space-y-1">
                 <CopyUrl url={monitorUrl} />
-                <p className="text-xs text-slate-400">Diese URL ist öffentlich zugänglich — kein Login erforderlich. QR-Code mit dem Handy scannen, um den Monitor zu öffnen.</p>
+                <p className="text-xs text-slate-400">Diese URL ist öffentlich zugänglich — kein Login erforderlich. QR-Code (Icon) zum Scannen anzeigen.</p>
               </div>
             </div>
           </div>
@@ -183,25 +183,58 @@ function MonitorDialog({
   );
 }
 
-const QR_SIZE = 96;
+const QR_SIZE_DEFAULT = 96;
+const QR_SIZE_DIALOG = 220;
 
-function MonitorUrlQr({ url }: { url: string }) {
+function MonitorUrlQr({ url, size = QR_SIZE_DEFAULT }: { url: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (!url || !canvasRef.current) return;
     QRCode.toCanvas(canvasRef.current, url, {
-      width: QR_SIZE,
+      width: size,
       margin: 1,
       color: { dark: "#1e293b", light: "#ffffff" },
     });
-  }, [url]);
+  }, [url, size]);
 
   return (
     <div className="flex flex-col items-center gap-1.5">
-      <canvas ref={canvasRef} width={QR_SIZE} height={QR_SIZE} className="rounded border border-slate-200 dark:border-slate-700 bg-white" aria-hidden />
+      <canvas ref={canvasRef} width={size} height={size} className="rounded border border-slate-200 dark:border-slate-700 bg-white" aria-hidden />
       <span className="text-xs text-slate-500">Link zum Scannen</span>
     </div>
+  );
+}
+
+function QrCodeDialog({ url, open, onOpenChange }: { url: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[280px] flex flex-col items-center py-6">
+        <DialogHeader>
+          <DialogTitle className="text-center">Monitor-Link scannen</DialogTitle>
+        </DialogHeader>
+        <MonitorUrlQr url={url} size={QR_SIZE_DIALOG} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MonitorQrButton({ url }: { url: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className="h-9 w-9 shrink-0 text-slate-500 hover:text-indigo-600"
+        onClick={() => setOpen(true)}
+        title="QR-Code anzeigen"
+      >
+        <QrCode className="h-4 w-4" />
+      </Button>
+      <QrCodeDialog url={url} open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
@@ -234,6 +267,7 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
   const [editing, setEditing] = useState<MonitorConfigData | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [qrDialogUrl, setQrDialogUrl] = useState<string | null>(null);
 
   async function handleDelete(monitor: MonitorConfigData) {
     if (!confirm(`Monitor "${monitor.name}" wirklich löschen?`)) return;
@@ -287,8 +321,17 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
                     </div>
                   )}
 
-                  <div className="flex items-start gap-4 flex-wrap">
-                    <MonitorUrlQr url={url} />
+                  <div className="flex items-start gap-2 flex-wrap">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 text-slate-500 hover:text-indigo-600"
+                      onClick={() => setQrDialogUrl(url)}
+                      title="QR-Code anzeigen"
+                    >
+                      <QrCode className="h-4 w-4" />
+                    </Button>
                     <div className="flex-1 min-w-0 space-y-1">
                       <CopyUrl url={url} />
                     </div>
@@ -343,6 +386,8 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
           onClose={() => setAddOpen(false)}
         />
       </Dialog>
+
+      <QrCodeDialog url={qrDialogUrl ?? ""} open={!!qrDialogUrl} onOpenChange={(o) => !o && setQrDialogUrl(null)} />
     </div>
   );
 }

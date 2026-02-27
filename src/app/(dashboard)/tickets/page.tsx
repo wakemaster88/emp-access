@@ -9,21 +9,37 @@ import { Badge } from "@/components/ui/badge";
 import { AddTicketDialog } from "@/components/tickets/add-ticket-dialog";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { TicketCodeSearch } from "@/components/tickets/ticket-code-search";
+import { TicketSortFilter } from "@/components/tickets/ticket-sort-filter";
 import { AreaFilter } from "@/components/tickets/area-filter";
 import { Eye, EyeOff } from "lucide-react";
 
 interface Props {
-  searchParams: Promise<{ showAll?: string; area?: string; code?: string }>;
+  searchParams: Promise<{ showAll?: string; area?: string; code?: string; sort?: string; order?: string; source?: string }>;
+}
+
+function buildOrderBy(sort: string, order: "asc" | "desc") {
+  switch (sort) {
+    case "name":
+      return { name: order };
+    case "resource":
+      return { accessArea: { name: order } };
+    case "status":
+      return { status: order };
+    case "date":
+    default:
+      return { updatedAt: order };
+  }
 }
 
 export default async function TicketsPage({ searchParams }: Props) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
 
-  const { showAll, area, code } = await searchParams;
+  const { showAll, area, code, sort = "date", order = "desc", source } = await searchParams;
   const showInactive = showAll === "1";
   const areaId = area ? Number(area) : undefined;
   const codeTrim = (code ?? "").trim();
+  const orderDir = order === "asc" ? "asc" : "desc";
 
   const isSuperAdmin = session.user.role === "SUPER_ADMIN";
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
@@ -34,12 +50,17 @@ export default async function TicketsPage({ searchParams }: Props) {
   const codeFilter = codeTrim
     ? { OR: [{ barcode: codeTrim }, { qrCode: codeTrim }, { rfidCode: codeTrim }] }
     : {};
+  const sourceFilter = (() => {
+    if (!source || source === "all") return {};
+    if (source === "Eigenes") return { source: null };
+    return { source: source as "ANNY" | "WAKESYS" | "EMP_CONTROL" | "BINARYTEC" | "SHELLY" };
+  })();
 
   const [tickets, areas, subscriptions, services, inactiveCount] = await Promise.all([
     db.ticket.findMany({
-      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...codeFilter },
+      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...codeFilter, ...sourceFilter },
       include: { accessArea: true, subscription: true, service: true, _count: { select: { scans: true } } },
-      orderBy: { updatedAt: "desc" },
+      orderBy: buildOrderBy(sort, orderDir),
       take: 500,
     }),
     db.accessArea.findMany({
@@ -85,6 +106,10 @@ export default async function TicketsPage({ searchParams }: Props) {
     ? `/tickets${area ? `?area=${area}` : ""}`
     : `/tickets?showAll=1${area ? `&area=${area}` : ""}`;
 
+  const sortParam = sort ?? "date";
+  const orderParam = order ?? "desc";
+  const sourceParam = source ?? "";
+
   return (
     <>
       <Header title="Tickets" accountName={session.user.accountName} />
@@ -101,7 +126,12 @@ export default async function TicketsPage({ searchParams }: Props) {
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <TicketSortFilter
+                currentSort={sortParam}
+                currentOrder={orderParam}
+                currentSource={sourceParam}
+              />
               {areas.length > 0 && (
                 <AreaFilter areas={areas} current={area} />
               )}

@@ -89,6 +89,7 @@ export async function PUT(
       ...(body.defaultSlotStart !== undefined && { defaultSlotStart: body.defaultSlotStart || null }),
       ...(body.defaultSlotEnd !== undefined && { defaultSlotEnd: body.defaultSlotEnd || null }),
       ...(body.defaultValidityDurationMinutes !== undefined && { defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null }),
+      ...(body.allowReentry !== undefined && { allowReentry: !!body.allowReentry }),
     },
     include: {
       serviceAreas: { include: { area: { select: { id: true, name: true } } } },

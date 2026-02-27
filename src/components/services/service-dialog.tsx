@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Loader2, Trash2, Save, Settings2, Link2, MapPin, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ export interface ServiceData {
   defaultSlotStart?: string | null;
   defaultSlotEnd?: string | null;
   defaultValidityDurationMinutes?: number | null;
+  allowReentry?: boolean;
 }
 
 interface AreaRef {
@@ -150,6 +152,7 @@ export function ServiceDialog({
   const [defaultSlotStart, setDefaultSlotStart] = useState("");
   const [defaultSlotEnd, setDefaultSlotEnd] = useState("");
   const [defaultValidityDurationMinutes, setDefaultValidityDurationMinutes] = useState("");
+  const [allowReentry, setAllowReentry] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -180,6 +183,7 @@ export function ServiceDialog({
         setDefaultSlotStart(service.defaultSlotStart ?? "");
         setDefaultSlotEnd(service.defaultSlotEnd ?? "");
         setDefaultValidityDurationMinutes(service.defaultValidityDurationMinutes != null ? String(service.defaultValidityDurationMinutes) : "");
+        setAllowReentry(service.allowReentry ?? false);
       } else {
         setName("");
         setSelectedAnny(new Set());
@@ -190,6 +194,7 @@ export function ServiceDialog({
         setDefaultSlotStart("");
         setDefaultSlotEnd("");
         setDefaultValidityDurationMinutes("");
+        setAllowReentry(false);
       }
     }
   }, [open, service, initialServiceAreas]);
@@ -225,6 +230,7 @@ export function ServiceDialog({
       const payload: Record<string, unknown> = {
         name: name.trim(),
         annyNames: [...selectedAnny],
+        allowReentry,
         areas: serviceAreas.map((sa) => {
           const out: Record<string, unknown> = { areaId: sa.areaId };
           if (sa.defaultValidityType && sa.defaultValidityType !== "none") {
@@ -354,6 +360,14 @@ export function ServiceDialog({
                 autoFocus
                 className="h-9"
               />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
+              <div>
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Wiedereinlass</p>
+                <p className="text-[11px] text-slate-500">Bei Scan an Ausgang: Ticket wieder gültig setzen</p>
+              </div>
+              <Switch checked={allowReentry} onCheckedChange={setAllowReentry} />
             </div>
 
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-2">

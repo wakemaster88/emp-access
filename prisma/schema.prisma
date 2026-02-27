@@ -246,6 +246,7 @@ model Service {
   defaultSlotStart            String?       // HH:mm
   defaultSlotEnd              String?       // HH:mm
   defaultValidityDurationMinutes Int?
+  allowReentry                Boolean       @default(false)  // Bei Ausgang: Ticket wieder auf gültig setzen
   accountId                   Int
   account                     Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   serviceAreas                ServiceArea[]

@@ -8,9 +8,21 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Wifi, WifiOff, Cpu, ChevronRight,
-  GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  Power, PowerOff, Zap,
+  Activity,
+  ChevronRight,
+  Clock,
+  Cpu,
+  DoorOpen,
+  GitMerge,
+  Globe,
+  Lightbulb,
+  MapPin,
+  Power,
+  PowerOff,
+  ScanLine,
+  ToggleRight,
+  Wifi,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -85,27 +97,67 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
   }, [devices]);
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead className="w-[260px]">Gerät</TableHead>
-          <TableHead className="w-[140px]">Funktion</TableHead>
-          <TableHead className="w-[130px]">IP-Adresse</TableHead>
-          <TableHead>Resourcen</TableHead>
-          <TableHead className="w-[180px]">Status</TableHead>
-          <TableHead className="w-[110px]">Letzte Aktivität</TableHead>
-          <TableHead className="w-[70px] text-right">Scans</TableHead>
-          <TableHead className="w-8" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {devices.length === 0 && (
-          <TableRow>
-            <TableCell colSpan={8} className="text-center text-slate-500 py-16">
-              Keine Geräte konfiguriert
-            </TableCell>
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
+            <TableHead className="w-[260px] text-slate-600 dark:text-slate-400 font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                <Wifi className="h-4 w-4 text-slate-400" />
+                Gerät
+              </span>
+            </TableHead>
+            <TableHead className="w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                <Activity className="h-4 w-4 text-slate-400" />
+                Funktion
+              </span>
+            </TableHead>
+            <TableHead className="w-[130px] text-slate-600 dark:text-slate-400 font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                <Globe className="h-4 w-4 text-slate-400" />
+                IP-Adresse
+              </span>
+            </TableHead>
+            <TableHead className="min-w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 text-slate-400" />
+                Resourcen
+              </span>
+            </TableHead>
+            <TableHead className="w-[200px] text-slate-600 dark:text-slate-400 font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                <Activity className="h-4 w-4 text-slate-400" />
+                Status
+              </span>
+            </TableHead>
+            <TableHead className="w-[120px] text-slate-600 dark:text-slate-400 font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-slate-400" />
+                Letzte Aktivität
+              </span>
+            </TableHead>
+            <TableHead className="w-[80px] text-right text-slate-600 dark:text-slate-400 font-medium">
+              <span className="inline-flex items-center justify-end gap-1.5">
+                <ScanLine className="h-4 w-4 text-slate-400" />
+                Scans
+              </span>
+            </TableHead>
+            <TableHead className="w-10" />
           </TableRow>
-        )}
+        </TableHeader>
+        <TableBody>
+          {devices.length === 0 && (
+            <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-700">
+              <TableCell colSpan={8} className="text-center py-16">
+                <div className="flex flex-col items-center gap-3 text-slate-500">
+                  <Cpu className="h-12 w-12 text-slate-300 dark:text-slate-600" />
+                  <p className="font-medium text-slate-600 dark:text-slate-400">Keine Geräte konfiguriert</p>
+                  <p className="text-sm">Füge ein Gerät hinzu (Raspberry Pi oder Shelly), um Zugang zu steuern.</p>
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
 
         {devices.map((device) => {
           const isShelly = device.type === "SHELLY";
@@ -179,20 +231,33 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
             );
           })();
 
-          // Bereiche: only relevant for Pi with access areas
+          // Resourcen: Einlass/Auslass mit Icons
           const bereicheCell = (() => {
-            if (!isPi || (!device.accessIn && !device.accessOut)) return <span className="text-slate-300">–</span>;
-            const parts = [
-              device.accessIn  && `↓ ${areaMap[device.accessIn]  ?? `#${device.accessIn}`}`,
-              device.accessOut && `↑ ${areaMap[device.accessOut] ?? `#${device.accessOut}`}`,
-            ].filter(Boolean);
-            return <span className="text-xs text-slate-500">{parts.join("  ")}</span>;
+            if (!isPi || (!device.accessIn && !device.accessOut)) return <span className="text-slate-400">–</span>;
+            const inName  = device.accessIn  ? (areaMap[device.accessIn]  ?? `#${device.accessIn}`)  : null;
+            const outName = device.accessOut ? (areaMap[device.accessOut] ?? `#${device.accessOut}`) : null;
+            return (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                {inName && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5" title="Einlass">
+                    <MapPin className="h-3 w-3 text-emerald-500 shrink-0" />
+                    {inName}
+                  </span>
+                )}
+                {outName && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5" title="Auslass">
+                    <MapPin className="h-3 w-3 text-sky-500 shrink-0" />
+                    {outName}
+                  </span>
+                )}
+              </div>
+            );
           })();
 
           return (
             <TableRow
               key={device.id}
-              className="group cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-colors"
+              className="group cursor-pointer border-slate-200 dark:border-slate-700 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-colors"
             >
               {/* Gerät */}
               <TableCell>
@@ -259,5 +324,6 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
         })}
       </TableBody>
     </Table>
+    </div>
   );
 }

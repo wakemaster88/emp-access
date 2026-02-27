@@ -37,7 +37,10 @@ export async function GET(request: NextRequest) {
 
           const scans = await db.scan.findMany({
             where: scanWhere,
-            include: { device: true, ticket: true },
+            include: {
+              device: true,
+              ticket: { include: { accessArea: { select: { name: true } } } },
+            },
             orderBy: { id: "desc" },
             take: lastScanId === 0 ? 100 : 20,
           });

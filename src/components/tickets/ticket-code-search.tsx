@@ -27,14 +27,13 @@ export function TicketCodeSearch({
 
   const buildTicketsUrl = useCallback(
     (code: string) => {
-      const params = new URLSearchParams();
-      if (currentShowAll) params.set("showAll", "1");
-      if (currentArea) params.set("area", currentArea);
+      const params = new URLSearchParams(searchParams.toString());
       if (code.trim()) params.set("code", code.trim());
+      else params.delete("code");
       const q = params.toString();
       return `/tickets${q ? `?${q}` : ""}`;
     },
-    [currentShowAll, currentArea]
+    [searchParams]
   );
 
   const handleSearch = useCallback(() => {

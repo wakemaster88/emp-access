@@ -143,7 +143,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
       <DialogTrigger asChild>
-        <Button className="bg-indigo-600 hover:bg-indigo-700 gap-2">
+        <Button className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm">
           <Plus className="h-4 w-4" />
           Gerät hinzufügen
         </Button>

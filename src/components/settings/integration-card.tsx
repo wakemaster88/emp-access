@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 
 export interface ApiConfigData {
@@ -95,8 +95,33 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
 
   const isConfigured = !!initialData?.token;
+
+  const empControlWebhookSecret = provider === "EMP_CONTROL" && data.extraConfig
+    ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
+    : null;
+  const empControlWebhookUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/api/integrations/emp-control/webhook`
+    : "";
+
+  const webhookApiDescription = (
+    <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
+      <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
+      <p><strong>POST</strong> {empControlWebhookUrl || "/api/integrations/emp-control/webhook"}</p>
+      <p><strong>Header:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
+      <p><strong>Body (JSON):</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaId" } ] }`}</code></p>
+      <p><strong>Ressourcen:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaId</code> (oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> / <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">resourceIds</code>) – ID der Access Area (Ressource), bei der der Mitarbeiter Zugang hat. Optional.</p>
+      <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">emp-&lt;id&gt;</code>) oder aktualisiert es, falls es bereits existiert.</p>
+    </div>
+  );
+
+  function copyToClipboard(text: string, key: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -111,6 +136,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
         const err = await res.json();
         setError(err.error?.formErrors?.[0] ?? "Speichern fehlgeschlagen");
       } else {
+        const updated = await res.json();
+        setData(updated);
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
       }
@@ -220,6 +247,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 )}
               </CardTitle>
               <CardDescription className="text-xs mt-0.5">{meta.description}</CardDescription>
+              {provider === "EMP_CONTROL" && (
+                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{empControlWebhookUrl || "/api/integrations/emp-control/webhook"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 text-slate-400">
@@ -284,6 +316,58 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   onChange={(e) => setData({ ...data, extraConfig: e.target.value })}
                   className="font-mono text-xs"
                 />
+              </div>
+            )}
+
+            {provider === "EMP_CONTROL" && (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                  Webhook – Mitarbeiter von emp-control pushen
+                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[11px] text-slate-500 shrink-0">URL</Label>
+                    <Input
+                      readOnly
+                      value={empControlWebhookUrl}
+                      className="font-mono text-xs h-8 bg-white dark:bg-slate-900"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => copyToClipboard(empControlWebhookUrl, "url")}
+                    >
+                      {copied === "url" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[11px] text-slate-500 shrink-0">Secret</Label>
+                    {empControlWebhookSecret ? (
+                      <>
+                        <Input
+                          readOnly
+                          type="password"
+                          value={empControlWebhookSecret}
+                          className="font-mono text-xs h-8 bg-white dark:bg-slate-900"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 shrink-0"
+                          onClick={() => copyToClipboard(empControlWebhookSecret, "secret")}
+                        >
+                          {copied === "secret" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="text-xs text-slate-400">Nach dem Speichern der Integration wird ein Geheimnis erzeugt und hier angezeigt.</span>
+                    )}
+                  </div>
+                </div>
+                {webhookApiDescription}
               </div>
             )}
 

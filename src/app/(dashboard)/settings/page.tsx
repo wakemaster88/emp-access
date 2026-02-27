@@ -1,13 +1,11 @@
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Plug, Key, Info, MapPin, ChevronRight, Plus, MonitorPlay, Wifi } from "lucide-react";
+import { Plug, Key, Info, MonitorPlay, Wifi } from "lucide-react";
 import { MonitorManager } from "@/components/settings/monitor-manager";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 
@@ -20,15 +18,9 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [apiConfigs, account, areas, monitors, devices, shellyDevices] = await Promise.all([
+  const [apiConfigs, account, monitors, devices, shellyDevices] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
     db.account.findUnique({ where: { id: session.user.accountId } }),
-    db.accessArea.findMany({
-      where: { accountId: session.user.accountId },
-      orderBy: [{ parentId: "asc" }, { name: "asc" }],
-      include: { parent: true },
-      take: 5,
-    }),
     db.monitorConfig.findMany({
       where: { accountId: session.user.accountId },
       orderBy: { createdAt: "desc" },
@@ -131,62 +123,6 @@ export default async function SettingsPage() {
             devices={devices}
             baseUrl={baseUrl}
           />
-        </section>
-
-        {/* Bereiche */}
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Resourcen
-            </h2>
-            <Badge variant="secondary" className="ml-auto text-xs">
-              {areas.length} Resourcen
-            </Badge>
-          </div>
-          <Card className="border-slate-200 dark:border-slate-800">
-            <CardContent className="pt-4 pb-4 space-y-1">
-              {areas.length === 0 && (
-                <p className="text-sm text-slate-500 py-2">Noch keine Resourcen angelegt.</p>
-              )}
-              {areas.map((area) => (
-                <div key={area.id} className="flex items-center justify-between py-1.5">
-                  <div>
-                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{area.name}</span>
-                    {area.parent && (
-                      <span className="text-xs text-slate-400 ml-2">in {area.parent.name}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {area.personLimit && (
-                      <Badge variant="secondary" className="text-xs">{area.personLimit} Pers.</Badge>
-                    )}
-                    <Badge className={
-                      area.allowReentry
-                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs"
-                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 text-xs"
-                    }>
-                      {area.allowReentry ? "Wiedereinlass" : "Einmalig"}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-              <div className="flex gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 mt-2">
-                <Button asChild variant="outline" size="sm" className="flex-1">
-                  <Link href="/areas">
-                    <ChevronRight className="h-4 w-4 mr-1.5" />
-                    Alle Resourcen verwalten
-                  </Link>
-                </Button>
-                <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-700">
-                  <Link href="/areas">
-                    <Plus className="h-4 w-4 mr-1.5" />
-                    Neue Resource
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
         </section>
 
         {/* Integrations */}

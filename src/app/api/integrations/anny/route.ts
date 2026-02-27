@@ -389,6 +389,7 @@ export async function POST() {
         endDate: group.endDate,
         status: mapGroupStatus(group.statuses),
         ticketTypeName: typeName,
+        barcode: uuid,
         qrCode: JSON.stringify(group.entries),
         source: "ANNY" as const,
         accessAreaId,

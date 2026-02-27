@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { z } from "zod";
@@ -40,6 +41,21 @@ export async function POST(req: NextRequest) {
 
   const db = tenantClient(session.user.accountId!);
 
+  let extraConfig = parsed.data.extraConfig ?? null;
+  if (parsed.data.provider === "EMP_CONTROL") {
+    const extra: Record<string, unknown> = (() => {
+      try {
+        return extraConfig ? JSON.parse(extraConfig) : {};
+      } catch {
+        return {};
+      }
+    })();
+    if (!extra.webhookSecret || typeof extra.webhookSecret !== "string") {
+      extra.webhookSecret = randomBytes(32).toString("hex");
+    }
+    extraConfig = JSON.stringify(extra);
+  }
+
   const existing = await db.apiConfig.findFirst({
     where: { accountId: session.user.accountId!, provider: parsed.data.provider },
   });
@@ -51,7 +67,7 @@ export async function POST(req: NextRequest) {
         token: parsed.data.token,
         eventId: parsed.data.eventId ?? null,
         baseUrl: parsed.data.baseUrl || null,
-        extraConfig: parsed.data.extraConfig ?? null,
+        extraConfig,
         lastUpdate: new Date(),
       },
     });
@@ -65,7 +81,7 @@ export async function POST(req: NextRequest) {
       token: parsed.data.token,
       eventId: parsed.data.eventId ?? null,
       baseUrl: parsed.data.baseUrl || null,
-      extraConfig: parsed.data.extraConfig ?? null,
+      extraConfig,
     },
   });
 

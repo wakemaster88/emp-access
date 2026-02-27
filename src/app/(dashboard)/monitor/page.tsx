@@ -5,7 +5,15 @@ import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Maximize, Minimize, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown, MapPin, Maximize, Minimize, Pause, Play, Ticket, Volume2, VolumeX, Wifi } from "lucide-react";
 import { fmtTime } from "@/lib/utils";
 
 interface MonitorScan {
@@ -23,6 +31,7 @@ interface MonitorScan {
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
     profileImage?: string | null;
+    accessArea?: { name: string } | null;
   } | null;
 }
 
@@ -47,6 +56,7 @@ export default function MonitorPage() {
   const [newIds, setNewIds] = useState<Set<number>>(new Set());
   const [counts, setCounts] = useState<AreaCount[]>([]);
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -86,7 +96,8 @@ export default function MonitorPage() {
   useEffect(() => {
     if (isPaused) return;
 
-    const eventSource = new EventSource("/api/monitor?areas=&devices=");
+    const devicesParam = selectedDeviceIds.length > 0 ? selectedDeviceIds.join(",") : "";
+    const eventSource = new EventSource(`/api/monitor?areas=&devices=${devicesParam}`);
 
     eventSource.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -113,7 +124,7 @@ export default function MonitorPage() {
     };
 
     return () => eventSource.close();
-  }, [isPaused, soundEnabled, playAlertSound]);
+  }, [isPaused, soundEnabled, playAlertSound, selectedDeviceIds]);
 
   useEffect(() => {
     if (feedRef.current) {
@@ -129,14 +140,63 @@ export default function MonitorPage() {
       <Header title="Live Monitor" />
 
       <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <div className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
               Live — {scans.length} Scans geladen
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="font-normal">
+                  {selectedDeviceIds.length === 0
+                    ? "Alle Geräte"
+                    : `${selectedDeviceIds.length} Gerät${selectedDeviceIds.length !== 1 ? "e" : ""}`}
+                  <ChevronDown className="h-4 w-4 opacity-50 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 max-h-72 overflow-y-auto">
+                <DropdownMenuLabel className="text-xs text-slate-500">Feed nach Gerät filtern</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={selectedDeviceIds.length === 0}
+                  onCheckedChange={() => setSelectedDeviceIds([])}
+                >
+                  Alle Geräte
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                {devices.map((d) => {
+                  const checked = selectedDeviceIds.length === 0 || selectedDeviceIds.includes(d.id);
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={d.id}
+                      checked={checked}
+                      onCheckedChange={(isChecked) => {
+                        if (isChecked) {
+                          setSelectedDeviceIds((prev) =>
+                            prev.length === 0 ? [d.id] : prev.includes(d.id) ? prev : [...prev, d.id]
+                          );
+                        } else {
+                          setSelectedDeviceIds((prev) =>
+                            prev.length === 0
+                              ? devices.filter((x) => x.id !== d.id).map((x) => x.id)
+                              : prev.filter((id) => id !== d.id)
+                          );
+                        }
+                      }}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${d.lastUpdate && d.lastUpdate > fiveMinAgo ? "bg-emerald-500" : "bg-slate-400"}`} />
+                        {d.name}
+                      </span>
+                      <span className="ml-auto text-xs text-slate-400">{d.type === "SHELLY" ? "Shelly" : "Pi"}</span>
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="outline" size="sm" onClick={() => setIsPaused(!isPaused)}>
               {isPaused ? <Play className="h-4 w-4 mr-1" /> : <Pause className="h-4 w-4 mr-1" />}
               {isPaused ? "Fortsetzen" : "Pause"}
@@ -169,99 +229,97 @@ export default function MonitorPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <Card className="lg:col-span-3 border-slate-200 dark:border-slate-800">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Scan-Feed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div ref={feedRef} className="space-y-2 max-h-[60vh] overflow-y-auto">
-                {scans.length === 0 && (
-                  <p className="text-center text-slate-500 py-12">Warte auf Scans...</p>
-                )}
-                {scans.map((scan) => {
-                  const isNew = newIds.has(scan.id);
-                  return (
-                  <div
-                    key={scan.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
-                      scan.result === "GRANTED"
-                        ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/50"
-                        : scan.result === "DENIED"
-                          ? "bg-rose-50 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50"
-                          : "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50"
-                    } ${isNew ? "animate-scan-flash ring-2 ring-offset-1" : ""} ${
-                      isNew && scan.result === "GRANTED" ? "ring-emerald-400" :
-                      isNew && scan.result === "DENIED" ? "ring-rose-400" :
-                      isNew ? "ring-amber-400" : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {scan.ticket?.profileImage ? (
-                        <img src={scan.ticket.profileImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-slate-200 dark:ring-slate-700" />
-                      ) : (
-                        <Badge
-                          className={
-                            scan.result === "GRANTED"
-                              ? "bg-emerald-500 text-white"
-                              : scan.result === "DENIED"
-                                ? "bg-rose-500 text-white"
-                                : "bg-amber-500 text-white"
-                          }
-                        >
-                          {scan.result === "GRANTED" ? "✓" : scan.result === "DENIED" ? "✕" : "⚠"}
-                        </Badge>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
-                          {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.ticket?.name || scan.code}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {scan.ticket?.ticketTypeName ? `${scan.ticket.ticketTypeName} · ` : ""}{scan.device.name}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {scan.ticket?.validityType === "DURATION" && scan.ticket.validityDurationMinutes && scan.ticket.firstScanAt && (
-                        <InternalCountdown
-                          firstScanAt={scan.ticket.firstScanAt}
-                          durationMinutes={scan.ticket.validityDurationMinutes}
-                        />
-                      )}
-                      <span className="text-xs text-slate-400 font-mono">
-                        {fmtTime(scan.scanTime)}
-                      </span>
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 dark:border-slate-800">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Geräte</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {devices.map((d) => {
-                const isOnline = d.lastUpdate && d.lastUpdate > fiveMinAgo;
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Scan-Feed</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div ref={feedRef} className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {scans.length === 0 && (
+                <p className="text-center text-slate-500 py-12">Warte auf Scans...</p>
+              )}
+              {scans.map((scan) => {
+                const isNew = newIds.has(scan.id);
                 return (
-                  <div key={d.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-900">
-                    <div className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
-                      <span className="text-sm">{d.name}</span>
+                <div
+                  key={scan.id}
+                  className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                    scan.result === "GRANTED"
+                      ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/50"
+                      : scan.result === "DENIED"
+                        ? "bg-rose-50 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50"
+                        : "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50"
+                  } ${isNew ? "animate-scan-flash ring-2 ring-offset-1" : ""} ${
+                    isNew && scan.result === "GRANTED" ? "ring-emerald-400" :
+                    isNew && scan.result === "DENIED" ? "ring-rose-400" :
+                    isNew ? "ring-amber-400" : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {scan.ticket?.profileImage ? (
+                      <img src={scan.ticket.profileImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-slate-200 dark:ring-slate-700" />
+                    ) : (
+                      <Badge
+                        className={
+                          scan.result === "GRANTED"
+                            ? "bg-emerald-500 text-white"
+                            : scan.result === "DENIED"
+                              ? "bg-rose-500 text-white"
+                              : "bg-amber-500 text-white"
+                        }
+                      >
+                        {scan.result === "GRANTED" ? "✓" : scan.result === "DENIED" ? "✕" : "⚠"}
+                      </Badge>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                        {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.ticket?.name || scan.code}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap">
+                        {scan.ticket?.ticketTypeName && (
+                          <span className="inline-flex items-center gap-1 shrink-0">
+                            <Ticket className="h-3 w-3 text-slate-400 shrink-0" aria-hidden />
+                            <span className="truncate">{scan.ticket.ticketTypeName}</span>
+                          </span>
+                        )}
+                        {scan.ticket?.ticketTypeName && scan.ticket?.accessArea?.name && (
+                          <span className="text-slate-400 shrink-0">·</span>
+                        )}
+                        {scan.ticket?.accessArea?.name && (
+                          <span className="inline-flex items-center gap-1 shrink-0 min-w-0">
+                            <MapPin className="h-3 w-3 text-slate-400 shrink-0" aria-hidden />
+                            <span className="truncate">{scan.ticket.accessArea.name}</span>
+                          </span>
+                        )}
+                        {(scan.ticket?.ticketTypeName || scan.ticket?.accessArea?.name) && scan.device.name && (
+                          <span className="text-slate-400 shrink-0">·</span>
+                        )}
+                        {scan.device.name && (
+                          <span className="inline-flex items-center gap-1 shrink-0 min-w-0">
+                            <Wifi className="h-3 w-3 text-slate-400 shrink-0" aria-hidden />
+                            <span className="truncate">{scan.device.name}</span>
+                          </span>
+                        )}
+                      </p>
                     </div>
-                    <span className="text-xs text-slate-400">{d.type === "SHELLY" ? "Shelly" : "Pi"}</span>
                   </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {scan.ticket?.validityType === "DURATION" && scan.ticket.validityDurationMinutes && scan.ticket.firstScanAt && (
+                      <InternalCountdown
+                        firstScanAt={scan.ticket.firstScanAt}
+                        durationMinutes={scan.ticket.validityDurationMinutes}
+                      />
+                    )}
+                    <span className="text-xs text-slate-400 font-mono">
+                      {fmtTime(scan.scanTime)}
+                    </span>
+                  </div>
+                </div>
                 );
               })}
-              {devices.length === 0 && (
-                <p className="text-sm text-slate-500 text-center py-4">Keine Geräte</p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

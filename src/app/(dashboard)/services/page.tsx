@@ -54,8 +54,8 @@ export default async function ServicesPage() {
       <Header title="Services" accountName={session.user.accountName} />
       <div className="p-6">
         <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader>
-            <CardTitle>Alle Services ({services.length})</CardTitle>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl">Alle Services ({services.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <ServicesTable

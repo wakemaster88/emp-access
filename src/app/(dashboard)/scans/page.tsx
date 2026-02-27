@@ -2,17 +2,9 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { fmtDateTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ScanGroupCard } from "@/components/scans/scan-group-card";
 
 interface Props {
   searchParams: Promise<{ device?: string; result?: string }>;
@@ -42,22 +34,19 @@ export default async function ScansPage({ searchParams }: Props) {
     take: 200,
   });
 
+  const groupedByCode = scans.reduce<Map<string, typeof scans>>((acc, scan) => {
+    const code = scan.code;
+    if (!acc.has(code)) acc.set(code, []);
+    acc.get(code)!.push(scan);
+    return acc;
+  }, new Map());
+  const sortedCodes = Array.from(groupedByCode.entries())
+    .sort(([, a], [, b]) => new Date(b[0].scanTime).getTime() - new Date(a[0].scanTime).getTime())
+    .map(([code]) => code);
+
   const filterDevice = deviceId
     ? await db.device.findFirst({ where: { id: deviceId }, select: { name: true } })
     : null;
-
-  const resultBadge = (result: string) => {
-    switch (result) {
-      case "GRANTED":
-        return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Erlaubt</Badge>;
-      case "DENIED":
-        return <Badge variant="destructive">Abgelehnt</Badge>;
-      case "PROTECTED":
-        return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Geschützt</Badge>;
-      default:
-        return <Badge variant="secondary">{result}</Badge>;
-    }
-  };
 
   return (
     <>
@@ -82,38 +71,32 @@ export default async function ScansPage({ searchParams }: Props) {
               )}
             </div>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Zeit</TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Ticket</TableHead>
-                  <TableHead>Gerät</TableHead>
-                  <TableHead>Ergebnis</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {scans.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-slate-500 py-12">
-                      Keine Scans vorhanden
-                    </TableCell>
-                  </TableRow>
-                )}
-                {scans.map((scan) => (
-                  <TableRow key={scan.id}>
-                    <TableCell className="text-sm">
-                      {fmtDateTime(scan.scanTime)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-slate-500">{scan.code}</TableCell>
-                    <TableCell>{scan.ticket?.name || "–"}</TableCell>
-                    <TableCell className="text-sm">{scan.device.name}</TableCell>
-                    <TableCell>{resultBadge(scan.result)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="p-4 sm:p-6">
+            {scans.length === 0 ? (
+              <p className="text-center text-slate-500 py-12">Keine Scans vorhanden</p>
+            ) : (
+              <div className="space-y-4">
+                {sortedCodes.map((code) => {
+                  const group = groupedByCode.get(code)!;
+                  const ticketName = group[0].ticket?.name || "–";
+                  const scanList = group.map((s) => ({
+                    id: s.id,
+                    scanTime: s.scanTime.toISOString(),
+                    deviceName: s.device.name,
+                    result: s.result,
+                    ticketTypeName: s.ticket?.ticketTypeName ?? null,
+                  }));
+                  return (
+                    <ScanGroupCard
+                      key={code}
+                      ticketName={ticketName}
+                      code={code}
+                      scans={scanList}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

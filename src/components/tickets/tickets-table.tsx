@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EditTicketDialog, type TicketData } from "./edit-ticket-dialog";
-import { fmtDate, fmtDateTime } from "@/lib/utils";
+import { fmtDateShort, fmtDateTimeShort, isDateOnly } from "@/lib/utils";
 
 interface Area {
   id: number;
@@ -38,6 +38,57 @@ interface TicketsTableProps {
   searchCode?: string;
 }
 
+function sourceBadge(source: string | null | undefined) {
+  const label = !source
+    ? "Eigenes"
+    : (() => {
+        const s = source.toUpperCase();
+        if (s === "ANNY") return "anny";
+        if (s === "WAKESYS") return "wakesys";
+        if (s === "BINARYTEC") return "binarytec";
+        if (s === "EMP_CONTROL") return "emp-control";
+        if (s === "SHELLY") return "shelly";
+        return source;
+      })();
+  if (!source) {
+    return (
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-400 font-normal">
+        {label}
+      </Badge>
+    );
+  }
+  const s = source.toUpperCase();
+  if (s === "ANNY") {
+    return (
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 font-normal">
+        {label}
+      </Badge>
+    );
+  }
+  if (s === "WAKESYS" || s === "EMP_CONTROL" || s === "BINARYTEC" || s === "SHELLY") {
+    return (
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400 font-normal">
+        {label}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-normal">
+      {label}
+    </Badge>
+  );
+}
+
+/** Zeigt Code nur an, wenn es ein echter Scan-Code ist (kein anny-Buchungs-JSON). */
+function displayCode(ticket: TicketData): string {
+  const raw = ticket.barcode || ticket.qrCode || ticket.rfidCode;
+  if (!raw) return "–";
+  const t = raw.trim();
+  if (t.startsWith("[") || t.startsWith("{")) return "–";
+  if (t.length > 80) return `${t.slice(0, 40)}…`;
+  return t;
+}
+
 function statusBadge(status: string) {
   switch (status) {
     case "VALID":
@@ -61,50 +112,75 @@ function formatDuration(minutes: number) {
 
 function ValidityInfo({ ticket }: { ticket: TicketData }) {
   const vt = ticket.validityType ?? "DATE_RANGE";
+  const hasRange = ticket.startDate || ticket.endDate;
 
-  const dateRange = (ticket.startDate || ticket.endDate)
-    ? `${ticket.startDate ? fmtDate(ticket.startDate) : "∞"} – ${ticket.endDate ? fmtDate(ticket.endDate) : "∞"}`
+  const dateRangeStr = hasRange
+    ? (() => {
+        const start = ticket.startDate ? new Date(ticket.startDate) : null;
+        const end = ticket.endDate ? new Date(ticket.endDate) : null;
+        const startOnlyDate = start && isDateOnly(start);
+        const endOnlyDate = end && isDateOnly(end);
+        if (startOnlyDate && endOnlyDate) {
+          return `${ticket.startDate ? fmtDateShort(ticket.startDate) : "∞"} – ${ticket.endDate ? fmtDateShort(ticket.endDate) : "∞"}`;
+        }
+        return `${ticket.startDate ? fmtDateTimeShort(ticket.startDate) : "∞"} – ${ticket.endDate ? fmtDateTimeShort(ticket.endDate) : "∞"}`;
+      })()
     : null;
 
   if (vt === "TIME_SLOT") {
+    const slot = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd}` : "Zeitslot";
     return (
-      <div className="space-y-0.5">
-        {dateRange && <p>{dateRange}</p>}
-        {ticket.slotStart && ticket.slotEnd ? (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400">
-            {ticket.slotStart}–{ticket.slotEnd} Uhr
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400">
-            Zeitslot
-          </Badge>
-        )}
-      </div>
+      <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+        {dateRangeStr && <span>{dateRangeStr}</span>}
+        {dateRangeStr && " · "}
+        <span className="text-indigo-600 dark:text-indigo-400">{slot} Uhr</span>
+      </span>
     );
   }
 
   if (vt === "DURATION") {
+    const dur = ticket.validityDurationMinutes ? `${formatDuration(ticket.validityDurationMinutes)} ab Scan` : "Dauer ab Scan";
     return (
-      <div className="space-y-0.5">
-        {dateRange && <p>{dateRange}</p>}
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400">
-          {ticket.validityDurationMinutes
-            ? `${formatDuration(ticket.validityDurationMinutes)} ab Scan`
-            : "Dauer ab Scan"}
-        </Badge>
+      <span className="text-xs text-slate-600 dark:text-slate-400">
+        {dateRangeStr && <span className="whitespace-nowrap">{dateRangeStr}</span>}
+        {dateRangeStr && " · "}
+        <span className="text-violet-600 dark:text-violet-400">{dur}</span>
         {ticket.firstScanAt && (
-          <p className="text-xs text-slate-400">Start: {fmtDateTime(ticket.firstScanAt)}</p>
+          <span className="block text-[10px] text-slate-400 mt-0.5">Start: {fmtDateTimeShort(ticket.firstScanAt)}</span>
         )}
-      </div>
+      </span>
     );
   }
 
-  return <span>{dateRange ?? "–"}</span>;
+  return (
+    <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+      {dateRangeStr ?? "–"}
+    </span>
+  );
 }
+
+type TicketWithArea = TicketData & { accessArea?: { name: string } | null };
 
 export function TicketsTable({ tickets, areas, subscriptions = [], services = [], readonly, searchCode }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
   const openedForCodeRef = useRef<string | null>(null);
+
+  const groupedByResource = useMemo(() => {
+    const map = new Map<string, TicketWithArea[]>();
+    for (const t of tickets as TicketWithArea[]) {
+      const name = t.accessArea?.name ?? "Keine Resource";
+      if (!map.has(name)) map.set(name, []);
+      map.get(name)!.push(t);
+    }
+    const none = "Keine Resource";
+    return Array.from(map.entries())
+      .sort(([a], [b]) => {
+        if (a === none) return 1;
+        if (b === none) return -1;
+        return a.localeCompare(b, "de");
+      })
+      .map(([resourceName, list]) => ({ resourceName, tickets: list }));
+  }, [tickets]);
 
   useEffect(() => {
     if (!searchCode) {
@@ -124,6 +200,8 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Code</TableHead>
+            <TableHead>Quelle</TableHead>
+            <TableHead>Tickettyp</TableHead>
             <TableHead>Resource</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Gültigkeit</TableHead>
@@ -133,54 +211,61 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
         <TableBody>
           {tickets.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-slate-500 py-12">
+              <TableCell colSpan={8} className="text-center text-slate-500 py-12">
                 {searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
               </TableCell>
             </TableRow>
           )}
-          {tickets.map((ticket) => (
-            <TableRow
-              key={ticket.id}
-              className={
-                readonly
-                  ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
-                  : "hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
-              }
-              onClick={() => !readonly && setSelected(ticket)}
-            >
-              <TableCell>
-                <div className="flex items-center gap-2.5">
-                  {ticket.profileImage ? (
-                    <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
-                  ) : null}
-                  <div>
-                    <p className="font-medium text-slate-900 dark:text-slate-100">
-                      {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                    </p>
-                    {ticket.ticketTypeName && (
-                      <p className="text-xs text-slate-400">{ticket.ticketTypeName}</p>
-                    )}
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell className="text-xs font-mono text-slate-500">
-                {ticket.source === "ANNY" ? (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 font-normal">
-                    anny
-                  </Badge>
-                ) : (
-                  ticket.barcode || ticket.qrCode || ticket.rfidCode || "–"
-                )}
-              </TableCell>
-              <TableCell className="text-sm">
-                {(ticket as TicketData & { accessArea?: { name: string } | null }).accessArea?.name || "–"}
-              </TableCell>
-              <TableCell>{statusBadge(ticket.status)}</TableCell>
-              <TableCell className="text-sm text-slate-500">
-                <ValidityInfo ticket={ticket} />
-              </TableCell>
-              <TableCell className="text-right font-medium">{ticket._count.scans}</TableCell>
-            </TableRow>
+          {groupedByResource.map(({ resourceName, tickets: groupTickets }) => (
+            <React.Fragment key={resourceName}>
+              <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                <TableCell colSpan={8} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  {resourceName}
+                  <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
+                    ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
+                  </span>
+                </TableCell>
+              </TableRow>
+              {groupTickets.map((ticket) => (
+                <TableRow
+                  key={ticket.id}
+                  className={
+                    readonly
+                      ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
+                  }
+                  onClick={() => !readonly && setSelected(ticket)}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2.5">
+                      {ticket.profileImage ? (
+                        <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                      ) : null}
+                      <p className="font-medium text-slate-900 dark:text-slate-100">
+                        {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs font-mono text-slate-500">
+                    {displayCode(ticket)}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {sourceBadge(ticket.source)}
+                  </TableCell>
+                  <TableCell className="text-sm text-slate-500">
+                    {ticket.ticketTypeName || "–"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {(ticket as TicketWithArea).accessArea?.name || "–"}
+                  </TableCell>
+                  <TableCell>{statusBadge(ticket.status)}</TableCell>
+                  <TableCell className="text-sm text-slate-500">
+                    <ValidityInfo ticket={ticket} />
+                  </TableCell>
+                  <TableCell className="text-right font-medium">{ticket._count.scans}</TableCell>
+                </TableRow>
+              ))}
+            </React.Fragment>
           ))}
         </TableBody>
       </Table>
