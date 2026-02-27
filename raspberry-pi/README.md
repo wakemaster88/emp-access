@@ -173,12 +173,13 @@ Unter Buster, wenn `liblgpio-dev` fehlt: `install.sh` baut die lg-Bibliothek aut
 ### emp-scanner.service: „Failed with result 'exit-code'“ / status=1/FAILURE
 
 - **ExecStart prüfen:** In `systemctl status emp-scanner` muss stehen:  
-  `.../venv/bin/python -m emp_scanner.main`  
-  Nicht `vesu` (→ venv) oder `-n` (→ -m). Bei Tippfehlern:
+  `/opt/emp-scanner/venv/bin/python -m emp_scanner.main`  
+  Typische Tippfehler: `enp-scanner`→emp, `venu`/`vesu`→venv, `-n`→`-m`, `nain`→main. Sofort-Fix auf dem Pi:
   ```bash
-  cd ~/emp-access/raspberry-pi && git pull && sudo bash install.sh
+  sudo sed -i -e 's|/enp-scanner/|/emp-scanner/|g' -e 's|/venu/|/venv/|g' -e 's|/vesu/|/venv/|g' -e 's|-n emp_scanner|-m emp_scanner|g' -e 's|\.nain|.main|g' /etc/systemd/system/emp-scanner.service
+  sudo systemctl daemon-reload && sudo systemctl restart emp-scanner
   ```
-  Das Install-Skript korrigiert vesu/-n in der Service-Datei. Danach: `sudo systemctl daemon-reload && sudo systemctl restart emp-scanner`
+  Oder: `cd ~/emp-access/raspberry-pi && git pull && sudo bash install.sh`
 - **Logs ansehen:** `sudo journalctl -u emp-scanner -n 50 --no-pager` (zeigt Python-Fehler oder Traceback).
 
 ## Entwicklung (ohne Hardware)

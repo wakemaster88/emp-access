@@ -177,16 +177,30 @@ fi
 # ─── Systemd services ────────────────────────────────────────────────────────
 
 echo "→ Systemd-Services installieren..."
-cp "$INSTALL_DIR/raspberry-pi/emp-scanner.service" /etc/systemd/system/
+# emp-scanner.service fest schreiben (vermeidet Tippfehler bei Kopie)
+cat > /etc/systemd/system/emp-scanner.service << 'EMPSVC'
+[Unit]
+Description=EMP Access Scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/emp-scanner/raspberry-pi
+ExecStart=/opt/emp-scanner/venv/bin/python -m emp_scanner.main
+Restart=always
+RestartSec=5
+WatchdogSec=120
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EMPSVC
 cp "$INSTALL_DIR/raspberry-pi/emp-updater.service" /etc/systemd/system/
 cp "$INSTALL_DIR/raspberry-pi/emp-updater.timer" /etc/systemd/system/
-
-# ExecStart sicherstellen: vesu→venv, -n→-m (immer anwenden)
-SVC="/etc/systemd/system/emp-scanner.service"
-sed -i 's|/vesu/|/venv/|g; s| -n emp_scanner| -m emp_scanner|g; s|-n emp_scanner|-m emp_scanner|g' "$SVC"
-grep -q 'venv/bin/python -m emp_scanner.main' "$SVC" || {
-    echo "  Warnung: ExecStart in emp-scanner.service prüfen (sollte .../venv/bin/python -m emp_scanner.main sein)"
-}
 
 systemctl daemon-reload
 systemctl enable emp-scanner
