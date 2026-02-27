@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/emp-scanner/raspberry-pi
+# -m ist erforderlich, damit Python das Modul emp_scanner.main ausführt
 ExecStart=/opt/emp-scanner/venv/bin/python -m emp_scanner.main
 Restart=always
 RestartSec=5

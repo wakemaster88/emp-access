@@ -170,6 +170,15 @@ sudo apt-get install -y swig build-essential python3-dev liblgpio-dev
 
 Unter Buster, wenn `liblgpio-dev` fehlt: `install.sh` baut die lg-Bibliothek automatisch aus Quellcode.
 
+### emp-scanner.service: „Failed with result 'exit-code'“ / status=1/FAILURE
+
+- **ExecStart muss `-m` enthalten:** Es muss heißen `python -m emp_scanner.main` (nicht `python emp_scanner.main`). Alte Service-Datei ersetzen:
+  ```bash
+  cd ~/emp-access/raspberry-pi && git pull && sudo bash install.sh
+  ```
+  oder prüfen: `grep ExecStart /etc/systemd/system/emp-scanner.service`
+- **Logs ansehen:** `sudo journalctl -u emp-scanner -n 50 --no-pager` (zeigt Python-Fehler oder Traceback).
+
 ## Entwicklung (ohne Hardware)
 
 ```bash
