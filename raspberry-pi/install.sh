@@ -129,7 +129,24 @@ fi
 echo "→ Python Virtual Environment erstellen..."
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install -q --upgrade pip
-"$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/raspberry-pi/requirements.txt"
+
+# lgpio-Build findet liblgpio in /usr/local (z. B. nach Quellcode-Build); Pfade setzen
+export LDFLAGS="-L/usr/local/lib ${LDFLAGS:-}"
+export CPPFLAGS="-I/usr/local/include ${CPPFLAGS:-}"
+export LD_LIBRARY_PATH="/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+"$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/raspberry-pi/requirements.txt" || {
+    echo "  pip install fehlgeschlagen (evtl. lgpio). Erneuter Versuch mit expliziten Pfaden..."
+    export LDFLAGS="-L/usr/local/lib -Wl,-rpath,/usr/local/lib ${LDFLAGS:-}"
+    export CPPFLAGS="-I/usr/local/include ${CPPFLAGS:-}"
+    export LD_LIBRARY_PATH="/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    "$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/raspberry-pi/requirements.txt" || {
+        echo ""
+        echo "Fehler: Python-Abhängigkeiten (lgpio) konnten nicht gebaut werden."
+        echo "Unter Buster: lg-Bibliothek wird aus Quellcode gebaut; LDFLAGS/CPPFLAGS sollten gesetzt sein."
+        echo "Falls das Problem bleibt: Raspberry Pi OS auf Bullseye/Bookworm upgraden (dort ist liblgpio-dev verfügbar)."
+        exit 1
+    }
+}
 
 # ─── Hardware Watchdog ────────────────────────────────────────────────────────
 
