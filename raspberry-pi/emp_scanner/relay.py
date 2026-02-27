@@ -8,11 +8,11 @@ Pin assignments (BCM):
   LED grün: GPIO 27
   LED rot:  GPIO 22
 
-Buzzer patterns (from pi-alt):
-  startup:  500 → 1000 → 1500 Hz (0.3s each)
+Buzzer patterns:
+  startup:  Kurze Aufwärtsmelodie, längerer Schluss = „System online“
   scan:     500 → 1500 Hz         (0.2s each)
-  valid:    1000 → 1500 → 2000 Hz (0.2s each)
-  invalid:  2000 → 1500 → 1000 Hz (0.2s each)
+  valid:    Aufsteigend C5→E5→G5, kurze Töne, längerer Abschluss („positiv“, bestätigend)
+  invalid:  Absteigend, tiefere Töne, doppelter Warnton („Fehler“, unmissverständlich)
 """
 from __future__ import annotations
 
@@ -68,8 +68,9 @@ class RelayController:
     # ─── Public actions ───────────────────────────────────────────────────────
 
     def startup_sound(self):
-        """500 → 1000 → 1500 Hz"""
-        self._buzzer_pattern([(500, 0.3), (1000, 0.3), (1500, 0.3)])
+        """Kurze Aufwärtsmelodie – klingt nach „System online / bereit“."""
+        # C5 → E5 → G5 → C6, letzter Ton länger = klarer Abschluss
+        self._buzzer_pattern([(523, 0.18), (659, 0.18), (784, 0.18), (1047, 0.4)])
 
     def grant(self):
         """Open relay + valid sound + green LED."""
@@ -79,7 +80,8 @@ class RelayController:
             self._set(self.led_green, True)
             self._set(self.led_red, False)
             logger.info("GRANTED – Relais geöffnet für %.1fs", self.duration)
-        self._buzzer_pattern([(1000, 0.2), (1500, 0.2), (2000, 0.2)])
+        # Gültig: aufsteigend, angenehm (C5–E5–G5), letzter Ton länger = Bestätigung
+        self._buzzer_pattern([(523, 0.12), (659, 0.12), (784, 0.22)])
         with self._lock:
             self._timer = threading.Timer(self.duration, self._close_relay)
             self._timer.daemon = True
@@ -91,7 +93,8 @@ class RelayController:
             self._set(self.led_red, True)
             self._set(self.led_green, False)
             logger.info("DENIED – Relais bleibt geschlossen")
-        self._buzzer_pattern([(2000, 0.2), (1500, 0.2), (1000, 0.2)])
+        # Ungültig: zwei kurze Warntöne + tiefer langer Ton (unmissverständlich „abgelehnt“)
+        self._buzzer_pattern([(480, 0.08), (480, 0.08), (320, 0.22)])
         with self._lock:
             self._timer = threading.Timer(1.5, self._reset_leds)
             self._timer.daemon = True
