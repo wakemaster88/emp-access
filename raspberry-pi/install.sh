@@ -15,33 +15,57 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# ─── Buster-Repo automatisch auf Legacy umstellen (bei 404) ───────────────────
+
+fix_buster_sources() {
+    local codename
+    codename=$(lsb_release -cs 2>/dev/null || grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d= -f2 || echo "")
+    if [ "$codename" != "buster" ]; then
+        return 1
+    fi
+    if grep -q "raspbian.raspberrypi.org" /etc/apt/sources.list 2>/dev/null || \
+       grep -q "raspbian.raspberrypi.org" /etc/apt/sources.list.d/raspi.list 2>/dev/null; then
+        echo "  Buster erkannt, stelle Repo-Quellen auf legacy.raspbian.org um..."
+        echo 'deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi' > /etc/apt/sources.list
+        mkdir -p /etc/apt/sources.list.d
+        echo 'deb http://archive.raspberrypi.org/debian buster main' > /etc/apt/sources.list.d/raspi.list
+        return 0
+    fi
+    return 1
+}
+
 # ─── System packages ─────────────────────────────────────────────────────────
 
 echo ""
 echo "→ System-Pakete installieren..."
 if ! apt-get update -qq 2>/dev/null; then
-    echo "  Warnung: apt-get update fehlgeschlagen (z.B. veraltete Repos oder fehlender GPG-Schlüssel)."
-    echo "  Siehe README Abschnitt 'Fehlerbehebung'. Versuche Installation mit vorhandenen Paketlisten..."
+    echo "  Warnung: apt-get update fehlgeschlagen."
+    if fix_buster_sources; then
+        echo "  Führe apt-get update erneut aus..."
+        apt-get update -qq || true
+    fi
 fi
-apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig build-essential || {
-    echo ""
-    echo "Fehler: Paketinstallation fehlgeschlagen."
-    echo ""
-    echo "Bei Raspberry Pi OS Buster (404) zuerst Repo-Quellen umstellen, dann install.sh erneut ausführen."
-    echo ""
-    echo "--- Einmal komplett kopieren und einfügen (Achtung: Schrägstrich in .../raspbian/ nicht vergessen): ---"
-    echo ""
-    printf '%s\n' \
-      "echo 'deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi' | sudo tee /etc/apt/sources.list" \
-      "echo 'deb http://archive.raspberrypi.org/debian buster main' | sudo tee /etc/apt/sources.list.d/raspi.list" \
-      "sudo apt-get update" \
-      "cd \"\$HOME/emp-access/raspberry-pi\" && sudo bash install.sh"
-    echo ""
-    echo "--- (Falls das Repo woanders liegt, im letzten Befehl den Pfad anpassen.) ---"
-    echo ""
-    echo "Weitere Ursachen: TeamViewer-Repo entfernen (siehe README Fehlerbehebung)."
-    exit 1
-}
+
+if ! apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig build-essential 2>/dev/null; then
+    echo "  Paketinstallation fehlgeschlagen, versuche automatische Repo-Korrektur für Buster..."
+    if fix_buster_sources; then
+        echo "  apt-get update und erneute Paketinstallation..."
+        apt-get update -qq
+        apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig build-essential || {
+            echo ""
+            echo "Fehler: Paketinstallation fehlgeschlagen (auch nach Repo-Umstellung)."
+            echo "TeamViewer-Repo ggf. entfernen: sudo rm /etc/apt/sources.list.d/teamviewer.list"
+            echo "Details: raspberry-pi/README.md → Fehlerbehebung"
+            exit 1
+        }
+    else
+        echo ""
+        echo "Fehler: Paketinstallation fehlgeschlagen."
+        echo "Bei Raspberry Pi OS Buster: Repo-Quellen manuell auf legacy.raspbian.org umstellen (siehe README)."
+        echo "Weitere Ursachen: TeamViewer-Repo entfernen (siehe README Fehlerbehebung)."
+        exit 1
+    fi
+fi
 
 # ─── Detect repo URL from parent git ─────────────────────────────────────────
 
