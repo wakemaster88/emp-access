@@ -115,6 +115,43 @@ Server prüft:
 Relais öffnen / LED rot + Buzzer
 ```
 
+## Fehlerbehebung bei der Installation
+
+### „Das Depot … enthält keine Release-Datei mehr“ (Raspbian Buster)
+
+Raspberry Pi OS **Buster** ist veraltet; die Repos wurden ins Archiv verschoben. Zwei Wege:
+
+**Option A – Auf neueres OS upgraden (empfohlen)**  
+- Neuinstallation mit [Raspberry Pi OS Bullseye oder Bookworm](https://www.raspberrypi.com/software/).
+
+**Option B – Buster mit Archiv-Quellen nutzen**
+
+```bash
+# Backup
+sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+sudo cp /etc/apt/sources.list.d/raspi.list /etc/apt/sources.list.d/raspi.list.bak 2>/dev/null || true
+
+# Alte URLs durch Archiv ersetzen
+sudo sed -i 's|raspbian.raspberrypi.org/raspbian|archive.raspbian.org/raspbian|g' /etc/apt/sources.list
+sudo sed -i 's|archive.raspberrypi.org/debian|archive.raspberrypi.org/debian|g' /etc/apt/sources.list.d/raspi.list 2>/dev/null || true
+# In sources.list Zeile mit raspbian.raspberrypi.org ggf. manuell ersetzen durch:
+# deb http://archive.raspbian.org/raspbian buster main contrib non-free rpi
+
+sudo apt-get update
+sudo bash install.sh
+```
+
+### „GPG-Fehler“ / „Depot … ist nicht signiert“ (TeamViewer o.ä.)
+
+Falls ein anderes Repo (z. B. TeamViewer) den Update blockiert:
+
+- **TeamViewer-Repo deaktivieren:**  
+  `sudo rm /etc/apt/sources.list.d/teamviewer.list` (oder die Zeile in der Datei auskommentieren).  
+  Danach: `sudo apt-get update` und `sudo bash install.sh` erneut ausführen.
+
+- **Oder GPG-Schlüssel hinzufügen** (Beispiel TeamViewer):  
+  `sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys EF9DBDC7387D1A07`
+
 ## Entwicklung (ohne Hardware)
 
 ```bash

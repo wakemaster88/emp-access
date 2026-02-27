@@ -19,8 +19,18 @@ fi
 
 echo ""
 echo "→ System-Pakete installieren..."
-apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip git
+if ! apt-get update -qq 2>/dev/null; then
+    echo "  Warnung: apt-get update fehlgeschlagen (z.B. veraltete Repos oder fehlender GPG-Schlüssel)."
+    echo "  Siehe README Abschnitt 'Fehlerbehebung'. Versuche Installation mit vorhandenen Paketlisten..."
+fi
+apt-get install -y -qq python3 python3-venv python3-pip git || {
+    echo ""
+    echo "Fehler: Paketinstallation fehlgeschlagen. Häufige Ursachen:"
+    echo "  • Raspberry Pi OS Buster: Bitte auf Bullseye/Bookworm upgraden oder /etc/apt/sources.list auf Archive umstellen."
+    echo "  • TeamViewer-Repo: Entfernen Sie die Zeile in /etc/apt/sources.list.d/ oder fügen Sie den GPG-Schlüssel hinzu."
+    echo "  Details: raspberry-pi/README.md → Fehlerbehebung"
+    exit 1
+}
 
 # ─── Detect repo URL from parent git ─────────────────────────────────────────
 
@@ -66,15 +76,18 @@ if ! grep -q "dtparam=watchdog=on" /boot/firmware/config.txt 2>/dev/null && \
 fi
 
 if [ ! -f /etc/watchdog.conf ] || ! grep -q "^watchdog-device" /etc/watchdog.conf; then
-    apt-get install -y -qq watchdog
-    cat > /etc/watchdog.conf << 'WDCONF'
+    if apt-get install -y -qq watchdog 2>/dev/null; then
+        cat > /etc/watchdog.conf << 'WDCONF'
 watchdog-device = /dev/watchdog
 watchdog-timeout = 15
 max-load-1 = 24
 WDCONF
-    systemctl enable watchdog
-    systemctl start watchdog
-    echo "  System-Watchdog konfiguriert (15s Timeout)"
+        systemctl enable watchdog
+        systemctl start watchdog
+        echo "  System-Watchdog konfiguriert (15s Timeout)"
+    else
+        echo "  Warnung: watchdog konnte nicht installiert werden (optional)."
+    fi
 fi
 
 # ─── Systemd services ────────────────────────────────────────────────────────
