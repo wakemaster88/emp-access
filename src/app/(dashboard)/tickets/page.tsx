@@ -32,7 +32,7 @@ export default async function TicketsPage({ searchParams }: Props) {
   const statusFilter = showInactive ? {} : { status: { in: ["VALID" as const, "REDEEMED" as const] } };
   const areaFilter = areaId ? { accessAreaId: areaId } : {};
   const codeFilter = codeTrim
-    ? { OR: [{ barcode: codeTrim }, { qrCode: codeTrim }, { rfidCode: codeTrim }] as const }
+    ? { OR: [{ barcode: codeTrim }, { qrCode: codeTrim }, { rfidCode: codeTrim }] }
     : {};
 
   const [tickets, areas, subscriptions, services, inactiveCount] = await Promise.all([
