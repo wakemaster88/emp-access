@@ -46,6 +46,8 @@ sudo bash install.sh
 
 **Update (erneut ausführen):** Einfach `sudo bash install.sh` nochmal aus dem gleichen Ordner starten – das Skript aktualisiert dann `/opt/emp-scanner`. Falls der Ordner blockiert ist, werden Scanner und Updater kurz gestoppt und der alte Stand ggf. nach `/opt/emp-scanner.old` verschoben.
 
+**Raspberry Pi OS Buster (ältere Version):** Wenn `apt-get update` oder die Paketinstallation mit 404/„Release-Datei“ fehlschlägt, zuerst die Repo-Quellen auf **legacy.raspbian.org** umstellen (siehe Abschnitt „Fehlerbehebung“ unten), dann `sudo apt-get update` und `sudo bash install.sh` erneut ausführen.
+
 ## Ersteinrichtung
 
 1. Im EMP Access Dashboard ein Raspberry-Pi-Gerät anlegen
@@ -121,25 +123,24 @@ Relais öffnen / LED rot + Buzzer
 
 ### „Das Depot … enthält keine Release-Datei mehr“ (Raspbian Buster)
 
-Raspberry Pi OS **Buster** ist veraltet; die Repos wurden ins Archiv verschoben. Zwei Wege:
+Raspberry Pi OS **Buster** ist veraltet; die Repos liegen seit Dez. 2025 unter **legacy.raspbian.org**. Zwei Wege:
 
 **Option A – Auf neueres OS upgraden (empfohlen)**  
 - Neuinstallation mit [Raspberry Pi OS Bullseye oder Bookworm](https://www.raspberrypi.com/software/).
 
-**Option B – Buster mit Archiv-Quellen nutzen**
+**Option B – Buster mit funktionierenden Quellen (legacy.raspbian.org)**
+
+Diese Befehle nacheinander ausführen (ersetzen die bestehenden Repo-Zeilen; Backup empfohlen: `sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak`):
 
 ```bash
-# Backup
-sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
-sudo cp /etc/apt/sources.list.d/raspi.list /etc/apt/sources.list.d/raspi.list.bak 2>/dev/null || true
+# Raspbian-Hauptquellen (Pakete wie swig, python3-dev)
+echo 'deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi' | sudo tee /etc/apt/sources.list
 
-# Alte URLs durch Archiv ersetzen
-sudo sed -i 's|raspbian.raspberrypi.org/raspbian|archive.raspbian.org/raspbian|g' /etc/apt/sources.list
-sudo sed -i 's|archive.raspberrypi.org/debian|archive.raspberrypi.org/debian|g' /etc/apt/sources.list.d/raspi.list 2>/dev/null || true
-# In sources.list Zeile mit raspbian.raspberrypi.org ggf. manuell ersetzen durch:
-# deb http://archive.raspbian.org/raspbian buster main contrib non-free rpi
+# Raspberry-Pi-spezifische Pakete
+echo 'deb http://archive.raspberrypi.org/debian buster main' | sudo tee /etc/apt/sources.list.d/raspi.list
 
 sudo apt-get update
+cd ~/emp-access/raspberry-pi
 sudo bash install.sh
 ```
 

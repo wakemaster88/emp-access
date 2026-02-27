@@ -25,10 +25,17 @@ if ! apt-get update -qq 2>/dev/null; then
 fi
 apt-get install -y -qq python3 python3-venv python3-pip python3-dev git swig build-essential || {
     echo ""
-    echo "Fehler: Paketinstallation fehlgeschlagen. Häufige Ursachen:"
-    echo "  • Raspberry Pi OS Buster: Bitte auf Bullseye/Bookworm upgraden oder /etc/apt/sources.list auf Archive umstellen."
-    echo "  • TeamViewer-Repo: Entfernen Sie die Zeile in /etc/apt/sources.list.d/ oder fügen Sie den GPG-Schlüssel hinzu."
-    echo "  Details: raspberry-pi/README.md → Fehlerbehebung"
+    echo "Fehler: Paketinstallation fehlgeschlagen."
+    echo ""
+    echo "Bei Raspberry Pi OS Buster (404 / „Release-Datei mehr“) zuerst Repo-Quellen auf Legacy umstellen:"
+    echo ""
+    echo "  # Raspbian: auf legacy.raspbian.org umstellen"
+    echo "  echo 'deb https://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi' | sudo tee /etc/apt/sources.list"
+    echo "  echo 'deb http://archive.raspberrypi.org/debian buster main' | sudo tee /etc/apt/sources.list.d/raspi.list"
+    echo "  sudo apt-get update"
+    echo "  sudo bash install.sh"
+    echo ""
+    echo "Weitere Ursachen: TeamViewer-Repo entfernen (siehe README Fehlerbehebung)."
     exit 1
 }
 
