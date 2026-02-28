@@ -277,12 +277,27 @@ export async function GET(request: NextRequest) {
     const serviceTickets = enrichedTickets.filter((t) => svcTicketIds.has(t.id));
 
     if (areaResources.length === 0) {
+      let computedHours = area.openingHours;
+      if (!computedHours) {
+        const namesForArea = areaAllNames[area.id] || [];
+        const slotSet = new Set<string>();
+        for (const n of namesForArea) {
+          const rid = resourceIds[n];
+          if (rid && annyAvailability[rid]) {
+            for (const p of annyAvailability[rid]) {
+              const s = fmtTime(p.start), e = fmtTime(p.end);
+              if (s && e) slotSet.add(`${s}–${e}`);
+            }
+          }
+        }
+        if (slotSet.size > 0) computedHours = [...slotSet].sort().join(" · ");
+      }
       return {
         id: area.id,
         name: area.name,
         personLimit: area.personLimit,
         allowReentry: area.allowReentry,
-        openingHours: area.openingHours,
+        openingHours: computedHours,
         resources: [],
         otherTickets: regularTickets,
         aboTickets,
