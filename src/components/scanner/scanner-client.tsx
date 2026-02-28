@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Html5Qrcode } from "html5-qrcode";
+import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
 import {
   Camera,
   SwitchCamera,
@@ -57,6 +57,7 @@ export function ScannerClient() {
   const [error, setError] = useState<string | null>(null);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerRunningRef = useRef(false);
   const cooldownRef = useRef<string | null>(null);
   const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,30 +122,49 @@ export function ScannerClient() {
     [selectedArea]
   );
 
+  const stopScannerSafe = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        const state = scannerRef.current.getState();
+        if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+          await scannerRef.current.stop();
+        }
+      } catch {
+        /* already stopped */
+      }
+      scannerRunningRef.current = false;
+      try {
+        scannerRef.current.clear();
+      } catch {
+        /* ignore */
+      }
+      scannerRef.current = null;
+    }
+    setIsScanning(false);
+  }, []);
+
   const startScanner = useCallback(async () => {
     setError(null);
     setIsStarting(true);
 
     try {
-      if (scannerRef.current) {
-        try {
-          await scannerRef.current.stop();
-        } catch {
-          /* already stopped */
-        }
-        scannerRef.current.clear();
-        scannerRef.current = null;
-      }
+      await stopScannerSafe();
 
       const scanner = new Html5Qrcode("scanner-viewport");
       scannerRef.current = scanner;
 
+      const qrboxFn = (vw: number, vh: number) => {
+        const size = Math.min(vw, vh) * 0.7;
+        return { width: Math.floor(size), height: Math.floor(size) };
+      };
+
       await scanner.start(
         { facingMode },
         {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1,
+          fps: 15,
+          qrbox: qrboxFn,
+          formatsToSupport: undefined,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
         },
         (decodedText) => {
           checkCode(decodedText);
@@ -152,35 +172,24 @@ export function ScannerClient() {
         () => {}
       );
 
+      scannerRunningRef.current = true;
       setIsScanning(true);
     } catch (err) {
+      scannerRunningRef.current = false;
       const msg = err instanceof Error ? err.message : "Kamera-Zugriff fehlgeschlagen";
       setError(msg);
     } finally {
       setIsStarting(false);
     }
-  }, [facingMode, checkCode]);
-
-  const stopScanner = useCallback(async () => {
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-      } catch {
-        /* ignore */
-      }
-      scannerRef.current.clear();
-      scannerRef.current = null;
-    }
-    setIsScanning(false);
-  }, []);
+  }, [facingMode, checkCode, stopScannerSafe]);
 
   const toggleCamera = useCallback(async () => {
     const newMode = facingMode === "environment" ? "user" : "environment";
     setFacingMode(newMode);
     if (isScanning) {
-      await stopScanner();
+      await stopScannerSafe();
     }
-  }, [facingMode, isScanning, stopScanner]);
+  }, [facingMode, isScanning, stopScannerSafe]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -189,8 +198,14 @@ export function ScannerClient() {
     return () => {
       mountedRef.current = false;
       if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current.clear();
+        try {
+          const state = scannerRef.current.getState();
+          if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+            scannerRef.current.stop().catch(() => {});
+          }
+        } catch { /* ignore */ }
+        scannerRunningRef.current = false;
+        try { scannerRef.current.clear(); } catch { /* ignore */ }
         scannerRef.current = null;
       }
       if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
@@ -235,7 +250,7 @@ export function ScannerClient() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={isScanning ? stopScanner : startScanner}
+            onClick={isScanning ? stopScannerSafe : startScanner}
             className={cn(
               "h-9 w-9",
               isScanning
@@ -330,12 +345,12 @@ export function ScannerClient() {
         {/* Scan frame overlay when scanning but no result shown */}
         {isScanning && !lastResult && !isStarting && (
           <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-            <div className="w-[250px] h-[250px] relative">
-              <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-indigo-400 rounded-tl-lg" />
-              <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-indigo-400 rounded-tr-lg" />
-              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-indigo-400 rounded-bl-lg" />
-              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-indigo-400 rounded-br-lg" />
-              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-indigo-400/40 animate-pulse" />
+            <div className="w-[70vmin] h-[70vmin] max-w-[350px] max-h-[350px] relative">
+              <div className="absolute top-0 left-0 w-10 h-10 border-t-3 border-l-3 border-indigo-400 rounded-tl-xl" />
+              <div className="absolute top-0 right-0 w-10 h-10 border-t-3 border-r-3 border-indigo-400 rounded-tr-xl" />
+              <div className="absolute bottom-0 left-0 w-10 h-10 border-b-3 border-l-3 border-indigo-400 rounded-bl-xl" />
+              <div className="absolute bottom-0 right-0 w-10 h-10 border-b-3 border-r-3 border-indigo-400 rounded-br-xl" />
+              <div className="absolute top-1/2 left-2 right-2 h-0.5 bg-indigo-400/50 animate-pulse" />
             </div>
           </div>
         )}

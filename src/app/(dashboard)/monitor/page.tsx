@@ -291,10 +291,10 @@ export default function MonitorPage() {
                             <span className="truncate">{scan.ticket.accessArea.name}</span>
                           </span>
                         )}
-                        {(scan.ticket?.ticketTypeName || scan.ticket?.accessArea?.name) && scan.device.name && (
+                        {(scan.ticket?.ticketTypeName || scan.ticket?.accessArea?.name) && scan.device?.name && (
                           <span className="text-slate-400 shrink-0">·</span>
                         )}
-                        {scan.device.name && (
+                        {scan.device?.name && (
                           <span className="inline-flex items-center gap-1 shrink-0 min-w-0">
                             <Wifi className="h-3 w-3 text-slate-400 shrink-0" aria-hidden />
                             <span className="truncate">{scan.device.name}</span>

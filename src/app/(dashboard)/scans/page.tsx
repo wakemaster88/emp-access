@@ -82,7 +82,7 @@ export default async function ScansPage({ searchParams }: Props) {
                   const scanList = group.map((s) => ({
                     id: s.id,
                     scanTime: s.scanTime.toISOString(),
-                    deviceName: s.device.name,
+                    deviceName: s.device?.name ?? "Web-Scanner",
                     result: s.result,
                     ticketTypeName: s.ticket?.ticketTypeName ?? null,
                   }));

@@ -159,13 +159,13 @@ model Ticket {
 model Scan {
   id        Int        @id @default(autoincrement())
   code      String
-  deviceId  Int
+  deviceId  Int?
   scanTime  DateTime   @default(now())
   result    ScanResult
   ticketId  Int?
   accountId Int
   account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  device    Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device    Device?    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   ticket    Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   createdAt DateTime   @default(now())
 
