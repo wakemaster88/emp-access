@@ -64,6 +64,27 @@ export async function POST(req: NextRequest) {
     }
     extraConfig = JSON.stringify(extra);
   }
+  if (parsed.data.provider === "ANNY") {
+    let extra: Record<string, unknown> = {};
+    try {
+      if (parsed.data.extraConfig) extra = JSON.parse(parsed.data.extraConfig);
+    } catch { /* ignore */ }
+    const existingAnny = await db.apiConfig.findFirst({
+      where: { accountId: session.user.accountId!, provider: "ANNY" },
+    });
+    if (existingAnny?.extraConfig) {
+      try {
+        const existingExtra = JSON.parse(existingAnny.extraConfig) as Record<string, unknown>;
+        if (existingExtra.webhookSecret && !extra.webhookSecret) {
+          extra.webhookSecret = existingExtra.webhookSecret;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!extra.webhookSecret || typeof extra.webhookSecret !== "string") {
+      extra.webhookSecret = randomBytes(32).toString("hex");
+    }
+    extraConfig = JSON.stringify(extra);
+  }
 
   const existing = await db.apiConfig.findFirst({
     where: { accountId: session.user.accountId!, provider: parsed.data.provider },

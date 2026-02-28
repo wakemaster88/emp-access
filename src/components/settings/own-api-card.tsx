@@ -9,6 +9,8 @@ import { Copy, Check, Info } from "lucide-react";
 interface OwnApiCardProps {
   baseUrl: string;
   apiToken: string;
+  annyWebhookUrl?: string | null;
+  annyWebhookSecret?: string | null;
 }
 
 const ENDPOINTS = [
@@ -18,7 +20,7 @@ const ENDPOINTS = [
   { method: "POST", path: "/api/devices/[id]/action", desc: "Gerät steuern (action: open, emergency, reset, deactivate)" },
 ];
 
-export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
+export function OwnApiCard({ baseUrl, apiToken, annyWebhookUrl, annyWebhookSecret }: OwnApiCardProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
   const copy = (text: string, key: string) => {
@@ -91,6 +93,48 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
             ))}
           </ul>
         </div>
+
+        {annyWebhookUrl && (
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
+            <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Webhook: anny.co → neue Tickets</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-500">
+              In anny.co diese URL als Webhook eintragen. Bei neuer/geänderter Buchung sendet anny.co einen POST; EMP legt daraus ein Ticket an.
+            </p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-500">URL</span>
+              <div className="flex items-center gap-1 min-w-0">
+                <code className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded truncate max-w-[220px]">
+                  {annyWebhookUrl}
+                </code>
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => copy(annyWebhookUrl, "anny-url")}>
+                  {copied === "anny-url" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </div>
+            {annyWebhookSecret ? (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-500">Secret</span>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <code className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded truncate max-w-[160px] font-mono">
+                      {annyWebhookSecret}
+                    </code>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => copy(annyWebhookSecret, "anny-secret")}>
+                      {copied === "anny-secret" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-500">
+                  Header: <code className="bg-slate-200 dark:bg-slate-700 px-0.5 rounded">Authorization: Bearer {'<Secret>'}</code> oder <code className="bg-slate-200 dark:bg-slate-700 px-0.5 rounded">X-Webhook-Secret: {'<Secret>'}</code>. Body: <code className="bg-slate-200 dark:bg-slate-700 px-0.5 rounded">{`{ "booking": { ... } }`}</code> oder <code className="bg-slate-200 dark:bg-slate-700 px-0.5 rounded">{`{ "bookings": [ ... ] }`}</code>
+                </p>
+              </>
+            ) : (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                Speichere die <strong>anny.co</strong>-Integration einmal unter <strong>Schnittstellen</strong>, um das Webhook-Secret zu erzeugen. Danach erscheint es hier.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/30">
           <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
