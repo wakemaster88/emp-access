@@ -227,36 +227,31 @@ export async function POST() {
     // Group bookings by customer + service/resource
     const groups = new Map<string, BookingGroup>();
 
+    const cancelledStatuses = new Set(["cancelled", "canceled", "rejected", "no_show"]);
+
     for (const booking of uniqueBookings) {
       const customer = booking.customer;
       const customerId = customer?.id;
 
-      // Skip resource reservations without customer (e.g. Ferienkurs blocking lifts)
-      if (!customerId) {
-        const serviceName = booking.service?.name || null;
-        const resourceName = booking.resource?.name || null;
-        if (serviceName) discoveredServiceNames.add(serviceName);
-        if (resourceName) discoveredResourceNames.add(resourceName);
-        const resId = booking.resource?.id;
-        if (resId && resourceName) discoveredResourceIds[resourceName] = String(resId);
-        continue;
-      }
+      // Collect discovered names even from skipped bookings
+      const serviceName = booking.service?.name || null;
+      const resourceName = booking.resource?.name || null;
+      if (serviceName) discoveredServiceNames.add(serviceName);
+      if (resourceName) discoveredResourceNames.add(resourceName);
+      const resId = booking.resource?.id;
+      if (resId && resourceName) discoveredResourceIds[resourceName] = String(resId);
+
+      // Skip bookings without customer
+      if (!customerId) continue;
+
+      // Skip cancelled/rejected bookings entirely
+      if (booking.status && cancelledStatuses.has(booking.status.toLowerCase())) continue;
 
       const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
       const key = `anny:${customerId}:${serviceId}`;
 
       const customerName = customer?.full_name || customer?.name || "";
       const nameParts = customerName.split(/\s+/);
-
-      const serviceName = booking.service?.name || null;
-      const resourceName = booking.resource?.name || null;
-      if (serviceName) discoveredServiceNames.add(serviceName);
-      if (resourceName) discoveredResourceNames.add(resourceName);
-
-      const resId = booking.resource?.id;
-      if (resId && resourceName) {
-        discoveredResourceIds[resourceName] = String(resId);
-      }
 
       const startDate = booking.start_date ? new Date(booking.start_date) : null;
       const endDate = booking.end_date ? new Date(booking.end_date) : null;
@@ -404,7 +399,6 @@ export async function POST() {
         endDate: group.endDate,
         status: mapGroupStatus(group.statuses),
         ticketTypeName: typeName,
-        barcode: uuid,
         qrCode: JSON.stringify(group.entries),
         source: "ANNY" as const,
         accessAreaId,

@@ -134,9 +134,14 @@ export async function POST(request: NextRequest) {
   let updated = 0;
   let skippedNoMapping = 0;
 
+  const cancelledStatuses = new Set(["cancelled", "canceled", "rejected", "no_show"]);
+
   for (const booking of bookings) {
     const customerId = booking.customer?.id;
     if (customerId == null) continue;
+
+    // Skip cancelled/rejected bookings
+    if (booking.status && cancelledStatuses.has(booking.status.toLowerCase())) continue;
 
     const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
     const uuid = `anny:${customerId}:${serviceId}`;
@@ -183,7 +188,6 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       status,
-      barcode: uuid,
       qrCode: JSON.stringify([{ id: String(booking.id), start: booking.start_date ?? null, end: booking.end_date ?? null, status: booking.status ?? null }]),
       source: "ANNY" as const,
       accessAreaId,
