@@ -44,9 +44,10 @@ interface SidebarProps {
   userName: string;
   role: string;
   onSignOut: () => void;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ userName, role, onSignOut }: SidebarProps) {
+export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const isSuperAdmin = role === "SUPER_ADMIN";
@@ -57,6 +58,7 @@ export function Sidebar({ userName, role, onSignOut }: SidebarProps) {
     const link = (
       <Link
         href={href}
+        onClick={onNavigate}
         className={cn(
           "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
           "hover:bg-slate-700/50",
@@ -87,27 +89,30 @@ export function Sidebar({ userName, role, onSignOut }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "flex flex-col h-screen bg-slate-900 border-r border-slate-800 transition-all duration-300",
+        "flex flex-col min-h-full bg-slate-900 border-r border-slate-800 transition-all duration-300 shrink-0",
         collapsed ? "w-16" : "w-64"
       )}
     >
-      <div className="flex items-center justify-between p-4">
+      <div className="flex items-center justify-between p-3 md:p-4">
         {!collapsed && (
-          <Link href={isSuperAdmin ? "/admin" : "/"} className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+          <Link href={isSuperAdmin ? "/admin" : "/"} className="flex items-center gap-2" onClick={onNavigate}>
+            <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
               <Shield className="h-5 w-5 text-white" />
             </div>
             <span className="text-lg font-bold text-white">EMP Access</span>
           </Link>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setCollapsed(!collapsed)}
-          className="text-slate-400 hover:text-white hover:bg-slate-800 h-8 w-8"
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
+        {!onNavigate && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setCollapsed(!collapsed)}
+            className="text-slate-400 hover:text-white hover:bg-slate-800 h-9 w-9 md:h-8 md:w-8 shrink-0"
+            aria-label={collapsed ? "Sidebar erweitern" : "Sidebar einklappen"}
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        )}
       </div>
 
       <Separator className="bg-slate-800" />
@@ -142,7 +147,7 @@ export function Sidebar({ userName, role, onSignOut }: SidebarProps) {
                 variant="ghost"
                 size="icon"
                 onClick={onSignOut}
-                className="text-slate-400 hover:text-red-400 hover:bg-slate-800 h-8 w-8 shrink-0"
+                className="text-slate-400 hover:text-red-400 hover:bg-slate-800 h-10 w-10 min-h-[44px] min-w-[44px] md:h-8 md:w-8 md:min-h-0 md:min-w-0 shrink-0"
               >
                 <LogOut className="h-4 w-4" />
               </Button>
