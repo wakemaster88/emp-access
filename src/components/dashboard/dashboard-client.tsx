@@ -103,7 +103,7 @@ function TicketRow({ ticket, onClick, inSlot }: { ticket: TicketEntry; onClick: 
 
   return (
     <div
-      className="flex items-center gap-2 py-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+      className="flex items-center gap-2 py-1 cursor-pointer rounded px-1 -mx-1 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       onClick={onClick}
     >
       {ticket.profileImage ? (
@@ -188,51 +188,49 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
   return (
     <Card
       className={cn(
-        "border-slate-200 dark:border-slate-800 overflow-hidden",
+        "border-slate-200 dark:border-slate-800 overflow-hidden gap-0 py-0",
         area.id === null && "border-dashed"
       )}
     >
-      <CardHeader className="py-2.5 px-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm flex items-center gap-1.5 min-w-0 truncate">
-            <MapPin className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-            {area.name}
-          </CardTitle>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {area.openingHours && (
-              <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
-                {area.openingHours}
-              </span>
-            )}
-            {area.personLimit != null && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-1.5 py-0 font-mono",
-                  area._count.tickets > area.personLimit
-                    ? "border-rose-300 text-rose-600"
-                    : "border-slate-300 text-slate-500"
-                )}
-              >
-                {area._count.tickets}/{area.personLimit}
-              </Badge>
-            )}
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+        <span className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate text-slate-900 dark:text-slate-100">
+          <MapPin className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+          {area.name}
+        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {area.openingHours && (
+            <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+              {area.openingHours}
+            </span>
+          )}
+          {area.personLimit != null && (
             <Badge
+              variant="outline"
               className={cn(
-                "text-[10px] px-1.5 py-0 tabular-nums",
-                area._count.tickets > 0
-                  ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                  : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+                "text-[10px] px-1.5 py-0 font-mono",
+                area._count.tickets > area.personLimit
+                  ? "border-rose-300 text-rose-600"
+                  : "border-slate-300 text-slate-500"
               )}
             >
-              {area._count.tickets}
+              {area._count.tickets}/{area.personLimit}
             </Badge>
-          </div>
+          )}
+          <Badge
+            className={cn(
+              "text-[10px] px-1.5 py-0 tabular-nums",
+              area._count.tickets > 0
+                ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+            )}
+          >
+            {area._count.tickets}
+          </Badge>
         </div>
-      </CardHeader>
+      </div>
 
       {!isEmpty && (
-        <CardContent className="pt-0 pb-2 px-3.5 max-h-[320px] overflow-y-auto">
+        <div className="px-3 pb-2 pt-1 max-h-[320px] overflow-y-auto">
           {area.resources.map((res, ri) => (
             <div key={res.resourceName} className={cn(ri > 0 && "mt-2")}>
               <div className="flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800">
@@ -271,13 +269,13 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
 
           <AboSection tickets={area.aboTickets} openTicket={openTicket} />
           <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} />
-        </CardContent>
+        </div>
       )}
 
       {isEmpty && (
-        <CardContent className="pt-0 pb-2.5 px-3.5">
+        <div className="px-3 pb-2 pt-1">
           <p className="text-[11px] text-slate-300 dark:text-slate-600">Keine Tickets</p>
-        </CardContent>
+        </div>
       )}
     </Card>
   );
