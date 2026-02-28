@@ -121,6 +121,7 @@ interface Sub {
 interface Svc {
   id: number;
   name: string;
+  requiresPhoto?: boolean;
 }
 
 interface ScanRecord {
@@ -172,6 +173,9 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [scansLoading, setScansLoading] = useState(false);
 
+  const selectedService = services.find((s) => String(s.id) === form.serviceId);
+  const needsPhoto = !!selectedService?.requiresPhoto && !profileImage;
+
   useEffect(() => {
     if (ticket) {
       setForm({
@@ -194,8 +198,18 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       setError("");
       setTab("edit");
       setScans([]);
+      setCameraOpen(false);
     }
   }, [ticket]);
+
+  useEffect(() => {
+    if (!ticket || cameraOpen || profileImage) return;
+    const svc = services.find((s) => s.id === ticket.serviceId);
+    if (svc?.requiresPhoto && !ticket.profileImage) {
+      const timer = setTimeout(() => setCameraOpen(true), 400);
+      return () => clearTimeout(timer);
+    }
+  }, [ticket, services, profileImage, cameraOpen]);
 
   useEffect(() => {
     if (tab === "scans" && ticket && scans.length === 0) {
@@ -300,35 +314,73 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
 
   return (
     <Dialog open={!!ticket} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="pb-0">
-          <div className="flex items-center justify-between gap-2 pr-6">
-            <DialogTitle className="text-base leading-tight truncate">
-              {[ticket?.firstName, ticket?.lastName].filter(Boolean).join(" ") || ticket?.name}
-            </DialogTitle>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {ticket?.source && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{ticket.source}</Badge>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto p-0 gap-0">
+        {/* Header */}
+        <div className="px-5 pt-5 pb-3">
+          <div className="flex items-start gap-3">
+            <div
+              className={`relative group h-14 w-14 rounded-xl ${needsPhoto ? "ring-2 ring-amber-400 ring-offset-2 dark:ring-offset-slate-950" : ""} bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-all shrink-0`}
+              onClick={() => setCameraOpen(true)}
+            >
+              {profileImage ? (
+                <>
+                  <img src={profileImage} alt="" className="h-full w-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Camera className="h-4 w-4 text-white" />
+                  </div>
+                </>
+              ) : (
+                <Camera className={`h-5 w-5 ${needsPhoto ? "text-amber-500" : "text-slate-400"}`} />
               )}
-              <Badge className={`text-[10px] px-1.5 py-0 ${statusColor}`}>
-                {ticket?.status === "VALID" ? "Gültig" : ticket?.status === "REDEEMED" ? "Eingelöst" : ticket?.status === "INVALID" ? "Ungültig" : "Geschützt"}
-              </Badge>
+              {profileImage && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setProfileImage(null); }}
+                  className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-slate-700 text-white flex items-center justify-center text-[8px] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-500"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <div className="flex-1 min-w-0 pt-0.5">
+              <DialogHeader className="p-0">
+                <DialogTitle className="text-base leading-tight truncate text-left">
+                  {[ticket?.firstName, ticket?.lastName].filter(Boolean).join(" ") || ticket?.name}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="flex items-center gap-1.5 mt-1">
+                {ticket?.source && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{ticket.source}</Badge>
+                )}
+                <Badge className={`text-[10px] px-1.5 py-0 ${statusColor}`}>
+                  {ticket?.status === "VALID" ? "Gültig" : ticket?.status === "REDEEMED" ? "Eingelöst" : ticket?.status === "INVALID" ? "Ungültig" : "Geschützt"}
+                </Badge>
+                {needsPhoto && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    Foto fehlt
+                  </Badge>
+                )}
+              </div>
+              {ticket?.ticketTypeName && (
+                <p className="text-xs text-slate-400 mt-0.5 truncate">{ticket.ticketTypeName}</p>
+              )}
             </div>
           </div>
-        </DialogHeader>
+        </div>
 
+        {/* Tabs */}
         {(() => {
           const isAnny = ticket?.source === "ANNY";
           const annyEntries = isAnny ? parseAnnyEntries(ticket?.qrCode ?? null) : [];
           const tabClass = (active: boolean) =>
-            `flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+            `flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium transition-colors border-b-2 ${
               active
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-                : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                ? "border-indigo-500 text-indigo-600 dark:text-indigo-400"
+                : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
             }`;
 
           return (
-            <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+            <div className="flex border-b border-slate-200 dark:border-slate-800 px-5">
               <button type="button" onClick={() => setTab("edit")} className={tabClass(tab === "edit")}>
                 <Pencil className="h-3 w-3" />
                 Bearbeiten
@@ -348,40 +400,24 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
         })()}
 
         {tab === "edit" && (
-          <form onSubmit={handleSave} className="space-y-3">
-            <div className="flex gap-3 items-center">
-              <div
-                className="relative group h-11 w-11 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-colors shrink-0"
-                onClick={() => setCameraOpen(true)}
-              >
-                {profileImage ? (
-                  <>
-                    <img src={profileImage} alt="" className="h-full w-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Camera className="h-3.5 w-3.5 text-white" />
-                    </div>
-                  </>
-                ) : (
-                  <Camera className="h-4 w-4 text-slate-400" />
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2 flex-1">
-                <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Vorname *" required autoFocus className="h-9" />
-                <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Nachname *" required className="h-9" />
-              </div>
-              {profileImage && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); setProfileImage(null); }} className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors shrink-0">
-                  ✕
-                </button>
-              )}
-            </div>
-
+          <form onSubmit={handleSave} className="px-5 py-4 space-y-3">
             {cameraOpen && (
               <CameraCapture
                 onCapture={(dataUrl) => { setProfileImage(dataUrl); setCameraOpen(false); }}
                 onClose={() => setCameraOpen(false)}
               />
             )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="e-first" className="text-xs">Vorname</Label>
+                <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Vorname" required autoFocus className="h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="e-last" className="text-xs">Nachname</Label>
+                <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Nachname" required className="h-9" />
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -532,7 +568,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
         {tab === "bookings" && ticket?.source === "ANNY" && (() => {
           const entries = parseAnnyEntries(ticket.qrCode);
           return (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[350px] overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[350px] overflow-y-auto px-5 py-2">
               {entries.map((entry, i) => {
                 const st = annyStatusLabel(entry.status);
                 const startTime = fmtBookingTime(entry.start);
@@ -559,7 +595,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
         })()}
 
         {tab === "scans" && (
-          <>
+          <div className="px-5 py-2">
             {scansLoading && (
               <div className="flex items-center justify-center py-6">
                 <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
@@ -586,7 +622,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                 ))}
               </div>
             )}
-          </>
+          </div>
         )}
       </DialogContent>
     </Dialog>

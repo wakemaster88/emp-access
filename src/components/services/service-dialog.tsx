@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Trash2, Save, Settings2, Link2, MapPin, Check } from "lucide-react";
+import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function toDateInput(val: string | Date | null | undefined): string {
@@ -34,6 +34,7 @@ export interface ServiceData {
   defaultSlotEnd?: string | null;
   defaultValidityDurationMinutes?: number | null;
   allowReentry?: boolean;
+  requiresPhoto?: boolean;
 }
 
 interface AreaRef {
@@ -153,6 +154,7 @@ export function ServiceDialog({
   const [defaultSlotEnd, setDefaultSlotEnd] = useState("");
   const [defaultValidityDurationMinutes, setDefaultValidityDurationMinutes] = useState("");
   const [allowReentry, setAllowReentry] = useState(false);
+  const [requiresPhoto, setRequiresPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -184,6 +186,7 @@ export function ServiceDialog({
         setDefaultSlotEnd(service.defaultSlotEnd ?? "");
         setDefaultValidityDurationMinutes(service.defaultValidityDurationMinutes != null ? String(service.defaultValidityDurationMinutes) : "");
         setAllowReentry(service.allowReentry ?? false);
+        setRequiresPhoto(service.requiresPhoto ?? false);
       } else {
         setName("");
         setSelectedAnny(new Set());
@@ -195,6 +198,7 @@ export function ServiceDialog({
         setDefaultSlotEnd("");
         setDefaultValidityDurationMinutes("");
         setAllowReentry(false);
+        setRequiresPhoto(false);
       }
     }
   }, [open, service, initialServiceAreas]);
@@ -231,6 +235,7 @@ export function ServiceDialog({
         name: name.trim(),
         annyNames: [...selectedAnny],
         allowReentry,
+        requiresPhoto,
         areas: serviceAreas.map((sa) => {
           const out: Record<string, unknown> = { areaId: sa.areaId };
           if (sa.defaultValidityType && sa.defaultValidityType !== "none") {
@@ -362,12 +367,24 @@ export function ServiceDialog({
               />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
-              <div>
-                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Wiedereinlass</p>
-                <p className="text-[11px] text-slate-500">Bei Scan an Ausgang: Ticket wieder gültig setzen</p>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+              <div className="flex items-center justify-between p-2.5">
+                <div>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Wiedereinlass</p>
+                  <p className="text-[11px] text-slate-500">Bei Scan an Ausgang: Ticket wieder gültig setzen</p>
+                </div>
+                <Switch checked={allowReentry} onCheckedChange={setAllowReentry} />
               </div>
-              <Switch checked={allowReentry} onCheckedChange={setAllowReentry} />
+              <div className="flex items-center justify-between p-2.5">
+                <div>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-slate-400" />
+                    Foto verpflichtend
+                  </p>
+                  <p className="text-[11px] text-slate-500">Kamera öffnet automatisch wenn kein Bild vorhanden</p>
+                </div>
+                <Switch checked={requiresPhoto} onCheckedChange={setRequiresPhoto} />
+              </div>
             </div>
 
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-2">
