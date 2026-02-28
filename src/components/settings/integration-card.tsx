@@ -35,7 +35,6 @@ interface ProviderMeta {
 
 const SYNC_ENDPOINTS: Record<string, { method: string; url: string }> = {
   ANNY: { method: "POST", url: "/api/integrations/anny" },
-  BINARYTEC: { method: "POST", url: "/api/integrations/binarytec" },
   EMP_CONTROL: { method: "GET", url: "/api/integrations/emp-control" },
 };
 
@@ -66,7 +65,8 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
     color: "bg-orange-500",
     fields: {
       token: "API Token",
-      baseUrl: "Base URL",
+      baseUrl: "Base URL (z. B. https://192.168.251.50:444)",
+      extraConfig: "Zusatz (JSON): resourceId für Check-Access / Scan-Fallback",
     },
   },
   EMP_CONTROL: {
@@ -315,11 +315,20 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Label htmlFor={`${provider}-extra`}>{meta.fields.extraConfig}</Label>
                 <Input
                   id={`${provider}-extra`}
-                  placeholder={provider === "EMP_CONTROL" ? '{"key": "value"}' : provider === "WAKESYS" ? '{"interfaceIds": [2, 3, 4]}' : ""}
+                  placeholder={provider === "EMP_CONTROL" ? '{"key": "value"}' : provider === "WAKESYS" ? '{"interfaceIds": [2, 3, 4]}' : provider === "BINARYTEC" ? '{"resourceId": "1"}' : ""}
                   value={data.extraConfig ?? ""}
                   onChange={(e) => setData({ ...data, extraConfig: e.target.value })}
                   className="font-mono text-xs"
                 />
+              </div>
+            )}
+
+            {provider === "BINARYTEC" && (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-2">
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Binarytec API (nur Check, kein Sync)</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-500">
+                  Wenn Binarytec konfiguriert ist, prüft der Raspberry Pi Scans <strong>nur</strong> per Binarytec (Check-Access). Keine EMP-Tickets, kein Ticket-Sync. <strong>resourceId</strong> im Zusatz (JSON) ist erforderlich.
+                </p>
               </div>
             )}
 

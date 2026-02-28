@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { checkWakesys } from "@/lib/wakesys";
+import { checkBinarytec } from "@/lib/binarytec";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -40,7 +41,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: true, message: "Dashboard-Öffnung erfasst" });
   }
 
-  // Find ticket by code (try with and without spaces); include service for allowReentry
+  // Wenn Binarytec konfiguriert: nur Binarytec für Ticketprüfung (kein Sync, kein EMP-Ticket-Lookup)
+  const binarytec = await checkBinarytec(db, accountId, code);
+  if (binarytec !== null) {
+    if (binarytec.valid) {
+      await db.scan.create({
+        data: { code, deviceId, result: "GRANTED", accountId },
+      });
+      return NextResponse.json({
+        granted: true,
+        message: "Zutritt gewährt (Binarytec)",
+      });
+    }
+    await db.scan.create({
+      data: { code, deviceId, result: "DENIED", accountId },
+    });
+    return NextResponse.json({ granted: false, message: "Zutritt verweigert (Binarytec)" });
+  }
+
+  // EMP-Tickets und ggf. Wakesys-Fallback
   const codesToTry = [code, rawCode];
   let ticket = null;
   for (const c of codesToTry) {
