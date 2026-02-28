@@ -58,7 +58,7 @@ export default async function SettingsPage() {
   return (
     <>
       <Header title="Einstellungen" accountName={session.user.accountName} />
-      <div className="p-6 space-y-8 max-w-3xl">
+      <div className="p-4 sm:p-6 space-y-8 max-w-3xl">
 
         {/* Account Info */}
         <section className="space-y-3">

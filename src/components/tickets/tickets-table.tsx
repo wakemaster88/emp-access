@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -195,80 +196,110 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
 
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Code</TableHead>
-            <TableHead>Quelle</TableHead>
-            <TableHead>Tickettyp</TableHead>
-            <TableHead>Resource</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Gültigkeit</TableHead>
-            <TableHead className="text-right">Scans</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tickets.length === 0 && (
+      <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-slate-500 py-12">
-                {searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
-              </TableCell>
+              <TableHead>Name</TableHead>
+              <TableHead className="hidden lg:table-cell">Code</TableHead>
+              <TableHead className="hidden sm:table-cell">Quelle</TableHead>
+              <TableHead className="hidden xl:table-cell">Tickettyp</TableHead>
+              <TableHead className="hidden md:table-cell">Resource</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="hidden md:table-cell">Gültigkeit</TableHead>
+              <TableHead className="text-right">Scans</TableHead>
             </TableRow>
-          )}
-          {groupedByResource.map(({ resourceName, tickets: groupTickets }) => (
-            <React.Fragment key={resourceName}>
-              <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                <TableCell colSpan={8} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                  {resourceName}
-                  <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
-                    ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
-                  </span>
+          </TableHeader>
+          <TableBody>
+            {tickets.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-slate-500 py-12">
+                  {searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
                 </TableCell>
               </TableRow>
-              {groupTickets.map((ticket) => (
-                <TableRow
-                  key={ticket.id}
-                  className={
-                    readonly
-                      ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
-                      : "hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
-                  }
-                  onClick={() => !readonly && setSelected(ticket)}
-                >
-                  <TableCell>
-                    <div className="flex items-center gap-2.5">
-                      {ticket.profileImage ? (
-                        <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
-                      ) : null}
-                      <p className="font-medium text-slate-900 dark:text-slate-100">
-                        {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                      </p>
-                    </div>
+            )}
+            {groupedByResource.map(({ resourceName, tickets: groupTickets }) => (
+              <React.Fragment key={resourceName}>
+                <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                  <TableCell colSpan={8} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    {resourceName}
+                    <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
+                      ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
+                    </span>
                   </TableCell>
-                  <TableCell className="text-xs font-mono text-slate-500">
-                    {displayCode(ticket)}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {sourceBadge(ticket.source)}
-                  </TableCell>
-                  <TableCell className="text-sm text-slate-500">
-                    {ticket.ticketTypeName || "–"}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {(ticket as TicketWithArea).accessArea?.name || "–"}
-                  </TableCell>
-                  <TableCell>{statusBadge(ticket.status)}</TableCell>
-                  <TableCell className="text-sm text-slate-500">
-                    <ValidityInfo ticket={ticket} />
-                  </TableCell>
-                  <TableCell className="text-right font-medium">{ticket._count.scans}</TableCell>
                 </TableRow>
-              ))}
-            </React.Fragment>
-          ))}
-        </TableBody>
-      </Table>
+                {groupTickets.map((ticket) => (
+                  <TableRow
+                    key={ticket.id}
+                    className={
+                      readonly
+                        ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
+                        : "hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
+                    }
+                    onClick={() => !readonly && setSelected(ticket)}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {ticket.profileImage ? (
+                          <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                        ) : null}
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                            {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                          </p>
+                          <p className="text-xs text-slate-400 sm:hidden truncate">
+                            {(ticket as TicketWithArea).accessArea?.name || "–"}
+                            {ticket.ticketTypeName ? ` · ${ticket.ticketTypeName}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-xs font-mono text-slate-500">
+                      {displayCode(ticket)}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-sm">
+                      {sourceBadge(ticket.source)}
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                      {ticket.ticketTypeName || "–"}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-sm">
+                      {(ticket as TicketWithArea).accessArea ? (
+                        <Link
+                          href={`/areas`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          {(ticket as TicketWithArea).accessArea?.name}
+                        </Link>
+                      ) : (
+                        "–"
+                      )}
+                    </TableCell>
+                    <TableCell>{statusBadge(ticket.status)}</TableCell>
+                    <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                      <ValidityInfo ticket={ticket} />
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {ticket._count.scans > 0 ? (
+                        <Link
+                          href={`/scans`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          {ticket._count.scans}
+                        </Link>
+                      ) : (
+                        <span className="text-slate-400">0</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </React.Fragment>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
       {!readonly && (
         <EditTicketDialog

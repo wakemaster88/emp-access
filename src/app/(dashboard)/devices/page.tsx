@@ -54,16 +54,16 @@ export default async function DevicesPage({ searchParams }: Props) {
   return (
     <>
       <Header title="Geräte" accountName={session.user.accountName} />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Card className="border-slate-200 dark:border-slate-800">
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 pb-4">
             <div className="flex flex-wrap items-center gap-3">
-              <CardTitle className="text-xl">Geräte ({devices.length})</CardTitle>
+              <CardTitle className="text-base sm:text-xl">Geräte ({devices.length})</CardTitle>
               <DeviceStatusFilter current={status} />
             </div>
             {!isSuperAdmin && <AddDeviceDialog areas={areas} />}
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="p-0 sm:px-6 sm:pb-6">
             <DevicesTable devices={devices} areas={areas} />
           </CardContent>
         </Card>

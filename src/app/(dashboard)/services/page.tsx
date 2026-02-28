@@ -1,8 +1,9 @@
 import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ServicesTable } from "@/components/services/services-table";
 
 interface AnnyExtra {
@@ -52,10 +53,13 @@ export default async function ServicesPage() {
   return (
     <>
       <Header title="Services" accountName={session.user.accountName} />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader className="pb-4">
-            <CardTitle className="text-xl">Alle Services ({services.length})</CardTitle>
+            <CardTitle className="text-base sm:text-xl">Alle Services ({services.length})</CardTitle>
+            <CardDescription>
+              Services gruppieren <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Tickets</Link> und verknüpfen sie mit <Link href="/areas" className="text-indigo-600 dark:text-indigo-400 hover:underline">Resourcen</Link> (Zugangsbereichen).
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ServicesTable

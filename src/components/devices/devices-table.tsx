@@ -97,29 +97,29 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
   }, [devices]);
 
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-            <TableHead className="w-[260px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="min-w-[180px] text-slate-600 dark:text-slate-400 font-medium">
               <span className="inline-flex items-center gap-1.5">
                 <Wifi className="h-4 w-4 text-slate-400" />
                 Gerät
               </span>
             </TableHead>
-            <TableHead className="w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden sm:table-cell w-[140px] text-slate-600 dark:text-slate-400 font-medium">
               <span className="inline-flex items-center gap-1.5">
                 <Activity className="h-4 w-4 text-slate-400" />
                 Funktion
               </span>
             </TableHead>
-            <TableHead className="w-[130px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden lg:table-cell w-[130px] text-slate-600 dark:text-slate-400 font-medium">
               <span className="inline-flex items-center gap-1.5">
                 <Globe className="h-4 w-4 text-slate-400" />
                 IP-Adresse
               </span>
             </TableHead>
-            <TableHead className="min-w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden md:table-cell min-w-[140px] text-slate-600 dark:text-slate-400 font-medium">
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="h-4 w-4 text-slate-400" />
                 Resourcen
@@ -131,13 +131,13 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                 Status
               </span>
             </TableHead>
-            <TableHead className="w-[120px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden lg:table-cell w-[120px] text-slate-600 dark:text-slate-400 font-medium">
               <span className="inline-flex items-center gap-1.5">
                 <Clock className="h-4 w-4 text-slate-400" />
                 Letzte Aktivität
               </span>
             </TableHead>
-            <TableHead className="w-[80px] text-right text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden sm:table-cell w-[80px] text-right text-slate-600 dark:text-slate-400 font-medium">
               <span className="inline-flex items-center justify-end gap-1.5">
                 <ScanLine className="h-4 w-4 text-slate-400" />
                 Scans
@@ -282,7 +282,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               </TableCell>
 
               {/* Funktion */}
-              <TableCell>
+              <TableCell className="hidden sm:table-cell">
                 {cat ? (
                   <Badge className={cn("text-xs gap-1 w-fit", cat.color)}>
                     <cat.icon className="h-3 w-3" /> {cat.label}
@@ -293,26 +293,36 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               </TableCell>
 
               {/* IP */}
-              <TableCell className="font-mono text-xs text-slate-500">
+              <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
                 {device.ipAddress || <span className="text-slate-300">–</span>}
               </TableCell>
 
               {/* Bereiche */}
-              <TableCell>{bereicheCell}</TableCell>
+              <TableCell className="hidden md:table-cell">{bereicheCell}</TableCell>
 
               {/* Status */}
               <TableCell>{statusCell}</TableCell>
 
               {/* Letzte Aktivität */}
-              <TableCell className="text-xs text-slate-400 whitespace-nowrap">
+              <TableCell className="hidden lg:table-cell text-xs text-slate-400 whitespace-nowrap">
                 {lastUpd
                   ? fmtDateTime(lastUpd, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
                   : <span className="text-slate-300">–</span>}
               </TableCell>
 
               {/* Scans */}
-              <TableCell className="text-right font-medium text-sm text-slate-700 dark:text-slate-300">
-                {device._count.scans}
+              <TableCell className="hidden sm:table-cell text-right font-medium text-sm">
+                {device._count.scans > 0 ? (
+                  <Link
+                    href={`/scans?device=${device.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    {device._count.scans}
+                  </Link>
+                ) : (
+                  <span className="text-slate-400">0</span>
+                )}
               </TableCell>
 
               {/* Pfeil */}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -92,45 +93,45 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-              <TableHead className="w-10 text-slate-500 font-medium">#</TableHead>
+              <TableHead className="hidden sm:table-cell w-10 text-slate-500 font-medium">#</TableHead>
               <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <MapPin className="h-4 w-4 text-slate-400" />
                   Name
                 </span>
               </TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden lg:table-cell text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <FolderTree className="h-4 w-4 text-slate-400" />
                   In Resource
                 </span>
               </TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden md:table-cell text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <LogIn className="h-4 w-4 text-slate-400" />
                   Geräte Einlass
                 </span>
               </TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden md:table-cell text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <LogOut className="h-4 w-4 text-slate-400" />
                   Geräte Auslass
                 </span>
               </TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden sm:table-cell text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <Repeat className="h-4 w-4 text-slate-400" />
                   Wiedereinlass
                 </span>
               </TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden sm:table-cell text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <Users className="h-4 w-4 text-slate-400" />
-                  Personenlimit
+                  Limit
                 </span>
               </TableHead>
               <TableHead className="text-right text-slate-600 dark:text-slate-400 font-medium">
@@ -169,14 +170,19 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   openingHours: area.openingHours,
                 })}
               >
-                <TableCell className="text-slate-400 text-sm tabular-nums">{i + 1}</TableCell>
+                <TableCell className="hidden sm:table-cell text-slate-400 text-sm tabular-nums">{i + 1}</TableCell>
                 <TableCell>
-                  <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
-                    <MapPin className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
-                    {area.name}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
+                      <MapPin className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                      {area.name}
+                    </span>
+                    {area.parent?.name && (
+                      <p className="lg:hidden text-xs text-slate-400 ml-6 mt-0.5">in {area.parent.name}</p>
+                    )}
+                  </div>
                 </TableCell>
-                <TableCell className="text-sm text-slate-500">
+                <TableCell className="hidden lg:table-cell text-sm text-slate-500">
                   {area.parent?.name ? (
                     <span className="inline-flex items-center gap-1.5">
                       <FolderTree className="h-3.5 w-3.5 text-slate-400" />
@@ -186,13 +192,13 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                     "–"
                   )}
                 </TableCell>
-                <TableCell className="py-2">
+                <TableCell className="hidden md:table-cell py-2">
                   <DeviceBadges devices={area.devicesIn} />
                 </TableCell>
-                <TableCell className="py-2">
+                <TableCell className="hidden md:table-cell py-2">
                   <DeviceBadges devices={area.devicesOut} />
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden sm:table-cell">
                   <Badge
                     className={
                       area.allowReentry
@@ -203,7 +209,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                     {area.allowReentry ? "Ja" : "Nein"}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-medium text-slate-700 dark:text-slate-300">
+                <TableCell className="hidden sm:table-cell font-medium text-slate-700 dark:text-slate-300">
                   {area.personLimit ? (
                     area.personLimit.toLocaleString("de-DE")
                   ) : (
@@ -213,9 +219,17 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  <span className="inline-flex items-center justify-end gap-1 text-sm font-medium text-slate-600 dark:text-slate-400">
-                    {area._count.tickets}
-                  </span>
+                  {area._count.tickets > 0 ? (
+                    <Link
+                      href={`/tickets?area=${area.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center justify-end gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      {area._count.tickets}
+                    </Link>
+                  ) : (
+                    <span className="text-sm text-slate-400">0</span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

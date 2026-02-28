@@ -1,8 +1,9 @@
 import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SubscriptionsTable } from "@/components/subscriptions/subscriptions-table";
 
 interface AnnyExtra {
@@ -54,10 +55,13 @@ export default async function SubscriptionsPage() {
   return (
     <>
       <Header title="Abos" accountName={session.user.accountName} />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader className="pb-4">
-            <CardTitle className="text-xl">Alle Abos ({subscriptions.length})</CardTitle>
+            <CardTitle className="text-base sm:text-xl">Alle Abos ({subscriptions.length})</CardTitle>
+            <CardDescription>
+              Abos verknüpfen <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Tickets</Link> mit <Link href="/areas" className="text-indigo-600 dark:text-indigo-400 hover:underline">Resourcen</Link> und definieren Standard-Gültigkeiten.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <SubscriptionsTable

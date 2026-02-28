@@ -53,11 +53,11 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
 
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/30 overflow-hidden shadow-sm hover:shadow transition-shadow">
-      <div className="px-4 py-3 sm:px-5 sm:py-3.5 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
-        <div className="flex items-baseline gap-3 min-w-0">
-          <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">{ticketName}</span>
-          <span className="inline-flex items-center gap-1.5 font-mono text-xs text-slate-400 dark:text-slate-500 shrink-0">
-            <Hash className="h-3.5 w-3.5" aria-hidden />
+      <div className="px-3 py-2.5 sm:px-5 sm:py-3.5 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+        <div className="flex items-baseline gap-2 sm:gap-3 min-w-0">
+          <span className="font-semibold text-sm sm:text-base text-slate-900 dark:text-slate-100 truncate">{ticketName}</span>
+          <span className="inline-flex items-center gap-1 sm:gap-1.5 font-mono text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 shrink-0 max-w-[120px] sm:max-w-none truncate">
+            <Hash className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" aria-hidden />
             {code}
           </span>
         </div>
@@ -69,34 +69,46 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
         {scans.slice(0, visible).map((scan) => (
           <li
             key={scan.id}
-            className="flex items-center gap-3 px-4 py-2.5 sm:px-5 sm:py-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors"
+            className="px-4 py-2.5 sm:px-5 sm:py-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors"
           >
-            <span
-              className={`shrink-0 w-2 h-2 rounded-full ${
-                scan.result === "GRANTED"
-                  ? "bg-emerald-500"
-                  : scan.result === "DENIED"
-                    ? "bg-rose-500"
-                    : "bg-amber-500"
-              }`}
-              aria-hidden
-            />
-            <span className="text-sm text-slate-600 dark:text-slate-400 tabular-nums w-[11rem] shrink-0">
-              {fmtDateTime(scan.scanTime)}
-            </span>
-            {scan.ticketTypeName && (
-              <span className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[12rem]">
-                <Ticket className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-                <span className="truncate">{scan.ticketTypeName}</span>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span
+                className={`shrink-0 w-2 h-2 rounded-full ${
+                  scan.result === "GRANTED"
+                    ? "bg-emerald-500"
+                    : scan.result === "DENIED"
+                      ? "bg-rose-500"
+                      : "bg-amber-500"
+                }`}
+                aria-hidden
+              />
+              <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 tabular-nums shrink-0">
+                {fmtDateTime(scan.scanTime)}
               </span>
-            )}
-            <span className="inline-flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300 truncate min-w-0">
-              <Wifi className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <span className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300 truncate min-w-0">
+                <Wifi className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                {scan.deviceName}
+              </span>
+              {scan.ticketTypeName && (
+                <span className="hidden md:inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[12rem]">
+                  <Ticket className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                  <span className="truncate">{scan.ticketTypeName}</span>
+                </span>
+              )}
+              <span className="ml-auto shrink-0">
+                <ResultBadge result={scan.result} />
+              </span>
+            </div>
+            <div className="sm:hidden flex items-center gap-2 mt-1 ml-4 text-xs text-slate-400">
+              <Wifi className="h-3 w-3 shrink-0" aria-hidden />
               {scan.deviceName}
-            </span>
-            <span className="ml-auto shrink-0">
-              <ResultBadge result={scan.result} />
-            </span>
+              {scan.ticketTypeName && (
+                <>
+                  <span className="text-slate-300 dark:text-slate-600">·</span>
+                  {scan.ticketTypeName}
+                </>
+              )}
+            </div>
           </li>
         ))}
       </ul>

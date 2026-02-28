@@ -12,7 +12,7 @@ export default async function DashboardPage() {
   return (
     <>
       <Header title="Dashboard" accountName={session.user.accountName} />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <DashboardClient />
       </div>
     </>

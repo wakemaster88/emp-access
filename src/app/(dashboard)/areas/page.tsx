@@ -1,8 +1,9 @@
 import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { AreasTable } from "@/components/areas/areas-table";
 
 interface AnnyExtra {
@@ -61,10 +62,13 @@ export default async function AreasPage() {
   return (
     <>
       <Header title="Resourcen" accountName={session.user.accountName} />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader className="pb-4">
-            <CardTitle className="text-xl">Alle Resourcen ({areas.length})</CardTitle>
+            <CardTitle className="text-base sm:text-xl">Alle Resourcen ({areas.length})</CardTitle>
+            <CardDescription>
+              Resourcen definieren Zugangsbereiche. <Link href="/services" className="text-indigo-600 dark:text-indigo-400 hover:underline">Services</Link> und <Link href="/subscriptions" className="text-indigo-600 dark:text-indigo-400 hover:underline">Abos</Link> verknüpfen Resourcen mit <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Tickets</Link>.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <AreasTable

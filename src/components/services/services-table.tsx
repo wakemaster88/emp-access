@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -130,30 +131,30 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-              <TableHead className="w-10 text-slate-500 font-medium">#</TableHead>
+              <TableHead className="hidden sm:table-cell w-10 text-slate-500 font-medium">#</TableHead>
               <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <Box className="h-4 w-4 text-slate-400" />
                   Name
                 </span>
               </TableHead>
-              <TableHead className="min-w-[160px] text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden lg:table-cell min-w-[160px] text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <Link2 className="h-4 w-4 text-slate-400" />
                   anny Verknüpfungen
                 </span>
               </TableHead>
-              <TableHead className="min-w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden md:table-cell min-w-[140px] text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <MapPin className="h-4 w-4 text-slate-400" />
                   Resourcen
                 </span>
               </TableHead>
-              <TableHead className="w-[120px] text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden sm:table-cell w-[120px] text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <Repeat className="h-4 w-4 text-slate-400" />
                   Wiedereinlass
@@ -192,20 +193,25 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                   }`}
                   onClick={() => !readonly && openEdit(svc)}
                 >
-                  <TableCell className="text-slate-400 text-sm tabular-nums">{i + 1}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-slate-400 text-sm tabular-nums">{i + 1}</TableCell>
                   <TableCell>
-                    <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
-                      <Box className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
-                      {svc.name}
-                    </span>
+                    <div className="min-w-0">
+                      <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
+                        <Box className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                        {svc.name}
+                      </span>
+                      <div className="md:hidden mt-0.5 ml-6">
+                        <ResourceBadges areas={svc.serviceAreas ?? []} />
+                      </div>
+                    </div>
                   </TableCell>
-                  <TableCell className="py-2">
+                  <TableCell className="hidden lg:table-cell py-2">
                     <AnnyBadges names={annyNames} />
                   </TableCell>
-                  <TableCell className="py-2">
+                  <TableCell className="hidden md:table-cell py-2">
                     <ResourceBadges areas={svc.serviceAreas ?? []} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden sm:table-cell">
                     {svc.allowReentry ? (
                       <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs font-normal">Ja</Badge>
                     ) : (
@@ -213,9 +219,17 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <span className="inline-flex items-center justify-end gap-1 text-sm font-medium text-slate-600 dark:text-slate-400">
-                      {svc._count.tickets}
-                    </span>
+                    {svc._count.tickets > 0 ? (
+                      <Link
+                        href={`/tickets?source=all`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center justify-end gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                      >
+                        {svc._count.tickets}
+                      </Link>
+                    ) : (
+                      <span className="text-sm text-slate-400">0</span>
+                    )}
                   </TableCell>
                 </TableRow>
               );
