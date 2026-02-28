@@ -66,6 +66,26 @@ class ApiClient:
             logger.warning("Dashboard-Öffnung melden fehlgeschlagen: %s", e)
             return False
 
+    def report_task_completed(self, task: int = 0) -> bool:
+        """
+        Meldet dem Server, dass der aktuelle Task ausgeführt wurde (z. B. task=0 nach Einmal öffnen).
+        Verhindert, dass der Server task=1 weiter anzeigt und der Task-Poll mehrfach auslöst.
+        """
+        try:
+            resp = self._session.post(
+                f"{self.server_url}/api/devices/pi",
+                json=[{
+                    "pis_id": self.device_id,
+                    "pis_task": task,
+                    "pis_update": int(time.time()),
+                }],
+                timeout=TIMEOUT_HEARTBEAT,
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning("Task-Bestätigung fehlgeschlagen: %s", e)
+            return False
+
     def get_config(self) -> Optional[dict]:
         """
         Nur GET – Geräteconfig abrufen (z. B. für schnelles Task-Polling).

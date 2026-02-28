@@ -235,6 +235,7 @@ class EmpScanner:
             self._current_task = 0
             if self.api:
                 self.api.report_dashboard_open()
+                self.api.report_task_completed(0)
         elif task == 2:
             logger.warning("Task: NOT-AUF")
             self.relay.emergency_open()
