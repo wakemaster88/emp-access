@@ -1,20 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+
+function hasApiToken(request: NextRequest) {
+  return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
+}
+
+async function getDbAndAccountId(request: NextRequest) {
+  if (hasApiToken(request)) {
+    const auth = await validateApiToken(request);
+    if ("error" in auth) return auth;
+    return { db: auth.db, accountId: auth.account.id };
+  }
+  const session = await getSessionWithDb();
+  if ("error" in session) return session;
+  return { db: session.db, accountId: session.accountId! };
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSessionWithDb();
-  if ("error" in session) return session.error;
+  const ctx = await getDbAndAccountId(request);
+  if ("error" in ctx) return ctx.error;
 
   const { id } = await params;
   const deviceId = Number(id);
   if (isNaN(deviceId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
-  const { db, accountId } = session;
+  const { db, accountId } = ctx;
   const device = await db.device.findFirst({
-    where: { id: deviceId, accountId: accountId! },
+    where: { id: deviceId, accountId },
     include: {
       _count: { select: { scans: true } },
     },

@@ -1,5 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+
+function hasApiToken(request: NextRequest) {
+  return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
+}
+
+export async function GET(request: NextRequest) {
+  let db, accountId: number;
+  if (hasApiToken(request)) {
+    const auth = await validateApiToken(request);
+    if ("error" in auth) return auth.error;
+    db = auth.db;
+    accountId = auth.account.id;
+  } else {
+    const session = await getSessionWithDb();
+    if ("error" in session) return session.error;
+    db = session.db;
+    accountId = session.accountId!;
+  }
+  const devices = await db.device.findMany({
+    where: { accountId },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      category: true,
+      isActive: true,
+      task: true,
+      accessIn: true,
+      accessOut: true,
+      lastUpdate: true,
+    },
+  });
+  return NextResponse.json(devices);
+}
 
 export async function POST(request: NextRequest) {
   const session = await getSessionWithDb();

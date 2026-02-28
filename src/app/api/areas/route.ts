@@ -1,13 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+
+function hasApiToken(request: NextRequest) {
+  return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
+}
 
 export async function GET(request: NextRequest) {
-  const session = await getSessionWithDb();
-  if ("error" in session) return session.error;
-
-  const { db, accountId } = session;
+  let db, accountId: number;
+  if (hasApiToken(request)) {
+    const auth = await validateApiToken(request);
+    if ("error" in auth) return auth.error;
+    db = auth.db;
+    accountId = auth.account.id;
+  } else {
+    const session = await getSessionWithDb();
+    if ("error" in session) return session.error;
+    db = session.db;
+    accountId = session.accountId!;
+  }
   const areas = await db.accessArea.findMany({
-    where: { accountId: accountId! },
+    where: { accountId },
     orderBy: { name: "asc" },
   });
   return NextResponse.json(areas);

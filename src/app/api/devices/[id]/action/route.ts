@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 
 // Task codes for Raspberry Pi
 // 0 = idle, 1 = open once, 2 = emergency open (NOT-AUF), 3 = deactivate
@@ -71,12 +71,26 @@ async function shellySendCloud(baseUrl: string, authKey: string, shellyBaseId: s
   return false;
 }
 
+function hasApiToken(request: NextRequest) {
+  return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSessionWithDb();
-  if ("error" in session) return session.error;
+  let db, accountId: number;
+  if (hasApiToken(request)) {
+    const auth = await validateApiToken(request);
+    if ("error" in auth) return auth.error;
+    db = auth.db;
+    accountId = auth.account.id;
+  } else {
+    const session = await getSessionWithDb();
+    if ("error" in session) return session.error;
+    db = session.db;
+    accountId = session.accountId!;
+  }
 
   const { id } = await params;
   const deviceId = Number(id);
@@ -95,8 +109,6 @@ export async function POST(
   if (!(action in taskMap)) {
     return NextResponse.json({ error: "Ungültige Aktion" }, { status: 400 });
   }
-
-  const { db, accountId } = session;
 
   const existing = await db.device.findFirst({
     where: { id: deviceId, accountId: accountId! },

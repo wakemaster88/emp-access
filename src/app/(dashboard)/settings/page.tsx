@@ -5,9 +5,10 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, MonitorPlay, Wifi } from "lucide-react";
+import { Plug, Key, Info, MonitorPlay, Wifi, Globe } from "lucide-react";
 import { MonitorManager } from "@/components/settings/monitor-manager";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
+import { OwnApiCard } from "@/components/settings/own-api-card";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"] as const;
 
@@ -81,6 +82,20 @@ export default async function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </section>
+
+        {/* Eigene API */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Globe className="h-5 w-5 text-slate-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+              Eigene API
+            </h2>
+          </div>
+          <OwnApiCard
+            baseUrl={baseUrl}
+            apiToken={account?.apiToken ?? ""}
+          />
         </section>
 
         {/* Shelly Cloud */}
