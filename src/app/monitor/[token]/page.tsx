@@ -342,7 +342,7 @@ export default function PublicMonitorPage({ params }: Props) {
                           {group.personName || group.ticketName}
                         </p>
                         <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
-                          {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device.name}
+                          {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device?.name ?? "Web-Scanner"}
                         </p>
                       </div>
                     </div>

@@ -113,9 +113,9 @@ export async function POST(request: NextRequest) {
     employeeId: s.ticket?.uuid?.replace("emp-", ""),
     rfidCode: s.code,
     scanTime: s.scanTime.toISOString(),
-    direction: s.device.accessIn ? "IN" : s.device.accessOut ? "OUT" : "UNKNOWN",
+    direction: s.device?.accessIn ? "IN" : s.device?.accessOut ? "OUT" : "UNKNOWN",
     granted: s.result === "GRANTED" || s.result === "PROTECTED",
-    deviceName: s.device.name,
+    deviceName: s.device?.name ?? "Unbekannt",
   }));
 
   try {
