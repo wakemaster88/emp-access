@@ -44,6 +44,8 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
       defaultSlotStart: sub.defaultSlotStart ?? undefined,
       defaultSlotEnd: sub.defaultSlotEnd ?? undefined,
       defaultValidityDurationMinutes: sub.defaultValidityDurationMinutes ?? undefined,
+      requiresPhoto: sub.requiresPhoto ?? false,
+      requiresRfid: sub.requiresRfid ?? false,
     });
     setSelectedAreas(sub.areas.map((a) => a.id));
   }

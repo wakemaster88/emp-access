@@ -216,14 +216,14 @@ export function SubscriptionDialog({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "Fehler beim Speichern");
+        const data = await res.json().catch(() => null);
+        setError(data?.error ?? `Server-Fehler (${res.status})`);
         return;
       }
       onClose();
       router.refresh();
-    } catch {
-      setError("Netzwerkfehler");
+    } catch (err) {
+      setError(`Netzwerkfehler: ${err instanceof Error ? err.message : "unbekannt"}`);
     } finally {
       setSaving(false);
     }
