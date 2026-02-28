@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
       where: { ...where, subscriptionId: { not: null }, ...ticketDateFilter },
       select: {
         ...ticketSelect,
-        subscription: { select: { requiresPhoto: true, requiresRfid: true, areas: { select: { id: true } } } },
+        subscription: { select: { name: true, requiresPhoto: true, requiresRfid: true, areas: { select: { id: true } } } },
       },
       orderBy: { name: "asc" },
     }),
@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
       where: { ...where, serviceId: { not: null }, ...ticketDateFilter },
       select: {
         ...ticketSelect,
-        service: { select: { requiresPhoto: true, requiresRfid: true, serviceAreas: { select: { area: { select: { id: true } } } } } },
+        service: { select: { name: true, requiresPhoto: true, requiresRfid: true, serviceAreas: { select: { area: { select: { id: true } } } } } },
       },
       orderBy: { name: "asc" },
     }),
@@ -249,8 +249,9 @@ export async function GET(request: NextRequest) {
     const hasPhoto = !!ticket.profileImage;
     const needsRfid = !hasRfid && (!!ticket.service?.requiresRfid || !!ticket.subscription?.requiresRfid);
     const needsPhoto = !hasPhoto && (!!ticket.service?.requiresPhoto || !!ticket.subscription?.requiresPhoto);
+    const groupName = ticket.subscription?.name || ticket.service?.name || null;
     const { qrCode: _, barcode: _b, rfidCode: _r, service: _s, subscription: _sub, ...rest } = ticket;
-    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasRfid, needsRfid, needsPhoto };
+    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasRfid, needsRfid, needsPhoto, groupName };
   }
 
   function ticketMatchesResource(ticketTypeName: string | null, resourceName: string): boolean {

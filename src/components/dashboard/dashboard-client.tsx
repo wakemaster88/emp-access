@@ -39,6 +39,7 @@ interface TicketEntry {
   hasRfid: boolean;
   needsRfid: boolean;
   needsPhoto: boolean;
+  groupName: string | null;
 }
 
 interface ResourceBlock {
@@ -147,8 +148,10 @@ function ActionRequiredCard({ tickets, openTicket }: { tickets: TicketEntry[]; o
             <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1 min-w-0">
               {personName(ticket)}
             </span>
-            {ticket.ticketTypeName && (
-              <span className="text-[10px] text-slate-400 truncate max-w-[100px] hidden sm:inline">{ticket.ticketTypeName}</span>
+            {(ticket.groupName || ticket.ticketTypeName) && (
+              <span className="text-[10px] text-amber-600/70 dark:text-amber-400/60 truncate max-w-[120px] hidden sm:inline">
+                {ticket.groupName || ticket.ticketTypeName}
+              </span>
             )}
             {ticket.needsPhoto && <Camera className="h-3 w-3 text-amber-500 shrink-0" />}
             {ticket.needsRfid && <ScanLine className="h-3 w-3 text-amber-500 shrink-0" />}
