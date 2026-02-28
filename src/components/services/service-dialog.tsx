@@ -287,14 +287,19 @@ export function ServiceDialog({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "Fehler beim Speichern");
+        try {
+          const data = await res.json();
+          setError(data.error ?? `Fehler ${res.status}`);
+        } catch {
+          setError(`Server-Fehler (${res.status})`);
+        }
         return;
       }
       onClose();
       router.refresh();
-    } catch {
-      setError("Netzwerkfehler");
+    } catch (err) {
+      setError(`Netzwerkfehler: ${err instanceof Error ? err.message : "Unbekannt"}`);
+
     } finally {
       setSaving(false);
     }

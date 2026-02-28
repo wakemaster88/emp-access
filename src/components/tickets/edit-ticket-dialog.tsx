@@ -266,14 +266,19 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error?.formErrors?.[0] ?? "Fehler beim Speichern");
+        try {
+          const data = await res.json();
+          setError(data.error?.formErrors?.[0] ?? data.error ?? `Fehler ${res.status}`);
+        } catch {
+          setError(`Server-Fehler (${res.status})`);
+        }
       } else {
         onClose();
         router.refresh();
       }
-    } catch {
-      setError("Netzwerkfehler");
+    } catch (err) {
+      setError(`Netzwerkfehler: ${err instanceof Error ? err.message : "Unbekannt"}`);
+
     } finally {
       setSaving(false);
     }
