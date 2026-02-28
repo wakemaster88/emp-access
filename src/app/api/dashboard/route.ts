@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
   const where = isSuperAdmin ? {} : { accountId: accountId! };
 
   const dateParam = request.nextUrl.searchParams.get("date");
-  const selectedDate = dateParam ? new Date(dateParam + "T00:00:00") : new Date();
+  const selectedDate = dateParam ? new Date(dateParam + "T12:00:00") : new Date();
   if (isNaN(selectedDate.getTime())) {
     return NextResponse.json({ error: "Ungültiges Datum" }, { status: 400 });
   }
@@ -95,7 +95,10 @@ export async function GET(request: NextRequest) {
   const dayEnd = new Date(selectedDate);
   dayEnd.setHours(23, 59, 59, 999);
 
-  const dateStr = dayStart.toISOString().split("T")[0];
+  const y = dayStart.getFullYear();
+  const m = String(dayStart.getMonth() + 1).padStart(2, "0");
+  const d = String(dayStart.getDate()).padStart(2, "0");
+  const dateStr = `${y}-${m}-${d}`;
 
   const ticketDateFilter = {
     status: { in: ["VALID", "REDEEMED"] as ("VALID" | "REDEEMED")[] },
