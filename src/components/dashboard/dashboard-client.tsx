@@ -126,11 +126,9 @@ function TicketRow({ ticket, onClick, inSlot }: { ticket: TicketEntry; onClick: 
       {time && (
         <span className="text-[10px] text-indigo-500 font-mono shrink-0">{time}</span>
       )}
-      {ticket.hasRfid ? (
-        <ScanLine className="h-3 w-3 text-emerald-500 shrink-0" title="RFID verknüpft" />
-      ) : (
-        <ScanLine className="h-3 w-3 text-slate-300 dark:text-slate-600 shrink-0" title="Kein RFID" />
-      )}
+      <span title={ticket.hasRfid ? "RFID verknüpft" : "Kein RFID"}>
+        <ScanLine className={cn("h-3 w-3 shrink-0", ticket.hasRfid ? "text-emerald-500" : "text-slate-300 dark:text-slate-600")} />
+      </span>
       <div
         className={cn(
           "h-1.5 w-1.5 rounded-full shrink-0",
