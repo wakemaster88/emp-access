@@ -4,13 +4,22 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { z } from "zod";
 
-const schema = z.object({
-  provider: z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"]),
-  token: z.string().min(1),
-  eventId: z.string().optional().nullable(),
-  baseUrl: z.string().url().optional().nullable().or(z.literal("")),
-  extraConfig: z.string().optional().nullable(),
-});
+const schema = z
+  .object({
+    provider: z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"]),
+    token: z.string(),
+    eventId: z.string().optional().nullable(),
+    baseUrl: z.string().url().optional().nullable().or(z.literal("")),
+    extraConfig: z.string().optional().nullable(),
+  })
+  .refine((data) => data.provider !== "WAKESYS" || data.baseUrl?.trim(), {
+    message: "Base URL ist für Wakesys erforderlich",
+    path: ["baseUrl"],
+  })
+  .refine((data) => data.provider === "WAKESYS" || data.token.trim().length > 0, {
+    message: "API Token ist erforderlich",
+    path: ["token"],
+  });
 
 async function getSession(req: NextRequest) {
   const session = await safeAuth();

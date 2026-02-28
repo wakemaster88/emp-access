@@ -30,6 +30,7 @@ interface ProviderMeta {
     baseUrl?: string;
     extraConfig?: string;
   };
+  tokenOptional?: boolean;
 }
 
 const SYNC_ENDPOINTS: Record<string, { method: string; url: string }> = {
@@ -53,9 +54,11 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
     description: "Wakepark Management & Ticketsystem",
     color: "bg-cyan-500",
     fields: {
-      token: "API Token",
-      baseUrl: "Base URL",
+      token: "API Token (nicht nötig – Wakesys-Abfrage erfolgt ohne Token)",
+      baseUrl: "Base URL (z. B. https://twincable-beckum.wakesys.com)",
+      extraConfig: "Zusatz (JSON, optional): account, interfaceIds [2,3,4], interfaceType",
     },
+    tokenOptional: true,
   },
   BINARYTEC: {
     label: "Binarytec",
@@ -97,7 +100,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
 
-  const isConfigured = !!initialData?.token;
+  const isConfigured =
+    provider === "WAKESYS" ? !!initialData?.baseUrl?.trim() : !!initialData?.token;
 
   const empControlWebhookSecret = provider === "EMP_CONTROL" && data.extraConfig
     ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
@@ -311,11 +315,31 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Label htmlFor={`${provider}-extra`}>{meta.fields.extraConfig}</Label>
                 <Input
                   id={`${provider}-extra`}
-                  placeholder={provider === "EMP_CONTROL" ? '{"key": "value"}' : ""}
+                  placeholder={provider === "EMP_CONTROL" ? '{"key": "value"}' : provider === "WAKESYS" ? '{"interfaceIds": [2, 3, 4]}' : ""}
                   value={data.extraConfig ?? ""}
                   onChange={(e) => setData({ ...data, extraConfig: e.target.value })}
                   className="font-mono text-xs"
                 />
+              </div>
+            )}
+
+            {provider === "WAKESYS" && (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-2">
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Interface-IDs (Wakesys)</p>
+                <ul className="text-[11px] text-slate-500 dark:text-slate-500 grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono">
+                  <li>1 = Admin</li>
+                  <li>2 = Seilbahn A</li>
+                  <li>3 = Seilbahn B</li>
+                  <li>4 = Übungslift</li>
+                  <li>5 = Browser</li>
+                  <li>6 = Kasse 1</li>
+                  <li>7 = Kasse 2</li>
+                  <li>8 = Kasse Büro</li>
+                  <li>19 = Drehkreuz</li>
+                </ul>
+                <p className="text-[11px] text-slate-500 dark:text-slate-500 mt-1">
+                  Zusatz z. B.: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">{`{"interfaceIds": [2, 3, 4]}`}</code> (Reihenfolge = Fallback)
+                </p>
               </div>
             )}
 
@@ -410,7 +434,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Button
                   size="sm"
                   onClick={handleSave}
-                  disabled={saving || !data.token}
+                  disabled={saving || (provider === "WAKESYS" ? !data.baseUrl?.trim() : !data.token)}
                   className={cn(
                     "min-w-24",
                     saved ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600 hover:bg-indigo-700"

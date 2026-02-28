@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { isValueValid } from "@/lib/wakesys";
+
+/**
+ * Wakesys API (query_operator.php) – wie api_wakesys.php.
+ * Gültig wenn: card_valid === "yes" ODER next_tickets[0] ODER valid_until >= aktuelle Zeit.
+ */
 
 export async function GET(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -20,26 +26,37 @@ export async function GET(request: NextRequest) {
   }
 
   const extraConfig = config.extraConfig ? JSON.parse(config.extraConfig) : {};
-  const account = extraConfig.account || "default";
-  const interfaceId = extraConfig.interfaceId || 2;
+  const account = extraConfig.account || (config.baseUrl ? new URL(config.baseUrl).hostname.split(".")[0] : null) || "default";
   const interfaceType = extraConfig.interfaceType || "gate";
+  const interfaceIds: number[] = Array.isArray(extraConfig.interfaceIds)
+    ? extraConfig.interfaceIds
+    : extraConfig.interfaceId != null
+      ? [Number(extraConfig.interfaceId)]
+      : [2];
 
   try {
-    const url = `https://${account}.wakesys.com/files_for_admin_and_browser/sql_query/query_operator.php?interface=gate&interface_id=${interfaceId}&controller_interface_type=${interfaceType}&id=${scan}`;
+    const idsToTry = interfaceIds.length > 0 ? interfaceIds : [2];
+    let lastData: unknown = null;
 
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    const data = await res.json();
+    for (const interfaceId of idsToTry) {
+      const url = `https://${account}.wakesys.com/files_for_admin_and_browser/sql_query/query_operator.php?interface=gate&interface_id=${interfaceId}&controller_interface_type=${interfaceType}&id=${encodeURIComponent(scan)}`;
 
-    const valid =
-      data?.data?.value?.card_valid === "yes" ||
-      !!data?.data?.value?.next_tickets_message?.[0] ||
-      !!data?.data?.value?.valid_until;
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      const data = await res.json();
+      const value = data?.data?.value ?? null;
+      lastData = value;
 
-    return NextResponse.json({
-      valid,
-      scan,
-      data: data?.data?.value,
-    });
+      if (isValueValid(value)) {
+        return NextResponse.json({
+          valid: true,
+          scan,
+          interfaceId,
+          data: value,
+        });
+      }
+    }
+
+    return NextResponse.json({ valid: false, scan, data: lastData });
   } catch (err) {
     return NextResponse.json(
       { error: `Wakesys error: ${err instanceof Error ? err.message : "unknown"}` },

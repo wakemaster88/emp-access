@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { checkWakesys } from "@/lib/wakesys";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -59,6 +60,16 @@ export async function POST(request: NextRequest) {
   }
 
   if (!ticket) {
+    const wakesys = await checkWakesys(db, accountId, code);
+    if (wakesys?.valid) {
+      await db.scan.create({
+        data: { code, deviceId, result: "GRANTED", accountId },
+      });
+      return NextResponse.json({
+        granted: true,
+        message: "Zutritt gewährt (Wakesys)",
+      });
+    }
     await db.scan.create({
       data: { code, deviceId, result: "DENIED", accountId },
     });
