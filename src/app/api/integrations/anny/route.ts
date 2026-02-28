@@ -395,12 +395,10 @@ export async function POST() {
         }
       }
 
-      if (!subscriptionId && !serviceId) {
-        if (group.serviceName && areaMappings[group.serviceName]) {
-          accessAreaId = areaMappings[group.serviceName];
-        } else if (group.resourceName && areaMappings[group.resourceName]) {
-          accessAreaId = areaMappings[group.resourceName];
-        }
+      if (group.serviceName && areaMappings[group.serviceName]) {
+        accessAreaId = areaMappings[group.serviceName];
+      } else if (group.resourceName && areaMappings[group.resourceName]) {
+        accessAreaId = areaMappings[group.resourceName];
       }
 
       // Skip groups without any service/subscription/area mapping
