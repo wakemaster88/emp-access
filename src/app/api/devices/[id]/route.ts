@@ -5,29 +5,27 @@ function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
 }
 
-async function getDbAndAccountId(request: NextRequest) {
-  if (hasApiToken(request)) {
-    const auth = await validateApiToken(request);
-    if ("error" in auth) return auth;
-    return { db: auth.db, accountId: auth.account.id };
-  }
-  const session = await getSessionWithDb();
-  if ("error" in session) return session;
-  return { db: session.db, accountId: session.accountId! };
-}
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const ctx = await getDbAndAccountId(request);
-  if ("error" in ctx) return ctx.error;
+  let db, accountId: number;
+  if (hasApiToken(request)) {
+    const auth = await validateApiToken(request);
+    if ("error" in auth) return auth.error;
+    db = auth.db;
+    accountId = auth.account.id;
+  } else {
+    const session = await getSessionWithDb();
+    if ("error" in session) return session.error;
+    db = session.db;
+    accountId = session.accountId!;
+  }
 
   const { id } = await params;
   const deviceId = Number(id);
   if (isNaN(deviceId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
-  const { db, accountId } = ctx;
   const device = await db.device.findFirst({
     where: { id: deviceId, accountId },
     include: {
