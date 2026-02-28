@@ -227,7 +227,7 @@ export async function GET(request: NextRequest) {
   // --- Scans by device ---
   const deviceScanCounts = new Map<string, { granted: number; denied: number }>();
   for (const scan of scans) {
-    const name = scan.device.name;
+    const name = scan.device?.name ?? "Web-Scanner";
     const entry = deviceScanCounts.get(name) || { granted: 0, denied: 0 };
     if (scan.result === "GRANTED") entry.granted++;
     else if (scan.result === "DENIED") entry.denied++;
