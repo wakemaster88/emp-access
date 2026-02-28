@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 
 export interface ApiConfigData {
@@ -96,6 +96,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [unmapped, setUnmapped] = useState<{ annyName: string; count: number; customerSample: string[] }[]>([]);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -159,6 +160,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     setSyncing(true);
     setError("");
     setSyncResult(null);
+    setUnmapped([]);
     try {
       const res = await fetch(syncEndpoint.url, {
         method: syncEndpoint.method,
@@ -186,7 +188,10 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
           parts.push(`${json.total} gesamt`);
         }
         setSyncResult(parts.length ? parts.join(", ") : "Keine neuen Daten");
-        setTimeout(() => setSyncResult(null), 8000);
+        if (Array.isArray(json.unmapped) && json.unmapped.length > 0) {
+          setUnmapped(json.unmapped);
+        }
+        setTimeout(() => setSyncResult(null), 12000);
 
         // Reload config to show newly discovered services/resources
         try {
@@ -414,6 +419,35 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg">
                 Sync abgeschlossen: {syncResult}
               </p>
+            )}
+
+            {unmapped.length > 0 && (
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <p className="text-xs font-medium">
+                    {unmapped.length} ANNY-Service{unmapped.length > 1 ? "s" : ""} ohne Zuordnung — Buchungen wurden nicht importiert
+                  </p>
+                </div>
+                <p className="text-[11px] text-amber-600 dark:text-amber-500">
+                  Erstelle einen Service unter &quot;Services&quot; und hinterlege den ANNY-Namen, dann erneut synchronisieren.
+                </p>
+                <div className="space-y-1">
+                  {unmapped.map((u) => (
+                    <div key={u.annyName} className="flex items-center justify-between text-xs bg-white dark:bg-slate-900 rounded px-2.5 py-1.5 border border-amber-100 dark:border-amber-900/50">
+                      <div className="min-w-0">
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{u.annyName}</span>
+                        {u.customerSample.length > 0 && (
+                          <span className="text-slate-400 ml-1.5">({u.customerSample.join(", ")}{u.count > u.customerSample.length ? ", …" : ""})</span>
+                        )}
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] shrink-0 ml-2">
+                        {u.count} Buchung{u.count > 1 ? "en" : ""}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
 
             <div className="flex items-center justify-between pt-1">

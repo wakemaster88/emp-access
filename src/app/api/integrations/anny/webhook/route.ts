@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
 
   let created = 0;
   let updated = 0;
+  let skippedNoMapping = 0;
 
   for (const booking of bookings) {
     const customerId = booking.customer?.id;
@@ -164,6 +165,11 @@ export async function POST(request: NextRequest) {
     if (!subscriptionId && !serviceIdNum) {
       if (serviceName && areaMappings[serviceName]) accessAreaId = areaMappings[serviceName];
       else if (resourceName && areaMappings[resourceName]) accessAreaId = areaMappings[resourceName];
+    }
+
+    if (!subscriptionId && !serviceIdNum && !accessAreaId) {
+      skippedNoMapping++;
+      continue;
     }
 
     const startDate = booking.start_date ? new Date(booking.start_date) : null;
@@ -206,5 +212,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ created, updated });
+  return NextResponse.json({ created, updated, skippedNoMapping });
 }

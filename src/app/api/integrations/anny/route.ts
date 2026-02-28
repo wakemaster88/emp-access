@@ -331,13 +331,13 @@ export async function POST() {
     let updated = 0;
     let skipped = 0;
     const activeUuids: string[] = [];
+    const unmapped: { annyName: string; count: number; customerSample: string[] }[] = [];
+    const unmappedNames = new Map<string, { count: number; customers: Set<string> }>();
 
     for (const group of groups.values()) {
       const uuid = group.key;
-      activeUuids.push(uuid);
       const count = group.entries.length;
 
-      // Sort entries by start date
       group.entries.sort((a, b) => {
         if (!a.start) return 1;
         if (!b.start) return -1;
@@ -350,7 +350,6 @@ export async function POST() {
         typeName = `${typeName} (${count} Termine)`;
       }
 
-      // Priority 1: Match against subscription annyNames
       let subscriptionId: number | null = null;
       let serviceId: number | null = null;
       let accessAreaId: number | null = null;
@@ -363,7 +362,6 @@ export async function POST() {
         subscriptionId = subNameMap.get(group.resourceName)!;
       }
 
-      // Priority 2: Match against service annyNames (only if no subscription match)
       if (!subscriptionId) {
         if (group.serviceName && svcNameMap.has(group.serviceName)) {
           serviceId = svcNameMap.get(group.serviceName)!;
@@ -372,7 +370,6 @@ export async function POST() {
         }
       }
 
-      // Priority 3: Direct area mapping (only if no subscription or service match)
       if (!subscriptionId && !serviceId) {
         if (group.serviceName && areaMappings[group.serviceName]) {
           accessAreaId = areaMappings[group.serviceName];
@@ -380,6 +377,24 @@ export async function POST() {
           accessAreaId = areaMappings[group.resourceName];
         }
       }
+
+      // Skip groups without any service/subscription/area mapping
+      if (!subscriptionId && !serviceId && !accessAreaId) {
+        const unmappedKey = displayName || "Unbekannt";
+        const entry = unmappedNames.get(unmappedKey);
+        if (entry) {
+          entry.count += count;
+          if (group.customerName && entry.customers.size < 3) entry.customers.add(group.customerName);
+        } else {
+          const customers = new Set<string>();
+          if (group.customerName) customers.add(group.customerName);
+          unmappedNames.set(unmappedKey, { count, customers });
+        }
+        skipped++;
+        continue;
+      }
+
+      activeUuids.push(uuid);
 
       const ticketData = {
         name: group.customerName || `Buchung ${group.entries[0].id}`,
@@ -417,6 +432,11 @@ export async function POST() {
       } catch {
         skipped++;
       }
+    }
+
+    // Build unmapped warnings
+    for (const [name, { count, customers }] of unmappedNames) {
+      unmapped.push({ annyName: name, count, customerSample: [...customers] });
     }
 
     // Mark anny tickets that no longer exist as INVALID
@@ -457,6 +477,7 @@ export async function POST() {
       resources: discoveredResourceNames.size,
       services: discoveredServiceNames.size,
       subscriptions: discoveredSubscriptionNames.size,
+      unmapped,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";
