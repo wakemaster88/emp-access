@@ -173,13 +173,58 @@ function AboSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicke
   );
 }
 
-function ServiceSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicket: (id: number) => void }) {
+function ServiceSection({ tickets, openTicket, collapse }: { tickets: TicketEntry[]; openTicket: (id: number) => void; collapse?: boolean }) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+
   if (tickets.length === 0) return null;
 
+  if (!collapse) {
+    return (
+      <div className="mt-2">
+        {tickets.map((ticket) => (
+          <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
+        ))}
+      </div>
+    );
+  }
+
+  const grouped = new Map<string, TicketEntry[]>();
+  for (const t of tickets) {
+    const key = t.ticketTypeName?.replace(/\s*\(\d+\s*Termine?\)/, "") || "Service";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(t);
+  }
+
+  function toggle(key: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
   return (
-    <div className="mt-2">
-      {tickets.map((ticket) => (
-        <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
+    <div className="mt-2 space-y-1">
+      {[...grouped.entries()].map(([name, group]) => (
+        <div key={name}>
+          <button
+            type="button"
+            onClick={() => toggle(name)}
+            className="w-full flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-t transition-colors"
+          >
+            <Users className="h-2.5 w-2.5 text-indigo-400 shrink-0" />
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">{name}</span>
+            <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-0.5">{group.length}</Badge>
+            <ChevronDown className={cn("h-3 w-3 text-slate-400 ml-auto transition-transform", openGroups.has(name) && "rotate-180")} />
+          </button>
+          {openGroups.has(name) && (
+            <div className="pl-0.5">
+              {group.map((ticket) => (
+                <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
+              ))}
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -275,7 +320,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
           )}
 
           <AboSection tickets={area.aboTickets} openTicket={openTicket} />
-          <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} />
+          <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} collapse={hasResources || hasOther} />
         </div>
       )}
 
