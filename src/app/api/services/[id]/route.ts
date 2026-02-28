@@ -91,6 +91,7 @@ export async function PUT(
       ...(body.defaultValidityDurationMinutes !== undefined && { defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null }),
       ...(body.allowReentry !== undefined && { allowReentry: !!body.allowReentry }),
       ...(body.requiresPhoto !== undefined && { requiresPhoto: !!body.requiresPhoto }),
+      ...(body.requiresCode !== undefined && { requiresCode: !!body.requiresCode }),
     },
     include: {
       serviceAreas: { include: { area: { select: { id: true, name: true } } } },

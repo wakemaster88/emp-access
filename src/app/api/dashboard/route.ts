@@ -124,6 +124,8 @@ export async function GET(request: NextRequest) {
     profileImage: true,
     source: true,
     qrCode: true,
+    barcode: true,
+    rfidCode: true,
   };
 
   const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, annyConfig] = await Promise.all([
@@ -240,8 +242,9 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function enrichTicket(ticket: any) {
     const bt = ticket.source === "ANNY" ? getBookingTimeForDate(ticket.qrCode, dateStr) : null;
-    const { qrCode: _, ...rest } = ticket;
-    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null };
+    const hasCode = !!(ticket.barcode || ticket.rfidCode);
+    const { qrCode: _, barcode: _b, rfidCode: _r, ...rest } = ticket;
+    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasCode };
   }
 
   function ticketMatchesResource(ticketTypeName: string | null, resourceName: string): boolean {

@@ -34,6 +34,7 @@ interface TicketEntry {
   source: string | null;
   bookingStart: string | null;
   bookingEnd: string | null;
+  hasCode: boolean;
 }
 
 interface ResourceBlock {
@@ -123,6 +124,11 @@ function TicketRow({ ticket, onClick, inSlot }: { ticket: TicketEntry; onClick: 
       )}
       {time && (
         <span className="text-[10px] text-indigo-500 font-mono shrink-0">{time}</span>
+      )}
+      {ticket.hasCode ? (
+        <ScanLine className="h-3 w-3 text-emerald-500 shrink-0" />
+      ) : (
+        <ScanLine className="h-3 w-3 text-slate-300 dark:text-slate-600 shrink-0" />
       )}
       <div
         className={cn(

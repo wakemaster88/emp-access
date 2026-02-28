@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check } from "lucide-react";
+import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function toDateInput(val: string | Date | null | undefined): string {
@@ -35,6 +35,7 @@ export interface ServiceData {
   defaultValidityDurationMinutes?: number | null;
   allowReentry?: boolean;
   requiresPhoto?: boolean;
+  requiresCode?: boolean;
 }
 
 interface AreaRef {
@@ -155,6 +156,7 @@ export function ServiceDialog({
   const [defaultValidityDurationMinutes, setDefaultValidityDurationMinutes] = useState("");
   const [allowReentry, setAllowReentry] = useState(false);
   const [requiresPhoto, setRequiresPhoto] = useState(false);
+  const [requiresCode, setRequiresCode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -187,6 +189,7 @@ export function ServiceDialog({
         setDefaultValidityDurationMinutes(service.defaultValidityDurationMinutes != null ? String(service.defaultValidityDurationMinutes) : "");
         setAllowReentry(service.allowReentry ?? false);
         setRequiresPhoto(service.requiresPhoto ?? false);
+        setRequiresCode(service.requiresCode ?? false);
       } else {
         setName("");
         setSelectedAnny(new Set());
@@ -199,6 +202,7 @@ export function ServiceDialog({
         setDefaultValidityDurationMinutes("");
         setAllowReentry(false);
         setRequiresPhoto(false);
+        setRequiresCode(false);
       }
     }
   }, [open, service, initialServiceAreas]);
@@ -236,6 +240,7 @@ export function ServiceDialog({
         annyNames: [...selectedAnny],
         allowReentry,
         requiresPhoto,
+        requiresCode,
         areas: serviceAreas.map((sa) => {
           const out: Record<string, unknown> = { areaId: sa.areaId };
           if (sa.defaultValidityType && sa.defaultValidityType !== "none") {
@@ -389,6 +394,16 @@ export function ServiceDialog({
                   <p className="text-[11px] text-slate-500">Kamera öffnet automatisch wenn kein Bild vorhanden</p>
                 </div>
                 <Switch checked={requiresPhoto} onCheckedChange={setRequiresPhoto} />
+              </div>
+              <div className="flex items-center justify-between p-2.5">
+                <div>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <ScanLine className="h-3.5 w-3.5 text-slate-400" />
+                    Code / Medium verpflichtend
+                  </p>
+                  <p className="text-[11px] text-slate-500">Warnung im Dashboard wenn kein Code hinterlegt</p>
+                </div>
+                <Switch checked={requiresCode} onCheckedChange={setRequiresCode} />
               </div>
             </div>
 
