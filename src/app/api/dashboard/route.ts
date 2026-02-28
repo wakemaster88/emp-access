@@ -242,9 +242,10 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function enrichTicket(ticket: any) {
     const bt = ticket.source === "ANNY" ? getBookingTimeForDate(ticket.qrCode, dateStr) : null;
-    const hasCode = !!(ticket.barcode || ticket.rfidCode);
+    const hasCode = !!ticket.barcode;
+    const hasRfid = !!ticket.rfidCode;
     const { qrCode: _, barcode: _b, rfidCode: _r, ...rest } = ticket;
-    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasCode };
+    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasCode, hasRfid };
   }
 
   function ticketMatchesResource(ticketTypeName: string | null, resourceName: string): boolean {

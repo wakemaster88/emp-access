@@ -248,7 +248,7 @@ model Service {
   defaultValidityDurationMinutes Int?
   allowReentry                Boolean       @default(false)
   requiresPhoto               Boolean       @default(false)
-  requiresCode                Boolean       @default(false)
+  requiresRfid                Boolean       @default(false)
   accountId                   Int
   account                     Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   serviceAreas                ServiceArea[]

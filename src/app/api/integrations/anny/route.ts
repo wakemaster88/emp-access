@@ -44,6 +44,7 @@ interface BookingEntry {
 interface BookingGroup {
   key: string;
   entries: BookingEntry[];
+  bookingNumber: string | null;
   customerName: string;
   firstName: string;
   lastName: string;
@@ -268,6 +269,9 @@ export async function POST() {
         if (!existing.entries.some((e) => e.id === entry.id)) {
           existing.entries.push(entry);
         }
+        if (!existing.bookingNumber && booking.number) {
+          existing.bookingNumber = booking.number;
+        }
         if (startDate && (!existing.startDate || startDate < existing.startDate)) {
           existing.startDate = startDate;
         }
@@ -279,6 +283,7 @@ export async function POST() {
         groups.set(key, {
           key,
           entries: [entry],
+          bookingNumber: booking.number || null,
           customerName,
           firstName: customer?.first_name || nameParts[0] || "",
           lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
@@ -399,6 +404,7 @@ export async function POST() {
         endDate: group.endDate,
         status: mapGroupStatus(group.statuses),
         ticketTypeName: typeName,
+        barcode: group.bookingNumber || null,
         qrCode: JSON.stringify(group.entries),
         source: "ANNY" as const,
         accessAreaId,

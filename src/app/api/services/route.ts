@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null,
       allowReentry: !!body.allowReentry,
       requiresPhoto: !!body.requiresPhoto,
-      requiresCode: !!body.requiresCode,
+      requiresRfid: !!body.requiresRfid,
       serviceAreas: areasPayload.length > 0 ? {
         create: areasPayload.map((a) => ({
           accessAreaId: a.areaId,

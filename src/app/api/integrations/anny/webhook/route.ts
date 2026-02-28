@@ -10,6 +10,7 @@ import { prisma, tenantClient } from "@/lib/prisma";
 
 interface AnnyBooking {
   id?: string | number;
+  number?: string;
   start_date?: string;
   end_date?: string;
   status?: string;
@@ -188,6 +189,7 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       status,
+      barcode: booking.number || null,
       qrCode: JSON.stringify([{ id: String(booking.id), start: booking.start_date ?? null, end: booking.end_date ?? null, status: booking.status ?? null }]),
       source: "ANNY" as const,
       accessAreaId,

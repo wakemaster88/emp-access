@@ -35,7 +35,7 @@ export interface ServiceData {
   defaultValidityDurationMinutes?: number | null;
   allowReentry?: boolean;
   requiresPhoto?: boolean;
-  requiresCode?: boolean;
+  requiresRfid?: boolean;
 }
 
 interface AreaRef {
@@ -156,7 +156,7 @@ export function ServiceDialog({
   const [defaultValidityDurationMinutes, setDefaultValidityDurationMinutes] = useState("");
   const [allowReentry, setAllowReentry] = useState(false);
   const [requiresPhoto, setRequiresPhoto] = useState(false);
-  const [requiresCode, setRequiresCode] = useState(false);
+  const [requiresRfid, setRequiresRfid] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -189,7 +189,7 @@ export function ServiceDialog({
         setDefaultValidityDurationMinutes(service.defaultValidityDurationMinutes != null ? String(service.defaultValidityDurationMinutes) : "");
         setAllowReentry(service.allowReentry ?? false);
         setRequiresPhoto(service.requiresPhoto ?? false);
-        setRequiresCode(service.requiresCode ?? false);
+        setRequiresRfid(service.requiresRfid ?? false);
       } else {
         setName("");
         setSelectedAnny(new Set());
@@ -202,7 +202,7 @@ export function ServiceDialog({
         setDefaultValidityDurationMinutes("");
         setAllowReentry(false);
         setRequiresPhoto(false);
-        setRequiresCode(false);
+        setRequiresRfid(false);
       }
     }
   }, [open, service, initialServiceAreas]);
@@ -240,7 +240,7 @@ export function ServiceDialog({
         annyNames: [...selectedAnny],
         allowReentry,
         requiresPhoto,
-        requiresCode,
+        requiresRfid,
         areas: serviceAreas.map((sa) => {
           const out: Record<string, unknown> = { areaId: sa.areaId };
           if (sa.defaultValidityType && sa.defaultValidityType !== "none") {
@@ -399,11 +399,11 @@ export function ServiceDialog({
                 <div>
                   <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                     <ScanLine className="h-3.5 w-3.5 text-slate-400" />
-                    Code / Medium verpflichtend
+                    RFID verpflichtend
                   </p>
-                  <p className="text-[11px] text-slate-500">Warnung im Dashboard wenn kein Code hinterlegt</p>
+                  <p className="text-[11px] text-slate-500">Warnung im Dashboard wenn kein RFID-Band verknüpft</p>
                 </div>
-                <Switch checked={requiresCode} onCheckedChange={setRequiresCode} />
+                <Switch checked={requiresRfid} onCheckedChange={setRequiresRfid} />
               </div>
             </div>
 

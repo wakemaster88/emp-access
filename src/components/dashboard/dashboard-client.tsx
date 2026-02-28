@@ -35,6 +35,7 @@ interface TicketEntry {
   bookingStart: string | null;
   bookingEnd: string | null;
   hasCode: boolean;
+  hasRfid: boolean;
 }
 
 interface ResourceBlock {
@@ -125,10 +126,10 @@ function TicketRow({ ticket, onClick, inSlot }: { ticket: TicketEntry; onClick: 
       {time && (
         <span className="text-[10px] text-indigo-500 font-mono shrink-0">{time}</span>
       )}
-      {ticket.hasCode ? (
-        <ScanLine className="h-3 w-3 text-emerald-500 shrink-0" />
+      {ticket.hasRfid ? (
+        <ScanLine className="h-3 w-3 text-emerald-500 shrink-0" title="RFID verknüpft" />
       ) : (
-        <ScanLine className="h-3 w-3 text-slate-300 dark:text-slate-600 shrink-0" />
+        <ScanLine className="h-3 w-3 text-slate-300 dark:text-slate-600 shrink-0" title="Kein RFID" />
       )}
       <div
         className={cn(
