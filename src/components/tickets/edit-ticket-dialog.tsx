@@ -19,9 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, CalendarDays } from "lucide-react";
-import { fmtDateTime } from "@/lib/utils";
+import { ChevronDown, Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, CalendarDays } from "lucide-react";
+import { cn, fmtDateTime } from "@/lib/utils";
 
 interface AnnyBookingEntry {
   id: string;
@@ -172,6 +171,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   const [error, setError] = useState("");
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [scansLoading, setScansLoading] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const selectedService = services.find((s) => String(s.id) === form.serviceId);
   const needsPhoto = !!selectedService?.requiresPhoto && !profileImage;
@@ -413,10 +413,19 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
               />
             )}
 
+            {/* 1. Code (primary) */}
+            <div className="space-y-1">
+              <Label htmlFor="e-code" className="text-xs flex items-center gap-1 font-medium">
+                <ScanLine className="h-3.5 w-3.5 text-indigo-500" />Code
+              </Label>
+              <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-sm h-10" placeholder="Scannen oder eingeben …" autoComplete="off" autoFocus />
+            </div>
+
+            {/* 2. Name */}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label htmlFor="e-first" className="text-xs">Vorname</Label>
-                <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Vorname" required autoFocus className="h-9" />
+                <Input id="e-first" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Vorname" required className="h-9" />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="e-last" className="text-xs">Nachname</Label>
@@ -424,137 +433,143 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Ticket-Typ</Label>
-                {services.length > 0 ? (
-                  <Select value={form.serviceId} onValueChange={(v) => {
-                    set("serviceId", v);
-                    if (v !== "none") {
-                      const svc = services.find((s) => String(s.id) === v);
-                      if (svc) set("ticketTypeName", svc.name);
-                    }
-                  }}>
-                    <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Service" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Kein Service</SelectItem>
-                      {services.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" className="h-9" />
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="e-code" className="text-xs flex items-center gap-1">
-                  <ScanLine className="h-3 w-3 text-slate-400" />Code
-                </Label>
-                <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-xs h-9" placeholder="Scannen / eingeben" autoComplete="off" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Resource</Label>
-                <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Keine" /></SelectTrigger>
+            {/* 3. Ticket-Typ (Service) */}
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Ticket-Typ / Service</Label>
+              {services.length > 0 ? (
+                <Select value={form.serviceId} onValueChange={(v) => {
+                  set("serviceId", v);
+                  if (v !== "none") {
+                    const svc = services.find((s) => String(s.id) === v);
+                    if (svc) set("ticketTypeName", svc.name);
+                  }
+                }}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Service" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Keine Resource</SelectItem>
-                    {areas.map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Abo</Label>
-                <Select value={form.subscriptionId} onValueChange={(v) => set("subscriptionId", v)}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Abo" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Kein Abo</SelectItem>
-                    {subscriptions.map((s) => (
+                    <SelectItem value="none">Kein Service</SelectItem>
+                    {services.map((s) => (
                       <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              ) : (
+                <Input id="e-type" value={form.ticketTypeName} onChange={(e) => set("ticketTypeName", e.target.value)} placeholder="z.B. Tageskarte" className="h-9" />
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Status</Label>
-                <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="VALID">Gültig</SelectItem>
-                    <SelectItem value="REDEEMED">Eingelöst</SelectItem>
-                    <SelectItem value="INVALID">Ungültig</SelectItem>
-                    <SelectItem value="PROTECTED">Geschützt</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Gültigkeit</Label>
-                <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DATE_RANGE">Zeitraum</SelectItem>
-                    <SelectItem value="TIME_SLOT">Zeitslot</SelectItem>
-                    <SelectItem value="DURATION">Dauer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* 4. Details (einklappbar) */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(!detailsOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+              >
+                <span>Details (Resource, Status, Gültigkeit)</span>
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", detailsOpen && "rotate-180")} />
+              </button>
+
+              {detailsOpen && (
+                <div className="px-3 pb-3 space-y-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-slate-500">Resource</Label>
+                      <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Keine" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Keine Resource</SelectItem>
+                          {areas.map((a) => (
+                            <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-slate-500">Abo</Label>
+                      <Select value={form.subscriptionId} onValueChange={(v) => set("subscriptionId", v)}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Kein Abo" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Kein Abo</SelectItem>
+                          {subscriptions.map((s) => (
+                            <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-slate-500">Status</Label>
+                      <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="VALID">Gültig</SelectItem>
+                          <SelectItem value="REDEEMED">Eingelöst</SelectItem>
+                          <SelectItem value="INVALID">Ungültig</SelectItem>
+                          <SelectItem value="PROTECTED">Geschützt</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-slate-500">Gültigkeit</Label>
+                      <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DATE_RANGE">Zeitraum</SelectItem>
+                          <SelectItem value="TIME_SLOT">Zeitslot</SelectItem>
+                          <SelectItem value="DURATION">Dauer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="e-start" className="text-[11px] text-slate-500">Gültig ab</Label>
+                      <Input id="e-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} className="h-8 text-xs" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="e-end" className="text-[11px] text-slate-500">Gültig bis</Label>
+                      <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} className="h-8 text-xs" />
+                    </div>
+                  </div>
+
+                  {form.validityType === "TIME_SLOT" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="e-slot-start" className="text-[11px] text-slate-500">Slot von</Label>
+                        <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} className="h-8 text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="e-slot-end" className="text-[11px] text-slate-500">Slot bis</Label>
+                        <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    </div>
+                  )}
+
+                  {form.validityType === "DURATION" && (
+                    <div className="space-y-1">
+                      <Label htmlFor="e-duration" className="text-[11px] text-slate-500">Dauer (Minuten)</Label>
+                      <div className="flex gap-2 items-center">
+                        <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className="h-8 text-xs flex-1" />
+                        <Button type="button" variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={() => set("validityDurationMinutes", "1440")}>
+                          1 Tag
+                        </Button>
+                      </div>
+                      {ticket?.firstScanAt && (
+                        <p className="text-[10px] text-slate-400">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label htmlFor="e-start" className="text-xs">Gültig ab</Label>
-                <Input id="e-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} className="h-9 text-xs" />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="e-end" className="text-xs">Gültig bis</Label>
-                <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} className="h-9 text-xs" />
-              </div>
-            </div>
-
-            {form.validityType === "TIME_SLOT" && (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="e-slot-start" className="text-xs">Slot von</Label>
-                  <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} className="h-9 text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="e-slot-end" className="text-xs">Slot bis</Label>
-                  <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} className="h-9 text-xs" />
-                </div>
-              </div>
-            )}
-
-            {form.validityType === "DURATION" && (
-              <div className="space-y-1">
-                <Label htmlFor="e-duration" className="text-xs">Dauer (Minuten)</Label>
-                <div className="flex gap-2 items-center">
-                  <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className="h-9 flex-1" />
-                  <Button type="button" variant="outline" size="sm" className="h-9 text-xs shrink-0" onClick={() => set("validityDurationMinutes", "1440")}>
-                    1 Tag
-                  </Button>
-                </div>
-                <p className="text-[10px] text-slate-400">1 Tag = 1440 Minuten</p>
-                {ticket?.firstScanAt && (
-                  <p className="text-[11px] text-slate-500">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
-                )}
-              </div>
-            )}
 
             {error && (
               <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
             )}
 
-            <Separator className="dark:bg-slate-800" />
-
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between pt-1">
               <Button type="button" variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || saving}
                 className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs">
                 {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
