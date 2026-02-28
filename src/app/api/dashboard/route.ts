@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
       where: { ...where, serviceId: { not: null }, ...ticketDateFilter },
       select: {
         ...ticketSelect,
-        service: { select: { serviceAreas: { select: { area: { select: { id: true } } } } } },
+        service: { select: { requiresPhoto: true, requiresRfid: true, serviceAreas: { select: { area: { select: { id: true } } } } } },
       },
       orderBy: { name: "asc" },
     }),
@@ -242,10 +242,12 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function enrichTicket(ticket: any) {
     const bt = ticket.source === "ANNY" ? getBookingTimeForDate(ticket.qrCode, dateStr) : null;
-    const hasCode = !!ticket.barcode;
     const hasRfid = !!ticket.rfidCode;
-    const { qrCode: _, barcode: _b, rfidCode: _r, ...rest } = ticket;
-    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasCode, hasRfid };
+    const hasPhoto = !!ticket.profileImage;
+    const needsRfid = !hasRfid && !!ticket.service?.requiresRfid;
+    const needsPhoto = !hasPhoto && !!ticket.service?.requiresPhoto;
+    const { qrCode: _, barcode: _b, rfidCode: _r, service: _s, subscription: _sub, ...rest } = ticket;
+    return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasRfid, needsRfid, needsPhoto };
   }
 
   function ticketMatchesResource(ticketTypeName: string | null, resourceName: string): boolean {
