@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 
+/** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
+const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
+
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
   if ("error" in auth) return auth.error;
@@ -26,6 +29,14 @@ export async function POST(request: NextRequest) {
 
   if (device.task === 3) {
     return NextResponse.json({ granted: false, message: "Gerät gesperrt" });
+  }
+
+  // Dashboard-Öffnung: Relais wurde per Button geöffnet → GRANTED-Scan ohne Ticket anlegen
+  if (code === DASHBOARD_OPEN_CODE) {
+    await db.scan.create({
+      data: { code: "Dashboard-Öffnung", deviceId, result: "GRANTED", accountId },
+    });
+    return NextResponse.json({ granted: true, message: "Dashboard-Öffnung erfasst" });
   }
 
   // Find ticket by code (try with and without spaces); include service for allowReentry

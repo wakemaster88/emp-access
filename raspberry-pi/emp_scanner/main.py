@@ -119,7 +119,8 @@ class EmpScanner:
         # Tell systemd we're ready
         _sd_notify("READY=1")
 
-        # Background threads
+        # Background threads: Task-Poll schnell (3s), Heartbeat mit System-Info seltener (30s)
+        threading.Thread(target=self._task_poll_loop, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         threading.Thread(target=self._update_loop, daemon=True).start()
         threading.Thread(target=self._watchdog_loop, daemon=True).start()
@@ -181,6 +182,28 @@ class EmpScanner:
             if self.relay:
                 self.relay.deny()
 
+    def _task_poll_loop(self):
+        """Schnelles Polling nur für Task (alle 3s), damit Dashboard-Button schnell wirkt."""
+        interval = max(1, int(getattr(self.config, "task_poll_interval", 3)))
+        while self._running:
+            try:
+                if self.api:
+                    device_config = self.api.get_config()
+                    if device_config:
+                        new_task = device_config.get("pis_task", 0)
+                        if new_task != self._current_task:
+                            logger.info("Task geändert: %d → %d", self._current_task, new_task)
+                            self._apply_task(new_task)
+                        if device_config.get("pis_active") == 0 and self._current_task != 3:
+                            logger.warning("Gerät vom Server deaktiviert")
+                            self._apply_task(3)
+            except Exception as e:
+                logger.debug("Task-Poll: %s", e)
+            for _ in range(interval):
+                if not self._running:
+                    return
+                time.sleep(1)
+
     def _heartbeat_loop(self):
         while self._running:
             try:
@@ -210,6 +233,8 @@ class EmpScanner:
             logger.info("Task: Einmal öffnen")
             self.relay.grant()
             self._current_task = 0
+            if self.api:
+                self.api.report_dashboard_open()
         elif task == 2:
             logger.warning("Task: NOT-AUF")
             self.relay.emergency_open()

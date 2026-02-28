@@ -50,6 +50,39 @@ class ApiClient:
 
         return {"granted": False, "message": "Server nicht erreichbar", "offline": True}
 
+    def report_dashboard_open(self) -> bool:
+        """
+        Meldet eine Dashboard-Öffnung (Relais per Button) als gültigen Scan am Server.
+        Wird vom Pi aufgerufen, nachdem task=1 ausgeführt wurde.
+        """
+        try:
+            resp = self._session.post(
+                f"{self.server_url}/api/devices/pi/scan",
+                json={"code": "__DASHBOARD_OPEN__", "deviceId": self.device_id},
+                timeout=TIMEOUT_SCAN,
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            logger.warning("Dashboard-Öffnung melden fehlgeschlagen: %s", e)
+            return False
+
+    def get_config(self) -> Optional[dict]:
+        """
+        Nur GET – Geräteconfig abrufen (z. B. für schnelles Task-Polling).
+        Returns device config or None.
+        """
+        try:
+            resp = self._session.get(
+                f"{self.server_url}/api/devices/pi",
+                params={"id": self.device_id},
+                timeout=TIMEOUT_HEARTBEAT,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception as e:
+            logger.debug("get_config: %s", e)
+        return None
+
     def send_heartbeat(self, task: int = 0) -> Optional[dict]:
         """
         Send heartbeat with system info. Returns device config from server or None.

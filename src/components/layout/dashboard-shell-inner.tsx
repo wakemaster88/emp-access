@@ -38,7 +38,7 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
         </SheetContent>
       </Sheet>
 
-      <main className="flex-1 min-w-0 flex flex-col min-h-[100dvh] overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto bg-slate-50 dark:bg-slate-950">
         {children}
       </main>
     </>
