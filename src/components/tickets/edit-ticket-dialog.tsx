@@ -136,6 +136,7 @@ interface EditTicketDialogProps {
   areas: Area[];
   subscriptions?: Sub[];
   services?: Svc[];
+  autoFocusCode?: boolean;
   onClose: () => void;
 }
 
@@ -145,7 +146,7 @@ function toDateInput(val: Date | string | null | undefined): string {
   return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 }
 
-export function EditTicketDialog({ ticket, areas, subscriptions = [], services = [], onClose }: EditTicketDialogProps) {
+export function EditTicketDialog({ ticket, areas, subscriptions = [], services = [], autoFocusCode, onClose }: EditTicketDialogProps) {
   const router = useRouter();
   const [tab, setTab] = useState<"edit" | "bookings" | "scans">("edit");
   const [form, setForm] = useState({
@@ -418,7 +419,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
               <Label htmlFor="e-code" className="text-xs flex items-center gap-1 font-medium">
                 <ScanLine className="h-3.5 w-3.5 text-indigo-500" />Code
               </Label>
-              <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-sm h-10" placeholder="Scannen oder eingeben …" autoComplete="off" autoFocus />
+              <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-sm h-10" placeholder="Scannen oder eingeben …" autoComplete="off" autoFocus={autoFocusCode} />
             </div>
 
             {/* 2. Name */}

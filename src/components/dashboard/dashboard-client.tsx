@@ -440,6 +440,7 @@ export function DashboardClient() {
         areas={areas}
         subscriptions={subs}
         services={svcs}
+        autoFocusCode
         onClose={() => {
           setSelectedTicket(null);
           fetchData(date);
