@@ -13,7 +13,9 @@ interface DashboardShellInnerProps {
 }
 
 function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps) {
-  const { open: mobileMenuOpen, setOpen: setMobileMenuOpen } = useMobileMenu();
+  const mobileMenu = useMobileMenu();
+  if (!mobileMenu) throw new Error("DashboardShellInner.Inner must be used within MobileMenuProvider");
+  const { open: mobileMenuOpen, setOpen: setMobileMenuOpen } = mobileMenu;
 
   return (
     <>
