@@ -96,8 +96,8 @@ function personName(t: TicketEntry): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
 }
 
-function TicketRow({ ticket, onClick, inSlot }: { ticket: TicketEntry; onClick: () => void; inSlot?: boolean }) {
-  const time = !inSlot
+function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: TicketEntry; onClick: () => void; inSlot?: boolean; hideType?: boolean; hideTime?: boolean }) {
+  const time = !inSlot && !hideTime
     ? (ticket.bookingStart
         ? `${ticket.bookingStart}${ticket.bookingEnd ? `–${ticket.bookingEnd}` : ""}`
         : ticket.slotStart && ticket.slotEnd
@@ -122,7 +122,7 @@ function TicketRow({ ticket, onClick, inSlot }: { ticket: TicketEntry; onClick: 
       <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1 min-w-0">
         {personName(ticket)}
       </span>
-      {!inSlot && ticket.ticketTypeName && (
+      {!inSlot && !hideType && ticket.ticketTypeName && (
         <span className="text-[10px] text-slate-400 truncate max-w-[90px] hidden sm:inline">{ticket.ticketTypeName}</span>
       )}
       {time && (
@@ -176,7 +176,7 @@ function AboSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicke
   );
 }
 
-function ServiceSection({ tickets, openTicket, collapse }: { tickets: TicketEntry[]; openTicket: (id: number) => void; collapse?: boolean }) {
+function ServiceSection({ tickets, openTicket, collapse, hideType, hideTime }: { tickets: TicketEntry[]; openTicket: (id: number) => void; collapse?: boolean; hideType?: boolean; hideTime?: boolean }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   if (tickets.length === 0) return null;
@@ -185,7 +185,7 @@ function ServiceSection({ tickets, openTicket, collapse }: { tickets: TicketEntr
     return (
       <div className="mt-2">
         {tickets.map((ticket) => (
-          <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
+          <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} hideType={hideType} hideTime={hideTime} />
         ))}
       </div>
     );
@@ -239,6 +239,10 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
   const hasAbos = area.aboTickets.length > 0;
   const hasServices = (area.serviceTickets?.length ?? 0) > 0;
   const isEmpty = !hasResources && !hasOther && !hasAbos && !hasServices;
+
+  const isPrimaryServiceArea = !hasResources && !hasOther && hasServices;
+  const svcHideTime = isPrimaryServiceArea && !!area.openingHours;
+  const svcHideType = isPrimaryServiceArea && new Set(area.serviceTickets?.map((t) => t.ticketTypeName?.replace(/\s*\(.*$/, ""))).size <= 1;
 
   return (
     <Card
@@ -323,7 +327,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
           )}
 
           <AboSection tickets={area.aboTickets} openTicket={openTicket} />
-          <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} collapse={hasResources || hasOther} />
+          <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} collapse={hasResources || hasOther} hideType={svcHideType} hideTime={svcHideTime} />
         </div>
       )}
 
