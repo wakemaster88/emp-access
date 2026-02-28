@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Wenn Binarytec konfiguriert: nur Binarytec für Ticketprüfung (kein Sync, kein EMP-Ticket-Lookup)
-  const binarytec = await checkBinarytec(db, accountId, code);
+  const binarytec = await checkBinarytec(db as Parameters<typeof checkBinarytec>[0], accountId, code);
   if (binarytec !== null) {
     if (binarytec.valid) {
       await db.scan.create({
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!ticket) {
-    const wakesys = await checkWakesys(db, accountId, code);
+    const wakesys = await checkWakesys(db as Parameters<typeof checkWakesys>[0], accountId, code);
     if (wakesys?.valid) {
       await db.scan.create({
         data: { code, deviceId, result: "GRANTED", accountId },
