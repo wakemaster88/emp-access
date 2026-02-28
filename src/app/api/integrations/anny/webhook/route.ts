@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     const customerName = customer?.full_name || [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || "";
     const nameParts = (customerName || "").split(/\s+/);
     const firstName = customer?.first_name ?? nameParts[0] ?? null;
-    const lastName = customer?.last_name ?? nameParts.slice(1).join(" ") || null;
+    const lastName = customer?.last_name ?? (nameParts.slice(1).join(" ") || null);
 
     const serviceName = booking.service?.name ?? null;
     const resourceName = booking.resource?.name ?? null;
