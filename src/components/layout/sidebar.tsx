@@ -17,6 +17,7 @@ import {
   Settings,
   CreditCard,
   Package,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/devices", label: "Geräte", icon: HardDrive },
   { href: "/areas", label: "Resourcen", icon: MapPin },
   { href: "/scans", label: "Scans", icon: ScanLine },
+  { href: "/analytics", label: "Auswertung", icon: BarChart3 },
   { href: "/monitor", label: "Live Monitor", icon: Monitor },
   { href: "/settings", label: "Einstellungen", icon: Settings },
 ];
