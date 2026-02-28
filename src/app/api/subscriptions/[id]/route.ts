@@ -66,6 +66,8 @@ export async function PUT(
       ...(body.defaultSlotStart !== undefined && { defaultSlotStart: body.defaultSlotStart || null }),
       ...(body.defaultSlotEnd !== undefined && { defaultSlotEnd: body.defaultSlotEnd || null }),
       ...(body.defaultValidityDurationMinutes !== undefined && { defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null }),
+      ...(body.requiresPhoto !== undefined && { requiresPhoto: !!body.requiresPhoto }),
+      ...(body.requiresRfid !== undefined && { requiresRfid: !!body.requiresRfid }),
     },
     include: {
       areas: { select: { id: true, name: true } },

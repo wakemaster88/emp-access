@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Trash2, Save, Settings2, Link2, MapPin, Check } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function toDateInput(val: string | Date | null | undefined): string {
@@ -32,6 +33,8 @@ export interface SubscriptionData {
   defaultSlotStart?: string | null;
   defaultSlotEnd?: string | null;
   defaultValidityDurationMinutes?: number | null;
+  requiresPhoto?: boolean;
+  requiresRfid?: boolean;
 }
 
 interface AreaRef {
@@ -116,6 +119,8 @@ export function SubscriptionDialog({
   const [defaultSlotStart, setDefaultSlotStart] = useState("");
   const [defaultSlotEnd, setDefaultSlotEnd] = useState("");
   const [defaultValidityDurationMinutes, setDefaultValidityDurationMinutes] = useState("");
+  const [requiresPhoto, setRequiresPhoto] = useState(false);
+  const [requiresRfid, setRequiresRfid] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -139,6 +144,8 @@ export function SubscriptionDialog({
         setDefaultSlotStart(subscription.defaultSlotStart ?? "");
         setDefaultSlotEnd(subscription.defaultSlotEnd ?? "");
         setDefaultValidityDurationMinutes(subscription.defaultValidityDurationMinutes != null ? String(subscription.defaultValidityDurationMinutes) : "");
+        setRequiresPhoto(subscription.requiresPhoto ?? false);
+        setRequiresRfid(subscription.requiresRfid ?? false);
       } else {
         setName("");
         setSelectedAnny(new Set());
@@ -149,6 +156,8 @@ export function SubscriptionDialog({
         setDefaultSlotStart("");
         setDefaultSlotEnd("");
         setDefaultValidityDurationMinutes("");
+        setRequiresPhoto(false);
+        setRequiresRfid(false);
       }
     }
   }, [open, subscription, initialAreaIds]);
@@ -177,6 +186,8 @@ export function SubscriptionDialog({
         name: name.trim(),
         annyNames: [...selectedAnny],
         areaIds: [...selectedAreas].map(Number),
+        requiresPhoto,
+        requiresRfid,
       };
       if (defaultValidityType && defaultValidityType !== "none") {
         payload.defaultValidityType = defaultValidityType;
@@ -335,6 +346,27 @@ export function SubscriptionDialog({
                   <p className="text-[10px] text-slate-400">1 Tag = 1440 Minuten</p>
                 </div>
               )}
+            </div>
+
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+              <div className="flex items-center justify-between p-2.5">
+                <div>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-amber-500" /> Foto erforderlich
+                  </p>
+                  <p className="text-[11px] text-slate-500">Kamera öffnet automatisch wenn kein Bild vorhanden</p>
+                </div>
+                <Switch checked={requiresPhoto} onCheckedChange={setRequiresPhoto} />
+              </div>
+              <div className="flex items-center justify-between p-2.5">
+                <div>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <ScanLine className="h-3.5 w-3.5 text-amber-500" /> RFID erforderlich
+                  </p>
+                  <p className="text-[11px] text-slate-500">Warnung im Dashboard wenn kein RFID-Band verknüpft</p>
+                </div>
+                <Switch checked={requiresRfid} onCheckedChange={setRequiresRfid} />
+              </div>
             </div>
 
             {subscription && (

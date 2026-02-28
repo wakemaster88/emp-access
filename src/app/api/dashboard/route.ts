@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
       where: { ...where, subscriptionId: { not: null }, ...ticketDateFilter },
       select: {
         ...ticketSelect,
-        subscription: { select: { areas: { select: { id: true } } } },
+        subscription: { select: { requiresPhoto: true, requiresRfid: true, areas: { select: { id: true } } } },
       },
       orderBy: { name: "asc" },
     }),
@@ -244,8 +244,8 @@ export async function GET(request: NextRequest) {
     const bt = ticket.source === "ANNY" ? getBookingTimeForDate(ticket.qrCode, dateStr) : null;
     const hasRfid = !!ticket.rfidCode;
     const hasPhoto = !!ticket.profileImage;
-    const needsRfid = !hasRfid && !!ticket.service?.requiresRfid;
-    const needsPhoto = !hasPhoto && !!ticket.service?.requiresPhoto;
+    const needsRfid = !hasRfid && (!!ticket.service?.requiresRfid || !!ticket.subscription?.requiresRfid);
+    const needsPhoto = !hasPhoto && (!!ticket.service?.requiresPhoto || !!ticket.subscription?.requiresPhoto);
     const { qrCode: _, barcode: _b, rfidCode: _r, service: _s, subscription: _sub, ...rest } = ticket;
     return { ...rest, bookingStart: bt?.start || null, bookingEnd: bt?.end || null, hasRfid, needsRfid, needsPhoto };
   }

@@ -46,6 +46,8 @@ export async function POST(request: NextRequest) {
       defaultSlotStart: body.defaultSlotStart ?? null,
       defaultSlotEnd: body.defaultSlotEnd ?? null,
       defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null,
+      requiresPhoto: !!body.requiresPhoto,
+      requiresRfid: !!body.requiresRfid,
     },
     include: {
       areas: { select: { id: true, name: true } },
