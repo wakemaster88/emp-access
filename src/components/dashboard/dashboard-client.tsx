@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  AlertTriangle,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -94,6 +95,78 @@ function isToday(dateStr: string): boolean {
 
 function personName(t: TicketEntry): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+}
+
+function ActionRequiredCard({ tickets, openTicket }: { tickets: TicketEntry[]; openTicket: (id: number) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  if (tickets.length === 0) return null;
+
+  const needsPhotoCount = tickets.filter((t) => t.needsPhoto).length;
+  const needsRfidCount = tickets.filter((t) => t.needsRfid).length;
+  const show = expanded ? tickets : tickets.slice(0, 5);
+
+  return (
+    <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/10 py-0 gap-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-amber-200/50 dark:border-amber-900/30">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+          Daten vervollständigen
+        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {needsPhotoCount > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-700 dark:text-amber-400 gap-1">
+              <Camera className="h-2.5 w-2.5" /> {needsPhotoCount}
+            </Badge>
+          )}
+          {needsRfidCount > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-700 dark:text-amber-400 gap-1">
+              <ScanLine className="h-2.5 w-2.5" /> {needsRfidCount}
+            </Badge>
+          )}
+          <Badge className="text-[10px] px-1.5 py-0 bg-amber-200 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+            {tickets.length}
+          </Badge>
+        </div>
+      </div>
+      <div className="px-3 pb-2 pt-1">
+        {show.map((ticket) => (
+          <div
+            key={ticket.id}
+            className="flex items-center gap-2 py-1 cursor-pointer rounded px-1 -mx-1 hover:bg-amber-100/60 dark:hover:bg-amber-950/30 transition-colors"
+            onClick={() => openTicket(ticket.id)}
+          >
+            {ticket.profileImage ? (
+              <img src={ticket.profileImage} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
+            ) : (
+              <div className="h-6 w-6 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                <span className="text-[10px] font-bold text-amber-600">
+                  {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
+                </span>
+              </div>
+            )}
+            <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1 min-w-0">
+              {personName(ticket)}
+            </span>
+            {ticket.ticketTypeName && (
+              <span className="text-[10px] text-slate-400 truncate max-w-[100px] hidden sm:inline">{ticket.ticketTypeName}</span>
+            )}
+            {ticket.needsPhoto && <Camera className="h-3 w-3 text-amber-500 shrink-0" />}
+            {ticket.needsRfid && <ScanLine className="h-3 w-3 text-amber-500 shrink-0" />}
+          </div>
+        ))}
+        {tickets.length > 5 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="w-full flex items-center justify-center gap-1 py-1 mt-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:text-amber-900 transition-colors"
+          >
+            {expanded ? "Weniger anzeigen" : `Alle ${tickets.length} anzeigen`}
+            <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
+          </button>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: TicketEntry; onClick: () => void; inSlot?: boolean; hideType?: boolean; hideTime?: boolean }) {
@@ -397,6 +470,22 @@ export function DashboardClient() {
 
   const totalTickets = allAreas.reduce((sum, a) => sum + a._count.tickets, 0);
 
+  const actionRequired = (() => {
+    const seen = new Set<number>();
+    const result: TicketEntry[] = [];
+    for (const area of allAreas) {
+      const all = [...area.otherTickets, ...area.aboTickets, ...(area.serviceTickets || [])];
+      for (const res of area.resources) all.push(...res.tickets);
+      for (const t of all) {
+        if ((t.needsPhoto || t.needsRfid) && !seen.has(t.id)) {
+          seen.add(t.id);
+          result.push(t);
+        }
+      }
+    }
+    return result;
+  })();
+
   const weekDays = (() => {
     const current = new Date(date + "T12:00:00");
     const dayOfWeek = current.getDay();
@@ -480,6 +569,10 @@ export function DashboardClient() {
           ))}
         </div>
       </div>
+
+      {!loading && actionRequired.length > 0 && (
+        <ActionRequiredCard tickets={actionRequired} openTicket={openTicket} />
+      )}
 
       {!loading && allAreas.length === 0 && (
         <div className="text-center py-12 text-slate-400">
