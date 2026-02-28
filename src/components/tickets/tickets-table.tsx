@@ -204,7 +204,6 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
               <TableHead className="hidden lg:table-cell">Code</TableHead>
               <TableHead className="hidden sm:table-cell">Quelle</TableHead>
               <TableHead className="hidden xl:table-cell">Tickettyp</TableHead>
-              <TableHead className="hidden md:table-cell">Resource</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="hidden md:table-cell">Gültigkeit</TableHead>
               <TableHead className="text-right">Scans</TableHead>
@@ -213,7 +212,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
           <TableBody>
             {tickets.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-slate-500 py-12">
+                <TableCell colSpan={7} className="text-center text-slate-500 py-12">
                   {searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
                 </TableCell>
               </TableRow>
@@ -221,7 +220,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
             {groupedByResource.map(({ resourceName, tickets: groupTickets }) => (
               <React.Fragment key={resourceName}>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                  <TableCell colSpan={8} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
                     {resourceName}
                     <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
                       ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
@@ -247,10 +246,11 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
                             {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
                           </p>
-                          <p className="text-xs text-slate-400 sm:hidden truncate">
-                            {(ticket as TicketWithArea).accessArea?.name || "–"}
-                            {ticket.ticketTypeName ? ` · ${ticket.ticketTypeName}` : ""}
-                          </p>
+                          {ticket.ticketTypeName && (
+                            <p className="text-xs text-slate-400 xl:hidden truncate">
+                              {ticket.ticketTypeName}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -262,19 +262,6 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                     </TableCell>
                     <TableCell className="hidden xl:table-cell text-sm text-slate-500">
                       {ticket.ticketTypeName || "–"}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm">
-                      {(ticket as TicketWithArea).accessArea ? (
-                        <Link
-                          href={`/areas`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
-                        >
-                          {(ticket as TicketWithArea).accessArea?.name}
-                        </Link>
-                      ) : (
-                        "–"
-                      )}
                     </TableCell>
                     <TableCell>{statusBadge(ticket.status)}</TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-slate-500">
