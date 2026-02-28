@@ -105,7 +105,7 @@ export async function POST() {
 
     while (true) {
       const params = new URLSearchParams({
-        include: "customer,resource,service",
+        include: "customer,resource,service,subscription",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
@@ -186,6 +186,27 @@ export async function POST() {
       }
     } catch { /* non-critical */ }
 
+    // GET /api/v1/subscriptions (customer subscriptions)
+    try {
+      let subPage = 1;
+      while (subPage <= 20) {
+        const subParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(subPage) });
+        const subRes = await fetch(`${apiBase}/subscriptions?${subParams}`, {
+          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!subRes.ok) break;
+        const subJson = await subRes.json();
+        const subs = Array.isArray(subJson) ? subJson : subJson.data || [];
+        for (const s of subs) {
+          const name = s.name || s.title || s.plan?.name || s.plan?.title;
+          if (name) discoveredSubscriptionNames.add(name);
+        }
+        if (subs.length < 50) break;
+        subPage++;
+      }
+    } catch { /* non-critical */ }
+
     // GET /api/v1/plans (offered plans / subscriptions)
     try {
       let planPage = 1;
@@ -237,8 +258,10 @@ export async function POST() {
       // Collect discovered names even from skipped bookings
       const serviceName = booking.service?.name || null;
       const resourceName = booking.resource?.name || null;
+      const subscriptionName = booking.subscription?.name || booking.subscription?.title || null;
       if (serviceName) discoveredServiceNames.add(serviceName);
       if (resourceName) discoveredResourceNames.add(resourceName);
+      if (subscriptionName) discoveredSubscriptionNames.add(subscriptionName);
       const resId = booking.resource?.id;
       if (resId && resourceName) discoveredResourceIds[resourceName] = String(resId);
 
@@ -248,7 +271,7 @@ export async function POST() {
       // Skip cancelled/rejected bookings entirely
       if (booking.status && cancelledStatuses.has(booking.status.toLowerCase())) continue;
 
-      const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
+      const serviceId = booking.service?.id ?? booking.resource?.id ?? booking.subscription?.id ?? "none";
       const key = `anny:${customerId}:${serviceId}`;
 
       const customerName = customer?.full_name || customer?.name || "";
@@ -291,7 +314,7 @@ export async function POST() {
           lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
           serviceName,
           resourceName,
-          subscriptionName: null,
+          subscriptionName,
           startDate,
           endDate,
           statuses: booking.status ? [booking.status] : [],
@@ -346,7 +369,7 @@ export async function POST() {
         return new Date(a.start).getTime() - new Date(b.start).getTime();
       });
 
-      const displayName = group.serviceName || group.resourceName || null;
+      const displayName = group.serviceName || group.resourceName || group.subscriptionName || null;
       let typeName = displayName;
       if (typeName && count > 1) {
         typeName = `${typeName} (${count} Termine)`;
