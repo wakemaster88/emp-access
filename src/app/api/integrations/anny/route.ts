@@ -105,7 +105,7 @@ export async function POST() {
 
     while (true) {
       const params = new URLSearchParams({
-        include: "customer,resource,service,subscription",
+        include: "customer,resource,service",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
