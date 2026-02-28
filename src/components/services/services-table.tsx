@@ -55,6 +55,8 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
       defaultSlotEnd: svc.defaultSlotEnd ?? undefined,
       defaultValidityDurationMinutes: svc.defaultValidityDurationMinutes ?? undefined,
       allowReentry: svc.allowReentry ?? false,
+      requiresPhoto: svc.requiresPhoto ?? false,
+      requiresRfid: svc.requiresRfid ?? false,
     });
     setInitialServiceAreas((svc.serviceAreas ?? []).map((sa) => ({
       areaId: sa.area.id,
