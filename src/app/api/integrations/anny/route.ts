@@ -266,7 +266,9 @@ export async function POST() {
 
       const existing = groups.get(key);
       if (existing) {
-        if (!existing.entries.some((e) => e.id === entry.id)) {
+        const isDupeId = existing.entries.some((e) => e.id === entry.id);
+        const isDupeSlot = entry.start && existing.entries.some((e) => e.start && e.start === entry.start);
+        if (!isDupeId && !isDupeSlot) {
           existing.entries.push(entry);
         }
         if (!existing.bookingNumber && booking.number) {
