@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     rfidCode: true,
   };
 
-  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, employeeTicketAreas, annyConfig] = await Promise.all([
+  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, , annyConfig] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: {
@@ -198,15 +198,6 @@ export async function GET(request: NextRequest) {
       if (!subTicketsByArea.has(sa.id)) subTicketsByArea.set(sa.id, []);
       subTicketsByArea.get(sa.id)!.push(ticket);
     }
-  }
-
-  // Build: areaId → employee tickets (via TicketArea join table)
-  const empTicketsByArea = new Map<number, typeof serviceTickets>();
-  const empTicketIds = new Set<number>();
-  for (const ta of employeeTicketAreas) {
-    empTicketIds.add(ta.ticket.id);
-    if (!empTicketsByArea.has(ta.accessAreaId)) empTicketsByArea.set(ta.accessAreaId, []);
-    empTicketsByArea.get(ta.accessAreaId)!.push(ta.ticket as typeof serviceTickets[0]);
   }
 
   // Build: areaId → service tickets
@@ -286,21 +277,17 @@ export async function GET(request: NextRequest) {
     const areaResources = areaResourceMap[area.id] || [];
     const areaSubTickets = (subTicketsByArea.get(area.id) || []).map(enrichTicket);
     const areaSvcTickets = (svcTicketsByArea.get(area.id) || []).map(enrichTicket);
-    const areaEmpTickets = (empTicketsByArea.get(area.id) || []).map(enrichTicket);
-    const directTickets = area.tickets.map(enrichTicket);
+    const directTickets = area.tickets.filter((t) => t.source !== "EMP_CONTROL").map(enrichTicket);
     const seenIds = new Set(directTickets.map((t) => t.id));
     const mergedSubTickets = areaSubTickets.filter((t) => !seenIds.has(t.id));
     const mergedSvcTickets = areaSvcTickets.filter((t) => !seenIds.has(t.id) && !mergedSubTickets.some((s) => s.id === t.id));
-    const mergedEmpTickets = areaEmpTickets.filter((t) => !seenIds.has(t.id));
     const enrichedTickets = [...directTickets, ...mergedSubTickets, ...mergedSvcTickets];
-    const totalCount = area._count.tickets + mergedSubTickets.length + mergedSvcTickets.length + mergedEmpTickets.length;
+    const totalCount = area._count.tickets + mergedSubTickets.length + mergedSvcTickets.length;
 
-    // Separate by category; filter out employee tickets from regular
-    const regularTickets = enrichedTickets.filter((t) => !subTicketIds.has(t.id) && !svcTicketIds.has(t.id) && !empTicketIds.has(t.id));
+    // Separate by category; exclude employee tickets entirely
+    const regularTickets = enrichedTickets.filter((t) => !subTicketIds.has(t.id) && !svcTicketIds.has(t.id));
     const aboTickets = enrichedTickets.filter((t) => subTicketIds.has(t.id));
     const serviceTickets = enrichedTickets.filter((t) => svcTicketIds.has(t.id));
-    const employeeTickets = [...enrichedTickets.filter((t) => empTicketIds.has(t.id)), ...mergedEmpTickets]
-      .filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i);
 
     if (areaResources.length === 0) {
       let computedHours = area.openingHours;
@@ -328,7 +315,6 @@ export async function GET(request: NextRequest) {
         otherTickets: regularTickets,
         aboTickets,
         serviceTickets,
-        employeeTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -403,7 +389,6 @@ export async function GET(request: NextRequest) {
         otherTickets: [...r.tickets, ...otherTickets],
         aboTickets,
         serviceTickets,
-        employeeTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -427,7 +412,6 @@ export async function GET(request: NextRequest) {
         otherTickets: [...primary.tickets, ...otherTickets],
         aboTickets,
         serviceTickets,
-        employeeTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -442,7 +426,6 @@ export async function GET(request: NextRequest) {
       otherTickets,
       aboTickets,
       serviceTickets,
-      employeeTickets,
       _count: { tickets: totalCount },
     };
   });
@@ -461,8 +444,7 @@ export async function GET(request: NextRequest) {
       otherTickets: unassignedTickets.filter((t) => t.source !== "EMP_CONTROL").map(enrichTicket),
       aboTickets: [],
       serviceTickets: [],
-      employeeTickets: unassignedTickets.filter((t) => t.source === "EMP_CONTROL").map(enrichTicket),
-      _count: { tickets: unassignedTickets.length },
+      _count: { tickets: unassignedTickets.filter((t) => t.source !== "EMP_CONTROL").length },
     },
   });
 }

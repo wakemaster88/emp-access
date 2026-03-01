@@ -16,7 +16,6 @@ import {
   MapPin,
   Clock,
   CreditCard,
-  UserCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
@@ -59,7 +58,6 @@ interface AreaData {
   otherTickets: TicketEntry[];
   aboTickets: TicketEntry[];
   serviceTickets?: TicketEntry[];
-  employeeTickets?: TicketEntry[];
   _count: { tickets: number };
 }
 
@@ -254,34 +252,6 @@ function AboSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicke
   );
 }
 
-function EmployeeSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicket: (id: number) => void }) {
-  const [open, setOpen] = useState(true);
-
-  if (tickets.length === 0) return null;
-
-  return (
-    <div className="mt-2">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-t transition-colors"
-      >
-        <UserCheck className="h-2.5 w-2.5 text-emerald-500 shrink-0" />
-        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Mitarbeiter</span>
-        <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-0.5">{tickets.length}</Badge>
-        <ChevronDown className={cn("h-3 w-3 text-slate-400 ml-auto transition-transform", open && "rotate-180")} />
-      </button>
-      {open && (
-        <div className="pl-0.5">
-          {tickets.map((ticket) => (
-            <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} hideType />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ServiceSection({ tickets, openTicket, collapse, hideType, hideTime }: { tickets: TicketEntry[]; openTicket: (id: number) => void; collapse?: boolean; hideType?: boolean; hideTime?: boolean }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
@@ -344,8 +314,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
   const hasOther = area.otherTickets.length > 0;
   const hasAbos = area.aboTickets.length > 0;
   const hasServices = (area.serviceTickets?.length ?? 0) > 0;
-  const hasEmployees = (area.employeeTickets?.length ?? 0) > 0;
-  const isEmpty = !hasResources && !hasOther && !hasAbos && !hasServices && !hasEmployees;
+  const isEmpty = !hasResources && !hasOther && !hasAbos && !hasServices;
 
   const isPrimaryServiceArea = !hasResources && !hasOther && hasServices;
   const svcHideTime = isPrimaryServiceArea && !!area.openingHours;
@@ -433,7 +402,6 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
             </div>
           )}
 
-          <EmployeeSection tickets={area.employeeTickets ?? []} openTicket={openTicket} />
           <AboSection tickets={area.aboTickets} openTicket={openTicket} />
           <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} collapse={hasResources || hasOther} hideType={svcHideType} hideTime={svcHideTime} />
         </div>
@@ -509,7 +477,7 @@ export function DashboardClient() {
     const seen = new Set<number>();
     const result: TicketEntry[] = [];
     for (const area of allAreas) {
-      const all = [...area.otherTickets, ...area.aboTickets, ...(area.serviceTickets || []), ...(area.employeeTickets || [])];
+      const all = [...area.otherTickets, ...area.aboTickets, ...(area.serviceTickets || [])];
       for (const res of area.resources) all.push(...res.tickets);
       for (const t of all) {
         if ((t.needsPhoto || t.needsRfid) && !seen.has(t.id)) {
