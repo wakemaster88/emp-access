@@ -16,7 +16,7 @@ const schema = z
     message: "Base URL ist für Wakesys erforderlich",
     path: ["baseUrl"],
   })
-  .refine((data) => data.provider === "WAKESYS" || data.token.trim().length > 0, {
+  .refine((data) => data.provider === "WAKESYS" || data.provider === "EMP_CONTROL" || data.token.trim().length > 0, {
     message: "API Token ist erforderlich",
     path: ["token"],
   });

@@ -74,10 +74,11 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
     description: "Personalmanagement-System (bidirektional)",
     color: "bg-indigo-500",
     fields: {
-      token: "API Token",
-      baseUrl: "System-URL",
+      token: "API Token (optional – nur für bidirektionale Sync)",
+      baseUrl: "System-URL (optional – nur für bidirektionale Sync)",
       extraConfig: "Zusatz-Konfiguration (JSON, optional)",
     },
+    tokenOptional: true,
   },
 };
 
@@ -102,7 +103,9 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const [copied, setCopied] = useState<string | null>(null);
 
   const isConfigured =
-    provider === "WAKESYS" ? !!initialData?.baseUrl?.trim() : !!initialData?.token;
+    provider === "WAKESYS" ? !!initialData?.baseUrl?.trim()
+    : provider === "EMP_CONTROL" ? !!initialData
+    : !!initialData?.token;
 
   const webhookSecret = (provider === "EMP_CONTROL" || provider === "ANNY") && data.extraConfig
     ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
@@ -494,7 +497,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 Entfernen
               </Button>
               <div className="flex items-center gap-2">
-                {syncEndpoint && isConfigured && (
+                {syncEndpoint && isConfigured && (provider !== "EMP_CONTROL" || !!data.token) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -509,7 +512,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <Button
                   size="sm"
                   onClick={handleSave}
-                  disabled={saving || (provider === "WAKESYS" ? !data.baseUrl?.trim() : !data.token)}
+                  disabled={saving || (provider === "WAKESYS" ? !data.baseUrl?.trim() : provider === "EMP_CONTROL" ? false : !data.token)}
                   className={cn(
                     "min-w-24",
                     saved ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600 hover:bg-indigo-700"
