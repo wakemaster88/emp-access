@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, CalendarDays } from "lucide-react";
+import { ChevronDown, Loader2, Trash2, Save, Pencil, ScanLine, CheckCircle2, XCircle, ShieldAlert, Camera, CalendarDays, MapPin } from "lucide-react";
 import { cn, fmtDateTime } from "@/lib/utils";
 
 interface AnnyBookingEntry {
@@ -105,6 +105,7 @@ export interface TicketData {
   uuid: string | null;
   source: string | null;
   _count: { scans: number };
+  ticketAreas?: { accessArea: { id: number; name: string } }[];
 }
 
 interface Area {
@@ -371,6 +372,16 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
               </div>
               {ticket?.ticketTypeName && (
                 <p className="text-xs text-slate-400 mt-0.5 truncate">{ticket.ticketTypeName}</p>
+              )}
+              {ticket?.source === "EMP_CONTROL" && ticket.ticketAreas && ticket.ticketAreas.length > 0 && (
+                <div className="flex items-center gap-1 flex-wrap mt-1">
+                  {ticket.ticketAreas.map((ta) => (
+                    <Badge key={ta.accessArea.id} variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400 font-normal gap-0.5">
+                      <MapPin className="h-2 w-2" />
+                      {ta.accessArea.name}
+                    </Badge>
+                  ))}
+                </div>
               )}
             </div>
           </div>

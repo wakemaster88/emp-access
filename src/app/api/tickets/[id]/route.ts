@@ -16,7 +16,7 @@ export async function GET(
   const { db, accountId } = session;
   const ticket = await db.ticket.findFirst({
     where: { id: ticketId, accountId: accountId! },
-    include: { _count: { select: { scans: true } } },
+    include: { _count: { select: { scans: true } }, ticketAreas: { include: { accessArea: { select: { id: true, name: true } } } } },
   });
   if (!ticket) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 

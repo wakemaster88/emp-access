@@ -233,6 +233,78 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
               </TableRow>
             )}
 
+            {regularGroups.map(({ resourceName, tickets: groupTickets }) => (
+              <React.Fragment key={resourceName}>
+                <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    {resourceName}
+                    <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
+                      ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
+                    </span>
+                  </TableCell>
+                </TableRow>
+                {groupTickets.map((ticket) => (
+                  <TableRow
+                    key={ticket.id}
+                    className={
+                      readonly
+                        ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
+                        : "hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
+                    }
+                    onClick={() => !readonly && setSelected(ticket)}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {ticket.profileImage ? (
+                          <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                        ) : null}
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                            {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                          </p>
+                          {(ticket.ticketTypeName || ticket.subscription?.name) && (
+                            <p className="text-xs text-slate-400 truncate">
+                              {ticket.ticketTypeName}
+                              {ticket.ticketTypeName && ticket.subscription?.name && " · "}
+                              {ticket.subscription?.name && (
+                                <span className="text-indigo-500 dark:text-indigo-400">{ticket.subscription.name}</span>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-xs font-mono text-slate-500">
+                      {displayCode(ticket)}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-sm">
+                      {sourceBadge(ticket.source)}
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                      {ticket.ticketTypeName || "–"}
+                    </TableCell>
+                    <TableCell>{statusBadge(ticket.status)}</TableCell>
+                    <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                      <ValidityInfo ticket={ticket} />
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {ticket._count.scans > 0 ? (
+                        <Link
+                          href={`/scans`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          {ticket._count.scans}
+                        </Link>
+                      ) : (
+                        <span className="text-slate-400">0</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </React.Fragment>
+            ))}
+
             {employeeTickets.length > 0 && (
               <>
                 <TableRow className="bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/20">
@@ -309,78 +381,6 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                 })}
               </>
             )}
-
-            {regularGroups.map(({ resourceName, tickets: groupTickets }) => (
-              <React.Fragment key={resourceName}>
-                <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                    {resourceName}
-                    <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
-                      ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
-                    </span>
-                  </TableCell>
-                </TableRow>
-                {groupTickets.map((ticket) => (
-                  <TableRow
-                    key={ticket.id}
-                    className={
-                      readonly
-                        ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
-                        : "hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
-                    }
-                    onClick={() => !readonly && setSelected(ticket)}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {ticket.profileImage ? (
-                          <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
-                        ) : null}
-                        <div className="min-w-0">
-                          <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                            {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                          </p>
-                          {(ticket.ticketTypeName || ticket.subscription?.name) && (
-                            <p className="text-xs text-slate-400 truncate">
-                              {ticket.ticketTypeName}
-                              {ticket.ticketTypeName && ticket.subscription?.name && " · "}
-                              {ticket.subscription?.name && (
-                                <span className="text-indigo-500 dark:text-indigo-400">{ticket.subscription.name}</span>
-                              )}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-xs font-mono text-slate-500">
-                      {displayCode(ticket)}
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell text-sm">
-                      {sourceBadge(ticket.source)}
-                    </TableCell>
-                    <TableCell className="hidden xl:table-cell text-sm text-slate-500">
-                      {ticket.ticketTypeName || "–"}
-                    </TableCell>
-                    <TableCell>{statusBadge(ticket.status)}</TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-slate-500">
-                      <ValidityInfo ticket={ticket} />
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {ticket._count.scans > 0 ? (
-                        <Link
-                          href={`/scans`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
-                        >
-                          {ticket._count.scans}
-                        </Link>
-                      ) : (
-                        <span className="text-slate-400">0</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </React.Fragment>
-            ))}
           </TableBody>
         </Table>
       </div>
