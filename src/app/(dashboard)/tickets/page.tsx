@@ -80,6 +80,7 @@ export default async function TicketsPage({ searchParams }: Props) {
         defaultSlotStart: true,
         defaultSlotEnd: true,
         defaultValidityDurationMinutes: true,
+        areas: { select: { id: true } },
       },
     }),
     db.service.findMany({
@@ -94,12 +95,23 @@ export default async function TicketsPage({ searchParams }: Props) {
         defaultSlotStart: true,
         defaultSlotEnd: true,
         defaultValidityDurationMinutes: true,
+        requiresPhoto: true,
+        serviceAreas: { select: { accessAreaId: true } },
       },
     }),
     showInactive
       ? Promise.resolve(0)
       : db.ticket.count({ where: { ...baseWhere, ...areaFilter, status: { notIn: ["VALID", "REDEEMED"] } } }),
   ]);
+
+  const subsWithAreas = subscriptions.map((s) => ({
+    ...s,
+    areaIds: s.areas.map((a) => a.id),
+  }));
+  const svcsWithAreas = services.map((s) => ({
+    ...s,
+    areaIds: s.serviceAreas.map((sa) => sa.accessAreaId),
+  }));
 
   const filterArea = areaId ? areas.find((a) => a.id === areaId) : null;
   const toggleHref = showInactive
@@ -142,7 +154,7 @@ export default async function TicketsPage({ searchParams }: Props) {
                     : <><Eye className="h-4 w-4 mr-1.5" /><span className="hidden xs:inline">Auch inaktive</span><span className="xs:hidden">Alle</span></>}
                 </Link>
               </Button>
-              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subscriptions} services={services} />}
+              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} />}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -154,8 +166,8 @@ export default async function TicketsPage({ searchParams }: Props) {
             <TicketsTable
               tickets={tickets as never}
               areas={areas}
-              subscriptions={subscriptions}
-              services={services}
+              subscriptions={subsWithAreas}
+              services={svcsWithAreas}
               readonly={isSuperAdmin}
               searchCode={codeTrim || undefined}
             />

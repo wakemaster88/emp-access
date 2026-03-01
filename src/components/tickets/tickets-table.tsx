@@ -22,11 +22,14 @@ interface Area {
 interface Sub {
   id: number;
   name: string;
+  areaIds?: number[];
 }
 
 interface Svc {
   id: number;
   name: string;
+  areaIds?: number[];
+  requiresPhoto?: boolean;
 }
 
 interface TicketsTableProps {

@@ -115,12 +115,14 @@ interface Area {
 interface Sub {
   id: number;
   name: string;
+  areaIds?: number[];
 }
 
 interface Svc {
   id: number;
   name: string;
   requiresPhoto?: boolean;
+  areaIds?: number[];
 }
 
 interface ScanRecord {
@@ -442,7 +444,12 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                   set("serviceId", v);
                   if (v !== "none") {
                     const svc = services.find((s) => String(s.id) === v);
-                    if (svc) set("ticketTypeName", svc.name);
+                    if (svc) {
+                      set("ticketTypeName", svc.name);
+                      if (svc.areaIds?.length && form.accessAreaId === "none") {
+                        set("accessAreaId", String(svc.areaIds[0]));
+                      }
+                    }
                   }
                 }}>
                   <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Kein Service" /></SelectTrigger>
@@ -486,7 +493,15 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[11px] text-slate-500">Abo</Label>
-                      <Select value={form.subscriptionId} onValueChange={(v) => set("subscriptionId", v)}>
+                      <Select value={form.subscriptionId} onValueChange={(v) => {
+                        set("subscriptionId", v);
+                        if (v !== "none") {
+                          const sub = subscriptions.find((s) => String(s.id) === v);
+                          if (sub?.areaIds?.length && form.accessAreaId === "none") {
+                            set("accessAreaId", String(sub.areaIds[0]));
+                          }
+                        }
+                      }}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Kein Abo" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">Kein Abo</SelectItem>

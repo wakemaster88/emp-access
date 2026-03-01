@@ -39,11 +39,13 @@ interface DefaultValidity {
 interface Sub extends DefaultValidity {
   id: number;
   name: string;
+  areaIds?: number[];
 }
 
 interface Svc extends DefaultValidity {
   id: number;
   name: string;
+  areaIds?: number[];
 }
 
 function toDateInput(val: string | Date | null | undefined): string {
@@ -261,11 +263,13 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
                 <Select value={form.serviceId} onValueChange={(v) => {
                   set("serviceId", v);
                   if (v !== "none") {
-                    set("accessAreaId", "none");
                     const svc = services.find((s) => String(s.id) === v);
                     if (svc) {
                       set("ticketTypeName", svc.name);
                       applyDefaultValidity(svc);
+                      if (svc.areaIds?.length) {
+                        set("accessAreaId", String(svc.areaIds[0]));
+                      }
                     }
                   } else {
                     set("ticketTypeName", "");
@@ -318,9 +322,13 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
                     <Select value={form.subscriptionId} onValueChange={(v) => {
                       set("subscriptionId", v);
                       if (v !== "none") {
-                        set("accessAreaId", "none");
                         const sub = subscriptions.find((s) => String(s.id) === v);
-                        if (sub) applyDefaultValidity(sub);
+                        if (sub) {
+                          applyDefaultValidity(sub);
+                          if (sub.areaIds?.length) {
+                            set("accessAreaId", String(sub.areaIds[0]));
+                          }
+                        }
                       }
                     }}>
                       <SelectTrigger>
