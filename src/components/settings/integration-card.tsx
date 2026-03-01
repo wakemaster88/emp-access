@@ -109,7 +109,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     : null;
   const webhookUrl = typeof window !== "undefined"
     ? provider === "EMP_CONTROL"
-      ? `${window.location.origin}/api/integrations/emp-control/webhook`
+      ? `${window.location.origin}/api/webhook/emp-control`
       : provider === "ANNY"
         ? `${window.location.origin}/api/integrations/anny/webhook`
         : ""
@@ -118,7 +118,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const empControlApiDescription = (
     <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
       <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
-      <p><strong>POST</strong> {webhookUrl || "/api/integrations/emp-control/webhook"}</p>
+      <p><strong>POST</strong> {webhookUrl || "/api/webhook/emp-control"}</p>
       <p><strong>Header:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
       <p><strong>Body (JSON):</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaId" } ] }`}</code></p>
       <p><strong>Ressourcen:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaId</code> (oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> / <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">resourceIds</code>) – ID der Access Area (Ressource), bei der der Mitarbeiter Zugang hat. Optional.</p>
@@ -278,7 +278,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               <CardDescription className="text-xs mt-0.5">{meta.description}</CardDescription>
               {provider === "EMP_CONTROL" && (
                 <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{webhookUrl || "/api/integrations/emp-control/webhook"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
+                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{webhookUrl || "/api/webhook/emp-control"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
                 </div>
               )}
               {provider === "ANNY" && isConfigured && (
