@@ -163,7 +163,6 @@ export function ScannerClient() {
         {
           fps: 15,
           qrbox: qrboxFn,
-          formatsToSupport: undefined,
           experimentalFeatures: { useBarCodeDetectorIfSupported: true },
         },
         (decodedText) => {
