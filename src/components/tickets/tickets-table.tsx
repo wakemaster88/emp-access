@@ -163,7 +163,11 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
   );
 }
 
-type TicketWithArea = TicketData & { accessArea?: { name: string } | null };
+type TicketWithArea = TicketData & {
+  accessArea?: { name: string } | null;
+  subscription?: { name: string } | null;
+  service?: { name: string } | null;
+};
 
 export function TicketsTable({ tickets, areas, subscriptions = [], services = [], readonly, searchCode }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
@@ -249,9 +253,13 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
                             {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
                           </p>
-                          {ticket.ticketTypeName && (
-                            <p className="text-xs text-slate-400 xl:hidden truncate">
+                          {(ticket.ticketTypeName || ticket.subscription?.name) && (
+                            <p className="text-xs text-slate-400 truncate">
                               {ticket.ticketTypeName}
+                              {ticket.ticketTypeName && ticket.subscription?.name && " · "}
+                              {ticket.subscription?.name && (
+                                <span className="text-indigo-500 dark:text-indigo-400">{ticket.subscription.name}</span>
+                              )}
                             </p>
                           )}
                         </div>
