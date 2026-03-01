@@ -41,16 +41,6 @@ export default async function SettingsPage() {
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
   const existingShellyIds = shellyDevices.map((d) => d.shellyId!).filter(Boolean);
 
-  const annyConfig = apiConfigs.find((c) => c.provider === "ANNY");
-  let annyWebhookSecret: string | null = null;
-  if (annyConfig?.extraConfig) {
-    try {
-      const extra = JSON.parse(annyConfig.extraConfig) as { webhookSecret?: string };
-      annyWebhookSecret = extra.webhookSecret ?? null;
-    } catch { /* ignore */ }
-  }
-  const annyWebhookUrl = annyConfig ? `${baseUrl.replace(/\/$/, "")}/api/integrations/anny/webhook` : null;
-
   const configByProvider = Object.fromEntries(
     apiConfigs.map((c) => [c.provider, c])
   );
@@ -105,8 +95,6 @@ export default async function SettingsPage() {
           <OwnApiCard
             baseUrl={baseUrl}
             apiToken={account?.apiToken ?? ""}
-            annyWebhookUrl={annyWebhookUrl}
-            annyWebhookSecret={annyWebhookSecret}
           />
         </section>
 

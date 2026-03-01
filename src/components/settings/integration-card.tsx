@@ -104,21 +104,41 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const isConfigured =
     provider === "WAKESYS" ? !!initialData?.baseUrl?.trim() : !!initialData?.token;
 
-  const empControlWebhookSecret = provider === "EMP_CONTROL" && data.extraConfig
+  const webhookSecret = (provider === "EMP_CONTROL" || provider === "ANNY") && data.extraConfig
     ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
     : null;
-  const empControlWebhookUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/api/integrations/emp-control/webhook`
+  const webhookUrl = typeof window !== "undefined"
+    ? provider === "EMP_CONTROL"
+      ? `${window.location.origin}/api/integrations/emp-control/webhook`
+      : provider === "ANNY"
+        ? `${window.location.origin}/api/integrations/anny/webhook`
+        : ""
     : "";
 
-  const webhookApiDescription = (
+  const empControlApiDescription = (
     <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
       <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
-      <p><strong>POST</strong> {empControlWebhookUrl || "/api/integrations/emp-control/webhook"}</p>
+      <p><strong>POST</strong> {webhookUrl || "/api/integrations/emp-control/webhook"}</p>
       <p><strong>Header:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
       <p><strong>Body (JSON):</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaId" } ] }`}</code></p>
       <p><strong>Ressourcen:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaId</code> (oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> / <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">resourceIds</code>) – ID der Access Area (Ressource), bei der der Mitarbeiter Zugang hat. Optional.</p>
       <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">emp-&lt;id&gt;</code>) oder aktualisiert es, falls es bereits existiert.</p>
+    </div>
+  );
+
+  const annyApiDescription = (
+    <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
+      <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
+      <p><strong>POST</strong> {webhookUrl || "/api/integrations/anny/webhook"}</p>
+      <p><strong>Header:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
+      <p><strong>Body (JSON):</strong></p>
+      <ul className="list-disc list-inside space-y-0.5 pl-1">
+        <li><code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">{`{ "booking": { ... } }`}</code> — einzelne Buchung</li>
+        <li><code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">{`{ "bookings": [ ... ] }`}</code> — mehrere Buchungen</li>
+        <li><code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">{`{ "data": { "booking": { ... } } }`}</code> — anny.co Webhook-Format</li>
+      </ul>
+      <p><strong>Booking-Felder:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">id, number, start_date, end_date, status, customer (id, full_name, first_name, last_name), resource (id, name), service (id, name)</code></p>
+      <p>Der Webhook ordnet Buchungen automatisch Services, Abos oder Bereichen zu und erstellt/aktualisiert Tickets. Stornierte Buchungen werden ignoriert.</p>
     </div>
   );
 
@@ -258,7 +278,12 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               <CardDescription className="text-xs mt-0.5">{meta.description}</CardDescription>
               {provider === "EMP_CONTROL" && (
                 <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{empControlWebhookUrl || "/api/integrations/emp-control/webhook"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
+                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{webhookUrl || "/api/integrations/emp-control/webhook"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
+                </div>
+              )}
+              {provider === "ANNY" && isConfigured && (
+                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{webhookUrl || "/api/integrations/anny/webhook"}</code> – Buchungen empfangen. Details beim Öffnen.</p>
                 </div>
               )}
             </div>
@@ -357,17 +382,24 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               </div>
             )}
 
-            {provider === "EMP_CONTROL" && (
+            {(provider === "EMP_CONTROL" || provider === "ANNY") && (
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
                 <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Webhook – Mitarbeiter von emp-control pushen
+                  {provider === "EMP_CONTROL"
+                    ? "Webhook – Mitarbeiter von emp-control pushen"
+                    : "Webhook – Buchungen von anny.co empfangen"}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-500">
+                  {provider === "ANNY"
+                    ? "In anny.co diese URL als Webhook eintragen. Bei neuer/geänderter Buchung sendet anny.co automatisch einen POST und EMP legt daraus ein Ticket an oder aktualisiert es."
+                    : "emp-control sendet Mitarbeiterdaten per POST an diesen Webhook."}
                 </p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Label className="text-[11px] text-slate-500 shrink-0">URL</Label>
                     <Input
                       readOnly
-                      value={empControlWebhookUrl}
+                      value={webhookUrl}
                       className="font-mono text-xs h-8 bg-white dark:bg-slate-900"
                     />
                     <Button
@@ -375,19 +407,19 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       variant="outline"
                       size="icon"
                       className="h-8 w-8 shrink-0"
-                      onClick={() => copyToClipboard(empControlWebhookUrl, "url")}
+                      onClick={() => copyToClipboard(webhookUrl, "wh-url")}
                     >
-                      {copied === "url" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied === "wh-url" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
                     <Label className="text-[11px] text-slate-500 shrink-0">Secret</Label>
-                    {empControlWebhookSecret ? (
+                    {webhookSecret ? (
                       <>
                         <Input
                           readOnly
                           type="password"
-                          value={empControlWebhookSecret}
+                          value={webhookSecret}
                           className="font-mono text-xs h-8 bg-white dark:bg-slate-900"
                         />
                         <Button
@@ -395,17 +427,17 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                           variant="outline"
                           size="icon"
                           className="h-8 w-8 shrink-0"
-                          onClick={() => copyToClipboard(empControlWebhookSecret, "secret")}
+                          onClick={() => copyToClipboard(webhookSecret, "wh-secret")}
                         >
-                          {copied === "secret" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                          {copied === "wh-secret" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
                         </Button>
                       </>
                     ) : (
-                      <span className="text-xs text-slate-400">Nach dem Speichern der Integration wird ein Geheimnis erzeugt und hier angezeigt.</span>
+                      <span className="text-xs text-slate-400">Nach dem Speichern wird ein Webhook-Secret erzeugt und hier angezeigt.</span>
                     )}
                   </div>
                 </div>
-                {webhookApiDescription}
+                {provider === "EMP_CONTROL" ? empControlApiDescription : annyApiDescription}
               </div>
             )}
 
