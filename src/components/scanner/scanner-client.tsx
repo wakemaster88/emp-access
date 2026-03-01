@@ -23,6 +23,39 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+function playTone(granted: boolean) {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+
+    if (granted) {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(1320, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.35);
+    } else {
+      osc.type = "square";
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(220, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    }
+
+    osc.onended = () => ctx.close();
+  } catch {
+    /* AudioContext not available */
+  }
+}
+
 interface ScanResult {
   id: string;
   code: string;
@@ -104,6 +137,7 @@ export function ScannerClient() {
 
         setLastResult(result);
         setScanHistory((prev) => [result, ...prev].slice(0, 50));
+        playTone(data.granted);
 
         if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
         resultTimerRef.current = setTimeout(() => {
@@ -117,6 +151,7 @@ export function ScannerClient() {
           message: "Netzwerkfehler",
           time: new Date(),
         });
+        playTone(false);
       }
     },
     [selectedArea]
