@@ -9,6 +9,6 @@ export async function GET() {
     webhook: "emp-control",
     method: "POST",
     auth: "Authorization: Bearer <webhook-secret> or X-Webhook-Secret: <webhook-secret>",
-    body: '{ "employees": [ { "id", "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaId" } ] }',
+    body: '{ "employees": [ { "id", "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaIds": [1, 2, 3] } ] }',
   });
 }

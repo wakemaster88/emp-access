@@ -59,7 +59,7 @@ export default async function TicketsPage({ searchParams }: Props) {
   const [tickets, areas, subscriptions, services, inactiveCount] = await Promise.all([
     db.ticket.findMany({
       where: { ...baseWhere, ...statusFilter, ...areaFilter, ...codeFilter, ...sourceFilter },
-      include: { accessArea: true, subscription: true, service: true, _count: { select: { scans: true } } },
+      include: { accessArea: true, subscription: true, service: true, ticketAreas: { include: { accessArea: true } }, _count: { select: { scans: true } } },
       orderBy: buildOrderBy(sort, orderDir),
       take: 500,
     }),

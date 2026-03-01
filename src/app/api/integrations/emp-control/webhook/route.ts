@@ -5,7 +5,8 @@ import { prisma, tenantClient } from "@/lib/prisma";
  * Webhook für emp-control: Mitarbeiter per POST übermitteln.
  * Auth: Header "Authorization: Bearer <webhookSecret>" oder "X-Webhook-Secret: <webhookSecret>".
  * Body: { "employees": [ { "id", "firstName", "lastName", "rfidCode"|"cardId", "contractStart", "contractEnd", "active", "areaId"|"areaIds"|"resourceIds" } ] }
- * areaId / areaIds[0] / resourceIds[0] = AccessArea-ID (Ressource), bei der der Mitarbeiter Zugang hat. Optional.
+ * areaId  = einzelne AccessArea-ID
+ * areaIds / resourceIds = Array von AccessArea-IDs (Mitarbeiter hat Zugang zu mehreren Bereichen)
  */
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -70,14 +71,20 @@ export async function POST(request: NextRequest) {
     const id = emp.id ?? emp.employeeId;
     if (id == null) continue;
 
-    const rawAreaId = emp.areaId ?? emp.accessAreaId ?? (Array.isArray(emp.areaIds) ? emp.areaIds[0] : undefined) ?? (Array.isArray(emp.resourceIds) ? emp.resourceIds[0] : undefined);
-    const accessAreaId =
-      rawAreaId != null && validAreaIds.has(Number(rawAreaId)) ? Number(rawAreaId) : null;
+    const rawIds: number[] = [];
+    if (Array.isArray(emp.areaIds)) {
+      for (const a of emp.areaIds) if (validAreaIds.has(Number(a))) rawIds.push(Number(a));
+    }
+    if (Array.isArray(emp.resourceIds)) {
+      for (const a of emp.resourceIds) if (validAreaIds.has(Number(a))) rawIds.push(Number(a));
+    }
+    if (emp.areaId != null && validAreaIds.has(Number(emp.areaId))) rawIds.push(Number(emp.areaId));
+    if (emp.accessAreaId != null && validAreaIds.has(Number(emp.accessAreaId))) rawIds.push(Number(emp.accessAreaId));
+    const areaIds = [...new Set(rawIds)];
+    const primaryAreaId = areaIds[0] ?? null;
 
     const uuid = `emp-${id}`;
-    const existing = await db.ticket.findFirst({
-      where: { uuid },
-    });
+    const existing = await db.ticket.findFirst({ where: { uuid } });
 
     const ticketData = {
       name: `${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim() || String(id),
@@ -89,20 +96,26 @@ export async function POST(request: NextRequest) {
       status: emp.active !== false ? ("VALID" as const) : ("INVALID" as const),
       ticketTypeName: "Mitarbeiter",
       source: "EMP_CONTROL" as const,
-      accessAreaId,
+      accessAreaId: primaryAreaId,
     };
 
+    let ticketId: number;
     if (existing) {
-      await db.ticket.update({
-        where: { id: existing.id },
-        data: ticketData,
-      });
+      await db.ticket.update({ where: { id: existing.id }, data: ticketData });
+      ticketId = existing.id;
       updated++;
     } else {
-      await db.ticket.create({
-        data: { ...ticketData, uuid, accountId },
-      });
+      const t = await db.ticket.create({ data: { ...ticketData, uuid, accountId } });
+      ticketId = t.id;
       created++;
+    }
+
+    if (areaIds.length > 0) {
+      await db.ticketArea.deleteMany({ where: { ticketId } });
+      await db.ticketArea.createMany({
+        data: areaIds.map((accessAreaId) => ({ ticketId, accessAreaId })),
+        skipDuplicates: true,
+      });
     }
   }
 

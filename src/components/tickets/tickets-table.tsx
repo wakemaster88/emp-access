@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { EditTicketDialog, type TicketData } from "./edit-ticket-dialog";
 import { fmtDateShort, fmtDateTimeShort, isDateOnly } from "@/lib/utils";
+import { UserCheck, MapPin } from "lucide-react";
 
 interface Area {
   id: number;
@@ -167,27 +168,34 @@ type TicketWithArea = TicketData & {
   accessArea?: { name: string } | null;
   subscription?: { name: string } | null;
   service?: { name: string } | null;
+  ticketAreas?: { accessArea: { id: number; name: string } }[];
 };
 
 export function TicketsTable({ tickets, areas, subscriptions = [], services = [], readonly, searchCode }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
   const openedForCodeRef = useRef<string | null>(null);
 
-  const groupedByResource = useMemo(() => {
+  const { regularGroups, employeeTickets } = useMemo(() => {
+    const allTickets = tickets as TicketWithArea[];
+    const empTickets = allTickets.filter((t) => t.source === "EMP_CONTROL");
+    const regTickets = allTickets.filter((t) => t.source !== "EMP_CONTROL");
+
     const map = new Map<string, TicketWithArea[]>();
-    for (const t of tickets as TicketWithArea[]) {
+    for (const t of regTickets) {
       const name = t.accessArea?.name ?? "Keine Resource";
       if (!map.has(name)) map.set(name, []);
       map.get(name)!.push(t);
     }
     const none = "Keine Resource";
-    return Array.from(map.entries())
+    const groups = Array.from(map.entries())
       .sort(([a], [b]) => {
         if (a === none) return 1;
         if (b === none) return -1;
         return a.localeCompare(b, "de");
       })
       .map(([resourceName, list]) => ({ resourceName, tickets: list }));
+
+    return { regularGroups: groups, employeeTickets: empTickets };
   }, [tickets]);
 
   useEffect(() => {
@@ -224,7 +232,85 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                 </TableCell>
               </TableRow>
             )}
-            {groupedByResource.map(({ resourceName, tickets: groupTickets }) => (
+
+            {employeeTickets.length > 0 && (
+              <>
+                <TableRow className="bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/20">
+                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                    <span className="flex items-center gap-1.5">
+                      <UserCheck className="h-3.5 w-3.5" />
+                      Mitarbeiter
+                      <span className="font-normal text-emerald-500 dark:text-emerald-500/70">
+                        ({employeeTickets.length})
+                      </span>
+                    </span>
+                  </TableCell>
+                </TableRow>
+                {employeeTickets.map((ticket) => {
+                  const empAreas = (ticket as TicketWithArea).ticketAreas?.map((ta) => ta.accessArea) ?? [];
+                  return (
+                    <TableRow
+                      key={ticket.id}
+                      className={readonly ? "" : "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/50"}
+                      onClick={() => !readonly && setSelected(ticket)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {ticket.profileImage ? (
+                            <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+                              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                              {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                            </p>
+                            {empAreas.length > 0 && (
+                              <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                {empAreas.map((a) => (
+                                  <Badge key={a.id} variant="outline" className="text-[9px] px-1 py-0 border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400 font-normal gap-0.5">
+                                    <MapPin className="h-2 w-2" />
+                                    {a.name}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs font-mono text-slate-500">
+                        {displayCode(ticket)}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-sm">
+                        {sourceBadge(ticket.source)}
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                        Mitarbeiter
+                      </TableCell>
+                      <TableCell>{statusBadge(ticket.status)}</TableCell>
+                      <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                        <ValidityInfo ticket={ticket} />
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {ticket._count.scans > 0 ? (
+                          <Link href="/scans" onClick={(e) => e.stopPropagation()} className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                            {ticket._count.scans}
+                          </Link>
+                        ) : (
+                          <span className="text-slate-400">0</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </>
+            )}
+
+            {regularGroups.map(({ resourceName, tickets: groupTickets }) => (
               <React.Fragment key={resourceName}>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
                   <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">

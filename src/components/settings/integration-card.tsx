@@ -123,9 +123,9 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
       <p><strong>POST</strong> {webhookUrl || "/api/webhook/emp-control"}</p>
       <p><strong>Header:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
-      <p><strong>Body (JSON):</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaId" } ] }`}</code></p>
-      <p><strong>Ressourcen:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaId</code> (oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> / <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">resourceIds</code>) – ID der Access Area (Ressource), bei der der Mitarbeiter Zugang hat. Optional.</p>
-      <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">emp-&lt;id&gt;</code>) oder aktualisiert es, falls es bereits existiert.</p>
+      <p><strong>Body (JSON):</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaIds": [1, 2, 3] } ] }`}</code></p>
+      <p><strong>Ressourcen:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> (Array) – IDs der Access Areas, bei denen der Mitarbeiter Zugang hat. Alternativ: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaId</code> (einzeln) oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">resourceIds</code>.</p>
+      <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">emp-&lt;id&gt;</code>) und verknüpft es mit allen angegebenen Ressourcen.</p>
     </div>
   );
 

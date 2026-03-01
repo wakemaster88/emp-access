@@ -142,6 +142,7 @@ model Ticket {
   accessArea              AccessArea?  @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
   subscription            Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
   service                 Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  ticketAreas             TicketArea[]
   scans                   Scan[]
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
@@ -189,6 +190,7 @@ model AccessArea {
   parent          AccessArea?  @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children        AccessArea[] @relation("AreaHierarchy")
   tickets         Ticket[]
+  ticketAreas     TicketArea[]
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
   createdAt       DateTime     @default(now())
@@ -196,6 +198,18 @@ model AccessArea {
 
   @@index([accountId])
   @@index([parentId])
+}
+
+model TicketArea {
+  id           Int        @id @default(autoincrement())
+  ticketId     Int
+  accessAreaId Int
+  ticket       Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  accessArea   AccessArea @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, accessAreaId])
+  @@index([ticketId])
+  @@index([accessAreaId])
 }
 
 model Subscription {
