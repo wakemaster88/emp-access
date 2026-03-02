@@ -14,7 +14,7 @@ logger = logging.getLogger("emp.scanner")
 
 try:
     import evdev
-    from evdev import InputDevice, categorize, ecodes
+    from evdev import InputDevice, ecodes
     HAS_EVDEV = True
 except ImportError:
     HAS_EVDEV = False
@@ -131,26 +131,27 @@ class ScannerInput:
                         break
                     if event.type != ecodes.EV_KEY:
                         continue
-                    key_event = categorize(event)
 
-                    if key_event.keystate == 1:  # key down
-                        code = key_event.scancode
-                        if code in (42, 54):
+                    scancode = event.code
+                    value = event.value  # 0=up, 1=down, 2=repeat
+
+                    if value == 1:  # key down
+                        if scancode in (42, 54):
                             shift = True
                             continue
-                        if code == 28:  # Enter → Scan komplett
+                        if scancode == 28:  # Enter → Scan komplett
                             scanned = "".join(buffer).strip()
                             buffer.clear()
                             if scanned:
                                 self.on_scan(scanned)
                             continue
                         char_map = KEY_MAP_SHIFT if shift else KEY_MAP
-                        char = char_map.get(code)
+                        char = char_map.get(scancode)
                         if char:
                             buffer.append(char.upper() if shift else char)
                         shift = False
-                    elif key_event.keystate == 0:
-                        if key_event.scancode in (42, 54):
+                    elif value == 0:  # key up
+                        if scancode in (42, 54):
                             shift = False
 
             except OSError:
