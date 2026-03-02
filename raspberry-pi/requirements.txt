@@ -1,5 +1,2 @@
 evdev>=1.7.0
 requests>=2.31.0
-RPi.GPIO>=0.7.1; platform_machine == "armv7l"
-# lgpio optional – wird im Code nicht verwendet; bei Buster/älterem OS oft nicht bautbar (liblgpio fehlt)
-# Optional installieren: pip install lgpio

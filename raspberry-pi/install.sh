@@ -138,19 +138,50 @@ python3 -m venv "$INSTALL_DIR/venv"
 export LDFLAGS="-L/usr/local/lib ${LDFLAGS:-}"
 export CPPFLAGS="-I/usr/local/include ${CPPFLAGS:-}"
 export LD_LIBRARY_PATH="/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-"$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/raspberry-pi/requirements.txt" || {
-    echo "  pip install fehlgeschlagen (evtl. lgpio). Erneuter Versuch mit expliziten Pfaden..."
+"$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/raspberry-pi/requirements.txt"
+
+# ─── GPIO-Bibliothek installieren (RPi.GPIO oder rpi-lgpio als Fallback) ──
+echo "→ GPIO-Bibliothek installieren..."
+ARCH=$(uname -m)
+GPIO_OK=0
+
+# Versuch 1: RPi.GPIO (funktioniert auf armv7l und oft auf aarch64)
+if "$INSTALL_DIR/venv/bin/pip" install -q RPi.GPIO 2>/dev/null; then
+    if "$INSTALL_DIR/venv/bin/python" -c "import RPi.GPIO" 2>/dev/null; then
+        echo "  RPi.GPIO installiert ($ARCH)"
+        GPIO_OK=1
+    fi
+fi
+
+# Versuch 2: rpi-lgpio (Drop-in-Ersatz, braucht lgpio; funktioniert auf Bookworm/Trixie)
+if [ "$GPIO_OK" -eq 0 ]; then
+    echo "  RPi.GPIO nicht verfügbar, versuche rpi-lgpio..."
+    if "$INSTALL_DIR/venv/bin/pip" install -q rpi-lgpio 2>/dev/null; then
+        if "$INSTALL_DIR/venv/bin/python" -c "import RPi.GPIO" 2>/dev/null; then
+            echo "  rpi-lgpio installiert ($ARCH)"
+            GPIO_OK=1
+        fi
+    fi
+fi
+
+# Versuch 3: lgpio direkt mit Build-Flags
+if [ "$GPIO_OK" -eq 0 ]; then
+    echo "  rpi-lgpio fehlgeschlagen, versuche lgpio mit Build-Flags..."
     export LDFLAGS="-L/usr/local/lib -Wl,-rpath,/usr/local/lib ${LDFLAGS:-}"
     export CPPFLAGS="-I/usr/local/include ${CPPFLAGS:-}"
     export LD_LIBRARY_PATH="/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    "$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/raspberry-pi/requirements.txt" || {
-        echo ""
-        echo "Fehler: Python-Abhängigkeiten (lgpio) konnten nicht gebaut werden."
-        echo "Unter Buster: lg-Bibliothek wird aus Quellcode gebaut; LDFLAGS/CPPFLAGS sollten gesetzt sein."
-        echo "Falls das Problem bleibt: Raspberry Pi OS auf Bullseye/Bookworm upgraden (dort ist liblgpio-dev verfügbar)."
-        exit 1
-    }
-}
+    if "$INSTALL_DIR/venv/bin/pip" install -q rpi-lgpio 2>/dev/null; then
+        if "$INSTALL_DIR/venv/bin/python" -c "import RPi.GPIO" 2>/dev/null; then
+            echo "  rpi-lgpio installiert mit Build-Flags ($ARCH)"
+            GPIO_OK=1
+        fi
+    fi
+fi
+
+if [ "$GPIO_OK" -eq 0 ]; then
+    echo "  WARNUNG: Keine GPIO-Bibliothek installiert – Scanner läuft ohne Relais/LED/Buzzer."
+    echo "  Manuell installieren: sudo /opt/emp-scanner/venv/bin/pip install RPi.GPIO"
+fi
 
 # ─── Hardware Watchdog ────────────────────────────────────────────────────────
 
