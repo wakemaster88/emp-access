@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
         service: { select: { allowReentry: true, name: true } },
         subscription: { select: { name: true } },
         accessArea: { select: { name: true } },
+        ticketAreas: { select: { accessAreaId: true } },
       },
     });
     if (ticket) break;
@@ -116,18 +117,27 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (accessAreaId && ticket.accessAreaId && ticket.accessAreaId !== accessAreaId) {
-    await db.scan.create({
-      data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
-    });
-    return NextResponse.json({ granted: false, message: "Resource nicht erlaubt" });
+  const isEmployee = ticket.source === "EMP_CONTROL";
+
+  if (accessAreaId) {
+    const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
+    const allTicketAreas = ticket.accessAreaId
+      ? [ticket.accessAreaId, ...ticketAreaIds]
+      : ticketAreaIds;
+    const hasAccess = allTicketAreas.length === 0 || allTicketAreas.includes(accessAreaId);
+    if (!hasAccess) {
+      await db.scan.create({
+        data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
+      });
+      return NextResponse.json({ granted: false, message: "Resource nicht erlaubt" });
+    }
   }
 
   await db.scan.create({
     data: { code, result: "GRANTED", ticketId: ticket.id, accountId: accountId! },
   });
 
-  if (ticket.status === "VALID") {
+  if (ticket.status === "VALID" && !isEmployee) {
     const updateData: Record<string, unknown> = { status: "REDEEMED" };
     if (vType === "DURATION" && !ticket.firstScanAt) {
       updateData.firstScanAt = now;

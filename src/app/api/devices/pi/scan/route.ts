@@ -73,7 +73,10 @@ export async function POST(request: NextRequest) {
           { uuid: c },
         ],
       },
-      include: { service: { select: { allowReentry: true } } },
+      include: {
+        service: { select: { allowReentry: true } },
+        ticketAreas: { select: { accessAreaId: true } },
+      },
     });
     if (ticket) break;
   }
@@ -168,10 +171,17 @@ export async function POST(request: NextRequest) {
     // firstScanAt will be set below on first GRANTED scan
   }
 
+  const isEmployee = ticket.source === "EMP_CONTROL";
+
   // Access area check (only if device has areas configured)
   if (device.accessIn || device.accessOut) {
-    const allowedAreas = [device.accessIn, device.accessOut].filter(Boolean);
-    if (ticket.accessAreaId && !allowedAreas.includes(ticket.accessAreaId)) {
+    const deviceAreas = [device.accessIn, device.accessOut].filter(Boolean) as number[];
+    const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
+    const allTicketAreas = ticket.accessAreaId
+      ? [ticket.accessAreaId, ...ticketAreaIds]
+      : ticketAreaIds;
+    const hasAccess = allTicketAreas.length === 0 || allTicketAreas.some((a) => deviceAreas.includes(a));
+    if (!hasAccess) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
@@ -179,8 +189,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Re-entry check (if disabled, check if ticket was already scanned at this device)
-  if (!device.allowReentry) {
+  // Re-entry check (employees always allowed; otherwise check device setting)
+  if (!device.allowReentry && !isEmployee) {
     const existingScan = await db.scan.findFirst({
       where: { ticketId: ticket.id, deviceId, result: "GRANTED" },
     });
@@ -199,8 +209,7 @@ export async function POST(request: NextRequest) {
 
   const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
 
-  if (ticket.status === "VALID") {
-    // Erster Zutritt: auf REDEEMED setzen, ggf. firstScanAt für DURATION
+  if (ticket.status === "VALID" && !isEmployee) {
     const updateData: Record<string, unknown> = { status: "REDEEMED" };
     if (vType === "DURATION" && !ticket.firstScanAt) {
       updateData.firstScanAt = now;
