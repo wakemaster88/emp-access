@@ -121,14 +121,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const scanBufferRef = useRef("");
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownScanIdsRef = useRef<Set<number>>(new Set());
-  const [liveScanToasts, setLiveScanToasts] = useState<{
-    id: number;
-    result: string;
-    ticketName: string;
-    ticketType: string;
-    deviceName: string;
-    time: string;
-  }[]>([]);
+  const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
 
   const fetchData = useCallback(async () => {
     try {
@@ -141,22 +134,24 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
       const newScans = json.recentScans.filter((s) => !knownScanIdsRef.current.has(s.id));
       if (knownScanIdsRef.current.size > 0 && newScans.length > 0) {
-        const allTickets = [...json.tickets, ...json.subscriptions.flatMap((s) => s.tickets)];
-        const toasts = newScans.map((s) => {
-          const t = allTickets.find((t) => t.id === s.ticketId);
-          return {
-            id: s.id,
-            result: s.result,
-            ticketName: t ? personName(t) : s.code,
-            ticketType: t?.ticketTypeName ?? t?.service?.name ?? "",
-            deviceName: s.device?.name ?? "",
-            time: new Date(s.scanTime).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-          };
-        });
-        setLiveScanToasts((prev) => [...toasts, ...prev].slice(0, 5));
-        setTimeout(() => {
-          setLiveScanToasts((prev) => prev.filter((t) => !newScans.some((s) => s.id === t.id)));
-        }, 6000);
+        const highlights = new Map<number, string>();
+        for (const s of newScans) {
+          if (s.ticketId) highlights.set(s.ticketId, s.result);
+        }
+        if (highlights.size > 0) {
+          setScanHighlights((prev) => {
+            const next = new Map(prev);
+            for (const [k, v] of highlights) next.set(k, v);
+            return next;
+          });
+          setTimeout(() => {
+            setScanHighlights((prev) => {
+              const next = new Map(prev);
+              for (const k of highlights.keys()) next.delete(k);
+              return next;
+            });
+          }, 4000);
+        }
       }
       for (const s of json.recentScans) knownScanIdsRef.current.add(s.id);
 
@@ -387,36 +382,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         </div>
       </header>
 
-      {/* Live scan banner */}
-      {liveScanToasts.length > 0 && (
-        <div className="border-b border-slate-800 divide-y divide-slate-800/50">
-          {liveScanToasts.map((t) => (
-            <div
-              key={t.id}
-              className={cn(
-                "px-4 py-2.5 flex items-center gap-3",
-                t.result === "GRANTED" ? "bg-emerald-950/40" : "bg-rose-950/40"
-              )}
-            >
-              {t.result === "GRANTED" ? (
-                <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
-              ) : (
-                <XCircle className="h-6 w-6 text-rose-400 shrink-0" />
-              )}
-              <div className="min-w-0 flex-1">
-                <span className={cn("text-sm font-bold", t.result === "GRANTED" ? "text-emerald-200" : "text-rose-200")}>
-                  {t.ticketName}
-                </span>
-                <span className="text-xs text-slate-400 ml-2">
-                  {[t.ticketType, t.deviceName, t.time].filter(Boolean).join(" · ")}
-                </span>
-              </div>
-              <ScanLine className={cn("h-4 w-4 shrink-0", t.result === "GRANTED" ? "text-emerald-500/50" : "text-rose-500/50")} />
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Day selector */}
       <DaySelector date={date} onChange={setDate} />
 
@@ -441,6 +406,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   onTap={() => setSelectedTicket(t)}
                   onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
                   checkingIn={checkingIn === t.id}
+                  highlight={scanHighlights.get(t.id)}
                 />
               ))}
             </div>
@@ -464,6 +430,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         onTap={() => setSelectedTicket(t)}
                         onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
                         checkingIn={checkingIn === t.id}
+                        highlight={scanHighlights.get(t.id)}
                       />
                     ))}
                   </div>
@@ -483,6 +450,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   ticket={t}
                   onTap={() => setSelectedTicket(t)}
                   checked
+                  highlight={scanHighlights.get(t.id)}
                 />
               ))}
             </div>
@@ -503,6 +471,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         ticket={{ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } }}
                         onTap={() => setSelectedTicket({ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } })}
                         isSub
+                        highlight={scanHighlights.get(t.id)}
                       />
                     ))}
                   </div>
@@ -756,6 +725,7 @@ function TicketCard({
   checkingIn,
   checked,
   isSub,
+  highlight,
 }: {
   ticket: CheckinTicket;
   onTap: () => void;
@@ -763,6 +733,7 @@ function TicketCard({
   checkingIn?: boolean;
   checked?: boolean;
   isSub?: boolean;
+  highlight?: string;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const needsPhoto = (ticket.service?.requiresPhoto || ticket.subscription?.requiresPhoto) && !ticket.profileImage;
@@ -772,8 +743,12 @@ function TicketCard({
     <div
       onClick={onTap}
       className={cn(
-        "flex items-center gap-3 rounded-2xl border p-3 transition-all active:scale-[0.98] cursor-pointer",
-        checked
+        "flex items-center gap-3 rounded-2xl border p-3 transition-all duration-700 active:scale-[0.98] cursor-pointer",
+        highlight === "GRANTED"
+          ? "border-emerald-500 bg-emerald-900/50 ring-2 ring-emerald-500/40"
+          : highlight === "DENIED"
+          ? "border-rose-500 bg-rose-900/50 ring-2 ring-rose-500/40"
+          : checked
           ? "border-emerald-700/40 bg-emerald-950/30"
           : "border-slate-700/60 bg-slate-900 hover:border-slate-600"
       )}
