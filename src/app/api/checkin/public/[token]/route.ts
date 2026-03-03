@@ -59,7 +59,7 @@ export async function GET(
           {
             OR: [
               { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-              { startDate: null, endDate: null },
+              { startDate: null, endDate: null, createdAt: { gte: dayStart, lte: dayEnd } },
               { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
               { startDate: null, endDate: { gte: dayStart } },
             ],
@@ -88,7 +88,7 @@ export async function GET(
             status: { in: ["VALID", "REDEEMED"] },
             OR: [
               { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-              { startDate: null, endDate: null },
+              { startDate: null, endDate: null, createdAt: { gte: dayStart, lte: dayEnd } },
               { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
               { startDate: null, endDate: { gte: dayStart } },
             ],
