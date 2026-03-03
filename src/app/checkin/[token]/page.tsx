@@ -140,7 +140,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchData]);
 
-  const handleScanRef = useRef<(code: string) => void>();
+  const handleScanRef = useRef<((code: string) => void) | null>(null);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
