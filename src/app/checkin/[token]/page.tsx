@@ -850,11 +850,11 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  @page{margin:0;padding:0;size:80mm 297mm portrait}
+  @page{margin:0;padding:0;size:72mm 297mm portrait}
   body{
     font-family:monospace;
-    width:80mm;max-width:80mm;
-    padding:2mm 4mm 6mm 4mm;
+    width:72mm;max-width:72mm;
+    padding:2mm 3mm 6mm 3mm;
     color:#000;background:#fff;
     font-size:11px;line-height:1.4;
     -webkit-text-size-adjust:none;
@@ -866,8 +866,8 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   .gap{height:2mm}
   .gap2{height:4mm}
   .sep{border:none;border-top:1px dashed #000;margin:3mm 0}
-  .title{font-size:15px;font-weight:bold;letter-spacing:0.5px}
-  .name{font-size:14px;font-weight:bold;margin-bottom:1mm}
+  .title{font-size:13px;font-weight:bold;letter-spacing:0.5px}
+  .name{font-size:12px;font-weight:bold;margin-bottom:1mm}
   .info{font-size:11px;margin-bottom:0.5mm}
   .extra{display:inline-block;border:1px solid #000;padding:1px 4px;margin:1px 2px 1px 0;font-size:10px}
   .qr{display:block;margin:2mm auto}
@@ -892,7 +892,7 @@ ${extras.map((e) => `<span class="extra">${e}</span>`).join("")}
 
 <hr class="sep">
 
-${qrDataUrl ? `<img src="${qrDataUrl}" class="qr" width="200" height="200" alt="">` : ""}
+${qrDataUrl ? `<img src="${qrDataUrl}" class="qr" width="180" height="180" alt="">` : ""}
 <div class="c code">${code}</div>
 
 <hr class="sep">
