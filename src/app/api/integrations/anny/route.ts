@@ -3,6 +3,15 @@ import { getSessionWithDb } from "@/lib/api-auth";
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
 
+interface AnnyLineItem {
+  id?: string | number;
+  name?: string;
+  title?: string;
+  quantity?: number;
+  price?: number | string;
+  product?: { id?: string | number; name?: string; title?: string };
+}
+
 interface AnnyBooking {
   id: string | number;
   number?: string;
@@ -32,6 +41,9 @@ interface AnnyBooking {
     name?: string;
     title?: string;
   };
+  line_items?: AnnyLineItem[];
+  products?: AnnyLineItem[];
+  extras?: AnnyLineItem[];
 }
 
 interface BookingEntry {
@@ -39,6 +51,11 @@ interface BookingEntry {
   start: string | null;
   end: string | null;
   status: string | null;
+}
+
+interface TicketExtra {
+  name: string;
+  quantity: number;
 }
 
 interface BookingGroup {
@@ -54,6 +71,17 @@ interface BookingGroup {
   startDate: Date | null;
   endDate: Date | null;
   statuses: string[];
+  extras: TicketExtra[];
+}
+
+function extractExtras(booking: AnnyBooking): TicketExtra[] {
+  const items = booking.line_items ?? booking.products ?? booking.extras ?? [];
+  const result: TicketExtra[] = [];
+  for (const item of items) {
+    const name = item.name ?? item.title ?? item.product?.name ?? item.product?.title;
+    if (name) result.push({ name, quantity: item.quantity ?? 1 });
+  }
+  return result;
 }
 
 interface AnnyMapping {
@@ -105,7 +133,7 @@ export async function POST() {
 
     while (true) {
       const params = new URLSearchParams({
-        include: "customer,resource,service",
+        include: "customer,resource,service,line_items",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
@@ -287,6 +315,8 @@ export async function POST() {
         status: booking.status || null,
       };
 
+      const bookingExtras = extractExtras(booking);
+
       const existing = groups.get(key);
       if (existing) {
         const isDupeId = existing.entries.some((e) => e.id === entry.id);
@@ -304,6 +334,9 @@ export async function POST() {
           existing.endDate = endDate;
         }
         if (booking.status) existing.statuses.push(booking.status);
+        for (const ex of bookingExtras) {
+          if (!existing.extras.some((e) => e.name === ex.name)) existing.extras.push(ex);
+        }
       } else {
         groups.set(key, {
           key,
@@ -318,6 +351,7 @@ export async function POST() {
           startDate,
           endDate,
           statuses: booking.status ? [booking.status] : [],
+          extras: bookingExtras,
         });
       }
     }
@@ -429,6 +463,7 @@ export async function POST() {
         ticketTypeName: typeName,
         barcode: group.bookingNumber || null,
         qrCode: JSON.stringify(group.entries),
+        extras: group.extras.length > 0 ? JSON.parse(JSON.stringify(group.extras)) : undefined,
         source: "ANNY" as const,
         accessAreaId,
         subscriptionId,

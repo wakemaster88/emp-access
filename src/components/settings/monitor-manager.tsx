@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
-  Loader2, Pencil, Wifi, WifiOff, QrCode,
+  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +29,7 @@ interface MonitorConfigData {
   id: number;
   name: string;
   token: string;
+  type: string;
   deviceIds: number[];
   isActive: boolean;
   createdAt: string;
@@ -54,6 +55,7 @@ function MonitorDialog({
   const router = useRouter();
   const isNew = !monitor;
   const [name, setName] = useState(monitor?.name ?? "");
+  const [type, setType] = useState(monitor?.type ?? "MONITOR");
   const [selectedDevices, setSelectedDevices] = useState<number[]>(monitor?.deviceIds ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -75,7 +77,7 @@ function MonitorDialog({
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), deviceIds: selectedDevices }),
+        body: JSON.stringify({ name: name.trim(), type, deviceIds: selectedDevices }),
       });
       if (!res.ok) {
         setError("Fehler beim Speichern");
@@ -90,7 +92,8 @@ function MonitorDialog({
     }
   }
 
-  const monitorUrl = monitor ? `${baseUrl}/monitor/${monitor.token}` : "";
+  const urlPath = type === "CHECKIN" ? "checkin" : "monitor";
+  const monitorUrl = monitor ? `${baseUrl}/${urlPath}/${monitor.token}` : "";
 
   return (
     <DialogContent className="sm:max-w-lg">
@@ -112,6 +115,44 @@ function MonitorDialog({
         </div>
 
         <div className="space-y-2">
+          <Label>Typ</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setType("MONITOR")}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
+                type === "MONITOR"
+                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
+                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+              )}
+            >
+              <Monitor className={cn("h-4 w-4 shrink-0", type === "MONITOR" ? "text-indigo-600" : "text-slate-400")} />
+              <div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Scan-Monitor</p>
+                <p className="text-xs text-slate-400">Live-Scans anzeigen</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setType("CHECKIN")}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
+                type === "CHECKIN"
+                  ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
+                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+              )}
+            >
+              <ClipboardCheck className={cn("h-4 w-4 shrink-0", type === "CHECKIN" ? "text-emerald-600" : "text-slate-400")} />
+              <div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Check-in</p>
+                <p className="text-xs text-slate-400">Gäste einchecken</p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {type === "MONITOR" && <div className="space-y-2">
           <Label>Geräte auswählen</Label>
           <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
             {devices.length === 0 && (
@@ -151,7 +192,7 @@ function MonitorDialog({
           {selectedDevices.length > 0 && (
             <p className="text-xs text-slate-500">{selectedDevices.length} Gerät(e) ausgewählt</p>
           )}
-        </div>
+        </div>}
 
         {!isNew && (
           <div className="space-y-1.5">
@@ -293,10 +334,13 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
       )}
 
       {monitors.map((monitor) => {
-        const url = `${baseUrl}/monitor/${monitor.token}`;
+        const isCheckin = monitor.type === "CHECKIN";
+        const urlPath = isCheckin ? "checkin" : "monitor";
+        const url = `${baseUrl}/${urlPath}/${monitor.token}`;
         const deviceNames = devices
           .filter((d) => (monitor.deviceIds as number[]).includes(d.id))
           .map((d) => d.name);
+        const TypeIcon = isCheckin ? ClipboardCheck : Monitor;
 
         return (
           <Card key={monitor.id} className="border-slate-200 dark:border-slate-800">
@@ -304,8 +348,14 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Monitor className="h-4 w-4 text-indigo-500 shrink-0" />
+                    <TypeIcon className={cn("h-4 w-4 shrink-0", isCheckin ? "text-emerald-500" : "text-indigo-500")} />
                     <span className="font-medium text-slate-900 dark:text-slate-100">{monitor.name}</span>
+                    <Badge className={cn("text-xs", isCheckin
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                      : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                    )}>
+                      {isCheckin ? "Check-in" : "Monitor"}
+                    </Badge>
                     <Badge className={monitor.isActive
                       ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs"
                       : "bg-slate-100 text-slate-500 text-xs"}>

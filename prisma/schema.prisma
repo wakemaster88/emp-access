@@ -136,6 +136,7 @@ model Ticket {
   lastName                String?
   ticketTypeName          String?
   profileImage            String?      @db.Text
+  extras                  Json?
   source                  ApiProvider?
   accountId               Int
   account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -279,6 +280,7 @@ model MonitorConfig {
   id        Int      @id @default(autoincrement())
   name      String
   token     String   @unique @default(cuid())
+  type      String   @default("MONITOR") // MONITOR | CHECKIN
   deviceIds Json     @default("[]")
   isActive  Boolean  @default(true)
   accountId Int

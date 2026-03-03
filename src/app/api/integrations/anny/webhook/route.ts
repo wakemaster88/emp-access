@@ -8,6 +8,14 @@ import { prisma, tenantClient } from "@/lib/prisma";
  * Booking-Format wie anny API: id, start_date, end_date, status, customer: { id, full_name, first_name, last_name }, resource?, service?
  */
 
+interface AnnyLineItem {
+  id?: string | number;
+  name?: string;
+  title?: string;
+  quantity?: number;
+  product?: { id?: string | number; name?: string; title?: string };
+}
+
 interface AnnyBooking {
   id?: string | number;
   number?: string;
@@ -22,6 +30,9 @@ interface AnnyBooking {
   };
   resource?: { id?: string | number; name?: string };
   service?: { id?: string | number; name?: string };
+  line_items?: AnnyLineItem[];
+  products?: AnnyLineItem[];
+  extras?: AnnyLineItem[];
 }
 
 interface AnnyMapping {
@@ -182,6 +193,14 @@ export async function POST(request: NextRequest) {
     const endDate = booking.end_date ? new Date(booking.end_date) : null;
     const status = mapStatus(booking.status);
 
+    const rawItems = booking.line_items ?? booking.products ?? booking.extras ?? [];
+    const extras = rawItems
+      .map((item) => ({
+        name: item.name ?? item.title ?? item.product?.name ?? item.product?.title ?? "",
+        quantity: item.quantity ?? 1,
+      }))
+      .filter((e) => e.name);
+
     const ticketData = {
       name: customerName || `Buchung ${booking.id ?? ""}`,
       firstName,
@@ -191,6 +210,7 @@ export async function POST(request: NextRequest) {
       status,
       barcode: booking.number || null,
       qrCode: JSON.stringify([{ id: String(booking.id), start: booking.start_date ?? null, end: booking.end_date ?? null, status: booking.status ?? null }]),
+      extras: extras.length > 0 ? JSON.parse(JSON.stringify(extras)) : undefined,
       source: "ANNY" as const,
       accessAreaId,
       subscriptionId,
