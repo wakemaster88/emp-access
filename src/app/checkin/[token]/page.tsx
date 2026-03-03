@@ -22,7 +22,9 @@ import {
   Fingerprint,
   Image as ImageIcon,
   CalendarDays,
+  Printer,
 } from "lucide-react";
+import QRCode from "qrcode";
 import { cn } from "@/lib/utils";
 
 interface TicketExtra {
@@ -47,6 +49,8 @@ interface CheckinTicket {
   profileImage: string | null;
   rfidCode: string | null;
   barcode: string | null;
+  qrCode: string | null;
+  uuid: string | null;
   extras: TicketExtra[] | null;
   source: string | null;
   subscriptionId: number | null;
@@ -78,6 +82,7 @@ interface ScanEntry {
 
 interface CheckinData {
   monitorName: string;
+  accountName: string;
   date: string;
   tickets: CheckinTicket[];
   subscriptions: SubData[];
@@ -440,6 +445,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           onSaveRfid={() => handleUpdateTicket(selectedTicket.id, { rfidCode: rfidInput })}
           onOpenCamera={() => setCameraOpen(true)}
           updatingTicket={updatingTicket === selectedTicket.id}
+          accountName={data?.accountName ?? ""}
         />
       )}
 
@@ -750,6 +756,61 @@ function TicketCard({
   );
 }
 
+async function printTicket(ticket: CheckinTicket, accountName: string) {
+  const code = ticket.barcode || ticket.qrCode || ticket.uuid || String(ticket.id);
+  let qrDataUrl = "";
+  try {
+    qrDataUrl = await QRCode.toDataURL(code, { width: 200, margin: 1, color: { dark: "#000", light: "#fff" } });
+  } catch { /* ignore */ }
+
+  const name = personName(ticket);
+  const type = ticket.ticketTypeName ?? ticket.service?.name ?? ticket.subscription?.name ?? "";
+  const time = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart} – ${ticket.slotEnd} Uhr` : "";
+  const area = ticket.accessArea?.name ?? "";
+  const validity = ticket.startDate
+    ? ticket.endDate
+      ? `${new Date(ticket.startDate).toLocaleDateString("de-DE")} – ${new Date(ticket.endDate).toLocaleDateString("de-DE")}`
+      : `ab ${new Date(ticket.startDate).toLocaleDateString("de-DE")}`
+    : "";
+  const extras = ((ticket.extras ?? []) as TicketExtra[])
+    .map((ex) => (ex.quantity > 1 ? `${ex.quantity}× ${ex.name}` : ex.name))
+    .join(", ");
+
+  const w = window.open("", "_blank", "width=320,height=600");
+  if (!w) return;
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Courier New',monospace;width:72mm;padding:4mm;color:#000;background:#fff;font-size:12px}
+  .center{text-align:center}
+  .bold{font-weight:bold}
+  .mt{margin-top:3mm}
+  .line{border-top:1px dashed #000;margin:3mm 0}
+  .row{display:flex;justify-content:space-between}
+  h1{font-size:16px;font-weight:bold}
+  h2{font-size:13px;font-weight:bold}
+  .qr{margin:3mm auto;display:block}
+  .small{font-size:10px;color:#555}
+  @media print{@page{margin:0;size:72mm auto}body{width:72mm}}
+</style></head><body>
+  <div class="center"><h1>${accountName}</h1></div>
+  <div class="line"></div>
+  <h2 class="mt">${name}</h2>
+  ${type ? `<p class="mt">${type}</p>` : ""}
+  ${time ? `<p>${time}</p>` : ""}
+  ${area ? `<p>Bereich: ${area}</p>` : ""}
+  ${validity ? `<p>Gültig: ${validity}</p>` : ""}
+  ${extras ? `<div class="mt"><p class="bold">Extras:</p><p>${extras}</p></div>` : ""}
+  <div class="line"></div>
+  ${qrDataUrl ? `<img src="${qrDataUrl}" class="qr" width="180" height="180" alt="QR">` : ""}
+  <p class="center small mt">${code}</p>
+  <div class="line"></div>
+  <p class="center small">${new Date().toLocaleString("de-DE")}</p>
+</body></html>`);
+  w.document.close();
+  setTimeout(() => { w.print(); }, 300);
+}
+
 function TicketOverlay({
   ticket,
   onClose,
@@ -762,6 +823,7 @@ function TicketOverlay({
   onSaveRfid,
   onOpenCamera,
   updatingTicket,
+  accountName,
 }: {
   ticket: CheckinTicket;
   onClose: () => void;
@@ -774,6 +836,7 @@ function TicketOverlay({
   onSaveRfid: () => void;
   onOpenCamera: () => void;
   updatingTicket: boolean;
+  accountName: string;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isChecked = ticket.checkedIn || ticket.status === "REDEEMED";
@@ -909,6 +972,15 @@ function TicketOverlay({
               </button>
             </div>
           )}
+
+          {/* Print button */}
+          <button
+            onClick={() => printTicket(ticket, accountName)}
+            className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+          >
+            <Printer className="h-4 w-4" />
+            Ticket drucken
+          </button>
         </div>
       </div>
     </div>
