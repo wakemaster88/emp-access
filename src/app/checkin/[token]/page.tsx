@@ -123,67 +123,69 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
+  const dateRef = useRef(date);
+  const cancelledRef = useRef(false);
 
-  const fetchRef = useRef<(() => Promise<void>) | null>(null);
+  const loadData = useCallback(async (forDate: string) => {
+    try {
+      const res = await fetch(`/api/checkin/public/${token}?date=${forDate}&_t=${Date.now()}`, { cache: "no-store" });
+      if (cancelledRef.current) return;
+      if (!res.ok) { setError("Check-in Monitor nicht gefunden"); return; }
+      const json: CheckinData = await res.json();
+      if (cancelledRef.current) return;
 
-  useEffect(() => {
-    const currentDate = date;
-    let cancelled = false;
-
-    knownScanIdsRef.current = new Set();
-    setScanHighlights(new Map());
-    setLoading(true);
-
-    const doFetch = async () => {
-      try {
-        const res = await fetch(`/api/checkin/public/${token}?date=${currentDate}&_t=${Date.now()}`, { cache: "no-store" });
-        if (cancelled) return;
-        if (!res.ok) { setError("Check-in Monitor nicht gefunden"); return; }
-        const json: CheckinData = await res.json();
-        if (cancelled) return;
-
-        const newScans = json.recentScans.filter((s) => !knownScanIdsRef.current.has(s.id));
-        if (knownScanIdsRef.current.size > 0 && newScans.length > 0) {
-          const highlights = new Map<number, string>();
-          for (const s of newScans) {
-            if (s.ticketId) highlights.set(s.ticketId, s.result);
-          }
-          if (highlights.size > 0) {
+      const newScans = json.recentScans.filter((s) => !knownScanIdsRef.current.has(s.id));
+      if (knownScanIdsRef.current.size > 0 && newScans.length > 0) {
+        const highlights = new Map<number, string>();
+        for (const s of newScans) {
+          if (s.ticketId) highlights.set(s.ticketId, s.result);
+        }
+        if (highlights.size > 0) {
+          setScanHighlights((prev) => {
+            const next = new Map(prev);
+            for (const [k, v] of highlights) next.set(k, v);
+            return next;
+          });
+          setTimeout(() => {
             setScanHighlights((prev) => {
               const next = new Map(prev);
-              for (const [k, v] of highlights) next.set(k, v);
+              for (const k of highlights.keys()) next.delete(k);
               return next;
             });
-            setTimeout(() => {
-              setScanHighlights((prev) => {
-                const next = new Map(prev);
-                for (const k of highlights.keys()) next.delete(k);
-                return next;
-              });
-            }, 4000);
-          }
+          }, 4000);
         }
-        for (const s of json.recentScans) knownScanIdsRef.current.add(s.id);
-
-        setData(json);
-        setError("");
-      } catch {
-        if (!cancelled) setError("Verbindungsfehler");
-      } finally {
-        if (!cancelled) setLoading(false);
       }
-    };
+      for (const s of json.recentScans) knownScanIdsRef.current.add(s.id);
 
-    fetchRef.current = async () => { await doFetch(); };
+      setData(json);
+      setError("");
+    } catch {
+      if (!cancelledRef.current) setError("Verbindungsfehler");
+    } finally {
+      if (!cancelledRef.current) setLoading(false);
+    }
+  }, [token]);
 
-    doFetch();
-    const interval = setInterval(doFetch, 5000);
+  const changeDate = useCallback((newDate: string) => {
+    setDate(newDate);
+    setData(null);
+    setLoading(true);
+    knownScanIdsRef.current = new Set();
+    setScanHighlights(new Map());
+    dateRef.current = newDate;
+    loadData(newDate);
+  }, [loadData]);
 
+  useEffect(() => {
+    cancelledRef.current = false;
+    setLoading(true);
+    loadData(date);
+    const interval = setInterval(() => loadData(dateRef.current), 5000);
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       clearInterval(interval);
     };
-  }, [token, date]);
+  }, [token, loadData]);
 
   const handleScanRef = useRef<((code: string) => void) | null>(null);
 
@@ -227,7 +229,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       });
       const json = await res.json();
       if (json.success) {
-        await fetchRef.current?.();
+        await loadData(dateRef.current);
         if (selectedTicket?.id === ticketId) {
           setSelectedTicket((prev) => prev ? { ...prev, checkedIn: true, status: "REDEEMED" } : null);
         }
@@ -235,7 +237,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     } finally {
       setCheckingIn(null);
     }
-  }, [token, date, selectedTicket]);
+  }, [token, loadData, selectedTicket]);
 
   const handleScan = useCallback(async (code: string) => {
     if (!code.trim()) return;
@@ -289,7 +291,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       }
 
       setRfidConflict(null);
-      await fetchRef.current?.();
+      await loadData(dateRef.current);
       if (selectedTicket?.id === ticketId) {
         setSelectedTicket((prev) => prev ? { ...prev, ...update } : null);
       }
@@ -297,7 +299,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       setUpdatingTicket(null);
       setEditMode(null);
     }
-  }, [token, date, selectedTicket]);
+  }, [token, loadData, selectedTicket]);
 
   const handleCameraCapture = useCallback((dataUrl: string) => {
     if (!selectedTicket) return;
@@ -395,7 +397,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       </header>
 
       {/* Day selector */}
-      <DaySelector date={date} onChange={setDate} />
+      <DaySelector date={date} onChange={changeDate} />
 
       {/* Stats bar */}
       <div className="px-4 py-2 flex gap-3 border-b border-slate-800/50">
