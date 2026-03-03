@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Shield } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,9 +40,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
       <Card className="w-full max-w-md border-slate-200 dark:border-slate-800 shadow-xl">
         <CardHeader className="text-center pb-2">
-          <div className="mx-auto h-14 w-14 rounded-2xl bg-indigo-600 flex items-center justify-center mb-4">
-            <Shield className="h-8 w-8 text-white" />
-          </div>
+          <Image src="/logo.png" alt="EMP Access" width={80} height={80} className="mx-auto mb-4" priority />
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">EMP Access</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Zugangskontrolle anmelden</p>
         </CardHeader>

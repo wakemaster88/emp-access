@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
@@ -98,15 +99,11 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
       )}
     >
       <div className="flex items-center justify-between p-3 md:p-4">
-        {!collapsed && (
-          <Link href={isSuperAdmin ? "/admin" : "/"} className="flex items-center gap-2" onClick={onNavigate}>
-            <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-lg font-bold text-white">EMP Access</span>
-          </Link>
-        )}
-        {!onNavigate && (
+        <Link href={isSuperAdmin ? "/admin" : "/"} className={cn("flex items-center gap-2", collapsed && "justify-center w-full")} onClick={onNavigate}>
+          <Image src="/logo.png" alt="EMP Access" width={32} height={32} className="shrink-0" />
+          {!collapsed && <span className="text-lg font-bold text-white">EMP Access</span>}
+        </Link>
+        {!onNavigate && !collapsed && (
           <Button
             variant="ghost"
             size="icon"

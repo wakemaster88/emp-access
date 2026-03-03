@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Shield, CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 
 interface Device {
@@ -259,9 +259,7 @@ export default function PublicMonitorPage({ params }: Props) {
       {/* Header */}
       <header className={cn("border-b px-6 py-3.5 flex items-center justify-between transition-colors duration-300", styles.header)}>
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Shield className="h-5 w-5 text-white" />
-          </div>
+          <img src="/logo.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
           <div>
             <h1 className={cn("text-lg font-bold tracking-tight", styles.headerTitle)}>{monitorName || "Live Monitor"}</h1>
             <p className={cn("text-[11px]", styles.headerSub)}>EMP Access — Echtzeit-Zugangsmonitor</p>
