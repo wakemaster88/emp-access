@@ -108,8 +108,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [updatingTicket, setUpdatingTicket] = useState<number | null>(null);
   const [rfidInput, setRfidInput] = useState("");
   const [editMode, setEditMode] = useState<"photo" | "rfid" | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -195,27 +195,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     }
   }, [token, fetchData, selectedTicket]);
 
-  const handlePhotoCapture = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedTicket) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = document.createElement("img");
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const size = 300;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d")!;
-        const min = Math.min(img.width, img.height);
-        const sx = (img.width - min) / 2;
-        const sy = (img.height - min) / 2;
-        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-        handleUpdateTicket(selectedTicket.id, { profileImage: canvas.toDataURL("image/jpeg", 0.8) });
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
+  const handleCameraCapture = useCallback((dataUrl: string) => {
+    if (!selectedTicket) return;
+    setCameraOpen(false);
+    setEditMode("photo");
+    handleUpdateTicket(selectedTicket.id, { profileImage: dataUrl });
   }, [selectedTicket, handleUpdateTicket]);
 
   const dayTickets = data?.tickets ?? [];
@@ -399,7 +383,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       </div>
 
       {/* Ticket detail overlay */}
-      {selectedTicket && (
+      {selectedTicket && !cameraOpen && (
         <TicketOverlay
           ticket={selectedTicket}
           onClose={() => { setSelectedTicket(null); setEditMode(null); setRfidInput(""); }}
@@ -410,8 +394,15 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           rfidInput={rfidInput}
           setRfidInput={setRfidInput}
           onSaveRfid={() => handleUpdateTicket(selectedTicket.id, { rfidCode: rfidInput })}
-          onCapturePhoto={() => fileInputRef.current?.click()}
+          onOpenCamera={() => setCameraOpen(true)}
           updatingTicket={updatingTicket === selectedTicket.id}
+        />
+      )}
+
+      {cameraOpen && (
+        <CameraOverlay
+          onCapture={handleCameraCapture}
+          onClose={() => setCameraOpen(false)}
         />
       )}
 
@@ -427,15 +418,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           inputRef={scanInputRef}
         />
       )}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={handlePhotoCapture}
-      />
     </div>
   );
 }
@@ -624,7 +606,7 @@ function TicketOverlay({
   rfidInput,
   setRfidInput,
   onSaveRfid,
-  onCapturePhoto,
+  onOpenCamera,
   updatingTicket,
 }: {
   ticket: CheckinTicket;
@@ -636,7 +618,7 @@ function TicketOverlay({
   rfidInput: string;
   setRfidInput: (v: string) => void;
   onSaveRfid: () => void;
-  onCapturePhoto: () => void;
+  onOpenCamera: () => void;
   updatingTicket: boolean;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
@@ -726,7 +708,7 @@ function TicketOverlay({
           {/* Photo / RFID buttons */}
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => { setEditMode("photo"); onCapturePhoto(); }}
+              onClick={onOpenCamera}
               disabled={updatingTicket}
               className="bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
             >
@@ -842,6 +824,106 @@ function ScanOverlay({
 
         <p className="text-xs text-slate-500 text-center">Barcode-Scanner-Eingabe wird automatisch erkannt</p>
       </div>
+    </div>
+  );
+}
+
+function CameraOverlay({ onCapture, onClose }: { onCapture: (dataUrl: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 960 } },
+        });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          setReady(true);
+        }
+      } catch {
+        if (!cancelled) setError("Kamera-Zugriff nicht möglich");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    const size = 300;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const min = Math.min(vw, vh);
+    const sx = (vw - min) / 2;
+    const sy = (vh - min) / 2;
+    ctx.drawImage(video, sx, sy, min, min, 0, 0, size, size);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    onCapture(canvas.toDataURL("image/jpeg", 0.8));
+  };
+
+  const handleClose = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black flex flex-col">
+      <div className="flex items-center justify-between p-4">
+        <h2 className="text-white text-lg font-bold">Foto aufnehmen</h2>
+        <button onClick={handleClose} className="p-2 rounded-xl bg-slate-800 text-white">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center relative overflow-hidden">
+        {error ? (
+          <p className="text-red-400 text-center px-8">{error}</p>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+            {!ready && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black">
+                <Loader2 className="h-10 w-10 text-white animate-spin" />
+              </div>
+            )}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-64 h-64 border-2 border-white/40 rounded-3xl" />
+            </div>
+          </>
+        )}
+      </div>
+
+      {ready && !error && (
+        <div className="p-6 flex justify-center">
+          <button
+            onClick={capture}
+            className="w-20 h-20 rounded-full bg-white border-4 border-slate-300 active:scale-90 transition-transform flex items-center justify-center"
+          >
+            <Camera className="h-8 w-8 text-slate-900" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
