@@ -387,33 +387,31 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         </div>
       </header>
 
-      {/* Live scan toasts */}
+      {/* Live scan banner */}
       {liveScanToasts.length > 0 && (
-        <div className="fixed top-16 right-4 z-40 flex flex-col gap-2 w-80 pointer-events-none">
+        <div className="border-b border-slate-800 divide-y divide-slate-800/50">
           {liveScanToasts.map((t) => (
             <div
               key={t.id}
               className={cn(
-                "rounded-2xl p-3 flex items-center gap-3 shadow-2xl border animate-in slide-in-from-right duration-300 pointer-events-auto",
-                t.result === "GRANTED"
-                  ? "bg-emerald-950 border-emerald-700/50"
-                  : "bg-rose-950 border-rose-700/50"
+                "px-4 py-2.5 flex items-center gap-3",
+                t.result === "GRANTED" ? "bg-emerald-950/40" : "bg-rose-950/40"
               )}
             >
               {t.result === "GRANTED" ? (
-                <CheckCircle2 className="h-8 w-8 text-emerald-400 shrink-0" />
+                <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
               ) : (
-                <XCircle className="h-8 w-8 text-rose-400 shrink-0" />
+                <XCircle className="h-6 w-6 text-rose-400 shrink-0" />
               )}
               <div className="min-w-0 flex-1">
-                <p className={cn("text-sm font-bold truncate", t.result === "GRANTED" ? "text-emerald-200" : "text-rose-200")}>
+                <span className={cn("text-sm font-bold", t.result === "GRANTED" ? "text-emerald-200" : "text-rose-200")}>
                   {t.ticketName}
-                </p>
-                <p className="text-xs text-slate-400 truncate">
+                </span>
+                <span className="text-xs text-slate-400 ml-2">
                   {[t.ticketType, t.deviceName, t.time].filter(Boolean).join(" · ")}
-                </p>
+                </span>
               </div>
-              <ScanLine className={cn("h-5 w-5 shrink-0", t.result === "GRANTED" ? "text-emerald-500" : "text-rose-500")} />
+              <ScanLine className={cn("h-4 w-4 shrink-0", t.result === "GRANTED" ? "text-emerald-500/50" : "text-rose-500/50")} />
             </div>
           ))}
         </div>
