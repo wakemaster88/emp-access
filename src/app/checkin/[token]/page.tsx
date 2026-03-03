@@ -928,11 +928,17 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
 
   const blob = doc.output("blob");
   const url = URL.createObjectURL(blob);
-  const w = window.open(url, "_blank");
-  if (w) {
-    w.addEventListener("afterprint", () => URL.revokeObjectURL(url));
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  }
+  const iframe = document.createElement("iframe");
+  iframe.style.display = "none";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    iframe.contentWindow?.print();
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      URL.revokeObjectURL(url);
+    }, 5000);
+  };
 }
 
 function TicketOverlay({
