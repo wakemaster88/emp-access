@@ -86,3 +86,17 @@ export const accountCreateSchema = z.object({
 });
 
 export const accountUpdateSchema = accountCreateSchema.partial();
+
+export const adminCreateSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  name: z.string().min(1),
+  role: z.enum(["USER", "ADMIN"]).optional(),
+});
+
+export const adminUpdateSchema = z.object({
+  email: z.string().email().optional(),
+  password: z.string().min(6).optional(),
+  name: z.string().min(1).optional(),
+  role: z.enum(["USER", "ADMIN"]).optional(),
+});
