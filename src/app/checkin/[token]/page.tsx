@@ -120,6 +120,15 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanBufferRef = useRef("");
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const knownScanIdsRef = useRef<Set<number>>(new Set());
+  const [liveScanToasts, setLiveScanToasts] = useState<{
+    id: number;
+    result: string;
+    ticketName: string;
+    ticketType: string;
+    deviceName: string;
+    time: string;
+  }[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -128,7 +137,29 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         setError("Check-in Monitor nicht gefunden");
         return;
       }
-      const json = await res.json();
+      const json: CheckinData = await res.json();
+
+      const newScans = json.recentScans.filter((s) => !knownScanIdsRef.current.has(s.id));
+      if (knownScanIdsRef.current.size > 0 && newScans.length > 0) {
+        const allTickets = [...json.tickets, ...json.subscriptions.flatMap((s) => s.tickets)];
+        const toasts = newScans.map((s) => {
+          const t = allTickets.find((t) => t.id === s.ticketId);
+          return {
+            id: s.id,
+            result: s.result,
+            ticketName: t ? personName(t) : s.code,
+            ticketType: t?.ticketTypeName ?? t?.service?.name ?? "",
+            deviceName: s.device?.name ?? "",
+            time: new Date(s.scanTime).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+          };
+        });
+        setLiveScanToasts((prev) => [...toasts, ...prev].slice(0, 5));
+        setTimeout(() => {
+          setLiveScanToasts((prev) => prev.filter((t) => !newScans.some((s) => s.id === t.id)));
+        }, 6000);
+      }
+      for (const s of json.recentScans) knownScanIdsRef.current.add(s.id);
+
       setData(json);
       setError("");
     } catch {
@@ -355,6 +386,38 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           <LiveClock />
         </div>
       </header>
+
+      {/* Live scan toasts */}
+      {liveScanToasts.length > 0 && (
+        <div className="fixed top-16 right-4 z-40 flex flex-col gap-2 w-80 pointer-events-none">
+          {liveScanToasts.map((t) => (
+            <div
+              key={t.id}
+              className={cn(
+                "rounded-2xl p-3 flex items-center gap-3 shadow-2xl border animate-in slide-in-from-right duration-300 pointer-events-auto",
+                t.result === "GRANTED"
+                  ? "bg-emerald-950 border-emerald-700/50"
+                  : "bg-rose-950 border-rose-700/50"
+              )}
+            >
+              {t.result === "GRANTED" ? (
+                <CheckCircle2 className="h-8 w-8 text-emerald-400 shrink-0" />
+              ) : (
+                <XCircle className="h-8 w-8 text-rose-400 shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className={cn("text-sm font-bold truncate", t.result === "GRANTED" ? "text-emerald-200" : "text-rose-200")}>
+                  {t.ticketName}
+                </p>
+                <p className="text-xs text-slate-400 truncate">
+                  {[t.ticketType, t.deviceName, t.time].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              <ScanLine className={cn("h-5 w-5 shrink-0", t.result === "GRANTED" ? "text-emerald-500" : "text-rose-500")} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Day selector */}
       <DaySelector date={date} onChange={setDate} />
