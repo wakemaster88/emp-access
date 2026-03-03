@@ -784,55 +784,93 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   const code = ticket.barcode || ticket.qrCode || ticket.uuid || String(ticket.id);
   let qrDataUrl = "";
   try {
-    qrDataUrl = await QRCode.toDataURL(code, { width: 200, margin: 1, color: { dark: "#000", light: "#fff" } });
+    qrDataUrl = await QRCode.toDataURL(code, {
+      width: 360,
+      margin: 0,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#ffffff" },
+    });
   } catch { /* ignore */ }
 
   const name = personName(ticket);
   const type = ticket.ticketTypeName ?? ticket.service?.name ?? ticket.subscription?.name ?? "";
   const time = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart} – ${ticket.slotEnd} Uhr` : "";
   const area = ticket.accessArea?.name ?? "";
+  const dateStr = ticket.startDate
+    ? new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : "";
   const validity = ticket.startDate
     ? ticket.endDate
-      ? `${new Date(ticket.startDate).toLocaleDateString("de-DE")} – ${new Date(ticket.endDate).toLocaleDateString("de-DE")}`
-      : `ab ${new Date(ticket.startDate).toLocaleDateString("de-DE")}`
+      ? `${dateStr} – ${new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}`
+      : dateStr
     : "";
   const extras = ((ticket.extras ?? []) as TicketExtra[])
-    .map((ex) => (ex.quantity > 1 ? `${ex.quantity}× ${ex.name}` : ex.name))
-    .join(", ");
+    .map((ex) => (ex.quantity > 1 ? `${ex.quantity}x ${ex.name}` : ex.name));
 
   const w = window.open("", "_blank", "width=320,height=600");
   if (!w) return;
+
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Courier New',monospace;width:72mm;padding:4mm;color:#000;background:#fff;font-size:12px}
-  .center{text-align:center}
-  .bold{font-weight:bold}
-  .mt{margin-top:3mm}
-  .line{border-top:1px dashed #000;margin:3mm 0}
-  .row{display:flex;justify-content:space-between}
-  h1{font-size:16px;font-weight:bold}
-  h2{font-size:13px;font-weight:bold}
-  .qr{margin:3mm auto;display:block}
-  .small{font-size:10px;color:#555}
-  @media print{@page{margin:0;size:72mm auto}body{width:72mm}}
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{margin:0;padding:0;size:80mm auto}
+  body{
+    font-family:monospace;
+    width:80mm;max-width:80mm;
+    padding:2mm 4mm 6mm 4mm;
+    color:#000;background:#fff;
+    font-size:11px;line-height:1.4;
+    -webkit-text-size-adjust:none;
+  }
+  .c{text-align:center}
+  .b{font-weight:bold}
+  .s{font-size:9px;color:#333}
+  .gap{height:2mm}
+  .gap2{height:4mm}
+  .sep{border:none;border-top:1px dashed #000;margin:3mm 0}
+  .title{font-size:15px;font-weight:bold;letter-spacing:0.5px}
+  .name{font-size:14px;font-weight:bold;margin-bottom:1mm}
+  .info{font-size:11px;margin-bottom:0.5mm}
+  .extra{display:inline-block;border:1px solid #000;padding:1px 4px;margin:1px 2px 1px 0;font-size:10px}
+  .qr{display:block;margin:2mm auto}
+  .code{font-size:9px;letter-spacing:1px;word-break:break-all}
+  .cut{margin-top:6mm;border-top:1px dashed #000}
 </style></head><body>
-  <div class="center"><h1>${accountName}</h1></div>
-  <div class="line"></div>
-  <h2 class="mt">${name}</h2>
-  ${type ? `<p class="mt">${type}</p>` : ""}
-  ${time ? `<p>${time}</p>` : ""}
-  ${area ? `<p>Bereich: ${area}</p>` : ""}
-  ${validity ? `<p>Gültig: ${validity}</p>` : ""}
-  ${extras ? `<div class="mt"><p class="bold">Extras:</p><p>${extras}</p></div>` : ""}
-  <div class="line"></div>
-  ${qrDataUrl ? `<img src="${qrDataUrl}" class="qr" width="180" height="180" alt="QR">` : ""}
-  <p class="center small mt">${code}</p>
-  <div class="line"></div>
-  <p class="center small">${new Date().toLocaleString("de-DE")}</p>
+
+<div class="c title">${accountName}</div>
+<hr class="sep">
+
+<div class="name">${name}</div>
+${type ? `<div class="info b">${type}</div>` : ""}
+${time ? `<div class="info">${time}</div>` : ""}
+${area ? `<div class="info">Bereich: ${area}</div>` : ""}
+${validity ? `<div class="info">Gueltig: ${validity}</div>` : ""}
+
+${extras.length > 0 ? `
+<div class="gap"></div>
+<div class="s b">Extras:</div>
+${extras.map((e) => `<span class="extra">${e}</span>`).join("")}
+` : ""}
+
+<hr class="sep">
+
+${qrDataUrl ? `<img src="${qrDataUrl}" class="qr" width="200" height="200" alt="">` : ""}
+<div class="c code">${code}</div>
+
+<hr class="sep">
+<div class="c s">${new Date().toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+<div class="cut"></div>
+
 </body></html>`);
   w.document.close();
-  setTimeout(() => { w.print(); }, 300);
+
+  const img = w.document.querySelector("img");
+  const doPrint = () => { w.focus(); w.print(); };
+  if (img && !img.complete) {
+    img.onload = () => setTimeout(doPrint, 100);
+  } else {
+    setTimeout(doPrint, 200);
+  }
 }
 
 function TicketOverlay({
