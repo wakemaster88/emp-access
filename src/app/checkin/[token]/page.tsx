@@ -561,6 +561,21 @@ function TicketCard({
           {ticket.slotStart && ticket.ticketTypeName ? " · " : ""}
           {ticket.ticketTypeName ?? ""}
         </p>
+        {isSub && ticket.startDate && ticket.endDate && (
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+            {" – "}
+            {new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+            {new Date(ticket.endDate) < new Date() && (
+              <span className="text-rose-400 font-semibold ml-1">abgelaufen</span>
+            )}
+          </p>
+        )}
+        {isSub && ticket.startDate && !ticket.endDate && (
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            ab {new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+          </p>
+        )}
         {extras.length > 0 && (
           <div className="flex gap-1 mt-1 flex-wrap">
             {extras.map((ex, i) => (
@@ -683,6 +698,17 @@ function TicketOverlay({
           <InfoRow label="RFID" value={ticket.rfidCode ?? "–"} icon={Fingerprint} />
           {ticket.accessArea && <InfoRow label="Bereich" value={ticket.accessArea.name} icon={Users} />}
           {ticket.barcode && <InfoRow label="Barcode" value={ticket.barcode} icon={ScanLine} />}
+          {ticket.startDate && (
+            <InfoRow
+              label="Gültig"
+              value={
+                ticket.endDate
+                  ? `${new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })} – ${new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}${new Date(ticket.endDate) < new Date() ? " (abgelaufen)" : ""}`
+                  : `ab ${new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`
+              }
+              icon={Clock}
+            />
+          )}
         </div>
 
         {/* Actions */}
