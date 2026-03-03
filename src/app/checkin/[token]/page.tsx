@@ -21,6 +21,7 @@ import {
   Package,
   Fingerprint,
   Image as ImageIcon,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -436,8 +437,14 @@ function LiveClock() {
 }
 
 function DaySelector({ date, onChange }: { date: string; onChange: (d: string) => void }) {
+  const [calOpen, setCalOpen] = useState(false);
+  const [calMonth, setCalMonth] = useState(() => {
+    const d = new Date(date);
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
   const days = useMemo(() => {
-    const result: { date: string; label: string; short: string; isToday: boolean }[] = [];
+    const result: { date: string; label: string; isToday: boolean }[] = [];
     const today = new Date();
     for (let i = -2; i <= 4; i++) {
       const d = new Date(today);
@@ -446,40 +453,129 @@ function DaySelector({ date, onChange }: { date: string; onChange: (d: string) =
       result.push({
         date: ds,
         label: d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }),
-        short: d.toLocaleDateString("de-DE", { weekday: "short" }),
         isToday: i === 0,
       });
     }
     return result;
   }, []);
 
+  const calDays = useMemo(() => {
+    const { year, month } = calMonth;
+    const first = new Date(year, month, 1);
+    const startDay = (first.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const rows: (Date | null)[][] = [];
+    let row: (Date | null)[] = [];
+    for (let i = 0; i < startDay; i++) row.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      row.push(new Date(year, month, d));
+      if (row.length === 7) { rows.push(row); row = []; }
+    }
+    if (row.length > 0) {
+      while (row.length < 7) row.push(null);
+      rows.push(row);
+    }
+    return rows;
+  }, [calMonth]);
+
+  const todayStr = toDateStr(new Date());
+  const selectedDate = new Date(date);
+  const monthLabel = new Date(calMonth.year, calMonth.month).toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+
   return (
-    <div className="px-4 py-2 flex items-center gap-2 border-b border-slate-800 overflow-x-auto">
-      <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() - 1); onChange(toDateStr(d)); }} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0">
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      <div className="flex gap-1.5 flex-1 justify-center">
-        {days.map((d) => (
-          <button
-            key={d.date}
-            onClick={() => onChange(d.date)}
-            className={cn(
-              "px-3 py-2 rounded-xl text-xs font-semibold transition-all min-w-[4.5rem] active:scale-95",
-              d.date === date
-                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25"
-                : d.isToday
-                ? "bg-slate-800 text-indigo-400 ring-1 ring-indigo-500/30"
-                : "bg-slate-800/50 text-slate-400 hover:bg-slate-800"
-            )}
-          >
-            {d.label}
-          </button>
-        ))}
+    <>
+      <div className="px-4 py-2 flex items-center gap-2 border-b border-slate-800 overflow-x-auto">
+        <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() - 1); onChange(toDateStr(d)); }} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0">
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className="flex gap-1.5 flex-1 justify-center">
+          {days.map((d) => (
+            <button
+              key={d.date}
+              onClick={() => onChange(d.date)}
+              className={cn(
+                "px-3 py-2 rounded-xl text-xs font-semibold transition-all min-w-[4.5rem] active:scale-95",
+                d.date === date
+                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25"
+                  : d.isToday
+                  ? "bg-slate-800 text-indigo-400 ring-1 ring-indigo-500/30"
+                  : "bg-slate-800/50 text-slate-400 hover:bg-slate-800"
+              )}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => { setCalMonth({ year: selectedDate.getFullYear(), month: selectedDate.getMonth() }); setCalOpen(true); }}
+          className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0"
+        >
+          <CalendarDays className="h-4 w-4" />
+        </button>
+        <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); onChange(toDateStr(d)); }} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0">
+          <ChevronRight className="h-4 w-4" />
+        </button>
       </div>
-      <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); onChange(toDateStr(d)); }} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0">
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
+
+      {calOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center" onClick={() => setCalOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-slate-900 border border-slate-700 rounded-3xl p-5 w-[340px] shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={() => setCalMonth((p) => { const m = p.month - 1; return m < 0 ? { year: p.year - 1, month: 11 } : { ...p, month: m }; })} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <span className="text-sm font-bold text-white capitalize">{monthLabel}</span>
+              <button onClick={() => setCalMonth((p) => { const m = p.month + 1; return m > 11 ? { year: p.year + 1, month: 0 } : { ...p, month: m }; })} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((wd) => (
+                <div key={wd} className="text-center text-[11px] font-bold text-slate-500 py-1">{wd}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {calDays.flat().map((d, i) => {
+                if (!d) return <div key={`e${i}`} />;
+                const ds = toDateStr(d);
+                const isSelected = ds === date;
+                const isToday = ds === todayStr;
+                return (
+                  <button
+                    key={ds}
+                    onClick={() => { onChange(ds); setCalOpen(false); }}
+                    className={cn(
+                      "w-10 h-10 rounded-xl text-sm font-semibold transition-all active:scale-90",
+                      isSelected
+                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25"
+                        : isToday
+                        ? "bg-slate-800 text-indigo-400 ring-1 ring-indigo-500/30"
+                        : "text-slate-300 hover:bg-slate-800"
+                    )}
+                  >
+                    {d.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex justify-between">
+              <button
+                onClick={() => { onChange(todayStr); setCalOpen(false); }}
+                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
+              >
+                Heute
+              </button>
+              <button
+                onClick={() => setCalOpen(false)}
+                className="text-xs font-semibold text-slate-400 hover:text-slate-300 px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
