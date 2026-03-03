@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
       defaultSlotEnd: body.defaultSlotEnd ?? null,
       defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null,
       allowReentry: !!body.allowReentry,
+      allowManualCheckin: body.allowManualCheckin !== false,
       requiresPhoto: !!body.requiresPhoto,
       requiresRfid: !!body.requiresRfid,
       serviceAreas: areasPayload.length > 0 ? {

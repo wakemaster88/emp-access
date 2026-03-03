@@ -59,7 +59,7 @@ interface CheckinTicket {
   checkedIn: boolean;
   accessArea?: { id: number; name: string } | null;
   subscription?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean } | null;
-  service?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean } | null;
+  service?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean; allowManualCheckin?: boolean } | null;
   _count?: { scans: number };
 }
 
@@ -441,7 +441,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   key={t.id}
                   ticket={t}
                   onTap={() => setSelectedTicket(t)}
-                  onCheckin={() => handleCheckin(t.id)}
+                  onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
                   checkingIn={checkingIn === t.id}
                 />
               ))}
@@ -464,7 +464,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         key={t.id}
                         ticket={t}
                         onTap={() => setSelectedTicket(t)}
-                        onCheckin={() => handleCheckin(t.id)}
+                        onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
                         checkingIn={checkingIn === t.id}
                       />
                     ))}
@@ -1083,7 +1083,7 @@ function TicketOverlay({
         {/* Actions */}
         <div className="p-5 space-y-3">
           {/* Check-in button */}
-          {!isChecked && !isSub && (
+          {!isChecked && !isSub && ticket.service?.allowManualCheckin !== false && (
             <button
               onClick={onCheckin}
               disabled={checkingIn}

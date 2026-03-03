@@ -90,6 +90,7 @@ export async function PUT(
       ...(body.defaultSlotEnd !== undefined && { defaultSlotEnd: body.defaultSlotEnd || null }),
       ...(body.defaultValidityDurationMinutes !== undefined && { defaultValidityDurationMinutes: body.defaultValidityDurationMinutes != null ? Number(body.defaultValidityDurationMinutes) : null }),
       ...(body.allowReentry !== undefined && { allowReentry: !!body.allowReentry }),
+      ...(body.allowManualCheckin !== undefined && { allowManualCheckin: !!body.allowManualCheckin }),
       ...(body.requiresPhoto !== undefined && { requiresPhoto: !!body.requiresPhoto }),
       ...(body.requiresRfid !== undefined && { requiresRfid: !!body.requiresRfid }),
     },

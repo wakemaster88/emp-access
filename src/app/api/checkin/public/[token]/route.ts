@@ -70,7 +70,7 @@ export async function GET(
         ...ticketSelect,
         accessArea: { select: { id: true, name: true } },
         subscription: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
-        service: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
+        service: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true, allowManualCheckin: true } },
         _count: { select: { scans: true } },
       },
       orderBy: [{ slotStart: "asc" }, { startDate: "asc" }, { name: "asc" }],

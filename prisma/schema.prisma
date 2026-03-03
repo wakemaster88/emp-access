@@ -264,6 +264,7 @@ model Service {
   defaultSlotEnd              String?       // HH:mm
   defaultValidityDurationMinutes Int?
   allowReentry                Boolean       @default(false)
+  allowManualCheckin          Boolean       @default(true)
   requiresPhoto               Boolean       @default(false)
   requiresRfid                Boolean       @default(false)
   accountId                   Int

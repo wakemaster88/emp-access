@@ -55,6 +55,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
       defaultSlotEnd: svc.defaultSlotEnd ?? undefined,
       defaultValidityDurationMinutes: svc.defaultValidityDurationMinutes ?? undefined,
       allowReentry: svc.allowReentry ?? false,
+      allowManualCheckin: svc.allowManualCheckin !== false,
       requiresPhoto: svc.requiresPhoto ?? false,
       requiresRfid: svc.requiresRfid ?? false,
     });

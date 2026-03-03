@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, ScanLine } from "lucide-react";
+import { Camera, Loader2, Trash2, Save, Settings2, Link2, MapPin, Check, ScanLine, ClipboardCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function toDateInput(val: string | Date | null | undefined): string {
@@ -34,6 +34,7 @@ export interface ServiceData {
   defaultSlotEnd?: string | null;
   defaultValidityDurationMinutes?: number | null;
   allowReentry?: boolean;
+  allowManualCheckin?: boolean;
   requiresPhoto?: boolean;
   requiresRfid?: boolean;
 }
@@ -155,6 +156,7 @@ export function ServiceDialog({
   const [defaultSlotEnd, setDefaultSlotEnd] = useState("");
   const [defaultValidityDurationMinutes, setDefaultValidityDurationMinutes] = useState("");
   const [allowReentry, setAllowReentry] = useState(false);
+  const [allowManualCheckin, setAllowManualCheckin] = useState(true);
   const [requiresPhoto, setRequiresPhoto] = useState(false);
   const [requiresRfid, setRequiresRfid] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -188,6 +190,7 @@ export function ServiceDialog({
         setDefaultSlotEnd(service.defaultSlotEnd ?? "");
         setDefaultValidityDurationMinutes(service.defaultValidityDurationMinutes != null ? String(service.defaultValidityDurationMinutes) : "");
         setAllowReentry(service.allowReentry ?? false);
+        setAllowManualCheckin(service.allowManualCheckin !== false);
         setRequiresPhoto(service.requiresPhoto ?? false);
         setRequiresRfid(service.requiresRfid ?? false);
       } else {
@@ -201,6 +204,7 @@ export function ServiceDialog({
         setDefaultSlotEnd("");
         setDefaultValidityDurationMinutes("");
         setAllowReentry(false);
+        setAllowManualCheckin(true);
         setRequiresPhoto(false);
         setRequiresRfid(false);
       }
@@ -239,6 +243,7 @@ export function ServiceDialog({
         name: name.trim(),
         annyNames: [...selectedAnny],
         allowReentry,
+        allowManualCheckin,
         requiresPhoto,
         requiresRfid,
         areas: serviceAreas.map((sa) => {
@@ -384,6 +389,16 @@ export function ServiceDialog({
                   <p className="text-[11px] text-slate-500">Bei Scan an Ausgang: Ticket wieder gültig setzen</p>
                 </div>
                 <Switch checked={allowReentry} onCheckedChange={setAllowReentry} />
+              </div>
+              <div className="flex items-center justify-between p-2.5">
+                <div>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <ClipboardCheck className="h-3.5 w-3.5 text-slate-400" />
+                    Manuelles Einchecken
+                  </p>
+                  <p className="text-[11px] text-slate-500">Einchecken-Button im Check-in Monitor anzeigen</p>
+                </div>
+                <Switch checked={allowManualCheckin} onCheckedChange={setAllowManualCheckin} />
               </div>
               <div className="flex items-center justify-between p-2.5">
                 <div>
