@@ -220,14 +220,35 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
   useEffect(() => { handleScanRef.current = handleScan; }, [handleScan]);
 
-  const handleUpdateTicket = useCallback(async (ticketId: number, update: { profileImage?: string; rfidCode?: string }) => {
+  const [rfidConflict, setRfidConflict] = useState<{
+    ticketId: number;
+    rfidCode: string;
+    existingOwner: string;
+    existingType: string | null;
+  } | null>(null);
+
+  const handleUpdateTicket = useCallback(async (ticketId: number, update: { profileImage?: string; rfidCode?: string }, force?: boolean) => {
     setUpdatingTicket(ticketId);
     try {
-      await fetch(`/api/checkin/public/${token}/update`, {
+      const res = await fetch(`/api/checkin/public/${token}/update`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticketId, ...update }),
+        body: JSON.stringify({ ticketId, ...update, force }),
       });
+      const json = await res.json();
+
+      if (res.status === 409 && json.conflict && update.rfidCode) {
+        setRfidConflict({
+          ticketId,
+          rfidCode: update.rfidCode,
+          existingOwner: json.existingOwner,
+          existingType: json.existingType,
+        });
+        setUpdatingTicket(null);
+        return;
+      }
+
+      setRfidConflict(null);
       await fetchData();
       if (selectedTicket?.id === ticketId) {
         setSelectedTicket((prev) => prev ? { ...prev, ...update } : null);
@@ -442,10 +463,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           setEditMode={setEditMode}
           rfidInput={rfidInput}
           setRfidInput={setRfidInput}
-          onSaveRfid={() => handleUpdateTicket(selectedTicket.id, { rfidCode: rfidInput })}
+          onSaveRfid={(code?: string) => handleUpdateTicket(selectedTicket.id, { rfidCode: code ?? rfidInput })}
           onOpenCamera={() => setCameraOpen(true)}
           updatingTicket={updatingTicket === selectedTicket.id}
           accountName={data?.accountName ?? ""}
+          rfidConflict={rfidConflict?.ticketId === selectedTicket.id ? rfidConflict : null}
+          onForceRfid={() => { if (rfidConflict) { handleUpdateTicket(rfidConflict.ticketId, { rfidCode: rfidConflict.rfidCode }, true); } }}
+          onCancelRfid={() => setRfidConflict(null)}
         />
       )}
 
@@ -824,6 +848,9 @@ function TicketOverlay({
   onOpenCamera,
   updatingTicket,
   accountName,
+  rfidConflict,
+  onForceRfid,
+  onCancelRfid,
 }: {
   ticket: CheckinTicket;
   onClose: () => void;
@@ -833,10 +860,13 @@ function TicketOverlay({
   setEditMode: (m: "photo" | "rfid" | null) => void;
   rfidInput: string;
   setRfidInput: (v: string) => void;
-  onSaveRfid: () => void;
+  onSaveRfid: (code?: string) => void;
   onOpenCamera: () => void;
   updatingTicket: boolean;
   accountName: string;
+  rfidConflict: { rfidCode: string; existingOwner: string; existingType: string | null } | null;
+  onForceRfid: () => void;
+  onCancelRfid: () => void;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isChecked = ticket.checkedIn || ticket.status === "REDEEMED";
@@ -954,22 +984,46 @@ function TicketOverlay({
 
           {/* RFID input */}
           {editMode === "rfid" && (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={rfidInput}
-                onChange={(e) => setRfidInput(e.target.value)}
-                placeholder="RFID-Code eingeben oder scannen"
-                className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                autoFocus
-              />
-              <button
-                onClick={onSaveRfid}
-                disabled={!rfidInput.trim() || updatingTicket}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50 active:scale-95"
-              >
-                {updatingTicket ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
-              </button>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <RfidInput
+                  value={rfidInput}
+                  onChange={setRfidInput}
+                  onSubmit={(code) => onSaveRfid(code)}
+                  disabled={updatingTicket}
+                />
+                <button
+                  onClick={() => onSaveRfid()}
+                  disabled={!rfidInput.trim() || updatingTicket}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50 active:scale-95"
+                >
+                  {updatingTicket ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
+                </button>
+              </div>
+              {rfidConflict && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3">
+                  <p className="text-sm text-amber-200">
+                    <span className="font-bold">RFID bereits vergeben</span> an{" "}
+                    <span className="font-semibold">{rfidConflict.existingOwner}</span>
+                    {rfidConflict.existingType && <span className="text-amber-300/70"> ({rfidConflict.existingType})</span>}
+                  </p>
+                  <p className="text-xs text-amber-300/60">RFID vom bisherigen Besitzer entfernen und diesem Ticket zuweisen?</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={onForceRfid}
+                      className="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                    >
+                      Überschreiben
+                    </button>
+                    <button
+                      onClick={onCancelRfid}
+                      className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1162,6 +1216,58 @@ function CameraOverlay({ onCapture, onClose }: { onCapture: (dataUrl: string) =>
         </div>
       )}
     </div>
+  );
+}
+
+function RfidInput({ value, onChange, onSubmit, disabled }: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: (code: string) => void;
+  disabled: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const bufferRef = useRef("");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    onChange(val);
+
+    bufferRef.current = val;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      const code = bufferRef.current.trim();
+      if (code.length >= 4) {
+        onSubmit(code);
+      }
+      bufferRef.current = "";
+    }, 300);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (timerRef.current) clearTimeout(timerRef.current);
+      bufferRef.current = "";
+      const code = value.trim();
+      if (code) onSubmit(code);
+    }
+  };
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={value}
+      onChange={handleChange}
+      onKeyDown={handleKeyDown}
+      disabled={disabled}
+      placeholder="RFID scannen oder eingeben"
+      className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      autoFocus
+    />
   );
 }
 

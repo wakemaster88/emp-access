@@ -30,8 +30,40 @@ export async function PUT(
   if (body.profileImage !== undefined) {
     updateData.profileImage = body.profileImage || null;
   }
+
   if (body.rfidCode !== undefined) {
-    updateData.rfidCode = body.rfidCode || null;
+    const rfid = (body.rfidCode as string)?.trim() || null;
+
+    if (rfid) {
+      const existing = await prisma.ticket.findFirst({
+        where: {
+          rfidCode: rfid,
+          accountId: monitor.accountId,
+          id: { not: ticket.id },
+        },
+        select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true },
+      });
+
+      if (existing && !body.force) {
+        const ownerName = [existing.firstName, existing.lastName].filter(Boolean).join(" ") || existing.name;
+        return NextResponse.json({
+          conflict: true,
+          existingTicketId: existing.id,
+          existingOwner: ownerName,
+          existingType: existing.ticketTypeName,
+          message: `RFID ist bereits vergeben an ${ownerName}`,
+        }, { status: 409 });
+      }
+
+      if (existing && body.force) {
+        await prisma.ticket.update({
+          where: { id: existing.id },
+          data: { rfidCode: null, version: { increment: 1 } },
+        });
+      }
+    }
+
+    updateData.rfidCode = rfid;
   }
 
   if (Object.keys(updateData).length === 0) {
