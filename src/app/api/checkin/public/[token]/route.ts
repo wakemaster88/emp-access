@@ -60,7 +60,7 @@ export async function GET(
             OR: [
               { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
               { startDate: null, endDate: null },
-              { startDate: { lte: dayEnd }, endDate: null },
+              { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
               { startDate: null, endDate: { gte: dayStart } },
             ],
           },
@@ -84,7 +84,15 @@ export async function GET(
         requiresPhoto: true,
         requiresRfid: true,
         tickets: {
-          where: { status: { in: ["VALID", "REDEEMED"] } },
+          where: {
+            status: { in: ["VALID", "REDEEMED"] },
+            OR: [
+              { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
+              { startDate: null, endDate: null },
+              { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
+              { startDate: null, endDate: { gte: dayStart } },
+            ],
+          },
           select: {
             ...ticketSelect,
             accessArea: { select: { id: true, name: true } },

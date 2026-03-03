@@ -561,21 +561,23 @@ function DaySelector({ date, onChange }: { date: string; onChange: (d: string) =
     return { year: d.getFullYear(), month: d.getMonth() };
   });
 
+  const todayStrGlobal = toDateStr(new Date());
+
   const days = useMemo(() => {
     const result: { date: string; label: string; isToday: boolean }[] = [];
-    const today = new Date();
-    for (let i = -2; i <= 4; i++) {
-      const d = new Date(today);
+    const center = new Date(date + "T12:00:00");
+    for (let i = -3; i <= 3; i++) {
+      const d = new Date(center);
       d.setDate(d.getDate() + i);
       const ds = toDateStr(d);
       result.push({
         date: ds,
         label: d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }),
-        isToday: i === 0,
+        isToday: ds === todayStrGlobal,
       });
     }
     return result;
-  }, []);
+  }, [date, todayStrGlobal]);
 
   const calDays = useMemo(() => {
     const { year, month } = calMonth;
@@ -596,7 +598,6 @@ function DaySelector({ date, onChange }: { date: string; onChange: (d: string) =
     return rows;
   }, [calMonth]);
 
-  const todayStr = toDateStr(new Date());
   const selectedDate = new Date(date);
   const monthLabel = new Date(calMonth.year, calMonth.month).toLocaleDateString("de-DE", { month: "long", year: "numeric" });
 
@@ -657,7 +658,7 @@ function DaySelector({ date, onChange }: { date: string; onChange: (d: string) =
                 if (!d) return <div key={`e${i}`} />;
                 const ds = toDateStr(d);
                 const isSelected = ds === date;
-                const isToday = ds === todayStr;
+                const isToday = ds === todayStrGlobal;
                 return (
                   <button
                     key={ds}
@@ -678,7 +679,7 @@ function DaySelector({ date, onChange }: { date: string; onChange: (d: string) =
             </div>
             <div className="mt-3 flex justify-between">
               <button
-                onClick={() => { onChange(todayStr); setCalOpen(false); }}
+                onClick={() => { onChange(todayStrGlobal); setCalOpen(false); }}
                 className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
               >
                 Heute
