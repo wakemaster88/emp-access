@@ -253,7 +253,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     const checked: CheckinTicket[] = [];
     const pending: CheckinTicket[] = [];
 
-    for (const t of dayTickets) {
+    for (const t of dayTickets.filter((t) => !t.subscriptionId)) {
       if (t.checkedIn || t.status === "REDEEMED") {
         checked.push(t);
         continue;
@@ -335,7 +335,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
       {/* Stats bar */}
       <div className="px-4 py-2 flex gap-3 border-b border-slate-800/50">
-        <StatPill icon={Users} label="Gesamt" value={dayTickets.length} />
+        <StatPill icon={Users} label="Gesamt" value={dayTickets.filter((t) => !t.subscriptionId).length} />
         <StatPill icon={CheckCircle2} label="Eingecheckt" value={checkedInTickets.length} color="emerald" />
         <StatPill icon={Clock} label="Ausstehend" value={pendingTickets.length + upcoming.length} color="amber" />
         <StatPill icon={CreditCard} label="Abos" value={subscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet" />
