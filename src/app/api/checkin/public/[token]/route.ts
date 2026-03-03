@@ -54,12 +54,16 @@ export async function GET(
       where: {
         accountId,
         status: { in: ["VALID", "REDEEMED"] },
-        source: { not: "EMP_CONTROL" },
-        OR: [
-          { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-          { startDate: null, endDate: null },
-          { startDate: { lte: dayEnd }, endDate: null },
-          { startDate: null, endDate: { gte: dayStart } },
+        AND: [
+          { OR: [{ source: null }, { source: { notIn: ["EMP_CONTROL"] } }] },
+          {
+            OR: [
+              { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
+              { startDate: null, endDate: null },
+              { startDate: { lte: dayEnd }, endDate: null },
+              { startDate: null, endDate: { gte: dayStart } },
+            ],
+          },
         ],
       },
       select: {
