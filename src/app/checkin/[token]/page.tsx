@@ -533,6 +533,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           rfidConflict={rfidConflict?.ticketId === selectedTicket.id ? rfidConflict : null}
           onForceRfid={() => { if (rfidConflict) { handleUpdateTicket(rfidConflict.ticketId, { rfidCode: rfidConflict.rfidCode }, true); } }}
           onCancelRfid={() => setRfidConflict(null)}
+          ticketScans={(data?.recentScans ?? []).filter((s) => s.ticketId === selectedTicket.id)}
         />
       )}
 
@@ -952,6 +953,7 @@ function TicketOverlay({
   rfidConflict,
   onForceRfid,
   onCancelRfid,
+  ticketScans,
 }: {
   ticket: CheckinTicket;
   onClose: () => void;
@@ -968,6 +970,7 @@ function TicketOverlay({
   rfidConflict: { rfidCode: string; existingOwner: string; existingType: string | null } | null;
   onForceRfid: () => void;
   onCancelRfid: () => void;
+  ticketScans: ScanEntry[];
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isChecked = ticket.checkedIn || ticket.status === "REDEEMED";
@@ -1043,6 +1046,39 @@ function TicketOverlay({
             />
           )}
         </div>
+
+        {/* Scan history */}
+        {ticketScans.length > 0 && (
+          <div className="px-5 py-3 border-b border-slate-800">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+              <ScanLine className="h-3.5 w-3.5 inline mr-1.5" />Scanverlauf
+            </p>
+            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              {ticketScans.map((s) => (
+                <div key={s.id} className="flex items-center gap-2 text-xs">
+                  {s.result === "GRANTED" ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                  )}
+                  <span className={s.result === "GRANTED" ? "text-emerald-300 font-semibold" : "text-rose-300 font-semibold"}>
+                    {s.result === "GRANTED" ? "Zugang" : "Abgelehnt"}
+                  </span>
+                  <span className="text-slate-500">·</span>
+                  <span className="text-slate-400">
+                    {new Date(s.scanTime).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                  {s.device && (
+                    <>
+                      <span className="text-slate-500">·</span>
+                      <span className="text-slate-500 truncate">{s.device.name}</span>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="p-5 space-y-3">
