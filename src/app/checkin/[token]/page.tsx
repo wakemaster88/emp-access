@@ -850,7 +850,7 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  @page{margin:0;padding:0;size:80mm auto}
+  @page{margin:0;padding:0;size:80mm 297mm portrait}
   body{
     font-family:monospace;
     width:80mm;max-width:80mm;
@@ -858,6 +858,7 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
     color:#000;background:#fff;
     font-size:11px;line-height:1.4;
     -webkit-text-size-adjust:none;
+    -webkit-transform:rotate(0deg);
   }
   .c{text-align:center}
   .b{font-weight:bold}
