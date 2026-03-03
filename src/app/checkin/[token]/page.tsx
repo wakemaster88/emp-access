@@ -25,6 +25,7 @@ import {
   Printer,
 } from "lucide-react";
 import QRCode from "qrcode";
+import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 
 interface TicketExtra {
@@ -822,8 +823,8 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   let qrDataUrl = "";
   try {
     qrDataUrl = await QRCode.toDataURL(code, {
-      width: 360,
-      margin: 0,
+      width: 400,
+      margin: 1,
       errorCorrectionLevel: "M",
       color: { dark: "#000000", light: "#ffffff" },
     });
@@ -844,70 +845,93 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   const extras = ((ticket.extras ?? []) as TicketExtra[])
     .map((ex) => (ex.quantity > 1 ? `${ex.quantity}x ${ex.name}` : ex.name));
 
-  const w = window.open("", "_blank", "width=320,height=600");
-  if (!w) return;
+  const pw = 72;
+  const margin = 4;
+  const contentW = pw - margin * 2;
+  const doc = new jsPDF({ unit: "mm", format: [pw, 200] });
 
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  @page{margin:0;padding:0;size:72mm 297mm portrait}
-  body{
-    font-family:monospace;
-    width:72mm;max-width:72mm;
-    padding:2mm 3mm 6mm 3mm;
-    color:#000;background:#fff;
-    font-size:11px;line-height:1.4;
-    -webkit-text-size-adjust:none;
-    -webkit-transform:rotate(0deg);
+  let y = 5;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(accountName, pw / 2, y, { align: "center" });
+  y += 5;
+
+  doc.setDrawColor(0);
+  doc.setLineDashPattern([1, 1], 0);
+  doc.line(margin, y, pw - margin, y);
+  y += 4;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  const nameLines = doc.splitTextToSize(name, contentW);
+  doc.text(nameLines, margin, y);
+  y += nameLines.length * 4.5;
+
+  doc.setFontSize(9);
+  if (type) {
+    doc.setFont("helvetica", "bold");
+    const typeLines = doc.splitTextToSize(type, contentW);
+    doc.text(typeLines, margin, y);
+    y += typeLines.length * 3.5;
   }
-  .c{text-align:center}
-  .b{font-weight:bold}
-  .s{font-size:9px;color:#333}
-  .gap{height:2mm}
-  .gap2{height:4mm}
-  .sep{border:none;border-top:1px dashed #000;margin:3mm 0}
-  .title{font-size:13px;font-weight:bold;letter-spacing:0.5px}
-  .name{font-size:12px;font-weight:bold;margin-bottom:1mm}
-  .info{font-size:11px;margin-bottom:0.5mm}
-  .extra{display:inline-block;border:1px solid #000;padding:1px 4px;margin:1px 2px 1px 0;font-size:10px}
-  .qr{display:block;margin:2mm auto}
-  .code{font-size:9px;letter-spacing:1px;word-break:break-all}
-  .cut{margin-top:6mm;border-top:1px dashed #000}
-</style></head><body>
 
-<div class="c title">${accountName}</div>
-<hr class="sep">
+  doc.setFont("helvetica", "normal");
+  if (time) { doc.text(time, margin, y); y += 3.5; }
+  if (area) { doc.text(`Bereich: ${area}`, margin, y); y += 3.5; }
+  if (validity) { doc.text(`Gültig: ${validity}`, margin, y); y += 3.5; }
 
-<div class="name">${name}</div>
-${type ? `<div class="info b">${type}</div>` : ""}
-${time ? `<div class="info">${time}</div>` : ""}
-${area ? `<div class="info">Bereich: ${area}</div>` : ""}
-${validity ? `<div class="info">Gueltig: ${validity}</div>` : ""}
+  if (extras.length > 0) {
+    y += 2;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("Extras:", margin, y);
+    y += 3;
+    doc.setFont("helvetica", "normal");
+    for (const ex of extras) {
+      const exLines = doc.splitTextToSize(`• ${ex}`, contentW);
+      doc.text(exLines, margin, y);
+      y += exLines.length * 3;
+    }
+  }
 
-${extras.length > 0 ? `
-<div class="gap"></div>
-<div class="s b">Extras:</div>
-${extras.map((e) => `<span class="extra">${e}</span>`).join("")}
-` : ""}
+  y += 2;
+  doc.line(margin, y, pw - margin, y);
+  y += 3;
 
-<hr class="sep">
+  if (qrDataUrl) {
+    const qrSize = 38;
+    const qrX = (pw - qrSize) / 2;
+    doc.addImage(qrDataUrl, "PNG", qrX, y, qrSize, qrSize);
+    y += qrSize + 2;
+  }
 
-${qrDataUrl ? `<img src="${qrDataUrl}" class="qr" width="180" height="180" alt="">` : ""}
-<div class="c code">${code}</div>
+  doc.setFont("courier", "normal");
+  doc.setFontSize(7);
+  doc.text(code, pw / 2, y, { align: "center" });
+  y += 4;
 
-<hr class="sep">
-<div class="c s">${new Date().toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
-<div class="cut"></div>
+  doc.line(margin, y, pw - margin, y);
+  y += 3;
 
-</body></html>`);
-  w.document.close();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  const now = new Date().toLocaleString("de-DE", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+  doc.text(now, pw / 2, y, { align: "center" });
+  y += 8;
 
-  const img = w.document.querySelector("img");
-  const doPrint = () => { w.focus(); w.print(); };
-  if (img && !img.complete) {
-    img.onload = () => setTimeout(doPrint, 100);
-  } else {
-    setTimeout(doPrint, 200);
+  doc.setLineDashPattern([1, 1], 0);
+  doc.line(margin, y, pw - margin, y);
+
+  const blob = doc.output("blob");
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, "_blank");
+  if (w) {
+    w.addEventListener("afterprint", () => URL.revokeObjectURL(url));
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 }
 
