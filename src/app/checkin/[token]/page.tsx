@@ -1042,12 +1042,8 @@ function TicketOverlay({
                   <span className="text-slate-400">
                     {new Date(s.scanTime).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                   </span>
-                  {s.device && (
-                    <>
-                      <span className="text-slate-500">·</span>
-                      <span className="text-slate-500 truncate">{s.device.name}</span>
-                    </>
-                  )}
+                  <span className="text-slate-500">·</span>
+                  <span className="text-slate-500 truncate">{s.device?.name ?? "Manuell"}</span>
                 </div>
               ))}
             </div>
