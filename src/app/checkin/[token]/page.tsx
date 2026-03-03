@@ -124,61 +124,66 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
 
-  const dateRef = useRef(date);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/checkin/public/${token}?date=${date}&_t=${Date.now()}`, { cache: "no-store" });
-      if (!res.ok) {
-        setError("Check-in Monitor nicht gefunden");
-        return;
-      }
-      const json: CheckinData = await res.json();
-
-      const newScans = json.recentScans.filter((s) => !knownScanIdsRef.current.has(s.id));
-      if (knownScanIdsRef.current.size > 0 && newScans.length > 0) {
-        const highlights = new Map<number, string>();
-        for (const s of newScans) {
-          if (s.ticketId) highlights.set(s.ticketId, s.result);
-        }
-        if (highlights.size > 0) {
-          setScanHighlights((prev) => {
-            const next = new Map(prev);
-            for (const [k, v] of highlights) next.set(k, v);
-            return next;
-          });
-          setTimeout(() => {
-            setScanHighlights((prev) => {
-              const next = new Map(prev);
-              for (const k of highlights.keys()) next.delete(k);
-              return next;
-            });
-          }, 4000);
-        }
-      }
-      for (const s of json.recentScans) knownScanIdsRef.current.add(s.id);
-
-      setData(json);
-      setError("");
-    } catch {
-      setError("Verbindungsfehler");
-    } finally {
-      setLoading(false);
-    }
-  }, [token, date]);
+  const fetchRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
-    if (dateRef.current !== date) {
-      knownScanIdsRef.current = new Set();
-      setScanHighlights(new Map());
-      setData(null);
-      dateRef.current = date;
-    }
+    const currentDate = date;
+    let cancelled = false;
+
+    knownScanIdsRef.current = new Set();
+    setScanHighlights(new Map());
     setLoading(true);
-    fetchData();
-    pollRef.current = setInterval(fetchData, 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fetchData, date]);
+
+    const doFetch = async () => {
+      try {
+        const res = await fetch(`/api/checkin/public/${token}?date=${currentDate}&_t=${Date.now()}`, { cache: "no-store" });
+        if (cancelled) return;
+        if (!res.ok) { setError("Check-in Monitor nicht gefunden"); return; }
+        const json: CheckinData = await res.json();
+        if (cancelled) return;
+
+        const newScans = json.recentScans.filter((s) => !knownScanIdsRef.current.has(s.id));
+        if (knownScanIdsRef.current.size > 0 && newScans.length > 0) {
+          const highlights = new Map<number, string>();
+          for (const s of newScans) {
+            if (s.ticketId) highlights.set(s.ticketId, s.result);
+          }
+          if (highlights.size > 0) {
+            setScanHighlights((prev) => {
+              const next = new Map(prev);
+              for (const [k, v] of highlights) next.set(k, v);
+              return next;
+            });
+            setTimeout(() => {
+              setScanHighlights((prev) => {
+                const next = new Map(prev);
+                for (const k of highlights.keys()) next.delete(k);
+                return next;
+              });
+            }, 4000);
+          }
+        }
+        for (const s of json.recentScans) knownScanIdsRef.current.add(s.id);
+
+        setData(json);
+        setError("");
+      } catch {
+        if (!cancelled) setError("Verbindungsfehler");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchRef.current = async () => { await doFetch(); };
+
+    doFetch();
+    const interval = setInterval(doFetch, 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [token, date]);
 
   const handleScanRef = useRef<((code: string) => void) | null>(null);
 
@@ -222,7 +227,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       });
       const json = await res.json();
       if (json.success) {
-        await fetchData();
+        await fetchRef.current?.();
         if (selectedTicket?.id === ticketId) {
           setSelectedTicket((prev) => prev ? { ...prev, checkedIn: true, status: "REDEEMED" } : null);
         }
@@ -230,7 +235,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     } finally {
       setCheckingIn(null);
     }
-  }, [token, fetchData, selectedTicket]);
+  }, [token, date, selectedTicket]);
 
   const handleScan = useCallback(async (code: string) => {
     if (!code.trim()) return;
@@ -284,7 +289,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       }
 
       setRfidConflict(null);
-      await fetchData();
+      await fetchRef.current?.();
       if (selectedTicket?.id === ticketId) {
         setSelectedTicket((prev) => prev ? { ...prev, ...update } : null);
       }
@@ -292,7 +297,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       setUpdatingTicket(null);
       setEditMode(null);
     }
-  }, [token, fetchData, selectedTicket]);
+  }, [token, date, selectedTicket]);
 
   const handleCameraCapture = useCallback((dataUrl: string) => {
     if (!selectedTicket) return;
