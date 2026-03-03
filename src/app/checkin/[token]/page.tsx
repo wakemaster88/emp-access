@@ -105,6 +105,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [scanInput, setScanInput] = useState("");
   const [scanResult, setScanResult] = useState<{ found: boolean; ticket?: CheckinTicket; message?: string } | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
+  const [scanBubble, setScanBubble] = useState("");
   const [checkingIn, setCheckingIn] = useState<number | null>(null);
   const [updatingTicket, setUpdatingTicket] = useState<number | null>(null);
   const [rfidInput, setRfidInput] = useState("");
@@ -112,6 +113,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [cameraOpen, setCameraOpen] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanBufferRef = useRef("");
+  const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -136,6 +139,38 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     pollRef.current = setInterval(fetchData, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchData]);
+
+  const handleScanRef = useRef<(code: string) => void>();
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "Enter") {
+        const code = scanBufferRef.current.trim();
+        scanBufferRef.current = "";
+        if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+        if (code.length >= 3) {
+          setScanBubble("");
+          handleScanRef.current?.(code);
+        }
+        return;
+      }
+
+      if (e.key.length === 1) {
+        scanBufferRef.current += e.key;
+        setScanBubble(scanBufferRef.current);
+        if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+        scanTimerRef.current = setTimeout(() => {
+          scanBufferRef.current = "";
+          setScanBubble("");
+        }, 500);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const handleCheckin = useCallback(async (ticketId: number) => {
     setCheckingIn(ticketId);
@@ -177,6 +212,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       setScanInput("");
     }
   }, [token]);
+
+  useEffect(() => { handleScanRef.current = handleScan; }, [handleScan]);
 
   const handleUpdateTicket = useCallback(async (ticketId: number, update: { profileImage?: string; rfidCode?: string }) => {
     setUpdatingTicket(ticketId);
@@ -276,6 +313,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {scanBubble && (
+            <div className="bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-xl text-xs font-mono animate-pulse flex items-center gap-1.5">
+              <ScanLine className="h-3.5 w-3.5" />
+              {scanBubble}
+            </div>
+          )}
           <button
             onClick={() => setScanMode(true)}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
