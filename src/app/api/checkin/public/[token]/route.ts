@@ -107,7 +107,7 @@ export async function GET(
     prisma.scan.findMany({
       where: {
         accountId,
-        scanTime: { gte: dayStart },
+        scanTime: { gte: dayStart, lte: dayEnd },
       },
       select: {
         id: true,

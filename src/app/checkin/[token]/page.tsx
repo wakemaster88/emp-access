@@ -124,9 +124,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
 
+  const dateRef = useRef(date);
+
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/checkin/public/${token}?date=${date}`);
+      const res = await fetch(`/api/checkin/public/${token}?date=${date}&_t=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) {
         setError("Check-in Monitor nicht gefunden");
         return;
@@ -166,11 +168,17 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   }, [token, date]);
 
   useEffect(() => {
+    if (dateRef.current !== date) {
+      knownScanIdsRef.current = new Set();
+      setScanHighlights(new Map());
+      setData(null);
+      dateRef.current = date;
+    }
     setLoading(true);
     fetchData();
     pollRef.current = setInterval(fetchData, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fetchData]);
+  }, [fetchData, date]);
 
   const handleScanRef = useRef<((code: string) => void) | null>(null);
 
