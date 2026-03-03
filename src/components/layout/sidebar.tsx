@@ -100,7 +100,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
     >
       <div className="flex items-center justify-between p-3 md:p-4">
         <Link href={isSuperAdmin ? "/admin" : "/"} className={cn("flex items-center gap-2", collapsed && "justify-center w-full")} onClick={onNavigate}>
-          <Image src="/logo.png" alt="EMP Access" width={32} height={32} className="shrink-0" />
+          <Image src="/logo-dark.png" alt="EMP Access" width={32} height={32} className="shrink-0" />
           {!collapsed && <span className="text-lg font-bold text-white">EMP Access</span>}
         </Link>
         {!onNavigate && !collapsed && (

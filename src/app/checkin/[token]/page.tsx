@@ -357,7 +357,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900 px-4 py-3 flex items-center justify-between safe-top">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
+          <img src="/logo-dark.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
           <div>
             <h1 className="text-lg font-bold tracking-tight">{data?.monitorName ?? "Check-in"}</h1>
             <p className="text-[11px] text-slate-400">EMP Access — Check-in Monitor</p>

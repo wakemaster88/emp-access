@@ -259,7 +259,7 @@ export default function PublicMonitorPage({ params }: Props) {
       {/* Header */}
       <header className={cn("border-b px-6 py-3.5 flex items-center justify-between transition-colors duration-300", styles.header)}>
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
+          <img src="/logo-dark.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
           <div>
             <h1 className={cn("text-lg font-bold tracking-tight", styles.headerTitle)}>{monitorName || "Live Monitor"}</h1>
             <p className={cn("text-[11px]", styles.headerSub)}>EMP Access — Echtzeit-Zugangsmonitor</p>
