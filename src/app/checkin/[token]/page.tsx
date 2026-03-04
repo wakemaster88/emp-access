@@ -635,8 +635,8 @@ function DaySelector({ date, onChange }: { date: string; onChange: (d: string) =
       </div>
 
       {calOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center" onClick={() => setCalOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="bg-slate-900 border border-slate-700 rounded-3xl p-5 w-[340px] shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={() => setCalOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] w-full sm:w-[340px] shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <button onClick={() => setCalMonth((p) => { const m = p.month - 1; return m < 0 ? { year: p.year - 1, month: 11 } : { ...p, month: m }; })} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
                 <ChevronLeft className="h-5 w-5" />
@@ -993,10 +993,10 @@ function TicketOverlay({
   const isSub = !!ticket.subscriptionId;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center safe-bottom" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto"
+        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)]"
       >
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-start gap-4">
@@ -1212,8 +1212,8 @@ function ScanOverlay({
   }, [inputRef]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md p-6 space-y-4">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-md p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <ScanLine className="h-5 w-5 text-indigo-400" />
@@ -1322,7 +1322,7 @@ function CameraOverlay({ onCapture, onClose }: { onCapture: (dataUrl: string) =>
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black flex flex-col">
+    <div className="fixed inset-0 z-[60] bg-black flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       <div className="flex items-center justify-between p-4">
         <h2 className="text-white text-lg font-bold">Foto aufnehmen</h2>
         <button onClick={handleClose} className="p-2 rounded-xl bg-slate-800 text-white">
@@ -1355,7 +1355,7 @@ function CameraOverlay({ onCapture, onClose }: { onCapture: (dataUrl: string) =>
       </div>
 
       {ready && !error && (
-        <div className="p-6 flex justify-center">
+        <div className="p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex justify-center">
           <button
             onClick={capture}
             className="w-20 h-20 rounded-full bg-white border-4 border-slate-300 active:scale-90 transition-transform flex items-center justify-center"
