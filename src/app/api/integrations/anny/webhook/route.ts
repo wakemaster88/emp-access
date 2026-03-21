@@ -23,6 +23,7 @@ interface AnnyBooking {
     last_name?: string;
     given_name?: string;
     family_name?: string;
+    birth_date?: string;
   };
   resource?: { id?: string | number; name?: string };
   service?: { id?: string | number; name?: string };
@@ -285,10 +286,13 @@ export async function POST(request: NextRequest) {
       }))
       .filter((e) => e.name);
 
+    const birthDate = customer?.birth_date ? new Date(customer.birth_date) : null;
+
     const ticketData = {
       name: customerName || `Buchung ${booking.id ?? ""}`,
       firstName,
       lastName,
+      birthDate,
       startDate,
       endDate,
       status,

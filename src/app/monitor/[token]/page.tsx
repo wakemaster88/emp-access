@@ -40,6 +40,7 @@ interface TicketInfo {
   name: string;
   firstName: string | null;
   lastName: string | null;
+  birthDate: string | null;
   ticketTypeName: string | null;
   status: string;
   profileImage: string | null;
@@ -580,6 +581,7 @@ export default function PublicMonitorPage({ params }: Props) {
                     <div className="min-w-0 flex-1">
                       <p className={cn("text-sm font-bold truncate", styles.ticketName)}>
                         {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                        {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className={cn("ml-1.5 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                       </p>
                       <p className={cn("text-xs font-medium truncate", styles.ticketSub)}>
                         {ticket.ticketTypeName || ticket.name}
@@ -631,6 +633,16 @@ export default function PublicMonitorPage({ params }: Props) {
       )}
     </div>
   );
+}
+
+function calcAge(birthDate: string | null | undefined): number | null {
+  if (!birthDate) return null;
+  const b = new Date(birthDate);
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age;
 }
 
 function DurationCountdown({ firstScanAt, durationMinutes, dark }: { firstScanAt: string; durationMinutes: number; dark: boolean }) {
@@ -774,7 +786,10 @@ function TicketDetailOverlay({
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className={cn("text-lg font-bold", styles.ticketName)}>{name}</p>
+            <p className={cn("text-lg font-bold", styles.ticketName)}>
+              {name}
+              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className={cn("ml-1.5 text-sm font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a} J.)</span> : null; })()}
+            </p>
             <p className={cn("text-sm", styles.ticketSub)}>{ticket.ticketTypeName || ticket.name}</p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <Badge className={cn(

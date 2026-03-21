@@ -28,6 +28,7 @@ export async function GET(
     name: true,
     firstName: true,
     lastName: true,
+    birthDate: true,
     ticketTypeName: true,
     status: true,
     validityType: true,

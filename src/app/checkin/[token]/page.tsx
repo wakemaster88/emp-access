@@ -40,6 +40,7 @@ interface CheckinTicket {
   name: string;
   firstName: string | null;
   lastName: string | null;
+  birthDate: string | null;
   ticketTypeName: string | null;
   status: string;
   validityType: string;
@@ -100,6 +101,16 @@ function toDateStr(d: Date): string {
 
 function personName(t: { firstName: string | null; lastName: string | null; name: string }): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+}
+
+function calcAge(birthDate: string | null | undefined): number | null {
+  if (!birthDate) return null;
+  const b = new Date(birthDate);
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age;
 }
 
 export default function CheckinPage({ params }: { params: Promise<{ token: string }> }) {
@@ -855,7 +866,10 @@ function TicketCard({
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold truncate">{personName(ticket)}</p>
+        <p className="text-sm font-bold truncate">
+          {personName(ticket)}
+          {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-slate-500">({a})</span> : null; })()}
+        </p>
         <p className="text-xs text-slate-400 truncate">
           {ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd}` : ""}
           {ticket.slotStart && ticket.ticketTypeName ? " · " : ""}

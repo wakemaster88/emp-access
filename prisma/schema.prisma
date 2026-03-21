@@ -136,6 +136,7 @@ model Ticket {
   barcode                 String?      @unique
   firstName               String?
   lastName                String?
+  birthDate               DateTime?
   ticketTypeName          String?
   profileImage            String?      @db.Text
   extras                  Json?

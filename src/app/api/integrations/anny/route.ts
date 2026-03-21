@@ -27,6 +27,9 @@ interface AnnyBooking {
     email?: string;
     first_name?: string;
     last_name?: string;
+    given_name?: string;
+    family_name?: string;
+    birth_date?: string;
   };
   resource?: {
     id?: string | number;
@@ -65,6 +68,7 @@ interface BookingGroup {
   customerName: string;
   firstName: string;
   lastName: string;
+  birthDate: Date | null;
   serviceName: string | null;
   resourceName: string | null;
   subscriptionName: string | null;
@@ -270,6 +274,7 @@ export async function POST() {
         full_name?: string;
         given_name?: string;
         family_name?: string;
+        birth_date?: string;
       };
     }
 
@@ -382,8 +387,9 @@ export async function POST() {
           entries: [entry],
           bookingNumber: booking.number || null,
           customerName,
-          firstName: customer?.first_name || nameParts[0] || "",
-          lastName: customer?.last_name || nameParts.slice(1).join(" ") || "",
+          firstName: customer?.given_name ?? customer?.first_name ?? nameParts[0] ?? "",
+          lastName: customer?.family_name ?? customer?.last_name ?? nameParts.slice(1).join(" ") ?? "",
+          birthDate: customer?.birth_date ? new Date(customer.birth_date) : null,
           serviceName,
           resourceName,
           subscriptionName,
@@ -496,6 +502,7 @@ export async function POST() {
         name: group.customerName || `Buchung ${group.entries[0].id}`,
         firstName: group.firstName || null,
         lastName: group.lastName || null,
+        birthDate: group.birthDate,
         startDate: group.startDate,
         endDate: group.endDate,
         status: mapGroupStatus(group.statuses),
@@ -561,10 +568,13 @@ export async function POST() {
       const startDate = ps.starts_at ? new Date(ps.starts_at) : null;
       const endDate = ps.ends_at ? new Date(ps.ends_at) : null;
 
+      const birthDate = ps.customer?.birth_date ? new Date(ps.customer.birth_date) : null;
+
       const ticketData = {
         name: customerName || `Abo ${ps.id ?? ""}`,
         firstName: firstName || null,
         lastName: lastName || null,
+        birthDate,
         startDate,
         endDate,
         status: ticketStatus,
