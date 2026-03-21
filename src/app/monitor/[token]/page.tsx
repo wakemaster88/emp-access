@@ -31,6 +31,8 @@ interface Scan {
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
     profileImage?: string | null;
+    endDate?: string | null;
+    subscriptionId?: number | null;
   } | null;
 }
 
@@ -66,6 +68,8 @@ interface ScanGroup {
   validityType?: string;
   validityDurationMinutes?: number | null;
   firstScanAt?: string | null;
+  endDate?: string | null;
+  subscriptionId?: number | null;
 }
 
 interface Props {
@@ -188,6 +192,8 @@ export default function PublicMonitorPage({ params }: Props) {
           validityType: scan.ticket?.validityType,
           validityDurationMinutes: scan.ticket?.validityDurationMinutes,
           firstScanAt: scan.ticket?.firstScanAt,
+          endDate: scan.ticket?.endDate,
+          subscriptionId: scan.ticket?.subscriptionId,
         });
       }
     }
@@ -383,6 +389,9 @@ export default function PublicMonitorPage({ params }: Props) {
                             </p>
                             <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
                               {group.ticketTypeName || group.scans[0].device?.name || ""}
+                              {group.subscriptionId && group.endDate && (
+                                <> · bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -438,6 +447,9 @@ export default function PublicMonitorPage({ params }: Props) {
                         </p>
                         <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
                           {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device?.name ?? "Web-Scanner"}
+                          {group.subscriptionId && group.endDate && (
+                            <> · bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
+                          )}
                         </p>
                       </div>
                     </div>
