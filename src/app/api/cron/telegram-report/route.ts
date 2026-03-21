@@ -53,24 +53,28 @@ async function buildReport(accountId: number): Promise<string> {
   const dayEnd = new Date(now);
   dayEnd.setHours(23, 59, 59, 999);
 
+  const tomorrowStart = new Date(dayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const tomorrowEnd = new Date(tomorrowStart);
+  tomorrowEnd.setHours(23, 59, 59, 999);
+
   const account = await prisma.account.findUnique({
     where: { id: accountId },
     select: { name: true },
   });
 
   const [
-    totalTickets,
-    activeTickets,
     scansToday,
     grantedToday,
     deniedToday,
     checkedInToday,
-    newTicketsToday,
-    areas,
+    newBookingsToday,
+    newAbosToday,
+    expiredAbosToday,
+    ticketsTomorrow,
+    pausedTickets,
     topScanned,
   ] = await Promise.all([
-    prisma.ticket.count({ where: { accountId } }),
-    prisma.ticket.count({ where: { accountId, status: { in: ["VALID", "REDEEMED"] } } }),
     prisma.scan.count({ where: { accountId, scanTime: { gte: dayStart, lte: dayEnd } } }),
     prisma.scan.count({ where: { accountId, scanTime: { gte: dayStart, lte: dayEnd }, result: "GRANTED" } }),
     prisma.scan.count({ where: { accountId, scanTime: { gte: dayStart, lte: dayEnd }, result: "DENIED" } }),
@@ -79,14 +83,36 @@ async function buildReport(accountId: number): Promise<string> {
       select: { ticketId: true },
       distinct: ["ticketId"],
     }),
-    prisma.ticket.count({ where: { accountId, createdAt: { gte: dayStart, lte: dayEnd } } }),
-    prisma.accessArea.findMany({
-      where: { accountId },
-      select: {
-        name: true,
-        _count: { select: { tickets: { where: { status: { in: ["VALID", "REDEEMED"] } } } } },
+    // Neue Buchungen heute (Einzeltickets ohne Abo)
+    prisma.ticket.count({
+      where: { accountId, createdAt: { gte: dayStart, lte: dayEnd }, subscriptionId: null },
+    }),
+    // Neue Abos heute
+    prisma.ticket.count({
+      where: { accountId, createdAt: { gte: dayStart, lte: dayEnd }, subscriptionId: { not: null } },
+    }),
+    // Abgelaufene Abos (endDate heute oder frueher, hatten Abo)
+    prisma.ticket.findMany({
+      where: {
+        accountId,
+        subscriptionId: { not: null },
+        endDate: { gte: dayStart, lte: dayEnd },
+        status: { in: ["INVALID", "CANCELED"] },
+      },
+      select: { firstName: true, lastName: true, name: true, ticketTypeName: true },
+    }),
+    // Tickets fuer morgen (startDate morgen ODER gueltig mit endDate nach morgen)
+    prisma.ticket.count({
+      where: {
+        accountId,
+        status: { in: ["VALID", "REDEEMED"] },
+        OR: [
+          { startDate: { gte: tomorrowStart, lte: tomorrowEnd } },
+          { startDate: { lte: tomorrowEnd }, endDate: { gte: tomorrowStart } },
+        ],
       },
     }),
+    prisma.ticket.count({ where: { accountId, status: "PAUSED" } }),
     prisma.scan.groupBy({
       by: ["ticketId"],
       where: { accountId, scanTime: { gte: dayStart, lte: dayEnd }, result: "GRANTED", ticketId: { not: null } },
@@ -116,18 +142,30 @@ async function buildReport(accountId: number): Promise<string> {
   let msg = `📊 <b>Tagesbericht – ${account?.name ?? "Account"}</b>\n`;
   msg += `📅 ${dateStr}, ${timeStr}\n\n`;
 
-  msg += `<b>📈 Übersicht</b>\n`;
-  msg += `• Scans heute: <b>${scansToday}</b> (✅ ${grantedToday} / ❌ ${deniedToday})\n`;
-  msg += `• Eingecheckt: <b>${checkedInToday.length}</b> Personen\n`;
-  msg += `• Neue Buchungen: <b>${newTicketsToday}</b>\n`;
-  msg += `• Aktive Tickets: <b>${activeTickets}</b> / ${totalTickets} gesamt\n\n`;
+  msg += `<b>✅ Eingecheckt heute</b>\n`;
+  msg += `• <b>${checkedInToday.length}</b> Personen eingecheckt\n`;
+  msg += `• ${scansToday} Scans gesamt (✅ ${grantedToday} / ❌ ${deniedToday})\n\n`;
 
-  if (areas.length > 0) {
-    msg += `<b>📍 Bereiche</b>\n`;
-    for (const area of areas) {
-      msg += `• ${area.name}: ${area._count.tickets} aktive Tickets\n`;
+  msg += `<b>🆕 Neue Buchungen heute</b>\n`;
+  msg += `• Einzelbuchungen: <b>${newBookingsToday}</b>\n`;
+  msg += `• Neue Abos: <b>${newAbosToday}</b>\n\n`;
+
+  if (expiredAbosToday.length > 0) {
+    msg += `<b>⏰ Abgelaufene Abos heute</b>\n`;
+    for (const t of expiredAbosToday) {
+      const personName = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+      msg += `• ${personName}${t.ticketTypeName ? ` (${t.ticketTypeName})` : ""}\n`;
     }
     msg += `\n`;
+  } else {
+    msg += `<b>⏰ Abgelaufene Abos heute</b>\n• Keine\n\n`;
+  }
+
+  msg += `<b>📅 Tickets morgen</b>\n`;
+  msg += `• <b>${ticketsTomorrow}</b> gültige Tickets\n\n`;
+
+  if (pausedTickets > 0) {
+    msg += `<b>⏸ Pausiert</b>\n• ${pausedTickets} Ticket${pausedTickets !== 1 ? "s" : ""} pausiert\n\n`;
   }
 
   if (topNames.length > 0) {
