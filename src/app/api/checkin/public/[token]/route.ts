@@ -141,12 +141,20 @@ export async function GET(
     checkedIn: t.status === "REDEEMED" || checkedInIds.has(t.id),
   }));
 
+  const enrichedSubscriptions = subscriptions.map((sub) => ({
+    ...sub,
+    tickets: sub.tickets.map((t) => ({
+      ...t,
+      checkedIn: t.status === "REDEEMED" || checkedInIds.has(t.id),
+    })),
+  }));
+
   return NextResponse.json({
     monitorName: monitor.name,
     accountName: monitor.account.name,
     date: berlinDate,
     tickets: enrichedTickets,
-    subscriptions,
+    subscriptions: enrichedSubscriptions,
     services,
     areas,
     recentScans,
