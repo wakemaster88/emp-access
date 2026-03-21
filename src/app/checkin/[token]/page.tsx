@@ -123,6 +123,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
+  const [searchQuery, setSearchQuery] = useState("");
   const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -339,15 +340,39 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     return { upcoming, checkedInTickets: checked, pendingTickets: pending };
   }, [dayTickets]);
 
+  const matchesSearch = useCallback((t: CheckinTicket) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (t.firstName?.toLowerCase().includes(q)) ||
+      (t.lastName?.toLowerCase().includes(q)) ||
+      t.name.toLowerCase().includes(q) ||
+      (t.ticketTypeName?.toLowerCase().includes(q)) ||
+      (t.rfidCode?.toLowerCase().includes(q)) ||
+      (t.barcode?.toLowerCase().includes(q))
+    );
+  }, [searchQuery]);
+
+  const filteredUpcoming = useMemo(() => upcoming.filter(matchesSearch), [upcoming, matchesSearch]);
+  const filteredCheckedIn = useMemo(() => checkedInTickets.filter(matchesSearch), [checkedInTickets, matchesSearch]);
+  const filteredPending = useMemo(() => pendingTickets.filter(matchesSearch), [pendingTickets, matchesSearch]);
+
+  const filteredSubscriptions = useMemo(() => {
+    return subscriptions.map((s) => ({
+      ...s,
+      tickets: s.tickets.filter(matchesSearch),
+    })).filter((s) => s.tickets.length > 0);
+  }, [subscriptions, matchesSearch]);
+
   const serviceGroups = useMemo(() => {
     const groups = new Map<string, CheckinTicket[]>();
-    for (const t of pendingTickets) {
+    for (const t of filteredPending) {
       const key = t.service?.name ?? t.subscription?.name ?? t.ticketTypeName ?? "Sonstige";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(t);
     }
     return groups;
-  }, [pendingTickets]);
+  }, [filteredPending]);
 
   if (error) {
     return (
@@ -405,13 +430,32 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         <StatPill icon={CreditCard} label="Abos" value={subscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet" />
       </div>
 
+      {/* Search */}
+      <div className="px-4 py-2 border-b border-slate-800/50">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Ticket suchen…"
+            className="w-full bg-slate-800/60 border border-slate-700/50 text-white rounded-xl pl-9 pr-9 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe">
         {/* Upcoming */}
-        {upcoming.length > 0 && (
-          <Section title="Nächste Gäste" icon={Clock} count={upcoming.length} color="amber">
+        {filteredUpcoming.length > 0 && (
+          <Section title="Nächste Gäste" icon={Clock} count={filteredUpcoming.length} color="amber">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {upcoming.map((t) => (
+              {filteredUpcoming.map((t) => (
                 <TicketCard
                   key={t.id}
                   ticket={t}
@@ -426,8 +470,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         )}
 
         {/* Tickets by service */}
-        <Section title="Tickets" icon={Ticket} count={pendingTickets.length} color="indigo">
-          {pendingTickets.length === 0 ? (
+        <Section title="Tickets" icon={Ticket} count={filteredPending.length} color="indigo">
+          {filteredPending.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-6">Keine ausstehenden Tickets</p>
           ) : (
             <div className="space-y-3">
@@ -453,10 +497,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         </Section>
 
         {/* Checked in */}
-        {checkedInTickets.length > 0 && (
-          <Section title="Eingecheckt" icon={CheckCircle2} count={checkedInTickets.length} color="emerald">
+        {filteredCheckedIn.length > 0 && (
+          <Section title="Eingecheckt" icon={CheckCircle2} count={filteredCheckedIn.length} color="emerald">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {checkedInTickets.map((t) => (
+              {filteredCheckedIn.map((t) => (
                 <TicketCard
                   key={t.id}
                   ticket={t}
@@ -470,10 +514,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         )}
 
         {/* Subscriptions */}
-        {subscriptions.some((s) => s.tickets.length > 0) && (
-          <Section title="Abonnements" icon={CreditCard} count={subscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet">
+        {filteredSubscriptions.length > 0 && (
+          <Section title="Abonnements" icon={CreditCard} count={filteredSubscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet">
             <div className="space-y-3">
-              {subscriptions.filter((s) => s.tickets.length > 0).map((sub) => (
+              {filteredSubscriptions.map((sub) => (
                 <div key={sub.id}>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-1">{sub.name}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
