@@ -96,34 +96,53 @@ export default function MonitorPage() {
   useEffect(() => {
     if (isPaused) return;
 
-    const devicesParam = selectedDeviceIds.length > 0 ? selectedDeviceIds.join(",") : "";
-    const eventSource = new EventSource(`/api/monitor?areas=&devices=${devicesParam}`);
+    let es: EventSource | null = null;
 
-    eventSource.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
+    function connectSSE() {
+      const devicesParam = selectedDeviceIds.length > 0 ? selectedDeviceIds.join(",") : "";
+      es = new EventSource(`/api/monitor?areas=&devices=${devicesParam}`);
 
-      if (msg.type === "scans" && msg.data.length > 0) {
-        const incoming = msg.data as MonitorScan[];
-        setScans((prev) => {
-          const existing = new Set(prev.map((s) => s.id));
-          const fresh = incoming.filter((s) => !existing.has(s.id));
-          if (!isFirstLoad.current && fresh.length > 0) {
-            setNewIds(new Set(fresh.map((s) => s.id)));
-            setTimeout(() => setNewIds(new Set()), 1500);
+      es.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === "scans" && msg.data.length > 0) {
+          const incoming = msg.data as MonitorScan[];
+          setScans((prev) => {
+            const existing = new Set(prev.map((s) => s.id));
+            const fresh = incoming.filter((s) => !existing.has(s.id));
+            if (!isFirstLoad.current && fresh.length > 0) {
+              setNewIds(new Set(fresh.map((s) => s.id)));
+              setTimeout(() => setNewIds(new Set()), 1500);
+            }
+            isFirstLoad.current = false;
+            return [...fresh, ...prev].slice(0, 100);
+          });
+
+          if (soundEnabled && incoming.some((s) => s.result === "DENIED")) {
+            playAlertSound();
           }
-          isFirstLoad.current = false;
-          return [...fresh, ...prev].slice(0, 100);
-        });
-
-        if (soundEnabled && incoming.some((s) => s.result === "DENIED")) {
-          playAlertSound();
         }
-      }
-      if (msg.type === "counts") setCounts(msg.data);
-      if (msg.type === "devices") setDevices(msg.data);
-    };
+        if (msg.type === "counts") setCounts(msg.data);
+        if (msg.type === "devices") setDevices(msg.data);
+      };
+    }
 
-    return () => eventSource.close();
+    connectSSE();
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        es?.close();
+        es = null;
+      } else if (!es) {
+        connectSSE();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      es?.close();
+    };
   }, [isPaused, soundEnabled, playAlertSound, selectedDeviceIds]);
 
   useEffect(() => {

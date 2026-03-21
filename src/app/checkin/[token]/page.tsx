@@ -192,11 +192,22 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     refreshRef.current = () => { doFetch(); };
 
     doFetch();
-    const interval = setInterval(doFetch, 5000);
+    let interval: ReturnType<typeof setInterval> | null = setInterval(doFetch, 15000);
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (interval) { clearInterval(interval); interval = null; }
+      } else if (!interval) {
+        doFetch();
+        interval = setInterval(doFetch, 15000);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [token, date]);
 

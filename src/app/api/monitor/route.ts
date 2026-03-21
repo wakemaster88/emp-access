@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       };
 
       await poll();
-      const interval = setInterval(poll, 2000);
+      const interval = setInterval(poll, 5000);
 
       request.signal.addEventListener("abort", () => {
         clearInterval(interval);

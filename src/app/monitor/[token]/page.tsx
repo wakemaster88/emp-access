@@ -189,7 +189,22 @@ export default function PublicMonitorPage({ params }: Props) {
     }
 
     connect();
-    return () => { esRef.current?.close(); };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        esRef.current?.close();
+        esRef.current = null;
+        setConnected(false);
+      } else if (!esRef.current) {
+        connect();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      esRef.current?.close();
+    };
   }, [token]);
 
   const groupedScans = useMemo(() => {

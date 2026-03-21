@@ -37,12 +37,20 @@ export async function GET(
           accountId,
           ...(deviceIds.length ? { id: { in: deviceIds } } : {}),
         },
-        select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true },
+        select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true, accessIn: true, accessOut: true },
       });
       send({ type: "meta", data: { name: monitor.name, devices } });
+      send({ type: "devices", data: devices });
+
+      // Cache area IDs from initial device fetch to avoid re-querying every poll
+      const cachedAreaIds = [...new Set(
+        devices.flatMap((d: Record<string, unknown>) => [d.accessIn, d.accessOut].filter((id): id is number => id != null))
+      )];
+      let pollCount = 0;
 
       const poll = async () => {
         try {
+          pollCount++;
           const scanWhere: Record<string, unknown> = {
             accountId,
             ...(deviceIds.length ? { deviceId: { in: deviceIds } } : {}),
@@ -64,19 +72,16 @@ export async function GET(
             send({ type: "scans", data: scans });
           }
 
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+          // Only refresh devices every 6th poll (~30s) instead of every poll
+          if (pollCount % 6 === 0) {
+            const refreshedDevices = await prisma.device.findMany({
+              where: { accountId, ...(deviceIds.length ? { id: { in: deviceIds } } : {}) },
+              select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true, accessIn: true, accessOut: true },
+            });
+            send({ type: "devices", data: refreshedDevices });
+          }
 
-          // Collect area IDs from monitored devices
-          const monitoredDevices = await prisma.device.findMany({
-            where: { accountId, ...(deviceIds.length ? { id: { in: deviceIds } } : {}) },
-            select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true, accessIn: true, accessOut: true },
-          });
-          send({ type: "devices", data: monitoredDevices });
-
-          const areaIds = [...new Set(
-            monitoredDevices.flatMap((d) => [d.accessIn, d.accessOut].filter((id): id is number => id != null))
-          )];
+          const areaIds = cachedAreaIds;
 
           const now = new Date();
           const todayStart = new Date(now);
@@ -149,7 +154,7 @@ export async function GET(
       };
 
       await poll();
-      const interval = setInterval(poll, 2000);
+      const interval = setInterval(poll, 5000);
 
       request.signal.addEventListener("abort", () => {
         clearInterval(interval);
