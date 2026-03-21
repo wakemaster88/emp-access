@@ -53,7 +53,7 @@ export async function GET(
     prisma.ticket.findMany({
       where: {
         accountId,
-        status: { in: ["VALID", "REDEEMED"] },
+        status: { in: ["VALID", "REDEEMED", "PAUSED"] },
         AND: [
           { OR: [{ source: null }, { source: { notIn: ["EMP_CONTROL"] } }] },
           {
@@ -85,7 +85,7 @@ export async function GET(
         requiresRfid: true,
         tickets: {
           where: {
-            status: { in: ["VALID", "REDEEMED"] },
+            status: { in: ["VALID", "REDEEMED", "PAUSED"] },
             OR: [
               { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
               { startDate: null, endDate: null, createdAt: { gte: dayStart, lte: dayEnd } },

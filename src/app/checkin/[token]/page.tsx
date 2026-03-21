@@ -24,6 +24,7 @@ import {
   CalendarDays,
   Printer,
   RefreshCw,
+  Pause,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -468,6 +469,22 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe monitor-scrollbar">
+        {/* Pause Alert */}
+        {(() => {
+          const pausedCount = dayTickets.filter((t) => t.status === "PAUSED").length
+            + subscriptions.reduce((a, s) => a + s.tickets.filter((t: { status: string }) => t.status === "PAUSED").length, 0);
+          if (pausedCount === 0) return null;
+          return (
+            <div className="rounded-2xl bg-orange-950 border border-orange-700/50 p-4 flex items-center gap-3">
+              <Pause className="h-6 w-6 text-orange-400 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-orange-200">Tickets pausiert</p>
+                <p className="text-xs text-orange-400">{pausedCount} {pausedCount === 1 ? "Ticket ist" : "Tickets sind"} aktuell pausiert. Check-in nicht möglich.</p>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Upcoming */}
         {filteredUpcoming.length > 0 && (
           <Section title="Nächste Gäste" icon={Clock} count={filteredUpcoming.length} color="amber">
@@ -823,6 +840,8 @@ function TicketCard({
           ? "border-emerald-500 bg-emerald-900/50 ring-2 ring-emerald-500/40"
           : highlight === "DENIED"
           ? "border-rose-500 bg-rose-900/50 ring-2 ring-rose-500/40"
+          : ticket.status === "PAUSED"
+          ? "border-orange-700/40 bg-orange-950/30 opacity-70"
           : checked
           ? "border-emerald-700/40 bg-emerald-950/30"
           : "border-slate-700/60 bg-slate-900 hover:border-slate-600"
@@ -874,7 +893,9 @@ function TicketCard({
         )}
       </div>
       <div className="shrink-0 flex flex-col items-end gap-1">
-        {checked ? (
+        {ticket.status === "PAUSED" ? (
+          <Badge className="bg-orange-500/25 text-orange-200 text-[11px] px-2 py-0.5 font-bold">Pausiert</Badge>
+        ) : checked ? (
           <Badge className="bg-emerald-500/25 text-emerald-200 text-[11px] px-2 py-0.5 font-bold">Eingecheckt</Badge>
         ) : isSub ? (
           <Badge className="bg-violet-500/25 text-violet-200 text-[11px] px-2 py-0.5 font-bold">Abo</Badge>
