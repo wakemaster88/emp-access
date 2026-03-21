@@ -7,7 +7,7 @@ export async function GET() {
   if ("error" in session) return session.error;
 
   const configs = await session.db.telegramConfig.findMany({
-    where: { accountId: session.accountId },
+    where: { accountId: session.accountId! },
     select: {
       id: true,
       chatId: true,
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     const existing = await session.db.telegramConfig.findFirst({
-      where: { accountId: session.accountId },
+      where: { accountId: session.accountId! },
     });
 
     if (existing) {
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
           chatId: String(chatId),
           dailyReport: dailyReport ?? true,
           dailyReportTime: dailyReportTime ?? "20:00",
-          accountId: session.accountId,
+          accountId: session.accountId!,
         },
       });
     }
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "test") {
     const config = await session.db.telegramConfig.findFirst({
-      where: { accountId: session.accountId, isActive: true },
+      where: { accountId: session.accountId!, isActive: true },
     });
     if (!config) return NextResponse.json({ error: "Kein Telegram konfiguriert" }, { status: 404 });
 
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "delete") {
     await session.db.telegramConfig.deleteMany({
-      where: { accountId: session.accountId },
+      where: { accountId: session.accountId! },
     });
     return NextResponse.json({ ok: true });
   }
