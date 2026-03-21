@@ -16,25 +16,60 @@ export async function POST(
     const action = body.action as string;
 
     if (action === "pause") {
-      const result = await prisma.ticket.updateMany({
+      const now = new Date();
+      const tickets = await prisma.ticket.findMany({
         where: {
           accountId: monitor.accountId,
           status: { in: ["VALID", "REDEEMED"] },
         },
-        data: { status: "PAUSED" },
+        select: { id: true, validityType: true, firstScanAt: true, validityDurationMinutes: true, extras: true },
       });
-      return NextResponse.json({ success: true, action: "paused", count: result.count });
+
+      for (const t of tickets) {
+        const ext = (t.extras as Record<string, unknown>) ?? {};
+        if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
+          const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
+          const remainingMs = Math.max(0, expiresAt - now.getTime());
+          ext.pausedAtMs = now.getTime();
+          ext.remainingMs = remainingMs;
+        }
+        ext.previousStatus = "VALID";
+        await prisma.ticket.update({
+          where: { id: t.id },
+          data: { status: "PAUSED", extras: ext },
+        });
+      }
+
+      return NextResponse.json({ success: true, action: "paused", count: tickets.length });
     }
 
     if (action === "resume") {
-      const result = await prisma.ticket.updateMany({
+      const now = new Date();
+      const tickets = await prisma.ticket.findMany({
         where: {
           accountId: monitor.accountId,
           status: "PAUSED",
         },
-        data: { status: "VALID" },
+        select: { id: true, validityType: true, validityDurationMinutes: true, extras: true },
       });
-      return NextResponse.json({ success: true, action: "resumed", count: result.count });
+
+      for (const t of tickets) {
+        const ext = (t.extras as Record<string, unknown>) ?? {};
+        const data: Record<string, unknown> = { status: "VALID" };
+
+        if (t.validityType === "DURATION" && typeof ext.remainingMs === "number" && t.validityDurationMinutes) {
+          data.firstScanAt = new Date(now.getTime() - (t.validityDurationMinutes * 60_000 - ext.remainingMs));
+        }
+
+        delete ext.pausedAtMs;
+        delete ext.remainingMs;
+        delete ext.previousStatus;
+        data.extras = ext;
+
+        await prisma.ticket.update({ where: { id: t.id }, data });
+      }
+
+      return NextResponse.json({ success: true, action: "resumed", count: tickets.length });
     }
 
     return NextResponse.json({ error: "Ungültige Aktion" }, { status: 400 });

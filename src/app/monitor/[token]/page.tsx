@@ -591,11 +591,20 @@ export default function PublicMonitorPage({ params }: Props) {
                         {badgeLabel}
                       </Badge>
                       {ticket.validityType === "DURATION" && ticket.validityDurationMinutes && ticket.firstScanAt && (
-                        <DurationCountdown
-                          firstScanAt={ticket.firstScanAt}
-                          durationMinutes={ticket.validityDurationMinutes}
-                          dark={dark}
-                        />
+                        isPaused ? (
+                          <span className={cn(
+                            "text-xs font-mono px-2.5 py-1 rounded-lg tabular-nums font-bold",
+                            dark ? "bg-orange-500/25 text-orange-200" : "bg-orange-200 text-orange-900"
+                          )}>
+                            ⏸
+                          </span>
+                        ) : (
+                          <DurationCountdown
+                            firstScanAt={ticket.firstScanAt}
+                            durationMinutes={ticket.validityDurationMinutes}
+                            dark={dark}
+                          />
+                        )
                       )}
                     </div>
                   </div>

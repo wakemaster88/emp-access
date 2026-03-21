@@ -45,6 +45,12 @@ export async function POST(
 
     const existingExtras = (ticket.extras as Record<string, unknown>) ?? {};
 
+    if (ticket.validityType === "DURATION" && ticket.firstScanAt && ticket.validityDurationMinutes) {
+      const expiresAt = new Date(ticket.firstScanAt).getTime() + ticket.validityDurationMinutes * 60_000;
+      existingExtras.remainingMs = Math.max(0, expiresAt - now.getTime());
+      existingExtras.pausedAtMs = now.getTime();
+    }
+
     await prisma.ticket.update({
       where: { id: ticket.id },
       data: {
