@@ -99,6 +99,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  // ANNY sometimes double-wraps: body.data contains {event, data: {actual booking}}
+  // Unwrap if body.data looks like a wrapper (has event + data keys)
+  const outerData = rawBody.data as Record<string, unknown> | undefined;
+  if (outerData && typeof outerData === "object" && "event" in outerData && "data" in outerData) {
+    rawBody = outerData as Record<string, unknown>;
+  }
+
   const body = rawBody as unknown as AnnyEventBody;
 
   const eventType = body.event ?? "";
@@ -124,10 +131,9 @@ export async function POST(request: NextRequest) {
     else if (body.data?.bookings) bookings = body.data.bookings;
   }
 
-  // Fallback: if data looks like a booking (has customer + service/resource), use it
   if (bookings.length === 0 && rawBody.data && typeof rawBody.data === "object") {
     const d = rawBody.data as Record<string, unknown>;
-    if (d.customer || d.service || d.resource) {
+    if (d.customer || d.service || d.resource || d.id) {
       bookings = [d as unknown as AnnyBooking];
     }
   }
@@ -139,9 +145,9 @@ export async function POST(request: NextRequest) {
         debug: {
           event: body.event,
           hasData: !!body.data,
-          dataKeys: body.data ? Object.keys(body.data) : [],
+          dataKeys: body.data ? Object.keys(body.data).slice(0, 10) : [],
           dataId: body.data?.id,
-          topKeys: Object.keys(rawBody),
+          topKeys: Object.keys(rawBody).slice(0, 10),
         },
       },
       { status: 400 }
