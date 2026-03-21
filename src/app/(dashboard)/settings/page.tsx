@@ -5,10 +5,11 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, MonitorPlay, Wifi, Globe } from "lucide-react";
+import { Plug, Key, Info, MonitorPlay, Wifi, Globe, MessageCircle } from "lucide-react";
 import { MonitorManager } from "@/components/settings/monitor-manager";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
+import { TelegramCard } from "@/components/settings/telegram-card";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"] as const;
 
@@ -19,7 +20,7 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [apiConfigs, account, monitors, devices, shellyDevices] = await Promise.all([
+  const [apiConfigs, account, monitors, devices, shellyDevices, telegramConfig] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
     db.account.findUnique({ where: { id: session.user.accountId } }),
     db.monitorConfig.findMany({
@@ -34,6 +35,10 @@ export default async function SettingsPage() {
     db.device.findMany({
       where: { accountId: session.user.accountId, type: "SHELLY", shellyId: { not: null } },
       select: { shellyId: true },
+    }),
+    db.telegramConfig.findFirst({
+      where: { accountId: session.user.accountId },
+      select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true },
     }),
   ]);
 
@@ -138,6 +143,22 @@ export default async function SettingsPage() {
             devices={devices}
             baseUrl={baseUrl}
           />
+        </section>
+
+        {/* Telegram Bot */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="h-5 w-5 text-slate-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+              Telegram Bot
+            </h2>
+            {telegramConfig?.isActive && (
+              <Badge className="ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
+                Verbunden
+              </Badge>
+            )}
+          </div>
+          <TelegramCard initialConfig={telegramConfig ?? null} />
         </section>
 
         {/* Integrations */}

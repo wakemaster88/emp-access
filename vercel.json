@@ -9,6 +9,15 @@
     },
     "src/app/api/integrations/**/*.ts": {
       "maxDuration": 30
+    },
+    "src/app/api/cron/**/*.ts": {
+      "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/telegram-report",
+      "schedule": "0,15,30,45 * * * *"
+    }
+  ]
 }

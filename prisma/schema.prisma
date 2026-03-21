@@ -71,6 +71,7 @@ model Account {
   monitors      MonitorConfig[]
   subscriptions Subscription[]
   services      Service[]
+  telegramConfigs TelegramConfig[]
 }
 
 model Admin {
@@ -294,6 +295,21 @@ model MonitorConfig {
 
   @@index([accountId])
   @@index([token])
+}
+
+model TelegramConfig {
+  id              Int      @id @default(autoincrement())
+  botToken        String
+  chatId          String
+  isActive        Boolean  @default(true)
+  dailyReport     Boolean  @default(true)
+  dailyReportTime String   @default("20:00") // HH:mm Berlin time
+  accountId       Int
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([accountId])
 }
 
 model ApiConfig {
