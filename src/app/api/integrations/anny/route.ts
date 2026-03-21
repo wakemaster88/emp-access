@@ -256,6 +256,45 @@ export async function POST() {
       }
     } catch { /* non-critical */ }
 
+    // GET /api/v1/plan-subscriptions (active customer subscriptions)
+    interface PlanSubscription {
+      id?: string;
+      name?: string;
+      status?: string;
+      starts_at?: string;
+      ends_at?: string;
+      canceled_at?: string;
+      plan?: { id?: string; name?: string; title?: string };
+      customer?: {
+        id?: string | number;
+        full_name?: string;
+        given_name?: string;
+        family_name?: string;
+      };
+    }
+
+    const allPlanSubscriptions: PlanSubscription[] = [];
+    try {
+      let psPage = 1;
+      while (psPage <= 50) {
+        const psParams = new URLSearchParams({
+          "page[size]": "50",
+          "page[number]": String(psPage),
+          include: "customer,plan",
+        });
+        const psRes = await fetch(`${apiBase}/plan-subscriptions?${psParams}`, {
+          headers: { Authorization: `Bearer ${config.token}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!psRes.ok) break;
+        const psJson = await psRes.json();
+        const psSubs = Array.isArray(psJson) ? psJson : psJson.data || [];
+        allPlanSubscriptions.push(...psSubs);
+        if (psSubs.length < 50) break;
+        psPage++;
+      }
+    } catch { /* non-critical */ }
+
     // Deduplicate bookings by ID
     const seenBookingIds = new Set<string>();
     const uniqueBookings: AnnyBooking[] = [];
@@ -492,6 +531,62 @@ export async function POST() {
       }
     }
 
+    // Process plan subscriptions (anny customer abos)
+    let subCreated = 0;
+    let subUpdated = 0;
+
+    for (const ps of allPlanSubscriptions) {
+      const customerId = ps.customer?.id;
+      if (!customerId) continue;
+
+      const planName = ps.plan?.name ?? ps.plan?.title ?? ps.name?.replace(/#\d+$/, "").trim() ?? null;
+      if (!planName) continue;
+
+      const subscriptionId = subNameMap.get(planName) ?? null;
+      if (!subscriptionId) continue;
+
+      const isActive = ps.status === "active" || ps.status === "trialing";
+      const uuid = `anny-sub:${customerId}:${ps.id ?? planName}`;
+      activeUuids.push(uuid);
+
+      const customerName = ps.customer?.full_name ?? "";
+      const firstName = ps.customer?.given_name ?? customerName.split(/\s+/)[0] ?? "";
+      const lastName = ps.customer?.family_name ?? customerName.split(/\s+/).slice(1).join(" ") ?? "";
+
+      const startDate = ps.starts_at ? new Date(ps.starts_at) : null;
+      const endDate = ps.ends_at ? new Date(ps.ends_at) : null;
+
+      const ticketData = {
+        name: customerName || `Abo ${ps.id ?? ""}`,
+        firstName: firstName || null,
+        lastName: lastName || null,
+        startDate,
+        endDate,
+        status: isActive ? ("VALID" as const) : ("INVALID" as const),
+        ticketTypeName: planName,
+        source: "ANNY" as const,
+        subscriptionId,
+        accessAreaId: null as number | null,
+        serviceId: null as number | null,
+      };
+
+      try {
+        const existing = await db.ticket.findFirst({
+          where: { uuid, accountId: accountId! },
+        });
+        if (existing) {
+          await db.ticket.update({ where: { id: existing.id }, data: ticketData });
+          subUpdated++;
+        } else {
+          await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });
+          subCreated++;
+        }
+      } catch { /* skip */ }
+    }
+
+    created += subCreated;
+    updated += subUpdated;
+
     // Build unmapped warnings
     for (const [name, { count, customers }] of unmappedNames) {
       unmapped.push({ annyName: name, count, customerSample: [...customers] });
@@ -535,6 +630,9 @@ export async function POST() {
       resources: discoveredResourceNames.size,
       services: discoveredServiceNames.size,
       subscriptions: discoveredSubscriptionNames.size,
+      planSubscriptions: allPlanSubscriptions.length,
+      planSubscriptionsCreated: subCreated,
+      planSubscriptionsUpdated: subUpdated,
       unmapped,
     });
   } catch (err) {
