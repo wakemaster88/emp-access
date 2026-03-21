@@ -111,6 +111,62 @@ function mapGroupStatus(statuses: string[]): "VALID" | "INVALID" | "REDEEMED" {
   return "VALID";
 }
 
+function parseDurationMonthsFromName(name: string | null): number | null {
+  if (!name) return null;
+  // "24M", "12M", "6M" etc. in plan name
+  const match = name.match(/(\d+)\s*M(?:\b|$)/i);
+  if (match) return parseInt(match[1], 10);
+  // "2 Jahre", "1 Jahr"
+  const yearMatch = name.match(/(\d+)\s*(?:Jahr|year)/i);
+  if (yearMatch) return parseInt(yearMatch[1], 10) * 12;
+  return null;
+}
+
+function calcSubscriptionEndDate(
+  ps: { contract_ends_at?: string; ends_at?: string; minimum_contract_months?: number; minimum_contract_period?: number; plan?: { interval?: string; interval_count?: number; minimum_contract_months?: number; minimum_contract_period?: number; duration_months?: number; name?: string; title?: string } },
+  startDate: Date | null,
+  planName: string | null,
+  subscriptionId: number | null,
+  subDefaultEndDate: Map<number, Date | null>,
+): Date | null {
+  // 1. contract_ends_at from ANNY (actual contract end)
+  if (ps.contract_ends_at) return new Date(ps.contract_ends_at);
+
+  // 2. minimum_contract_months from subscription or plan level
+  const contractMonths =
+    ps.minimum_contract_months ??
+    ps.minimum_contract_period ??
+    ps.plan?.minimum_contract_months ??
+    ps.plan?.minimum_contract_period ??
+    ps.plan?.duration_months ??
+    null;
+
+  if (contractMonths && startDate) {
+    const end = new Date(startDate);
+    end.setMonth(end.getMonth() + contractMonths);
+    return end;
+  }
+
+  // 3. Parse plan name for "12M", "24M", "1 Jahr", etc.
+  const nameMonths = parseDurationMonthsFromName(planName) ?? parseDurationMonthsFromName(ps.plan?.name ?? ps.plan?.title ?? null);
+  if (nameMonths && startDate) {
+    const end = new Date(startDate);
+    end.setMonth(end.getMonth() + nameMonths);
+    return end;
+  }
+
+  // 4. Use Subscription defaultEndDate from our DB
+  if (subscriptionId != null) {
+    const defEnd = subDefaultEndDate.get(subscriptionId);
+    if (defEnd) return defEnd;
+  }
+
+  // 5. Fall back to ANNY's ends_at (billing period) only as last resort
+  if (ps.ends_at) return new Date(ps.ends_at);
+
+  return null;
+}
+
 export const maxDuration = 60;
 
 export async function POST() {
@@ -267,8 +323,21 @@ export async function POST() {
       status?: string;
       starts_at?: string;
       ends_at?: string;
+      contract_ends_at?: string;
+      current_period_ends_at?: string;
       canceled_at?: string;
-      plan?: { id?: string; name?: string; title?: string };
+      minimum_contract_months?: number;
+      minimum_contract_period?: number;
+      plan?: {
+        id?: string;
+        name?: string;
+        title?: string;
+        interval?: string;
+        interval_count?: number;
+        minimum_contract_months?: number;
+        minimum_contract_period?: number;
+        duration_months?: number;
+      };
       customer?: {
         id?: string | number;
         full_name?: string;
@@ -404,10 +473,12 @@ export async function POST() {
     // Load subscriptions for anny name matching
     const subscriptions = await db.subscription.findMany({
       where: { accountId: accountId! },
-      select: { id: true, annyNames: true },
+      select: { id: true, annyNames: true, defaultEndDate: true },
     });
     const subNameMap = new Map<string, number>();
+    const subDefaultEndDate = new Map<number, Date | null>();
     for (const sub of subscriptions) {
+      subDefaultEndDate.set(sub.id, sub.defaultEndDate);
       if (sub.annyNames) {
         try {
           const names: string[] = JSON.parse(sub.annyNames);
@@ -566,7 +637,7 @@ export async function POST() {
       const lastName = ps.customer?.family_name ?? customerName.split(/\s+/).slice(1).join(" ") ?? "";
 
       const startDate = ps.starts_at ? new Date(ps.starts_at) : null;
-      const endDate = ps.ends_at ? new Date(ps.ends_at) : null;
+      const endDate = calcSubscriptionEndDate(ps, startDate, planName, subscriptionId, subDefaultEndDate);
 
       const birthDate = ps.customer?.birth_date ? new Date(ps.customer.birth_date) : null;
 
