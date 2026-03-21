@@ -94,7 +94,15 @@ function displayCode(ticket: TicketData): string {
   return t;
 }
 
-function statusBadge(status: string) {
+function isExpired(ticket: { endDate?: string | Date | null }): boolean {
+  if (!ticket.endDate) return false;
+  return new Date(ticket.endDate) < new Date();
+}
+
+function statusBadge(status: string, ticket?: { endDate?: string | Date | null }) {
+  if (ticket && (status === "VALID" || status === "REDEEMED") && isExpired(ticket)) {
+    return <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">Abgelaufen</Badge>;
+  }
   switch (status) {
     case "VALID":
       return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Gültig</Badge>;
@@ -307,7 +315,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                     <TableCell className="hidden xl:table-cell text-sm text-slate-500">
                       {ticket.ticketTypeName || "–"}
                     </TableCell>
-                    <TableCell>{statusBadge(ticket.status)}</TableCell>
+                    <TableCell>{statusBadge(ticket.status, ticket)}</TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-slate-500">
                       <ValidityInfo ticket={ticket} />
                     </TableCell>
@@ -387,7 +395,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                       <TableCell className="hidden xl:table-cell text-sm text-slate-500">
                         Mitarbeiter
                       </TableCell>
-                      <TableCell>{statusBadge(ticket.status)}</TableCell>
+                      <TableCell>{statusBadge(ticket.status, ticket)}</TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-slate-500">
                         <ValidityInfo ticket={ticket} />
                       </TableCell>
