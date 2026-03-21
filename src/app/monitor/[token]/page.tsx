@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 
 interface Device {
@@ -81,6 +81,7 @@ export default function PublicMonitorPage({ params }: Props) {
   const [error, setError] = useState("");
   const [dark, setDark] = useState(true);
   const [scanningId, setScanningId] = useState<number | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<TicketInfo | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const isFirstLoad = useRef(true);
 
@@ -96,6 +97,14 @@ export default function PublicMonitorPage({ params }: Props) {
       await res.json();
     } catch { /* ignore */ }
     setTimeout(() => setScanningId(null), 800);
+  }
+
+  function handleTicketClick(ticket: TicketInfo) {
+    if (window.innerWidth < 1024) {
+      setSelectedTicket(ticket);
+    } else {
+      handleTicketScan(ticket.id);
+    }
   }
 
   useEffect(() => {
@@ -313,8 +322,8 @@ export default function PublicMonitorPage({ params }: Props) {
       {/* Content */}
       <div className="flex-1 p-5">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 h-full">
-          {/* Scan Feed */}
-          <div className="lg:col-span-2 flex flex-col">
+          {/* Scan Feed - hidden on mobile */}
+          <div className="hidden lg:flex lg:col-span-2 flex-col">
             <div className="flex items-center gap-2 mb-3">
               <ScanLine className={cn("h-5 w-5", styles.sectionLabel)} />
               <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>Letzte Scans</h2>
@@ -454,7 +463,7 @@ export default function PublicMonitorPage({ params }: Props) {
                 return (
                   <div
                     key={ticket.id}
-                    onClick={() => handleTicketScan(ticket.id)}
+                    onClick={() => handleTicketClick(ticket)}
                     className={cn(
                       "flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-all duration-150 cursor-pointer select-none active:scale-[0.98]",
                       isScanning
@@ -503,6 +512,19 @@ export default function PublicMonitorPage({ params }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Mobile Ticket Detail Overlay */}
+      {selectedTicket && (
+        <TicketDetailOverlay
+          ticket={selectedTicket}
+          scans={scans}
+          dark={dark}
+          styles={styles}
+          scanningId={scanningId}
+          onScan={() => handleTicketScan(selectedTicket.id)}
+          onClose={() => setSelectedTicket(null)}
+        />
+      )}
     </div>
   );
 }
@@ -540,6 +562,146 @@ function DurationCountdown({ firstScanAt, durationMinutes, dark }: { firstScanAt
     )}>
       {remaining}
     </span>
+  );
+}
+
+function TicketDetailOverlay({
+  ticket,
+  scans,
+  dark,
+  styles,
+  scanningId,
+  onScan,
+  onClose,
+}: {
+  ticket: TicketInfo;
+  scans: Scan[];
+  dark: boolean;
+  styles: Record<string, string>;
+  scanningId: number | null;
+  onScan: () => void;
+  onClose: () => void;
+}) {
+  const ticketScans = useMemo(
+    () => scans.filter((s) => s.ticket?.id === ticket.id).slice(0, 20),
+    [scans, ticket.id]
+  );
+
+  const name = [ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name;
+  const endStr = ticket.endDate
+    ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
+    : null;
+  const startStr = ticket.startDate
+    ? new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
+    : null;
+  const isScanning = scanningId === ticket.id;
+
+  return (
+    <div className={cn("fixed inset-0 z-50 flex flex-col", styles.page)}>
+      <header className={cn("border-b px-4 py-3 flex items-center gap-3", styles.header)}>
+        <button onClick={onClose} className={cn("p-2 -ml-2 rounded-xl", styles.modeBtnBg)}>
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <h2 className={cn("font-bold truncate", styles.headerTitle)}>{name}</h2>
+          <p className={cn("text-xs", styles.headerSub)}>
+            {ticket.ticketTypeName || ticket.name}
+            {endStr && ` · bis ${endStr}`}
+          </p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Ticket Info */}
+        <div className={cn("rounded-2xl border p-4 flex items-center gap-4", styles.ticketBg)}>
+          {ticket.profileImage ? (
+            <img src={ticket.profileImage} alt="" className={cn("h-16 w-16 rounded-2xl object-cover shrink-0 ring-1", styles.imgRing)} />
+          ) : (
+            <div className={cn("h-16 w-16 rounded-2xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
+              <Users className={cn("h-6 w-6", styles.ticketAvatarIcon)} />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className={cn("text-lg font-bold", styles.ticketName)}>{name}</p>
+            <p className={cn("text-sm", styles.ticketSub)}>{ticket.ticketTypeName || ticket.name}</p>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <Badge className={cn(
+                "text-xs px-2 py-0.5 font-bold",
+                ticket.status === "VALID"
+                  ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                  : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
+              )}>
+                {ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
+              </Badge>
+              {startStr && endStr && (
+                <span className={cn("text-xs", styles.ticketSub)}>{startStr} – {endStr}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Checkin Button */}
+        <button
+          onClick={onScan}
+          disabled={isScanning}
+          className={cn(
+            "w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
+            isScanning
+              ? dark ? "bg-emerald-800 text-emerald-200" : "bg-emerald-200 text-emerald-900"
+              : dark ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white",
+          )}
+        >
+          <LogIn className="h-5 w-5" />
+          {isScanning ? "Eingecheckt!" : "Einchecken"}
+        </button>
+
+        {/* Scan History */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <ScanLine className={cn("h-4 w-4", styles.sectionLabel)} />
+            <h3 className={cn("text-xs font-bold uppercase tracking-widest", styles.sectionLabel)}>Scan-Verlauf</h3>
+            <span className={cn("text-xs font-mono font-bold border rounded-lg px-1.5 py-0.5 ml-auto", styles.ticketCountBorder)}>{ticketScans.length}</span>
+          </div>
+          {ticketScans.length === 0 ? (
+            <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>Noch keine Scans</p>
+          ) : (
+            <div className="space-y-1.5">
+              {ticketScans.map((scan) => {
+                const isGranted = scan.result === "GRANTED";
+                return (
+                  <div
+                    key={scan.id}
+                    className={cn(
+                      "flex items-center justify-between rounded-xl border px-3 py-2.5",
+                      isGranted ? styles.scanGranted : styles.scanDenied,
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {isGranted ? (
+                        <CheckCircle2 className={cn("h-5 w-5 shrink-0", dark ? "text-emerald-400" : "text-emerald-600")} />
+                      ) : (
+                        <XCircle className={cn("h-5 w-5 shrink-0", dark ? "text-rose-400" : "text-rose-600")} />
+                      )}
+                      <div>
+                        <p className={cn("text-sm font-semibold", styles.scanName)}>
+                          {isGranted ? "Erlaubt" : "Abgelehnt"}
+                        </p>
+                        <p className={cn("text-xs", styles.scanSub)}>
+                          {scan.device?.name ?? "Monitor"}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={cn("text-sm tabular-nums font-mono font-semibold", styles.scanTime)}>
+                      {fmtTime(scan.scanTime)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
