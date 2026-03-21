@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 
-/**
- * Webhook für anny.co: neue/geänderte Buchungen per POST.
- * Auth: Header "Authorization: Bearer <webhookSecret>" oder "X-Webhook-Secret: <webhookSecret>".
- * Body: { "booking": {...} } oder { "bookings": [...] } bzw. { "data": { "booking" } } / { "data": { "bookings" } }
- * Booking-Format wie anny API: id, start_date, end_date, status, customer: { id, full_name, first_name, last_name }, resource?, service?
- */
-
 interface AnnyLineItem {
   id?: string | number;
   name?: string;
@@ -39,6 +32,16 @@ interface AnnyMapping {
   mappings?: Record<string, number>;
 }
 
+type AnnyEventBody = {
+  event?: string;
+  event_id?: string;
+  webhook_id?: string;
+  triggered_at?: string;
+  data?: AnnyBooking & { booking?: AnnyBooking; bookings?: AnnyBooking[] };
+  booking?: AnnyBooking;
+  bookings?: AnnyBooking[];
+};
+
 function mapStatus(s: string | undefined): "VALID" | "INVALID" | "REDEEMED" {
   const lower = (s ?? "").toLowerCase();
   if (["cancelled", "canceled", "rejected", "no_show"].includes(lower)) return "INVALID";
@@ -49,13 +52,15 @@ function mapStatus(s: string | undefined): "VALID" | "INVALID" | "REDEEMED" {
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const secretHeader = request.headers.get("x-webhook-secret");
+  const secretParam = request.nextUrl.searchParams.get("secret");
+
   const token = authHeader?.startsWith("Bearer ")
     ? authHeader.slice(7).trim()
-    : secretHeader?.trim();
+    : secretHeader?.trim() || secretParam?.trim() || null;
 
   if (!token) {
     return NextResponse.json(
-      { error: "Missing webhook secret (Authorization: Bearer … or X-Webhook-Secret)" },
+      { error: "Missing webhook secret (Authorization: Bearer …, X-Webhook-Secret, or ?secret=…)" },
       { status: 401 }
     );
   }
@@ -84,28 +89,80 @@ export async function POST(request: NextRequest) {
   const accountId = config.accountId;
   const db = tenantClient(accountId);
 
-  let body: unknown;
+  let body: AnnyEventBody;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const data = (body as { data?: { booking?: AnnyBooking; bookings?: AnnyBooking[] } }).data;
-  const rawBooking = (body as { booking?: AnnyBooking }).booking;
-  const rawBookings = (body as { bookings?: AnnyBooking[] }).bookings;
+  const eventType = body.event ?? "";
+  const isDelete = eventType === "bookings.deleted";
+  const isCancel = eventType === "bookings.cancelled" || eventType === "bookings.canceled";
 
   let bookings: AnnyBooking[] = [];
-  if (Array.isArray(rawBookings)) bookings = rawBookings;
-  else if (Array.isArray(data?.bookings)) bookings = data.bookings;
-  else if (rawBooking && typeof rawBooking === "object") bookings = [rawBooking];
-  else if (data?.booking && typeof data.booking === "object") bookings = [data.booking];
+
+  if (body.event && body.data) {
+    if (body.data.booking) {
+      bookings = [body.data.booking];
+    } else if (body.data.bookings) {
+      bookings = body.data.bookings;
+    } else if (body.data.id) {
+      bookings = [body.data as AnnyBooking];
+    }
+  }
+
+  if (bookings.length === 0) {
+    if (Array.isArray(body.bookings)) bookings = body.bookings;
+    else if (body.booking && typeof body.booking === "object") bookings = [body.booking];
+    else if (body.data?.booking) bookings = [body.data.booking];
+    else if (body.data?.bookings) bookings = body.data.bookings;
+  }
 
   if (bookings.length === 0) {
     return NextResponse.json(
-      { error: "Body must contain booking, bookings, or data.booking / data.bookings" },
+      { error: "Body must contain booking data" },
       { status: 400 }
     );
+  }
+
+  if (isDelete || isCancel) {
+    let deleted = 0;
+    let invalidated = 0;
+
+    for (const booking of bookings) {
+      const customerId = booking.customer?.id;
+      const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
+
+      const conditions: Array<Record<string, unknown>> = [];
+      if (customerId != null) {
+        conditions.push({ uuid: `anny:${customerId}:${serviceId}`, accountId });
+      }
+      if (booking.number) {
+        conditions.push({ barcode: booking.number, accountId, source: "ANNY" });
+      }
+
+      if (conditions.length === 0) continue;
+
+      const existing = await db.ticket.findFirst({
+        where: { OR: conditions },
+      });
+
+      if (!existing) continue;
+
+      if (isDelete) {
+        await db.ticket.delete({ where: { id: existing.id } });
+        deleted++;
+      } else {
+        await db.ticket.update({
+          where: { id: existing.id },
+          data: { status: "INVALID" },
+        });
+        invalidated++;
+      }
+    }
+
+    return NextResponse.json({ deleted, invalidated });
   }
 
   let annyConfig: AnnyMapping = {};
@@ -152,7 +209,6 @@ export async function POST(request: NextRequest) {
     const customerId = booking.customer?.id;
     if (customerId == null) continue;
 
-    // Skip cancelled/rejected bookings
     if (booking.status && cancelledStatuses.has(booking.status.toLowerCase())) continue;
 
     const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";

@@ -110,13 +110,16 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const webhookSecret = (provider === "EMP_CONTROL" || provider === "ANNY") && data.extraConfig
     ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
     : null;
-  const webhookUrl = typeof window !== "undefined"
+  const webhookBaseUrl = typeof window !== "undefined"
     ? provider === "EMP_CONTROL"
       ? `${window.location.origin}/api/webhook/emp-control`
       : provider === "ANNY"
         ? `${window.location.origin}/api/integrations/anny/webhook`
         : ""
     : "";
+  const webhookUrl = provider === "ANNY" && webhookSecret
+    ? `${webhookBaseUrl}?secret=${webhookSecret}`
+    : webhookBaseUrl;
 
   const empControlApiDescription = (
     <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
@@ -133,7 +136,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
       <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
       <p><strong>POST</strong> {webhookUrl || "/api/integrations/anny/webhook"}</p>
-      <p><strong>Header:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
+      <p><strong>Auth:</strong> Secret ist in der URL enthalten (<code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">?secret=…</code>). Alternativ als Header: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code></p>
       <p><strong>Body (JSON):</strong></p>
       <ul className="list-disc list-inside space-y-0.5 pl-1">
         <li><code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">{`{ "booking": { ... } }`}</code> — einzelne Buchung</li>

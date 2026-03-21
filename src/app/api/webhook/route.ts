@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   }
 
   if ("employees" in body || Array.isArray(body)) return empControlWebhook(request);
-  if ("booking" in body || "bookings" in body || "data" in body) return annyWebhook(request);
+  if ("event" in body || "booking" in body || "bookings" in body || "data" in body) return annyWebhook(request);
 
   return NextResponse.json(
     { error: "Cannot determine provider. Use ?provider=emp-control or ?provider=anny, or POST to /api/webhook/emp-control or /api/integrations/emp-control/webhook" },
@@ -31,6 +31,6 @@ export async function GET() {
       "emp-control": "POST /api/webhook/emp-control or POST /api/integrations/emp-control/webhook",
       "anny": "POST /api/webhook?provider=anny or POST /api/integrations/anny/webhook",
     },
-    auth: "Header: Authorization: Bearer <secret> or X-Webhook-Secret: <secret>",
+    auth: "Header: Authorization: Bearer <secret>, X-Webhook-Secret: <secret>, or ?secret=<secret> query param",
   });
 }
