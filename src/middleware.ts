@@ -9,7 +9,9 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/gate") ||
     pathname.startsWith("/api/devices/pi") ||
     pathname.startsWith("/api/scans") ||
+    pathname.startsWith("/api/integrations") ||
     pathname.startsWith("/api/monitor/public") ||
+    pathname.startsWith("/api/checkin/public") ||
     pathname.startsWith("/monitor/") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");

@@ -17,9 +17,12 @@ interface AnnyBooking {
   status?: string;
   customer?: {
     id?: string | number;
+    uuid?: string;
     full_name?: string;
     first_name?: string;
     last_name?: string;
+    given_name?: string;
+    family_name?: string;
   };
   resource?: { id?: string | number; name?: string };
   service?: { id?: string | number; name?: string };
@@ -89,12 +92,14 @@ export async function POST(request: NextRequest) {
   const accountId = config.accountId;
   const db = tenantClient(accountId);
 
-  let body: AnnyEventBody;
+  let rawBody: Record<string, unknown>;
   try {
-    body = await request.json();
+    rawBody = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const body = rawBody as unknown as AnnyEventBody;
 
   const eventType = body.event ?? "";
   const isDelete = eventType === "bookings.deleted";
@@ -119,9 +124,26 @@ export async function POST(request: NextRequest) {
     else if (body.data?.bookings) bookings = body.data.bookings;
   }
 
+  // Fallback: if data looks like a booking (has customer + service/resource), use it
+  if (bookings.length === 0 && rawBody.data && typeof rawBody.data === "object") {
+    const d = rawBody.data as Record<string, unknown>;
+    if (d.customer || d.service || d.resource) {
+      bookings = [d as unknown as AnnyBooking];
+    }
+  }
+
   if (bookings.length === 0) {
     return NextResponse.json(
-      { error: "Body must contain booking data" },
+      {
+        error: "Body must contain booking data",
+        debug: {
+          event: body.event,
+          hasData: !!body.data,
+          dataKeys: body.data ? Object.keys(body.data) : [],
+          dataId: body.data?.id,
+          topKeys: Object.keys(rawBody),
+        },
+      },
       { status: 400 }
     );
   }
@@ -215,10 +237,10 @@ export async function POST(request: NextRequest) {
     const uuid = `anny:${customerId}:${serviceId}`;
 
     const customer = booking.customer;
-    const customerName = customer?.full_name || [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || "";
+    const customerName = customer?.full_name || [customer?.given_name ?? customer?.first_name, customer?.family_name ?? customer?.last_name].filter(Boolean).join(" ") || "";
     const nameParts = (customerName || "").split(/\s+/);
-    const firstName = customer?.first_name ?? nameParts[0] ?? null;
-    const lastName = customer?.last_name ?? (nameParts.slice(1).join(" ") || null);
+    const firstName = customer?.given_name ?? customer?.first_name ?? nameParts[0] ?? null;
+    const lastName = customer?.family_name ?? customer?.last_name ?? (nameParts.slice(1).join(" ") || null);
 
     const serviceName = booking.service?.name ?? null;
     const resourceName = booking.resource?.name ?? null;
