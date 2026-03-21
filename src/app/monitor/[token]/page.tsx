@@ -80,8 +80,23 @@ export default function PublicMonitorPage({ params }: Props) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [dark, setDark] = useState(true);
+  const [scanningId, setScanningId] = useState<number | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const isFirstLoad = useRef(true);
+
+  async function handleTicketScan(ticketId: number) {
+    if (scanningId) return;
+    setScanningId(ticketId);
+    try {
+      const res = await fetch(`/api/monitor/public/${token}/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId }),
+      });
+      await res.json();
+    } catch { /* ignore */ }
+    setTimeout(() => setScanningId(null), 800);
+  }
 
   useEffect(() => {
     function connect() {
@@ -309,67 +324,111 @@ export default function PublicMonitorPage({ params }: Props) {
                 Warte auf Scans…
               </div>
             )}
-            <div className="space-y-1.5 max-h-[calc(100vh-9rem)] overflow-y-auto pr-1 monitor-scrollbar">
-              {groupedScans.map((group, idx) => {
+            <div className="max-h-[calc(100vh-9rem)] overflow-y-auto pr-1 monitor-scrollbar">
+              {/* Top 2 scans side-by-side */}
+              {groupedScans.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  {groupedScans.slice(0, 2).map((group) => {
+                    const rc = resultConfig[group.result];
+                    const Icon = rc.icon;
+                    const isNew = group.scans.some((s) => newIds.has(s.id));
+                    const scanCount = group.scans.length;
+                    return (
+                      <div
+                        key={group.scans[0].id}
+                        className={cn(
+                          "flex flex-col rounded-2xl border overflow-hidden transition-all duration-200",
+                          rc.bg,
+                          isNew && `animate-scan-flash ring-2 ring-offset-1 ${styles.ringOffset}`,
+                          isNew && rc.ring,
+                        )}
+                      >
+                        <div className="flex items-center gap-3 px-4 pt-4 pb-2 min-w-0">
+                          {group.profileImage ? (
+                            <img src={group.profileImage} alt="" className="h-16 w-16 rounded-xl object-cover shrink-0" />
+                          ) : (
+                            <div className={cn("h-14 w-14 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
+                              <Icon className={cn("h-7 w-7", rc.text)} />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className={cn("font-bold text-lg leading-tight truncate", styles.scanName)}>
+                              {group.personName || group.ticketName}
+                            </p>
+                            <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
+                              {group.ticketTypeName || group.scans[0].device?.name || ""}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-1">
+                          <div className="flex items-center gap-2">
+                            {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
+                              <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
+                            )}
+                            {scanCount > 1 && (
+                              <span className={cn("text-sm font-mono font-bold px-3 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>×{scanCount}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={cn("text-sm font-bold px-4 py-1.5 rounded-lg", rc.badge)}>{rc.label}</span>
+                            <span className={cn("text-base tabular-nums font-mono font-semibold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {/* Remaining scans */}
+              <div className="space-y-1.5">
+              {groupedScans.slice(2).map((group) => {
                 const rc = resultConfig[group.result];
                 const Icon = rc.icon;
                 const isNew = group.scans.some((s) => newIds.has(s.id));
                 const scanCount = group.scans.length;
-                const isLarge = idx < 2;
 
                 return (
                   <div
                     key={group.scans[0].id}
                     className={cn(
                       "flex items-center justify-between rounded-2xl border overflow-hidden transition-all duration-200",
-                      isLarge
-                        ? group.profileImage ? "pl-0 pr-5 py-0" : "px-5 py-4"
-                        : group.profileImage ? "pl-0 pr-4 py-0" : "px-4 py-3",
+                      group.profileImage ? "pl-0 pr-4 py-0" : "px-4 py-3",
                       rc.bg,
                       isNew && `animate-scan-flash ring-2 ring-offset-1 ${styles.ringOffset}`,
                       isNew && rc.ring,
                     )}
                   >
-                    <div className={cn("flex items-center min-w-0", isLarge ? "gap-4" : "gap-3")}>
+                    <div className="flex items-center gap-3 min-w-0">
                       {group.profileImage ? (
-                        <img src={group.profileImage} alt="" className={cn("object-cover shrink-0", isLarge ? "h-20 w-20" : "h-16 w-16")} />
+                        <img src={group.profileImage} alt="" className="h-16 w-16 object-cover shrink-0" />
                       ) : (
-                        <div className={cn("rounded-2xl flex items-center justify-center shrink-0", isLarge ? "h-14 w-14" : "h-11 w-11", dark ? "bg-white/10" : "bg-slate-200")}>
-                          <Icon className={cn(isLarge ? "h-7 w-7" : "h-6 w-6", rc.text)} />
+                        <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
+                          <Icon className={cn("h-6 w-6", rc.text)} />
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className={cn("font-bold leading-tight truncate", styles.scanName, isLarge ? "text-lg" : "text-[15px]")}>
+                        <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
                           {group.personName || group.ticketName}
                         </p>
-                        <p className={cn("truncate", styles.scanSub, isLarge ? "text-sm mt-1" : "text-sm mt-0.5")}>
+                        <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
                           {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device?.name ?? "Web-Scanner"}
                         </p>
                       </div>
                     </div>
-                    <div className={cn("flex items-center shrink-0", isLarge ? "gap-3" : "gap-2")}>
+                    <div className="flex items-center gap-2 shrink-0">
                       {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
-                        <DurationCountdown
-                          firstScanAt={group.firstScanAt}
-                          durationMinutes={group.validityDurationMinutes}
-                          dark={dark}
-                        />
+                        <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
                       )}
                       {scanCount > 1 && (
-                        <span className={cn("font-mono font-bold rounded-lg tabular-nums", styles.scanCountBg, isLarge ? "text-sm px-3 py-1.5" : "text-xs px-2.5 py-1")}>
-                          ×{scanCount}
-                        </span>
+                        <span className={cn("text-xs font-mono font-bold px-2.5 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>×{scanCount}</span>
                       )}
-                      <span className={cn("font-bold rounded-lg", rc.badge, isLarge ? "text-sm px-4 py-1.5" : "text-xs px-3 py-1")}>
-                        {rc.label}
-                      </span>
-                      <span className={cn("tabular-nums font-mono font-semibold", styles.scanTime, isLarge ? "text-base" : "text-sm")}>
-                        {fmtTime(group.latestScanTime)}
-                      </span>
+                      <span className={cn("text-xs font-bold px-3 py-1 rounded-lg", rc.badge)}>{rc.label}</span>
+                      <span className={cn("text-sm tabular-nums font-mono font-semibold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
                     </div>
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
 
@@ -391,10 +450,18 @@ export default function PublicMonitorPage({ params }: Props) {
                 const endStr = ticket.endDate
                   ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
                   : null;
+                const isScanning = scanningId === ticket.id;
                 return (
                   <div
                     key={ticket.id}
-                    className={cn("flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-colors duration-150", styles.ticketBg)}
+                    onClick={() => handleTicketScan(ticket.id)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-all duration-150 cursor-pointer select-none active:scale-[0.98]",
+                      isScanning
+                        ? dark ? "bg-emerald-950 border-emerald-500/50 ring-1 ring-emerald-500/30" : "bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30"
+                        : styles.ticketBg,
+                      dark ? "hover:bg-slate-800" : "hover:bg-slate-100",
+                    )}
                   >
                     {ticket.profileImage ? (
                       <img src={ticket.profileImage} alt="" className={cn("h-10 w-10 rounded-xl object-cover shrink-0 ring-1", styles.imgRing)} />
