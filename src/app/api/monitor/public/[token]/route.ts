@@ -78,15 +78,35 @@ export async function GET(
             monitoredDevices.flatMap((d) => [d.accessIn, d.accessOut].filter((id): id is number => id != null))
           )];
 
+          const now = new Date();
+          const todayStart = new Date(now);
+          todayStart.setHours(0, 0, 0, 0);
+          const todayEnd = new Date(now);
+          todayEnd.setHours(23, 59, 59, 999);
+
           const ticketWhere: Record<string, unknown> = {
             accountId,
             status: { in: ["VALID", "REDEEMED"] },
+            OR: [
+              { startDate: null },
+              { startDate: { lte: todayEnd } },
+            ],
+            AND: [
+              {
+                OR: [
+                  { endDate: null },
+                  { endDate: { gte: todayStart } },
+                ],
+              },
+            ],
           };
           if (areaIds.length > 0) {
-            ticketWhere.OR = [
-              { accessAreaId: { in: areaIds } },
-              { accessAreaId: null },
-            ];
+            (ticketWhere.AND as Record<string, unknown>[]).push({
+              OR: [
+                { accessAreaId: { in: areaIds } },
+                { accessAreaId: null },
+              ],
+            });
           }
 
           const tickets = await prisma.ticket.findMany({

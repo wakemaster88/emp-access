@@ -384,45 +384,51 @@ export default function PublicMonitorPage({ params }: Props) {
               {tickets.length === 0 && (
                 <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>Keine aktiven Tickets</p>
               )}
-              {tickets.map((ticket) => (
-                <div
-                  key={ticket.id}
-                  className={cn("flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-colors duration-150", styles.ticketBg)}
-                >
-                  {ticket.profileImage ? (
-                    <img src={ticket.profileImage} alt="" className={cn("h-10 w-10 rounded-xl object-cover shrink-0 ring-1", styles.imgRing)} />
-                  ) : (
-                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
-                      <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className={cn("text-sm font-bold truncate", styles.ticketName)}>
-                      {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                    </p>
-                    <p className={cn("text-xs font-medium truncate", styles.ticketSub)}>
-                      {ticket.ticketTypeName || ticket.name}
-                    </p>
-                  </div>
-                  <div className="shrink-0 flex flex-col items-end gap-0.5">
-                    <Badge className={cn(
-                      "text-[11px] px-2 py-0.5 font-bold",
-                      ticket.status === "VALID"
-                        ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
-                        : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
-                    )}>
-                      {ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
-                    </Badge>
-                    {ticket.validityType === "DURATION" && ticket.validityDurationMinutes && ticket.firstScanAt && (
-                      <DurationCountdown
-                        firstScanAt={ticket.firstScanAt}
-                        durationMinutes={ticket.validityDurationMinutes}
-                        dark={dark}
-                      />
+              {tickets.map((ticket) => {
+                const endStr = ticket.endDate
+                  ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
+                  : null;
+                return (
+                  <div
+                    key={ticket.id}
+                    className={cn("flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-colors duration-150", styles.ticketBg)}
+                  >
+                    {ticket.profileImage ? (
+                      <img src={ticket.profileImage} alt="" className={cn("h-10 w-10 rounded-xl object-cover shrink-0 ring-1", styles.imgRing)} />
+                    ) : (
+                      <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
+                        <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
+                      </div>
                     )}
+                    <div className="min-w-0 flex-1">
+                      <p className={cn("text-sm font-bold truncate", styles.ticketName)}>
+                        {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                      </p>
+                      <p className={cn("text-xs font-medium truncate", styles.ticketSub)}>
+                        {ticket.ticketTypeName || ticket.name}
+                        {endStr && <span className={cn("ml-1", dark ? "text-slate-500" : "text-slate-400")}>· bis {endStr}</span>}
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex flex-col items-end gap-0.5">
+                      <Badge className={cn(
+                        "text-[11px] px-2 py-0.5 font-bold",
+                        ticket.status === "VALID"
+                          ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                          : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
+                      )}>
+                        {ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
+                      </Badge>
+                      {ticket.validityType === "DURATION" && ticket.validityDurationMinutes && ticket.firstScanAt && (
+                        <DurationCountdown
+                          firstScanAt={ticket.firstScanAt}
+                          durationMinutes={ticket.validityDurationMinutes}
+                          dark={dark}
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
