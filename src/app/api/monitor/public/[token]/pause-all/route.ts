@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(
@@ -36,7 +37,7 @@ export async function POST(
         ext.previousStatus = "VALID";
         await prisma.ticket.update({
           where: { id: t.id },
-          data: { status: "PAUSED", extras: ext },
+          data: { status: "PAUSED", extras: ext as Prisma.InputJsonValue },
         });
       }
 
@@ -55,18 +56,23 @@ export async function POST(
 
       for (const t of tickets) {
         const ext = (t.extras as Record<string, unknown>) ?? {};
-        const data: Record<string, unknown> = { status: "VALID" };
-
+        let firstScanAt: Date | undefined;
         if (t.validityType === "DURATION" && typeof ext.remainingMs === "number" && t.validityDurationMinutes) {
-          data.firstScanAt = new Date(now.getTime() - (t.validityDurationMinutes * 60_000 - ext.remainingMs));
+          firstScanAt = new Date(now.getTime() - (t.validityDurationMinutes * 60_000 - ext.remainingMs));
         }
 
         delete ext.pausedAtMs;
         delete ext.remainingMs;
         delete ext.previousStatus;
-        data.extras = ext;
 
-        await prisma.ticket.update({ where: { id: t.id }, data });
+        await prisma.ticket.update({
+          where: { id: t.id },
+          data: {
+            status: "VALID",
+            extras: ext as Prisma.InputJsonValue,
+            ...(firstScanAt ? { firstScanAt } : {}),
+          },
+        });
       }
 
       return NextResponse.json({ success: true, action: "resumed", count: tickets.length });
