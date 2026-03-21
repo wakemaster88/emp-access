@@ -26,6 +26,21 @@ export default async function SubscriptionsPage() {
       include: {
         areas: { select: { id: true, name: true } },
         _count: { select: { tickets: true } },
+        tickets: {
+          select: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            startDate: true,
+            endDate: true,
+            status: true,
+            ticketTypeName: true,
+            rfidCode: true,
+            barcode: true,
+          },
+          orderBy: { name: "asc" },
+        },
       },
       orderBy: { name: "asc" },
     }),
