@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     rfidCode: true,
   };
 
-  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, , annyConfig] = await Promise.all([
+  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, , annyConfig, recentScans, checkedInToday, newTicketsToday, activeDevices] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: {
@@ -187,6 +187,44 @@ export async function GET(request: NextRequest) {
     db.apiConfig.findFirst({
       where: { ...(isSuperAdmin ? {} : { accountId: accountId! }), provider: "ANNY" },
       select: { token: true, baseUrl: true, extraConfig: true },
+    }),
+    db.scan.findMany({
+      where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
+      select: {
+        id: true,
+        code: true,
+        result: true,
+        scanTime: true,
+        device: { select: { name: true } },
+        ticket: { select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true, profileImage: true } },
+      },
+      orderBy: { scanTime: "desc" },
+      take: 15,
+    }),
+    db.scan.groupBy({
+      by: ["ticketId"],
+      where: { ...where, scanTime: { gte: dayStart, lte: dayEnd }, result: "GRANTED", ticketId: { not: null } },
+      _count: true,
+    }),
+    db.ticket.findMany({
+      where: { ...where, createdAt: { gte: dayStart, lte: dayEnd } },
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        ticketTypeName: true,
+        profileImage: true,
+        source: true,
+        createdAt: true,
+        subscription: { select: { name: true } },
+        service: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+    db.device.count({
+      where: { ...where, isActive: true, lastUpdate: { gte: new Date(Date.now() - 5 * 60_000) } },
     }),
   ]);
 
@@ -433,6 +471,26 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     date: dateStr,
     scansToday,
+    checkedInCount: checkedInToday.length,
+    newTicketsCount: newTicketsToday.length,
+    activeDevices,
+    recentScans: recentScans.map((s) => ({
+      id: s.id,
+      result: s.result,
+      scanTime: s.scanTime,
+      deviceName: s.device?.name ?? null,
+      ticketName: s.ticket ? ([s.ticket.firstName, s.ticket.lastName].filter(Boolean).join(" ") || s.ticket.name) : s.code,
+      ticketTypeName: s.ticket?.ticketTypeName ?? null,
+      profileImage: s.ticket?.profileImage ?? null,
+    })),
+    newTickets: newTicketsToday.map((t) => ({
+      id: t.id,
+      name: [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name,
+      typeName: t.subscription?.name || t.service?.name || t.ticketTypeName || null,
+      source: t.source,
+      profileImage: t.profileImage,
+      createdAt: t.createdAt,
+    })),
     areas: structuredAreas,
     unassigned: {
       id: null,

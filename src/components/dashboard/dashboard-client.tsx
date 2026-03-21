@@ -16,6 +16,11 @@ import {
   MapPin,
   Clock,
   CreditCard,
+  CheckCircle2,
+  XCircle,
+  Wifi,
+  TrendingUp,
+  Ticket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
@@ -61,9 +66,33 @@ interface AreaData {
   _count: { tickets: number };
 }
 
+interface RecentScan {
+  id: number;
+  result: "GRANTED" | "DENIED" | "PROTECTED";
+  scanTime: string;
+  deviceName: string | null;
+  ticketName: string;
+  ticketTypeName: string | null;
+  profileImage: string | null;
+}
+
+interface NewTicket {
+  id: number;
+  name: string;
+  typeName: string | null;
+  source: string | null;
+  profileImage: string | null;
+  createdAt: string;
+}
+
 interface DashboardData {
   date: string;
   scansToday: number;
+  checkedInCount: number;
+  newTicketsCount: number;
+  activeDevices: number;
+  recentScans: RecentScan[];
+  newTickets: NewTicket[];
   areas: AreaData[];
   unassigned: AreaData;
 }
@@ -507,8 +536,21 @@ export function DashboardClient() {
     });
   })();
 
+  function fmtScanTime(iso: string): string {
+    try {
+      return new Date(iso).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch { return ""; }
+  }
+
+  function fmtCreatedAt(iso: string): string {
+    try {
+      return new Date(iso).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
+  }
+
   return (
     <div className="space-y-4">
+      {/* Date navigation */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1">
@@ -531,23 +573,11 @@ export function DashboardClient() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
             {fmtDisplayDate(date)}
           </span>
-
           <div className="ml-auto flex items-center gap-2">
             {(loading || ticketLoading) && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-            <Badge variant="secondary" className="gap-1 text-xs py-0.5 px-2">
-              <Users className="h-3 w-3" />
-              {totalTickets}
-            </Badge>
-            {data && (
-              <Badge variant="secondary" className="gap-1 text-xs py-0.5 px-2">
-                <ScanLine className="h-3 w-3" />
-                {data.scansToday}
-              </Badge>
-            )}
           </div>
         </div>
 
@@ -573,10 +603,140 @@ export function DashboardClient() {
         </div>
       </div>
 
+      {/* Stat cards */}
+      {!loading && data && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Card className="py-3 px-4 gap-0">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Tickets</span>
+              <Ticket className="h-3.5 w-3.5 text-indigo-500" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{totalTickets}</p>
+          </Card>
+          <Card className="py-3 px-4 gap-0">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Scans</span>
+              <ScanLine className="h-3.5 w-3.5 text-sky-500" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{data.scansToday}</p>
+          </Card>
+          <Card className="py-3 px-4 gap-0">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Eingecheckt</span>
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{data.checkedInCount}</p>
+          </Card>
+          <Card className="py-3 px-4 gap-0">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Geräte</span>
+              <Wifi className="h-3.5 w-3.5 text-amber-500" />
+            </div>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{data.activeDevices}</p>
+          </Card>
+        </div>
+      )}
+
+      {/* Action required */}
       {!loading && actionRequired.length > 0 && (
         <ActionRequiredCard tickets={actionRequired} openTicket={openTicket} />
       )}
 
+      {/* Live feeds: Recent scans + New bookings */}
+      {!loading && data && (data.recentScans.length > 0 || data.newTickets.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {/* Recent scans */}
+          {data.recentScans.length > 0 && (
+            <Card className="py-0 gap-0 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+                  <ScanLine className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+                  Letzte Scans
+                </span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {data.scansToday} heute
+                </Badge>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto">
+                {data.recentScans.map((scan) => (
+                  <div key={scan.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    {scan.profileImage ? (
+                      <img src={scan.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className={cn(
+                        "h-7 w-7 rounded-full flex items-center justify-center shrink-0",
+                        scan.result === "GRANTED" ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-rose-100 dark:bg-rose-900/30"
+                      )}>
+                        {scan.result === "GRANTED"
+                          ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                          : <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">{scan.ticketName}</p>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {scan.ticketTypeName && <>{scan.ticketTypeName} · </>}
+                        {scan.deviceName || "Unbekannt"}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] font-mono text-slate-400">{fmtScanTime(scan.scanTime)}</span>
+                      <div className={cn(
+                        "h-1.5 w-1.5 rounded-full ml-auto mt-0.5",
+                        scan.result === "GRANTED" ? "bg-emerald-500" : scan.result === "DENIED" ? "bg-rose-500" : "bg-amber-500"
+                      )} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* New bookings */}
+          {data.newTickets.length > 0 && (
+            <Card className="py-0 gap-0 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+                <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                  Neue Buchungen
+                </span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {data.newTicketsCount} heute
+                </Badge>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto">
+                {data.newTickets.map((ticket) => (
+                  <div
+                    key={ticket.id}
+                    className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    onClick={() => openTicket(ticket.id)}
+                  >
+                    {ticket.profileImage ? (
+                      <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="h-7 w-7 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
+                        <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                          {(ticket.name[0] || "?").toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">{ticket.name}</p>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {ticket.typeName || "Ticket"}
+                        {ticket.source && <> · {ticket.source === "ANNY" ? "anny.co" : ticket.source === "EMP_CONTROL" ? "Mitarbeiter" : ticket.source}</>}
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400 shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Area cards */}
       {!loading && allAreas.length === 0 && (
         <div className="text-center py-12 text-slate-400">
           <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
