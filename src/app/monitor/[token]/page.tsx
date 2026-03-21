@@ -88,6 +88,8 @@ export default function PublicMonitorPage({ params }: Props) {
   const [dark, setDark] = useState(true);
   const [scanningId, setScanningId] = useState<number | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<TicketInfo | null>(null);
+  const [allPaused, setAllPaused] = useState(false);
+  const [pauseToggling, setPauseToggling] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const isFirstLoad = useRef(true);
 
@@ -103,6 +105,21 @@ export default function PublicMonitorPage({ params }: Props) {
       await res.json();
     } catch { /* ignore */ }
     setTimeout(() => setScanningId(null), 800);
+  }
+
+  async function handlePauseAll() {
+    if (pauseToggling) return;
+    setPauseToggling(true);
+    try {
+      const action = allPaused ? "resume" : "pause";
+      const res = await fetch(`/api/monitor/public/${token}/pause-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) setAllPaused(!allPaused);
+    } catch { /* ignore */ }
+    setPauseToggling(false);
   }
 
   function handleTicketClick(ticket: TicketInfo) {
@@ -472,7 +489,7 @@ export default function PublicMonitorPage({ params }: Props) {
 
           {/* Right Side */}
           <div className="flex flex-col gap-4">
-            <LiveClock dark={dark} styles={styles} />
+            <LiveClock dark={dark} styles={styles} allPaused={allPaused} pauseToggling={pauseToggling} onClick={handlePauseAll} />
 
             <div className="flex items-center gap-2">
               <Ticket className={cn("h-5 w-5", styles.sectionLabel)} />
@@ -876,7 +893,7 @@ function TicketDetailOverlay({
   );
 }
 
-function LiveClock({ dark, styles }: { dark: boolean; styles: Record<string, string> }) {
+function LiveClock({ dark, styles, allPaused, pauseToggling, onClick }: { dark: boolean; styles: Record<string, string>; allPaused: boolean; pauseToggling: boolean; onClick: () => void }) {
   const [time, setTime] = useState("");
   const [date, setDate] = useState("");
   useEffect(() => {
@@ -889,9 +906,31 @@ function LiveClock({ dark, styles }: { dark: boolean; styles: Record<string, str
     return () => clearInterval(id);
   }, []);
   return (
-    <div className={cn("rounded-2xl border px-5 py-4 text-center transition-colors duration-300", styles.clockBg)}>
-      <p className={cn("text-4xl font-mono font-black tracking-tight tabular-nums", styles.clockText)}>{time}</p>
-      <p className={cn("text-sm mt-1 font-bold", styles.clockSub)}>{date}</p>
-    </div>
+    <button
+      onClick={onClick}
+      disabled={pauseToggling}
+      className={cn(
+        "rounded-2xl border px-5 py-4 text-center transition-all duration-500 cursor-pointer active:scale-[0.97] w-full",
+        allPaused
+          ? dark ? "bg-rose-950 border-rose-600/60 ring-2 ring-rose-500/30" : "bg-rose-100 border-rose-400 ring-2 ring-rose-400/30"
+          : styles.clockBg,
+        pauseToggling && "opacity-60",
+      )}
+    >
+      {allPaused && (
+        <div className="flex items-center justify-center gap-2 mb-1">
+          <Pause className={cn("h-4 w-4", dark ? "text-rose-400" : "text-rose-600")} />
+          <span className={cn("text-xs font-bold uppercase tracking-widest", dark ? "text-rose-400" : "text-rose-600")}>Pausiert</span>
+        </div>
+      )}
+      <p className={cn(
+        "text-4xl font-mono font-black tracking-tight tabular-nums",
+        allPaused ? (dark ? "text-rose-200" : "text-rose-900") : styles.clockText,
+      )}>{time}</p>
+      <p className={cn(
+        "text-sm mt-1 font-bold",
+        allPaused ? (dark ? "text-rose-400" : "text-rose-600") : styles.clockSub,
+      )}>{date}</p>
+    </button>
   );
 }
