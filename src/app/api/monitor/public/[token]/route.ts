@@ -112,7 +112,7 @@ export async function GET(
             });
           }
 
-          const tickets = await prisma.ticket.findMany({
+          const rawTickets = await prisma.ticket.findMany({
             where: ticketWhere,
             select: {
               id: true,
@@ -133,6 +133,13 @@ export async function GET(
               source: true,
             },
             orderBy: { name: "asc" },
+          });
+          const tickets = rawTickets.filter((t) => {
+            if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
+              const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
+              if (now.getTime() > expiresAt) return false;
+            }
+            return true;
           });
           send({ type: "tickets", data: tickets });
         } catch {

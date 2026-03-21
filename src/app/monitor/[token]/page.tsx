@@ -139,7 +139,15 @@ export default function PublicMonitorPage({ params }: Props) {
             return [...fresh, ...prev].slice(0, 50);
           });
         } else if (msg.type === "tickets") {
-          const sorted = (msg.data as TicketInfo[]).sort((a, b) => {
+          const now = Date.now();
+          const valid = (msg.data as TicketInfo[]).filter((t) => {
+            if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
+              const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
+              if (now > expiresAt) return false;
+            }
+            return true;
+          });
+          const sorted = valid.sort((a, b) => {
             const order = (t: TicketInfo) =>
               t.source === "EMP_CONTROL" ? 2
               : t.subscriptionId != null ? 1

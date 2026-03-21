@@ -28,9 +28,14 @@ export async function POST(
   if (ticket.status === "INVALID") {
     return NextResponse.json({ granted: false, message: "Ticket ungültig" });
   }
-
   if (ticket.status === "PROTECTED") {
     return NextResponse.json({ granted: false, message: "Ticket gesperrt" });
+  }
+  if (ticket.status === "PAUSED") {
+    return NextResponse.json({ granted: false, message: "Abo pausiert" });
+  }
+  if (ticket.status === "CANCELED") {
+    return NextResponse.json({ granted: false, message: "Abo gekündigt" });
   }
 
   const now = new Date();
@@ -40,6 +45,13 @@ export async function POST(
   }
   if (ticket.startDate && new Date(ticket.startDate) > now) {
     return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig" });
+  }
+
+  if (ticket.validityType === "DURATION" && ticket.firstScanAt && ticket.validityDurationMinutes) {
+    const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
+    if (now > expiresAt) {
+      return NextResponse.json({ granted: false, message: "Zeitticket abgelaufen" });
+    }
   }
 
   const code = ticket.barcode || ticket.qrCode || ticket.rfidCode || `monitor:${ticket.id}`;

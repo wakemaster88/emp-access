@@ -28,12 +28,31 @@ export async function POST(
   if (ticket.status === "INVALID") {
     return NextResponse.json({ success: false, message: "Ticket ungültig" });
   }
-
   if (ticket.status === "PROTECTED") {
     return NextResponse.json({ success: false, message: "Ticket gesperrt" });
   }
+  if (ticket.status === "PAUSED") {
+    return NextResponse.json({ success: false, message: "Abo pausiert" });
+  }
+  if (ticket.status === "CANCELED") {
+    return NextResponse.json({ success: false, message: "Abo gekündigt" });
+  }
 
   const now = new Date();
+
+  if (ticket.endDate && new Date(ticket.endDate) < now) {
+    return NextResponse.json({ success: false, message: "Ticket abgelaufen" });
+  }
+  if (ticket.startDate && new Date(ticket.startDate) > now) {
+    return NextResponse.json({ success: false, message: "Ticket noch nicht gültig" });
+  }
+  if (ticket.validityType === "DURATION" && ticket.firstScanAt && ticket.validityDurationMinutes) {
+    const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
+    if (now > expiresAt) {
+      return NextResponse.json({ success: false, message: "Zeitticket abgelaufen" });
+    }
+  }
+
   const code = ticket.barcode || ticket.qrCode || ticket.rfidCode || `checkin:${ticket.id}`;
 
   await prisma.scan.create({
