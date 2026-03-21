@@ -47,7 +47,9 @@ interface SubscriptionsTableProps {
   readonly?: boolean;
 }
 
-function ticketValidity(t: TicketRow): "valid" | "expired" | "invalid" {
+function ticketValidity(t: TicketRow): "valid" | "expired" | "invalid" | "paused" | "canceled" {
+  if (t.status === "PAUSED") return "paused";
+  if (t.status === "CANCELED") return "canceled";
   if (t.status === "INVALID") return "invalid";
   if (t.status === "REDEEMED") return "expired";
   if (t.endDate) {
@@ -358,6 +360,14 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                                       {v === "valid" ? (
                                         <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs">
                                           Gültig
+                                        </Badge>
+                                      ) : v === "paused" ? (
+                                        <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 text-xs">
+                                          Pausiert
+                                        </Badge>
+                                      ) : v === "canceled" ? (
+                                        <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 text-xs">
+                                          Gekündigt
                                         </Badge>
                                       ) : v === "expired" ? (
                                         <Badge className="bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 text-xs">

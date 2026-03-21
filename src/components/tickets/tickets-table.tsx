@@ -110,6 +110,10 @@ function statusBadge(status: string, ticket?: { endDate?: string | Date | null }
       return <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">Eingelöst</Badge>;
     case "INVALID":
       return <Badge variant="destructive">Ungültig</Badge>;
+    case "PAUSED":
+      return <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">Pausiert</Badge>;
+    case "CANCELED":
+      return <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">Gekündigt</Badge>;
     case "PROTECTED":
       return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Geschützt</Badge>;
     default:

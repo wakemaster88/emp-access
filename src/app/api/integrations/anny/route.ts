@@ -545,9 +545,14 @@ export async function POST() {
       const subscriptionId = subNameMap.get(planName) ?? null;
       if (!subscriptionId) continue;
 
-      const isActive = ps.status === "active" || ps.status === "trialing";
+      const ticketStatus =
+        ps.status === "active" || ps.status === "trialing" ? ("VALID" as const)
+        : ps.status === "paused" ? ("PAUSED" as const)
+        : ps.status === "canceled" || ps.status === "cancelled" ? ("CANCELED" as const)
+        : ("INVALID" as const);
+
       const uuid = `anny-sub:${customerId}:${ps.id ?? planName}`;
-      activeUuids.push(uuid);
+      if (ticketStatus === "VALID") activeUuids.push(uuid);
 
       const customerName = ps.customer?.full_name ?? "";
       const firstName = ps.customer?.given_name ?? customerName.split(/\s+/)[0] ?? "";
@@ -562,7 +567,7 @@ export async function POST() {
         lastName: lastName || null,
         startDate,
         endDate,
-        status: isActive ? ("VALID" as const) : ("INVALID" as const),
+        status: ticketStatus,
         ticketTypeName: planName,
         source: "ANNY" as const,
         subscriptionId,

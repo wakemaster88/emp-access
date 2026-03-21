@@ -30,6 +30,8 @@ enum TicketStatus {
   REDEEMED
   INVALID
   PROTECTED
+  PAUSED
+  CANCELED
 }
 
 enum ValidityType {

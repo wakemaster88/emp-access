@@ -1,0 +1,3 @@
+-- Add PAUSED and CANCELED values to TicketStatus enum
+ALTER TYPE "TicketStatus" ADD VALUE IF NOT EXISTS 'PAUSED';
+ALTER TYPE "TicketStatus" ADD VALUE IF NOT EXISTS 'CANCELED';
