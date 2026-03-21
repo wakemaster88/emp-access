@@ -310,41 +310,44 @@ export default function PublicMonitorPage({ params }: Props) {
               </div>
             )}
             <div className="space-y-1.5 max-h-[calc(100vh-9rem)] overflow-y-auto pr-1 monitor-scrollbar">
-              {groupedScans.map((group) => {
+              {groupedScans.map((group, idx) => {
                 const rc = resultConfig[group.result];
                 const Icon = rc.icon;
                 const isNew = group.scans.some((s) => newIds.has(s.id));
                 const scanCount = group.scans.length;
+                const isLarge = idx < 2;
 
                 return (
                   <div
                     key={group.scans[0].id}
                     className={cn(
                       "flex items-center justify-between rounded-2xl border overflow-hidden transition-all duration-200",
-                      group.profileImage ? "pl-0 pr-4 py-0" : "px-4 py-3",
+                      isLarge
+                        ? group.profileImage ? "pl-0 pr-5 py-0" : "px-5 py-4"
+                        : group.profileImage ? "pl-0 pr-4 py-0" : "px-4 py-3",
                       rc.bg,
                       isNew && `animate-scan-flash ring-2 ring-offset-1 ${styles.ringOffset}`,
                       isNew && rc.ring,
                     )}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className={cn("flex items-center min-w-0", isLarge ? "gap-4" : "gap-3")}>
                       {group.profileImage ? (
-                        <img src={group.profileImage} alt="" className="h-16 w-16 object-cover shrink-0" />
+                        <img src={group.profileImage} alt="" className={cn("object-cover shrink-0", isLarge ? "h-20 w-20" : "h-16 w-16")} />
                       ) : (
-                        <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
-                          <Icon className={cn("h-6 w-6", rc.text)} />
+                        <div className={cn("rounded-2xl flex items-center justify-center shrink-0", isLarge ? "h-14 w-14" : "h-11 w-11", dark ? "bg-white/10" : "bg-slate-200")}>
+                          <Icon className={cn(isLarge ? "h-7 w-7" : "h-6 w-6", rc.text)} />
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
+                        <p className={cn("font-bold leading-tight truncate", styles.scanName, isLarge ? "text-lg" : "text-[15px]")}>
                           {group.personName || group.ticketName}
                         </p>
-                        <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
+                        <p className={cn("truncate", styles.scanSub, isLarge ? "text-sm mt-1" : "text-sm mt-0.5")}>
                           {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device?.name ?? "Web-Scanner"}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className={cn("flex items-center shrink-0", isLarge ? "gap-3" : "gap-2")}>
                       {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
                         <DurationCountdown
                           firstScanAt={group.firstScanAt}
@@ -353,14 +356,14 @@ export default function PublicMonitorPage({ params }: Props) {
                         />
                       )}
                       {scanCount > 1 && (
-                        <span className={cn("text-xs font-mono font-bold px-2.5 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>
+                        <span className={cn("font-mono font-bold rounded-lg tabular-nums", styles.scanCountBg, isLarge ? "text-sm px-3 py-1.5" : "text-xs px-2.5 py-1")}>
                           ×{scanCount}
                         </span>
                       )}
-                      <span className={cn("text-xs font-bold px-3 py-1 rounded-lg", rc.badge)}>
+                      <span className={cn("font-bold rounded-lg", rc.badge, isLarge ? "text-sm px-4 py-1.5" : "text-xs px-3 py-1")}>
                         {rc.label}
                       </span>
-                      <span className={cn("text-sm tabular-nums font-mono font-semibold", styles.scanTime)}>
+                      <span className={cn("tabular-nums font-mono font-semibold", styles.scanTime, isLarge ? "text-base" : "text-sm")}>
                         {fmtTime(group.latestScanTime)}
                       </span>
                     </div>
