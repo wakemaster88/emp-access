@@ -14,7 +14,7 @@ import { AreaFilter } from "@/components/tickets/area-filter";
 import { Eye, EyeOff } from "lucide-react";
 
 interface Props {
-  searchParams: Promise<{ showAll?: string; area?: string; code?: string; sort?: string; order?: string; source?: string }>;
+  searchParams: Promise<{ showAll?: string; area?: string; code?: string; sort?: string; order?: string; source?: string; sub?: string; svc?: string }>;
 }
 
 function buildOrderBy(sort: string, order: "asc" | "desc") {
@@ -35,9 +35,11 @@ export default async function TicketsPage({ searchParams }: Props) {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");
 
-  const { showAll, area, code, sort = "date", order = "desc", source } = await searchParams;
+  const { showAll, area, code, sort = "date", order = "desc", source, sub, svc } = await searchParams;
   const showInactive = showAll === "1";
   const areaId = area ? Number(area) : undefined;
+  const subId = sub ? Number(sub) : undefined;
+  const svcId = svc ? Number(svc) : undefined;
   const codeTrim = (code ?? "").trim();
   const orderDir = order === "asc" ? "asc" : "desc";
 
@@ -47,6 +49,8 @@ export default async function TicketsPage({ searchParams }: Props) {
   const baseWhere = isSuperAdmin ? {} : { accountId: session.user.accountId! };
   const statusFilter = showInactive ? {} : { status: { in: ["VALID" as const, "REDEEMED" as const] } };
   const areaFilter = areaId ? { accessAreaId: areaId } : {};
+  const subFilter = subId ? { subscriptionId: subId } : {};
+  const svcFilter = svcId ? { serviceId: svcId } : {};
   const codeFilter = codeTrim
     ? { OR: [{ barcode: codeTrim }, { qrCode: codeTrim }, { rfidCode: codeTrim }] }
     : {};
@@ -58,7 +62,7 @@ export default async function TicketsPage({ searchParams }: Props) {
 
   const [tickets, areas, subscriptions, services, inactiveCount] = await Promise.all([
     db.ticket.findMany({
-      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...codeFilter, ...sourceFilter },
+      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, ...codeFilter, ...sourceFilter },
       include: { accessArea: true, subscription: true, service: true, ticketAreas: { include: { accessArea: true } }, _count: { select: { scans: true } } },
       orderBy: buildOrderBy(sort, orderDir),
       take: 500,
@@ -121,6 +125,8 @@ export default async function TicketsPage({ searchParams }: Props) {
   const sortParam = sort ?? "date";
   const orderParam = order ?? "desc";
   const sourceParam = source ?? "";
+  const subParam = sub ?? "";
+  const svcParam = svc ?? "";
 
   return (
     <>
@@ -143,6 +149,10 @@ export default async function TicketsPage({ searchParams }: Props) {
                 currentSort={sortParam}
                 currentOrder={orderParam}
                 currentSource={sourceParam}
+                currentSub={subParam}
+                currentSvc={svcParam}
+                subscriptions={subsWithAreas}
+                services={svcsWithAreas}
               />
               {areas.length > 0 && (
                 <AreaFilter areas={areas} current={area} />

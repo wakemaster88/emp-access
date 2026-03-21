@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowUpDown, Filter } from "lucide-react";
+import { ArrowUpDown, Filter, CreditCard, Package } from "lucide-react";
 
 const SORT_OPTIONS = [
   { value: "date_desc", label: "Neueste zuerst", sort: "date", order: "desc" as const },
@@ -31,14 +31,32 @@ const SOURCE_OPTIONS = [
   { value: "SHELLY", label: "shelly" },
 ] as const;
 
+interface SubOption {
+  id: number;
+  name: string;
+}
+
+interface SvcOption {
+  id: number;
+  name: string;
+}
+
 export function TicketSortFilter({
   currentSort,
   currentOrder,
   currentSource,
+  currentSub,
+  currentSvc,
+  subscriptions = [],
+  services = [],
 }: {
   currentSort: string;
   currentOrder: string;
   currentSource: string;
+  currentSub?: string;
+  currentSvc?: string;
+  subscriptions?: SubOption[];
+  services?: SvcOption[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -47,13 +65,21 @@ export function TicketSortFilter({
     (o) => o.sort === currentSort && o.order === currentOrder
   )?.value ?? "date_desc";
 
-  function updateParams(updates: { sort?: string; order?: string; source?: string }) {
+  function updateParams(updates: { sort?: string; order?: string; source?: string; sub?: string; svc?: string }) {
     const params = new URLSearchParams(searchParams.toString());
     if (updates.sort !== undefined) params.set("sort", updates.sort);
     if (updates.order !== undefined) params.set("order", updates.order);
     if (updates.source !== undefined) {
       if (updates.source === "all") params.delete("source");
       else params.set("source", updates.source);
+    }
+    if (updates.sub !== undefined) {
+      if (updates.sub === "all") params.delete("sub");
+      else params.set("sub", updates.sub);
+    }
+    if (updates.svc !== undefined) {
+      if (updates.svc === "all") params.delete("svc");
+      else params.set("svc", updates.svc);
     }
     router.push(`/tickets${params.toString() ? `?${params}` : ""}`);
   }
@@ -95,6 +121,34 @@ export function TicketSortFilter({
           ))}
         </SelectContent>
       </Select>
+      {subscriptions.length > 0 && (
+        <Select value={currentSub || "all"} onValueChange={(v) => updateParams({ sub: v })}>
+          <SelectTrigger className="w-[170px] h-9 text-sm">
+            <CreditCard className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
+            <SelectValue placeholder="Alle Abos" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Abos</SelectItem>
+            {subscriptions.map((s) => (
+              <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {services.length > 0 && (
+        <Select value={currentSvc || "all"} onValueChange={(v) => updateParams({ svc: v })}>
+          <SelectTrigger className="w-[170px] h-9 text-sm">
+            <Package className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
+            <SelectValue placeholder="Alle Services" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Services</SelectItem>
+            {services.map((s) => (
+              <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 }

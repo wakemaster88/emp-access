@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { EditTicketDialog, type TicketData } from "./edit-ticket-dialog";
 import { fmtDateShort, fmtDateTimeShort, isDateOnly } from "@/lib/utils";
-import { UserCheck, MapPin } from "lucide-react";
+import { UserCheck, MapPin, CreditCard, Package } from "lucide-react";
 
 interface Area {
   id: number;
@@ -180,20 +180,38 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
     const empTickets = allTickets.filter((t) => t.source === "EMP_CONTROL");
     const regTickets = allTickets.filter((t) => t.source !== "EMP_CONTROL");
 
-    const map = new Map<string, TicketWithArea[]>();
+    const map = new Map<string, { type: "resource" | "subscription" | "service" | "none"; tickets: TicketWithArea[] }>();
     for (const t of regTickets) {
-      const name = t.accessArea?.name ?? "Keine Resource";
-      if (!map.has(name)) map.set(name, []);
-      map.get(name)!.push(t);
+      let groupName: string;
+      let groupType: "resource" | "subscription" | "service" | "none";
+      if (t.accessArea?.name) {
+        groupName = t.accessArea.name;
+        groupType = "resource";
+      } else if (t.subscription?.name) {
+        groupName = t.subscription.name;
+        groupType = "subscription";
+      } else if (t.service?.name) {
+        groupName = t.service.name;
+        groupType = "service";
+      } else {
+        groupName = "Ohne Zuordnung";
+        groupType = "none";
+      }
+      const key = `${groupType}:${groupName}`;
+      if (!map.has(key)) map.set(key, { type: groupType, tickets: [] });
+      map.get(key)!.tickets.push(t);
     }
-    const none = "Keine Resource";
     const groups = Array.from(map.entries())
-      .sort(([a], [b]) => {
-        if (a === none) return 1;
-        if (b === none) return -1;
-        return a.localeCompare(b, "de");
+      .sort(([, a], [, b]) => {
+        const order = { resource: 0, service: 1, subscription: 2, none: 3 };
+        if (a.type !== b.type) return order[a.type] - order[b.type];
+        return 0;
       })
-      .map(([resourceName, list]) => ({ resourceName, tickets: list }));
+      .map(([key, { type, tickets: list }]) => ({
+        groupName: key.split(":").slice(1).join(":"),
+        groupType: type,
+        tickets: list,
+      }));
 
     return { regularGroups: groups, employeeTickets: empTickets };
   }, [tickets]);
@@ -233,13 +251,19 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
               </TableRow>
             )}
 
-            {regularGroups.map(({ resourceName, tickets: groupTickets }) => (
-              <React.Fragment key={resourceName}>
+            {regularGroups.map(({ groupName, groupType, tickets: groupTickets }) => (
+              <React.Fragment key={`${groupType}:${groupName}`}>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
                   <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                    {resourceName}
-                    <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">
-                      ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
+                    <span className="flex items-center gap-1.5">
+                      {groupType === "subscription" && <CreditCard className="h-3 w-3 text-indigo-500" />}
+                      {groupType === "service" && <Package className="h-3 w-3 text-violet-500" />}
+                      {groupName}
+                      {groupType === "subscription" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-indigo-200 text-indigo-500 dark:border-indigo-800 dark:text-indigo-400 font-normal ml-1">Abo</Badge>}
+                      {groupType === "service" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-violet-200 text-violet-500 dark:border-violet-800 dark:text-violet-400 font-normal ml-1">Service</Badge>}
+                      <span className="font-normal text-slate-400 dark:text-slate-500">
+                        ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
+                      </span>
                     </span>
                   </TableCell>
                 </TableRow>
