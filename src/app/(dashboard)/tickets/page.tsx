@@ -38,8 +38,10 @@ export default async function TicketsPage({ searchParams }: Props) {
   const { showAll, area, code, sort = "date", order = "desc", source, sub, svc } = await searchParams;
   const showInactive = showAll === "1";
   const areaId = area ? Number(area) : undefined;
-  const subId = sub ? Number(sub) : undefined;
-  const svcId = svc ? Number(svc) : undefined;
+  const subAll = sub === "all";
+  const subId = sub && !subAll ? Number(sub) : undefined;
+  const svcAll = svc === "all";
+  const svcId = svc && !svcAll ? Number(svc) : undefined;
   const codeTrim = (code ?? "").trim();
   const orderDir = order === "asc" ? "asc" : "desc";
 
@@ -49,8 +51,8 @@ export default async function TicketsPage({ searchParams }: Props) {
   const baseWhere = isSuperAdmin ? {} : { accountId: session.user.accountId! };
   const statusFilter = showInactive ? {} : { status: { in: ["VALID" as const, "REDEEMED" as const] } };
   const areaFilter = areaId ? { accessAreaId: areaId } : {};
-  const subFilter = subId ? { subscriptionId: subId } : {};
-  const svcFilter = svcId ? { serviceId: svcId } : {};
+  const subFilter = subAll ? { subscriptionId: { not: null } } : subId ? { subscriptionId: subId } : {};
+  const svcFilter = svcAll ? { serviceId: { not: null } } : svcId ? { serviceId: svcId } : {};
   const codeFilter = codeTrim
     ? { OR: [{ barcode: codeTrim }, { qrCode: codeTrim }, { rfidCode: codeTrim }] }
     : {};

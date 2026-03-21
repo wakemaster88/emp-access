@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowUpDown, Filter, CreditCard, Package } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const SORT_OPTIONS = [
   { value: "date_desc", label: "Neueste zuerst", sort: "date", order: "desc" as const },
@@ -74,11 +75,11 @@ export function TicketSortFilter({
       else params.set("source", updates.source);
     }
     if (updates.sub !== undefined) {
-      if (updates.sub === "all") params.delete("sub");
+      if (updates.sub === "none") params.delete("sub");
       else params.set("sub", updates.sub);
     }
     if (updates.svc !== undefined) {
-      if (updates.svc === "all") params.delete("svc");
+      if (updates.svc === "none") params.delete("svc");
       else params.set("svc", updates.svc);
     }
     router.push(`/tickets${params.toString() ? `?${params}` : ""}`);
@@ -122,12 +123,13 @@ export function TicketSortFilter({
         </SelectContent>
       </Select>
       {subscriptions.length > 0 && (
-        <Select value={currentSub || "all"} onValueChange={(v) => updateParams({ sub: v })}>
-          <SelectTrigger className="w-[170px] h-9 text-sm">
+        <Select value={currentSub || "none"} onValueChange={(v) => updateParams({ sub: v })}>
+          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSub && "border-indigo-300 dark:border-indigo-700")}>
             <CreditCard className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
             <SelectValue placeholder="Alle Abos" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="none">Alle</SelectItem>
             <SelectItem value="all">Alle Abos</SelectItem>
             {subscriptions.map((s) => (
               <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
@@ -136,12 +138,13 @@ export function TicketSortFilter({
         </Select>
       )}
       {services.length > 0 && (
-        <Select value={currentSvc || "all"} onValueChange={(v) => updateParams({ svc: v })}>
-          <SelectTrigger className="w-[170px] h-9 text-sm">
+        <Select value={currentSvc || "none"} onValueChange={(v) => updateParams({ svc: v })}>
+          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSvc && "border-indigo-300 dark:border-indigo-700")}>
             <Package className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
             <SelectValue placeholder="Alle Services" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="none">Alle</SelectItem>
             <SelectItem value="all">Alle Services</SelectItem>
             {services.map((s) => (
               <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
