@@ -114,6 +114,8 @@ model Device {
   updatedAt     DateTime   @updatedAt
 
   @@index([accountId])
+  @@index([accessIn])
+  @@index([accessOut])
 }
 
 model Ticket {
@@ -160,6 +162,9 @@ model Ticket {
   @@index([subscriptionId])
   @@index([serviceId])
   @@index([status])
+  @@index([accountId, uuid])
+  @@index([accountId, status])
+  @@index([accountId, source])
 }
 
 model Scan {
@@ -180,6 +185,8 @@ model Scan {
   @@index([scanTime])
   @@index([code])
   @@index([ticketId])
+  @@index([accountId, scanTime])
+  @@index([accountId, scanTime, result])
 }
 
 model AccessArea {
@@ -328,4 +335,5 @@ model ApiConfig {
 
   @@index([accountId])
   @@index([provider])
+  @@index([accountId, provider])
 }

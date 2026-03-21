@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  const { token } = await params;
+  const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
+  if (!monitor || !monitor.isActive) {
+    return NextResponse.json({ error: "Monitor nicht gefunden" }, { status: 404 });
+  }
+
+  const ticketId = Number(request.nextUrl.searchParams.get("ticketId"));
+  if (!ticketId || isNaN(ticketId)) {
+    return NextResponse.json({ error: "ticketId erforderlich" }, { status: 400 });
+  }
+
+  const ticket = await prisma.ticket.findFirst({
+    where: { id: ticketId, accountId: monitor.accountId },
+    select: { profileImage: true },
+  });
+
+  return NextResponse.json({ profileImage: ticket?.profileImage ?? null });
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }

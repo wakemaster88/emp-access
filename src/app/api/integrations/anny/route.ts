@@ -509,6 +509,16 @@ export async function POST() {
     const unmapped: { annyName: string; count: number; customerSample: string[] }[] = [];
     const unmappedNames = new Map<string, { count: number; customers: Set<string> }>();
 
+    // Pre-fetch all existing ANNY tickets by uuid to avoid N+1
+    const allGroupUuids = [...groups.keys()];
+    const existingTickets = allGroupUuids.length > 0
+      ? await db.ticket.findMany({
+          where: { accountId: accountId!, uuid: { in: allGroupUuids } },
+          select: { id: true, uuid: true },
+        })
+      : [];
+    const existingByUuid = new Map(existingTickets.map((t) => [t.uuid, t.id]));
+
     for (const group of groups.values()) {
       const uuid = group.key;
       const count = group.entries.length;
@@ -588,20 +598,12 @@ export async function POST() {
       };
 
       try {
-        const existingTicket = await db.ticket.findFirst({
-          where: { uuid, accountId: accountId! },
-        });
-
-        if (existingTicket) {
-          await db.ticket.update({
-            where: { id: existingTicket.id },
-            data: ticketData,
-          });
+        const existingId = existingByUuid.get(uuid);
+        if (existingId) {
+          await db.ticket.update({ where: { id: existingId }, data: ticketData });
           updated++;
         } else {
-          await db.ticket.create({
-            data: { ...ticketData, uuid, accountId: accountId! },
-          });
+          await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });
           created++;
         }
       } catch {
@@ -612,6 +614,18 @@ export async function POST() {
     // Process plan subscriptions (anny customer abos)
     let subCreated = 0;
     let subUpdated = 0;
+
+    // Pre-fetch existing subscription tickets
+    const subUuids = allPlanSubscriptions
+      .filter((ps) => ps.customer?.id)
+      .map((ps) => `anny-sub:${ps.customer!.id}:${ps.id ?? ps.plan?.name ?? ps.plan?.title ?? ps.name?.replace(/#\d+$/, "").trim() ?? ""}`);
+    const existingSubTickets = subUuids.length > 0
+      ? await db.ticket.findMany({
+          where: { accountId: accountId!, uuid: { in: subUuids } },
+          select: { id: true, uuid: true },
+        })
+      : [];
+    const existingSubByUuid = new Map(existingSubTickets.map((t) => [t.uuid, t.id]));
 
     for (const ps of allPlanSubscriptions) {
       const customerId = ps.customer?.id;
@@ -657,11 +671,9 @@ export async function POST() {
       };
 
       try {
-        const existing = await db.ticket.findFirst({
-          where: { uuid, accountId: accountId! },
-        });
-        if (existing) {
-          await db.ticket.update({ where: { id: existing.id }, data: ticketData });
+        const existingId = existingSubByUuid.get(uuid);
+        if (existingId) {
+          await db.ticket.update({ where: { id: existingId }, data: ticketData });
           subUpdated++;
         } else {
           await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });

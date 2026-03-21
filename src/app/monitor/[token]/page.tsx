@@ -30,9 +30,9 @@ interface Scan {
     validityType?: string;
     validityDurationMinutes?: number | null;
     firstScanAt?: string | null;
-    profileImage?: string | null;
     endDate?: string | null;
     subscriptionId?: number | null;
+    status?: string;
   } | null;
 }
 
@@ -44,7 +44,6 @@ interface TicketInfo {
   birthDate: string | null;
   ticketTypeName: string | null;
   status: string;
-  profileImage: string | null;
   validityType: string;
   validityDurationMinutes: number | null;
   firstScanAt: string | null;
@@ -63,7 +62,6 @@ interface ScanGroup {
   personName: string;
   birthDate?: string | null;
   ticketTypeName: string;
-  profileImage: string | null;
   result: "GRANTED" | "DENIED" | "PROTECTED";
   scans: Scan[];
   latestScanTime: string;
@@ -224,7 +222,6 @@ export default function PublicMonitorPage({ params }: Props) {
           personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || "",
           birthDate: scan.ticket?.birthDate,
           ticketTypeName: scan.ticket?.ticketTypeName || "",
-          profileImage: scan.ticket?.profileImage ?? null,
           result: scan.result,
           scans: [scan],
           latestScanTime: scan.scanTime,
@@ -415,13 +412,9 @@ export default function PublicMonitorPage({ params }: Props) {
                         )}
                       >
                         <div className="flex items-center gap-3 px-4 pt-4 pb-2 min-w-0">
-                          {group.profileImage ? (
-                            <img src={group.profileImage} alt="" className="h-16 w-16 rounded-xl object-cover shrink-0" />
-                          ) : (
-                            <div className={cn("h-14 w-14 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
-                              <Icon className={cn("h-7 w-7", rc.text)} />
-                            </div>
-                          )}
+                          <div className={cn("h-14 w-14 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
+                            <Icon className={cn("h-7 w-7", rc.text)} />
+                          </div>
                           <div className="min-w-0 flex-1">
                             <p className={cn("font-bold text-lg leading-tight truncate", styles.scanName)}>
                               {group.personName || group.ticketName}
@@ -467,20 +460,16 @@ export default function PublicMonitorPage({ params }: Props) {
                     key={group.scans[0].id}
                     className={cn(
                       "flex items-center justify-between rounded-2xl border overflow-hidden transition-all duration-200",
-                      group.profileImage ? "pl-0 pr-4 py-0" : "px-4 py-3",
+                      "px-4 py-3",
                       rc.bg,
                       isNew && `animate-scan-flash ring-2 ring-offset-1 ${styles.ringOffset}`,
                       isNew && rc.ring,
                     )}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      {group.profileImage ? (
-                        <img src={group.profileImage} alt="" className="h-16 w-16 object-cover shrink-0" />
-                      ) : (
-                        <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
-                          <Icon className={cn("h-6 w-6", rc.text)} />
-                        </div>
-                      )}
+                      <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
+                        <Icon className={cn("h-6 w-6", rc.text)} />
+                      </div>
                       <div className="min-w-0">
                         <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
                           {group.personName || group.ticketName}
@@ -591,13 +580,9 @@ export default function PublicMonitorPage({ params }: Props) {
                       !isScanning && (dark ? "hover:bg-slate-800" : "hover:bg-slate-100"),
                     )}
                   >
-                    {ticket.profileImage ? (
-                      <img src={ticket.profileImage} alt="" className={cn("h-10 w-10 rounded-xl object-cover shrink-0 ring-1", styles.imgRing)} />
-                    ) : (
-                      <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
-                        <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
-                      </div>
-                    )}
+                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
+                      <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className={cn("text-sm font-bold truncate", styles.ticketName)}>
                         {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
@@ -728,7 +713,17 @@ function TicketDetailOverlay({
   const [pauseLoading, setPauseLoading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photoSaving, setPhotoSaving] = useState(false);
-  const [currentImage, setCurrentImage] = useState(ticket.profileImage);
+  const [currentImage, setCurrentImage] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  useEffect(() => {
+    setImageLoading(true);
+    fetch(`/api/monitor/public/${token}/photo?ticketId=${ticket.id}`)
+      .then((r) => r.json())
+      .then((d) => setCurrentImage(d.profileImage ?? null))
+      .catch(() => {})
+      .finally(() => setImageLoading(false));
+  }, [token, ticket.id]);
 
   const handleCapture = useCallback(async (dataUrl: string) => {
     setCameraOpen(false);

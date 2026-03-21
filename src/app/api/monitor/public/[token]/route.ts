@@ -48,7 +48,7 @@ export async function GET(
       )];
       let pollCount = 0;
 
-      const poll = async () => {
+      const pollScans = async () => {
         try {
           pollCount++;
           const scanWhere: Record<string, unknown> = {
@@ -61,7 +61,7 @@ export async function GET(
             where: scanWhere,
             include: {
               device: { select: { id: true, name: true } },
-              ticket: { select: { id: true, name: true, firstName: true, lastName: true, birthDate: true, ticketTypeName: true, validityType: true, validityDurationMinutes: true, firstScanAt: true, profileImage: true, endDate: true, subscriptionId: true } },
+              ticket: { select: { id: true, name: true, firstName: true, lastName: true, birthDate: true, ticketTypeName: true, validityType: true, validityDurationMinutes: true, firstScanAt: true, endDate: true, subscriptionId: true, status: true } },
             },
             orderBy: { id: "desc" },
             take: lastScanId === 0 ? 50 : 20,
@@ -72,7 +72,7 @@ export async function GET(
             send({ type: "scans", data: scans });
           }
 
-          // Only refresh devices every 6th poll (~30s) instead of every poll
+          // Only refresh devices every 6th poll (~30s)
           if (pollCount % 6 === 0) {
             const refreshedDevices = await prisma.device.findMany({
               where: { accountId, ...(deviceIds.length ? { id: { in: deviceIds } } : {}) },
@@ -80,9 +80,14 @@ export async function GET(
             });
             send({ type: "devices", data: refreshedDevices });
           }
+        } catch {
+          // db error — continue polling
+        }
+      };
 
+      const pollTickets = async () => {
+        try {
           const areaIds = cachedAreaIds;
-
           const now = new Date();
           const todayStart = new Date(now);
           todayStart.setHours(0, 0, 0, 0);
@@ -127,7 +132,6 @@ export async function GET(
               birthDate: true,
               ticketTypeName: true,
               status: true,
-              profileImage: true,
               validityType: true,
               validityDurationMinutes: true,
               firstScanAt: true,
@@ -137,6 +141,7 @@ export async function GET(
               slotEnd: true,
               subscriptionId: true,
               source: true,
+              extras: true,
             },
             orderBy: { name: "asc" },
           });
@@ -149,15 +154,21 @@ export async function GET(
           });
           send({ type: "tickets", data: tickets });
         } catch {
-          // db error — continue polling
+          // db error — continue
         }
       };
 
-      await poll();
-      const interval = setInterval(poll, 5000);
+      // Initial load: scans + tickets
+      await pollScans();
+      await pollTickets();
+
+      // Scans every 5s, tickets every 30s
+      const scanInterval = setInterval(pollScans, 5000);
+      const ticketInterval = setInterval(pollTickets, 30000);
 
       request.signal.addEventListener("abort", () => {
-        clearInterval(interval);
+        clearInterval(scanInterval);
+        clearInterval(ticketInterval);
         try { controller.close(); } catch { /* already closed */ }
       });
     },
