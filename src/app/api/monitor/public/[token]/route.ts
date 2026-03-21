@@ -104,7 +104,10 @@ export async function GET(
             (ticketWhere.AND as Record<string, unknown>[]).push({
               OR: [
                 { accessAreaId: { in: areaIds } },
-                { accessAreaId: null },
+                { ticketAreas: { some: { accessAreaId: { in: areaIds } } } },
+                { subscription: { areas: { some: { id: { in: areaIds } } } } },
+                { service: { serviceAreas: { some: { accessAreaId: { in: areaIds } } } } },
+                { accessAreaId: null, subscriptionId: null, serviceId: null },
               ],
             });
           }
