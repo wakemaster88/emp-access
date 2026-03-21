@@ -49,6 +49,7 @@ interface TicketInfo {
   endDate: string | null;
   slotStart: string | null;
   slotEnd: string | null;
+  subscriptionId: number | null;
 }
 
 interface ScanGroup {
@@ -137,7 +138,13 @@ export default function PublicMonitorPage({ params }: Props) {
             return [...fresh, ...prev].slice(0, 50);
           });
         } else if (msg.type === "tickets") {
-          setTickets(msg.data);
+          const sorted = (msg.data as TicketInfo[]).sort((a, b) => {
+            const aIsSub = a.subscriptionId != null ? 1 : 0;
+            const bIsSub = b.subscriptionId != null ? 1 : 0;
+            if (aIsSub !== bIsSub) return aIsSub - bIsSub;
+            return 0;
+          });
+          setTickets(sorted);
         } else if (msg.type === "devices") {
           setDevices(msg.data);
         }

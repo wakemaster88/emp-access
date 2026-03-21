@@ -126,6 +126,7 @@ export async function GET(
               endDate: true,
               slotStart: true,
               slotEnd: true,
+              subscriptionId: true,
             },
             orderBy: { name: "asc" },
           });
