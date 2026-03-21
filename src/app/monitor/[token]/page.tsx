@@ -460,16 +460,58 @@ export default function PublicMonitorPage({ params }: Props) {
                   ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
                   : null;
                 const isScanning = scanningId === ticket.id;
+
+                const now = Date.now();
+                const endMs = ticket.endDate ? new Date(ticket.endDate).getTime() : null;
+                const isExpired = endMs != null && endMs < now;
+                const isWarning = endMs != null && !isExpired && (endMs - now) < 15 * 60_000;
+
+                let durationExpired = false;
+                let durationWarning = false;
+                if (ticket.validityType === "DURATION" && ticket.validityDurationMinutes && ticket.firstScanAt) {
+                  const expiresAt = new Date(ticket.firstScanAt).getTime() + ticket.validityDurationMinutes * 60_000;
+                  durationExpired = expiresAt < now;
+                  durationWarning = !durationExpired && (expiresAt - now) < 15 * 60_000;
+                }
+
+                const checkedIn = scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED");
+
+                const cardBg = isScanning
+                  ? dark ? "bg-emerald-950 border-emerald-500/50 ring-1 ring-emerald-500/30" : "bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30"
+                  : isExpired || durationExpired
+                    ? dark ? "bg-rose-950/60 border-rose-700/50" : "bg-rose-50 border-rose-300"
+                    : isWarning || durationWarning
+                      ? dark ? "bg-amber-950/60 border-amber-700/50" : "bg-amber-50 border-amber-300"
+                      : checkedIn
+                        ? dark ? "bg-emerald-950/40 border-emerald-700/40" : "bg-emerald-50/80 border-emerald-300"
+                        : styles.ticketBg;
+
+                const badgeStyle = isExpired || durationExpired
+                  ? dark ? "bg-rose-500/25 text-rose-200 border-rose-500/30" : "bg-rose-200 text-rose-900 border-rose-400"
+                  : isWarning || durationWarning
+                    ? dark ? "bg-amber-500/25 text-amber-200 border-amber-500/30" : "bg-amber-200 text-amber-900 border-amber-400"
+                    : checkedIn
+                      ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                      : ticket.status === "VALID"
+                        ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                        : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400";
+
+                const badgeLabel = isExpired || durationExpired
+                  ? "Abgelaufen"
+                  : isWarning || durationWarning
+                    ? "Läuft ab"
+                    : checkedIn
+                      ? "Eingecheckt"
+                      : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
+
                 return (
                   <div
                     key={ticket.id}
                     onClick={() => handleTicketClick(ticket)}
                     className={cn(
                       "flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-all duration-150 cursor-pointer select-none active:scale-[0.98]",
-                      isScanning
-                        ? dark ? "bg-emerald-950 border-emerald-500/50 ring-1 ring-emerald-500/30" : "bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30"
-                        : styles.ticketBg,
-                      dark ? "hover:bg-slate-800" : "hover:bg-slate-100",
+                      cardBg,
+                      !isScanning && (dark ? "hover:bg-slate-800" : "hover:bg-slate-100"),
                     )}
                   >
                     {ticket.profileImage ? (
@@ -489,13 +531,8 @@ export default function PublicMonitorPage({ params }: Props) {
                       </p>
                     </div>
                     <div className="shrink-0 flex flex-col items-end gap-0.5">
-                      <Badge className={cn(
-                        "text-[11px] px-2 py-0.5 font-bold",
-                        ticket.status === "VALID"
-                          ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
-                          : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
-                      )}>
-                        {ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
+                      <Badge className={cn("text-[11px] px-2 py-0.5 font-bold", badgeStyle)}>
+                        {badgeLabel}
                       </Badge>
                       {ticket.validityType === "DURATION" && ticket.validityDurationMinutes && ticket.firstScanAt && (
                         <DurationCountdown
