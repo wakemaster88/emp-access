@@ -445,14 +445,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       {/* Day selector */}
       <DaySelector date={date} onChange={setDate} />
 
-      {/* Stats bar */}
-      <div className="px-4 py-2 flex gap-3 border-b border-slate-800/50">
-        <StatPill icon={Users} label="Gesamt" value={dayTickets.filter((t) => !t.subscriptionId).length} />
-        <StatPill icon={CheckCircle2} label="Eingecheckt" value={allCheckedIn.length} color="emerald" />
-        <StatPill icon={Clock} label="Ausstehend" value={pendingTickets.length + upcoming.length} color="amber" />
-        <StatPill icon={CreditCard} label="Abos" value={subscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet" />
-      </div>
-
       {/* Search */}
       <div className="px-4 py-2 border-b border-slate-800/50">
         <div className="relative">
