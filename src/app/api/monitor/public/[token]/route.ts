@@ -86,7 +86,7 @@ export async function GET(
 
           const ticketWhere: Record<string, unknown> = {
             accountId,
-            status: { in: ["VALID", "REDEEMED"] },
+            status: { in: ["VALID", "REDEEMED", "PAUSED"] },
             OR: [
               { startDate: null },
               { startDate: { lte: todayEnd } },

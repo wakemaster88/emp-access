@@ -169,12 +169,16 @@ export default function PublicMonitorPage({ params }: Props) {
           });
           const sorted = valid.sort((a, b) => {
             const order = (t: TicketInfo) =>
-              t.source === "EMP_CONTROL" ? 2
+              t.status === "PAUSED" ? 3
+              : t.source === "EMP_CONTROL" ? 2
               : t.subscriptionId != null ? 1
               : 0;
             return order(a) - order(b);
           });
           setTickets(sorted);
+          const hasActive = sorted.some((t) => t.status === "VALID" || t.status === "REDEEMED");
+          const hasPaused = sorted.some((t) => t.status === "PAUSED");
+          setAllPaused(hasPaused && !hasActive);
         } else if (msg.type === "devices") {
           setDevices(msg.data);
         }
@@ -520,34 +524,41 @@ export default function PublicMonitorPage({ params }: Props) {
                 }
 
                 const checkedIn = scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED");
+                const isPaused = ticket.status === "PAUSED";
 
                 const cardBg = isScanning
                   ? dark ? "bg-emerald-950 border-emerald-500/50 ring-1 ring-emerald-500/30" : "bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30"
+                  : isPaused
+                    ? dark ? "bg-orange-950/40 border-orange-700/40 opacity-70" : "bg-orange-50/80 border-orange-300 opacity-70"
+                    : isExpired || durationExpired
+                      ? dark ? "bg-rose-950/60 border-rose-700/50" : "bg-rose-50 border-rose-300"
+                      : isWarning || durationWarning
+                        ? dark ? "bg-amber-950/60 border-amber-700/50" : "bg-amber-50 border-amber-300"
+                        : checkedIn
+                          ? dark ? "bg-emerald-950/40 border-emerald-700/40" : "bg-emerald-50/80 border-emerald-300"
+                          : styles.ticketBg;
+
+                const badgeStyle = isPaused
+                  ? dark ? "bg-orange-500/25 text-orange-200 border-orange-500/30" : "bg-orange-200 text-orange-900 border-orange-400"
                   : isExpired || durationExpired
-                    ? dark ? "bg-rose-950/60 border-rose-700/50" : "bg-rose-50 border-rose-300"
+                    ? dark ? "bg-rose-500/25 text-rose-200 border-rose-500/30" : "bg-rose-200 text-rose-900 border-rose-400"
                     : isWarning || durationWarning
-                      ? dark ? "bg-amber-950/60 border-amber-700/50" : "bg-amber-50 border-amber-300"
+                      ? dark ? "bg-amber-500/25 text-amber-200 border-amber-500/30" : "bg-amber-200 text-amber-900 border-amber-400"
                       : checkedIn
-                        ? dark ? "bg-emerald-950/40 border-emerald-700/40" : "bg-emerald-50/80 border-emerald-300"
-                        : styles.ticketBg;
-
-                const badgeStyle = isExpired || durationExpired
-                  ? dark ? "bg-rose-500/25 text-rose-200 border-rose-500/30" : "bg-rose-200 text-rose-900 border-rose-400"
-                  : isWarning || durationWarning
-                    ? dark ? "bg-amber-500/25 text-amber-200 border-amber-500/30" : "bg-amber-200 text-amber-900 border-amber-400"
-                    : checkedIn
-                      ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
-                      : ticket.status === "VALID"
                         ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
-                        : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400";
+                        : ticket.status === "VALID"
+                          ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                          : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400";
 
-                const badgeLabel = isExpired || durationExpired
-                  ? "Abgelaufen"
-                  : isWarning || durationWarning
-                    ? "Läuft ab"
-                    : checkedIn
-                      ? "Eingecheckt"
-                      : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
+                const badgeLabel = isPaused
+                  ? "Pausiert"
+                  : isExpired || durationExpired
+                    ? "Abgelaufen"
+                    : isWarning || durationWarning
+                      ? "Läuft ab"
+                      : checkedIn
+                        ? "Eingecheckt"
+                        : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
 
                 return (
                   <div
@@ -759,11 +770,13 @@ function TicketDetailOverlay({
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <Badge className={cn(
                 "text-xs px-2 py-0.5 font-bold",
-                ticket.status === "VALID"
-                  ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
-                  : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
+                ticket.status === "PAUSED"
+                  ? dark ? "bg-orange-500/25 text-orange-200 border-orange-500/30" : "bg-orange-200 text-orange-900 border-orange-400"
+                  : ticket.status === "VALID"
+                    ? dark ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/30" : "bg-emerald-200 text-emerald-900 border-emerald-400"
+                    : dark ? "bg-sky-500/25 text-sky-200 border-sky-500/30" : "bg-sky-200 text-sky-900 border-sky-400"
               )}>
-                {ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
+                {ticket.status === "PAUSED" ? "Pausiert" : ticket.status === "VALID" ? "Gültig" : "Eingelöst"}
               </Badge>
               {startStr && endStr && (
                 <span className={cn("text-xs", styles.ticketSub)}>{startStr} – {endStr}</span>

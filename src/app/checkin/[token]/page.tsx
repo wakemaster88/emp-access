@@ -234,6 +234,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         if (selectedTicket?.id === ticketId) {
           setSelectedTicket((prev) => prev ? { ...prev, checkedIn: true, status: "REDEEMED" } : null);
         }
+      } else if (json.message) {
+        alert(json.message);
       }
     } finally {
       setCheckingIn(null);
