@@ -201,10 +201,10 @@ export async function GET(request: NextRequest) {
       orderBy: { scanTime: "desc" },
       take: 15,
     }),
-    db.scan.groupBy({
-      by: ["ticketId"],
+    db.scan.findMany({
       where: { ...where, scanTime: { gte: dayStart, lte: dayEnd }, result: "GRANTED", ticketId: { not: null } },
-      _count: true,
+      select: { ticketId: true },
+      distinct: ["ticketId"],
     }),
     db.ticket.findMany({
       where: { ...where, createdAt: { gte: dayStart, lte: dayEnd } },
