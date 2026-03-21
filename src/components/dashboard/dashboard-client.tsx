@@ -394,7 +394,7 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
       </div>
 
       {!isEmpty && (
-        <div className="px-3 pb-2 pt-1 max-h-[320px] overflow-y-auto">
+        <div className="px-3 pb-2 pt-1 max-h-[320px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
           {area.resources.map((res, ri) => (
             <div key={res.resourceName} className={cn(ri > 0 && "mt-2")}>
               <div className="flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800">
@@ -657,7 +657,7 @@ export function DashboardClient() {
                   {data.scansToday} heute
                 </Badge>
               </div>
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
                 {data.recentScans.map((scan) => (
                   <div key={scan.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     {scan.profileImage ? (
@@ -704,7 +704,7 @@ export function DashboardClient() {
                   {data.newTicketsCount} heute
                 </Badge>
               </div>
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
                 {data.newTickets.map((ticket) => (
                   <div
                     key={ticket.id}

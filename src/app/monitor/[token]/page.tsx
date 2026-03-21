@@ -657,7 +657,7 @@ function TicketDetailOverlay({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 monitor-scrollbar">
         {/* Ticket Info */}
         <div className={cn("rounded-2xl border p-4 flex items-center gap-4", styles.ticketBg)}>
           {ticket.profileImage ? (

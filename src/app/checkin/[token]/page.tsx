@@ -450,7 +450,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe monitor-scrollbar">
         {/* Upcoming */}
         {filteredUpcoming.length > 0 && (
           <Section title="Nächste Gäste" icon={Clock} count={filteredUpcoming.length} color="amber">
@@ -1040,7 +1040,7 @@ function TicketOverlay({
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)] monitor-scrollbar"
       >
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-start gap-4">
@@ -1113,7 +1113,7 @@ function TicketOverlay({
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
               <ScanLine className="h-3.5 w-3.5 inline mr-1.5" />Scanverlauf
             </p>
-            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+            <div className="space-y-1.5 max-h-32 overflow-y-auto monitor-scrollbar">
               {ticketScans.map((s) => (
                 <div key={s.id} className="flex items-center gap-2 text-xs">
                   {s.result === "GRANTED" ? (
