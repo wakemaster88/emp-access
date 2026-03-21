@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2 } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 
 interface Device {
@@ -589,6 +589,8 @@ export default function PublicMonitorPage({ params }: Props) {
           scanningId={scanningId}
           onScan={() => handleTicketScan(selectedTicket.id)}
           onClose={() => setSelectedTicket(null)}
+          token={token}
+          onPaused={() => setSelectedTicket(null)}
         />
       )}
     </div>
@@ -639,6 +641,8 @@ function TicketDetailOverlay({
   scanningId,
   onScan,
   onClose,
+  token,
+  onPaused,
 }: {
   ticket: TicketInfo;
   scans: Scan[];
@@ -647,7 +651,14 @@ function TicketDetailOverlay({
   scanningId: number | null;
   onScan: () => void;
   onClose: () => void;
+  token: string;
+  onPaused: () => void;
 }) {
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [pauseDuration, setPauseDuration] = useState<string | null>(null);
+  const [pauseReason, setPauseReason] = useState("");
+  const [pauseLoading, setPauseLoading] = useState(false);
+
   const ticketScans = useMemo(
     () => scans.filter((s) => s.ticket?.id === ticket.id).slice(0, 20),
     [scans, ticket.id]
@@ -661,6 +672,28 @@ function TicketDetailOverlay({
     ? new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
     : null;
   const isScanning = scanningId === ticket.id;
+
+  const handlePause = async () => {
+    if (!pauseDuration) return;
+    setPauseLoading(true);
+    try {
+      const res = await fetch(`/api/monitor/public/${token}/pause`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId: ticket.id, duration: pauseDuration, reason: pauseReason }),
+      });
+      if (res.ok) onPaused();
+    } finally {
+      setPauseLoading(false);
+    }
+  };
+
+  const durationOptions = [
+    { value: "1h", label: "1 Stunde" },
+    { value: "1d", label: "1 Tag" },
+    { value: "1w", label: "1 Woche" },
+    { value: "1m", label: "1 Monat" },
+  ];
 
   return (
     <div className={cn("fixed inset-0 z-50 flex flex-col", styles.page)}>
@@ -720,6 +753,78 @@ function TicketDetailOverlay({
           <LogIn className="h-5 w-5" />
           {isScanning ? "Eingecheckt!" : "Einchecken"}
         </button>
+
+        {/* Pause Button */}
+        {!pauseOpen ? (
+          <button
+            onClick={() => setPauseOpen(true)}
+            className={cn(
+              "w-full py-3 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
+              dark ? "bg-orange-600/20 hover:bg-orange-600/30 text-orange-300 border border-orange-500/30" : "bg-orange-100 hover:bg-orange-200 text-orange-800 border border-orange-300",
+            )}
+          >
+            <Pause className="h-4 w-4" />
+            Pausieren
+          </button>
+        ) : (
+          <div className={cn("rounded-2xl border p-4 space-y-3", dark ? "border-orange-500/30 bg-orange-950/20" : "border-orange-300 bg-orange-50")}>
+            <div className="flex items-center gap-2">
+              <Pause className={cn("h-4 w-4", dark ? "text-orange-400" : "text-orange-600")} />
+              <p className={cn("text-sm font-bold", dark ? "text-orange-300" : "text-orange-800")}>Ticket pausieren</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {durationOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setPauseDuration(pauseDuration === opt.value ? null : opt.value)}
+                  className={cn(
+                    "py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95",
+                    pauseDuration === opt.value
+                      ? dark ? "bg-orange-600 text-white" : "bg-orange-600 text-white"
+                      : dark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              value={pauseReason}
+              onChange={(e) => setPauseReason(e.target.value)}
+              placeholder="Begründung (optional)"
+              className={cn(
+                "w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50",
+                dark ? "bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500" : "bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400",
+              )}
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={handlePause}
+                disabled={!pauseDuration || pauseLoading}
+                className={cn(
+                  "flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50",
+                  dark ? "bg-orange-600 hover:bg-orange-500 text-white" : "bg-orange-600 hover:bg-orange-500 text-white",
+                )}
+              >
+                {pauseLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                Pausieren
+              </button>
+              <button
+                onClick={() => { setPauseOpen(false); setPauseDuration(null); setPauseReason(""); }}
+                className={cn(
+                  "py-3 px-5 rounded-xl font-semibold text-sm transition-all active:scale-95",
+                  dark ? "bg-slate-800 hover:bg-slate-700 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-700",
+                )}
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Scan History */}
         <div>
