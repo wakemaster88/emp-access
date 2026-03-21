@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
-import { use } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 
 interface Device {
@@ -675,6 +674,23 @@ function TicketDetailOverlay({
   const [pauseDuration, setPauseDuration] = useState<string | null>(null);
   const [pauseReason, setPauseReason] = useState("");
   const [pauseLoading, setPauseLoading] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const [currentImage, setCurrentImage] = useState(ticket.profileImage);
+
+  const handleCapture = useCallback(async (dataUrl: string) => {
+    setCameraOpen(false);
+    setPhotoSaving(true);
+    try {
+      const res = await fetch(`/api/monitor/public/${token}/photo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId: ticket.id, profileImage: dataUrl }),
+      });
+      if (res.ok) setCurrentImage(dataUrl);
+    } catch { /* ignore */ }
+    setPhotoSaving(false);
+  }, [token, ticket.id]);
 
   const ticketScans = useMemo(
     () => scans.filter((s) => s.ticket?.id === ticket.id).slice(0, 20),
@@ -730,8 +746,8 @@ function TicketDetailOverlay({
       <div className="flex-1 overflow-y-auto p-4 space-y-4 monitor-scrollbar">
         {/* Ticket Info */}
         <div className={cn("rounded-2xl border p-4 flex items-center gap-4", styles.ticketBg)}>
-          {ticket.profileImage ? (
-            <img src={ticket.profileImage} alt="" className={cn("h-16 w-16 rounded-2xl object-cover shrink-0 ring-1", styles.imgRing)} />
+          {currentImage ? (
+            <img src={currentImage} alt="" className={cn("h-16 w-16 rounded-2xl object-cover shrink-0 ring-1", styles.imgRing)} />
           ) : (
             <div className={cn("h-16 w-16 rounded-2xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
               <Users className={cn("h-6 w-6", styles.ticketAvatarIcon)} />
@@ -843,6 +859,19 @@ function TicketDetailOverlay({
           </div>
         )}
 
+        {/* Photo Button */}
+        <button
+          onClick={() => setCameraOpen(true)}
+          disabled={photoSaving}
+          className={cn(
+            "w-full py-3 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
+            dark ? "bg-slate-800 hover:bg-slate-700 text-slate-300" : "bg-slate-100 hover:bg-slate-200 text-slate-700",
+          )}
+        >
+          {photoSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+          Foto {currentImage ? "ändern" : "aufnehmen"}
+        </button>
+
         {/* Scan History */}
         <div>
           <div className="flex items-center gap-2 mb-3">
@@ -889,6 +918,131 @@ function TicketDetailOverlay({
           )}
         </div>
       </div>
+
+      {cameraOpen && (
+        <CameraCapture
+          dark={dark}
+          onCapture={handleCapture}
+          onClose={() => setCameraOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CameraCapture({ dark, onCapture, onClose }: { dark: boolean; onCapture: (dataUrl: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [ready, setReady] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment", width: { ideal: 720 }, height: { ideal: 720 } } })
+      .then((stream) => {
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => setReady(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const snap = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext("2d")!;
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, 512, 512);
+    setPreview(canvas.toDataURL("image/jpeg", 0.8));
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+  };
+
+  const retake = () => {
+    setPreview(null);
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment", width: { ideal: 720 }, height: { ideal: 720 } } })
+      .then((stream) => {
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => setReady(true);
+        }
+      })
+      .catch(() => {});
+  };
+
+  return (
+    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95">
+      <canvas ref={canvasRef} className="hidden" />
+      {!preview ? (
+        <>
+          <div className="relative w-full max-w-[320px] aspect-square rounded-3xl overflow-hidden bg-black">
+            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            {!ready && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 text-white/60 animate-spin" />
+              </div>
+            )}
+          </div>
+          <div className="flex gap-4 mt-6">
+            <button
+              onClick={snap}
+              disabled={!ready}
+              className="h-16 w-16 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform disabled:opacity-40"
+            >
+              <div className="h-14 w-14 rounded-full border-[3px] border-black/20" />
+            </button>
+          </div>
+          <button
+            onClick={() => { streamRef.current?.getTracks().forEach((t) => t.stop()); onClose(); }}
+            className="mt-4 text-white/70 text-sm font-semibold hover:text-white transition-colors"
+          >
+            Abbrechen
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="relative w-full max-w-[320px] aspect-square rounded-3xl overflow-hidden">
+            <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+          </div>
+          <div className="flex gap-4 mt-6">
+            <button
+              onClick={retake}
+              className={cn(
+                "py-3 px-6 rounded-2xl font-semibold text-sm transition-all active:scale-95",
+                "bg-white/10 text-white hover:bg-white/20",
+              )}
+            >
+              Nochmal
+            </button>
+            <button
+              onClick={() => onCapture(preview)}
+              className={cn(
+                "py-3 px-6 rounded-2xl font-bold text-sm transition-all active:scale-95",
+                "bg-indigo-600 text-white hover:bg-indigo-500",
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" /> Verwenden
+              </span>
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
