@@ -23,6 +23,7 @@ import {
   Image as ImageIcon,
   CalendarDays,
   Printer,
+  RefreshCw,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -124,6 +125,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -340,6 +342,20 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     return { upcoming, checkedInTickets: checked, pendingTickets: pending };
   }, [dayTickets]);
 
+  const checkedInAbos = useMemo(() => {
+    const all: CheckinTicket[] = [];
+    for (const sub of subscriptions) {
+      for (const t of sub.tickets) {
+        if (t.checkedIn || t.status === "REDEEMED") {
+          all.push({ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } });
+        }
+      }
+    }
+    return all;
+  }, [subscriptions]);
+
+  const allCheckedIn = useMemo(() => [...checkedInTickets, ...checkedInAbos], [checkedInTickets, checkedInAbos]);
+
   const matchesSearch = useCallback((t: CheckinTicket) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -354,7 +370,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   }, [searchQuery]);
 
   const filteredUpcoming = useMemo(() => upcoming.filter(matchesSearch), [upcoming, matchesSearch]);
-  const filteredCheckedIn = useMemo(() => checkedInTickets.filter(matchesSearch), [checkedInTickets, matchesSearch]);
+  const filteredCheckedIn = useMemo(() => allCheckedIn.filter(matchesSearch), [allCheckedIn, matchesSearch]);
   const filteredPending = useMemo(() => pendingTickets.filter(matchesSearch), [pendingTickets, matchesSearch]);
 
   const filteredSubscriptions = useMemo(() => {
@@ -416,6 +432,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             Scannen
           </button>
           <LiveClock />
+          <button
+            onClick={() => { setRefreshing(true); refreshRef.current?.(); setTimeout(() => setRefreshing(false), 800); }}
+            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors active:scale-95"
+            title="Aktualisieren"
+          >
+            <RefreshCw className={cn("h-4.5 w-4.5", refreshing && "animate-spin")} />
+          </button>
         </div>
       </header>
 
@@ -425,7 +448,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       {/* Stats bar */}
       <div className="px-4 py-2 flex gap-3 border-b border-slate-800/50">
         <StatPill icon={Users} label="Gesamt" value={dayTickets.filter((t) => !t.subscriptionId).length} />
-        <StatPill icon={CheckCircle2} label="Eingecheckt" value={checkedInTickets.length} color="emerald" />
+        <StatPill icon={CheckCircle2} label="Eingecheckt" value={allCheckedIn.length} color="emerald" />
         <StatPill icon={Clock} label="Ausstehend" value={pendingTickets.length + upcoming.length} color="amber" />
         <StatPill icon={CreditCard} label="Abos" value={subscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet" />
       </div>
@@ -506,6 +529,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   ticket={t}
                   onTap={() => setSelectedTicket(t)}
                   checked
+                  isSub={!!t.subscriptionId}
                   highlight={scanHighlights.get(t.id)}
                 />
               ))}
