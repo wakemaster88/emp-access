@@ -25,6 +25,7 @@ interface Scan {
     name: string;
     firstName?: string | null;
     lastName?: string | null;
+    birthDate?: string | null;
     ticketTypeName?: string | null;
     validityType?: string;
     validityDurationMinutes?: number | null;
@@ -60,6 +61,7 @@ interface ScanGroup {
   ticketId: number | null;
   ticketName: string;
   personName: string;
+  birthDate?: string | null;
   ticketTypeName: string;
   profileImage: string | null;
   result: "GRANTED" | "DENIED" | "PROTECTED";
@@ -205,6 +207,7 @@ export default function PublicMonitorPage({ params }: Props) {
           ticketId,
           ticketName: scan.ticket?.name || scan.code,
           personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || "",
+          birthDate: scan.ticket?.birthDate,
           ticketTypeName: scan.ticket?.ticketTypeName || "",
           profileImage: scan.ticket?.profileImage ?? null,
           result: scan.result,
@@ -407,6 +410,7 @@ export default function PublicMonitorPage({ params }: Props) {
                           <div className="min-w-0 flex-1">
                             <p className={cn("font-bold text-lg leading-tight truncate", styles.scanName)}>
                               {group.personName || group.ticketName}
+                              {(() => { const a = calcAge(group.birthDate); return a != null ? <span className={cn("ml-1.5 text-sm font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                             </p>
                             <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
                               {group.ticketTypeName || group.scans[0].device?.name || ""}
@@ -465,6 +469,7 @@ export default function PublicMonitorPage({ params }: Props) {
                       <div className="min-w-0">
                         <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
                           {group.personName || group.ticketName}
+                          {(() => { const a = calcAge(group.birthDate); return a != null ? <span className={cn("ml-1 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                         </p>
                         <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
                           {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device?.name ?? "Web-Scanner"}

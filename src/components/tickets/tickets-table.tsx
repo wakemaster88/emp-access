@@ -43,6 +43,16 @@ interface TicketsTableProps {
   searchCode?: string;
 }
 
+function calcAge(birthDate: Date | string | null | undefined): number | null {
+  if (!birthDate) return null;
+  const b = new Date(birthDate);
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age;
+}
+
 function sourceBadge(source: string | null | undefined) {
   const label = !source
     ? "Eigenes"
@@ -297,6 +307,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                         <div className="min-w-0">
                           <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
                             {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                            {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-slate-400">({a})</span> : null; })()}
                           </p>
                           {(ticket.ticketTypeName || ticket.subscription?.name) && (
                             <p className="text-xs text-slate-400 truncate">
@@ -376,6 +387,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           <div className="min-w-0">
                             <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
                               {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
+                              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-slate-400">({a})</span> : null; })()}
                             </p>
                             {empAreas.length > 0 && (
                               <div className="flex items-center gap-1 flex-wrap mt-0.5">
