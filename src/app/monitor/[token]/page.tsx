@@ -288,38 +288,38 @@ export default function PublicMonitorPage({ params }: Props) {
   return (
     <div className={cn("min-h-screen flex flex-col transition-colors duration-300", styles.page)}>
       {/* Header */}
-      <header className={cn("border-b px-6 py-3.5 flex items-center justify-between transition-colors duration-300", styles.header)}>
-        <div className="flex items-center gap-3">
-          <img src="/logo-dark.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
-          <div>
-            <h1 className={cn("text-lg font-bold tracking-tight", styles.headerTitle)}>{monitorName || "Live Monitor"}</h1>
-            <p className={cn("text-[11px]", styles.headerSub)}>EMP Access — Echtzeit-Zugangsmonitor</p>
+      <header className={cn("border-b px-3 py-2 sm:px-6 sm:py-3.5 flex items-center justify-between transition-colors duration-300", styles.header)} style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}>
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <img src="/logo-dark.png" alt="EMP Access" className="h-7 w-7 sm:h-9 sm:w-9 shrink-0" />
+          <div className="min-w-0">
+            <h1 className={cn("text-sm sm:text-lg font-bold tracking-tight truncate", styles.headerTitle)}>{monitorName || "Live Monitor"}</h1>
+            <p className={cn("text-[10px] sm:text-[11px] hidden sm:block", styles.headerSub)}>EMP Access — Echtzeit-Zugangsmonitor</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {devices.map((device) => {
             const online = device.lastUpdate ? new Date(device.lastUpdate) > fiveMinAgo : false;
             return (
-              <div key={device.id} className="flex items-center gap-1.5">
+              <div key={device.id} className="flex items-center gap-1 sm:gap-1.5">
                 <div className={cn("h-2 w-2 rounded-full transition-all", online ? styles.deviceDot : styles.deviceDotOff)} />
-                <span className={cn("text-xs font-medium", styles.deviceText)}>{device.name}</span>
+                <span className={cn("text-[10px] sm:text-xs font-medium hidden sm:inline", styles.deviceText)}>{device.name}</span>
               </div>
             );
           })}
           <button
             onClick={() => setDark((d) => !d)}
-            className={cn("p-2 rounded-lg transition-colors", styles.modeBtnBg)}
+            className={cn("p-1.5 sm:p-2 rounded-lg transition-colors", styles.modeBtnBg)}
           >
-            {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {dark ? <Sun className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Moon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
           </button>
           {connected ? (
-            <Badge className={cn("gap-1.5 font-medium", styles.liveBadge)}>
-              <span className={cn("h-2 w-2 rounded-full animate-pulse", dark ? "bg-emerald-400" : "bg-emerald-500")} />
+            <Badge className={cn("gap-1 sm:gap-1.5 font-medium text-[10px] sm:text-xs px-1.5 sm:px-2.5", styles.liveBadge)}>
+              <span className={cn("h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full animate-pulse", dark ? "bg-emerald-400" : "bg-emerald-500")} />
               Live
             </Badge>
           ) : (
-            <Badge className={cn("gap-1.5", styles.connectBadge)}>
-              <span className="h-2 w-2 rounded-full bg-slate-400 animate-pulse" />
+            <Badge className={cn("gap-1 sm:gap-1.5 text-[10px] sm:text-xs px-1.5 sm:px-2.5", styles.connectBadge)}>
+              <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-slate-400 animate-pulse" />
               Verbinde…
             </Badge>
           )}
@@ -327,7 +327,7 @@ export default function PublicMonitorPage({ params }: Props) {
       </header>
 
       {/* Content */}
-      <div className="flex-1 p-5">
+      <div className="flex-1 p-3 sm:p-5" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 h-full">
           {/* Scan Feed - hidden on mobile */}
           <div className="hidden lg:flex lg:col-span-2 flex-col">
