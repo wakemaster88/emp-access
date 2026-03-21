@@ -130,6 +130,7 @@ export async function GET(
               slotStart: true,
               slotEnd: true,
               subscriptionId: true,
+              source: true,
             },
             orderBy: { name: "asc" },
           });

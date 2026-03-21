@@ -50,6 +50,7 @@ interface TicketInfo {
   slotStart: string | null;
   slotEnd: string | null;
   subscriptionId: number | null;
+  source: string | null;
 }
 
 interface ScanGroup {
@@ -139,10 +140,11 @@ export default function PublicMonitorPage({ params }: Props) {
           });
         } else if (msg.type === "tickets") {
           const sorted = (msg.data as TicketInfo[]).sort((a, b) => {
-            const aIsSub = a.subscriptionId != null ? 1 : 0;
-            const bIsSub = b.subscriptionId != null ? 1 : 0;
-            if (aIsSub !== bIsSub) return aIsSub - bIsSub;
-            return 0;
+            const order = (t: TicketInfo) =>
+              t.source === "EMP_CONTROL" ? 2
+              : t.subscriptionId != null ? 1
+              : 0;
+            return order(a) - order(b);
           });
           setTickets(sorted);
         } else if (msg.type === "devices") {
