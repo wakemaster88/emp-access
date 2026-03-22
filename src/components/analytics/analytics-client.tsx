@@ -18,6 +18,8 @@ import {
   Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EaboAnalytics } from "@/components/analytics/e-abo-analytics";
 import {
   BarChart,
   Bar,
@@ -184,6 +186,21 @@ export function AnalyticsClient() {
 
   return (
     <div className="space-y-4">
+      <Tabs defaultValue="general" className="w-full space-y-4">
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="general" className="flex-1 sm:flex-none">
+            Allgemein
+          </TabsTrigger>
+          <TabsTrigger value="eabo" className="flex-1 sm:flex-none">
+            E-Abo Auswertung
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="eabo" className="space-y-4 mt-0">
+          <EaboAnalytics />
+        </TabsContent>
+
+        <TabsContent value="general" className="space-y-4 mt-0">
       {/* Period selector */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
         <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
@@ -518,6 +535,8 @@ export function AnalyticsClient() {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
