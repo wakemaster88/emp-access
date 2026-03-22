@@ -30,7 +30,9 @@ export async function GET() {
     endpoints: {
       "emp-control": "POST /api/webhook/emp-control or POST /api/integrations/emp-control/webhook",
       "anny": "POST /api/webhook?provider=anny or POST /api/integrations/anny/webhook",
+      utilization:
+        "GET /api/webhook/utilization?date=YYYY-MM-DD — Auslastung pro Ressource (Account-API-Token wie /api/areas)",
     },
-    auth: "Header: Authorization: Bearer <secret>, X-Webhook-Secret: <secret>, or ?secret=<secret> query param",
+    auth: "Inbound webhooks: Authorization / X-Webhook-Secret / ?secret=. Auslastung: Account apiToken (Bearer oder ?token=) wie unter Einstellungen » Eigene API.",
   });
 }

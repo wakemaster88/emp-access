@@ -13,6 +13,11 @@ interface OwnApiCardProps {
 
 const ENDPOINTS = [
   { method: "GET", path: "/api/areas", desc: "Ressourcen (Zugangsbereiche) auflisten" },
+  {
+    method: "GET",
+    path: "/api/webhook/utilization?date=YYYY-MM-DD",
+    desc: "Auslastung pro Ressource (Tickets am Tag / personLimit); optional &all=1 für alle Bereiche",
+  },
   { method: "GET", path: "/api/devices", desc: "Geräte auflisten" },
   { method: "GET", path: "/api/devices/[id]", desc: "Einzelnes Gerät abrufen" },
   { method: "POST", path: "/api/devices/[id]/action", desc: "Gerät steuern (action: open, emergency, reset, deactivate)" },
