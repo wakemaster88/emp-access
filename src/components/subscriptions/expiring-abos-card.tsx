@@ -2,16 +2,18 @@ import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarClock, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { TicketStatus } from "@prisma/client";
 
+/** Wie von Prisma `findMany` geliefert (nullable trotz where-Filter). */
 export type ExpiringAboTicket = {
   id: number;
   name: string;
   firstName: string | null;
   lastName: string | null;
-  endDate: Date;
-  status: string;
+  endDate: Date | null;
+  status: TicketStatus;
   ticketTypeName: string | null;
-  subscription: { id: number; name: string };
+  subscription: { id: number; name: string } | null;
   barcode: string | null;
   qrCode: string | null;
   rfidCode: string | null;
@@ -24,7 +26,8 @@ function personName(t: ExpiringAboTicket) {
 function ticketsHref(t: ExpiringAboTicket) {
   const code = t.barcode || t.qrCode || t.rfidCode;
   if (code) return `/tickets?code=${encodeURIComponent(code)}`;
-  return `/tickets?sub=${t.subscription.id}`;
+  if (t.subscription) return `/tickets?sub=${t.subscription.id}`;
+  return "/tickets";
 }
 
 export function ExpiringAbosCard({
@@ -34,6 +37,11 @@ export function ExpiringAbosCard({
   tickets: ExpiringAboTicket[];
   readonly?: boolean;
 }) {
+  const rows = tickets.filter(
+    (t): t is ExpiringAboTicket & { endDate: Date; subscription: { id: number; name: string } } =>
+      t.endDate != null && t.subscription != null
+  );
+
   return (
     <Card className="border-slate-200 dark:border-slate-800 mb-6">
       <CardHeader className="pb-3">
@@ -48,13 +56,13 @@ export function ExpiringAbosCard({
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        {tickets.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="text-sm text-slate-500 dark:text-slate-400 py-2">
             Keine Abo-Tickets mit gesetztem Enddatum in der Zukunft.
           </p>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
-            {tickets.map((t) => {
+            {rows.map((t) => {
               const endStr = t.endDate.toLocaleDateString("de-DE", {
                 day: "2-digit",
                 month: "2-digit",
