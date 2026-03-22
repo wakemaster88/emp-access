@@ -34,3 +34,12 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Telegram Tagesbericht (Vercel Cron)
+
+1. **Umgebungsvariable `CRON_SECRET`** in Vercel anlegen (z. B. 32 Zeichen Zufall), **Production** (und ggf. Preview) aktivieren, danach **Redeploy**.
+2. Ohne `CRON_SECRET` antwortet `/api/cron/telegram-report` mit **503** – der Job läuft dann nicht sichtbar „erfolgreich“.
+3. Vercel sendet bei Cron-Aufrufen `Authorization: Bearer <CRON_SECRET>`. Der Wert muss **exakt** mit der Variable übereinstimmen.
+4. Der Bericht wird nur gesendet, wenn die **Berliner Uhrzeit** (HH:mm) mit der in den Einstellungen gewählten Zeit übereinstimmt (Cron alle 15 Minuten).
+5. Test manuell:  
+   `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/telegram-report"`
