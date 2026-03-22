@@ -642,23 +642,26 @@ export function DashboardClient() {
         <ActionRequiredCard tickets={actionRequired} openTicket={openTicket} />
       )}
 
-      {/* Live feeds: Recent scans + New bookings */}
-      {!loading && data && (data.recentScans.length > 0 || data.newTickets.length > 0) && (
+      {/* Live feeds: Recent scans + New bookings (immer sichtbar; Inhalt für gewähltes Datum) */}
+      {!loading && data && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {/* Recent scans */}
-          {data.recentScans.length > 0 && (
-            <Card className="py-0 gap-0 overflow-hidden">
-              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
-                  <ScanLine className="h-3.5 w-3.5 text-sky-500 shrink-0" />
-                  Letzte Scans
-                </span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  {data.scansToday} heute
-                </Badge>
-              </div>
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
-                {data.recentScans.map((scan) => (
+          <Card className="py-0 gap-0 overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+                <ScanLine className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+                Letzte Scans
+              </span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                {data.scansToday} am gewählten Tag
+              </Badge>
+            </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[120px]">
+              {data.recentScans.length === 0 ? (
+                <p className="px-3 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                  Keine Scans an diesem Tag. Anderes Datum oben wählen oder unter „Scans“ die Historie öffnen.
+                </p>
+              ) : (
+                data.recentScans.map((scan) => (
                   <div key={scan.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     {scan.profileImage ? (
                       <img src={scan.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
@@ -687,25 +690,28 @@ export function DashboardClient() {
                       )} />
                     </div>
                   </div>
-                ))}
-              </div>
-            </Card>
-          )}
+                ))
+              )}
+            </div>
+          </Card>
 
-          {/* New bookings */}
-          {data.newTickets.length > 0 && (
-            <Card className="py-0 gap-0 overflow-hidden">
-              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
-                  <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  Neue Buchungen
-                </span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  {data.newTicketsCount} heute
-                </Badge>
-              </div>
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
-                {data.newTickets.map((ticket) => (
+          <Card className="py-0 gap-0 overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+                <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                Neueste Tickets
+              </span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                {data.newTicketsCount} neu am gewählten Tag
+              </Badge>
+            </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[120px]">
+              {data.newTickets.length === 0 ? (
+                <p className="px-3 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                  Keine neu angelegten Tickets an diesem Tag. (Nur Erstellungsdatum, nicht Gültigkeit.)
+                </p>
+              ) : (
+                data.newTickets.map((ticket) => (
                   <div
                     key={ticket.id}
                     className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
@@ -729,10 +735,10 @@ export function DashboardClient() {
                     </div>
                     <span className="text-[10px] font-mono text-slate-400 shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
                   </div>
-                ))}
-              </div>
-            </Card>
-          )}
+                ))
+              )}
+            </div>
+          </Card>
         </div>
       )}
 
