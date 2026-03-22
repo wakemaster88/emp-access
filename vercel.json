@@ -7,6 +7,9 @@
     "src/app/api/monitor/route.ts": {
       "maxDuration": 60
     },
+    "src/app/api/monitor/public/[token]/route.ts": {
+      "maxDuration": 30
+    },
     "src/app/api/integrations/**/*.ts": {
       "maxDuration": 30
     },

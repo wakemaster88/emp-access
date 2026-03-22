@@ -90,7 +90,9 @@ export default function PublicMonitorPage({ params }: Props) {
   const [selectedTicket, setSelectedTicket] = useState<TicketInfo | null>(null);
   const [allPaused, setAllPaused] = useState(false);
   const [pauseToggling, setPauseToggling] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastScanIdRef = useRef(0);
+  const pollTickRef = useRef(0);
   const isFirstLoad = useRef(true);
 
   async function handleTicketScan(ticketId: number) {
@@ -131,24 +133,60 @@ export default function PublicMonitorPage({ params }: Props) {
   }
 
   useEffect(() => {
-    function connect() {
-      const es = new EventSource(`/api/monitor/public/${token}`);
-      esRef.current = es;
+    let cancelled = false;
+    lastScanIdRef.current = 0;
+    pollTickRef.current = 0;
 
-      es.onopen = () => { setConnected(true); setError(""); };
-      es.onerror = () => {
-        setConnected(false);
-        es.close();
-        setTimeout(connect, 3000);
-      };
+    const applyTickets = (raw: TicketInfo[]) => {
+      const now = Date.now();
+      const valid = raw.filter((t) => {
+        if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
+          const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
+          if (now > expiresAt) return false;
+        }
+        return true;
+      });
+      const sorted = valid.sort((a, b) => {
+        const order = (t: TicketInfo) =>
+          t.status === "PAUSED" ? 3
+          : t.source === "EMP_CONTROL" ? 2
+          : t.subscriptionId != null ? 1
+          : 0;
+        return order(a) - order(b);
+      });
+      setTickets(sorted);
+      const hasActive = sorted.some((t) => t.status === "VALID" || t.status === "REDEEMED");
+      const hasPaused = sorted.some((t) => t.status === "PAUSED");
+      setAllPaused(hasPaused && !hasActive);
+    };
 
-      es.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "meta") {
-          setMonitorName(msg.data.name);
-          setDevices(msg.data.devices);
-        } else if (msg.type === "scans") {
-          const incoming = msg.data as Scan[];
+    async function doPoll() {
+      if (cancelled || document.hidden) return;
+      const tick = pollTickRef.current;
+      pollTickRef.current += 1;
+      const includeTickets = tick === 0 || tick % 6 === 0;
+      const url = `/api/monitor/public/${encodeURIComponent(token)}?poll=1&since=${lastScanIdRef.current}&tickets=${includeTickets ? 1 : 0}`;
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (cancelled) return;
+        if (!res.ok) {
+          if (res.status === 410) setError("Bitte Seite neu laden (F5).");
+          else setError("Verbindungsfehler");
+          setConnected(false);
+          return;
+        }
+        const data = (await res.json()) as {
+          name: string;
+          devices: Device[];
+          scans: Scan[];
+          tickets: TicketInfo[] | null;
+          lastScanId: number;
+        };
+        if (cancelled) return;
+        setMonitorName(data.name);
+        setDevices(data.devices);
+        if (data.scans?.length) {
+          const incoming = data.scans;
           setScans((prev) => {
             const existing = new Set(prev.map((s) => s.id));
             const fresh = incoming.filter((s) => !existing.has(s.id));
@@ -159,49 +197,47 @@ export default function PublicMonitorPage({ params }: Props) {
             isFirstLoad.current = false;
             return [...fresh, ...prev].slice(0, 50);
           });
-        } else if (msg.type === "tickets") {
-          const now = Date.now();
-          const valid = (msg.data as TicketInfo[]).filter((t) => {
-            if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
-              const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
-              if (now > expiresAt) return false;
-            }
-            return true;
-          });
-          const sorted = valid.sort((a, b) => {
-            const order = (t: TicketInfo) =>
-              t.status === "PAUSED" ? 3
-              : t.source === "EMP_CONTROL" ? 2
-              : t.subscriptionId != null ? 1
-              : 0;
-            return order(a) - order(b);
-          });
-          setTickets(sorted);
-          const hasActive = sorted.some((t) => t.status === "VALID" || t.status === "REDEEMED");
-          const hasPaused = sorted.some((t) => t.status === "PAUSED");
-          setAllPaused(hasPaused && !hasActive);
-        } else if (msg.type === "devices") {
-          setDevices(msg.data);
         }
-      };
+        if (typeof data.lastScanId === "number") {
+          lastScanIdRef.current = data.lastScanId;
+        }
+        if (data.tickets) {
+          applyTickets(data.tickets);
+        }
+        setConnected(true);
+        setError("");
+      } catch {
+        if (!cancelled) {
+          setError("Verbindungsfehler");
+          setConnected(false);
+        }
+      }
     }
 
-    connect();
+    doPoll();
+    pollTimerRef.current = setInterval(doPoll, 8000);
 
     const handleVisibility = () => {
       if (document.hidden) {
-        esRef.current?.close();
-        esRef.current = null;
+        if (pollTimerRef.current) {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
         setConnected(false);
-      } else if (!esRef.current) {
-        connect();
+      } else {
+        void doPoll();
+        if (!pollTimerRef.current) {
+          pollTimerRef.current = setInterval(doPoll, 8000);
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
+      cancelled = true;
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibility);
-      esRef.current?.close();
     };
   }, [token]);
 
