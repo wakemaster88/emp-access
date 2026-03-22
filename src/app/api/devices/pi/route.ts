@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { piStatusSchema } from "@/lib/validators";
+import { LATEST_PI_VERSION } from "@/lib/pi-version";
 import type { Device } from "@prisma/client";
 
 /** Pi-JSON wie GET – auch in POST results[], damit der Heartbeat ohne zweiten Request auskommt. */
@@ -36,7 +37,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Device not found" }, { status: 404 });
   }
 
-  return NextResponse.json(deviceToPiState(device));
+  return NextResponse.json({
+    ...deviceToPiState(device),
+    /** Soll-Version laut Server (Dashboard) – Pi: `emp_scanner.VERSION` nach `git pull` angleichen */
+    latest_scanner_version: LATEST_PI_VERSION,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -84,5 +89,8 @@ export async function POST(request: NextRequest) {
     results.push({ pis_id: update.pis_id, updated: false });
   }
 
-  return NextResponse.json({ results });
+  return NextResponse.json({
+    latest_scanner_version: LATEST_PI_VERSION,
+    results,
+  });
 }

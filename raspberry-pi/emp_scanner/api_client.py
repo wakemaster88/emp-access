@@ -124,9 +124,13 @@ class ApiClient:
             )
             if resp.status_code == 200:
                 payload = resp.json()
+                latest = payload.get("latest_scanner_version")
                 results = payload.get("results") or []
                 if results and isinstance(results[0], dict) and "pis_task" in results[0]:
-                    return results[0]
+                    cfg = dict(results[0])
+                    if latest is not None:
+                        cfg["latest_scanner_version"] = latest
+                    return cfg
 
             resp = self._session.get(
                 f"{self.server_url}/api/devices/pi",

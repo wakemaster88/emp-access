@@ -98,6 +98,14 @@ Der Pi nutzt zwei Hintergrund-Schleifen:
 
 `task_poll_interval: 1` in alter `config.json` erzeugt fast jede Sekunde einen API-Call und unnötige DB-Reads – für „Online“ im Dashboard reichen 5–15 s völlig (Dashboard wertet ohnehin mehrere Minuten als online).
 
+## Version & Auto-Update
+
+- **Scanner-Version:** `raspberry-pi/emp_scanner/__init__.py` → `VERSION` (z. B. `1.2.5`). Nach `git pull` + Neustart meldet der Pi diese Version im Heartbeat (`scanner_version` in den Systeminfos).
+- **Dashboard „aktuell“:** Der Wert muss mit `src/lib/pi-version.ts` → `LATEST_PI_VERSION` übereinstimmen (beim Release beide anpassen).
+- **API:** `GET/POST /api/devices/pi` liefert zusätzlich `latest_scanner_version` (gleicher Wert wie im Dashboard).
+
+Auto-Update auf dem Pi läuft per **`git fetch` / `reset`** (siehe `emp_scanner/updater.py`), nicht über die Versionsnummer allein.
+
 ## Betrieb
 
 ```bash
