@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera, Search } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay } from "@/lib/berlin-day";
+import { monitorTicketTypeLine } from "@/lib/monitor-ticket-subtitle";
 
 interface Device {
   id: number;
@@ -54,6 +55,9 @@ interface TicketInfo {
   slotEnd: string | null;
   subscriptionId: number | null;
   source: string | null;
+  service?: { name: string } | null;
+  subscription?: { name: string } | null;
+  accessArea?: { name: string } | null;
 }
 
 interface ScanGroup {
@@ -661,6 +665,9 @@ export default function PublicMonitorPage({ params }: Props) {
                         ? "Eingecheckt"
                         : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
 
+                const typeLine = monitorTicketTypeLine(ticket);
+                const subParts = [typeLine, endStr ? `bis ${endStr}` : null].filter(Boolean) as string[];
+
                 return (
                   <div
                     key={ticket.id}
@@ -680,8 +687,9 @@ export default function PublicMonitorPage({ params }: Props) {
                         {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className={cn("ml-1.5 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                       </p>
                       <p className={cn("text-xs font-medium truncate", styles.ticketSub)}>
-                        {ticket.ticketTypeName || ticket.name}
-                        {endStr && <span className={cn("ml-1", dark ? "text-slate-500" : "text-slate-400")}>· bis {endStr}</span>}
+                        {subParts.length > 0
+                          ? subParts.join(" · ")
+                          : <span className={dark ? "text-slate-500" : "text-slate-400"}>Ticket</span>}
                       </p>
                     </div>
                     <div className="shrink-0 flex flex-col items-end gap-0.5">
@@ -836,9 +844,11 @@ function TicketDetailOverlay({
   );
 
   const name = [ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name;
+  const typeLine = monitorTicketTypeLine(ticket);
   const endStr = ticket.endDate
     ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
     : null;
+  const headerSubParts = [typeLine, endStr ? `bis ${endStr}` : null].filter(Boolean) as string[];
   const startStr = ticket.startDate
     ? new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
     : null;
@@ -875,8 +885,7 @@ function TicketDetailOverlay({
         <div className="min-w-0 flex-1">
           <h2 className={cn("font-bold truncate", styles.headerTitle)}>{name}</h2>
           <p className={cn("text-xs", styles.headerSub)}>
-            {ticket.ticketTypeName || ticket.name}
-            {endStr && ` · bis ${endStr}`}
+            {headerSubParts.length > 0 ? headerSubParts.join(" · ") : "Ticket"}
           </p>
         </div>
       </header>
@@ -896,7 +905,9 @@ function TicketDetailOverlay({
               {name}
               {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className={cn("ml-1.5 text-sm font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a} J.)</span> : null; })()}
             </p>
-            <p className={cn("text-sm", styles.ticketSub)}>{ticket.ticketTypeName || ticket.name}</p>
+            <p className={cn("text-sm", styles.ticketSub)}>
+              {typeLine ?? "Ticket"}
+            </p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <Badge className={cn(
                 "text-xs px-2 py-0.5 font-bold",
