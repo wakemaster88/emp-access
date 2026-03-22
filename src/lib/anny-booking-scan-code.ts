@@ -43,14 +43,20 @@ function nestedTicketCode(src: Record<string, unknown>): string | null {
   const ticket = src.ticket;
   if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) return null;
   const t = ticket as Record<string, unknown>;
+  const tFlat =
+    t.attributes && typeof t.attributes === "object" && !Array.isArray(t.attributes)
+      ? { ...t, ...(t.attributes as Record<string, unknown>) }
+      : t;
   return pickString(
-    t.code,
-    t.token,
-    t.qr_code,
-    t.qrCode,
-    t.ticket_code,
-    t.ticketCode,
-    t.number,
+    tFlat.code,
+    tFlat.token,
+    tFlat.qr_code,
+    tFlat.qrCode,
+    tFlat.ticket_code,
+    tFlat.ticketCode,
+    tFlat.number,
+    tFlat.scan_code,
+    tFlat.scanCode,
   );
 }
 
@@ -90,6 +96,16 @@ export function extractAnnyBookingScanCode(raw: unknown): string | null {
     src.accessCode,
     src.checkin_code,
     src.checkinCode,
+    src.admission_code,
+    src.admissionCode,
+    src.entry_code,
+    src.entryCode,
+    src.digital_ticket_code,
+    src.digitalTicketCode,
+    src.guest_code,
+    src.guestCode,
+    src.redemption_code,
+    src.redemptionCode,
   );
   if (direct) return direct;
 

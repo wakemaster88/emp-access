@@ -1,54 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
+import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
+import type { AnnyBooking } from "@/lib/anny-types";
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
-
-interface AnnyLineItem {
-  id?: string | number;
-  name?: string;
-  title?: string;
-  quantity?: number;
-  price?: number | string;
-  product?: { id?: string | number; name?: string; title?: string };
-}
-
-interface AnnyBooking {
-  id: string | number;
-  number?: string;
-  description?: string;
-  start_date?: string;
-  end_date?: string;
-  status?: string;
-  created_at?: string;
-  customer?: {
-    id?: string | number;
-    full_name?: string;
-    name?: string;
-    email?: string;
-    first_name?: string;
-    last_name?: string;
-    given_name?: string;
-    family_name?: string;
-    birth_date?: string;
-  };
-  resource?: {
-    id?: string | number;
-    name?: string;
-  };
-  service?: {
-    id?: string | number;
-    name?: string;
-  };
-  subscription?: {
-    id?: string | number;
-    name?: string;
-    title?: string;
-  };
-  line_items?: AnnyLineItem[];
-  products?: AnnyLineItem[];
-  extras?: AnnyLineItem[];
-}
 
 interface BookingEntry {
   id: string;
@@ -100,6 +56,9 @@ interface AnnyMapping {
 }
 
 function mapGroupStatus(statuses: string[]): "VALID" | "INVALID" | "REDEEMED" {
+  // Ohne Status (z. B. JSON:API nur in attributes, vorher nicht gemappt) nicht als „alle storniert“ werten
+  if (statuses.length === 0) return "VALID";
+
   const normalized = statuses.map((s) => s.toLowerCase());
   const allCancelled = normalized.every((s) =>
     s === "cancelled" || s === "canceled" || s === "rejected" || s === "no_show"
@@ -196,7 +155,8 @@ export async function POST() {
 
     while (true) {
       const params = new URLSearchParams({
-        include: "customer,resource,service",
+        // ticket: oft QR-/Token-Felder für den Scanner (JSON:API included)
+        include: "customer,resource,service,ticket",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
@@ -218,7 +178,7 @@ export async function POST() {
       }
 
       const json = await res.json();
-      const bookings: AnnyBooking[] = Array.isArray(json) ? json : json.data || [];
+      const bookings = normalizeAnnyBookingsResponse(json);
       allBookings = allBookings.concat(bookings);
 
       if (bookings.length < pageSize || page >= 50) break;
