@@ -155,8 +155,8 @@ export async function POST() {
 
     while (true) {
       const params = new URLSearchParams({
-        // ticket: oft QR-/Token-Felder für den Scanner (JSON:API included)
-        include: "customer,resource,service,ticket",
+        // Kein `ticket` in include: ANNY antwortet teils mit 500 (Server Error).
+        include: "customer,resource,service",
         "page[size]": String(pageSize),
         "page[number]": String(page),
       });
