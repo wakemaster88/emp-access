@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SubscriptionsTable } from "@/components/subscriptions/subscriptions-table";
+import { ExpiringAbosCard } from "@/components/subscriptions/expiring-abos-card";
 
 interface AnnyExtra {
   services?: string[];
@@ -20,7 +21,7 @@ export default async function SubscriptionsPage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [subscriptions, areas, annyConfig] = await Promise.all([
+  const [subscriptions, areas, annyConfig, expiringAboTickets] = await Promise.all([
     db.subscription.findMany({
       where: accountFilter,
       include: {
@@ -53,6 +54,29 @@ export default async function SubscriptionsPage() {
       where: { ...accountFilter, provider: "ANNY" },
       select: { extraConfig: true },
     }).catch(() => null),
+    db.ticket.findMany({
+      where: {
+        ...accountFilter,
+        subscriptionId: { not: null },
+        endDate: { not: null, gt: new Date() },
+        status: { in: ["VALID", "REDEEMED", "PAUSED"] },
+      },
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        endDate: true,
+        status: true,
+        ticketTypeName: true,
+        barcode: true,
+        qrCode: true,
+        rfidCode: true,
+        subscription: { select: { id: true, name: true } },
+      },
+      orderBy: { endDate: "asc" },
+      take: 10,
+    }),
   ]);
 
   let annyServices: string[] = [];
@@ -71,6 +95,7 @@ export default async function SubscriptionsPage() {
     <>
       <Header title="Abos" accountName={session.user.accountName} />
       <div className="p-4 sm:p-6">
+        <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Abos ({subscriptions.length})</CardTitle>
