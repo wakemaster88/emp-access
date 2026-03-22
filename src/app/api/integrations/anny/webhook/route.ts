@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
+import { annyBarcodeForTicket, extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 
 interface AnnyLineItem {
   id?: string | number;
@@ -170,6 +171,10 @@ export async function POST(request: NextRequest) {
       if (booking.number) {
         conditions.push({ barcode: booking.number, accountId, source: "ANNY" });
       }
+      const delScan = extractAnnyBookingScanCode(booking);
+      if (delScan && delScan !== booking.number) {
+        conditions.push({ barcode: delScan, accountId, source: "ANNY" });
+      }
 
       if (conditions.length === 0) continue;
 
@@ -296,7 +301,7 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       status,
-      barcode: booking.number || null,
+      barcode: annyBarcodeForTicket(booking, booking.number),
       qrCode: JSON.stringify([{ id: String(booking.id), start: booking.start_date ?? null, end: booking.end_date ?? null, status: booking.status ?? null }]),
       extras: extras.length > 0 ? JSON.parse(JSON.stringify(extras)) : undefined,
       source: "ANNY" as const,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
 
@@ -65,6 +66,8 @@ interface BookingGroup {
   key: string;
   entries: BookingEntry[];
   bookingNumber: string | null;
+  /** QR-/Ticket-Token (!TIX…), falls von der API geliefert – kann von `number` abweichen */
+  scanCode: string | null;
   customerName: string;
   firstName: string;
   lastName: string;
@@ -440,6 +443,17 @@ export async function POST() {
         if (!existing.bookingNumber && booking.number) {
           existing.bookingNumber = booking.number;
         }
+        const scan = extractAnnyBookingScanCode(booking);
+        if (scan) {
+          if (!existing.scanCode) {
+            existing.scanCode = scan;
+          } else if (
+            (scan.startsWith("!") || /^TIX/i.test(scan)) &&
+            !existing.scanCode.startsWith("!")
+          ) {
+            existing.scanCode = scan;
+          }
+        }
         if (startDate && (!existing.startDate || startDate < existing.startDate)) {
           existing.startDate = startDate;
         }
@@ -455,6 +469,7 @@ export async function POST() {
           key,
           entries: [entry],
           bookingNumber: booking.number || null,
+          scanCode: extractAnnyBookingScanCode(booking),
           customerName,
           firstName: customer?.given_name ?? customer?.first_name ?? nameParts[0] ?? "",
           lastName: customer?.family_name ?? customer?.last_name ?? nameParts.slice(1).join(" ") ?? "",
@@ -588,7 +603,7 @@ export async function POST() {
         endDate: group.endDate,
         status: mapGroupStatus(group.statuses),
         ticketTypeName: typeName,
-        barcode: group.bookingNumber || null,
+        barcode: group.scanCode || group.bookingNumber || null,
         qrCode: JSON.stringify(group.entries),
         extras: group.extras.length > 0 ? JSON.parse(JSON.stringify(group.extras)) : undefined,
         source: "ANNY" as const,
