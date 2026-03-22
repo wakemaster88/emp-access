@@ -12,6 +12,8 @@ interface AnnyLineItem {
 
 interface AnnyBooking {
   id?: string | number;
+  /** QR-/Scan-Token (!TIX…), von ANNY getrennt von `number` (z. B. BB…) */
+  code?: string;
   number?: string;
   start_date?: string;
   end_date?: string;

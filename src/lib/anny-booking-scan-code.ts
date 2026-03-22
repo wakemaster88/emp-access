@@ -80,6 +80,10 @@ export function extractAnnyBookingScanCode(raw: unknown): string | null {
     if (fromMeta) return fromMeta;
   }
 
+  // ANNY (Webhooks & manche API-Payloads): QR-Token in `code`, Buchungsnr. in `number`
+  const topCode = pickString(src.code);
+  if (topCode && looksLikeAnnyTicketToken(topCode)) return topCode;
+
   // Explizite Ticket-/QR-Felder (Reihenfolge: spezifisch → allgemein)
   const direct = pickString(
     src.ticket_code,

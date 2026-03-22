@@ -11,6 +11,8 @@ export interface AnnyLineItem {
 
 export interface AnnyBooking {
   id: string | number;
+  /** QR-/Scan-Token (!TIX…); Buchungsnr. oft separat in `number` (z. B. BB…) */
+  code?: string;
   number?: string;
   description?: string;
   start_date?: string;
