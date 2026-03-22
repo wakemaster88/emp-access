@@ -13,6 +13,8 @@ import { TelegramCard } from "@/components/settings/telegram-card";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"] as const;
 
+export const dynamic = "force-dynamic";
+
 export default async function SettingsPage() {
   const session = await safeAuth();
   if (!session?.user) redirect("/login");

@@ -165,7 +165,14 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       });
       if (!res.ok) {
         const err = await res.json();
-        setError(err.error?.formErrors?.[0] ?? "Speichern fehlgeschlagen");
+        const fe = err.error?.fieldErrors as Record<string, string[]> | undefined;
+        const fromFields = fe ? (Object.values(fe).flat() as string[]).find(Boolean) : undefined;
+        const fromForm = Array.isArray(err.error?.formErrors) ? err.error.formErrors[0] : undefined;
+        setError(
+          typeof err.error === "string"
+            ? err.error
+            : (fromFields ?? fromForm ?? "Speichern fehlgeschlagen"),
+        );
       } else {
         const updated = await res.json();
         setData(updated);

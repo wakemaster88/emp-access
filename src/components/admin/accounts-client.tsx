@@ -66,6 +66,8 @@ interface FormState {
   name: string;
   subdomain: string;
   isActive: boolean;
+  /** Nur beim Bearbeiten: leer = Token unverändert */
+  apiToken: string;
 }
 
 interface UserFormState {
@@ -75,7 +77,7 @@ interface UserFormState {
   role: string;
 }
 
-const EMPTY_FORM: FormState = { name: "", subdomain: "", isActive: true };
+const EMPTY_FORM: FormState = { name: "", subdomain: "", isActive: true, apiToken: "" };
 const EMPTY_USER_FORM: UserFormState = { name: "", email: "", password: "", role: "USER" };
 
 export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
@@ -107,7 +109,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
   }
 
   function openEdit(acc: Account) {
-    setForm({ name: acc.name, subdomain: acc.subdomain, isActive: acc.isActive });
+    setForm({ name: acc.name, subdomain: acc.subdomain, isActive: acc.isActive, apiToken: "" });
     setError("");
     setEditAccount(acc);
   }
@@ -127,10 +129,18 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
 
     try {
       if (editAccount) {
+        const payload: Record<string, unknown> = {
+          name: form.name.trim(),
+          subdomain: form.subdomain.trim(),
+          isActive: form.isActive,
+        };
+        if (form.apiToken.trim().length >= 16) {
+          payload.apiToken = form.apiToken.trim();
+        }
         const res = await fetch(`/api/admin/accounts/${editAccount.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const data = await res.json();
@@ -140,7 +150,13 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
         setAccounts((prev) =>
           prev.map((a) =>
             a.id === editAccount.id
-              ? { ...a, name: updated.name, subdomain: updated.subdomain, isActive: updated.isActive }
+              ? {
+                  ...a,
+                  name: updated.name,
+                  subdomain: updated.subdomain,
+                  isActive: updated.isActive,
+                  apiToken: updated.apiToken ?? a.apiToken,
+                }
               : a
           )
         );
@@ -149,7 +165,11 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
         const res = await fetch("/api/admin/accounts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify({
+            name: form.name.trim(),
+            subdomain: form.subdomain.trim(),
+            isActive: form.isActive,
+          }),
         });
         if (!res.ok) {
           const data = await res.json();
@@ -452,6 +472,24 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                 onCheckedChange={(checked) => setForm({ ...form, isActive: checked })}
               />
             </div>
+
+            {editAccount && (
+              <div className="space-y-2">
+                <Label htmlFor="apiToken">API-Token (optional)</Label>
+                <Input
+                  id="apiToken"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Leer lassen = unverändert; min. 16 Zeichen zum Setzen"
+                  value={form.apiToken}
+                  onChange={(e) => setForm({ ...form, apiToken: e.target.value })}
+                  className="font-mono text-xs"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Mandanten-Token für Raspberry Pi, Shelly und eigene API. Nach Änderung Geräte aktualisieren.
+                </p>
+              </div>
+            )}
 
             {error && (
               <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950 dark:text-rose-400 px-3 py-2 rounded-lg">

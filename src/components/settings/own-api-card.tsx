@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, Info } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Copy, Check, Info, Loader2, RefreshCw, Save } from "lucide-react";
 
 interface OwnApiCardProps {
   baseUrl: string;
@@ -24,7 +27,16 @@ const ENDPOINTS = [
 ];
 
 export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
+  const router = useRouter();
   const [copied, setCopied] = useState<string | null>(null);
+  const [displayToken, setDisplayToken] = useState(apiToken);
+  const [customToken, setCustomToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    setDisplayToken(apiToken);
+  }, [apiToken]);
 
   const copy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -32,11 +44,47 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  async function patchToken(body: Record<string, unknown>) {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const res = await fetch("/api/settings/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const fe = data.error?.fieldErrors as Record<string, string[]> | undefined;
+        const fromFields = fe ? (Object.values(fe).flat() as string[]).find(Boolean) : undefined;
+        const fromForm = Array.isArray(data.error?.formErrors) ? data.error.formErrors[0] : undefined;
+        setFeedback({
+          type: "err",
+          text:
+            typeof data.error === "string"
+              ? data.error
+              : (fromFields ?? fromForm ?? "Speichern fehlgeschlagen"),
+        });
+        return;
+      }
+      if (data.apiToken) {
+        setDisplayToken(data.apiToken);
+        setCustomToken("");
+        setFeedback({ type: "ok", text: "API-Token gespeichert. Geräte ggf. neu konfigurieren." });
+        router.refresh();
+      }
+    } catch {
+      setFeedback({ type: "err", text: "Netzwerkfehler" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Card className="border-slate-200 dark:border-slate-800">
       <CardContent className="pt-5 space-y-4">
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          Andere Systeme können mit dem API-Token auf Ressourcen und Geräte zugreifen.
+          Andere Systeme können mit dem API-Token auf Ressourcen und Geräte zugreifen. Token hier setzen oder neu generieren – wird in der Datenbank gespeichert.
         </p>
 
         <div className="space-y-2">
@@ -60,13 +108,14 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
             <span className="text-sm text-slate-500">API-Token</span>
             <div className="flex items-center gap-1 min-w-0">
               <Badge variant="outline" className="font-mono text-xs max-w-[180px] truncate">
-                {apiToken || "—"}
+                {displayToken || "—"}
               </Badge>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 shrink-0"
-                onClick={() => copy(apiToken, "token")}
+                onClick={() => copy(displayToken, "token")}
+                disabled={!displayToken}
               >
                 {copied === "token" ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
               </Button>
@@ -74,11 +123,68 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
           </div>
         </div>
 
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8"
+              disabled={busy}
+              onClick={() => patchToken({ regenerate: true })}
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              <span className="ml-1.5">Neu generieren</span>
+            </Button>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-api-token" className="text-xs">
+              Eigenen Token speichern (min. 16 Zeichen)
+            </Label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input
+                id="custom-api-token"
+                className="font-mono text-xs h-9"
+                placeholder="Neuer Token …"
+                value={customToken}
+                onChange={(e) => setCustomToken(e.target.value)}
+                autoComplete="off"
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 shrink-0"
+                disabled={busy || customToken.trim().length < 16}
+                onClick={() => patchToken({ apiToken: customToken.trim() })}
+              >
+                <Save className="h-3.5 w-3.5" />
+                <span className="ml-1.5">Speichern</span>
+              </Button>
+            </div>
+          </div>
+          {feedback && (
+            <p
+              className={
+                feedback.type === "ok"
+                  ? "text-xs text-emerald-600 dark:text-emerald-400"
+                  : "text-xs text-rose-600 dark:text-rose-400"
+              }
+            >
+              {feedback.text}
+            </p>
+          )}
+        </div>
+
         <div className="rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 p-3 space-y-2">
           <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Authentifizierung</p>
           <p className="text-xs text-slate-500 dark:text-slate-500">
             Header: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">Authorization: Bearer {'<token>'}</code>
             {" "}oder Query: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">?token={'<token>'}</code>
+          </p>
+          <p className="text-xs text-slate-500">
+            Token ändern (eingeloggt): <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">PATCH /api/settings/account</code> mit{" "}
+            <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">{`{ "regenerate": true }`}</code> oder{" "}
+            <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">{`{ "apiToken": "…" }`}</code>
           </p>
         </div>
 

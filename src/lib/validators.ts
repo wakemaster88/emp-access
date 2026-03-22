@@ -85,7 +85,10 @@ export const accountCreateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-export const accountUpdateSchema = accountCreateSchema.partial();
+export const accountUpdateSchema = accountCreateSchema.partial().extend({
+  /** Leer = unverändert; sonst min. 16 Zeichen (Mandanten-API-Token) */
+  apiToken: z.union([z.literal(""), z.string().min(16).max(256)]).optional(),
+});
 
 export const adminCreateSchema = z.object({
   email: z.string().email(),

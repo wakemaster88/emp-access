@@ -35,14 +35,33 @@ export async function PUT(
     }
   }
 
-  const account = await superAdminClient.account.update({
-    where: { id: accountId },
-    data: {
-      ...(parsed.data.name !== undefined && { name: parsed.data.name }),
-      ...(parsed.data.subdomain !== undefined && { subdomain: parsed.data.subdomain }),
-      ...(parsed.data.isActive !== undefined && { isActive: parsed.data.isActive }),
-    },
-  });
+  const data: {
+    name?: string;
+    subdomain?: string;
+    isActive?: boolean;
+    apiToken?: string;
+  } = {
+    ...(parsed.data.name !== undefined && { name: parsed.data.name }),
+    ...(parsed.data.subdomain !== undefined && { subdomain: parsed.data.subdomain }),
+    ...(parsed.data.isActive !== undefined && { isActive: parsed.data.isActive }),
+  };
+  if (parsed.data.apiToken !== undefined && parsed.data.apiToken.trim().length > 0) {
+    data.apiToken = parsed.data.apiToken.trim();
+  }
+
+  let account;
+  try {
+    account = await superAdminClient.account.update({
+      where: { id: accountId },
+      data,
+    });
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err.code === "P2002") {
+      return NextResponse.json({ error: "API-Token bereits vergeben" }, { status: 409 });
+    }
+    throw e;
+  }
 
   return NextResponse.json(account);
 }
