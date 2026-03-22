@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera, Search } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 
 interface Device {
@@ -90,6 +90,7 @@ export default function PublicMonitorPage({ params }: Props) {
   const [selectedTicket, setSelectedTicket] = useState<TicketInfo | null>(null);
   const [allPaused, setAllPaused] = useState(false);
   const [pauseToggling, setPauseToggling] = useState(false);
+  const [ticketSearch, setTicketSearch] = useState("");
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastScanIdRef = useRef(0);
   const pollTickRef = useRef(0);
@@ -240,6 +241,22 @@ export default function PublicMonitorPage({ params }: Props) {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [token]);
+
+  const filteredTickets = useMemo(() => {
+    const q = ticketSearch.trim().toLowerCase();
+    if (!q) return tickets;
+    return tickets.filter((t) => {
+      const hay = [
+        t.name,
+        t.firstName ?? "",
+        t.lastName ?? "",
+        t.ticketTypeName ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [tickets, ticketSearch]);
 
   const groupedScans = useMemo(() => {
     const groups: ScanGroup[] = [];
@@ -540,17 +557,52 @@ export default function PublicMonitorPage({ params }: Props) {
           <div className="flex flex-col gap-4">
             <LiveClock dark={dark} styles={styles} allPaused={allPaused} pauseToggling={pauseToggling} onClick={handlePauseAll} />
 
+            {/* Suche nur Mobil: direkt unter Uhr/Datum */}
+            <div className="lg:hidden">
+              <label className="sr-only" htmlFor="monitor-ticket-search">Tickets durchsuchen</label>
+              <div
+                className={cn(
+                  "flex items-center gap-2 rounded-2xl border px-3 py-2.5",
+                  dark ? "border-slate-700 bg-slate-900/80" : "border-slate-300 bg-white",
+                )}
+              >
+                <Search className={cn("h-4 w-4 shrink-0", dark ? "text-slate-500" : "text-slate-400")} aria-hidden />
+                <input
+                  id="monitor-ticket-search"
+                  type="search"
+                  enterKeyHint="search"
+                  value={ticketSearch}
+                  onChange={(e) => setTicketSearch(e.target.value)}
+                  placeholder="Tickets durchsuchen…"
+                  className={cn(
+                    "min-w-0 flex-1 bg-transparent text-sm outline-none",
+                    dark ? "text-white placeholder:text-slate-500" : "text-slate-900 placeholder:text-slate-400",
+                  )}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+
             <div className="flex items-center gap-2">
               <Ticket className={cn("h-5 w-5", styles.sectionLabel)} />
               <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>Gültige Tickets</h2>
-              <span className={cn("text-xs font-mono font-bold border rounded-lg px-2 py-0.5 ml-auto", styles.ticketCountBorder)}>{tickets.length}</span>
+              <span className={cn("text-xs font-mono font-bold border rounded-lg px-2 py-0.5 ml-auto", styles.ticketCountBorder)}>
+                {ticketSearch.trim() ? `${filteredTickets.length}/${tickets.length}` : tickets.length}
+              </span>
             </div>
 
-            <div className="space-y-1.5 max-h-[calc(100vh-18rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
+            <div className="space-y-1.5 max-h-[calc(100vh-26rem)] lg:max-h-[calc(100vh-18rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
               {tickets.length === 0 && (
                 <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>Keine aktiven Tickets</p>
               )}
-              {tickets.map((ticket) => {
+              {tickets.length > 0 && filteredTickets.length === 0 && (
+                <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>
+                  Keine Treffer für „{ticketSearch.trim()}“
+                </p>
+              )}
+              {filteredTickets.map((ticket) => {
                 const endStr = ticket.endDate
                   ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
                   : null;
