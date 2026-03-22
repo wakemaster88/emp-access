@@ -124,7 +124,7 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
           <div className="flex gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={handleTest} disabled={loading} className="flex-1">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
-              Testnachricht
+              Bericht testen
             </Button>
             <Button variant="outline" size="sm" onClick={handleDelete} disabled={loading} className="text-rose-600 hover:text-rose-700 border-rose-200 hover:border-rose-300">
               <Trash2 className="h-4 w-4" />
@@ -136,7 +136,7 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               testResult === "ok" ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400" : "bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400",
             )}>
               {testResult === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-              {testResult === "ok" ? "Nachricht erfolgreich gesendet!" : "Fehler beim Senden"}
+              {testResult === "ok" ? "Tagesbericht erfolgreich gesendet!" : "Fehler beim Senden"}
             </div>
           )}
         </CardContent>
