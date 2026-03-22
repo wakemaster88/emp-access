@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
 
   const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
 
-  if (ticket.status === "VALID" && !isEmployee) {
+  if (ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null) {
     const updateData: Record<string, unknown> = { status: "REDEEMED" };
     if (vType === "DURATION" && !ticket.firstScanAt) {
       updateData.firstScanAt = now;

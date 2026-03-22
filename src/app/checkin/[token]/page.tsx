@@ -255,7 +255,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       if (json.success) {
         refreshRef.current?.();
         if (selectedTicket?.id === ticketId) {
-          setSelectedTicket((prev) => prev ? { ...prev, checkedIn: true, status: "REDEEMED" } : null);
+          setSelectedTicket((prev) => prev
+            ? {
+                ...prev,
+                checkedIn: true,
+                ...(prev.subscriptionId ? {} : { status: "REDEEMED" as const }),
+              }
+            : null);
         }
       } else if (json.message) {
         alert(json.message);
@@ -371,7 +377,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     const all: CheckinTicket[] = [];
     for (const sub of subscriptions) {
       for (const t of sub.tickets) {
-        if (t.checkedIn || t.status === "REDEEMED") {
+        // Abo: nur API-Flag checkedIn (= heute eingescannt), nicht dauerhaft REDEEMED
+        if (t.checkedIn) {
           all.push({ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } });
         }
       }
@@ -583,6 +590,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         key={t.id}
                         ticket={{ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } }}
                         onTap={() => setSelectedTicket({ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } })}
+                        checked={t.checkedIn}
+                        onCheckin={() => handleCheckin(t.id)}
+                        checkingIn={checkingIn === t.id}
                         isSub
                         highlight={scanHighlights.get(t.id)}
                       />
@@ -922,16 +932,20 @@ function TicketCard({
           <Badge className="bg-orange-500/25 text-orange-200 text-[11px] px-2 py-0.5 font-bold">Pausiert</Badge>
         ) : checked ? (
           <Badge className="bg-emerald-500/25 text-emerald-200 text-[11px] px-2 py-0.5 font-bold">Eingecheckt</Badge>
+        ) : onCheckin ? (
+          <div className="flex flex-col items-end gap-1">
+            {isSub && <Badge className="bg-violet-500/25 text-violet-200 text-[11px] px-2 py-0.5 font-bold">Abo</Badge>}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onCheckin(); }}
+              disabled={checkingIn}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-colors active:scale-95 disabled:opacity-50"
+            >
+              {checkingIn ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Einchecken"}
+            </button>
+          </div>
         ) : isSub ? (
           <Badge className="bg-violet-500/25 text-violet-200 text-[11px] px-2 py-0.5 font-bold">Abo</Badge>
-        ) : onCheckin ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); onCheckin(); }}
-            disabled={checkingIn}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-colors active:scale-95 disabled:opacity-50"
-          >
-            {checkingIn ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Einchecken"}
-          </button>
         ) : null}
       </div>
     </div>
@@ -1097,8 +1111,8 @@ function TicketOverlay({
   ticketScans: ScanEntry[];
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
-  const isChecked = ticket.checkedIn || ticket.status === "REDEEMED";
   const isSub = !!ticket.subscriptionId;
+  const isChecked = isSub ? ticket.checkedIn : (ticket.checkedIn || ticket.status === "REDEEMED");
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>

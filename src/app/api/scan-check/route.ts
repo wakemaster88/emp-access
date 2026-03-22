@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     data: { code, result: "GRANTED", ticketId: ticket.id, accountId: accountId! },
   });
 
-  if (ticket.status === "VALID" && !isEmployee) {
+  if (ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null) {
     const updateData: Record<string, unknown> = { status: "REDEEMED" };
     if (vType === "DURATION" && !ticket.firstScanAt) {
       updateData.firstScanAt = now;

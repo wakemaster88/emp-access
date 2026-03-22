@@ -65,7 +65,8 @@ export async function POST(
   });
 
   const updateData: Record<string, unknown> = {};
-  if (ticket.status === "VALID") {
+  // Mehrtage-/Abo-Tickets bleiben VALID – „eingecheckt“ = Scan heute, nicht REDEEMED dauerhaft
+  if (ticket.status === "VALID" && ticket.subscriptionId == null) {
     updateData.status = "REDEEMED";
   }
   if (ticket.validityType === "DURATION" && !ticket.firstScanAt) {

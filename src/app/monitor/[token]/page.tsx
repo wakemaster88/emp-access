@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera, Search } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
+import { isSameBerlinDay } from "@/lib/berlin-day";
 
 interface Device {
   id: number;
@@ -621,7 +622,9 @@ export default function PublicMonitorPage({ params }: Props) {
                   durationWarning = !durationExpired && (expiresAt - now) < 15 * 60_000;
                 }
 
-                const checkedIn = scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED");
+                const checkedIn = ticket.subscriptionId != null
+                  ? scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED" && isSameBerlinDay(s.scanTime))
+                  : scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED");
                 const isPaused = ticket.status === "PAUSED";
 
                 const cardBg = isScanning

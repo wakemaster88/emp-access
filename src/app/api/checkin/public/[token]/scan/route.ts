@@ -44,6 +44,22 @@ export async function POST(
     return NextResponse.json({ found: false, message: "Ticket nicht gefunden" });
   }
 
+  let checkedIn = ticket.status === "REDEEMED";
+  if (ticket.subscriptionId != null) {
+    const berlinDate = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+    const dayStart = new Date(`${berlinDate}T00:00:00+01:00`);
+    const dayEnd = new Date(`${berlinDate}T23:59:59+01:00`);
+    const scanToday = await prisma.scan.findFirst({
+      where: {
+        ticketId: ticket.id,
+        accountId: monitor.accountId,
+        result: "GRANTED",
+        scanTime: { gte: dayStart, lte: dayEnd },
+      },
+    });
+    checkedIn = !!scanToday;
+  }
+
   return NextResponse.json({
     found: true,
     ticket: {
@@ -64,10 +80,11 @@ export async function POST(
       rfidCode: ticket.rfidCode,
       extras: ticket.extras,
       source: ticket.source,
+      subscriptionId: ticket.subscriptionId,
       accessArea: ticket.accessArea,
       subscription: ticket.subscription,
       service: ticket.service,
-      checkedIn: ticket.status === "REDEEMED",
+      checkedIn,
     },
   });
 }

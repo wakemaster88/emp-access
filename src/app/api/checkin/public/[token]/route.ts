@@ -137,16 +137,24 @@ export async function GET(
       .map((s) => s.ticketId!)
   );
 
+  /** Abos: Einchecken nur für den gewählten Tag (GRANTED-Scan an diesem Tag), nicht dauerhaft über REDEEMED. */
+  function checkedInForTicket(t: { id: number; status: string; subscriptionId: number | null }) {
+    if (t.subscriptionId != null) {
+      return checkedInIds.has(t.id);
+    }
+    return t.status === "REDEEMED" || checkedInIds.has(t.id);
+  }
+
   const enrichedTickets = tickets.map((t) => ({
     ...t,
-    checkedIn: t.status === "REDEEMED" || checkedInIds.has(t.id),
+    checkedIn: checkedInForTicket(t),
   }));
 
   const enrichedSubscriptions = subscriptions.map((sub) => ({
     ...sub,
     tickets: sub.tickets.map((t) => ({
       ...t,
-      checkedIn: t.status === "REDEEMED" || checkedInIds.has(t.id),
+      checkedIn: checkedInForTicket(t),
     })),
   }));
 
