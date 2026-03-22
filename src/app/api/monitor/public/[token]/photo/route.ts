@@ -21,7 +21,14 @@ export async function GET(
     select: { profileImage: true },
   });
 
-  return NextResponse.json({ profileImage: ticket?.profileImage ?? null });
+  return NextResponse.json(
+    { profileImage: ticket?.profileImage ?? null },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    }
+  );
 }
 
 export async function POST(

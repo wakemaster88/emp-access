@@ -35,6 +35,7 @@ interface Scan {
     endDate?: string | null;
     subscriptionId?: number | null;
     status?: string;
+    profileImage?: string | null;
   } | null;
 }
 
@@ -58,6 +59,7 @@ interface TicketInfo {
   service?: { name: string } | null;
   subscription?: { name: string } | null;
   accessArea?: { name: string } | null;
+  profileImage?: string | null;
 }
 
 interface ScanGroup {
@@ -75,6 +77,8 @@ interface ScanGroup {
   firstScanAt?: string | null;
   endDate?: string | null;
   subscriptionId?: number | null;
+  /** Profilbild aus Check-in / DB (Letzte Scans / Gruppierung) */
+  profileImage?: string | null;
 }
 
 interface Props {
@@ -247,6 +251,17 @@ export default function PublicMonitorPage({ params }: Props) {
     };
   }, [token]);
 
+  /** Nach Check-in: Profilbild aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen */
+  useEffect(() => {
+    setSelectedTicket((prev) => {
+      if (!prev) return prev;
+      const fresh = tickets.find((t) => t.id === prev.id);
+      if (!fresh) return prev;
+      if (prev.profileImage === fresh.profileImage) return prev;
+      return { ...prev, profileImage: fresh.profileImage };
+    });
+  }, [tickets]);
+
   const filteredTickets = useMemo(() => {
     const q = ticketSearch.trim().toLowerCase();
     if (!q) return tickets;
@@ -272,6 +287,8 @@ export default function PublicMonitorPage({ params }: Props) {
 
       if (lastGroup && lastGroup.groupKey === key && lastGroup.result === scan.result) {
         lastGroup.scans.push(scan);
+        const img = scan.ticket?.profileImage;
+        if (img && !lastGroup.profileImage) lastGroup.profileImage = img;
       } else {
         groups.push({
           groupKey: key,
@@ -288,6 +305,7 @@ export default function PublicMonitorPage({ params }: Props) {
           firstScanAt: scan.ticket?.firstScanAt,
           endDate: scan.ticket?.endDate,
           subscriptionId: scan.ticket?.subscriptionId,
+          profileImage: scan.ticket?.profileImage ?? undefined,
         });
       }
     }
@@ -470,8 +488,12 @@ export default function PublicMonitorPage({ params }: Props) {
                         )}
                       >
                         <div className="flex items-center gap-3 px-4 pt-4 pb-2 min-w-0">
-                          <div className={cn("h-14 w-14 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
-                            <Icon className={cn("h-7 w-7", rc.text)} />
+                          <div className={cn("h-14 w-14 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden", dark ? "bg-white/10" : "bg-slate-200")}>
+                            {group.profileImage ? (
+                              <img src={group.profileImage} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <Icon className={cn("h-7 w-7", rc.text)} />
+                            )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className={cn("font-bold text-lg leading-tight truncate", styles.scanName)}>
@@ -525,8 +547,12 @@ export default function PublicMonitorPage({ params }: Props) {
                     )}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0", dark ? "bg-white/10" : "bg-slate-200")}>
-                        <Icon className={cn("h-6 w-6", rc.text)} />
+                      <div className={cn("h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden", dark ? "bg-white/10" : "bg-slate-200")}>
+                        {group.profileImage ? (
+                          <img src={group.profileImage} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <Icon className={cn("h-6 w-6", rc.text)} />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
@@ -678,8 +704,12 @@ export default function PublicMonitorPage({ params }: Props) {
                       !isScanning && (dark ? "hover:bg-slate-800" : "hover:bg-slate-100"),
                     )}
                   >
-                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", styles.ticketAvatarBg)}>
-                      <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
+                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", styles.ticketAvatarBg)}>
+                      {ticket.profileImage ? (
+                        <img src={ticket.profileImage} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className={cn("text-sm font-bold truncate", styles.ticketName)}>
@@ -812,17 +842,18 @@ function TicketDetailOverlay({
   const [pauseLoading, setPauseLoading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photoSaving, setPhotoSaving] = useState(false);
-  const [currentImage, setCurrentImage] = useState<string | null>(null);
+  const [currentImage, setCurrentImage] = useState<string | null>(() => ticket.profileImage ?? null);
   const [imageLoading, setImageLoading] = useState(true);
 
   useEffect(() => {
+    setCurrentImage(ticket.profileImage ?? null);
     setImageLoading(true);
-    fetch(`/api/monitor/public/${token}/photo?ticketId=${ticket.id}`)
+    fetch(`/api/monitor/public/${encodeURIComponent(token)}/photo?ticketId=${ticket.id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setCurrentImage(d.profileImage ?? null))
       .catch(() => {})
       .finally(() => setImageLoading(false));
-  }, [token, ticket.id]);
+  }, [token, ticket.id, ticket.profileImage]);
 
   const handleCapture = useCallback(async (dataUrl: string) => {
     setCameraOpen(false);
