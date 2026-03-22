@@ -72,6 +72,7 @@ Die Datei `config.json` wird beim ersten QR-Scan automatisch erstellt:
   "led_red_pin": 22,
   "buzzer_pin": 23,
   "heartbeat_interval": 30,
+  "task_poll_interval": 5,
   "update_check_interval": 300,
   "scanner_device": "auto"
 }
@@ -84,7 +85,18 @@ Die Datei `config.json` wird beim ersten QR-Scan automatisch erstellt:
 | `device_id` | Geräte-ID auf dem Server |
 | `relay_pin` | GPIO-Pin für das Relais |
 | `relay_duration` | Öffnungsdauer in Sekunden |
+| `heartbeat_interval` | Sekunden zwischen Heartbeats (POST mit System-Info, inkl. aktueller Task vom Server) |
+| `task_poll_interval` | Sekunden zwischen leichten GET-Abfragen nur für Task/Deaktivierung (Standard **5**, Minimum **2** – kein 1×/s) |
 | `scanner_device` | `auto`, `stdin` oder `/dev/input/eventX` |
+
+### API-Häufigkeit (z. B. Neon / Serverless-DB)
+
+Der Pi nutzt zwei Hintergrund-Schleifen:
+
+1. **Task-Poll:** `GET /api/devices/pi?id=…` alle `task_poll_interval` Sekunden (Standard 5, nie unter 2).
+2. **Heartbeat:** `POST /api/devices/pi` alle `heartbeat_interval` Sekunden (Standard 30) – der Server liefert im POST die Gerätekonfiguration mit, sodass **kein zweiter GET** nötig ist.
+
+`task_poll_interval: 1` in alter `config.json` erzeugt fast jede Sekunde einen API-Call und unnötige DB-Reads – für „Online“ im Dashboard reichen 5–15 s völlig (Dashboard wertet ohnehin mehrere Minuten als online).
 
 ## Betrieb
 

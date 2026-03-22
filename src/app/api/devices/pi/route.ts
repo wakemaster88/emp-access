@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { piStatusSchema } from "@/lib/validators";
+import type { Device } from "@prisma/client";
+
+/** Pi-JSON wie GET – auch in POST results[], damit der Heartbeat ohne zweiten Request auskommt. */
+function deviceToPiState(device: Device) {
+  return {
+    pis_id: device.id,
+    pis_name: device.name,
+    pis_type: device.type,
+    pis_in: device.accessIn,
+    pis_out: device.accessOut,
+    pis_active: device.isActive ? 1 : 0,
+    pis_task: device.task,
+    pis_again: device.allowReentry ? 1 : 0,
+    pis_firmware: device.firmware,
+  };
+}
 
 export async function GET(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -20,17 +36,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Device not found" }, { status: 404 });
   }
 
-  return NextResponse.json({
-    pis_id: device.id,
-    pis_name: device.name,
-    pis_type: device.type,
-    pis_in: device.accessIn,
-    pis_out: device.accessOut,
-    pis_active: device.isActive ? 1 : 0,
-    pis_task: device.task,
-    pis_again: device.allowReentry ? 1 : 0,
-    pis_firmware: device.firmware,
-  });
+  return NextResponse.json(deviceToPiState(device));
 }
 
 export async function POST(request: NextRequest) {
@@ -62,11 +68,20 @@ export async function POST(request: NextRequest) {
     if (current?.task === 1 && update.pis_task === 0) {
       data.task = 0;
     }
-    const device = await db.device.updateMany({
+    const updated = await db.device.updateMany({
       where: { id: update.pis_id, type: "RASPBERRY_PI" },
       data,
     });
-    results.push({ pis_id: update.pis_id, updated: device.count > 0 });
+    if (updated.count > 0) {
+      const row = await db.device.findFirst({
+        where: { id: update.pis_id, type: "RASPBERRY_PI" },
+      });
+      if (row) {
+        results.push({ ...deviceToPiState(row), updated: true });
+        continue;
+      }
+    }
+    results.push({ pis_id: update.pis_id, updated: false });
   }
 
   return NextResponse.json({ results });

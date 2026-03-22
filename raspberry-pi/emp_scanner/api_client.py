@@ -106,11 +106,13 @@ class ApiClient:
     def send_heartbeat(self, task: int = 0) -> Optional[dict]:
         """
         Send heartbeat with system info. Returns device config from server or None.
+        Nutzt die POST-Antwort (enthält Pi-State) – nur ein Request statt POST+GET.
+        Fallback: GET für ältere Server ohne State in results[].
         """
         try:
             sys_info = collect_system_info()
 
-            self._session.post(
+            resp = self._session.post(
                 f"{self.server_url}/api/devices/pi",
                 json=[{
                     "pis_id": self.device_id,
@@ -120,6 +122,11 @@ class ApiClient:
                 }],
                 timeout=TIMEOUT_HEARTBEAT,
             )
+            if resp.status_code == 200:
+                payload = resp.json()
+                results = payload.get("results") or []
+                if results and isinstance(results[0], dict) and "pis_task" in results[0]:
+                    return results[0]
 
             resp = self._session.get(
                 f"{self.server_url}/api/devices/pi",

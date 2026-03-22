@@ -21,7 +21,8 @@ DEFAULT = {
     "led_red_pin": 22,
     "buzzer_pin": 23,
     "heartbeat_interval": 30,
-    "task_poll_interval": 3,
+    # Task nur per GET (leichtgewichtig); nicht unter 2 s setzen (Last auf DB/Neon)
+    "task_poll_interval": 5,
     "update_check_interval": 300,
     "scanner_device": "auto",
 }

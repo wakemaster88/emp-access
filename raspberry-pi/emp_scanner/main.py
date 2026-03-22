@@ -6,7 +6,7 @@ Workflow:
 2. Play startup sound
 3. Start scanner input (USB HID)
 4. On scan -> beep -> validate with server -> relay + valid/invalid sound
-5. Background: heartbeat + task polling every 30s
+5. Background: task poll (Standard 5 s, min. 2 s) + Heartbeat mit System-Info (Standard 30 s)
 6. Background: auto-update check every 5 min
 7. Background: systemd watchdog ping every 30s
 """
@@ -119,7 +119,7 @@ class EmpScanner:
         # Tell systemd we're ready
         _sd_notify("READY=1")
 
-        # Background threads: Task-Poll schnell (3s), Heartbeat mit System-Info seltener (30s)
+        # Background threads: Task-Poll (Standard 5s, min. 2s), Heartbeat mit System-Info (30s)
         threading.Thread(target=self._task_poll_loop, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         threading.Thread(target=self._update_loop, daemon=True).start()
@@ -183,8 +183,8 @@ class EmpScanner:
                 self.relay.deny()
 
     def _task_poll_loop(self):
-        """Schnelles Polling nur für Task (alle 3s), damit Dashboard-Button schnell wirkt."""
-        interval = max(1, int(getattr(self.config, "task_poll_interval", 3)))
+        """Polling nur für Task (GET). Min. 2s, Standard 5s – weniger Last auf API/DB als 1×/s."""
+        interval = max(2, int(getattr(self.config, "task_poll_interval", 5)))
         while self._running:
             try:
                 if self.api:
