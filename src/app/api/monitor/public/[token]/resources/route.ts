@@ -105,7 +105,7 @@ export async function GET(
 
   const config = await prisma.monitorConfig.findUnique({
     where: { token },
-    select: { id: true, type: true, accountId: true, isActive: true, deviceIds: true },
+    select: { id: true, name: true, type: true, accountId: true, isActive: true, deviceIds: true },
   });
 
   if (!config || config.type !== "RESOURCE_MONITOR" || !config.isActive) {
@@ -239,6 +239,7 @@ export async function GET(
   });
 
   return NextResponse.json({
+    name: config.name,
     date: dateStr,
     now: now.toISOString(),
     resources,

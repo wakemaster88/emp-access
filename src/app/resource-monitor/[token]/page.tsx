@@ -21,6 +21,7 @@ interface Resource {
 }
 
 interface MonitorData {
+  name: string;
   date: string;
   now: string;
   resources: Resource[];
@@ -147,7 +148,7 @@ export default function ResourceMonitorPage({
         className="shrink-0 bg-gray-50 border-b border-gray-300 px-3 sm:px-5 flex items-center justify-between"
         style={{ height: HEADER_HEIGHT }}
       >
-        <h1 className="text-sm sm:text-base font-bold tracking-tight truncate text-gray-900">Ressourcen-Monitor</h1>
+        <h1 className="text-sm sm:text-base font-bold tracking-tight truncate text-gray-900">{data.name}</h1>
         <div className="flex items-baseline gap-2 sm:gap-3 shrink-0 pl-3">
           <p className="text-[11px] sm:text-xs text-gray-500 truncate">{formatDateDE(data.date)}</p>
           <p className="text-lg sm:text-2xl font-mono font-bold tabular-nums text-emerald-600">{nowTime}</p>
