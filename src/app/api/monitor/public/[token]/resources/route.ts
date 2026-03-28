@@ -172,7 +172,7 @@ export async function GET(
     const bookedSlotMap = new Map<string, { start: string; end: string; count: number; names: string[] }>();
     for (const rid of rids) {
       for (const b of annyBookings[rid] ?? []) {
-        if (!b.start) continue;
+        if (!b.start || !b.end) continue;
         const key = `${b.start}-${b.end}`;
         const existing = bookedSlotMap.get(key);
         if (existing) {
