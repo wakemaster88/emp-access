@@ -152,7 +152,6 @@ export async function GET(
   }
 
   const allRids = [...new Set(allLinks.map((l) => l.annyResourceId))];
-  const allAnnyNames = new Set(allLinks.map((l) => l.annyName));
 
   let annyAvailability: Record<string, { start: string; end: string }[]> = {};
   let allBookings: BookingEntry[] = [];
@@ -174,11 +173,12 @@ export async function GET(
 
     const hasSubResources = links.some((l) => l.label !== area.name);
 
+    const areaAnnyNames = new Set(links.map((l) => l.annyName));
     const bookedSlotMap = new Map<string, { start: string; end: string; count: number; names: string[] }>();
     for (const b of allBookings) {
       const matchByRid = b.resourceId != null && rids.includes(b.resourceId);
-      const matchByResName = b.resourceName != null && allAnnyNames.has(b.resourceName);
-      const matchBySvcName = b.serviceName != null && allAnnyNames.has(b.serviceName);
+      const matchByResName = b.resourceName != null && areaAnnyNames.has(b.resourceName);
+      const matchBySvcName = b.serviceName != null && areaAnnyNames.has(b.serviceName);
       if (!matchByRid && !matchByResName && !matchBySvcName) continue;
       if (!b.start || !b.end) continue;
 
