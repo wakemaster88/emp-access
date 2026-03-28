@@ -259,54 +259,85 @@ export async function GET(
       }
     }
 
-    const bookedIntervals: { start: number; end: number }[] = [];
+    const bookedRanges: { start: number; end: number; count: number; names: string[] }[] = [];
     for (const [, b] of bookedSlotMap) {
       const sMin = timeToMin(b.start);
       const eMin = timeToMin(b.end);
-      if (sMin < eMin) bookedIntervals.push({ start: sMin, end: eMin });
+      if (sMin < eMin) bookedRanges.push({ start: sMin, end: eMin, count: b.count, names: b.names });
     }
 
-    const freeIntervals: { start: number; end: number; source: string; isPublic: boolean }[] = [];
-    const seenFree = new Set<string>();
+    const breakpoints = new Set<number>();
+    for (const a of availIntervals) { breakpoints.add(a.start); breakpoints.add(a.end); }
+    for (const b of bookedRanges) { breakpoints.add(b.start); breakpoints.add(b.end); }
+    const sorted = [...breakpoints].sort((a, b) => a - b);
 
-    for (const avail of availIntervals) {
-      const remaining = subtractIntervals([{ start: avail.start, end: avail.end }], bookedIntervals);
-      for (const f of remaining) {
-        const key = `${f.start}-${f.end}-${avail.source}`;
-        if (!seenFree.has(key)) {
-          seenFree.add(key);
-          freeIntervals.push({ ...f, source: avail.source, isPublic: avail.isPublic });
+    const rawSlots: TimeSlot[] = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const segStart = sorted[i];
+      const segEnd = sorted[i + 1];
+
+      let bookCount = 0;
+      const bookNames: string[] = [];
+      for (const b of bookedRanges) {
+        if (b.start <= segStart && b.end >= segEnd) {
+          bookCount += b.count;
+          bookNames.push(...b.names);
         }
+      }
+
+      if (bookCount > 0) {
+        rawSlots.push({
+          start: minToTime(segStart),
+          end: minToTime(segEnd),
+          status: "booked",
+          count: bookCount,
+          names: bookNames.slice(0, 8),
+          capacity: area.personLimit,
+        });
+        continue;
+      }
+
+      const sources: string[] = [];
+      let anyPublic = false;
+      for (const a of availIntervals) {
+        if (a.start <= segStart && a.end >= segEnd) {
+          if (!sources.includes(a.source)) sources.push(a.source);
+          if (a.isPublic) anyPublic = true;
+        }
+      }
+
+      if (sources.length > 0) {
+        rawSlots.push({
+          start: minToTime(segStart),
+          end: minToTime(segEnd),
+          status: "free",
+          count: 0,
+          names: [],
+          capacity: area.personLimit,
+          source: sources.join(", "),
+          isPublic: anyPublic,
+        });
       }
     }
 
     const slots: TimeSlot[] = [];
-
-    for (const [, booked] of bookedSlotMap) {
-      slots.push({
-        start: booked.start,
-        end: booked.end,
-        status: "booked",
-        count: booked.count,
-        names: booked.names,
-        capacity: area.personLimit,
-      });
+    for (const slot of rawSlots) {
+      const prev = slots[slots.length - 1];
+      if (
+        prev &&
+        prev.end === slot.start &&
+        prev.status === slot.status &&
+        prev.source === slot.source &&
+        prev.isPublic === slot.isPublic &&
+        (slot.status === "free" ||
+          (slot.status === "booked" && prev.count === slot.count &&
+            prev.names.join(",") === slot.names.join(",")))
+      ) {
+        prev.end = slot.end;
+      } else {
+        slots.push({ ...slot });
+      }
     }
-
-    for (const f of freeIntervals) {
-      slots.push({
-        start: minToTime(f.start),
-        end: minToTime(f.end),
-        status: "free",
-        count: 0,
-        names: [],
-        capacity: area.personLimit,
-        source: f.source,
-        isPublic: f.isPublic,
-      });
-    }
-
-    slots.sort((a, b) => a.start.localeCompare(b.start));
 
     const totalBooked = [...bookedSlotMap.values()].reduce((sum, s) => sum + s.count, 0);
 
