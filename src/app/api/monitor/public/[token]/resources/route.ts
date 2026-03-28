@@ -256,7 +256,7 @@ export async function GET(
     for (const avail of availIntervals) {
       const remaining = subtractIntervals([{ start: avail.start, end: avail.end }], bookedIntervals);
       for (const f of remaining) {
-        const key = `${f.start}-${f.end}-${avail.isPublic ? "pub" : "prv"}`;
+        const key = `${f.start}-${f.end}-${avail.source}`;
         if (!seenFree.has(key)) {
           seenFree.add(key);
           freeIntervals.push({ ...f, source: avail.source, isPublic: avail.isPublic });
@@ -278,7 +278,8 @@ export async function GET(
     }
 
     for (const f of freeIntervals) {
-      const label = f.source.includes(" - ") ? f.source.split(" - ")[0].trim() : f.source;
+      let label = f.source.replace(/^Wake & Ski\s*-\s*/i, "");
+      if (label.includes(" - ")) label = label.split(" - ")[0].trim();
       slots.push({
         start: minToTime(f.start),
         end: minToTime(f.end),
