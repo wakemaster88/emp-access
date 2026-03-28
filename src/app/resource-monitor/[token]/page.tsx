@@ -306,7 +306,7 @@ export default function ResourceMonitorPage({
                         {isFree ? (
                           <>
                             <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
-                              {isPublic && slot.source ? slot.source : "Frei"}
+                              {slot.source || "Frei"}
                             </p>
                             {heightPct > 4 && (
                               <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
