@@ -23,33 +23,32 @@ interface BookingEntry {
   start: string;
   end: string;
   customerName: string;
+  resourceId: string | null;
+  resourceName: string | null;
+  serviceName: string | null;
 }
 
 /**
- * Fetches ALL bookings for a day from ANNY (services + resources),
- * returns them grouped by ANNY resource ID.
+ * Fetches ALL bookings from ANNY, filters to the target day client-side,
+ * and returns flat list with resource/service info for flexible matching.
+ * Uses same params as the proven sync code (no ANNY-specific date filters).
  */
 async function fetchAllAnnyBookingsForDay(
   baseUrl: string,
   apiToken: string,
   dateStr: string,
-): Promise<Map<string, BookingEntry[]>> {
-  const startDate = `${dateStr}T00:00:00+01:00`;
-  const endDate = `${dateStr}T23:59:59+01:00`;
-  const result = new Map<string, BookingEntry[]>();
+): Promise<BookingEntry[]> {
+  const result: BookingEntry[] = [];
   const cancelledStatuses = new Set(["cancelled", "canceled", "rejected", "no_show"]);
   let page = 1;
   const pageSize = 100;
 
   try {
-    while (page <= 10) {
+    while (page <= 20) {
       const params = new URLSearchParams({
         include: "customer,resource,service",
-        "filter[start_date_from]": startDate,
-        "filter[start_date_to]": endDate,
         "page[size]": String(pageSize),
         "page[number]": String(page),
-        sort: "start_date",
       });
 
       const res = await fetch(`${baseUrl}/api/v1/bookings?${params}`, {
@@ -65,27 +64,25 @@ async function fetchAllAnnyBookingsForDay(
         const status = (booking.status || "").toLowerCase();
         if (cancelledStatuses.has(status)) continue;
 
-        const resourceId = booking.resource?.id ? String(booking.resource.id) : null;
-        if (!resourceId) continue;
-
-        if (booking.start_date) {
-          try {
-            const bd = new Date(booking.start_date)
-              .toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
-            if (bd !== dateStr) continue;
-          } catch { continue; }
-        }
+        if (!booking.start_date) continue;
+        try {
+          const bd = new Date(booking.start_date)
+            .toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+          if (bd !== dateStr) continue;
+        } catch { continue; }
 
         const cust = booking.customer;
         const customerName =
           cust?.full_name || cust?.name ||
           `${cust?.given_name || ""} ${cust?.family_name || ""}`.trim();
 
-        if (!result.has(resourceId)) result.set(resourceId, []);
-        result.get(resourceId)!.push({
-          start: booking.start_date ? fmtTimeBerlin(booking.start_date) : "",
+        result.push({
+          start: fmtTimeBerlin(booking.start_date),
           end: booking.end_date ? fmtTimeBerlin(booking.end_date) : "",
           customerName,
+          resourceId: booking.resource?.id ? String(booking.resource.id) : null,
+          resourceName: booking.resource?.name || null,
+          serviceName: booking.service?.name || null,
         });
       }
 
@@ -139,7 +136,7 @@ export async function GET(
   let mappings: Record<string, number> = {};
   let resourceIds: Record<string, string> = {};
   let annyAvailability: Record<string, { start: string; end: string }[]> = {};
-  let allAnnyBookings = new Map<string, BookingEntry[]>();
+  let allBookings: BookingEntry[] = [];
   let baseUrl = "";
 
   if (annyConfig?.token && annyConfig.extraConfig) {
@@ -150,14 +147,14 @@ export async function GET(
       baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
       const allRids = [...new Set(Object.values(resourceIds))];
 
-      if (allRids.length > 0) {
-        const [avail, bookings] = await Promise.all([
-          fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr),
-          fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
-        ]);
-        annyAvailability = avail;
-        allAnnyBookings = bookings;
-      }
+      const [avail, bookings] = await Promise.all([
+        allRids.length > 0
+          ? fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr)
+          : Promise.resolve({} as Record<string, { start: string; end: string }[]>),
+        fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
+      ]);
+      annyAvailability = avail;
+      allBookings = bookings;
     } catch { /* ignore */ }
   }
 
@@ -173,18 +170,26 @@ export async function GET(
   const resources = areas.map((area) => {
     const rids = areaAnnyIds.get(area.id) ?? [];
 
+    const mappedNames = new Set<string>();
+    for (const [name, aid] of Object.entries(mappings)) {
+      if (aid === area.id) mappedNames.add(name);
+    }
+
     const bookedSlotMap = new Map<string, { start: string; end: string; count: number; names: string[] }>();
-    for (const rid of rids) {
-      for (const b of allAnnyBookings.get(rid) ?? []) {
-        if (!b.start || !b.end) continue;
-        const key = `${b.start}-${b.end}`;
-        const existing = bookedSlotMap.get(key);
-        if (existing) {
-          existing.count++;
-          if (existing.names.length < 8) existing.names.push(b.customerName);
-        } else {
-          bookedSlotMap.set(key, { start: b.start, end: b.end, count: 1, names: [b.customerName] });
-        }
+    for (const b of allBookings) {
+      const matchByRid = b.resourceId != null && rids.includes(b.resourceId);
+      const matchByResName = b.resourceName != null && mappedNames.has(b.resourceName);
+      const matchBySvcName = b.serviceName != null && mappedNames.has(b.serviceName);
+      if (!matchByRid && !matchByResName && !matchBySvcName) continue;
+      if (!b.start || !b.end) continue;
+
+      const key = `${b.start}-${b.end}`;
+      const existing = bookedSlotMap.get(key);
+      if (existing) {
+        existing.count++;
+        if (existing.names.length < 8) existing.names.push(b.customerName);
+      } else {
+        bookedSlotMap.set(key, { start: b.start, end: b.end, count: 1, names: [b.customerName] });
       }
     }
 
