@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import {
-  fetchAnnyAvailability,
+  fetchAnnyAvailabilityWithSlots,
   fmtTimeBerlin,
   type AnnyMapping,
 } from "@/lib/anny-availability";
@@ -154,7 +154,7 @@ export async function GET(
 
       const [avail, bookings] = await Promise.all([
         allRids.length > 0
-          ? fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr)
+          ? fetchAnnyAvailabilityWithSlots(baseUrl, annyConfig.token, allRids, dateStr)
           : Promise.resolve({} as Record<string, { start: string; end: string }[]>),
         fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
       ]);
