@@ -1,64 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-
-interface AnnyMapping {
-  mappings?: Record<string, number>;
-  services?: string[];
-  resources?: string[];
-  resourceIds?: Record<string, string>;
-}
-
-interface AvailabilityPeriod {
-  start: string;
-  end: string;
-}
-
-async function fetchAnnyAvailability(
-  baseUrl: string,
-  token: string,
-  resourceIds: string[],
-  dateStr: string
-): Promise<Record<string, AvailabilityPeriod[]>> {
-  if (resourceIds.length === 0) return {};
-
-  const startDate = `${dateStr}T00:00:00+01:00`;
-  const endDate = `${dateStr}T23:59:59+01:00`;
-
-  const params = new URLSearchParams({ start_date: startDate, end_date: endDate, timezone: "Europe/Berlin" });
-  for (const id of resourceIds) {
-    params.append("r[]", id);
-  }
-
-  try {
-    const res = await fetch(`${baseUrl}/api/v1/availability/periods?${params}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return {};
-    const json = await res.json();
-    const result: Record<string, AvailabilityPeriod[]> = {};
-    for (const [rid, periods] of Object.entries(json)) {
-      if (Array.isArray(periods)) {
-        result[rid] = periods.map((p: Record<string, string>) => ({
-          start: p.start || p.start_date || p.from || "",
-          end: p.end || p.end_date || p.to || "",
-        })).filter((p: AvailabilityPeriod) => p.start || p.end);
-      }
-    }
-    return result;
-  } catch {
-    return {};
-  }
-}
-
-function fmtTime(iso: string): string {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    return d.toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
-  } catch { return ""; }
-}
+import {
+  fetchAnnyAvailability,
+  fmtTimeBerlin as fmtTime,
+  type AnnyMapping,
+  type AvailabilityPeriod,
+} from "@/lib/anny-availability";
 
 function getBookingTimeForDate(qrCode: string | null, dateStr: string): { start: string; end: string } | null {
   if (!qrCode) return null;

@@ -1,30 +1,87 @@
 import type { PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
-import { computeResourceUtilization } from "@/lib/resource-utilization";
+import { computeResourceUtilization, type ResourceUtilizationRow } from "@/lib/resource-utilization";
+import {
+  fetchAnnyAvailability,
+  fmtTimeBerlin,
+  periodsToSlots,
+  type AnnyMapping,
+  type AvailabilitySlot,
+} from "@/lib/anny-availability";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || !!request.headers.get("authorization")?.startsWith("Bearer ");
 }
 
-function jsonResponse(
+type EnrichedRow = ResourceUtilizationRow & {
+  availability: AvailabilitySlot[];
+  openingHours: string | null;
+};
+
+async function loadAnnyAvailability(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  accountId: number,
   dateStr: string,
-  resources: Awaited<ReturnType<typeof computeResourceUtilization>>,
-) {
-  return NextResponse.json({
-    date: dateStr,
-    note: "Kalendertag (00:00–23:59 lokal); Ticket-Gültigkeit wie im Dashboard.",
-    resources,
-    meta: {
-      capacityField: "personLimit am Zugangsbereich",
-      ticketRule:
-        "Eindeutige Tickets mit Status VALID/REDEEMED, deren Gültigkeit den Tag überlappt; inkl. Abo-/Service-Zuordnung und TicketArea.",
-    },
+  resources: ResourceUtilizationRow[],
+): Promise<Map<number, AvailabilitySlot[]>> {
+  const result = new Map<number, AvailabilitySlot[]>();
+  try {
+    const annyConfig = await db.apiConfig.findFirst({
+      where: { accountId, provider: "ANNY" },
+      select: { token: true, baseUrl: true, extraConfig: true },
+    });
+    if (!annyConfig?.token || !annyConfig.extraConfig) return result;
+
+    const parsed: AnnyMapping = JSON.parse(annyConfig.extraConfig);
+    const mappings = parsed.mappings ?? {};
+    const resourceIds = parsed.resourceIds ?? {};
+
+    const areaToAnnyIds = new Map<number, string[]>();
+    for (const [name, areaId] of Object.entries(mappings)) {
+      const rid = resourceIds[name];
+      if (!rid) continue;
+      if (!areaToAnnyIds.has(areaId)) areaToAnnyIds.set(areaId, []);
+      const list = areaToAnnyIds.get(areaId)!;
+      if (!list.includes(rid)) list.push(rid);
+    }
+
+    const allRids = [...new Set([...areaToAnnyIds.values()].flat())];
+    if (allRids.length === 0) return result;
+
+    const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
+    const availability = await fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr);
+
+    for (const row of resources) {
+      const rids = areaToAnnyIds.get(row.resourceId);
+      if (!rids) continue;
+      const allPeriods = rids.flatMap((rid) => availability[rid] ?? []);
+      if (allPeriods.length === 0) continue;
+      result.set(row.resourceId, periodsToSlots(allPeriods));
+    }
+  } catch {
+    /* ANNY nicht konfiguriert oder Fehler → ignorieren */
+  }
+  return result;
+}
+
+function enrichResources(
+  resources: ResourceUtilizationRow[],
+  availMap: Map<number, AvailabilitySlot[]>,
+): EnrichedRow[] {
+  return resources.map((r) => {
+    const slots = availMap.get(r.resourceId) ?? [];
+    const openingHours =
+      slots.length > 0
+        ? slots.map((s) => `${s.startTime}–${s.endTime}`).join(" · ")
+        : null;
+    return { ...r, availability: slots, openingHours };
   });
 }
 
 /**
- * Auslastung pro Ressource (Zugangsbereich): gültige Tickets am Tag / Kapazität (personLimit).
+ * Auslastung + ANNY-Verfügbarkeiten pro Ressource.
  *
  * Auth wie eigene API: Bearer-Token oder ?token= (Account apiToken), alternativ eingeloggte Session.
  *
@@ -61,7 +118,11 @@ export async function GET(request: NextRequest) {
       dayEnd,
       opts,
     );
-    return jsonResponse(dateStr, resources);
+    const availMap = await loadAnnyAvailability(auth.db, auth.account.id, dateStr, resources);
+    return NextResponse.json({
+      date: dateStr,
+      resources: enrichResources(resources, availMap),
+    });
   }
 
   const session = await getSessionWithDb();
@@ -80,5 +141,9 @@ export async function GET(request: NextRequest) {
     dayEnd,
     opts,
   );
-  return jsonResponse(dateStr, resources);
+  const availMap = await loadAnnyAvailability(session.db, session.accountId!, dateStr, resources);
+  return NextResponse.json({
+    date: dateStr,
+    resources: enrichResources(resources, availMap),
+  });
 }
