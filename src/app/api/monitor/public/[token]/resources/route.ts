@@ -336,11 +336,18 @@ export async function GET(
       }
     }
 
+    const hasSubResources = rids.some((rid) => {
+      const mapKey = `${area.id}:${rid}`;
+      const labels = areaRidLabels.get(mapKey);
+      return labels ? [...labels].some((l) => l !== area.name) : false;
+    });
+
     const availIntervals: { start: number; end: number; source: string; isPublic: boolean; interval: number; price: string }[] = [];
     for (const rid of rids) {
       const mapKey = `${area.id}:${rid}`;
       const labels = areaRidLabels.get(mapKey);
-      const filtered = labels ? [...labels].filter((l) => l !== area.name) : [];
+      const allLabels = labels ? [...labels] : [];
+      const filtered = hasSubResources ? allLabels.filter((l) => l !== area.name) : allLabels;
       if (filtered.length === 0) continue;
       const deduped = filtered.filter((label) =>
         !filtered.some((other) => other !== label && other.startsWith(label)),
