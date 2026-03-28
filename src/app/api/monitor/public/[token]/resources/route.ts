@@ -247,7 +247,8 @@ export async function GET(
     for (const rid of rids) {
       const mapKey = `${area.id}:${rid}`;
       const labels = areaRidLabels.get(mapKey);
-      const sourceName = labels ? [...labels].join(", ") : rid;
+      const filtered = labels ? [...labels].filter((l) => l !== area.name) : [];
+      const sourceName = filtered.length > 0 ? filtered.join(", ") : "";
       const isPublic = areaRidPublic.get(mapKey) ?? false;
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
