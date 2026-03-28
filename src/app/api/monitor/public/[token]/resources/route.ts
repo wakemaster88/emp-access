@@ -304,10 +304,32 @@ export async function GET(
     };
   });
 
-  return NextResponse.json({
+  const debugMode = url.searchParams.get("debug") === "1";
+
+  const response: Record<string, unknown> = {
     name: config.name,
     date: dateStr,
     now: now.toISOString(),
     resources,
-  });
+  };
+
+  if (debugMode) {
+    const debugAreaRids: Record<string, string[]> = {};
+    for (const [areaId, rids] of areaAnnyIds) {
+      const area = areas.find((a) => a.id === areaId);
+      debugAreaRids[`${areaId} (${area?.name ?? "?"})`] = rids;
+    }
+    response._debug = {
+      allRids: [...new Set(Object.values(resourceIds))],
+      areaAnnyIds: debugAreaRids,
+      availabilityKeys: Object.keys(annyAvailability),
+      availabilityCounts: Object.fromEntries(
+        Object.entries(annyAvailability).map(([k, v]) => [k, v.length]),
+      ),
+      ridToName: Object.fromEntries(ridToName),
+      bookingsCount: allBookings.length,
+    };
+  }
+
+  return NextResponse.json(response);
 }
