@@ -275,66 +275,89 @@ export default function ResourceMonitorPage({
                   })}
 
                   {/* Slots: free (green), public/ÖB (blue), booked (red) */}
-                  {resource.slots.map((slot, i) => {
-                    const startMin = timeToMinutes(slot.start);
-                    const endMin = slot.end ? timeToMinutes(slot.end) : null;
-                    if (startMin == null) return null;
-                    const topPct = minutesToPercent(clampMinutes(startMin));
-                    const effectiveEndMin = endMin != null ? endMin : startMin + 60;
-                    const bottomPct = minutesToPercent(clampMinutes(effectiveEndMin));
-                    const heightPct = Math.max(bottomPct - topPct, 2);
-                    const isFree = slot.status === "free";
-                    const isPublic = isFree && slot.isPublic;
+                  {(() => {
+                    const freeSlots = resource.slots.filter((s) => s.status === "free");
+                    const hasPublic = freeSlots.some((s) => s.isPublic);
+                    const hasPrivate = freeSlots.some((s) => !s.isPublic);
+                    const splitColumns = hasPublic && hasPrivate;
 
-                    return (
-                      <div
-                        key={`slot-${i}`}
-                        className={cn(
-                          "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded",
-                          "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden shadow-sm border",
-                          isFree
-                            ? isPublic
-                              ? "bg-sky-50 border-sky-300 text-sky-800 z-[2]"
-                              : "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
-                            : "bg-red-50 border-red-300 text-red-900 z-[5]",
-                        )}
-                        style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-                        title={isFree
-                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}`
-                          : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}`}
-                      >
-                        {isFree ? (
-                          <>
-                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
-                              {slot.source || "Frei"}
-                            </p>
-                            {heightPct > 4 && (
-                              <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
-                                {slot.start} – {slot.end}
+                    return resource.slots.map((slot, i) => {
+                      const startMin = timeToMinutes(slot.start);
+                      const endMin = slot.end ? timeToMinutes(slot.end) : null;
+                      if (startMin == null) return null;
+                      const topPct = minutesToPercent(clampMinutes(startMin));
+                      const effectiveEndMin = endMin != null ? endMin : startMin + 60;
+                      const bottomPct = minutesToPercent(clampMinutes(effectiveEndMin));
+                      const heightPct = Math.max(bottomPct - topPct, 2);
+                      const isFree = slot.status === "free";
+                      const isPublic = isFree && slot.isPublic;
+
+                      const posStyle: React.CSSProperties = { top: `${topPct}%`, height: `${heightPct}%` };
+                      let posClass: string;
+
+                      if (!isFree) {
+                        posClass = "left-1 right-1 sm:left-1.5 sm:right-1.5";
+                      } else if (!splitColumns) {
+                        posClass = "left-1 right-1 sm:left-1.5 sm:right-1.5";
+                      } else if (isPublic) {
+                        posClass = "right-1 sm:right-1.5";
+                        posStyle.left = "50%";
+                      } else {
+                        posClass = "left-1 sm:left-1.5";
+                        posStyle.right = "50%";
+                      }
+
+                      return (
+                        <div
+                          key={`slot-${i}`}
+                          className={cn(
+                            "absolute rounded",
+                            posClass,
+                            "flex flex-col justify-center px-1 sm:px-1.5 overflow-hidden shadow-sm border",
+                            isFree
+                              ? isPublic
+                                ? "bg-sky-50 border-sky-300 text-sky-800 z-[2]"
+                                : "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
+                              : "bg-red-50 border-red-300 text-red-900 z-[5]",
+                          )}
+                          style={posStyle}
+                          title={isFree
+                            ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}`
+                            : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}`}
+                        >
+                          {isFree ? (
+                            <>
+                              <p className="text-[9px] sm:text-[11px] font-bold leading-tight truncate">
+                                {slot.source || "Frei"}
                               </p>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
-                              {slot.count}x gebucht
-                            </p>
-                            {heightPct > 4 && (
-                              <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
-                                {slot.start} – {slot.end}
+                              {heightPct > 4 && (
+                                <p className="text-[8px] sm:text-[9px] font-medium leading-tight truncate opacity-70">
+                                  {slot.start} – {slot.end}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
+                                {slot.count}x gebucht
                               </p>
-                            )}
-                            {heightPct > 7 && slot.names.length > 0 && (
-                              <p className="text-[8px] sm:text-[9px] leading-tight truncate opacity-60 mt-px">
-                                {slot.names.slice(0, 3).join(", ")}
-                                {slot.count > 3 ? " …" : ""}
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
+                              {heightPct > 4 && (
+                                <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
+                                  {slot.start} – {slot.end}
+                                </p>
+                              )}
+                              {heightPct > 7 && slot.names.length > 0 && (
+                                <p className="text-[8px] sm:text-[9px] leading-tight truncate opacity-60 mt-px">
+                                  {slot.names.slice(0, 3).join(", ")}
+                                  {slot.count > 3 ? " …" : ""}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
 
                   {/* Now line */}
                   {showNowLine && (

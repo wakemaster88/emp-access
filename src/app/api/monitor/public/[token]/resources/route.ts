@@ -250,34 +250,16 @@ export async function GET(
       if (sMin < eMin) bookedIntervals.push({ start: sMin, end: eMin });
     }
 
-    const publicAvail = availIntervals.filter((a) => a.isPublic);
-    const privateAvail = availIntervals.filter((a) => !a.isPublic);
-
-    const publicIntervals: { start: number; end: number }[] = [];
-    for (const a of publicAvail) publicIntervals.push({ start: a.start, end: a.end });
-
     const freeIntervals: { start: number; end: number; source: string; isPublic: boolean }[] = [];
     const seenFree = new Set<string>();
 
-    for (const avail of publicAvail) {
+    for (const avail of availIntervals) {
       const remaining = subtractIntervals([{ start: avail.start, end: avail.end }], bookedIntervals);
       for (const f of remaining) {
-        const key = `${f.start}-${f.end}-pub`;
+        const key = `${f.start}-${f.end}-${avail.isPublic ? "pub" : "prv"}`;
         if (!seenFree.has(key)) {
           seenFree.add(key);
-          freeIntervals.push({ ...f, source: avail.source, isPublic: true });
-        }
-      }
-    }
-
-    for (const avail of privateAvail) {
-      const afterBookings = subtractIntervals([{ start: avail.start, end: avail.end }], bookedIntervals);
-      const afterPublic = subtractIntervals(afterBookings, publicIntervals);
-      for (const f of afterPublic) {
-        const key = `${f.start}-${f.end}-prv`;
-        if (!seenFree.has(key)) {
-          seenFree.add(key);
-          freeIntervals.push({ ...f, source: avail.source, isPublic: false });
+          freeIntervals.push({ ...f, source: avail.source, isPublic: avail.isPublic });
         }
       }
     }
@@ -296,7 +278,7 @@ export async function GET(
     }
 
     for (const f of freeIntervals) {
-      const label = f.source.replace(/^.*?\s*-\s*/, "");
+      const label = f.source.includes(" - ") ? f.source.split(" - ")[0].trim() : f.source;
       slots.push({
         start: minToTime(f.start),
         end: minToTime(f.end),
