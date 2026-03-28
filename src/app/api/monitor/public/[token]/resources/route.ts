@@ -167,6 +167,35 @@ export async function GET(
     if (!list.includes(rid)) list.push(rid);
   }
 
+  function timeToMin(t: string): number {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + (m || 0);
+  }
+
+  function minToTime(m: number): string {
+    return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  }
+
+  function subtractIntervals(
+    free: { start: number; end: number }[],
+    booked: { start: number; end: number }[],
+  ): { start: number; end: number }[] {
+    let result = [...free];
+    for (const b of booked) {
+      const next: { start: number; end: number }[] = [];
+      for (const f of result) {
+        if (b.end <= f.start || b.start >= f.end) {
+          next.push(f);
+        } else {
+          if (f.start < b.start) next.push({ start: f.start, end: b.start });
+          if (f.end > b.end) next.push({ start: b.end, end: f.end });
+        }
+      }
+      result = next;
+    }
+    return result;
+  }
+
   const resources = areas.map((area) => {
     const rids = areaAnnyIds.get(area.id) ?? [];
 
@@ -193,18 +222,37 @@ export async function GET(
       }
     }
 
-    const freeSlots: { start: string; end: string }[] = [];
+    const availIntervals: { start: number; end: number }[] = [];
     for (const rid of rids) {
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
         const e = fmtTimeBerlin(p.end);
         if (!s || !e) continue;
-        const key = `${s}-${e}`;
-        if (!bookedSlotMap.has(key) && !freeSlots.some((f) => f.start === s && f.end === e)) {
-          freeSlots.push({ start: s, end: e });
-        }
+        const sMin = timeToMin(s);
+        const eMin = timeToMin(e);
+        if (sMin < eMin) availIntervals.push({ start: sMin, end: eMin });
       }
     }
+
+    availIntervals.sort((a, b) => a.start - b.start);
+    const merged: { start: number; end: number }[] = [];
+    for (const iv of availIntervals) {
+      const last = merged[merged.length - 1];
+      if (last && iv.start <= last.end) {
+        last.end = Math.max(last.end, iv.end);
+      } else {
+        merged.push({ ...iv });
+      }
+    }
+
+    const bookedIntervals: { start: number; end: number }[] = [];
+    for (const [, b] of bookedSlotMap) {
+      const sMin = timeToMin(b.start);
+      const eMin = timeToMin(b.end);
+      if (sMin < eMin) bookedIntervals.push({ start: sMin, end: eMin });
+    }
+
+    const freeIntervals = subtractIntervals(merged, bookedIntervals);
 
     const slots: TimeSlot[] = [];
 
@@ -219,10 +267,10 @@ export async function GET(
       });
     }
 
-    for (const free of freeSlots) {
+    for (const f of freeIntervals) {
       slots.push({
-        start: free.start,
-        end: free.end,
+        start: minToTime(f.start),
+        end: minToTime(f.end),
         status: "free",
         count: 0,
         names: [],
