@@ -249,7 +249,10 @@ export async function GET(
       const labels = areaRidLabels.get(mapKey);
       const filtered = labels ? [...labels].filter((l) => l !== area.name) : [];
       if (filtered.length === 0) continue;
-      const sourceName = filtered.join(", ");
+      const deduped = filtered.filter((label) =>
+        !filtered.some((other) => other !== label && other.startsWith(label)),
+      );
+      const sourceName = (deduped.length > 0 ? deduped : filtered).join(", ");
       const isPublic = areaRidPublic.get(mapKey) ?? false;
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
