@@ -36,36 +36,45 @@ interface ServiceInfo {
   price: string;
 }
 
-async function fetchAnnyServices(
+async function fetchAnnyServicesForResources(
   baseUrl: string,
   apiToken: string,
+  rids: string[],
 ): Promise<Map<string, ServiceInfo>> {
   const result = new Map<string, ServiceInfo>();
   const headers = { Authorization: `Bearer ${apiToken}`, Accept: "application/json" };
 
-  try {
-    for (let page = 1; page <= 5; page++) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function extractServices(items: any[], rid: string) {
+    for (const svc of items) {
+      const a = svc.attributes || svc;
+      const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
+      const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
+      if (interval <= 0) continue;
+      const existing = result.get(rid);
+      if (!existing || interval < existing.interval) {
+        result.set(rid, { interval, price });
+      }
+    }
+  }
+
+  await Promise.all(rids.map(async (rid) => {
+    try {
       const res = await fetch(
-        `${baseUrl}/api/v1/services?page[size]=50&page[number]=${page}`,
+        `${baseUrl}/api/v1/resources/${rid}?include=services`,
         { headers, signal: AbortSignal.timeout(8000) },
       );
-      if (!res.ok) break;
+      if (!res.ok) return;
       const json = await res.json();
-      const items = (json.data || json) as { id: string; attributes?: Record<string, unknown> }[];
-      if (!Array.isArray(items) || items.length === 0) break;
-
-      for (const svc of items) {
-        const a = svc.attributes || (svc as unknown as Record<string, unknown>);
-        const name = a.name as string;
-        if (!name) continue;
-        const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
-        const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
-        if (interval > 0) result.set(name, { interval, price });
+      const included = (json.included || []).filter(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (i: any) => i.type === "services",
+      );
+      if (included.length > 0) {
+        extractServices(included, rid);
       }
-
-      if (items.length < 50) break;
-    }
-  } catch { /* ignore */ }
+    } catch { /* skip */ }
+  }));
 
   return result;
 }
@@ -198,7 +207,9 @@ export async function GET(
           ? fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr)
           : Promise.resolve({} as Record<string, { start: string; end: string }[]>),
         fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
-        fetchAnnyServices(baseUrl, annyConfig.token),
+        allRids.length > 0
+          ? fetchAnnyServicesForResources(baseUrl, annyConfig.token, allRids)
+          : Promise.resolve(new Map<string, ServiceInfo>()),
       ]);
       annyAvailability = avail;
       allBookings = bookings;
@@ -228,7 +239,7 @@ export async function GET(
 
     if (/öffentlich/i.test(name)) areaRidPublic.set(mapKey, true);
 
-    const svcInfo = annyServices.get(name);
+    const svcInfo = annyServices.get(rid);
     if (svcInfo && svcInfo.interval > 0) {
       const existing = areaRidInterval.get(mapKey) ?? 0;
       if (!existing || svcInfo.interval < existing) {
