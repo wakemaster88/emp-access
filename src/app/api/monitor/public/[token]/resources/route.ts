@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import {
-  fetchAnnyAvailabilityWithSlots,
+  fetchAnnyAvailability,
   fmtTimeBerlin,
   type AnnyMapping,
 } from "@/lib/anny-availability";
@@ -154,7 +154,7 @@ export async function GET(
 
       const [avail, bookings] = await Promise.all([
         allRids.length > 0
-          ? fetchAnnyAvailabilityWithSlots(baseUrl, annyConfig.token, allRids, dateStr)
+          ? fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr)
           : Promise.resolve({} as Record<string, { start: string; end: string }[]>),
         fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
       ]);
@@ -302,12 +302,12 @@ export async function GET(
       let anyPublic = false;
       for (const a of availIntervals) {
         if (a.start <= segStart && a.end >= segEnd) {
-          if (!sources.includes(a.source)) sources.push(a.source);
+          if (a.source && !sources.includes(a.source)) sources.push(a.source);
           if (a.isPublic) anyPublic = true;
         }
       }
 
-      if (sources.length > 0) {
+      if (sources.length > 0 || availIntervals.some((a) => a.start <= segStart && a.end >= segEnd)) {
         rawSlots.push({
           start: minToTime(segStart),
           end: minToTime(segEnd),
