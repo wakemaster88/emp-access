@@ -212,7 +212,7 @@ export async function GET(
           labels: new Set(),
           isPublic: link.isPublic,
           splitSlots: link.splitSlots,
-          interval: link.bookingInterval ?? 0,
+          interval: link.bookingInterval ?? (link.splitSlots ? 60 : 0),
           price: link.priceLabel ?? "",
         });
       }
