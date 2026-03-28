@@ -32,7 +32,7 @@ const TOTAL_HOURS = HOUR_END - HOUR_START;
 const TOTAL_MINUTES = TOTAL_HOURS * 60;
 const POLL_INTERVAL = 60_000;
 const HEADER_HEIGHT = 52;
-const COL_HEADER_HEIGHT = 44;
+const COL_HEADER_HEIGHT = 36;
 const TIME_GUTTER = 54;
 const GRID_PAD = 12;
 
@@ -147,11 +147,9 @@ export default function ResourceMonitorPage({
         className="shrink-0 bg-gray-50 border-b border-gray-300 px-3 sm:px-5 flex items-center justify-between"
         style={{ height: HEADER_HEIGHT }}
       >
-        <div className="min-w-0">
-          <h1 className="text-sm sm:text-base font-bold tracking-tight truncate text-gray-900">Ressourcen-Monitor</h1>
+        <h1 className="text-sm sm:text-base font-bold tracking-tight truncate text-gray-900">Ressourcen-Monitor</h1>
+        <div className="flex items-baseline gap-2 sm:gap-3 shrink-0 pl-3">
           <p className="text-[11px] sm:text-xs text-gray-500 truncate">{formatDateDE(data.date)}</p>
-        </div>
-        <div className="text-right shrink-0 pl-3">
           <p className="text-lg sm:text-2xl font-mono font-bold tabular-nums text-emerald-600">{nowTime}</p>
         </div>
       </header>
@@ -168,29 +166,14 @@ export default function ResourceMonitorPage({
             style={{ height: COL_HEADER_HEIGHT }}
           >
             <div className="shrink-0" style={{ width: TIME_GUTTER }} />
-            {resources.map((r) => {
-              const pct = r.capacity != null && r.capacity > 0
-                ? Math.round((r.totalBooked / r.capacity) * 100)
-                : null;
-              return (
-                <div
-                  key={r.id}
-                  className="flex-1 min-w-0 px-1 flex flex-col items-center justify-center border-l border-gray-300"
-                >
-                  <p className="text-xs sm:text-sm font-bold truncate max-w-full text-gray-900">{r.name}</p>
-                  <p className="text-[10px] sm:text-xs tabular-nums font-medium">
-                    <span className={cn(
-                      pct != null && pct >= 100 ? "text-red-600" : pct != null && pct >= 80 ? "text-amber-600" : "text-gray-600",
-                    )}>
-                      {r.totalBooked}
-                    </span>
-                    {r.capacity != null && (
-                      <span className="text-gray-400">/{r.capacity}</span>
-                    )}
-                  </p>
-                </div>
-              );
-            })}
+            {resources.map((r) => (
+              <div
+                key={r.id}
+                className="flex-1 min-w-0 px-1 flex items-center justify-center border-l border-gray-300"
+              >
+                <p className="text-sm sm:text-base font-bold truncate max-w-full text-gray-900">{r.name}</p>
+              </div>
+            ))}
           </div>
 
           {/* Grid */}
