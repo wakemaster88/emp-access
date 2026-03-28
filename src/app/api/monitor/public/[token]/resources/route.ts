@@ -36,47 +36,77 @@ interface ServiceInfo {
   price: string;
 }
 
-async function fetchAnnyServicesForResources(
+function cleanLabelForMatch(name: string): string {
+  let l = name.replace(/^Wake & Ski\s*-\s*/i, "").trim();
+  if (l.includes(" - ")) l = l.split(" - ")[0].trim();
+  return l.toLowerCase();
+}
+
+async function fetchAnnyServices(
   baseUrl: string,
   apiToken: string,
-  rids: string[],
+  ridMapping: Record<string, string>,
 ): Promise<Map<string, ServiceInfo>> {
-  const result = new Map<string, ServiceInfo>();
+  const byName = new Map<string, ServiceInfo>();
   const headers = { Authorization: `Bearer ${apiToken}`, Accept: "application/json" };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function extractServices(items: any[], rid: string) {
-    for (const svc of items) {
-      const a = svc.attributes || svc;
-      const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
-      const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
-      if (interval <= 0) continue;
-      const existing = result.get(rid);
-      if (!existing || interval < existing.interval) {
-        result.set(rid, { interval, price });
+  try {
+    for (let page = 1; page <= 5; page++) {
+      const res = await fetch(
+        `${baseUrl}/api/v1/services?page[size]=50&page[number]=${page}`,
+        { headers, signal: AbortSignal.timeout(8000) },
+      );
+      if (!res.ok) break;
+      const json = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const items = (json.data || json) as any[];
+      if (!Array.isArray(items) || items.length === 0) break;
+
+      for (const svc of items) {
+        const a = svc.attributes || svc;
+        const name = a.name as string;
+        if (!name) continue;
+        const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
+        const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
+        if (interval > 0) {
+          const existing = byName.get(name);
+          if (!existing || interval < existing.interval) {
+            byName.set(name, { interval, price });
+          }
+        }
+      }
+      if (items.length < 50) break;
+    }
+  } catch { /* ignore */ }
+
+  const byRid = new Map<string, ServiceInfo>();
+
+  for (const [name, rid] of Object.entries(ridMapping)) {
+    if (byRid.has(rid)) continue;
+    const svcInfo = byName.get(name);
+    if (svcInfo) {
+      byRid.set(rid, svcInfo);
+    }
+  }
+
+  for (const [name, rid] of Object.entries(ridMapping)) {
+    if (byRid.has(rid)) continue;
+    const cleaned = cleanLabelForMatch(name);
+    if (!cleaned) continue;
+    for (const [svcName, svcInfo] of byName) {
+      const cleanedSvc = cleanLabelForMatch(svcName);
+      if (
+        cleaned === cleanedSvc ||
+        cleaned.startsWith(cleanedSvc) ||
+        cleanedSvc.startsWith(cleaned)
+      ) {
+        byRid.set(rid, svcInfo);
+        break;
       }
     }
   }
 
-  await Promise.all(rids.map(async (rid) => {
-    try {
-      const res = await fetch(
-        `${baseUrl}/api/v1/resources/${rid}?include=services`,
-        { headers, signal: AbortSignal.timeout(8000) },
-      );
-      if (!res.ok) return;
-      const json = await res.json();
-      const included = (json.included || []).filter(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (i: any) => i.type === "services",
-      );
-      if (included.length > 0) {
-        extractServices(included, rid);
-      }
-    } catch { /* skip */ }
-  }));
-
-  return result;
+  return byRid;
 }
 
 /**
@@ -207,9 +237,7 @@ export async function GET(
           ? fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr)
           : Promise.resolve({} as Record<string, { start: string; end: string }[]>),
         fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
-        allRids.length > 0
-          ? fetchAnnyServicesForResources(baseUrl, annyConfig.token, allRids)
-          : Promise.resolve(new Map<string, ServiceInfo>()),
+        fetchAnnyServices(baseUrl, annyConfig.token, resourceIds),
       ]);
       annyAvailability = avail;
       allBookings = bookings;
