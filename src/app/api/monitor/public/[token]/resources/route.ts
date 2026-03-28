@@ -237,17 +237,6 @@ export async function GET(
       }
     }
 
-    availIntervals.sort((a, b) => a.start - b.start);
-    const merged: { start: number; end: number }[] = [];
-    for (const iv of availIntervals) {
-      const last = merged[merged.length - 1];
-      if (last && iv.start <= last.end) {
-        last.end = Math.max(last.end, iv.end);
-      } else {
-        merged.push({ ...iv });
-      }
-    }
-
     const bookedIntervals: { start: number; end: number }[] = [];
     for (const [, b] of bookedSlotMap) {
       const sMin = timeToMin(b.start);
@@ -255,7 +244,18 @@ export async function GET(
       if (sMin < eMin) bookedIntervals.push({ start: sMin, end: eMin });
     }
 
-    const freeIntervals = subtractIntervals(merged, bookedIntervals);
+    const freeIntervals: { start: number; end: number }[] = [];
+    const seenFree = new Set<string>();
+    for (const avail of availIntervals) {
+      const remaining = subtractIntervals([avail], bookedIntervals);
+      for (const f of remaining) {
+        const key = `${f.start}-${f.end}`;
+        if (!seenFree.has(key)) {
+          seenFree.add(key);
+          freeIntervals.push(f);
+        }
+      }
+    }
 
     const slots: TimeSlot[] = [];
 
