@@ -24,7 +24,7 @@ export async function PUT(
     where: { id: monitorId },
     data: {
       name: body.name?.trim() ?? existing.name,
-      type: body.type === "CHECKIN" ? "CHECKIN" : body.type === "MONITOR" ? "MONITOR" : existing.type,
+      type: body.type === "CHECKIN" ? "CHECKIN" : body.type === "RESOURCE_MONITOR" ? "RESOURCE_MONITOR" : body.type === "MONITOR" ? "MONITOR" : existing.type,
       deviceIds: body.deviceIds ?? existing.deviceIds,
       isActive: body.isActive ?? existing.isActive,
     },

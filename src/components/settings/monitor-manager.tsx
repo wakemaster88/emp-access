@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
-  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck,
+  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,20 +35,28 @@ interface MonitorConfigData {
   createdAt: string;
 }
 
+interface AccessAreaItem {
+  id: number;
+  name: string;
+}
+
 interface MonitorManagerProps {
   monitors: MonitorConfigData[];
   devices: Device[];
+  accessAreas: AccessAreaItem[];
   baseUrl: string;
 }
 
 function MonitorDialog({
   monitor,
   devices,
+  accessAreas,
   baseUrl,
   onClose,
 }: {
   monitor: MonitorConfigData | null;
   devices: Device[];
+  accessAreas: AccessAreaItem[];
   baseUrl: string;
   onClose: () => void;
 }) {
@@ -92,7 +100,7 @@ function MonitorDialog({
     }
   }
 
-  const urlPath = type === "CHECKIN" ? "checkin" : "monitor";
+  const urlPath = type === "CHECKIN" ? "checkin" : type === "RESOURCE_MONITOR" ? "resource-monitor" : "monitor";
   const monitorUrl = monitor ? `${baseUrl}/${urlPath}/${monitor.token}` : "";
 
   return (
@@ -116,7 +124,7 @@ function MonitorDialog({
 
         <div className="space-y-2">
           <Label>Typ</Label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => setType("MONITOR")}
@@ -130,7 +138,7 @@ function MonitorDialog({
               <Monitor className={cn("h-4 w-4 shrink-0", type === "MONITOR" ? "text-indigo-600" : "text-slate-400")} />
               <div>
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Scan-Monitor</p>
-                <p className="text-xs text-slate-400">Live-Scans anzeigen</p>
+                <p className="text-xs text-slate-400">Live-Scans</p>
               </div>
             </button>
             <button
@@ -147,6 +155,22 @@ function MonitorDialog({
               <div>
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Check-in</p>
                 <p className="text-xs text-slate-400">Gäste einchecken</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setType("RESOURCE_MONITOR")}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
+                type === "RESOURCE_MONITOR"
+                  ? "border-sky-500 bg-sky-50 dark:bg-sky-950/30"
+                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+              )}
+            >
+              <LayoutGrid className={cn("h-4 w-4 shrink-0", type === "RESOURCE_MONITOR" ? "text-sky-600" : "text-slate-400")} />
+              <div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Ressourcen</p>
+                <p className="text-xs text-slate-400">Tagesübersicht</p>
               </div>
             </button>
           </div>
@@ -191,6 +215,45 @@ function MonitorDialog({
           </div>
           {selectedDevices.length > 0 && (
             <p className="text-xs text-slate-500">{selectedDevices.length} Gerät(e) ausgewählt</p>
+          )}
+        </div>}
+
+        {type === "RESOURCE_MONITOR" && <div className="space-y-2">
+          <Label>Bereiche auswählen</Label>
+          <p className="text-xs text-slate-400">Wähle die Bereiche, die im Ressourcen-Monitor angezeigt werden. Ohne Auswahl werden alle Dashboard-Bereiche verwendet.</p>
+          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+            {accessAreas.length === 0 && (
+              <p className="text-sm text-slate-500">Keine Bereiche vorhanden</p>
+            )}
+            {accessAreas.map((area) => {
+              const selected = selectedDevices.includes(area.id);
+              return (
+                <button
+                  key={area.id}
+                  type="button"
+                  onClick={() => toggleDevice(area.id)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
+                    selected
+                      ? "border-sky-500 bg-sky-50 dark:bg-sky-950/30"
+                      : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                  )}
+                >
+                  <div className={cn(
+                    "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                    selected ? "bg-sky-600 border-sky-600" : "border-slate-300 dark:border-slate-600"
+                  )}>
+                    {selected && <Check className="h-3 w-3 text-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{area.name}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {selectedDevices.length > 0 && (
+            <p className="text-xs text-slate-500">{selectedDevices.length} Bereich(e) ausgewählt</p>
           )}
         </div>}
 
@@ -303,7 +366,7 @@ function CopyUrl({ url }: { url: string }) {
   );
 }
 
-export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerProps) {
+export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: MonitorManagerProps) {
   const router = useRouter();
   const [editing, setEditing] = useState<MonitorConfigData | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
@@ -335,12 +398,17 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
 
       {monitors.map((monitor) => {
         const isCheckin = monitor.type === "CHECKIN";
-        const urlPath = isCheckin ? "checkin" : "monitor";
+        const isResource = monitor.type === "RESOURCE_MONITOR";
+        const urlPath = isCheckin ? "checkin" : isResource ? "resource-monitor" : "monitor";
         const url = `${baseUrl}/${urlPath}/${monitor.token}`;
-        const deviceNames = devices
-          .filter((d) => (monitor.deviceIds as number[]).includes(d.id))
-          .map((d) => d.name);
-        const TypeIcon = isCheckin ? ClipboardCheck : Monitor;
+        const deviceNames = isResource
+          ? accessAreas
+              .filter((a) => (monitor.deviceIds as number[]).includes(a.id))
+              .map((a) => a.name)
+          : devices
+              .filter((d) => (monitor.deviceIds as number[]).includes(d.id))
+              .map((d) => d.name);
+        const TypeIcon = isCheckin ? ClipboardCheck : isResource ? LayoutGrid : Monitor;
 
         return (
           <Card key={monitor.id} className="border-slate-200 dark:border-slate-800">
@@ -348,13 +416,15 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center gap-2">
-                    <TypeIcon className={cn("h-4 w-4 shrink-0", isCheckin ? "text-emerald-500" : "text-indigo-500")} />
+                    <TypeIcon className={cn("h-4 w-4 shrink-0", isCheckin ? "text-emerald-500" : isResource ? "text-sky-500" : "text-indigo-500")} />
                     <span className="font-medium text-slate-900 dark:text-slate-100">{monitor.name}</span>
                     <Badge className={cn("text-xs", isCheckin
                       ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                      : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                      : isResource
+                        ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
+                        : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
                     )}>
-                      {isCheckin ? "Check-in" : "Monitor"}
+                      {isCheckin ? "Check-in" : isResource ? "Ressourcen" : "Monitor"}
                     </Badge>
                     <Badge className={monitor.isActive
                       ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs"
@@ -399,6 +469,7 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
                       <MonitorDialog
                         monitor={editing}
                         devices={devices}
+                        accessAreas={accessAreas}
                         baseUrl={baseUrl}
                         onClose={() => setEditing(null)}
                       />
@@ -432,6 +503,7 @@ export function MonitorManager({ monitors, devices, baseUrl }: MonitorManagerPro
         <MonitorDialog
           monitor={null}
           devices={devices}
+          accessAreas={accessAreas}
           baseUrl={baseUrl}
           onClose={() => setAddOpen(false)}
         />

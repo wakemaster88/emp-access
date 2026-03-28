@@ -22,7 +22,7 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [apiConfigs, account, monitors, devices, shellyDevices, telegramConfig] = await Promise.all([
+  const [apiConfigs, account, monitors, devices, shellyDevices, telegramConfig, accessAreas] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
     db.account.findUnique({ where: { id: session.user.accountId } }),
     db.monitorConfig.findMany({
@@ -41,6 +41,11 @@ export default async function SettingsPage() {
     db.telegramConfig.findFirst({
       where: { accountId: session.user.accountId },
       select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true },
+    }),
+    db.accessArea.findMany({
+      where: { accountId: session.user.accountId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -143,6 +148,7 @@ export default async function SettingsPage() {
               createdAt: m.createdAt.toISOString(),
             }))}
             devices={devices}
+            accessAreas={accessAreas}
             baseUrl={baseUrl}
           />
         </section>

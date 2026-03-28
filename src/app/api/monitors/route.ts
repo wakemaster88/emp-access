@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { db, accountId } = session;
-  const type = body.type === "CHECKIN" ? "CHECKIN" : "MONITOR";
+  const type = body.type === "CHECKIN" ? "CHECKIN" : body.type === "RESOURCE_MONITOR" ? "RESOURCE_MONITOR" : "MONITOR";
   const monitor = await db.monitorConfig.create({
     data: {
       name: body.name.trim(),
