@@ -248,7 +248,8 @@ export async function GET(
       const mapKey = `${area.id}:${rid}`;
       const labels = areaRidLabels.get(mapKey);
       const filtered = labels ? [...labels].filter((l) => l !== area.name) : [];
-      const sourceName = filtered.length > 0 ? filtered.join(", ") : "";
+      if (filtered.length === 0) continue;
+      const sourceName = filtered.join(", ");
       const isPublic = areaRidPublic.get(mapKey) ?? false;
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
@@ -307,7 +308,7 @@ export async function GET(
         }
       }
 
-      if (sources.length > 0 || availIntervals.some((a) => a.start <= segStart && a.end >= segEnd)) {
+      if (sources.length > 0) {
         rawSlots.push({
           start: minToTime(segStart),
           end: minToTime(segEnd),
