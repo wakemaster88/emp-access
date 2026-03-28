@@ -360,14 +360,60 @@ export async function GET(
     resources,
   };
 
-  if (debugMode) {
+  if (debugMode && baseUrl && annyConfig?.token) {
+    const allRids = [...new Set(Object.values(resourceIds))];
     const debugAreaRids: Record<string, string[]> = {};
     for (const [areaId, rids] of areaAnnyIds) {
       const area = areas.find((a) => a.id === areaId);
       debugAreaRids[`${areaId} (${area?.name ?? "?"})`] = rids;
     }
+
+    const testRids = allRids.slice(0, 5);
+    const slotsParams = new URLSearchParams({
+      start_date: `${dateStr}T00:00:00+01:00`,
+      end_date: `${dateStr}T23:59:59+01:00`,
+      timezone: "Europe/Berlin",
+    });
+    for (const id of testRids) slotsParams.append("r[]", id);
+
+    let slotsRaw: unknown = null;
+    let periodsRaw: unknown = null;
+    const resourceDetails: Record<string, unknown> = {};
+
+    try {
+      const headers = { Authorization: `Bearer ${annyConfig.token}`, Accept: "application/json" };
+      const [slotsRes, periodsRes] = await Promise.all([
+        fetch(`${baseUrl}/api/v1/availability/slots?${slotsParams}`, { headers, signal: AbortSignal.timeout(8000) }),
+        fetch(`${baseUrl}/api/v1/availability/periods?${slotsParams}`, { headers, signal: AbortSignal.timeout(8000) }),
+      ]);
+      if (slotsRes.ok) slotsRaw = await slotsRes.json();
+      else slotsRaw = { _error: slotsRes.status, _statusText: slotsRes.statusText };
+      if (periodsRes.ok) periodsRaw = await periodsRes.json();
+      else periodsRaw = { _error: periodsRes.status };
+
+      for (const rid of testRids.slice(0, 3)) {
+        try {
+          const r = await fetch(`${baseUrl}/api/v1/resources/${rid}`, { headers, signal: AbortSignal.timeout(5000) });
+          if (r.ok) {
+            const rj = await r.json();
+            const d = rj?.data?.attributes || rj?.data || rj;
+            resourceDetails[rid] = {
+              name: d?.name,
+              slot_duration: d?.slot_duration,
+              slot_interval: d?.slot_interval,
+              booking_interval: d?.booking_interval,
+              duration: d?.duration,
+              min_duration: d?.min_duration,
+              max_duration: d?.max_duration,
+              buffer_time: d?.buffer_time,
+            };
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* skip */ }
+
     response._debug = {
-      allRids: [...new Set(Object.values(resourceIds))],
+      allRids,
       areaAnnyIds: debugAreaRids,
       availabilityKeys: Object.keys(annyAvailability),
       availabilityCounts: Object.fromEntries(
@@ -377,6 +423,9 @@ export async function GET(
         [...areaRidLabels].map(([k, v]) => [k, [...v]]),
       ),
       bookingsCount: allBookings.length,
+      _slotsEndpoint: slotsRaw,
+      _periodsEndpoint: periodsRaw,
+      _resourceDetails: resourceDetails,
     };
   }
 
