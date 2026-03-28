@@ -8,11 +8,11 @@ interface AvailabilitySlot {
   endTime: string;
 }
 
-interface Booking {
-  name: string;
-  typeName: string | null;
+interface BookingSlot {
   start: string;
   end: string;
+  count: number;
+  names: string[];
 }
 
 interface Resource {
@@ -21,7 +21,7 @@ interface Resource {
   capacity: number | null;
   availability: AvailabilitySlot[];
   bookingCount: number;
-  bookings: Booking[];
+  bookingSlots: BookingSlot[];
 }
 
 interface MonitorData {
@@ -35,9 +35,9 @@ const HOUR_END = 22;
 const TOTAL_HOURS = HOUR_END - HOUR_START;
 const TOTAL_MINUTES = TOTAL_HOURS * 60;
 const POLL_INTERVAL = 60_000;
-const HEADER_HEIGHT = 56;
-const COL_HEADER_HEIGHT = 44;
-const TIME_GUTTER = 52;
+const HEADER_HEIGHT = 52;
+const COL_HEADER_HEIGHT = 40;
+const TIME_GUTTER = 48;
 
 function timeToMinutes(timeStr: string): number | null {
   const parts = timeStr.split(":");
@@ -81,6 +81,14 @@ function formatDateDE(dateStr: string): string {
   }
 }
 
+function utilizationColor(count: number, capacity: number | null): string {
+  if (capacity == null || capacity <= 0) return "bg-indigo-500";
+  const pct = count / capacity;
+  if (pct >= 1) return "bg-red-500";
+  if (pct >= 0.8) return "bg-amber-500";
+  return "bg-indigo-500";
+}
+
 export default function ResourceMonitorPage({
   params,
 }: {
@@ -121,7 +129,7 @@ export default function ResourceMonitorPage({
 
   if (error) {
     return (
-      <div className="h-screen bg-white flex items-center justify-center">
+      <div className="h-dvh bg-white flex items-center justify-center">
         <p className="text-slate-400 text-lg">Monitor nicht gefunden oder inaktiv.</p>
       </div>
     );
@@ -129,7 +137,7 @@ export default function ResourceMonitorPage({
 
   if (!data) {
     return (
-      <div className="h-screen bg-white flex items-center justify-center">
+      <div className="h-dvh bg-white flex items-center justify-center">
         <div className="flex items-center gap-3 text-slate-400">
           <div className="h-5 w-5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
           Laden…
@@ -142,22 +150,21 @@ export default function ResourceMonitorPage({
   const showNowLine = nowMinutes >= HOUR_START * 60 && nowMinutes <= HOUR_END * 60;
   const hours = Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => HOUR_START + i);
   const resources = data.resources;
-  const gridHeight = `calc(100vh - ${HEADER_HEIGHT + COL_HEADER_HEIGHT}px)`;
+  const gridHeight = `calc(100dvh - ${HEADER_HEIGHT + COL_HEADER_HEIGHT}px)`;
 
   return (
-    <div className="h-screen bg-white text-slate-900 flex flex-col overflow-hidden select-none">
+    <div className="h-dvh bg-white text-slate-900 flex flex-col overflow-hidden select-none">
       {/* Header */}
       <header
         className="shrink-0 bg-white border-b border-slate-200 px-3 sm:px-5 flex items-center justify-between"
         style={{ height: HEADER_HEIGHT }}
       >
         <div className="min-w-0">
-          <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">Ressourcen-Monitor</h1>
-          <p className="text-xs sm:text-sm text-slate-400 truncate">{formatDateDE(data.date)}</p>
+          <h1 className="text-sm sm:text-base font-semibold tracking-tight truncate">Ressourcen-Monitor</h1>
+          <p className="text-[11px] sm:text-xs text-slate-400 truncate">{formatDateDE(data.date)}</p>
         </div>
         <div className="text-right shrink-0 pl-3">
-          <p className="text-xl sm:text-2xl font-mono font-bold tabular-nums text-emerald-600">{nowTime}</p>
-          <p className="text-[10px] sm:text-xs text-slate-400">{resources.length} Ressource{resources.length !== 1 ? "n" : ""}</p>
+          <p className="text-lg sm:text-2xl font-mono font-bold tabular-nums text-emerald-600">{nowTime}</p>
         </div>
       </header>
 
@@ -169,56 +176,76 @@ export default function ResourceMonitorPage({
         <>
           {/* Column headers */}
           <div
-            className="shrink-0 flex border-b border-slate-200 bg-slate-50"
+            className="shrink-0 flex border-b border-slate-200 bg-slate-50/80"
             style={{ height: COL_HEADER_HEIGHT }}
           >
             <div className="shrink-0" style={{ width: TIME_GUTTER }} />
-            {resources.map((r) => (
-              <div
-                key={r.id}
-                className="flex-1 min-w-0 px-1 flex flex-col items-center justify-center border-l border-slate-200"
-              >
-                <p className="text-xs sm:text-sm font-semibold truncate max-w-full">{r.name}</p>
-                <p className="text-[10px] sm:text-xs text-slate-400 tabular-nums">
-                  {r.bookingCount}{r.capacity != null ? `/${r.capacity}` : ""}
-                </p>
-              </div>
-            ))}
+            {resources.map((r) => {
+              const pct = r.capacity != null && r.capacity > 0
+                ? Math.round((r.bookingCount / r.capacity) * 100)
+                : null;
+              return (
+                <div
+                  key={r.id}
+                  className="flex-1 min-w-0 px-1 flex flex-col items-center justify-center border-l border-slate-200"
+                >
+                  <p className="text-[11px] sm:text-sm font-semibold truncate max-w-full">{r.name}</p>
+                  <p className="text-[10px] sm:text-xs tabular-nums">
+                    <span className={cn(
+                      "font-medium",
+                      pct != null && pct >= 100 ? "text-red-600" : pct != null && pct >= 80 ? "text-amber-600" : "text-slate-500",
+                    )}>
+                      {r.bookingCount}
+                    </span>
+                    {r.capacity != null && (
+                      <span className="text-slate-400">/{r.capacity}</span>
+                    )}
+                    {pct != null && (
+                      <span className={cn(
+                        "ml-0.5",
+                        pct >= 100 ? "text-red-500" : pct >= 80 ? "text-amber-500" : "text-slate-400",
+                      )}>
+                        ({pct}%)
+                      </span>
+                    )}
+                  </p>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Grid area — fills remaining viewport */}
+          {/* Grid */}
           <div
             ref={gridRef}
-            className="relative flex overflow-hidden"
+            className="relative flex flex-1 overflow-hidden"
             style={{ height: gridHeight }}
           >
             {/* Time gutter */}
             <div
-              className="shrink-0 relative bg-white z-10"
-              style={{ width: TIME_GUTTER, height: "100%" }}
+              className="shrink-0 relative bg-white z-10 border-r border-slate-100"
+              style={{ width: TIME_GUTTER }}
             >
               {hours.map((h) => {
                 const pct = ((h - HOUR_START) / TOTAL_HOURS) * 100;
                 return (
                   <div
                     key={h}
-                    className="absolute right-0 left-0 flex justify-end pr-1.5 sm:pr-2"
+                    className="absolute right-0 left-0 flex justify-end pr-1 sm:pr-1.5"
                     style={{ top: `${pct}%`, transform: "translateY(-50%)" }}
                   >
-                    <span className="text-[10px] sm:text-xs text-slate-400 font-mono leading-none">
+                    <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono leading-none tabular-nums">
                       {String(h).padStart(2, "0")}:00
                     </span>
                   </div>
                 );
               })}
 
-              {/* Now label in gutter */}
               {showNowLine && (
                 <div
-                  className="absolute left-0 right-0 flex justify-end pr-1.5 sm:pr-2 z-30"
+                  className="absolute left-0 right-0 flex justify-end pr-1 sm:pr-1.5 z-30"
                   style={{ top: `${nowPct}%`, transform: "translateY(-50%)" }}
                 >
-                  <span className="text-[10px] font-mono font-bold text-red-500 bg-white px-0.5 rounded leading-none">
+                  <span className="text-[9px] sm:text-[10px] font-mono font-bold text-red-500 bg-white leading-none tabular-nums">
                     {nowTime}
                   </span>
                 </div>
@@ -230,7 +257,6 @@ export default function ResourceMonitorPage({
               <div
                 key={resource.id}
                 className="flex-1 min-w-0 relative border-l border-slate-200"
-                style={{ height: "100%" }}
               >
                 {/* Hour lines */}
                 {hours.map((h) => {
@@ -250,7 +276,7 @@ export default function ResourceMonitorPage({
                   return (
                     <div
                       key={`half-${h}`}
-                      className="absolute left-0 right-0 border-t border-slate-50"
+                      className="absolute left-0 right-0 border-t border-dashed border-slate-50"
                       style={{ top: `${pct}%` }}
                     />
                   );
@@ -268,35 +294,49 @@ export default function ResourceMonitorPage({
                   return (
                     <div
                       key={`avail-${i}`}
-                      className="absolute left-0.5 right-0.5 sm:left-1 sm:right-1 rounded-sm bg-emerald-50 border border-emerald-200/60"
+                      className="absolute left-0 right-0 bg-emerald-50/70 border-y border-emerald-200/40"
                       style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                       title={`Verfügbar: ${slot.startTime} – ${slot.endTime}`}
                     />
                   );
                 })}
 
-                {/* Booking blocks */}
-                {resource.bookings.map((booking, i) => {
-                  const startMin = timeToMinutes(booking.start);
-                  const endMin = booking.end ? timeToMinutes(booking.end) : null;
+                {/* Booking slot blocks */}
+                {resource.bookingSlots.map((slot, i) => {
+                  const startMin = timeToMinutes(slot.start);
+                  const endMin = slot.end ? timeToMinutes(slot.end) : null;
                   if (startMin == null) return null;
                   const topPct = minutesToPercent(clampMinutes(startMin));
                   const effectiveEndMin = endMin != null ? endMin : startMin + 60;
                   const bottomPct = minutesToPercent(clampMinutes(effectiveEndMin));
-                  const heightPct = Math.max(bottomPct - topPct, 1.5);
+                  const heightPct = Math.max(bottomPct - topPct, 2);
+                  const color = utilizationColor(slot.count, resource.capacity);
+                  const tooltip = `${slot.start}${slot.end ? ` – ${slot.end}` : ""}: ${slot.count} Buchung${slot.count !== 1 ? "en" : ""}\n${slot.names.join(", ")}${slot.count > slot.names.length ? ` (+${slot.count - slot.names.length})` : ""}`;
+
                   return (
                     <div
-                      key={`booking-${i}`}
+                      key={`slot-${i}`}
                       className={cn(
-                        "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded px-1 sm:px-1.5 py-px overflow-hidden",
-                        "bg-indigo-500 text-white text-[9px] sm:text-[10px] leading-tight shadow-sm",
+                        "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded",
+                        "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden",
+                        color, "text-white shadow-sm",
                       )}
                       style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-                      title={`${booking.name}${booking.typeName ? ` (${booking.typeName})` : ""} · ${booking.start}${booking.end ? ` – ${booking.end}` : ""}`}
+                      title={tooltip}
                     >
-                      <p className="font-medium truncate">{booking.name}</p>
-                      {heightPct > 3 && booking.typeName && (
-                        <p className="truncate opacity-75">{booking.typeName}</p>
+                      <p className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
+                        {slot.count} Buchung{slot.count !== 1 ? "en" : ""}
+                      </p>
+                      {heightPct > 4 && (
+                        <p className="text-[9px] sm:text-[10px] leading-tight truncate opacity-80">
+                          {slot.start}{slot.end ? ` – ${slot.end}` : ""}
+                        </p>
+                      )}
+                      {heightPct > 7 && slot.names.length > 0 && (
+                        <p className="text-[8px] sm:text-[9px] leading-tight truncate opacity-60 mt-px">
+                          {slot.names.slice(0, 3).join(", ")}
+                          {slot.count > 3 ? " …" : ""}
+                        </p>
                       )}
                     </div>
                   );

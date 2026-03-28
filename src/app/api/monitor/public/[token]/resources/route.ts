@@ -63,6 +63,8 @@ export async function GET(
             ticketTypeName: true,
             startDate: true,
             endDate: true,
+            slotStart: true,
+            slotEnd: true,
             source: true,
             qrCode: true,
           },
@@ -84,6 +86,8 @@ export async function GET(
         ticketTypeName: true,
         startDate: true,
         endDate: true,
+        slotStart: true,
+        slotEnd: true,
         source: true,
         qrCode: true,
         subscription: { select: { areas: { select: { id: true } } } },
@@ -99,6 +103,8 @@ export async function GET(
         ticketTypeName: true,
         startDate: true,
         endDate: true,
+        slotStart: true,
+        slotEnd: true,
         source: true,
         qrCode: true,
         service: { select: { serviceAreas: { select: { area: { select: { id: true } } } } } },
@@ -150,8 +156,19 @@ export async function GET(
   }
 
   function bookingSlot(
-    ticket: { source: string | null; qrCode: string | null; startDate: Date | null; endDate: Date | null },
+    ticket: {
+      source: string | null;
+      qrCode: string | null;
+      startDate: Date | null;
+      endDate: Date | null;
+      slotStart: string | null;
+      slotEnd: string | null;
+    },
   ): { start: string; end: string } | null {
+    if (ticket.slotStart) {
+      return { start: ticket.slotStart, end: ticket.slotEnd ?? "" };
+    }
+
     if (ticket.source === "ANNY" && ticket.qrCode) {
       try {
         const entries = JSON.parse(ticket.qrCode);
@@ -167,10 +184,18 @@ export async function GET(
         }
       } catch { /* not JSON */ }
     }
-    if (ticket.startDate && ticket.startDate >= dayStart && ticket.startDate <= dayEnd) {
-      const s = fmtTimeBerlin(ticket.startDate.toISOString());
-      const e = ticket.endDate ? fmtTimeBerlin(ticket.endDate.toISOString()) : "";
-      if (s) return { start: s, end: e };
+
+    if (ticket.startDate) {
+      const sd = ticket.startDate;
+      const ed = ticket.endDate;
+      const sdInDay = sd >= dayStart && sd <= dayEnd;
+      const edInDay = ed && ed >= dayStart && ed <= dayEnd;
+
+      if (sdInDay) {
+        const s = fmtTimeBerlin(sd.toISOString());
+        const e = edInDay ? fmtTimeBerlin(ed.toISOString()) : "";
+        if (s) return { start: s, end: e };
+      }
     }
     return null;
   }
@@ -194,14 +219,28 @@ export async function GET(
       if (!seen.has(t.id)) { seen.add(t.id); allTickets.push(t); }
     }
 
-    const bookings = allTickets
+    const rawBookings = allTickets
       .map((t) => {
         const slot = bookingSlot(t);
         return slot
           ? { name: displayName(t), typeName: t.ticketTypeName, start: slot.start, end: slot.end }
           : null;
       })
-      .filter((b): b is NonNullable<typeof b> => b != null && !!b.start)
+      .filter((b): b is NonNullable<typeof b> => b != null && !!b.start);
+
+    const slotGroups = new Map<string, { start: string; end: string; count: number; names: string[] }>();
+    for (const b of rawBookings) {
+      const key = `${b.start}-${b.end}`;
+      const g = slotGroups.get(key);
+      if (g) {
+        g.count++;
+        if (g.names.length < 5) g.names.push(b.name);
+      } else {
+        slotGroups.set(key, { start: b.start, end: b.end, count: 1, names: [b.name] });
+      }
+    }
+
+    const bookingSlots = [...slotGroups.values()]
       .sort((a, b) => a.start.localeCompare(b.start));
 
     return {
@@ -210,7 +249,7 @@ export async function GET(
       capacity: area.personLimit,
       availability: slots.map((s) => ({ startTime: s.startTime, endTime: s.endTime })),
       bookingCount: allTickets.length,
-      bookings,
+      bookingSlots,
     };
   });
 
