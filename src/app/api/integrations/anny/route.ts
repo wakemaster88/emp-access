@@ -343,12 +343,19 @@ export async function POST() {
       }
     }
 
-    // Parse area mapping from extraConfig
     let annyConfig: AnnyMapping = {};
     try {
       if (config.extraConfig) annyConfig = JSON.parse(config.extraConfig);
     } catch { /* ignore invalid JSON */ }
-    const areaMappings = annyConfig.mappings || {};
+
+    const annyLinks = await db.annyResourceLink.findMany({
+      where: { accountId: accountId! },
+      select: { annyName: true, accessAreaId: true },
+    });
+    const areaMappings: Record<string, number> = {};
+    for (const link of annyLinks) {
+      areaMappings[link.annyName] = link.accessAreaId;
+    }
 
     // Group bookings by customer + service/resource
     const groups = new Map<string, BookingGroup>();
@@ -676,7 +683,6 @@ export async function POST() {
       data: { status: "INVALID" },
     });
 
-    // Persist discovered service/resource/subscription names + resource IDs
     const updatedConfig: AnnyMapping = {
       ...annyConfig,
       services: [...discoveredServiceNames].sort(),
@@ -692,6 +698,51 @@ export async function POST() {
         extraConfig: JSON.stringify(updatedConfig),
       },
     });
+
+    // Update cached service info on AnnyResourceLink records
+    try {
+      const linksToUpdate = await db.annyResourceLink.findMany({
+        where: { accountId: accountId! },
+      });
+      if (linksToUpdate.length > 0) {
+        const svcMap = new Map<string, { interval: number; price: string }>();
+        const headers = { Authorization: `Bearer ${config.token}`, Accept: "application/json" };
+        for (let page = 1; page <= 5; page++) {
+          const res = await fetch(
+            `${baseUrl}/api/v1/services?page[size]=50&page[number]=${page}`,
+            { headers, signal: AbortSignal.timeout(8000) },
+          );
+          if (!res.ok) break;
+          const json = await res.json();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const items = (json.data || json) as any[];
+          if (!Array.isArray(items) || items.length === 0) break;
+          for (const svc of items) {
+            const a = svc.attributes || svc;
+            const name = a.name as string;
+            if (!name) continue;
+            const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
+            const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
+            if (interval > 0) svcMap.set(name, { interval, price });
+          }
+          if (items.length < 50) break;
+        }
+
+        for (const link of linksToUpdate) {
+          const svc = svcMap.get(link.annyName);
+          if (!svc) continue;
+          const needsUpdate =
+            link.bookingInterval !== svc.interval ||
+            (link.priceLabel ?? "") !== svc.price;
+          if (needsUpdate) {
+            await db.annyResourceLink.update({
+              where: { id: link.id },
+              data: { bookingInterval: svc.interval, priceLabel: svc.price },
+            });
+          }
+        }
+      }
+    } catch { /* service cache update is best-effort */ }
 
     return NextResponse.json({
       created,

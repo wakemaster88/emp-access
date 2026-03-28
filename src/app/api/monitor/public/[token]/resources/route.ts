@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
-import {
-  fetchAnnyAvailability,
-  fmtTimeBerlin,
-  type AnnyMapping,
-} from "@/lib/anny-availability";
+import { fetchAnnyAvailability, fmtTimeBerlin } from "@/lib/anny-availability";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 
 export const dynamic = "force-dynamic";
@@ -31,89 +27,6 @@ interface BookingEntry {
   serviceName: string | null;
 }
 
-interface ServiceInfo {
-  interval: number;
-  price: string;
-}
-
-function cleanLabelForMatch(name: string): string {
-  let l = name.replace(/^Wake & Ski\s*-\s*/i, "").trim();
-  if (l.includes(" - ")) l = l.split(" - ")[0].trim();
-  return l.toLowerCase();
-}
-
-async function fetchAnnyServices(
-  baseUrl: string,
-  apiToken: string,
-  ridMapping: Record<string, string>,
-): Promise<Map<string, ServiceInfo>> {
-  const byName = new Map<string, ServiceInfo>();
-  const headers = { Authorization: `Bearer ${apiToken}`, Accept: "application/json" };
-
-  try {
-    for (let page = 1; page <= 5; page++) {
-      const res = await fetch(
-        `${baseUrl}/api/v1/services?page[size]=50&page[number]=${page}`,
-        { headers, signal: AbortSignal.timeout(8000) },
-      );
-      if (!res.ok) break;
-      const json = await res.json();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const items = (json.data || json) as any[];
-      if (!Array.isArray(items) || items.length === 0) break;
-
-      for (const svc of items) {
-        const a = svc.attributes || svc;
-        const name = a.name as string;
-        if (!name) continue;
-        const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
-        const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
-        if (interval > 0) {
-          const existing = byName.get(name);
-          if (!existing || interval < existing.interval) {
-            byName.set(name, { interval, price });
-          }
-        }
-      }
-      if (items.length < 50) break;
-    }
-  } catch { /* ignore */ }
-
-  const byRid = new Map<string, ServiceInfo>();
-
-  for (const [name, rid] of Object.entries(ridMapping)) {
-    if (byRid.has(rid)) continue;
-    const svcInfo = byName.get(name);
-    if (svcInfo) {
-      byRid.set(rid, svcInfo);
-    }
-  }
-
-  for (const [name, rid] of Object.entries(ridMapping)) {
-    if (byRid.has(rid)) continue;
-    const cleaned = cleanLabelForMatch(name);
-    if (!cleaned) continue;
-    for (const [svcName, svcInfo] of byName) {
-      const cleanedSvc = cleanLabelForMatch(svcName);
-      if (
-        cleaned === cleanedSvc ||
-        cleaned.startsWith(cleanedSvc) ||
-        cleanedSvc.startsWith(cleaned)
-      ) {
-        byRid.set(rid, svcInfo);
-        break;
-      }
-    }
-  }
-
-  return byRid;
-}
-
-/**
- * Fetches ALL bookings from ANNY, filters to the target day client-side,
- * and returns flat list with resource/service info for flexible matching.
- * Uses same params as the proven sync code (no ANNY-specific date filters).
- */
 async function fetchAllAnnyBookingsForDay(
   baseUrl: string,
   apiToken: string,
@@ -175,6 +88,15 @@ async function fetchAllAnnyBookingsForDay(
   return result;
 }
 
+function timeToMin(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+function minToTime(m: number): string {
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ token: string }> },
@@ -202,7 +124,7 @@ export async function GET(
 
   const selectedAreaIds = (config.deviceIds as number[]) ?? [];
 
-  const [areas, annyConfig] = await Promise.all([
+  const [areas, annyConfig, allLinks] = await Promise.all([
     db.accessArea.findMany({
       where: {
         accountId,
@@ -213,116 +135,50 @@ export async function GET(
     }),
     db.apiConfig.findFirst({
       where: { accountId, provider: "ANNY" },
-      select: { token: true, baseUrl: true, extraConfig: true },
+      select: { token: true, baseUrl: true },
+    }),
+    db.annyResourceLink.findMany({
+      where: {
+        accountId,
+        ...(selectedAreaIds.length > 0 ? { accessAreaId: { in: selectedAreaIds } } : {}),
+      },
     }),
   ]);
 
-  let mappings: Record<string, number> = {};
-  let resourceIds: Record<string, string> = {};
+  const areaLinks = new Map<number, typeof allLinks>();
+  for (const link of allLinks) {
+    if (!areaLinks.has(link.accessAreaId)) areaLinks.set(link.accessAreaId, []);
+    areaLinks.get(link.accessAreaId)!.push(link);
+  }
+
+  const allRids = [...new Set(allLinks.map((l) => l.annyResourceId))];
+  const allAnnyNames = new Set(allLinks.map((l) => l.annyName));
+
   let annyAvailability: Record<string, { start: string; end: string }[]> = {};
   let allBookings: BookingEntry[] = [];
-  let annyServices = new Map<string, ServiceInfo>();
   let baseUrl = "";
 
-  if (annyConfig?.token && annyConfig.extraConfig) {
-    try {
-      const parsed: AnnyMapping = JSON.parse(annyConfig.extraConfig);
-      mappings = parsed.mappings ?? {};
-      resourceIds = parsed.resourceIds ?? {};
-      baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
-      const allRids = [...new Set(Object.values(resourceIds))];
-
-      const [avail, bookings, services] = await Promise.all([
-        allRids.length > 0
-          ? fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr)
-          : Promise.resolve({} as Record<string, { start: string; end: string }[]>),
-        fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
-        fetchAnnyServices(baseUrl, annyConfig.token, resourceIds),
-      ]);
-      annyAvailability = avail;
-      allBookings = bookings;
-      annyServices = services;
-    } catch { /* ignore */ }
-  }
-
-  const areaAnnyIds = new Map<number, string[]>();
-  const areaRidLabels = new Map<string, Set<string>>();
-  const areaRidPublic = new Map<string, boolean>();
-  const areaRidInterval = new Map<string, number>();
-  const areaRidPrice = new Map<string, string>();
-
-  function cleanLabel(name: string): string {
-    let l = name.replace(/^Wake & Ski\s*-\s*/i, "");
-    if (l.includes(" - ")) l = l.split(" - ")[0].trim();
-    return l;
-  }
-
-  for (const [name, areaId] of Object.entries(mappings)) {
-    const rid = resourceIds[name];
-    if (!rid) continue;
-
-    const mapKey = `${areaId}:${rid}`;
-    if (!areaRidLabels.has(mapKey)) areaRidLabels.set(mapKey, new Set());
-    areaRidLabels.get(mapKey)!.add(cleanLabel(name));
-
-    if (/öffentlich/i.test(name)) areaRidPublic.set(mapKey, true);
-
-    const svcInfo = annyServices.get(rid);
-    if (svcInfo && svcInfo.interval > 0) {
-      const existing = areaRidInterval.get(mapKey) ?? 0;
-      if (!existing || svcInfo.interval < existing) {
-        areaRidInterval.set(mapKey, svcInfo.interval);
-        if (svcInfo.price) areaRidPrice.set(mapKey, svcInfo.price);
-      }
-    }
-
-    if (!areaAnnyIds.has(areaId)) areaAnnyIds.set(areaId, []);
-    const list = areaAnnyIds.get(areaId)!;
-    if (!list.includes(rid)) list.push(rid);
-  }
-
-  function timeToMin(t: string): number {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + (m || 0);
-  }
-
-  function minToTime(m: number): string {
-    return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  }
-
-  function subtractIntervals(
-    free: { start: number; end: number }[],
-    booked: { start: number; end: number }[],
-  ): { start: number; end: number }[] {
-    let result = [...free];
-    for (const b of booked) {
-      const next: { start: number; end: number }[] = [];
-      for (const f of result) {
-        if (b.end <= f.start || b.start >= f.end) {
-          next.push(f);
-        } else {
-          if (f.start < b.start) next.push({ start: f.start, end: b.start });
-          if (f.end > b.end) next.push({ start: b.end, end: f.end });
-        }
-      }
-      result = next;
-    }
-    return result;
+  if (annyConfig?.token && allRids.length > 0) {
+    baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
+    const [avail, bookings] = await Promise.all([
+      fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr),
+      fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
+    ]);
+    annyAvailability = avail;
+    allBookings = bookings;
   }
 
   const resources = areas.map((area) => {
-    const rids = areaAnnyIds.get(area.id) ?? [];
+    const links = areaLinks.get(area.id) ?? [];
+    const rids = [...new Set(links.map((l) => l.annyResourceId))];
 
-    const mappedNames = new Set<string>();
-    for (const [name, aid] of Object.entries(mappings)) {
-      if (aid === area.id) mappedNames.add(name);
-    }
+    const hasSubResources = links.some((l) => l.label !== area.name);
 
     const bookedSlotMap = new Map<string, { start: string; end: string; count: number; names: string[] }>();
     for (const b of allBookings) {
       const matchByRid = b.resourceId != null && rids.includes(b.resourceId);
-      const matchByResName = b.resourceName != null && mappedNames.has(b.resourceName);
-      const matchBySvcName = b.serviceName != null && mappedNames.has(b.serviceName);
+      const matchByResName = b.resourceName != null && allAnnyNames.has(b.resourceName);
+      const matchBySvcName = b.serviceName != null && allAnnyNames.has(b.serviceName);
       if (!matchByRid && !matchByResName && !matchBySvcName) continue;
       if (!b.start || !b.end) continue;
 
@@ -336,33 +192,61 @@ export async function GET(
       }
     }
 
-    const hasSubResources = rids.some((rid) => {
-      const mapKey = `${area.id}:${rid}`;
-      const labels = areaRidLabels.get(mapKey);
-      return labels ? [...labels].some((l) => l !== area.name) : false;
-    });
+    interface AvailInterval {
+      start: number;
+      end: number;
+      source: string;
+      isPublic: boolean;
+      splitSlots: boolean;
+      interval: number;
+      price: string;
+    }
 
-    const availIntervals: { start: number; end: number; source: string; isPublic: boolean; interval: number; price: string }[] = [];
-    for (const rid of rids) {
-      const mapKey = `${area.id}:${rid}`;
-      const labels = areaRidLabels.get(mapKey);
-      const allLabels = labels ? [...labels] : [];
-      const filtered = hasSubResources ? allLabels.filter((l) => l !== area.name) : allLabels;
-      if (filtered.length === 0) continue;
-      const deduped = filtered.filter((label) =>
-        !filtered.some((other) => other !== label && other.startsWith(label)),
+    const ridLabels = new Map<string, { labels: Set<string>; isPublic: boolean; splitSlots: boolean; interval: number; price: string }>();
+    for (const link of links) {
+      const label = hasSubResources && link.label === area.name ? null : link.label;
+      if (!label) continue;
+
+      if (!ridLabels.has(link.annyResourceId)) {
+        ridLabels.set(link.annyResourceId, {
+          labels: new Set(),
+          isPublic: link.isPublic,
+          splitSlots: link.splitSlots,
+          interval: link.bookingInterval ?? 0,
+          price: link.priceLabel ?? "",
+        });
+      }
+      const entry = ridLabels.get(link.annyResourceId)!;
+      entry.labels.add(label);
+      if (link.isPublic) entry.isPublic = true;
+      if (!link.splitSlots) entry.splitSlots = false;
+      if (link.bookingInterval && (entry.interval === 0 || link.bookingInterval < entry.interval)) {
+        entry.interval = link.bookingInterval;
+        if (link.priceLabel) entry.price = link.priceLabel;
+      }
+    }
+
+    const availIntervals: AvailInterval[] = [];
+    for (const [rid, info] of ridLabels) {
+      const labelsArr = [...info.labels];
+      const deduped = labelsArr.filter((label) =>
+        !labelsArr.some((other) => other !== label && other.startsWith(label)),
       );
-      const sourceName = (deduped.length > 0 ? deduped : filtered).join(", ");
-      const isPublic = areaRidPublic.get(mapKey) ?? false;
-      const interval = areaRidInterval.get(mapKey) ?? 0;
-      const price = areaRidPrice.get(mapKey) ?? "";
+      const sourceName = (deduped.length > 0 ? deduped : labelsArr).join(", ");
+
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
         const e = fmtTimeBerlin(p.end);
         if (!s || !e) continue;
         const sMin = timeToMin(s);
         const eMin = timeToMin(e);
-        if (sMin < eMin) availIntervals.push({ start: sMin, end: eMin, source: sourceName, isPublic, interval, price });
+        if (sMin < eMin) {
+          availIntervals.push({
+            start: sMin, end: eMin, source: sourceName,
+            isPublic: info.isPublic, splitSlots: info.splitSlots,
+            interval: info.interval, price: info.price,
+          });
+        }
       }
     }
 
@@ -394,11 +278,8 @@ export async function GET(
 
       if (bookCount > 0) {
         rawSlots.push({
-          start: minToTime(segStart),
-          end: minToTime(segEnd),
-          status: "booked",
-          count: bookCount,
-          names: bookNames.slice(0, 8),
+          start: minToTime(segStart), end: minToTime(segEnd),
+          status: "booked", count: bookCount, names: bookNames.slice(0, 8),
           capacity: area.personLimit,
         });
         continue;
@@ -406,30 +287,30 @@ export async function GET(
 
       const sources: string[] = [];
       let anyPublic = false;
+      let shouldSplit = false;
       let minInterval = 0;
       let slotPrice = "";
       for (const a of availIntervals) {
         if (a.start <= segStart && a.end >= segEnd) {
           if (a.source && !sources.includes(a.source)) sources.push(a.source);
           if (a.isPublic) anyPublic = true;
-          if (a.interval > 0 && (minInterval === 0 || a.interval < minInterval)) {
-            minInterval = a.interval;
-            slotPrice = a.price;
+          if (a.splitSlots && a.interval > 0) {
+            shouldSplit = true;
+            if (minInterval === 0 || a.interval < minInterval) {
+              minInterval = a.interval;
+              slotPrice = a.price;
+            }
           }
+          if (!shouldSplit && a.price && !slotPrice) slotPrice = a.price;
         }
       }
 
       if (sources.length > 0) {
         rawSlots.push({
-          start: minToTime(segStart),
-          end: minToTime(segEnd),
-          status: "free",
-          count: 0,
-          names: [],
-          capacity: area.personLimit,
-          source: sources.join(", "),
-          isPublic: anyPublic,
-          price: slotPrice,
+          start: minToTime(segStart), end: minToTime(segEnd),
+          status: "free", count: 0, names: [],
+          capacity: area.personLimit, source: sources.join(", "),
+          isPublic: anyPublic, price: slotPrice,
         });
       }
     }
@@ -456,7 +337,7 @@ export async function GET(
 
     const slots: TimeSlot[] = [];
     for (const slot of merged) {
-      if (slot.status !== "free" || !slot.price) {
+      if (slot.status !== "free") {
         slots.push(slot);
         continue;
       }
@@ -465,7 +346,7 @@ export async function GET(
       const eMin = timeToMin(slot.end);
       let interval = 0;
       for (const a of availIntervals) {
-        if (a.start <= sMin && a.end >= eMin && a.interval > 0) {
+        if (a.splitSlots && a.start <= sMin && a.end >= eMin && a.interval > 0) {
           interval = interval === 0 ? a.interval : Math.min(interval, a.interval);
         }
       }
@@ -490,83 +371,10 @@ export async function GET(
     };
   });
 
-  const debugMode = url.searchParams.get("debug") === "1";
-
-  const response: Record<string, unknown> = {
+  return NextResponse.json({
     name: config.name,
     date: dateStr,
     now: now.toISOString(),
     resources,
-  };
-
-  if (debugMode && baseUrl && annyConfig?.token) {
-    const allRids = [...new Set(Object.values(resourceIds))];
-    const debugAreaRids: Record<string, string[]> = {};
-    for (const [areaId, rids] of areaAnnyIds) {
-      const area = areas.find((a) => a.id === areaId);
-      debugAreaRids[`${areaId} (${area?.name ?? "?"})`] = rids;
-    }
-
-    const testRids = allRids.slice(0, 5);
-    const slotsParams = new URLSearchParams({
-      start_date: `${dateStr}T00:00:00+01:00`,
-      end_date: `${dateStr}T23:59:59+01:00`,
-      timezone: "Europe/Berlin",
-    });
-    for (const id of testRids) slotsParams.append("r[]", id);
-
-    let slotsRaw: unknown = null;
-    let periodsRaw: unknown = null;
-    const resourceDetails: Record<string, unknown> = {};
-
-    try {
-      const headers = { Authorization: `Bearer ${annyConfig.token}`, Accept: "application/json" };
-      const [slotsRes, periodsRes] = await Promise.all([
-        fetch(`${baseUrl}/api/v1/availability/slots?${slotsParams}`, { headers, signal: AbortSignal.timeout(8000) }),
-        fetch(`${baseUrl}/api/v1/availability/periods?${slotsParams}`, { headers, signal: AbortSignal.timeout(8000) }),
-      ]);
-      if (slotsRes.ok) slotsRaw = await slotsRes.json();
-      else slotsRaw = { _error: slotsRes.status, _statusText: slotsRes.statusText };
-      if (periodsRes.ok) periodsRaw = await periodsRes.json();
-      else periodsRaw = { _error: periodsRes.status };
-
-      for (const rid of testRids.slice(0, 3)) {
-        try {
-          const r = await fetch(`${baseUrl}/api/v1/resources/${rid}`, { headers, signal: AbortSignal.timeout(5000) });
-          if (r.ok) {
-            const rj = await r.json();
-            const d = rj?.data?.attributes || rj?.data || rj;
-            resourceDetails[rid] = {
-              name: d?.name,
-              slot_duration: d?.slot_duration,
-              slot_interval: d?.slot_interval,
-              booking_interval: d?.booking_interval,
-              duration: d?.duration,
-              min_duration: d?.min_duration,
-              max_duration: d?.max_duration,
-              buffer_time: d?.buffer_time,
-            };
-          }
-        } catch { /* skip */ }
-      }
-    } catch { /* skip */ }
-
-    response._debug = {
-      allRids,
-      areaAnnyIds: debugAreaRids,
-      availabilityKeys: Object.keys(annyAvailability),
-      availabilityCounts: Object.fromEntries(
-        Object.entries(annyAvailability).map(([k, v]) => [k, v.length]),
-      ),
-      areaRidLabels: Object.fromEntries(
-        [...areaRidLabels].map(([k, v]) => [k, [...v]]),
-      ),
-      bookingsCount: allBookings.length,
-      _slotsEndpoint: slotsRaw,
-      _periodsEndpoint: periodsRaw,
-      _resourceDetails: resourceDetails,
-    };
-  }
-
-  return NextResponse.json(response);
+  });
 }

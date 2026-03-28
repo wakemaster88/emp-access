@@ -8,14 +8,6 @@ export interface AvailabilityPeriod {
   end: string;
 }
 
-export interface AnnyMapping {
-  mappings?: Record<string, number>;
-  services?: string[];
-  resources?: string[];
-  subscriptions?: string[];
-  resourceIds?: Record<string, string>;
-}
-
 export async function fetchAnnyAvailability(
   baseUrl: string,
   token: string,

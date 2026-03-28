@@ -201,37 +201,11 @@ export function AreaDialog({
 
       if (hasAnny && areaId) {
         try {
-          const cfgRes = await fetch("/api/settings/integrations");
-          if (cfgRes.ok) {
-            const configs = await cfgRes.json();
-            const annyConfig = Array.isArray(configs)
-              ? configs.find((c: { provider: string }) => c.provider === "ANNY")
-              : null;
-            if (annyConfig) {
-              let extra: Record<string, unknown> = {};
-              try { if (annyConfig.extraConfig) extra = JSON.parse(annyConfig.extraConfig); } catch { /* ignore */ }
-              const mappings = (extra.mappings as Record<string, number>) || {};
-
-              for (const name of allAnnyItems) {
-                if (mappings[name] === areaId) delete mappings[name];
-              }
-              for (const name of selectedAnny) {
-                mappings[name] = areaId;
-              }
-
-              extra.mappings = mappings;
-              await fetch("/api/settings/integrations", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  provider: "ANNY",
-                  token: annyConfig.token,
-                  baseUrl: annyConfig.baseUrl || "",
-                  extraConfig: JSON.stringify(extra),
-                }),
-              });
-            }
-          }
+          await fetch(`/api/areas/${areaId}/anny-links`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify([...selectedAnny]),
+          });
         } catch { /* best-effort */ }
       }
 

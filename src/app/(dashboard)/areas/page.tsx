@@ -20,7 +20,7 @@ export default async function AreasPage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [areas, devices, annyConfig] = await Promise.all([
+  const [areas, devices, annyConfig, annyLinks] = await Promise.all([
     db.accessArea.findMany({
       where: accountFilter,
       include: {
@@ -37,6 +37,10 @@ export default async function AreasPage() {
       where: { ...accountFilter, provider: "ANNY" },
       select: { extraConfig: true },
     }).catch(() => null),
+    db.annyResourceLink.findMany({
+      where: accountFilter,
+      select: { annyName: true, accessAreaId: true },
+    }).catch(() => [] as { annyName: string; accessAreaId: number }[]),
   ]);
 
   // Map devices to areas
@@ -48,15 +52,18 @@ export default async function AreasPage() {
 
   let annyResourceNames: string[] = [];
   let annyServiceNames: string[] = [];
-  let annyMappings: Record<string, number> = {};
   if (annyConfig?.extraConfig) {
     try {
       const parsed: AnnyExtra = JSON.parse(annyConfig.extraConfig);
       annyResourceNames = (parsed.resources || []).sort();
       const resSet = new Set(annyResourceNames);
       annyServiceNames = (parsed.services || []).filter((s) => !resSet.has(s)).sort();
-      annyMappings = parsed.mappings || {};
     } catch { /* ignore */ }
+  }
+
+  const annyMappings: Record<string, number> = {};
+  for (const link of annyLinks) {
+    annyMappings[link.annyName] = link.accessAreaId;
   }
 
   return (

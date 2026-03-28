@@ -205,6 +205,7 @@ model AccessArea {
   ticketAreas     TicketArea[]
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
+  annyLinks       AnnyResourceLink[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -317,6 +318,26 @@ model TelegramConfig {
   updatedAt       DateTime @updatedAt
 
   @@index([accountId])
+}
+
+model AnnyResourceLink {
+  id              Int        @id @default(autoincrement())
+  accessAreaId    Int
+  accessArea      AccessArea @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
+  annyResourceId  String
+  annyName        String
+  label           String
+  isPublic        Boolean    @default(false)
+  splitSlots      Boolean    @default(false)
+  bookingInterval Int?
+  priceLabel      String?
+  accountId       Int
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([accessAreaId, annyName])
+  @@index([accountId])
+  @@index([accessAreaId])
 }
 
 model ApiConfig {

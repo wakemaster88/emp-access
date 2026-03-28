@@ -35,9 +35,8 @@ interface AnnyBooking {
   extras?: AnnyLineItem[];
 }
 
-interface AnnyMapping {
-  mappings?: Record<string, number>;
-}
+
+
 
 type AnnyEventBody = {
   event?: string;
@@ -201,11 +200,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ deleted, invalidated });
   }
 
-  let annyConfig: AnnyMapping = {};
-  try {
-    if (config.extraConfig) annyConfig = JSON.parse(config.extraConfig);
-  } catch { /* ignore */ }
-  const areaMappings = annyConfig.mappings || {};
+  const annyLinks = await db.annyResourceLink.findMany({
+    where: { accountId },
+    select: { annyName: true, accessAreaId: true },
+  });
+  const areaMappings: Record<string, number> = {};
+  for (const link of annyLinks) {
+    areaMappings[link.annyName] = link.accessAreaId;
+  }
 
   const subscriptions = await db.subscription.findMany({
     where: { accountId },

@@ -3,7 +3,6 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import {
   fetchAnnyAvailability,
   fmtTimeBerlin as fmtTime,
-  type AnnyMapping,
   type AvailabilityPeriod,
 } from "@/lib/anny-availability";
 
@@ -198,42 +197,29 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Parse anny mapping
-  let mappings: Record<string, number> = {};
-  let resourceIds: Record<string, string> = {};
-  let knownResources: Set<string> = new Set();
+  const annyLinks = await db.annyResourceLink.findMany({
+    where: { accountId: accountId! },
+  });
+
   let annyAvailability: Record<string, AvailabilityPeriod[]> = {};
+  const allResIds = [...new Set(annyLinks.map((l) => l.annyResourceId))];
 
-  if (annyConfig?.token && annyConfig.extraConfig) {
+  if (annyConfig?.token && allResIds.length > 0) {
     try {
-      const parsed: AnnyMapping = JSON.parse(annyConfig.extraConfig);
-      mappings = parsed.mappings || {};
-      resourceIds = parsed.resourceIds || {};
-      if (parsed.resources) parsed.resources.forEach((r) => knownResources.add(r));
-
-      const allResIds = [...new Set(Object.values(resourceIds))];
-      if (allResIds.length > 0) {
-        const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
-        annyAvailability = await fetchAnnyAvailability(baseUrl, annyConfig.token, allResIds, dateStr);
-      }
+      const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
+      annyAvailability = await fetchAnnyAvailability(baseUrl, annyConfig.token, allResIds, dateStr);
     } catch { /* ignore */ }
   }
 
-  // Build: areaId → [{ resourceName, resourceId }] — only actual resources, not services
   const areaResourceMap: Record<number, { name: string; resourceId: string }[]> = {};
-  // Build: areaId → all mapped names (resources + services) for ticket matching
   const areaAllNames: Record<number, string[]> = {};
-  for (const [name, areaId] of Object.entries(mappings)) {
-    if (!areaAllNames[areaId]) areaAllNames[areaId] = [];
-    areaAllNames[areaId].push(name);
+  for (const link of annyLinks) {
+    if (!areaAllNames[link.accessAreaId]) areaAllNames[link.accessAreaId] = [];
+    areaAllNames[link.accessAreaId].push(link.annyName);
 
-    const resId = resourceIds[name];
-    const isResource = knownResources.size === 0 || knownResources.has(name);
-    if (resId && isResource) {
-      if (!areaResourceMap[areaId]) areaResourceMap[areaId] = [];
-      const exists = areaResourceMap[areaId].some((r) => r.resourceId === resId);
-      if (!exists) areaResourceMap[areaId].push({ name, resourceId: resId });
-    }
+    if (!areaResourceMap[link.accessAreaId]) areaResourceMap[link.accessAreaId] = [];
+    const exists = areaResourceMap[link.accessAreaId].some((r) => r.resourceId === link.annyResourceId);
+    if (!exists) areaResourceMap[link.accessAreaId].push({ name: link.annyName, resourceId: link.annyResourceId });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -277,11 +263,12 @@ export async function GET(request: NextRequest) {
     if (areaResources.length === 0) {
       let computedHours = area.openingHours;
       if (!computedHours) {
-        const namesForArea = areaAllNames[area.id] || [];
+        const areaRids = [...new Set(
+          annyLinks.filter((l) => l.accessAreaId === area.id).map((l) => l.annyResourceId),
+        )];
         const slotSet = new Set<string>();
-        for (const n of namesForArea) {
-          const rid = resourceIds[n];
-          if (rid && annyAvailability[rid]) {
+        for (const rid of areaRids) {
+          if (annyAvailability[rid]) {
             for (const p of annyAvailability[rid]) {
               const s = fmtTime(p.start), e = fmtTime(p.end);
               if (s && e) slotSet.add(`${s}–${e}`);

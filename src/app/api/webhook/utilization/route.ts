@@ -4,9 +4,7 @@ import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { computeResourceUtilization, type ResourceUtilizationRow } from "@/lib/resource-utilization";
 import {
   fetchAnnyAvailability,
-  fmtTimeBerlin,
   periodsToSlots,
-  type AnnyMapping,
   type AvailabilitySlot,
 } from "@/lib/anny-availability";
 
@@ -32,22 +30,21 @@ async function loadAnnyAvailability(
       where: { accountId, provider: "ANNY" },
       select: { token: true, baseUrl: true, extraConfig: true },
     });
-    if (!annyConfig?.token || !annyConfig.extraConfig) return result;
+    if (!annyConfig?.token) return result;
 
-    const parsed: AnnyMapping = JSON.parse(annyConfig.extraConfig);
-    const mappings = parsed.mappings ?? {};
-    const resourceIds = parsed.resourceIds ?? {};
+    const annyLinks: { accessAreaId: number; annyResourceId: string }[] = await db.annyResourceLink.findMany({
+      where: { accountId },
+      select: { accessAreaId: true, annyResourceId: true },
+    });
 
     const areaToAnnyIds = new Map<number, string[]>();
-    for (const [name, areaId] of Object.entries(mappings)) {
-      const rid = resourceIds[name];
-      if (!rid) continue;
-      if (!areaToAnnyIds.has(areaId)) areaToAnnyIds.set(areaId, []);
-      const list = areaToAnnyIds.get(areaId)!;
-      if (!list.includes(rid)) list.push(rid);
+    for (const link of annyLinks) {
+      if (!areaToAnnyIds.has(link.accessAreaId)) areaToAnnyIds.set(link.accessAreaId, []);
+      const list = areaToAnnyIds.get(link.accessAreaId)!;
+      if (!list.includes(link.annyResourceId)) list.push(link.annyResourceId);
     }
 
-    const allRids = [...new Set([...areaToAnnyIds.values()].flat())];
+    const allRids = [...new Set(annyLinks.map((l) => l.annyResourceId))];
     if (allRids.length === 0) return result;
 
     const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
