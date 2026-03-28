@@ -12,6 +12,7 @@ interface TimeSlot {
   capacity: number | null;
   source?: string;
   isPublic?: boolean;
+  price?: string;
 }
 
 interface Resource {
@@ -300,7 +301,7 @@ export default function ResourceMonitorPage({
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                         title={isFree
-                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}`
+                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}${slot.price ? ` (${slot.price})` : ""}`
                           : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}`}
                       >
                         {isFree ? (
@@ -311,6 +312,11 @@ export default function ResourceMonitorPage({
                             {heightPct > 4 && (
                               <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}
+                              </p>
+                            )}
+                            {slot.price && heightPct > 6 && (
+                              <p className="text-[9px] sm:text-[10px] font-semibold leading-tight truncate">
+                                {slot.price}
                               </p>
                             )}
                           </>

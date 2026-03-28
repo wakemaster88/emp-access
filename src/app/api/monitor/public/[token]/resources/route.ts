@@ -19,6 +19,7 @@ interface TimeSlot {
   capacity: number | null;
   source?: string;
   isPublic?: boolean;
+  price?: string;
 }
 
 interface BookingEntry {
@@ -28,6 +29,45 @@ interface BookingEntry {
   resourceId: string | null;
   resourceName: string | null;
   serviceName: string | null;
+}
+
+interface ServiceInfo {
+  interval: number;
+  price: string;
+}
+
+async function fetchAnnyServices(
+  baseUrl: string,
+  apiToken: string,
+): Promise<Map<string, ServiceInfo>> {
+  const result = new Map<string, ServiceInfo>();
+  const headers = { Authorization: `Bearer ${apiToken}`, Accept: "application/json" };
+
+  try {
+    for (let page = 1; page <= 5; page++) {
+      const res = await fetch(
+        `${baseUrl}/api/v1/services?page[size]=50&page[number]=${page}`,
+        { headers, signal: AbortSignal.timeout(8000) },
+      );
+      if (!res.ok) break;
+      const json = await res.json();
+      const items = (json.data || json) as { id: string; attributes?: Record<string, unknown> }[];
+      if (!Array.isArray(items) || items.length === 0) break;
+
+      for (const svc of items) {
+        const a = svc.attributes || (svc as unknown as Record<string, unknown>);
+        const name = a.name as string;
+        if (!name) continue;
+        const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
+        const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
+        if (interval > 0) result.set(name, { interval, price });
+      }
+
+      if (items.length < 50) break;
+    }
+  } catch { /* ignore */ }
+
+  return result;
 }
 
 /**
@@ -142,6 +182,7 @@ export async function GET(
   let resourceIds: Record<string, string> = {};
   let annyAvailability: Record<string, { start: string; end: string }[]> = {};
   let allBookings: BookingEntry[] = [];
+  let annyServices = new Map<string, ServiceInfo>();
   let baseUrl = "";
 
   if (annyConfig?.token && annyConfig.extraConfig) {
@@ -152,20 +193,24 @@ export async function GET(
       baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
       const allRids = [...new Set(Object.values(resourceIds))];
 
-      const [avail, bookings] = await Promise.all([
+      const [avail, bookings, services] = await Promise.all([
         allRids.length > 0
           ? fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr)
           : Promise.resolve({} as Record<string, { start: string; end: string }[]>),
         fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
+        fetchAnnyServices(baseUrl, annyConfig.token),
       ]);
       annyAvailability = avail;
       allBookings = bookings;
+      annyServices = services;
     } catch { /* ignore */ }
   }
 
   const areaAnnyIds = new Map<number, string[]>();
   const areaRidLabels = new Map<string, Set<string>>();
   const areaRidPublic = new Map<string, boolean>();
+  const areaRidInterval = new Map<string, number>();
+  const areaRidPrice = new Map<string, string>();
 
   function cleanLabel(name: string): string {
     let l = name.replace(/^Wake & Ski\s*-\s*/i, "");
@@ -182,6 +227,15 @@ export async function GET(
     areaRidLabels.get(mapKey)!.add(cleanLabel(name));
 
     if (/öffentlich/i.test(name)) areaRidPublic.set(mapKey, true);
+
+    const svcInfo = annyServices.get(name);
+    if (svcInfo && svcInfo.interval > 0) {
+      const existing = areaRidInterval.get(mapKey) ?? 0;
+      if (!existing || svcInfo.interval < existing) {
+        areaRidInterval.set(mapKey, svcInfo.interval);
+        if (svcInfo.price) areaRidPrice.set(mapKey, svcInfo.price);
+      }
+    }
 
     if (!areaAnnyIds.has(areaId)) areaAnnyIds.set(areaId, []);
     const list = areaAnnyIds.get(areaId)!;
@@ -243,7 +297,7 @@ export async function GET(
       }
     }
 
-    const availIntervals: { start: number; end: number; source: string; isPublic: boolean }[] = [];
+    const availIntervals: { start: number; end: number; source: string; isPublic: boolean; interval: number; price: string }[] = [];
     for (const rid of rids) {
       const mapKey = `${area.id}:${rid}`;
       const labels = areaRidLabels.get(mapKey);
@@ -254,13 +308,15 @@ export async function GET(
       );
       const sourceName = (deduped.length > 0 ? deduped : filtered).join(", ");
       const isPublic = areaRidPublic.get(mapKey) ?? false;
+      const interval = areaRidInterval.get(mapKey) ?? 0;
+      const price = areaRidPrice.get(mapKey) ?? "";
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
         const e = fmtTimeBerlin(p.end);
         if (!s || !e) continue;
         const sMin = timeToMin(s);
         const eMin = timeToMin(e);
-        if (sMin < eMin) availIntervals.push({ start: sMin, end: eMin, source: sourceName, isPublic });
+        if (sMin < eMin) availIntervals.push({ start: sMin, end: eMin, source: sourceName, isPublic, interval, price });
       }
     }
 
@@ -304,10 +360,16 @@ export async function GET(
 
       const sources: string[] = [];
       let anyPublic = false;
+      let minInterval = 0;
+      let slotPrice = "";
       for (const a of availIntervals) {
         if (a.start <= segStart && a.end >= segEnd) {
           if (a.source && !sources.includes(a.source)) sources.push(a.source);
           if (a.isPublic) anyPublic = true;
+          if (a.interval > 0 && (minInterval === 0 || a.interval < minInterval)) {
+            minInterval = a.interval;
+            slotPrice = a.price;
+          }
         }
       }
 
@@ -321,26 +383,53 @@ export async function GET(
           capacity: area.personLimit,
           source: sources.join(", "),
           isPublic: anyPublic,
+          price: slotPrice,
         });
       }
     }
 
-    const slots: TimeSlot[] = [];
+    const merged: TimeSlot[] = [];
     for (const slot of rawSlots) {
-      const prev = slots[slots.length - 1];
+      const prev = merged[merged.length - 1];
       if (
         prev &&
         prev.end === slot.start &&
         prev.status === slot.status &&
         prev.source === slot.source &&
         prev.isPublic === slot.isPublic &&
+        prev.price === slot.price &&
         (slot.status === "free" ||
           (slot.status === "booked" && prev.count === slot.count &&
             prev.names.join(",") === slot.names.join(",")))
       ) {
         prev.end = slot.end;
       } else {
-        slots.push({ ...slot });
+        merged.push({ ...slot });
+      }
+    }
+
+    const slots: TimeSlot[] = [];
+    for (const slot of merged) {
+      if (slot.status !== "free" || !slot.price) {
+        slots.push(slot);
+        continue;
+      }
+
+      const sMin = timeToMin(slot.start);
+      const eMin = timeToMin(slot.end);
+      let interval = 0;
+      for (const a of availIntervals) {
+        if (a.start <= sMin && a.end >= eMin && a.interval > 0) {
+          interval = interval === 0 ? a.interval : Math.min(interval, a.interval);
+        }
+      }
+
+      if (interval > 0 && (eMin - sMin) > interval) {
+        for (let t = sMin; t < eMin; t += interval) {
+          slots.push({ ...slot, start: minToTime(t), end: minToTime(Math.min(t + interval, eMin)) });
+        }
+      } else {
+        slots.push(slot);
       }
     }
 
