@@ -5,8 +5,7 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, MonitorPlay, Wifi, Globe, MessageCircle } from "lucide-react";
-import { MonitorManager } from "@/components/settings/monitor-manager";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { TelegramCard } from "@/components/settings/telegram-card";
@@ -22,18 +21,9 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [apiConfigs, account, monitors, devices, shellyDevices, telegramConfig, accessAreas] = await Promise.all([
+  const [apiConfigs, account, shellyDevices, telegramConfig] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
     db.account.findUnique({ where: { id: session.user.accountId } }),
-    db.monitorConfig.findMany({
-      where: { accountId: session.user.accountId },
-      orderBy: { createdAt: "desc" },
-    }),
-    db.device.findMany({
-      where: { accountId: session.user.accountId },
-      select: { id: true, name: true, type: true, isActive: true },
-      orderBy: { name: "asc" },
-    }),
     db.device.findMany({
       where: { accountId: session.user.accountId, type: "SHELLY", shellyId: { not: null } },
       select: { shellyId: true },
@@ -41,11 +31,6 @@ export default async function SettingsPage() {
     db.telegramConfig.findFirst({
       where: { accountId: session.user.accountId },
       select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true },
-    }),
-    db.accessArea.findMany({
-      where: { accountId: session.user.accountId },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -127,29 +112,6 @@ export default async function SettingsPage() {
             savedServer={shellyConfig?.baseUrl ?? null}
             savedAuthKey={shellyConfig?.token ?? null}
             existingDeviceIds={existingShellyIds}
-          />
-        </section>
-
-        {/* Live Monitore */}
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <MonitorPlay className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Live Monitore
-            </h2>
-            <Badge variant="secondary" className="ml-auto text-xs">
-              {monitors.length} Monitor{monitors.length !== 1 ? "e" : ""}
-            </Badge>
-          </div>
-          <MonitorManager
-            monitors={monitors.map((m) => ({
-              ...m,
-              deviceIds: m.deviceIds as number[],
-              createdAt: m.createdAt.toISOString(),
-            }))}
-            devices={devices}
-            accessAreas={accessAreas}
-            baseUrl={baseUrl}
           />
         </section>
 

@@ -11,6 +11,7 @@ import {
   MapPin,
   ScanLine,
   Monitor,
+  MonitorCog,
   ChevronLeft,
   ChevronRight,
   Shield,
@@ -37,6 +38,7 @@ const navItems = [
   { href: "/scans", label: "Scans", icon: ScanLine },
   { href: "/analytics", label: "Auswertung", icon: BarChart3 },
   { href: "/monitor", label: "Live Monitor", icon: Monitor },
+  { href: "/monitors", label: "Monitore", icon: MonitorCog },
   { href: "/settings", label: "Einstellungen", icon: Settings },
 ];
 
