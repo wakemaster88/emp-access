@@ -164,11 +164,25 @@ export async function GET(
   }
 
   const areaAnnyIds = new Map<number, string[]>();
-  const ridToName = new Map<string, string>();
+  const areaRidLabels = new Map<string, Set<string>>();
+  const areaRidPublic = new Map<string, boolean>();
+
+  function cleanLabel(name: string): string {
+    let l = name.replace(/^Wake & Ski\s*-\s*/i, "");
+    if (l.includes(" - ")) l = l.split(" - ")[0].trim();
+    return l;
+  }
+
   for (const [name, areaId] of Object.entries(mappings)) {
     const rid = resourceIds[name];
     if (!rid) continue;
-    ridToName.set(rid, name);
+
+    const mapKey = `${areaId}:${rid}`;
+    if (!areaRidLabels.has(mapKey)) areaRidLabels.set(mapKey, new Set());
+    areaRidLabels.get(mapKey)!.add(cleanLabel(name));
+
+    if (/öffentlich/i.test(name)) areaRidPublic.set(mapKey, true);
+
     if (!areaAnnyIds.has(areaId)) areaAnnyIds.set(areaId, []);
     const list = areaAnnyIds.get(areaId)!;
     if (!list.includes(rid)) list.push(rid);
@@ -231,8 +245,10 @@ export async function GET(
 
     const availIntervals: { start: number; end: number; source: string; isPublic: boolean }[] = [];
     for (const rid of rids) {
-      const sourceName = ridToName.get(rid) || "";
-      const isPublic = /öffentlich/i.test(sourceName);
+      const mapKey = `${area.id}:${rid}`;
+      const labels = areaRidLabels.get(mapKey);
+      const sourceName = labels ? [...labels].join(", ") : rid;
+      const isPublic = areaRidPublic.get(mapKey) ?? false;
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
         const e = fmtTimeBerlin(p.end);
@@ -278,8 +294,6 @@ export async function GET(
     }
 
     for (const f of freeIntervals) {
-      let label = f.source.replace(/^Wake & Ski\s*-\s*/i, "");
-      if (label.includes(" - ")) label = label.split(" - ")[0].trim();
       slots.push({
         start: minToTime(f.start),
         end: minToTime(f.end),
@@ -287,7 +301,7 @@ export async function GET(
         count: 0,
         names: [],
         capacity: area.personLimit,
-        source: label,
+        source: f.source,
         isPublic: f.isPublic,
       });
     }
@@ -327,7 +341,9 @@ export async function GET(
       availabilityCounts: Object.fromEntries(
         Object.entries(annyAvailability).map(([k, v]) => [k, v.length]),
       ),
-      ridToName: Object.fromEntries(ridToName),
+      areaRidLabels: Object.fromEntries(
+        [...areaRidLabels].map(([k, v]) => [k, [...v]]),
+      ),
       bookingsCount: allBookings.length,
     };
   }
