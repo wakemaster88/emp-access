@@ -95,7 +95,7 @@ async function fetchAllAnnyBookingsForDay(
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
@@ -114,7 +114,10 @@ export async function GET(
 
   const now = new Date();
   const berlinDate = now.toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
-  const dateStr = berlinDate;
+
+  const url = new URL(request.url);
+  const queryDate = url.searchParams.get("date");
+  const dateStr = queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate) ? queryDate : berlinDate;
 
   const selectedAreaIds = (config.deviceIds as number[]) ?? [];
 

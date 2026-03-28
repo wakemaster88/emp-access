@@ -89,11 +89,17 @@ export default function ResourceMonitorPage({
   const [error, setError] = useState(false);
   const [nowMinutes, setNowMinutes] = useState(getNowBerlinMinutes);
   const [nowTime, setNowTime] = useState(getNowBerlinTime);
+  const [selectedDate, setSelectedDate] = useState<string>("");
   const gridRef = useRef<HTMLDivElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  const todayBerlin = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  const isToday = !selectedDate || selectedDate === todayBerlin;
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/monitor/public/${token}/resources`);
+      const dateParam = selectedDate ? `?date=${selectedDate}` : "";
+      const res = await fetch(`/api/monitor/public/${token}/resources${dateParam}`);
       if (!res.ok) { setError(true); return; }
       const json: MonitorData = await res.json();
       setData(json);
@@ -101,7 +107,7 @@ export default function ResourceMonitorPage({
     } catch {
       setError(true);
     }
-  }, [token]);
+  }, [token, selectedDate]);
 
   useEffect(() => {
     fetchData();
@@ -137,7 +143,7 @@ export default function ResourceMonitorPage({
   }
 
   const nowPct = minutesToPercent(clampMinutes(nowMinutes));
-  const showNowLine = nowMinutes >= HOUR_START * 60 && nowMinutes <= HOUR_END * 60;
+  const showNowLine = isToday && nowMinutes >= HOUR_START * 60 && nowMinutes <= HOUR_END * 60;
   const hours = Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => HOUR_START + i);
   const resources = data.resources;
 
@@ -150,7 +156,30 @@ export default function ResourceMonitorPage({
       >
         <h1 className="text-sm sm:text-base font-bold tracking-tight truncate text-gray-900">{data.name}</h1>
         <div className="flex items-baseline gap-2 sm:gap-3 shrink-0 pl-3">
-          <p className="text-[11px] sm:text-xs text-gray-500 truncate">{formatDateDE(data.date)}</p>
+          <button
+            type="button"
+            onClick={() => dateInputRef.current?.showPicker()}
+            className="text-[11px] sm:text-xs text-gray-500 hover:text-gray-900 truncate cursor-pointer underline decoration-dotted underline-offset-2 transition-colors"
+          >
+            {formatDateDE(data.date)}
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={selectedDate || todayBerlin}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="sr-only"
+            tabIndex={-1}
+          />
+          {!isToday && (
+            <button
+              type="button"
+              onClick={() => setSelectedDate("")}
+              className="text-[10px] sm:text-xs text-emerald-600 hover:text-emerald-800 font-medium transition-colors"
+            >
+              Heute
+            </button>
+          )}
           <p className="text-lg sm:text-2xl font-mono font-bold tabular-nums text-emerald-600">{nowTime}</p>
         </div>
       </header>
