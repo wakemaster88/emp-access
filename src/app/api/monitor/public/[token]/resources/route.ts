@@ -5,6 +5,7 @@ import {
   fmtTimeBerlin,
   type AnnyMapping,
 } from "@/lib/anny-availability";
+import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,74 +19,82 @@ interface TimeSlot {
   capacity: number | null;
 }
 
-async function fetchAnnyBookingsForDay(
+interface BookingEntry {
+  start: string;
+  end: string;
+  customerName: string;
+}
+
+/**
+ * Fetches ALL bookings for a day from ANNY (services + resources),
+ * returns them grouped by ANNY resource ID.
+ */
+async function fetchAllAnnyBookingsForDay(
   baseUrl: string,
-  token: string,
-  resourceId: string,
+  apiToken: string,
   dateStr: string,
-): Promise<{ start: string; end: string; customerName: string; status: string }[]> {
+): Promise<Map<string, BookingEntry[]>> {
   const startDate = `${dateStr}T00:00:00+01:00`;
   const endDate = `${dateStr}T23:59:59+01:00`;
-
-  const params = new URLSearchParams({
-    include: "customer",
-    "filter[resource_id]": resourceId,
-    "filter[start_date_from]": startDate,
-    "filter[start_date_to]": endDate,
-    "page[size]": "100",
-    sort: "start_date",
-  });
+  const result = new Map<string, BookingEntry[]>();
+  const cancelledStatuses = new Set(["cancelled", "canceled", "rejected", "no_show"]);
+  let page = 1;
+  const pageSize = 100;
 
   try {
-    const res = await fetch(`${baseUrl}/api/v1/bookings?${params}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    const json = await res.json();
-
-    const includedMap = new Map<string, Record<string, unknown>>();
-    if (Array.isArray(json.included)) {
-      for (const inc of json.included) {
-        if (inc.id && inc.type) includedMap.set(`${inc.type}:${inc.id}`, inc);
-      }
-    }
-
-    const data = Array.isArray(json.data) ? json.data : json.data ? [json.data] : [];
-    const results: { start: string; end: string; customerName: string; status: string }[] = [];
-
-    for (const item of data) {
-      const attrs = item.attributes ?? item;
-      const bookingStart = attrs.start_date || attrs.starts_at || "";
-      const bookingEnd = attrs.end_date || attrs.ends_at || "";
-      const status = (attrs.status || "").toLowerCase();
-
-      if (["cancelled", "canceled", "rejected", "no_show"].includes(status)) continue;
-
-      let customerName = "";
-      const custRel = item.relationships?.customer?.data;
-      if (custRel?.id && custRel?.type) {
-        const cust = includedMap.get(`${custRel.type}:${custRel.id}`);
-        if (cust) {
-          const ca = (cust as Record<string, unknown>).attributes as Record<string, string> | undefined;
-          customerName = ca?.full_name || ca?.name || `${ca?.given_name || ""} ${ca?.family_name || ""}`.trim();
-        }
-      }
-      if (!customerName) {
-        customerName = attrs.customer?.full_name || attrs.customer?.name || "";
-      }
-
-      results.push({
-        start: bookingStart ? fmtTimeBerlin(bookingStart) : "",
-        end: bookingEnd ? fmtTimeBerlin(bookingEnd) : "",
-        customerName,
-        status,
+    while (page <= 10) {
+      const params = new URLSearchParams({
+        include: "customer,resource,service",
+        "filter[start_date_from]": startDate,
+        "filter[start_date_to]": endDate,
+        "page[size]": String(pageSize),
+        "page[number]": String(page),
+        sort: "start_date",
       });
+
+      const res = await fetch(`${baseUrl}/api/v1/bookings?${params}`, {
+        headers: { Authorization: `Bearer ${apiToken}`, Accept: "application/json" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) break;
+
+      const json = await res.json();
+      const bookings = normalizeAnnyBookingsResponse(json);
+
+      for (const booking of bookings) {
+        const status = (booking.status || "").toLowerCase();
+        if (cancelledStatuses.has(status)) continue;
+
+        const resourceId = booking.resource?.id ? String(booking.resource.id) : null;
+        if (!resourceId) continue;
+
+        if (booking.start_date) {
+          try {
+            const bd = new Date(booking.start_date)
+              .toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+            if (bd !== dateStr) continue;
+          } catch { continue; }
+        }
+
+        const cust = booking.customer;
+        const customerName =
+          cust?.full_name || cust?.name ||
+          `${cust?.given_name || ""} ${cust?.family_name || ""}`.trim();
+
+        if (!result.has(resourceId)) result.set(resourceId, []);
+        result.get(resourceId)!.push({
+          start: booking.start_date ? fmtTimeBerlin(booking.start_date) : "",
+          end: booking.end_date ? fmtTimeBerlin(booking.end_date) : "",
+          customerName,
+        });
+      }
+
+      if (bookings.length < pageSize) break;
+      page++;
     }
-    return results;
-  } catch {
-    return [];
-  }
+  } catch { /* ignore */ }
+
+  return result;
 }
 
 export async function GET(
@@ -130,7 +139,7 @@ export async function GET(
   let mappings: Record<string, number> = {};
   let resourceIds: Record<string, string> = {};
   let annyAvailability: Record<string, { start: string; end: string }[]> = {};
-  let annyBookings: Record<string, Awaited<ReturnType<typeof fetchAnnyBookingsForDay>>> = {};
+  let allAnnyBookings = new Map<string, BookingEntry[]>();
   let baseUrl = "";
 
   if (annyConfig?.token && annyConfig.extraConfig) {
@@ -142,17 +151,12 @@ export async function GET(
       const allRids = [...new Set(Object.values(resourceIds))];
 
       if (allRids.length > 0) {
-        const [avail, ...bookingResults] = await Promise.all([
+        const [avail, bookings] = await Promise.all([
           fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr),
-          ...allRids.map((rid) =>
-            fetchAnnyBookingsForDay(baseUrl, annyConfig.token, rid, dateStr)
-              .then((b) => ({ rid, bookings: b }))
-          ),
+          fetchAllAnnyBookingsForDay(baseUrl, annyConfig.token, dateStr),
         ]);
         annyAvailability = avail;
-        for (const br of bookingResults) {
-          annyBookings[br.rid] = br.bookings;
-        }
+        allAnnyBookings = bookings;
       }
     } catch { /* ignore */ }
   }
@@ -171,7 +175,7 @@ export async function GET(
 
     const bookedSlotMap = new Map<string, { start: string; end: string; count: number; names: string[] }>();
     for (const rid of rids) {
-      for (const b of annyBookings[rid] ?? []) {
+      for (const b of allAnnyBookings.get(rid) ?? []) {
         if (!b.start || !b.end) continue;
         const key = `${b.start}-${b.end}`;
         const existing = bookedSlotMap.get(key);

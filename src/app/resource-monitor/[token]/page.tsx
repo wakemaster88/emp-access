@@ -260,8 +260,8 @@ export default function ResourceMonitorPage({
                           "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded",
                           "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden shadow-sm border",
                           isFree
-                            ? "bg-emerald-50 border-emerald-300 text-emerald-800"
-                            : "bg-red-50 border-red-300 text-red-900",
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
+                            : "bg-red-50 border-red-300 text-red-900 z-[5]",
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                         title={isFree
