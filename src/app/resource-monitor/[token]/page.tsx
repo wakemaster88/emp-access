@@ -10,6 +10,8 @@ interface TimeSlot {
   count: number;
   names: string[];
   capacity: number | null;
+  source?: string;
+  isPublic?: boolean;
 }
 
 interface Resource {
@@ -272,7 +274,7 @@ export default function ResourceMonitorPage({
                     );
                   })}
 
-                  {/* Slots: free (green) + booked (red) */}
+                  {/* Slots: free (green), public/ÖB (blue), booked (red) */}
                   {resource.slots.map((slot, i) => {
                     const startMin = timeToMinutes(slot.start);
                     const endMin = slot.end ? timeToMinutes(slot.end) : null;
@@ -282,6 +284,7 @@ export default function ResourceMonitorPage({
                     const bottomPct = minutesToPercent(clampMinutes(effectiveEndMin));
                     const heightPct = Math.max(bottomPct - topPct, 2);
                     const isFree = slot.status === "free";
+                    const isPublic = isFree && slot.isPublic;
 
                     return (
                       <div
@@ -290,17 +293,21 @@ export default function ResourceMonitorPage({
                           "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded",
                           "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden shadow-sm border",
                           isFree
-                            ? "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
+                            ? isPublic
+                              ? "bg-sky-50 border-sky-300 text-sky-800 z-[2]"
+                              : "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
                             : "bg-red-50 border-red-300 text-red-900 z-[5]",
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                         title={isFree
-                          ? `Frei: ${slot.start} – ${slot.end}`
+                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}`
                           : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}`}
                       >
                         {isFree ? (
                           <>
-                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">Frei</p>
+                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
+                              {isPublic && slot.source ? slot.source : "Frei"}
+                            </p>
                             {heightPct > 4 && (
                               <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}

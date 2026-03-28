@@ -17,6 +17,8 @@ interface TimeSlot {
   count: number;
   names: string[];
   capacity: number | null;
+  source?: string;
+  isPublic?: boolean;
 }
 
 interface BookingEntry {
@@ -162,9 +164,11 @@ export async function GET(
   }
 
   const areaAnnyIds = new Map<number, string[]>();
+  const ridToName = new Map<string, string>();
   for (const [name, areaId] of Object.entries(mappings)) {
     const rid = resourceIds[name];
     if (!rid) continue;
+    ridToName.set(rid, name);
     if (!areaAnnyIds.has(areaId)) areaAnnyIds.set(areaId, []);
     const list = areaAnnyIds.get(areaId)!;
     if (!list.includes(rid)) list.push(rid);
@@ -225,15 +229,17 @@ export async function GET(
       }
     }
 
-    const availIntervals: { start: number; end: number }[] = [];
+    const availIntervals: { start: number; end: number; source: string; isPublic: boolean }[] = [];
     for (const rid of rids) {
+      const sourceName = ridToName.get(rid) || "";
+      const isPublic = /öffentlich/i.test(sourceName);
       for (const p of annyAvailability[rid] ?? []) {
         const s = fmtTimeBerlin(p.start);
         const e = fmtTimeBerlin(p.end);
         if (!s || !e) continue;
         const sMin = timeToMin(s);
         const eMin = timeToMin(e);
-        if (sMin < eMin) availIntervals.push({ start: sMin, end: eMin });
+        if (sMin < eMin) availIntervals.push({ start: sMin, end: eMin, source: sourceName, isPublic });
       }
     }
 
@@ -244,15 +250,15 @@ export async function GET(
       if (sMin < eMin) bookedIntervals.push({ start: sMin, end: eMin });
     }
 
-    const freeIntervals: { start: number; end: number }[] = [];
+    const freeIntervals: { start: number; end: number; source: string; isPublic: boolean }[] = [];
     const seenFree = new Set<string>();
     for (const avail of availIntervals) {
-      const remaining = subtractIntervals([avail], bookedIntervals);
+      const remaining = subtractIntervals([{ start: avail.start, end: avail.end }], bookedIntervals);
       for (const f of remaining) {
-        const key = `${f.start}-${f.end}`;
+        const key = `${f.start}-${f.end}-${avail.isPublic ? "pub" : "prv"}`;
         if (!seenFree.has(key)) {
           seenFree.add(key);
-          freeIntervals.push(f);
+          freeIntervals.push({ ...f, source: avail.source, isPublic: avail.isPublic });
         }
       }
     }
@@ -271,6 +277,7 @@ export async function GET(
     }
 
     for (const f of freeIntervals) {
+      const label = f.source.replace(/^.*?\s*-\s*/, "");
       slots.push({
         start: minToTime(f.start),
         end: minToTime(f.end),
@@ -278,6 +285,8 @@ export async function GET(
         count: 0,
         names: [],
         capacity: area.personLimit,
+        source: label,
+        isPublic: f.isPublic,
       });
     }
 
