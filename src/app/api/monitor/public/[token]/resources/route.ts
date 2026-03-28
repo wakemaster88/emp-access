@@ -177,8 +177,9 @@ export async function GET(
     const bookedSlotMap = new Map<string, { start: string; end: string; count: number; names: string[] }>();
     for (const b of allBookings) {
       const matchByRid = b.resourceId != null && rids.includes(b.resourceId);
-      const matchByResName = b.resourceName != null && areaAnnyNames.has(b.resourceName);
-      const matchBySvcName = b.serviceName != null && areaAnnyNames.has(b.serviceName);
+      const ridIsKnown = b.resourceId != null && allRids.includes(b.resourceId);
+      const matchByResName = !ridIsKnown && b.resourceName != null && areaAnnyNames.has(b.resourceName);
+      const matchBySvcName = !ridIsKnown && b.serviceName != null && areaAnnyNames.has(b.serviceName);
       if (!matchByRid && !matchByResName && !matchBySvcName) continue;
       if (!b.start || !b.end) continue;
 
