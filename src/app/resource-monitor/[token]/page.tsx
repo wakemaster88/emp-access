@@ -3,25 +3,21 @@
 import { useEffect, useState, useCallback, use, useRef } from "react";
 import { cn } from "@/lib/utils";
 
-interface AvailabilitySlot {
-  startTime: string;
-  endTime: string;
-}
-
-interface BookingSlot {
+interface TimeSlot {
   start: string;
   end: string;
+  status: "free" | "booked";
   count: number;
   names: string[];
+  capacity: number | null;
 }
 
 interface Resource {
   id: number;
   name: string;
   capacity: number | null;
-  availability: AvailabilitySlot[];
-  bookingCount: number;
-  bookingSlots: BookingSlot[];
+  totalBooked: number;
+  slots: TimeSlot[];
 }
 
 interface MonitorData {
@@ -80,14 +76,6 @@ function formatDateDE(dateStr: string): string {
   } catch {
     return dateStr;
   }
-}
-
-function utilizationColor(count: number, capacity: number | null): string {
-  if (capacity == null || capacity <= 0) return "bg-blue-600";
-  const pct = count / capacity;
-  if (pct >= 1) return "bg-red-600";
-  if (pct >= 0.8) return "bg-amber-500";
-  return "bg-blue-600";
 }
 
 export default function ResourceMonitorPage({
@@ -182,7 +170,7 @@ export default function ResourceMonitorPage({
             <div className="shrink-0" style={{ width: TIME_GUTTER }} />
             {resources.map((r) => {
               const pct = r.capacity != null && r.capacity > 0
-                ? Math.round((r.bookingCount / r.capacity) * 100)
+                ? Math.round((r.totalBooked / r.capacity) * 100)
                 : null;
               return (
                 <div
@@ -194,18 +182,10 @@ export default function ResourceMonitorPage({
                     <span className={cn(
                       pct != null && pct >= 100 ? "text-red-600" : pct != null && pct >= 80 ? "text-amber-600" : "text-gray-600",
                     )}>
-                      {r.bookingCount}
+                      {r.totalBooked}
                     </span>
                     {r.capacity != null && (
                       <span className="text-gray-400">/{r.capacity}</span>
-                    )}
-                    {pct != null && (
-                      <span className={cn(
-                        "ml-0.5",
-                        pct >= 100 ? "text-red-600" : pct >= 80 ? "text-amber-600" : "text-gray-400",
-                      )}>
-                        ({pct}%)
-                      </span>
                     )}
                   </p>
                 </div>
@@ -213,19 +193,15 @@ export default function ResourceMonitorPage({
             })}
           </div>
 
-          {/* Grid wrapper with padding so 08:00 / 22:00 labels aren't clipped */}
+          {/* Grid */}
           <div
             ref={gridRef}
             className="flex flex-1 overflow-hidden"
             style={{ paddingTop: GRID_PAD, paddingBottom: GRID_PAD }}
           >
-            {/* Inner grid fills remaining space; all % positions are relative to this */}
             <div className="relative flex w-full h-full">
               {/* Time gutter */}
-              <div
-                className="shrink-0 relative z-10"
-                style={{ width: TIME_GUTTER }}
-              >
+              <div className="shrink-0 relative z-10" style={{ width: TIME_GUTTER }}>
                 {hours.map((h) => {
                   const pct = ((h - HOUR_START) / TOTAL_HOURS) * 100;
                   return (
@@ -283,27 +259,8 @@ export default function ResourceMonitorPage({
                     );
                   })}
 
-                  {/* Availability blocks */}
-                  {resource.availability.map((slot, i) => {
-                    const startMin = timeToMinutes(slot.startTime);
-                    const endMin = timeToMinutes(slot.endTime);
-                    if (startMin == null || endMin == null) return null;
-                    const topPct = minutesToPercent(clampMinutes(startMin));
-                    const bottomPct = minutesToPercent(clampMinutes(endMin));
-                    const heightPct = bottomPct - topPct;
-                    if (heightPct <= 0) return null;
-                    return (
-                      <div
-                        key={`avail-${i}`}
-                        className="absolute left-0 right-0 bg-green-50 border-y border-green-300/50"
-                        style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-                        title={`Verfügbar: ${slot.startTime} – ${slot.endTime}`}
-                      />
-                    );
-                  })}
-
-                  {/* Booking slot blocks */}
-                  {resource.bookingSlots.map((slot, i) => {
+                  {/* Slots: free (green) + booked (red) */}
+                  {resource.slots.map((slot, i) => {
                     const startMin = timeToMinutes(slot.start);
                     const endMin = slot.end ? timeToMinutes(slot.end) : null;
                     if (startMin == null) return null;
@@ -311,33 +268,49 @@ export default function ResourceMonitorPage({
                     const effectiveEndMin = endMin != null ? endMin : startMin + 60;
                     const bottomPct = minutesToPercent(clampMinutes(effectiveEndMin));
                     const heightPct = Math.max(bottomPct - topPct, 2);
-                    const color = utilizationColor(slot.count, resource.capacity);
-                    const tooltip = `${slot.start}${slot.end ? ` – ${slot.end}` : ""}: ${slot.count} Buchung${slot.count !== 1 ? "en" : ""}\n${slot.names.join(", ")}${slot.count > slot.names.length ? ` (+${slot.count - slot.names.length})` : ""}`;
+                    const isFree = slot.status === "free";
 
                     return (
                       <div
                         key={`slot-${i}`}
                         className={cn(
-                          "absolute left-1 right-1 sm:left-2 sm:right-2 rounded",
-                          "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden",
-                          color, "text-white shadow",
+                          "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded",
+                          "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden shadow-sm border",
+                          isFree
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                            : "bg-red-50 border-red-300 text-red-900",
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-                        title={tooltip}
+                        title={isFree
+                          ? `Frei: ${slot.start} – ${slot.end}`
+                          : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}`}
                       >
-                        <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
-                          {slot.count} Buchung{slot.count !== 1 ? "en" : ""}
-                        </p>
-                        {heightPct > 4 && (
-                          <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-90">
-                            {slot.start}{slot.end ? ` – ${slot.end}` : ""}
-                          </p>
-                        )}
-                        {heightPct > 7 && slot.names.length > 0 && (
-                          <p className="text-[8px] sm:text-[9px] leading-tight truncate opacity-70 mt-px">
-                            {slot.names.slice(0, 3).join(", ")}
-                            {slot.count > 3 ? " …" : ""}
-                          </p>
+                        {isFree ? (
+                          <>
+                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">Frei</p>
+                            {heightPct > 4 && (
+                              <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
+                                {slot.start} – {slot.end}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
+                              {slot.count}x gebucht
+                            </p>
+                            {heightPct > 4 && (
+                              <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
+                                {slot.start} – {slot.end}
+                              </p>
+                            )}
+                            {heightPct > 7 && slot.names.length > 0 && (
+                              <p className="text-[8px] sm:text-[9px] leading-tight truncate opacity-60 mt-px">
+                                {slot.names.slice(0, 3).join(", ")}
+                                {slot.count > 3 ? " …" : ""}
+                              </p>
+                            )}
+                          </>
                         )}
                       </div>
                     );

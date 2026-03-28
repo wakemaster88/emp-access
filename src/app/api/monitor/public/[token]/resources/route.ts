@@ -3,13 +3,90 @@ import { prisma, tenantClient } from "@/lib/prisma";
 import {
   fetchAnnyAvailability,
   fmtTimeBerlin,
-  periodsToSlots,
   type AnnyMapping,
 } from "@/lib/anny-availability";
-import { ticketValidOnDayFilter } from "@/lib/resource-utilization";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+interface TimeSlot {
+  start: string;
+  end: string;
+  status: "free" | "booked";
+  count: number;
+  names: string[];
+  capacity: number | null;
+}
+
+async function fetchAnnyBookingsForDay(
+  baseUrl: string,
+  token: string,
+  resourceId: string,
+  dateStr: string,
+): Promise<{ start: string; end: string; customerName: string; status: string }[]> {
+  const startDate = `${dateStr}T00:00:00+01:00`;
+  const endDate = `${dateStr}T23:59:59+01:00`;
+
+  const params = new URLSearchParams({
+    include: "customer",
+    "filter[resource_id]": resourceId,
+    "filter[start_date_from]": startDate,
+    "filter[start_date_to]": endDate,
+    "page[size]": "100",
+    sort: "start_date",
+  });
+
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/bookings?${params}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+
+    const includedMap = new Map<string, Record<string, unknown>>();
+    if (Array.isArray(json.included)) {
+      for (const inc of json.included) {
+        if (inc.id && inc.type) includedMap.set(`${inc.type}:${inc.id}`, inc);
+      }
+    }
+
+    const data = Array.isArray(json.data) ? json.data : json.data ? [json.data] : [];
+    const results: { start: string; end: string; customerName: string; status: string }[] = [];
+
+    for (const item of data) {
+      const attrs = item.attributes ?? item;
+      const bookingStart = attrs.start_date || attrs.starts_at || "";
+      const bookingEnd = attrs.end_date || attrs.ends_at || "";
+      const status = (attrs.status || "").toLowerCase();
+
+      if (["cancelled", "canceled", "rejected", "no_show"].includes(status)) continue;
+
+      let customerName = "";
+      const custRel = item.relationships?.customer?.data;
+      if (custRel?.id && custRel?.type) {
+        const cust = includedMap.get(`${custRel.type}:${custRel.id}`);
+        if (cust) {
+          const ca = (cust as Record<string, unknown>).attributes as Record<string, string> | undefined;
+          customerName = ca?.full_name || ca?.name || `${ca?.given_name || ""} ${ca?.family_name || ""}`.trim();
+        }
+      }
+      if (!customerName) {
+        customerName = attrs.customer?.full_name || attrs.customer?.name || "";
+      }
+
+      results.push({
+        start: bookingStart ? fmtTimeBerlin(bookingStart) : "",
+        end: bookingEnd ? fmtTimeBerlin(bookingEnd) : "",
+        customerName,
+        status,
+      });
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
 
 export async function GET(
   _request: Request,
@@ -30,118 +107,52 @@ export async function GET(
   const db = tenantClient(accountId);
 
   const now = new Date();
-  const dayStart = new Date(now);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(now);
-  dayEnd.setHours(23, 59, 59, 999);
-
-  const y = dayStart.getFullYear();
-  const m = String(dayStart.getMonth() + 1).padStart(2, "0");
-  const d = String(dayStart.getDate()).padStart(2, "0");
-  const dateStr = `${y}-${m}-${d}`;
+  const berlinDate = now.toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  const dateStr = berlinDate;
 
   const selectedAreaIds = (config.deviceIds as number[]) ?? [];
-  const ticketDateFilter = ticketValidOnDayFilter(dayStart, dayEnd);
 
-  const [areas, annyConfig, subscriptionTickets, serviceTickets] = await Promise.all([
+  const [areas, annyConfig] = await Promise.all([
     db.accessArea.findMany({
       where: {
         accountId,
         ...(selectedAreaIds.length > 0 ? { id: { in: selectedAreaIds } } : { showOnDashboard: true }),
       },
-      select: {
-        id: true,
-        name: true,
-        personLimit: true,
-        tickets: {
-          where: ticketDateFilter,
-          select: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            ticketTypeName: true,
-            startDate: true,
-            endDate: true,
-            slotStart: true,
-            slotEnd: true,
-            source: true,
-            qrCode: true,
-          },
-        },
-      },
+      select: { id: true, name: true, personLimit: true },
       orderBy: { name: "asc" },
     }),
     db.apiConfig.findFirst({
       where: { accountId, provider: "ANNY" },
       select: { token: true, baseUrl: true, extraConfig: true },
     }),
-    db.ticket.findMany({
-      where: { accountId, subscriptionId: { not: null }, ...ticketDateFilter },
-      select: {
-        id: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        ticketTypeName: true,
-        startDate: true,
-        endDate: true,
-        slotStart: true,
-        slotEnd: true,
-        source: true,
-        qrCode: true,
-        subscription: { select: { areas: { select: { id: true } } } },
-      },
-    }),
-    db.ticket.findMany({
-      where: { accountId, serviceId: { not: null }, ...ticketDateFilter },
-      select: {
-        id: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        ticketTypeName: true,
-        startDate: true,
-        endDate: true,
-        slotStart: true,
-        slotEnd: true,
-        source: true,
-        qrCode: true,
-        service: { select: { serviceAreas: { select: { area: { select: { id: true } } } } } },
-      },
-    }),
   ]);
-
-  const subByArea = new Map<number, typeof subscriptionTickets>();
-  for (const t of subscriptionTickets) {
-    for (const a of t.subscription?.areas ?? []) {
-      if (!subByArea.has(a.id)) subByArea.set(a.id, []);
-      subByArea.get(a.id)!.push(t);
-    }
-  }
-  const svcByArea = new Map<number, typeof serviceTickets>();
-  for (const t of serviceTickets) {
-    for (const sa of t.service?.serviceAreas ?? []) {
-      const aid = sa.area?.id;
-      if (aid == null) continue;
-      if (!svcByArea.has(aid)) svcByArea.set(aid, []);
-      svcByArea.get(aid)!.push(t);
-    }
-  }
 
   let mappings: Record<string, number> = {};
   let resourceIds: Record<string, string> = {};
   let annyAvailability: Record<string, { start: string; end: string }[]> = {};
+  let annyBookings: Record<string, Awaited<ReturnType<typeof fetchAnnyBookingsForDay>>> = {};
+  let baseUrl = "";
 
   if (annyConfig?.token && annyConfig.extraConfig) {
     try {
       const parsed: AnnyMapping = JSON.parse(annyConfig.extraConfig);
       mappings = parsed.mappings ?? {};
       resourceIds = parsed.resourceIds ?? {};
+      baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
       const allRids = [...new Set(Object.values(resourceIds))];
+
       if (allRids.length > 0) {
-        const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
-        annyAvailability = await fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr);
+        const [avail, ...bookingResults] = await Promise.all([
+          fetchAnnyAvailability(baseUrl, annyConfig.token, allRids, dateStr),
+          ...allRids.map((rid) =>
+            fetchAnnyBookingsForDay(baseUrl, annyConfig.token, rid, dateStr)
+              .then((b) => ({ rid, bookings: b }))
+          ),
+        ]);
+        annyAvailability = avail;
+        for (const br of bookingResults) {
+          annyBookings[br.rid] = br.bookings;
+        }
       }
     } catch { /* ignore */ }
   }
@@ -155,101 +166,71 @@ export async function GET(
     if (!list.includes(rid)) list.push(rid);
   }
 
-  function bookingSlot(
-    ticket: {
-      source: string | null;
-      qrCode: string | null;
-      startDate: Date | null;
-      endDate: Date | null;
-      slotStart: string | null;
-      slotEnd: string | null;
-    },
-  ): { start: string; end: string } | null {
-    if (ticket.slotStart) {
-      return { start: ticket.slotStart, end: ticket.slotEnd ?? "" };
-    }
-
-    if (ticket.source === "ANNY" && ticket.qrCode) {
-      try {
-        const entries = JSON.parse(ticket.qrCode);
-        if (Array.isArray(entries)) {
-          for (const e of entries) {
-            if (e.start && e.start.includes(dateStr)) {
-              return {
-                start: fmtTimeBerlin(e.start),
-                end: e.end ? fmtTimeBerlin(e.end) : "",
-              };
-            }
-          }
-        }
-      } catch { /* not JSON */ }
-    }
-
-    if (ticket.startDate) {
-      const sd = ticket.startDate;
-      const ed = ticket.endDate;
-      const sdInDay = sd >= dayStart && sd <= dayEnd;
-      const edInDay = ed && ed >= dayStart && ed <= dayEnd;
-
-      if (sdInDay) {
-        const s = fmtTimeBerlin(sd.toISOString());
-        const e = edInDay ? fmtTimeBerlin(ed.toISOString()) : "";
-        if (s) return { start: s, end: e };
-      }
-    }
-    return null;
-  }
-
-  function displayName(t: { name: string; firstName: string | null; lastName: string | null }) {
-    const n = [t.firstName, t.lastName].filter(Boolean).join(" ").trim();
-    return n || t.name;
-  }
-
   const resources = areas.map((area) => {
     const rids = areaAnnyIds.get(area.id) ?? [];
-    const allPeriods = rids.flatMap((rid) => annyAvailability[rid] ?? []);
-    const slots = periodsToSlots(allPeriods);
 
-    const seen = new Set<number>();
-    const allTickets = [...area.tickets];
-    for (const t of subByArea.get(area.id) ?? []) {
-      if (!seen.has(t.id)) { seen.add(t.id); allTickets.push(t); }
-    }
-    for (const t of svcByArea.get(area.id) ?? []) {
-      if (!seen.has(t.id)) { seen.add(t.id); allTickets.push(t); }
-    }
-
-    const rawBookings = allTickets
-      .map((t) => {
-        const slot = bookingSlot(t);
-        return slot
-          ? { name: displayName(t), typeName: t.ticketTypeName, start: slot.start, end: slot.end }
-          : null;
-      })
-      .filter((b): b is NonNullable<typeof b> => b != null && !!b.start);
-
-    const slotGroups = new Map<string, { start: string; end: string; count: number; names: string[] }>();
-    for (const b of rawBookings) {
-      const key = `${b.start}-${b.end}`;
-      const g = slotGroups.get(key);
-      if (g) {
-        g.count++;
-        if (g.names.length < 5) g.names.push(b.name);
-      } else {
-        slotGroups.set(key, { start: b.start, end: b.end, count: 1, names: [b.name] });
+    const bookedSlotMap = new Map<string, { start: string; end: string; count: number; names: string[] }>();
+    for (const rid of rids) {
+      for (const b of annyBookings[rid] ?? []) {
+        if (!b.start) continue;
+        const key = `${b.start}-${b.end}`;
+        const existing = bookedSlotMap.get(key);
+        if (existing) {
+          existing.count++;
+          if (existing.names.length < 8) existing.names.push(b.customerName);
+        } else {
+          bookedSlotMap.set(key, { start: b.start, end: b.end, count: 1, names: [b.customerName] });
+        }
       }
     }
 
-    const bookingSlots = [...slotGroups.values()]
-      .sort((a, b) => a.start.localeCompare(b.start));
+    const freeSlots: { start: string; end: string }[] = [];
+    for (const rid of rids) {
+      for (const p of annyAvailability[rid] ?? []) {
+        const s = fmtTimeBerlin(p.start);
+        const e = fmtTimeBerlin(p.end);
+        if (!s || !e) continue;
+        const key = `${s}-${e}`;
+        if (!bookedSlotMap.has(key) && !freeSlots.some((f) => f.start === s && f.end === e)) {
+          freeSlots.push({ start: s, end: e });
+        }
+      }
+    }
+
+    const slots: TimeSlot[] = [];
+
+    for (const [, booked] of bookedSlotMap) {
+      slots.push({
+        start: booked.start,
+        end: booked.end,
+        status: "booked",
+        count: booked.count,
+        names: booked.names,
+        capacity: area.personLimit,
+      });
+    }
+
+    for (const free of freeSlots) {
+      slots.push({
+        start: free.start,
+        end: free.end,
+        status: "free",
+        count: 0,
+        names: [],
+        capacity: area.personLimit,
+      });
+    }
+
+    slots.sort((a, b) => a.start.localeCompare(b.start));
+
+    const totalBooked = [...bookedSlotMap.values()].reduce((sum, s) => sum + s.count, 0);
 
     return {
       id: area.id,
       name: area.name,
       capacity: area.personLimit,
-      availability: slots.map((s) => ({ startTime: s.startTime, endTime: s.endTime })),
-      bookingCount: allTickets.length,
-      bookingSlots,
+      totalBooked,
+      slots,
     };
   });
 
