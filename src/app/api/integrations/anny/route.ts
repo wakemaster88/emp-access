@@ -167,13 +167,18 @@ export async function POST() {
     const baseUrl = config.baseUrl?.replace(/\/+$/, "") || DEFAULT_BASE_URL;
     const apiBase = `${baseUrl}/api/v1`;
 
+    const SYNC_WINDOW_DAYS = 60;
+    const syncCutoff = new Date();
+    syncCutoff.setDate(syncCutoff.getDate() - SYNC_WINDOW_DAYS);
+    syncCutoff.setHours(0, 0, 0, 0);
+
     let allBookings: AnnyBooking[] = [];
     let page = 1;
-    const pageSize = 30;
+    const pageSize = 100;
+    let oldSkipped = 0;
 
     while (true) {
       const params = new URLSearchParams({
-        // Kein `ticket` in include: ANNY antwortet teils mit 500 (Server Error).
         include: "customer,resource,service",
         "page[size]": String(pageSize),
         "page[number]": String(page),
@@ -197,9 +202,20 @@ export async function POST() {
 
       const json = await res.json();
       const bookings = normalizeAnnyBookingsResponse(json);
-      allBookings = allBookings.concat(bookings);
 
-      if (bookings.length < pageSize || page >= 50) break;
+      let pageOldCount = 0;
+      for (const b of bookings) {
+        if (b.start_date && new Date(b.start_date) < syncCutoff) {
+          pageOldCount++;
+          oldSkipped++;
+        } else {
+          allBookings.push(b);
+        }
+      }
+
+      if (bookings.length < pageSize) break;
+      if (pageOldCount === bookings.length) break;
+      if (page >= 100) break;
       page++;
     }
 
@@ -378,10 +394,7 @@ export async function POST() {
       areaMappings[link.annyName] = link.accessAreaId;
     }
 
-    console.log(`[anny sync] ${allBookings.length} raw, ${uniqueBookings.length} unique bookings`);
-    for (const b of uniqueBookings) {
-      console.log(`  booking id=${b.id} number=${b.number} customer=${b.customer?.full_name ?? b.customer?.name} service=${b.service?.name} resource=${b.resource?.name} start=${b.start_date}`);
-    }
+    console.log(`[anny sync] ${uniqueBookings.length} bookings in window (${SYNC_WINDOW_DAYS}d), ${oldSkipped} older skipped, ${page} pages fetched`);
 
     // Group bookings by customer + service/resource + booking ID
     const groups = new Map<string, BookingGroup>();
@@ -732,13 +745,18 @@ export async function POST() {
       unmapped.push({ annyName: name, count, customerSample: [...customers] });
     }
 
-    // Mark anny tickets that no longer exist as INVALID
+    // Only invalidate booking tickets within the sync window (older ones weren't fetched).
+    // Plan-subscription tickets (anny-sub:*) are fully synced, so always included in activeUuids.
     const orphaned = await db.ticket.updateMany({
       where: {
         accountId: accountId!,
         source: "ANNY",
         uuid: { notIn: activeUuids },
         status: { not: "INVALID" },
+        OR: [
+          { startDate: { gte: syncCutoff } },
+          { uuid: { startsWith: "anny-sub:" } },
+        ],
       },
       data: { status: "INVALID" },
     });
@@ -804,20 +822,6 @@ export async function POST() {
       }
     } catch { /* service cache update is best-effort */ }
 
-    const bookingDebug = uniqueBookings.slice(0, 200).map((b) => ({
-      id: String(b.id),
-      number: b.number ?? null,
-      customer: b.customer?.full_name ?? b.customer?.name ?? null,
-      customerId: b.customer?.id ?? null,
-      service: b.service?.name ?? null,
-      serviceId: b.service?.id ?? null,
-      resource: b.resource?.name ?? null,
-      resourceId: b.resource?.id ?? null,
-      start: b.start_date ?? null,
-      end: b.end_date ?? null,
-      status: b.status ?? null,
-    }));
-
     return NextResponse.json({
       created,
       updated,
@@ -825,9 +829,10 @@ export async function POST() {
       errors,
       errorDetails: errorDetails.length > 0 ? errorDetails.slice(0, 20) : undefined,
       invalidated: orphaned.count,
-      total: allBookings.length,
-      unique: uniqueBookings.length,
-      dupedIds: dupedIds.length > 0 ? dupedIds.slice(0, 20) : undefined,
+      total: uniqueBookings.length,
+      oldSkipped,
+      syncWindowDays: SYNC_WINDOW_DAYS,
+      pages: page,
       groups: groups.size,
       resources: discoveredResourceNames.size,
       services: discoveredServiceNames.size,
@@ -836,7 +841,6 @@ export async function POST() {
       planSubscriptionsCreated: subCreated,
       planSubscriptionsUpdated: subUpdated,
       unmapped,
-      bookings: bookingDebug,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";

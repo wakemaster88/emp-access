@@ -235,6 +235,9 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
         } else if (json.total !== undefined) {
           parts.push(`${json.total} gesamt`);
         }
+        if (json.syncWindowDays) {
+          parts.push(`letzte ${json.syncWindowDays} Tage`);
+        }
         setSyncResult(parts.length ? parts.join(", ") : "Keine neuen Daten");
         if (Array.isArray(json.unmapped) && json.unmapped.length > 0) {
           setUnmapped(json.unmapped);
