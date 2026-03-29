@@ -205,7 +205,7 @@ export default function ResourceMonitorPage({
                 key={r.id}
                 className="flex-1 min-w-0 px-1 flex items-center justify-center border-l border-gray-300"
               >
-                <p className="text-sm sm:text-base font-bold truncate max-w-full text-gray-900">{r.name}</p>
+                <p className="text-base sm:text-lg font-bold truncate max-w-full text-gray-900">{r.name}</p>
               </div>
             ))}
           </div>
@@ -227,7 +227,7 @@ export default function ResourceMonitorPage({
                       className="absolute right-0 left-0 flex justify-end pr-1.5 sm:pr-2"
                       style={{ top: `${pct}%`, transform: "translateY(-50%)" }}
                     >
-                      <span className="text-[10px] sm:text-xs text-gray-500 font-mono font-medium leading-none tabular-nums">
+                      <span className="text-xs sm:text-sm text-gray-500 font-mono font-medium leading-none tabular-nums">
                         {String(h).padStart(2, "0")}:00
                       </span>
                     </div>
@@ -320,7 +320,7 @@ export default function ResourceMonitorPage({
                       >
                         {badge && (
                           <span className={cn(
-                            "absolute top-0.5 right-0.5 sm:top-1 sm:right-1 px-1 sm:px-1.5 py-px rounded text-[8px] sm:text-[9px] font-bold leading-tight whitespace-nowrap",
+                            "absolute top-0.5 right-0.5 sm:top-1 sm:right-1 px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold leading-tight whitespace-nowrap",
                             isFree
                               ? isPublic
                                 ? "bg-sky-200/80 text-sky-900"
@@ -332,32 +332,32 @@ export default function ResourceMonitorPage({
                         )}
                         {isFree ? (
                           <>
-                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate pr-6 sm:pr-8">
+                            <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
                               {slot.source || "Frei"}
                             </p>
                             {heightPct > 4 && (
-                              <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
+                              <p className="text-[10px] sm:text-xs font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}
                               </p>
                             )}
                             {slot.price && heightPct > 6 && (
-                              <p className="text-[9px] sm:text-[10px] font-semibold leading-tight truncate">
+                              <p className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
                                 {slot.price}
                               </p>
                             )}
                           </>
                         ) : (
                           <>
-                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate pr-6 sm:pr-8">
+                            <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
                               {slot.count}x gebucht
                             </p>
                             {heightPct > 4 && (
-                              <p className="text-[9px] sm:text-[10px] font-medium leading-tight truncate opacity-70">
+                              <p className="text-[10px] sm:text-xs font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}
                               </p>
                             )}
                             {heightPct > 7 && slot.names.length > 0 && (
-                              <p className="text-[8px] sm:text-[9px] leading-tight truncate opacity-60 mt-px">
+                              <p className="text-[9px] sm:text-[10px] leading-tight truncate opacity-60 mt-px">
                                 {slot.names.slice(0, 3).join(", ")}
                                 {slot.count > 3 ? " …" : ""}
                               </p>
