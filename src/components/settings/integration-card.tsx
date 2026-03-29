@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, Trash2, Save, ChevronDown, ChevronUp, RefreshCw, Copy, Search, XCircle } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 
 export interface ApiConfigData {
@@ -101,6 +101,17 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [testCode, setTestCode] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    valid: boolean;
+    name?: string | null;
+    category?: string | null;
+    cardName?: string | null;
+    validUntil?: string | null;
+    interfaceNames?: string[] | null;
+    message?: string;
+  } | null>(null);
 
   const isConfigured =
     provider === "WAKESYS" ? !!initialData?.baseUrl?.trim()
@@ -252,6 +263,37 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     }
   }
 
+  async function handleWakesysTest() {
+    if (!testCode.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/integrations/wakesys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: testCode.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setTestResult({ valid: false, message: json.error || "Fehler" });
+      } else {
+        setTestResult({
+          valid: json.valid,
+          name: json.name,
+          category: json.category,
+          cardName: json.cardName,
+          validUntil: json.validUntil,
+          interfaceNames: json.interface,
+          message: json.message,
+        });
+      }
+    } catch {
+      setTestResult({ valid: false, message: "Netzwerkfehler" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
   async function handleDelete() {
     if (!confirm(`Möchtest du die ${meta.label}-Integration wirklich löschen?`)) return;
     setDeleting(true);
@@ -392,6 +434,63 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 <p className="text-[11px] text-slate-500 dark:text-slate-500 mt-1">
                   Zusatz z. B.: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">{`{"interfaceIds": [2, 3, 4]}`}</code> (Reihenfolge = Fallback)
                 </p>
+              </div>
+            )}
+
+            {provider === "WAKESYS" && isConfigured && (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">RFID / Code testen</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="RFID-Code eingeben…"
+                    value={testCode}
+                    onChange={(e) => setTestCode(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleWakesysTest()}
+                    className="font-mono text-sm h-9"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleWakesysTest}
+                    disabled={testing || !testCode.trim()}
+                    className="shrink-0 h-9"
+                  >
+                    {testing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4 mr-1.5" />}
+                    {testing ? "" : "Prüfen"}
+                  </Button>
+                </div>
+                {testResult && (
+                  <div className={cn(
+                    "rounded-lg border p-3 space-y-1",
+                    testResult.valid
+                      ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30"
+                      : "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30",
+                  )}>
+                    <div className="flex items-center gap-2">
+                      {testResult.valid ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                      )}
+                      <span className={cn("text-sm font-bold", testResult.valid ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400")}>
+                        {testResult.valid ? "Gültig" : "Nicht gültig"}
+                      </span>
+                    </div>
+                    {testResult.valid && (
+                      <div className="text-xs text-slate-600 dark:text-slate-400 space-y-0.5 pl-6">
+                        {testResult.name && <p><strong>Name:</strong> {testResult.name}</p>}
+                        {testResult.cardName && <p><strong>Karte:</strong> {testResult.cardName}</p>}
+                        {testResult.category && <p><strong>Kategorie:</strong> {testResult.category}</p>}
+                        {testResult.validUntil && <p><strong>Gültig bis:</strong> {testResult.validUntil}</p>}
+                        {testResult.interfaceNames && <p><strong>Interface:</strong> {testResult.interfaceNames.join(", ")}</p>}
+                      </div>
+                    )}
+                    {testResult.message && !testResult.valid && (
+                      <p className="text-xs text-rose-600 dark:text-rose-400 pl-6">{testResult.message}</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

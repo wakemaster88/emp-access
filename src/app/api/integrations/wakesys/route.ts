@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { validateApiToken, getSessionWithDb } from "@/lib/api-auth";
 import { isValueValid } from "@/lib/wakesys";
 
 /**
@@ -61,6 +61,71 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { error: `Wakesys error: ${err instanceof Error ? err.message : "unknown"}` },
       { status: 502 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const session = await getSessionWithDb();
+  if ("error" in session) return session.error;
+
+  const body = await request.json();
+  const raw = String(body.code ?? "").trim();
+  const code = raw.replace(/^#+/, "").replace(/\s+/g, "");
+  if (!code) {
+    return NextResponse.json({ error: "Kein Code eingegeben" }, { status: 400 });
+  }
+
+  const { db, accountId } = session;
+  const config = await db.apiConfig.findFirst({
+    where: { accountId: accountId!, provider: "WAKESYS" },
+  });
+  if (!config) {
+    return NextResponse.json({ error: "Wakesys nicht konfiguriert" }, { status: 404 });
+  }
+
+  const extraConfig = config.extraConfig ? JSON.parse(config.extraConfig) : {};
+  const account =
+    extraConfig.account ||
+    (config.baseUrl ? new URL(config.baseUrl).hostname.split(".")[0] : null) ||
+    "default";
+  const interfaceType = extraConfig.interfaceType || "gate";
+  const interfaceIds: number[] = Array.isArray(extraConfig.interfaceIds)
+    ? extraConfig.interfaceIds
+    : extraConfig.interfaceId != null
+      ? [Number(extraConfig.interfaceId)]
+      : [2];
+
+  const idsToTry = interfaceIds.length > 0 ? interfaceIds : [2];
+
+  try {
+    for (const interfaceId of idsToTry) {
+      const url = `https://${account}.wakesys.com/files_for_admin_and_browser/sql_query/query_operator.php?interface=gate&interface_id=${interfaceId}&controller_interface_type=${interfaceType}&id=${encodeURIComponent(code)}`;
+
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      const data = await res.json();
+      const value = data?.data?.value ?? null;
+
+      if (isValueValid(value)) {
+        return NextResponse.json({
+          valid: true,
+          code,
+          interfaceId,
+          name: [value.col_first_name, value.col_last_name].filter(Boolean).join(" ") || null,
+          category: value.col_category_name || null,
+          cardName: value.card_name || null,
+          validUntil: value.valid_until || null,
+          interface: value.interface || null,
+          state: value.state || null,
+        });
+      }
+    }
+
+    return NextResponse.json({ valid: false, code, message: "Code nicht gültig" });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Wakesys-Fehler: ${err instanceof Error ? err.message : "unbekannt"}` },
+      { status: 502 },
     );
   }
 }
