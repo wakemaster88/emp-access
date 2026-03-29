@@ -212,6 +212,42 @@ export async function GET(
     }
   }
 
+  const allCheckinScans = areaIds.length > 0
+    ? await db.scan.findMany({
+        where: {
+          accountId,
+          scanTime: { gte: dayStart, lte: dayEnd },
+          result: "GRANTED",
+          ticket: {
+            subscriptionId: null,
+            status: { in: ["VALID", "REDEEMED"] },
+            OR: [
+              { accessAreaId: { in: areaIds } },
+              { ticketAreas: { some: { accessAreaId: { in: areaIds } } } },
+            ],
+          },
+        },
+        select: {
+          ticket: {
+            select: {
+              accessAreaId: true,
+              ticketAreas: { select: { accessAreaId: true } },
+            },
+          },
+        },
+      })
+    : [];
+
+  const ticketCheckinsByArea = new Map<number, number>();
+  for (const scan of allCheckinScans) {
+    const aids = new Set<number>();
+    if (scan.ticket?.accessAreaId) aids.add(scan.ticket.accessAreaId);
+    for (const ta of scan.ticket?.ticketAreas ?? []) aids.add(ta.accessAreaId);
+    for (const aid of aids) {
+      ticketCheckinsByArea.set(aid, (ticketCheckinsByArea.get(aid) ?? 0) + 1);
+    }
+  }
+
   const resources = areas.map((area) => {
     const links = areaLinks.get(area.id) ?? [];
     const rids = [...new Set(links.map((l) => l.annyResourceId))];
@@ -421,12 +457,15 @@ export async function GET(
     }
 
     const totalBooked = [...bookedSlotMap.values()].reduce((sum, s) => sum + s.count, 0);
+    const aboCheckins = (checkinsByArea.get(area.id) ?? []).length;
+    const ticketCheckins = ticketCheckinsByArea.get(area.id) ?? 0;
 
     return {
       id: area.id,
       name: area.name,
       capacity: area.personLimit,
       totalBooked,
+      dayCheckins: aboCheckins + ticketCheckins,
       slots,
     };
   });

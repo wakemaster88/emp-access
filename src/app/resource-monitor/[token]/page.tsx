@@ -21,6 +21,7 @@ interface Resource {
   name: string;
   capacity: number | null;
   totalBooked: number;
+  dayCheckins?: number;
   slots: TimeSlot[];
 }
 
@@ -289,11 +290,12 @@ export default function ResourceMonitorPage({
                     const isPublic = isFree && slot.isPublic;
 
                     const checkins = slot.checkins ?? 0;
+                    const dayCI = resource.dayCheckins ?? 0;
                     let badge: string | null = null;
-                    if (isFree && !isPublic) {
+                    if (isFree && isPublic) {
+                      badge = `${dayCI} Gäste`;
+                    } else if (isFree && !isPublic) {
                       badge = "0/1";
-                    } else if (isFree && isPublic && checkins > 0) {
-                      badge = `${checkins} Abo`;
                     } else if (!isFree && !slot.isPublic) {
                       badge = `${slot.count}/1`;
                     } else if (!isFree) {
@@ -315,7 +317,7 @@ export default function ResourceMonitorPage({
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                         title={isFree
-                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}${slot.price ? ` (${slot.price})` : ""}${checkins > 0 ? ` | ${checkins} Abo-Checkins` : ""}`
+                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}${slot.price ? ` (${slot.price})` : ""}${isPublic && dayCI > 0 ? ` | ${dayCI} Gäste eingecheckt` : ""}${!isPublic && checkins > 0 ? ` | ${checkins} Abo-Checkins` : ""}`
                           : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}${checkins > 0 ? `\n${checkins} Abo-Checkins` : ""}`}
                       >
                         {badge && (
