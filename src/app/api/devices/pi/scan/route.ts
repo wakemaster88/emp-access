@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const rawCode = String(body.code ?? "").trim();
   const code = rawCode.replace(/\s+/g, "");
+  const stripped = code.replace(/^#+/, "");
   const deviceId = Number(body.deviceId);
 
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
@@ -60,7 +61,9 @@ export async function POST(request: NextRequest) {
   }
 
   // EMP-Tickets und ggf. Wakesys-Fallback
-  const codesToTry = [code, rawCode];
+  const codesToTry = stripped !== code
+    ? [code, rawCode, stripped]
+    : [code, rawCode];
   let ticket = null;
   for (const c of codesToTry) {
     ticket = await db.ticket.findFirst({
@@ -82,10 +85,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (!ticket) {
-    const wakesys = await checkWakesys(db as Parameters<typeof checkWakesys>[0], accountId, code);
+    const wakesys = await checkWakesys(db as Parameters<typeof checkWakesys>[0], accountId, stripped || code);
     if (wakesys?.valid) {
       await db.scan.create({
-        data: { code, deviceId, result: "GRANTED", accountId },
+        data: { code: stripped || code, deviceId, result: "GRANTED", accountId },
       });
       return NextResponse.json({
         granted: true,
@@ -93,7 +96,7 @@ export async function POST(request: NextRequest) {
       });
     }
     await db.scan.create({
-      data: { code, deviceId, result: "DENIED", accountId },
+      data: { code: stripped || code, deviceId, result: "DENIED", accountId },
     });
     return NextResponse.json({ granted: false, message: "Ticket nicht gefunden" });
   }
