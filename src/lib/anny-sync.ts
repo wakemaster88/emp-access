@@ -623,6 +623,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         }
       }
     } catch (e) {
+      if (barcode) usedBarcodes.delete(barcode);
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[anny sync] ticket error uuid=${uuid} barcode=${barcode}:`, msg);
       errorDetails.push(`${uuid}: ${msg.slice(0, 120)}`);
