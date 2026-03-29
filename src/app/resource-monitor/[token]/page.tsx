@@ -13,6 +13,7 @@ interface TimeSlot {
   source?: string;
   isPublic?: boolean;
   price?: string;
+  checkins?: number;
 }
 
 interface Resource {
@@ -287,6 +288,19 @@ export default function ResourceMonitorPage({
                     const isFree = slot.status === "free";
                     const isPublic = isFree && slot.isPublic;
 
+                    const checkins = slot.checkins ?? 0;
+                    let badge: string | null = null;
+                    if (isFree && !isPublic) {
+                      badge = "0/1";
+                    } else if (isFree && isPublic && checkins > 0) {
+                      badge = `${checkins} Abo`;
+                    } else if (!isFree && !slot.isPublic) {
+                      badge = `${slot.count}/1`;
+                    } else if (!isFree) {
+                      const total = slot.count + checkins;
+                      badge = checkins > 0 ? `${slot.count}+${checkins}` : `${total}`;
+                    }
+
                     return (
                       <div
                         key={`slot-${i}`}
@@ -301,12 +315,24 @@ export default function ResourceMonitorPage({
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                         title={isFree
-                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}${slot.price ? ` (${slot.price})` : ""}`
-                          : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}`}
+                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}${slot.price ? ` (${slot.price})` : ""}${checkins > 0 ? ` | ${checkins} Abo-Checkins` : ""}`
+                          : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}${checkins > 0 ? `\n${checkins} Abo-Checkins` : ""}`}
                       >
+                        {badge && (
+                          <span className={cn(
+                            "absolute top-0.5 right-0.5 sm:top-1 sm:right-1 px-1 sm:px-1.5 py-px rounded text-[8px] sm:text-[9px] font-bold leading-tight whitespace-nowrap",
+                            isFree
+                              ? isPublic
+                                ? "bg-sky-200/80 text-sky-900"
+                                : "bg-emerald-200/80 text-emerald-900"
+                              : "bg-red-200/80 text-red-900",
+                          )}>
+                            {badge}
+                          </span>
+                        )}
                         {isFree ? (
                           <>
-                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
+                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate pr-6 sm:pr-8">
                               {slot.source || "Frei"}
                             </p>
                             {heightPct > 4 && (
@@ -322,7 +348,7 @@ export default function ResourceMonitorPage({
                           </>
                         ) : (
                           <>
-                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate">
+                            <p className="text-[10px] sm:text-xs font-bold leading-tight truncate pr-6 sm:pr-8">
                               {slot.count}x gebucht
                             </p>
                             {heightPct > 4 && (

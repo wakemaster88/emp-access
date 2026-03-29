@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
-import { fetchAnnyAvailability, fmtTimeBerlin } from "@/lib/anny-availability";
+import { fetchAnnyAvailability, fmtTimeBerlin, berlinOffset } from "@/lib/anny-availability";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +16,7 @@ interface TimeSlot {
   source?: string;
   isPublic?: boolean;
   price?: string;
+  checkins?: number;
 }
 
 interface BookingEntry {
@@ -165,6 +166,50 @@ export async function GET(
     ]);
     annyAvailability = avail;
     allBookings = bookings;
+  }
+
+  const tz = berlinOffset(dateStr);
+  const dayStart = new Date(`${dateStr}T00:00:00${tz}`);
+  const dayEnd = new Date(`${dateStr}T23:59:59${tz}`);
+
+  const areaIds = areas.map((a) => a.id);
+  const checkinScans = areaIds.length > 0
+    ? await db.scan.findMany({
+        where: {
+          accountId,
+          scanTime: { gte: dayStart, lte: dayEnd },
+          result: "GRANTED",
+          ticket: {
+            subscriptionId: { not: null },
+            status: { in: ["VALID", "REDEEMED"] },
+            OR: [
+              { accessAreaId: { in: areaIds } },
+              { ticketAreas: { some: { accessAreaId: { in: areaIds } } } },
+            ],
+          },
+        },
+        select: {
+          scanTime: true,
+          ticket: {
+            select: {
+              accessAreaId: true,
+              ticketAreas: { select: { accessAreaId: true } },
+            },
+          },
+        },
+      })
+    : [];
+
+  const checkinsByArea = new Map<number, string[]>();
+  for (const scan of checkinScans) {
+    const scanMin = fmtTimeBerlin(scan.scanTime.toISOString());
+    const ticketAreaIds = new Set<number>();
+    if (scan.ticket?.accessAreaId) ticketAreaIds.add(scan.ticket.accessAreaId);
+    for (const ta of scan.ticket?.ticketAreas ?? []) ticketAreaIds.add(ta.accessAreaId);
+    for (const aid of ticketAreaIds) {
+      if (!checkinsByArea.has(aid)) checkinsByArea.set(aid, []);
+      checkinsByArea.get(aid)!.push(scanMin);
+    }
   }
 
   const resources = areas.map((area) => {
@@ -358,6 +403,20 @@ export async function GET(
         }
       } else {
         slots.push(slot);
+      }
+    }
+
+    const areaCheckins = checkinsByArea.get(area.id) ?? [];
+    if (areaCheckins.length > 0) {
+      for (const slot of slots) {
+        const sMin = timeToMin(slot.start);
+        const eMin = timeToMin(slot.end);
+        let ci = 0;
+        for (const scanTime of areaCheckins) {
+          const m = timeToMin(scanTime);
+          if (m >= sMin && m < eMin) ci++;
+        }
+        if (ci > 0) slot.checkins = ci;
       }
     }
 
