@@ -19,7 +19,7 @@ export function isValueValid(value: { card_valid?: string; next_tickets?: unknow
   return false;
 }
 
-export type WakesysCheckResult = { valid: true; interfaceId?: number } | { valid: false } | null;
+export type WakesysCheckResult = { valid: true; interfaceId?: number; name?: string } | { valid: false } | null;
 
 /**
  * Prüft bei Wakesys, ob der Scan-Code ein gültiges Ticket hat.
@@ -58,7 +58,10 @@ export async function checkWakesys(
       const value = data?.data?.value ?? null;
 
       if (isValueValid(value)) {
-        return { valid: true, interfaceId };
+        const firstName = value?.col_first_name || "";
+        const lastName = value?.col_last_name || "";
+        const name = [firstName, lastName].filter(Boolean).join(" ") || undefined;
+        return { valid: true, interfaceId, name };
       }
     }
     return { valid: false };

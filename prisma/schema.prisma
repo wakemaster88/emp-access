@@ -170,6 +170,7 @@ model Ticket {
 model Scan {
   id        Int        @id @default(autoincrement())
   code      String
+  note      String?
   deviceId  Int?
   scanTime  DateTime   @default(now())
   result    ScanResult

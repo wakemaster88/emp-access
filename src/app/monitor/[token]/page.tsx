@@ -19,6 +19,7 @@ interface Device {
 interface Scan {
   id: number;
   code: string;
+  note?: string | null;
   result: "GRANTED" | "DENIED" | "PROTECTED";
   scanTime: string;
   device: { id: number; name: string };
@@ -294,8 +295,8 @@ export default function PublicMonitorPage({ params }: Props) {
         groups.push({
           groupKey: key,
           ticketId,
-          ticketName: scan.ticket?.name || scan.code,
-          personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || "",
+          ticketName: scan.ticket?.name || scan.note || scan.code,
+          personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.note || "",
           birthDate: scan.ticket?.birthDate,
           ticketTypeName: scan.ticket?.ticketTypeName || "",
           result: scan.result,

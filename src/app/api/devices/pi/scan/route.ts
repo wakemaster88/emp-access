@@ -88,7 +88,13 @@ export async function POST(request: NextRequest) {
     const wakesys = await checkWakesys(db as Parameters<typeof checkWakesys>[0], accountId, stripped || code);
     if (wakesys?.valid) {
       await db.scan.create({
-        data: { code: stripped || code, deviceId, result: "GRANTED", accountId },
+        data: {
+          code: stripped || code,
+          note: wakesys.name || null,
+          deviceId,
+          result: "GRANTED",
+          accountId,
+        },
       });
       return NextResponse.json({
         granted: true,
