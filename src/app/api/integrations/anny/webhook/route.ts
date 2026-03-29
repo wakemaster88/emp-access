@@ -334,14 +334,29 @@ export async function POST(request: NextRequest) {
         if (claimed.count > 0) {
           updated++;
         } else {
-          await db.ticket.create({
-            data: { ...ticketData, uuid, accountId },
-          });
+          try {
+            await db.ticket.create({
+              data: { ...ticketData, uuid, accountId },
+            });
+          } catch (createErr: unknown) {
+            const isUnique =
+              createErr != null &&
+              typeof createErr === "object" &&
+              "code" in createErr &&
+              (createErr as { code: string }).code === "P2002";
+            if (isUnique) {
+              await db.ticket.create({
+                data: { ...ticketData, barcode: null, uuid, accountId },
+              });
+            } else {
+              throw createErr;
+            }
+          }
           created++;
         }
       }
-    } catch {
-      // skip on conflict/error
+    } catch (e) {
+      console.error(`[anny webhook] ticket error uuid=${uuid}:`, e instanceof Error ? e.message : e);
     }
   }
 

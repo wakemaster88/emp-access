@@ -228,6 +228,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
         if (json.updated) parts.push(`${json.updated} aktualisiert`);
         if (json.invalidated) parts.push(`${json.invalidated} invalidiert`);
         if (json.skipped) parts.push(`${json.skipped} übersprungen`);
+        if (json.errors) parts.push(`${json.errors} Fehler`);
         if (json.resources) parts.push(`${json.resources} Ressourcen`);
         if (json.total !== undefined && json.groups !== undefined) {
           parts.push(`${json.total} Buchungen → ${json.groups} Tickets`);

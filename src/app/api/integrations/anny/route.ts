@@ -129,6 +129,24 @@ function calcSubscriptionEndDate(
   return null;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function createTicketSafe(db: any, ticketData: any, uuid: string, accountId: number) {
+  try {
+    return await db.ticket.create({ data: { ...ticketData, uuid, accountId } });
+  } catch (e: unknown) {
+    const isPrismaUnique =
+      e != null &&
+      typeof e === "object" &&
+      "code" in e &&
+      (e as { code: string }).code === "P2002";
+    if (isPrismaUnique) {
+      console.warn(`[anny sync] barcode conflict uuid=${uuid}, retrying without barcode`);
+      return await db.ticket.create({ data: { ...ticketData, barcode: null, uuid, accountId } });
+    }
+    throw e;
+  }
+}
+
 export const maxDuration = 60;
 
 export async function POST() {
@@ -494,7 +512,10 @@ export async function POST() {
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    let errors = 0;
+    const errorDetails: string[] = [];
     const activeUuids: string[] = [];
+    const usedBarcodes = new Set<string>();
     const unmapped: { annyName: string; count: number; customerSample: string[] }[] = [];
     const unmappedNames = new Map<string, { count: number; customers: Set<string> }>();
 
@@ -574,6 +595,14 @@ export async function POST() {
 
       activeUuids.push(uuid);
 
+      let barcode = group.scanCode || group.bookingNumber || null;
+      if (barcode && usedBarcodes.has(barcode)) {
+        barcode = group.bookingNumber && !usedBarcodes.has(group.bookingNumber)
+          ? group.bookingNumber
+          : null;
+      }
+      if (barcode) usedBarcodes.add(barcode);
+
       const ticketData = {
         name: group.customerName || `Buchung ${group.entries[0].id}`,
         firstName: group.firstName || null,
@@ -583,7 +612,7 @@ export async function POST() {
         endDate: group.endDate,
         status: mapGroupStatus(group.statuses),
         ticketTypeName: typeName,
-        barcode: group.scanCode || group.bookingNumber || null,
+        barcode,
         qrCode: JSON.stringify(group.entries),
         extras: group.extras.length > 0 ? JSON.parse(JSON.stringify(group.extras)) : undefined,
         source: "ANNY" as const,
@@ -608,16 +637,19 @@ export async function POST() {
               claimedLegacy.add(legacy);
               updated++;
             } else {
-              await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });
+              await createTicketSafe(db, ticketData, uuid, accountId!);
               created++;
             }
           } else {
-            await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });
+            await createTicketSafe(db, ticketData, uuid, accountId!);
             created++;
           }
         }
-      } catch {
-        skipped++;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[anny sync] ticket error uuid=${uuid} barcode=${barcode}:`, msg);
+        errorDetails.push(`${uuid}: ${msg.slice(0, 120)}`);
+        errors++;
       }
     }
 
@@ -790,6 +822,8 @@ export async function POST() {
       created,
       updated,
       skipped,
+      errors,
+      errorDetails: errorDetails.length > 0 ? errorDetails.slice(0, 20) : undefined,
       invalidated: orphaned.count,
       total: allBookings.length,
       unique: uniqueBookings.length,
