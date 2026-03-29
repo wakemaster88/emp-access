@@ -107,16 +107,41 @@ export async function POST(request: NextRequest) {
       const value = data?.data?.value ?? null;
 
       if (isValueValid(value)) {
+        const firstName = value.col_first_name || null;
+        const lastName = value.col_last_name || null;
+
+        let matchingTickets: { id: number; name: string; firstName: string | null; lastName: string | null; ticketTypeName: string | null; rfidCode: string | null; status: string; subscriptionId: number | null }[] = [];
+        if (firstName || lastName) {
+          const nameWhere: Record<string, unknown> = { accountId: accountId! };
+          if (firstName && lastName) {
+            nameWhere.firstName = { contains: firstName, mode: "insensitive" };
+            nameWhere.lastName = { contains: lastName, mode: "insensitive" };
+          } else if (lastName) {
+            nameWhere.lastName = { contains: lastName, mode: "insensitive" };
+          } else {
+            nameWhere.firstName = { contains: firstName, mode: "insensitive" };
+          }
+          nameWhere.status = { in: ["VALID", "REDEEMED"] };
+          matchingTickets = await db.ticket.findMany({
+            where: nameWhere,
+            select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true, rfidCode: true, status: true, subscriptionId: true },
+            take: 10,
+          });
+        }
+
         return NextResponse.json({
           valid: true,
           code,
           interfaceId,
-          name: [value.col_first_name, value.col_last_name].filter(Boolean).join(" ") || null,
+          name: [firstName, lastName].filter(Boolean).join(" ") || null,
+          firstName,
+          lastName,
           category: value.col_category_name || null,
           cardName: value.card_name || null,
           validUntil: value.valid_until || null,
           interface: value.interface || null,
           state: value.state || null,
+          matchingTickets,
         });
       }
     }
@@ -128,4 +153,33 @@ export async function POST(request: NextRequest) {
       { status: 502 },
     );
   }
+}
+
+export async function PATCH(request: NextRequest) {
+  const session = await getSessionWithDb();
+  if ("error" in session) return session.error;
+
+  const { db, accountId } = session;
+  const body = await request.json();
+  const ticketId = Number(body.ticketId);
+  const rfidCode = String(body.rfidCode ?? "").trim().replace(/^#+/, "");
+
+  if (!ticketId || !rfidCode) {
+    return NextResponse.json({ error: "ticketId und rfidCode erforderlich" }, { status: 400 });
+  }
+
+  const ticket = await db.ticket.findFirst({
+    where: { id: ticketId, accountId: accountId! },
+    select: { id: true, name: true, rfidCode: true },
+  });
+  if (!ticket) {
+    return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 404 });
+  }
+
+  await db.ticket.update({
+    where: { id: ticketId },
+    data: { rfidCode },
+  });
+
+  return NextResponse.json({ ok: true, ticketId, rfidCode });
 }

@@ -510,6 +510,9 @@ export default function PublicMonitorPage({ params }: Props) {
                         </div>
                         <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-1">
                           <div className="flex items-center gap-2">
+                            {group.result === "GRANTED" && !group.ticketId && (
+                              <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
+                            )}
                             {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
                               <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
                             )}
@@ -568,6 +571,9 @@ export default function PublicMonitorPage({ params }: Props) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {group.result === "GRANTED" && !group.ticketId && (
+                        <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
+                      )}
                       {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
                         <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
                       )}

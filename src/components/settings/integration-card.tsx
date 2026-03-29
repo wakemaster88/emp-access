@@ -103,14 +103,17 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   const [copied, setCopied] = useState<string | null>(null);
   const [testCode, setTestCode] = useState("");
   const [testing, setTesting] = useState(false);
+  const [merging, setMerging] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{
     valid: boolean;
+    code?: string;
     name?: string | null;
     category?: string | null;
     cardName?: string | null;
     validUntil?: string | null;
     interfaceNames?: string[] | null;
     message?: string;
+    matchingTickets?: { id: number; name: string; firstName: string | null; lastName: string | null; ticketTypeName: string | null; rfidCode: string | null; status: string; subscriptionId: number | null }[];
   } | null>(null);
 
   const isConfigured =
@@ -263,6 +266,28 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     }
   }
 
+  async function handleRfidMerge(ticketId: number) {
+    if (!testResult?.code) return;
+    setMerging(ticketId);
+    try {
+      const res = await fetch("/api/integrations/wakesys", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId, rfidCode: testResult.code }),
+      });
+      if (res.ok) {
+        setTestResult((prev) => prev ? {
+          ...prev,
+          matchingTickets: prev.matchingTickets?.map((t) =>
+            t.id === ticketId ? { ...t, rfidCode: testResult.code! } : t
+          ),
+        } : prev);
+      }
+    } finally {
+      setMerging(null);
+    }
+  }
+
   async function handleWakesysTest() {
     if (!testCode.trim()) return;
     setTesting(true);
@@ -279,12 +304,14 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       } else {
         setTestResult({
           valid: json.valid,
+          code: json.code,
           name: json.name,
           category: json.category,
           cardName: json.cardName,
           validUntil: json.validUntil,
           interfaceNames: json.interface,
           message: json.message,
+          matchingTickets: json.matchingTickets,
         });
       }
     } catch {
@@ -490,6 +517,47 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       <p className="text-xs text-rose-600 dark:text-rose-400 pl-6">{testResult.message}</p>
                     )}
                   </div>
+                )}
+                {testResult?.valid && testResult.matchingTickets && testResult.matchingTickets.length > 0 && (
+                  <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 p-3 space-y-2">
+                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-400">
+                      {testResult.matchingTickets.length} passende{testResult.matchingTickets.length === 1 ? "s" : ""} Ticket{testResult.matchingTickets.length === 1 ? "" : "s"} im System
+                    </p>
+                    <div className="space-y-1.5">
+                      {testResult.matchingTickets.map((t) => (
+                        <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/50 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+                              {[t.firstName, t.lastName].filter(Boolean).join(" ") || t.name}
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {t.ticketTypeName || (t.subscriptionId ? "Abo" : "Ticket")}
+                              {t.rfidCode && <> · RFID: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{t.rfidCode}</code></>}
+                            </p>
+                          </div>
+                          {t.rfidCode === testResult.code ? (
+                            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] shrink-0 gap-1">
+                              <CheckCircle2 className="h-3 w-3" /> Verknüpft
+                            </Badge>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRfidMerge(t.id)}
+                              disabled={merging === t.id}
+                              className="shrink-0 h-7 text-xs"
+                            >
+                              {merging === t.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : "RFID zuweisen"}
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {testResult?.valid && testResult.matchingTickets?.length === 0 && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Kein passendes Ticket im System gefunden.</p>
                 )}
               </div>
             )}
