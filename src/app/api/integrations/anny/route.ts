@@ -382,8 +382,8 @@ export async function POST() {
       // Skip cancelled/rejected bookings entirely
       if (booking.status && cancelledStatuses.has(booking.status.toLowerCase())) continue;
 
-      const serviceId = booking.service?.id ?? booking.resource?.id ?? booking.subscription?.id ?? "none";
-      const key = `anny:${customerId}:${serviceId}`;
+      const svcId = booking.service?.id ?? booking.resource?.id ?? booking.subscription?.id ?? "none";
+      const key = `anny:${customerId}:${svcId}:${booking.id}`;
 
       const customerName = customer?.full_name || customer?.name || "";
       const nameParts = customerName.split(/\s+/);
@@ -403,8 +403,7 @@ export async function POST() {
       const existing = groups.get(key);
       if (existing) {
         const isDupeId = existing.entries.some((e) => e.id === entry.id);
-        const isDupeSlot = entry.start && existing.entries.some((e) => e.start && e.start === entry.start);
-        if (!isDupeId && !isDupeSlot) {
+        if (!isDupeId) {
           existing.entries.push(entry);
         }
         if (!existing.bookingNumber && booking.number) {
@@ -493,13 +492,19 @@ export async function POST() {
 
     // Pre-fetch all existing ANNY tickets by uuid to avoid N+1
     const allGroupUuids = [...groups.keys()];
-    const existingTickets = allGroupUuids.length > 0
+    const legacyUuids = [...new Set(allGroupUuids.map((k) => {
+      const parts = k.split(":");
+      return parts.slice(0, 3).join(":");
+    }))];
+    const allLookupUuids = [...new Set([...allGroupUuids, ...legacyUuids])];
+    const existingTickets = allLookupUuids.length > 0
       ? await db.ticket.findMany({
-          where: { accountId: accountId!, uuid: { in: allGroupUuids } },
+          where: { accountId: accountId!, uuid: { in: allLookupUuids } },
           select: { id: true, uuid: true },
         })
       : [];
     const existingByUuid = new Map(existingTickets.map((t) => [t.uuid, t.id]));
+    const claimedLegacy = new Set<string>();
 
     for (const group of groups.values()) {
       const uuid = group.key;
@@ -580,9 +585,16 @@ export async function POST() {
       };
 
       try {
-        const existingId = existingByUuid.get(uuid);
+        let existingId = existingByUuid.get(uuid);
+        if (!existingId) {
+          const legacy = uuid.split(":").slice(0, 3).join(":");
+          if (!claimedLegacy.has(legacy) && existingByUuid.has(legacy)) {
+            existingId = existingByUuid.get(legacy);
+            claimedLegacy.add(legacy);
+          }
+        }
         if (existingId) {
-          await db.ticket.update({ where: { id: existingId }, data: ticketData });
+          await db.ticket.update({ where: { id: existingId }, data: { ...ticketData, uuid } });
           updated++;
         } else {
           await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });

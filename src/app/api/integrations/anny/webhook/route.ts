@@ -163,11 +163,12 @@ export async function POST(request: NextRequest) {
 
     for (const booking of bookings) {
       const customerId = booking.customer?.id;
-      const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
+      const svcId = booking.service?.id ?? booking.resource?.id ?? "none";
 
       const conditions: Array<Record<string, unknown>> = [];
       if (customerId != null) {
-        conditions.push({ uuid: `anny:${customerId}:${serviceId}`, accountId });
+        conditions.push({ uuid: `anny:${customerId}:${svcId}:${booking.id}`, accountId });
+        conditions.push({ uuid: `anny:${customerId}:${svcId}`, accountId });
       }
       if (booking.number) {
         conditions.push({ barcode: booking.number, accountId, source: "ANNY" });
@@ -249,8 +250,9 @@ export async function POST(request: NextRequest) {
 
     if (booking.status && cancelledStatuses.has(booking.status.toLowerCase())) continue;
 
-    const serviceId = booking.service?.id ?? booking.resource?.id ?? "none";
-    const uuid = `anny:${customerId}:${serviceId}`;
+    const svcId = booking.service?.id ?? booking.resource?.id ?? "none";
+    const uuid = `anny:${customerId}:${svcId}:${booking.id}`;
+    const legacyUuid = `anny:${customerId}:${svcId}`;
 
     const customer = booking.customer;
     const customerName = customer?.full_name || [customer?.given_name ?? customer?.first_name, customer?.family_name ?? customer?.last_name].filter(Boolean).join(" ") || "";
@@ -316,12 +318,12 @@ export async function POST(request: NextRequest) {
 
     try {
       const existing = await db.ticket.findFirst({
-        where: { uuid, accountId },
+        where: { OR: [{ uuid, accountId }, { uuid: legacyUuid, accountId }] },
       });
       if (existing) {
         await db.ticket.update({
           where: { id: existing.id },
-          data: ticketData,
+          data: { ...ticketData, uuid },
         });
         updated++;
       } else {
