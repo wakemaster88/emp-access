@@ -331,8 +331,9 @@ model AnnyResourceLink {
   isPublic        Boolean    @default(false)
   splitSlots      Boolean    @default(false)
   bookingInterval Int?
-  priceLabel      String?
-  accountId       Int
+  priceLabel         String?
+  priceLabelWeekend  String?
+  accountId          Int
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 

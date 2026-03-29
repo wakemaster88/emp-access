@@ -123,6 +123,9 @@ export async function GET(
   const queryDate = url.searchParams.get("date");
   const dateStr = queryDate && /^\d{4}-\d{2}-\d{2}$/.test(queryDate) ? queryDate : berlinDate;
 
+  const dayOfWeek = new Date(`${dateStr}T12:00:00`).getDay();
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
   const selectedAreaIds = (config.deviceIds as number[]) ?? [];
 
   const [areas, annyConfig, allLinks] = await Promise.all([
@@ -301,13 +304,15 @@ export async function GET(
       const label = hasSubResources && link.label === area.name ? null : link.label;
       if (!label) continue;
 
+      const linkPrice = (isWeekend && link.priceLabelWeekend) || link.priceLabel || "";
+
       if (!ridLabels.has(link.annyResourceId)) {
         ridLabels.set(link.annyResourceId, {
           labels: new Set(),
           isPublic: link.isPublic,
           splitSlots: link.splitSlots,
           interval: link.bookingInterval ?? (link.splitSlots ? 60 : 0),
-          price: link.priceLabel ?? "",
+          price: linkPrice,
         });
       }
       const entry = ridLabels.get(link.annyResourceId)!;
@@ -316,7 +321,7 @@ export async function GET(
       if (!link.splitSlots) entry.splitSlots = false;
       if (link.bookingInterval && (entry.interval === 0 || link.bookingInterval < entry.interval)) {
         entry.interval = link.bookingInterval;
-        if (link.priceLabel) entry.price = link.priceLabel;
+        if (linkPrice) entry.price = linkPrice;
       }
     }
 

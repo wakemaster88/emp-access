@@ -1,7 +1,8 @@
 /**
- * Migration script: extraConfig.mappings + resourceIds -> AnnyResourceLink table.
+ * Migration script: updates AnnyResourceLink priceLabel + priceLabelWeekend
+ * from live ANNY service data.
  *
- * Run once:  npx tsx scripts/migrate-anny-links.ts
+ * Run:  npx tsx scripts/migrate-anny-links.ts
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -17,7 +18,8 @@ interface AnnyMapping {
   resources?: string[];
 }
 
-interface ServiceInfo {
+interface AnnyService {
+  name: string;
   interval: number;
   price: string;
 }
@@ -34,14 +36,14 @@ function cleanLabelForMatch(name: string): string {
   return l.toLowerCase();
 }
 
-async function fetchAllServices(
+async function fetchAllAnnyServices(
   baseUrl: string,
   token: string,
-): Promise<Map<string, ServiceInfo>> {
-  const result = new Map<string, ServiceInfo>();
+): Promise<AnnyService[]> {
+  const result: AnnyService[] = [];
   const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
 
-  for (let page = 1; page <= 5; page++) {
+  for (let page = 1; page <= 10; page++) {
     const res = await fetch(
       `${baseUrl}/api/v1/services?page[size]=50&page[number]=${page}`,
       { headers, signal: AbortSignal.timeout(8000) },
@@ -58,17 +60,19 @@ async function fetchAllServices(
       if (!name) continue;
       const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
       const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
-      if (interval > 0) {
-        const existing = result.get(name);
-        if (!existing || interval < existing.interval) {
-          result.set(name, { interval, price });
-        }
-      }
+      result.push({ name, interval, price });
     }
     if (items.length < 50) break;
   }
 
   return result;
+}
+
+const WEEKEND_KEYWORDS = ["wochenende", "weekend", "sa/so", "sa-so", "samstag", "sonntag"];
+
+function isWeekendVariant(name: string): boolean {
+  const lower = name.toLowerCase();
+  return WEEKEND_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 async function main() {
@@ -92,56 +96,64 @@ async function main() {
 
     console.log(`\nAccount ${config.accountId}: ${Object.keys(mappings).length} mappings`);
 
-    const services = await fetchAllServices(baseUrl, config.token);
-    console.log(`  Fetched ${services.size} services from ANNY`);
+    const allServices = await fetchAllAnnyServices(baseUrl, config.token);
+    console.log(`  Fetched ${allServices.length} services from ANNY`);
 
-    // Build rid -> ServiceInfo via exact name match + fuzzy
-    const ridService = new Map<string, ServiceInfo>();
+    // Build rid -> best ServiceInfo (smallest interval) for non-public matching
+    const ridService = new Map<string, AnnyService>();
     for (const [name, rid] of Object.entries(resourceIds)) {
-      if (ridService.has(rid)) continue;
-      const svc = services.get(name);
-      if (svc) ridService.set(rid, svc);
-    }
-    for (const [name, rid] of Object.entries(resourceIds)) {
-      if (ridService.has(rid)) continue;
       const cleaned = cleanLabelForMatch(name);
-      if (!cleaned) continue;
-      for (const [svcName, svcInfo] of services) {
-        const cleanedSvc = cleanLabelForMatch(svcName);
-        if (
-          cleaned === cleanedSvc ||
-          cleaned.startsWith(cleanedSvc) ||
-          cleanedSvc.startsWith(cleaned)
-        ) {
-          ridService.set(rid, svcInfo);
-          break;
+      for (const svc of allServices) {
+        if (isWeekendVariant(svc.name)) continue;
+        const cleanedSvc = cleanLabelForMatch(svc.name);
+        if (cleanedSvc === cleaned || cleanedSvc.startsWith(cleaned) || cleaned.startsWith(cleanedSvc)) {
+          const existing = ridService.get(rid);
+          if (!existing || (svc.interval > 0 && svc.interval < existing.interval)) {
+            ridService.set(rid, svc);
+          }
         }
       }
     }
 
-    // Collect all prices per rid for public resources
-    const ridAllPrices = new Map<string, string[]>();
-    for (const [name, rid] of Object.entries(resourceIds)) {
-      if (!/öffentlich/i.test(name)) continue;
-      for (const [svcName, svcInfo] of services) {
-        if (/öffentlich/i.test(svcName) && svcInfo.price) {
-          if (!ridAllPrices.has(rid)) ridAllPrices.set(rid, []);
-          const list = ridAllPrices.get(rid)!;
-          if (!list.includes(svcInfo.price)) list.push(svcInfo.price);
-        }
+    // Collect ÖB prices: ONLY services with "öffentlich" in the name
+    const publicPricesWeekday: string[] = [];
+    const publicPricesWeekend: string[] = [];
+    for (const svc of allServices) {
+      if (!svc.price) continue;
+      const lower = svc.name.toLowerCase();
+      if (!lower.includes("öffentlich")) continue;
+      if (isWeekendVariant(svc.name)) {
+        if (!publicPricesWeekend.includes(svc.price)) publicPricesWeekend.push(svc.price);
+      } else {
+        if (!publicPricesWeekday.includes(svc.price)) publicPricesWeekday.push(svc.price);
       }
     }
 
-    let created = 0;
+    // Detect weekend price variants for non-public services
+    const weekendPriceByBase = new Map<string, string>();
+    for (const svc of allServices) {
+      if (!svc.price || !isWeekendVariant(svc.name)) continue;
+      if (svc.name.toLowerCase().includes("öffentlich")) continue;
+      const base = cleanLabelForMatch(svc.name);
+      const existing = weekendPriceByBase.get(base);
+      if (!existing || svc.price.length > existing.length) {
+        weekendPriceByBase.set(base, svc.price);
+      }
+    }
+
+    console.log(`  ÖB prices weekday: ${publicPricesWeekday.join(" | ") || "(keine)"}`);
+    console.log(`  ÖB prices weekend: ${publicPricesWeekend.join(" | ") || "(keine)"}`);
+    console.log(`  Weekend variants: ${weekendPriceByBase.size}`);
+    for (const [base, price] of weekendPriceByBase) {
+      console.log(`    "${base}" → ${price}`);
+    }
+
+    let updated = 0;
     let skipped = 0;
 
     for (const [name, areaId] of Object.entries(mappings)) {
       const rid = resourceIds[name];
-      if (!rid) {
-        console.log(`  SKIP (no rid): ${name}`);
-        skipped++;
-        continue;
-      }
+      if (!rid) { skipped++; continue; }
 
       const label = cleanLabel(name);
       const isPublic = /öffentlich/i.test(name);
@@ -149,11 +161,24 @@ async function main() {
       const splitSlots = !isPublic && (svcInfo?.interval ?? 0) > 0;
 
       let priceLabel: string | null = null;
+      let priceLabelWeekend: string | null = null;
+
       if (isPublic) {
-        const allPrices = ridAllPrices.get(rid);
-        priceLabel = allPrices ? allPrices.join(", ") : svcInfo?.price || null;
+        priceLabel = publicPricesWeekday.length > 0
+          ? publicPricesWeekday.join("\n")
+          : svcInfo?.price || null;
+        priceLabelWeekend = publicPricesWeekend.length > 0
+          ? publicPricesWeekend.join("\n")
+          : null;
       } else {
         priceLabel = svcInfo?.price || null;
+        const cleanedLink = cleanLabelForMatch(name);
+        for (const [base, price] of weekendPriceByBase) {
+          if (cleanedLink.startsWith(base) || base.startsWith(cleanedLink)) {
+            priceLabelWeekend = price;
+            break;
+          }
+        }
       }
 
       try {
@@ -168,6 +193,7 @@ async function main() {
             splitSlots,
             bookingInterval: svcInfo?.interval || null,
             priceLabel,
+            priceLabelWeekend,
           },
           create: {
             accessAreaId: areaId,
@@ -178,16 +204,19 @@ async function main() {
             splitSlots,
             bookingInterval: svcInfo?.interval || null,
             priceLabel,
+            priceLabelWeekend,
             accountId: config.accountId,
           },
         });
-        created++;
+        const weekendInfo = priceLabelWeekend ? ` | WE: ${priceLabelWeekend}` : "";
+        console.log(`  ✓ ${label} → ${priceLabel || "(null)"}${weekendInfo}`);
+        updated++;
       } catch (e) {
         console.log(`  ERROR: ${name} -> area ${areaId}: ${e}`);
       }
     }
 
-    console.log(`  Created/updated: ${created}, Skipped: ${skipped}`);
+    console.log(`\n  Updated: ${updated}, Skipped: ${skipped}`);
   }
 
   await prisma.$disconnect();
