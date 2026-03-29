@@ -69,16 +69,19 @@ export async function POST(request: NextRequest) {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
 
+  const { db, accountId } = session;
+  if (!accountId) {
+    return NextResponse.json({ error: "Kein Account zugeordnet" }, { status: 403 });
+  }
+
   const body = await request.json();
   const raw = String(body.code ?? "").trim();
   const code = raw.replace(/^#+/, "").replace(/\s+/g, "");
   if (!code) {
     return NextResponse.json({ error: "Kein Code eingegeben" }, { status: 400 });
   }
-
-  const { db, accountId } = session;
   const config = await db.apiConfig.findFirst({
-    where: { accountId: accountId!, provider: "WAKESYS" },
+    where: { accountId, provider: "WAKESYS" },
   });
   if (!config) {
     return NextResponse.json({ error: "Wakesys nicht konfiguriert" }, { status: 404 });
@@ -112,7 +115,7 @@ export async function POST(request: NextRequest) {
 
         let matchingTickets: { id: number; name: string; firstName: string | null; lastName: string | null; ticketTypeName: string | null; rfidCode: string | null; status: string; subscriptionId: number | null }[] = [];
         if (firstName || lastName) {
-          const nameWhere: Record<string, unknown> = { accountId: accountId! };
+          const nameWhere: Record<string, unknown> = { accountId };
           if (firstName && lastName) {
             nameWhere.firstName = { contains: firstName, mode: "insensitive" };
             nameWhere.lastName = { contains: lastName, mode: "insensitive" };
@@ -139,7 +142,7 @@ export async function POST(request: NextRequest) {
           category: value.col_category_name || null,
           cardName: value.card_name || null,
           validUntil: value.valid_until || null,
-          interface: value.interface || null,
+          interface: Array.isArray(value.interface) ? value.interface : null,
           state: value.state || null,
           matchingTickets,
         });
@@ -160,6 +163,10 @@ export async function PATCH(request: NextRequest) {
   if ("error" in session) return session.error;
 
   const { db, accountId } = session;
+  if (!accountId) {
+    return NextResponse.json({ error: "Kein Account zugeordnet" }, { status: 403 });
+  }
+
   const body = await request.json();
   const ticketId = Number(body.ticketId);
   const rfidCode = String(body.rfidCode ?? "").trim().replace(/^#+/, "");
@@ -169,7 +176,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const ticket = await db.ticket.findFirst({
-    where: { id: ticketId, accountId: accountId! },
+    where: { id: ticketId, accountId },
     select: { id: true, name: true, rfidCode: true },
   });
   if (!ticket) {

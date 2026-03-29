@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   }
 
   // EMP-Tickets und ggf. Wakesys-Fallback
-  const codesToTry = stripped !== code
+  const codesToTry = stripped && stripped !== code
     ? [code, rawCode, stripped]
     : [code, rawCode];
   let ticket = null;
