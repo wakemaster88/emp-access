@@ -106,6 +106,25 @@ export default function PublicMonitorPage({ params }: Props) {
   const lastScanIdRef = useRef(0);
   const pollTickRef = useRef(0);
   const isFirstLoad = useRef(true);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const playDenyTone = useCallback(() => {
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, t);
+      osc.frequency.linearRampToValueAtTime(300, t + 0.18);
+      gain.gain.setValueAtTime(0.12, t);
+      gain.gain.linearRampToValueAtTime(0, t + 0.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    } catch { /* audio not available */ }
+  }, []);
 
   async function handleTicketScan(ticketId: number) {
     if (scanningId) return;
@@ -205,6 +224,7 @@ export default function PublicMonitorPage({ params }: Props) {
             if (!isFirstLoad.current && fresh.length > 0) {
               setNewIds(new Set(fresh.map((s) => s.id)));
               setTimeout(() => setNewIds(new Set()), 1500);
+              if (fresh.some((s) => s.result === "DENIED")) playDenyTone();
             }
             isFirstLoad.current = false;
             return [...fresh, ...prev].slice(0, 50);
