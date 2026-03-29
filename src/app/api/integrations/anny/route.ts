@@ -335,11 +335,14 @@ export async function POST() {
     // Deduplicate bookings by ID
     const seenBookingIds = new Set<string>();
     const uniqueBookings: AnnyBooking[] = [];
+    const dupedIds: string[] = [];
     for (const b of allBookings) {
       const bid = String(b.id);
       if (!seenBookingIds.has(bid)) {
         seenBookingIds.add(bid);
         uniqueBookings.push(b);
+      } else {
+        dupedIds.push(bid);
       }
     }
 
@@ -357,7 +360,12 @@ export async function POST() {
       areaMappings[link.annyName] = link.accessAreaId;
     }
 
-    // Group bookings by customer + service/resource
+    console.log(`[anny sync] ${allBookings.length} raw, ${uniqueBookings.length} unique bookings`);
+    for (const b of uniqueBookings) {
+      console.log(`  booking id=${b.id} number=${b.number} customer=${b.customer?.full_name ?? b.customer?.name} service=${b.service?.name} resource=${b.resource?.name} start=${b.start_date}`);
+    }
+
+    // Group bookings by customer + service/resource + booking ID
     const groups = new Map<string, BookingGroup>();
 
     const cancelledStatuses = new Set(["cancelled", "canceled", "rejected", "no_show"]);
@@ -756,12 +764,28 @@ export async function POST() {
       }
     } catch { /* service cache update is best-effort */ }
 
+    const bookingDebug = uniqueBookings.slice(0, 200).map((b) => ({
+      id: String(b.id),
+      number: b.number ?? null,
+      customer: b.customer?.full_name ?? b.customer?.name ?? null,
+      customerId: b.customer?.id ?? null,
+      service: b.service?.name ?? null,
+      serviceId: b.service?.id ?? null,
+      resource: b.resource?.name ?? null,
+      resourceId: b.resource?.id ?? null,
+      start: b.start_date ?? null,
+      end: b.end_date ?? null,
+      status: b.status ?? null,
+    }));
+
     return NextResponse.json({
       created,
       updated,
       skipped,
       invalidated: orphaned.count,
       total: allBookings.length,
+      unique: uniqueBookings.length,
+      dupedIds: dupedIds.length > 0 ? dupedIds.slice(0, 20) : undefined,
       groups: groups.size,
       resources: discoveredResourceNames.size,
       services: discoveredServiceNames.size,
@@ -770,6 +794,7 @@ export async function POST() {
       planSubscriptionsCreated: subCreated,
       planSubscriptionsUpdated: subUpdated,
       unmapped,
+      bookings: bookingDebug,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";
