@@ -461,14 +461,28 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   // --- Load local mappings ---
 
+  interface ValidityDefaults {
+    validityType?: string | null;
+    validityDurationMinutes?: number | null;
+    slotStart?: string | null;
+    slotEnd?: string | null;
+  }
+
   const dbSubscriptions = await prisma.subscription.findMany({
     where: { accountId },
-    select: { id: true, annyNames: true, defaultEndDate: true },
+    select: { id: true, annyNames: true, defaultEndDate: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
   });
   const subNameMap = new Map<string, number>();
   const subDefaultEndDate = new Map<number, Date | null>();
+  const subDefaults = new Map<number, ValidityDefaults>();
   for (const sub of dbSubscriptions) {
     subDefaultEndDate.set(sub.id, sub.defaultEndDate);
+    subDefaults.set(sub.id, {
+      validityType: sub.defaultValidityType,
+      validityDurationMinutes: sub.defaultValidityDurationMinutes,
+      slotStart: sub.defaultSlotStart,
+      slotEnd: sub.defaultSlotEnd,
+    });
     if (sub.annyNames) {
       try {
         const names: string[] = JSON.parse(sub.annyNames);
@@ -479,10 +493,17 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   const servicesList = await prisma.service.findMany({
     where: { accountId },
-    select: { id: true, annyNames: true },
+    select: { id: true, annyNames: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
   });
   const svcNameMap = new Map<string, number>();
+  const svcDefaults = new Map<number, ValidityDefaults>();
   for (const svc of servicesList) {
+    svcDefaults.set(svc.id, {
+      validityType: svc.defaultValidityType,
+      validityDurationMinutes: svc.defaultValidityDurationMinutes,
+      slotStart: svc.defaultSlotStart,
+      slotEnd: svc.defaultSlotEnd,
+    });
     if (svc.annyNames) {
       try {
         const names: string[] = JSON.parse(svc.annyNames);
@@ -580,6 +601,10 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     }
     if (barcode) usedBarcodes.add(barcode);
 
+    const defaults = (serviceId && svcDefaults.get(serviceId))
+      || (subscriptionId && subDefaults.get(subscriptionId))
+      || {};
+
     const ticketData = {
       name: group.customerName || `Buchung ${group.entries[0].id}`,
       firstName: group.firstName || null,
@@ -596,6 +621,10 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       accessAreaId,
       subscriptionId,
       serviceId,
+      ...(defaults.validityType ? { validityType: defaults.validityType as "DATE_RANGE" | "DURATION" | "TIME_SLOT" } : {}),
+      ...(defaults.validityDurationMinutes != null ? { validityDurationMinutes: defaults.validityDurationMinutes } : {}),
+      ...(defaults.slotStart ? { slotStart: defaults.slotStart } : {}),
+      ...(defaults.slotEnd ? { slotEnd: defaults.slotEnd } : {}),
     };
 
     try {

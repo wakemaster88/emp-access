@@ -210,12 +210,21 @@ export async function POST(request: NextRequest) {
     areaMappings[link.annyName] = link.accessAreaId;
   }
 
+  interface ValidityDefaults {
+    validityType?: string | null;
+    validityDurationMinutes?: number | null;
+    slotStart?: string | null;
+    slotEnd?: string | null;
+  }
+
   const subscriptions = await db.subscription.findMany({
     where: { accountId },
-    select: { id: true, annyNames: true },
+    select: { id: true, annyNames: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
   });
   const subNameMap = new Map<string, number>();
+  const subDefaults = new Map<number, ValidityDefaults>();
   for (const sub of subscriptions) {
+    subDefaults.set(sub.id, { validityType: sub.defaultValidityType, validityDurationMinutes: sub.defaultValidityDurationMinutes, slotStart: sub.defaultSlotStart, slotEnd: sub.defaultSlotEnd });
     if (sub.annyNames) {
       try {
         const names: string[] = JSON.parse(sub.annyNames);
@@ -226,10 +235,12 @@ export async function POST(request: NextRequest) {
 
   const servicesList = await db.service.findMany({
     where: { accountId },
-    select: { id: true, annyNames: true },
+    select: { id: true, annyNames: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
   });
   const svcNameMap = new Map<string, number>();
+  const svcDefaults = new Map<number, ValidityDefaults>();
   for (const svc of servicesList) {
+    svcDefaults.set(svc.id, { validityType: svc.defaultValidityType, validityDurationMinutes: svc.defaultValidityDurationMinutes, slotStart: svc.defaultSlotStart, slotEnd: svc.defaultSlotEnd });
     if (svc.annyNames) {
       try {
         const names: string[] = JSON.parse(svc.annyNames);
@@ -299,6 +310,10 @@ export async function POST(request: NextRequest) {
 
     const birthDate = customer?.birth_date ? new Date(customer.birth_date) : null;
 
+    const defaults = (serviceIdNum && svcDefaults.get(serviceIdNum))
+      || (subscriptionId && subDefaults.get(subscriptionId))
+      || {};
+
     const ticketData = {
       name: customerName || `Buchung ${booking.id ?? ""}`,
       firstName,
@@ -314,6 +329,10 @@ export async function POST(request: NextRequest) {
       accessAreaId,
       subscriptionId,
       serviceId: serviceIdNum,
+      ...(defaults.validityType ? { validityType: defaults.validityType as "DATE_RANGE" | "DURATION" | "TIME_SLOT" } : {}),
+      ...(defaults.validityDurationMinutes != null ? { validityDurationMinutes: defaults.validityDurationMinutes } : {}),
+      ...(defaults.slotStart ? { slotStart: defaults.slotStart } : {}),
+      ...(defaults.slotEnd ? { slotEnd: defaults.slotEnd } : {}),
     };
 
     try {
