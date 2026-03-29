@@ -341,11 +341,11 @@ export default function ResourceMonitorPage({
                                 {slot.start} – {slot.end}
                               </p>
                             )}
-                            {slot.price && heightPct > 6 && (
-                              <p className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
-                                {slot.price}
+                            {slot.price && heightPct > 6 && slot.price.split("\n").map((p, j) => (
+                              <p key={j} className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
+                                {p}
                               </p>
-                            )}
+                            ))}
                           </>
                         ) : isPublic ? (
                           <>
@@ -363,11 +363,11 @@ export default function ResourceMonitorPage({
                                 {slot.names.length > 3 ? " …" : ""}
                               </p>
                             )}
-                            {slot.count === 0 && slot.price && heightPct > 6 && (
-                              <p className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
-                                {slot.price}
+                            {slot.price && heightPct > 6 && slot.price.split("\n").map((p, j) => (
+                              <p key={j} className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
+                                {p}
                               </p>
-                            )}
+                            ))}
                           </>
                         ) : (
                           <>

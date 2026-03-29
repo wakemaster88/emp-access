@@ -212,6 +212,18 @@ export async function GET(
     }
   }
 
+  const globalAboCheckins = await db.scan.count({
+    where: {
+      accountId,
+      scanTime: { gte: dayStart, lte: dayEnd },
+      result: "GRANTED",
+      ticket: {
+        subscriptionId: { not: null },
+        status: { in: ["VALID", "REDEEMED"] },
+      },
+    },
+  });
+
   const allCheckinScans = areaIds.length > 0
     ? await db.scan.findMany({
         where: {
@@ -361,12 +373,12 @@ export async function GET(
       if (bookCount > 0) {
         let segPublic = false;
         const segSources: string[] = [];
-        let segPrice = "";
+        const segPrices: string[] = [];
         for (const a of availIntervals) {
           if (a.start <= segStart && a.end >= segEnd) {
             if (a.isPublic) segPublic = true;
             if (a.source && !segSources.includes(a.source)) segSources.push(a.source);
-            if (a.price && !segPrice) segPrice = a.price;
+            if (a.price && !segPrices.includes(a.price)) segPrices.push(a.price);
           }
         }
         rawSlots.push({
@@ -374,7 +386,7 @@ export async function GET(
           status: segPublic ? "free" : "booked",
           count: bookCount, names: bookNames.slice(0, 8),
           capacity: area.personLimit,
-          ...(segPublic ? { isPublic: true, source: segSources.join(", "), price: segPrice } : {}),
+          ...(segPublic ? { isPublic: true, source: segSources.join(", "), price: segPrices.join("\n") } : {}),
         });
         continue;
       }
@@ -383,21 +395,23 @@ export async function GET(
       let anyPublic = false;
       let shouldSplit = false;
       let minInterval = 0;
-      let slotPrice = "";
+      let splitPrice = "";
+      const allPrices: string[] = [];
       for (const a of availIntervals) {
         if (a.start <= segStart && a.end >= segEnd) {
           if (a.source && !sources.includes(a.source)) sources.push(a.source);
           if (a.isPublic) anyPublic = true;
+          if (a.price && !allPrices.includes(a.price)) allPrices.push(a.price);
           if (a.splitSlots && a.interval > 0) {
             shouldSplit = true;
             if (minInterval === 0 || a.interval < minInterval) {
               minInterval = a.interval;
-              slotPrice = a.price;
+              splitPrice = a.price;
             }
           }
-          if (!shouldSplit && a.price && !slotPrice) slotPrice = a.price;
         }
       }
+      const slotPrice = shouldSplit ? splitPrice : allPrices.join("\n");
 
       if (sources.length > 0) {
         rawSlots.push({
@@ -469,7 +483,6 @@ export async function GET(
     }
 
     const totalBooked = [...bookedSlotMap.values()].reduce((sum, s) => sum + s.count, 0);
-    const aboCheckins = (checkinsByArea.get(area.id) ?? []).length;
     const ticketCheckins = ticketCheckinsByArea.get(area.id) ?? 0;
 
     return {
@@ -477,7 +490,7 @@ export async function GET(
       name: area.name,
       capacity: area.personLimit,
       totalBooked,
-      dayCheckins: aboCheckins + ticketCheckins,
+      dayCheckins: globalAboCheckins + ticketCheckins,
       slots,
     };
   });
