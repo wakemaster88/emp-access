@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { berlinOffset } from "@/lib/anny-availability";
 
 export async function GET(
   request: NextRequest,
@@ -20,8 +21,9 @@ export async function GET(
   const now = new Date();
   const berlinDate = dateParam || now.toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
 
-  const dayStart = new Date(`${berlinDate}T00:00:00+01:00`);
-  const dayEnd = new Date(`${berlinDate}T23:59:59+01:00`);
+  const tz = berlinOffset(berlinDate);
+  const dayStart = new Date(`${berlinDate}T00:00:00${tz}`);
+  const dayEnd = new Date(`${berlinDate}T23:59:59${tz}`);
 
   const ticketSelect = {
     id: true,

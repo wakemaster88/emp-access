@@ -8,6 +8,17 @@ export interface AvailabilityPeriod {
   end: string;
 }
 
+export function berlinOffset(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  const berlin = d.toLocaleString("sv-SE", { timeZone: "Europe/Berlin" });
+  const utc = d.toLocaleString("sv-SE", { timeZone: "UTC" });
+  const diffMs = new Date(berlin).getTime() - new Date(utc).getTime();
+  const h = Math.floor(Math.abs(diffMs) / 3600000);
+  const m = Math.floor((Math.abs(diffMs) % 3600000) / 60000);
+  const sign = diffMs >= 0 ? "+" : "-";
+  return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 export async function fetchAnnyAvailability(
   baseUrl: string,
   token: string,
@@ -16,8 +27,9 @@ export async function fetchAnnyAvailability(
 ): Promise<Record<string, AvailabilityPeriod[]>> {
   if (resourceIds.length === 0) return {};
 
-  const startDate = `${dateStr}T00:00:00+01:00`;
-  const endDate = `${dateStr}T23:59:59+01:00`;
+  const offset = berlinOffset(dateStr);
+  const startDate = `${dateStr}T00:00:00${offset}`;
+  const endDate = `${dateStr}T23:59:59${offset}`;
 
   const params = new URLSearchParams({
     start_date: startDate,
@@ -64,8 +76,9 @@ export async function fetchAnnyAvailabilityWithSlots(
 ): Promise<Record<string, AvailabilityPeriod[]>> {
   if (resourceIds.length === 0) return {};
 
-  const startDate = `${dateStr}T00:00:00+01:00`;
-  const endDate = `${dateStr}T23:59:59+01:00`;
+  const offset = berlinOffset(dateStr);
+  const startDate = `${dateStr}T00:00:00${offset}`;
+  const endDate = `${dateStr}T23:59:59${offset}`;
 
   const params = new URLSearchParams({
     start_date: startDate,
