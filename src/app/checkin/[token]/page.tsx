@@ -25,6 +25,7 @@ import {
   Printer,
   RefreshCw,
   Pause,
+  Plus,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -84,14 +85,36 @@ interface ScanEntry {
   device: { id: number; name: string } | null;
 }
 
+interface DefaultValidity {
+  defaultValidityType?: string | null;
+  defaultStartDate?: string | null;
+  defaultEndDate?: string | null;
+  defaultSlotStart?: string | null;
+  defaultSlotEnd?: string | null;
+  defaultValidityDurationMinutes?: number | null;
+}
+
+interface ServiceData extends DefaultValidity {
+  id: number;
+  name: string;
+  areaIds?: number[];
+}
+
+interface SubOption extends DefaultValidity {
+  id: number;
+  name: string;
+  areaIds?: number[];
+}
+
 interface CheckinData {
   monitorName: string;
   accountName: string;
   date: string;
   tickets: CheckinTicket[];
   subscriptions: SubData[];
-  services: { id: number; name: string }[];
+  services: ServiceData[];
   areas: { id: number; name: string }[];
+  allSubscriptions?: SubOption[];
   recentScans: ScanEntry[];
 }
 
@@ -138,6 +161,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [addTicketOpen, setAddTicketOpen] = useState(false);
   const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -457,6 +481,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             </div>
           )}
           <button
+            onClick={() => setAddTicketOpen(true)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+          >
+            <Plus className="h-5 w-5" />
+            <span className="hidden sm:inline">Ticket</span>
+          </button>
+          <button
             onClick={() => setScanMode(true)}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
           >
@@ -631,6 +662,18 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         <CameraOverlay
           onCapture={handleCameraCapture}
           onClose={() => setCameraOpen(false)}
+        />
+      )}
+
+      {/* Add ticket overlay */}
+      {addTicketOpen && (
+        <AddTicketOverlay
+          token={token}
+          services={data?.services ?? []}
+          areas={data?.areas ?? []}
+          subscriptions={data?.allSubscriptions ?? []}
+          onClose={() => setAddTicketOpen(false)}
+          onCreated={() => { setAddTicketOpen(false); refreshRef.current?.(); }}
         />
       )}
 
@@ -1548,6 +1591,408 @@ function InfoRow({ label, value, icon: Icon }: { label: string; value: string; i
       <Icon className="h-4 w-4 text-slate-500 shrink-0" />
       <span className="text-xs text-slate-500 w-16">{label}</span>
       <span className="text-sm text-slate-200 font-mono truncate">{value}</span>
+    </div>
+  );
+}
+
+/* ──── Add Ticket Overlay ──── */
+
+const ADD_EMPTY = {
+  firstName: "",
+  lastName: "",
+  ticketTypeName: "",
+  code: "",
+  accessAreaId: "none",
+  subscriptionId: "none",
+  serviceId: "none",
+  status: "VALID",
+  startDate: "",
+  endDate: "",
+  validityType: "DATE_RANGE",
+  slotStart: "",
+  slotEnd: "",
+  validityDurationMinutes: "",
+};
+
+function toDateInput(val: string | Date | null | undefined): string {
+  if (!val) return "";
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
+}
+
+function AddTicketOverlay({
+  token,
+  services,
+  areas,
+  subscriptions,
+  onClose,
+  onCreated,
+}: {
+  token: string;
+  services: ServiceData[];
+  areas: { id: number; name: string }[];
+  subscriptions: SubOption[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState(ADD_EMPTY);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function set(key: keyof typeof ADD_EMPTY, value: string) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function applyDefaults(def: DefaultValidity | undefined) {
+    if (!def?.defaultValidityType) return;
+    set("validityType", def.defaultValidityType);
+    if (def.defaultValidityType === "DATE_RANGE") {
+      set("startDate", toDateInput(def.defaultStartDate));
+      set("endDate", toDateInput(def.defaultEndDate));
+      set("slotStart", "");
+      set("slotEnd", "");
+      set("validityDurationMinutes", "");
+    } else if (def.defaultValidityType === "TIME_SLOT") {
+      set("startDate", "");
+      set("endDate", "");
+      set("slotStart", def.defaultSlotStart ?? "");
+      set("slotEnd", def.defaultSlotEnd ?? "");
+      set("validityDurationMinutes", "");
+    } else if (def.defaultValidityType === "DURATION") {
+      set("startDate", "");
+      set("endDate", "");
+      set("slotStart", "");
+      set("slotEnd", "");
+      set("validityDurationMinutes", def.defaultValidityDurationMinutes != null ? String(def.defaultValidityDurationMinutes) : "");
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.firstName.trim() && !form.lastName.trim()) return;
+    setLoading(true);
+    setError("");
+
+    const fullName = `${form.firstName} ${form.lastName}`.trim() || "Ticket";
+    const payload: Record<string, unknown> = {
+      name: fullName,
+      status: form.status,
+      validityType: form.validityType,
+    };
+    if (form.firstName) payload.firstName = form.firstName;
+    if (form.lastName) payload.lastName = form.lastName;
+    if (form.serviceId && form.serviceId !== "none") {
+      payload.serviceId = Number(form.serviceId);
+      const svc = services.find((s) => String(s.id) === form.serviceId);
+      if (svc) payload.ticketTypeName = svc.name;
+    } else if (form.ticketTypeName) {
+      payload.ticketTypeName = form.ticketTypeName;
+    }
+    if (form.code) {
+      payload.barcode = form.code;
+      payload.qrCode = form.code;
+      payload.rfidCode = form.code;
+    }
+    if (form.subscriptionId && form.subscriptionId !== "none") {
+      payload.subscriptionId = Number(form.subscriptionId);
+    } else if (form.accessAreaId && form.accessAreaId !== "none") {
+      payload.accessAreaId = Number(form.accessAreaId);
+    }
+    if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
+    if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
+    if (form.validityType === "TIME_SLOT") {
+      if (form.slotStart) payload.slotStart = form.slotStart;
+      if (form.slotEnd) payload.slotEnd = form.slotEnd;
+    }
+    if (form.validityType === "DURATION" && form.validityDurationMinutes) {
+      payload.validityDurationMinutes = Number(form.validityDurationMinutes);
+    }
+
+    try {
+      const res = await fetch(`/api/checkin/public/${token}/ticket`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error?.formErrors?.[0] ?? "Fehler beim Erstellen");
+      } else {
+        setForm(ADD_EMPTY);
+        onCreated();
+      }
+    } catch {
+      setError("Netzwerkfehler");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const hideResource = form.subscriptionId !== "none" || form.serviceId !== "none";
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)] monitor-scrollbar"
+      >
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Plus className="h-5 w-5 text-emerald-400" />
+            Ticket erstellen
+          </h2>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Name */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Vorname <span className="text-rose-500">*</span></label>
+              <input
+                type="text"
+                value={form.firstName}
+                onChange={(e) => set("firstName", e.target.value)}
+                placeholder="Max"
+                required
+                autoFocus
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Nachname <span className="text-rose-500">*</span></label>
+              <input
+                type="text"
+                value={form.lastName}
+                onChange={(e) => set("lastName", e.target.value)}
+                placeholder="Mustermann"
+                required
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
+              />
+            </div>
+          </div>
+
+          {/* Service + Code */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Ticket-Typ</label>
+              {services.length > 0 ? (
+                <select
+                  value={form.serviceId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    set("serviceId", v);
+                    if (v !== "none") {
+                      const svc = services.find((s) => String(s.id) === v);
+                      if (svc) {
+                        set("ticketTypeName", svc.name);
+                        applyDefaults(svc);
+                        if (svc.areaIds?.length) set("accessAreaId", String(svc.areaIds[0]));
+                      }
+                    } else {
+                      set("ticketTypeName", "");
+                    }
+                  }}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  <option value="none">Kein Service</option>
+                  {services.map((s) => (
+                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={form.ticketTypeName}
+                  onChange={(e) => set("ticketTypeName", e.target.value)}
+                  placeholder="z.B. Tageskarte"
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                />
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <ScanLine className="h-3.5 w-3.5" />
+                Code
+              </label>
+              <input
+                type="text"
+                value={form.code}
+                onChange={(e) => set("code", e.target.value)}
+                placeholder="Scannen / eingeben"
+                autoComplete="off"
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+              />
+            </div>
+          </div>
+
+          {/* Abo + Resource + Status */}
+          <div className="grid grid-cols-2 gap-3">
+            {subscriptions.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">Abo</label>
+                <select
+                  value={form.subscriptionId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    set("subscriptionId", v);
+                    if (v !== "none") {
+                      const sub = subscriptions.find((s) => String(s.id) === v);
+                      if (sub) {
+                        applyDefaults(sub);
+                        if (sub.areaIds?.length) set("accessAreaId", String(sub.areaIds[0]));
+                      }
+                    }
+                  }}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  <option value="none">Kein Abo</option>
+                  {subscriptions.map((s) => (
+                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!hideResource && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">Bereich</label>
+                <select
+                  value={form.accessAreaId}
+                  onChange={(e) => set("accessAreaId", e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                >
+                  <option value="none">Keiner</option>
+                  {areas.map((a) => (
+                    <option key={a.id} value={String(a.id)}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => set("status", e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              >
+                <option value="VALID">Gültig</option>
+                <option value="INVALID">Ungültig</option>
+                <option value="PROTECTED">Geschützt</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Validity Type */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-400">Gültigkeitstyp</label>
+            <select
+              value={form.validityType}
+              onChange={(e) => set("validityType", e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            >
+              <option value="DATE_RANGE">Zeitraum (Tage)</option>
+              <option value="TIME_SLOT">Zeitslot (Uhrzeit)</option>
+              <option value="DURATION">Dauer ab 1. Scan</option>
+            </select>
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Gültig ab</label>
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={(e) => set("startDate", e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Gültig bis</label>
+              <input
+                type="date"
+                value={form.endDate}
+                onChange={(e) => set("endDate", e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
+              />
+            </div>
+          </div>
+
+          {/* Time Slot */}
+          {form.validityType === "TIME_SLOT" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">Slot von</label>
+                <input
+                  type="time"
+                  value={form.slotStart}
+                  onChange={(e) => set("slotStart", e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">Slot bis</label>
+                <input
+                  type="time"
+                  value={form.slotEnd}
+                  onChange={(e) => set("slotEnd", e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Duration */}
+          {form.validityType === "DURATION" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400">Dauer (Minuten)</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  value={form.validityDurationMinutes}
+                  onChange={(e) => set("validityDurationMinutes", e.target.value)}
+                  placeholder="z.B. 120"
+                  className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => set("validityDurationMinutes", "1440")}
+                  className="px-3 py-2 bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-xs font-medium hover:bg-slate-700 transition-colors"
+                >
+                  1 Tag
+                </button>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-rose-950 border border-rose-700/50 rounded-xl p-3 text-sm text-rose-200">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="flex-1 py-3 rounded-xl border border-slate-700 text-slate-300 font-semibold text-sm hover:bg-slate-800 transition-colors disabled:opacity-50"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              disabled={loading || (!form.firstName.trim() && !form.lastName.trim())}
+              className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Ticket erstellen"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

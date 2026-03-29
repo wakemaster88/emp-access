@@ -52,7 +52,7 @@ export async function GET(
     accessAreaId: true,
   } as const;
 
-  const [tickets, subscriptions, services, areas, recentScans] = await Promise.all([
+  const [tickets, subscriptions, services, areas, allSubscriptions, recentScans] = await Promise.all([
     prisma.ticket.findMany({
       where: {
         accountId,
@@ -107,12 +107,37 @@ export async function GET(
 
     prisma.service.findMany({
       where: { accountId },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        defaultValidityType: true,
+        defaultStartDate: true,
+        defaultEndDate: true,
+        defaultSlotStart: true,
+        defaultSlotEnd: true,
+        defaultValidityDurationMinutes: true,
+        serviceAreas: { select: { accessAreaId: true } },
+      },
     }),
 
     prisma.accessArea.findMany({
       where: { accountId },
       select: { id: true, name: true },
+    }),
+
+    prisma.subscription.findMany({
+      where: { accountId },
+      select: {
+        id: true,
+        name: true,
+        defaultValidityType: true,
+        defaultStartDate: true,
+        defaultEndDate: true,
+        defaultSlotStart: true,
+        defaultSlotEnd: true,
+        defaultValidityDurationMinutes: true,
+        areas: { select: { id: true } },
+      },
     }),
 
     prisma.scan.findMany({
@@ -160,14 +185,39 @@ export async function GET(
     })),
   }));
 
+  const servicesWithAreas = services.map((s) => ({
+    id: s.id,
+    name: s.name,
+    defaultValidityType: s.defaultValidityType,
+    defaultStartDate: s.defaultStartDate,
+    defaultEndDate: s.defaultEndDate,
+    defaultSlotStart: s.defaultSlotStart,
+    defaultSlotEnd: s.defaultSlotEnd,
+    defaultValidityDurationMinutes: s.defaultValidityDurationMinutes,
+    areaIds: s.serviceAreas.map((sa) => sa.accessAreaId),
+  }));
+
+  const subsWithAreas = allSubscriptions.map((s) => ({
+    id: s.id,
+    name: s.name,
+    defaultValidityType: s.defaultValidityType,
+    defaultStartDate: s.defaultStartDate,
+    defaultEndDate: s.defaultEndDate,
+    defaultSlotStart: s.defaultSlotStart,
+    defaultSlotEnd: s.defaultSlotEnd,
+    defaultValidityDurationMinutes: s.defaultValidityDurationMinutes,
+    areaIds: s.areas.map((a) => a.id),
+  }));
+
   return NextResponse.json({
     monitorName: monitor.name,
     accountName: monitor.account.name,
     date: berlinDate,
     tickets: enrichedTickets,
     subscriptions: enrichedSubscriptions,
-    services,
+    services: servicesWithAreas,
     areas,
+    allSubscriptions: subsWithAreas,
     recentScans,
   });
 }
