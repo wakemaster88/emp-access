@@ -359,10 +359,22 @@ export async function GET(
       }
 
       if (bookCount > 0) {
+        let segPublic = false;
+        const segSources: string[] = [];
+        let segPrice = "";
+        for (const a of availIntervals) {
+          if (a.start <= segStart && a.end >= segEnd) {
+            if (a.isPublic) segPublic = true;
+            if (a.source && !segSources.includes(a.source)) segSources.push(a.source);
+            if (a.price && !segPrice) segPrice = a.price;
+          }
+        }
         rawSlots.push({
           start: minToTime(segStart), end: minToTime(segEnd),
-          status: "booked", count: bookCount, names: bookNames.slice(0, 8),
+          status: segPublic ? "free" : "booked",
+          count: bookCount, names: bookNames.slice(0, 8),
           capacity: area.personLimit,
+          ...(segPublic ? { isPublic: true, source: segSources.join(", "), price: segPrice } : {}),
         });
         continue;
       }
@@ -407,7 +419,7 @@ export async function GET(
         prev.source === slot.source &&
         prev.isPublic === slot.isPublic &&
         prev.price === slot.price &&
-        (slot.status === "free" ||
+        (slot.status === "free" && prev.count === slot.count ||
           (slot.status === "booked" && prev.count === slot.count &&
             prev.names.join(",") === slot.names.join(",")))
       ) {

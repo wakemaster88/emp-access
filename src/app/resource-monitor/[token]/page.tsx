@@ -287,20 +287,17 @@ export default function ResourceMonitorPage({
                     const bottomPct = minutesToPercent(clampMinutes(effectiveEndMin));
                     const heightPct = Math.max(bottomPct - topPct, 2);
                     const isFree = slot.status === "free";
-                    const isPublic = isFree && slot.isPublic;
+                    const isPublic = slot.isPublic;
 
                     const checkins = slot.checkins ?? 0;
                     const dayCI = resource.dayCheckins ?? 0;
                     let badge: string | null = null;
-                    if (isFree && isPublic) {
-                      badge = `${dayCI} Gäste`;
-                    } else if (isFree && !isPublic) {
+                    if (isPublic) {
+                      badge = `${(slot.count || 0) + dayCI} Gäste`;
+                    } else if (isFree) {
                       badge = "0/1";
-                    } else if (!isFree && !slot.isPublic) {
+                    } else {
                       badge = `${slot.count}/1`;
-                    } else if (!isFree) {
-                      const total = slot.count + checkins;
-                      badge = checkins > 0 ? `${slot.count}+${checkins}` : `${total}`;
                     }
 
                     return (
@@ -309,30 +306,32 @@ export default function ResourceMonitorPage({
                         className={cn(
                           "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded",
                           "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden shadow-sm border",
-                          isFree
-                            ? isPublic
-                              ? "bg-sky-50 border-sky-300 text-sky-800 z-[2]"
-                              : "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
-                            : "bg-red-50 border-red-300 text-red-900 z-[5]",
+                          isPublic
+                            ? "bg-sky-50 border-sky-300 text-sky-800 z-[2]"
+                            : isFree
+                              ? "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
+                              : "bg-red-50 border-red-300 text-red-900 z-[5]",
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-                        title={isFree
-                          ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}${slot.price ? ` (${slot.price})` : ""}${isPublic && dayCI > 0 ? ` | ${dayCI} Gäste eingecheckt` : ""}${!isPublic && checkins > 0 ? ` | ${checkins} Abo-Checkins` : ""}`
-                          : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}${checkins > 0 ? `\n${checkins} Abo-Checkins` : ""}`}
+                        title={isPublic
+                          ? `${slot.source ? slot.source + ": " : ""}${slot.start} – ${slot.end}${slot.count > 0 ? ` | ${slot.count}x gebucht: ${slot.names.join(", ")}` : ""}${dayCI > 0 ? ` | ${dayCI} Tages-Checkins` : ""}`
+                          : isFree
+                            ? `${slot.source ? slot.source + ": " : ""}Frei ${slot.start} – ${slot.end}${slot.price ? ` (${slot.price})` : ""}${checkins > 0 ? ` | ${checkins} Abo-Checkins` : ""}`
+                            : `${slot.count}x gebucht: ${slot.start} – ${slot.end}\n${slot.names.join(", ")}${checkins > 0 ? `\n${checkins} Abo-Checkins` : ""}`}
                       >
                         {badge && (
                           <span className={cn(
                             "absolute top-0.5 right-0.5 sm:top-1 sm:right-1 px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold leading-tight whitespace-nowrap",
-                            isFree
-                              ? isPublic
-                                ? "bg-sky-200/80 text-sky-900"
-                                : "bg-emerald-200/80 text-emerald-900"
-                              : "bg-red-200/80 text-red-900",
+                            isPublic
+                              ? "bg-sky-200/80 text-sky-900"
+                              : isFree
+                                ? "bg-emerald-200/80 text-emerald-900"
+                                : "bg-red-200/80 text-red-900",
                           )}>
                             {badge}
                           </span>
                         )}
-                        {isFree ? (
+                        {isFree && !isPublic ? (
                           <>
                             <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
                               {slot.source || "Frei"}
@@ -343,6 +342,28 @@ export default function ResourceMonitorPage({
                               </p>
                             )}
                             {slot.price && heightPct > 6 && (
+                              <p className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
+                                {slot.price}
+                              </p>
+                            )}
+                          </>
+                        ) : isPublic ? (
+                          <>
+                            <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
+                              {slot.count > 0 ? `${slot.count}x gebucht` : (slot.source || "Frei")}
+                            </p>
+                            {heightPct > 4 && (
+                              <p className="text-[10px] sm:text-xs font-medium leading-tight truncate opacity-70">
+                                {slot.start} – {slot.end}
+                              </p>
+                            )}
+                            {heightPct > 7 && slot.names.length > 0 && (
+                              <p className="text-[9px] sm:text-[10px] leading-tight truncate opacity-60 mt-px">
+                                {slot.names.slice(0, 3).join(", ")}
+                                {slot.names.length > 3 ? " …" : ""}
+                              </p>
+                            )}
+                            {slot.count === 0 && slot.price && heightPct > 6 && (
                               <p className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
                                 {slot.price}
                               </p>
