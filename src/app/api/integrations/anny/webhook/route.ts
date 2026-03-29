@@ -317,20 +317,28 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      const existing = await db.ticket.findFirst({
-        where: { OR: [{ uuid, accountId }, { uuid: legacyUuid, accountId }] },
+      const exactMatch = await db.ticket.findFirst({
+        where: { uuid, accountId },
       });
-      if (existing) {
+      if (exactMatch) {
         await db.ticket.update({
-          where: { id: existing.id },
-          data: { ...ticketData, uuid },
+          where: { id: exactMatch.id },
+          data: ticketData,
         });
         updated++;
       } else {
-        await db.ticket.create({
-          data: { ...ticketData, uuid, accountId },
+        const claimed = await db.ticket.updateMany({
+          where: { uuid: legacyUuid, accountId },
+          data: { ...ticketData, uuid },
         });
-        created++;
+        if (claimed.count > 0) {
+          updated++;
+        } else {
+          await db.ticket.create({
+            data: { ...ticketData, uuid, accountId },
+          });
+          created++;
+        }
       }
     } catch {
       // skip on conflict/error

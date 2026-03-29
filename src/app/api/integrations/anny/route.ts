@@ -593,20 +593,28 @@ export async function POST() {
       };
 
       try {
-        let existingId = existingByUuid.get(uuid);
-        if (!existingId) {
-          const legacy = uuid.split(":").slice(0, 3).join(":");
-          if (!claimedLegacy.has(legacy) && existingByUuid.has(legacy)) {
-            existingId = existingByUuid.get(legacy);
-            claimedLegacy.add(legacy);
-          }
-        }
+        const existingId = existingByUuid.get(uuid);
         if (existingId) {
           await db.ticket.update({ where: { id: existingId }, data: { ...ticketData, uuid } });
           updated++;
         } else {
-          await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });
-          created++;
+          const legacy = uuid.split(":").slice(0, 3).join(":");
+          if (!claimedLegacy.has(legacy) && existingByUuid.has(legacy)) {
+            const claimed = await db.ticket.updateMany({
+              where: { id: existingByUuid.get(legacy)!, uuid: legacy },
+              data: { ...ticketData, uuid },
+            });
+            if (claimed.count > 0) {
+              claimedLegacy.add(legacy);
+              updated++;
+            } else {
+              await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });
+              created++;
+            }
+          } else {
+            await db.ticket.create({ data: { ...ticketData, uuid, accountId: accountId! } });
+            created++;
+          }
         }
       } catch {
         skipped++;
