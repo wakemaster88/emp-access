@@ -350,17 +350,11 @@ export default function ResourceMonitorPage({
                         ) : isPublic ? (
                           <>
                             <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
-                              {slot.count > 0 ? `${slot.count}x gebucht` : (slot.source || "Frei")}
+                              {slot.source || "Öffentlicher Betrieb"}
                             </p>
                             {heightPct > 4 && (
                               <p className="text-[10px] sm:text-xs font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}
-                              </p>
-                            )}
-                            {heightPct > 7 && slot.names.length > 0 && (
-                              <p className="text-[9px] sm:text-[10px] leading-tight truncate opacity-60 mt-px">
-                                {slot.names.slice(0, 3).join(", ")}
-                                {slot.names.length > 3 ? " …" : ""}
                               </p>
                             )}
                             {slot.price && heightPct > 6 && slot.price.split("\n").map((p, j) => (
