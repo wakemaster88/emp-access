@@ -14,13 +14,17 @@
       "maxDuration": 30
     },
     "src/app/api/cron/**/*.ts": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/cron/telegram-report",
       "schedule": "0,15,30,45 * * * *"
+    },
+    {
+      "path": "/api/cron/anny-sync",
+      "schedule": "5 * * * *"
     }
   ]
 }
