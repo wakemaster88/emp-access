@@ -100,6 +100,7 @@ export default function PublicMonitorPage({ params }: Props) {
   const [allPaused, setAllPaused] = useState(false);
   const [pauseToggling, setPauseToggling] = useState(false);
   const [ticketSearch, setTicketSearch] = useState("");
+  const [mobileTab, setMobileTab] = useState<"tickets" | "scans">("tickets");
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastScanIdRef = useRef(0);
   const pollTickRef = useRef(0);
@@ -434,6 +435,32 @@ export default function PublicMonitorPage({ params }: Props) {
               </div>
             );
           })}
+          <div className={cn("flex lg:hidden rounded-lg overflow-hidden border", dark ? "border-slate-700" : "border-slate-300")}>
+            <button
+              onClick={() => setMobileTab("scans")}
+              className={cn(
+                "px-2 py-1 text-[10px] font-bold transition-colors flex items-center gap-1",
+                mobileTab === "scans"
+                  ? dark ? "bg-indigo-600 text-white" : "bg-indigo-500 text-white"
+                  : dark ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500",
+              )}
+            >
+              <ScanLine className="h-3 w-3" />
+              Scans
+            </button>
+            <button
+              onClick={() => setMobileTab("tickets")}
+              className={cn(
+                "px-2 py-1 text-[10px] font-bold transition-colors flex items-center gap-1",
+                mobileTab === "tickets"
+                  ? dark ? "bg-indigo-600 text-white" : "bg-indigo-500 text-white"
+                  : dark ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500",
+              )}
+            >
+              <Ticket className="h-3 w-3" />
+              Tickets
+            </button>
+          </div>
           <button
             onClick={() => setDark((d) => !d)}
             className={cn("p-1.5 sm:p-2 rounded-lg transition-colors", styles.modeBtnBg)}
@@ -457,8 +484,8 @@ export default function PublicMonitorPage({ params }: Props) {
       {/* Content */}
       <div className="flex-1 p-3 sm:p-5" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 h-full">
-          {/* Scan Feed - hidden on mobile */}
-          <div className="hidden lg:flex lg:col-span-2 flex-col">
+          {/* Scan Feed */}
+          <div className={cn("flex-col lg:col-span-2", mobileTab === "scans" ? "flex" : "hidden lg:flex")}>
             <div className="flex items-center gap-2 mb-3">
               <ScanLine className={cn("h-5 w-5", styles.sectionLabel)} />
               <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>Letzte Scans</h2>
@@ -591,7 +618,7 @@ export default function PublicMonitorPage({ params }: Props) {
           </div>
 
           {/* Right Side */}
-          <div className="flex flex-col gap-4">
+          <div className={cn("flex-col gap-4", mobileTab === "tickets" ? "flex" : "hidden lg:flex")}>
             <LiveClock dark={dark} styles={styles} allPaused={allPaused} pauseToggling={pauseToggling} onClick={handlePauseAll} />
 
             {/* Suche nur Mobil: direkt unter Uhr/Datum */}
