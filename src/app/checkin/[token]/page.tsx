@@ -1635,77 +1635,73 @@ function AddTicketOverlay({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [form, setForm] = useState(ADD_EMPTY);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [code, setCode] = useState("");
+  const [serviceId, setServiceId] = useState("none");
+  const [subscriptionId, setSubscriptionId] = useState("none");
+  const [accessAreaId, setAccessAreaId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  function set(key: keyof typeof ADD_EMPTY, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function applyDefaults(def: DefaultValidity | undefined) {
-    if (!def?.defaultValidityType) return;
-    set("validityType", def.defaultValidityType);
-    if (def.defaultValidityType === "DATE_RANGE") {
-      set("startDate", toDateInput(def.defaultStartDate));
-      set("endDate", toDateInput(def.defaultEndDate));
-      set("slotStart", "");
-      set("slotEnd", "");
-      set("validityDurationMinutes", "");
-    } else if (def.defaultValidityType === "TIME_SLOT") {
-      set("startDate", "");
-      set("endDate", "");
-      set("slotStart", def.defaultSlotStart ?? "");
-      set("slotEnd", def.defaultSlotEnd ?? "");
-      set("validityDurationMinutes", "");
-    } else if (def.defaultValidityType === "DURATION") {
-      set("startDate", "");
-      set("endDate", "");
-      set("slotStart", "");
-      set("slotEnd", "");
-      set("validityDurationMinutes", def.defaultValidityDurationMinutes != null ? String(def.defaultValidityDurationMinutes) : "");
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.firstName.trim() && !form.lastName.trim()) return;
+    if (!firstName.trim() && !lastName.trim()) return;
     setLoading(true);
     setError("");
 
-    const fullName = `${form.firstName} ${form.lastName}`.trim() || "Ticket";
+    const fullName = `${firstName} ${lastName}`.trim() || "Ticket";
     const payload: Record<string, unknown> = {
       name: fullName,
-      status: form.status,
-      validityType: form.validityType,
+      status: "VALID",
     };
-    if (form.firstName) payload.firstName = form.firstName;
-    if (form.lastName) payload.lastName = form.lastName;
-    if (form.serviceId && form.serviceId !== "none") {
-      payload.serviceId = Number(form.serviceId);
-      const svc = services.find((s) => String(s.id) === form.serviceId);
-      if (svc) payload.ticketTypeName = svc.name;
-    } else if (form.ticketTypeName) {
-      payload.ticketTypeName = form.ticketTypeName;
+    if (firstName) payload.firstName = firstName;
+    if (lastName) payload.lastName = lastName;
+
+    if (serviceId !== "none") {
+      payload.serviceId = Number(serviceId);
+      const svc = services.find((s) => String(s.id) === serviceId);
+      if (svc) {
+        payload.ticketTypeName = svc.name;
+        if (svc.defaultValidityType) {
+          payload.validityType = svc.defaultValidityType;
+          if (svc.defaultValidityType === "DATE_RANGE") {
+            if (svc.defaultStartDate) payload.startDate = new Date(svc.defaultStartDate).toISOString();
+            if (svc.defaultEndDate) payload.endDate = new Date(svc.defaultEndDate).toISOString();
+          } else if (svc.defaultValidityType === "TIME_SLOT") {
+            if (svc.defaultSlotStart) payload.slotStart = svc.defaultSlotStart;
+            if (svc.defaultSlotEnd) payload.slotEnd = svc.defaultSlotEnd;
+          } else if (svc.defaultValidityType === "DURATION" && svc.defaultValidityDurationMinutes != null) {
+            payload.validityDurationMinutes = svc.defaultValidityDurationMinutes;
+          }
+        }
+      }
     }
-    if (form.code) {
-      payload.barcode = form.code;
-      payload.qrCode = form.code;
-      payload.rfidCode = form.code;
+
+    if (code) {
+      payload.barcode = code;
+      payload.qrCode = code;
+      payload.rfidCode = code;
     }
-    if (form.subscriptionId && form.subscriptionId !== "none") {
-      payload.subscriptionId = Number(form.subscriptionId);
-    } else if (form.accessAreaId && form.accessAreaId !== "none") {
-      payload.accessAreaId = Number(form.accessAreaId);
+
+    if (subscriptionId !== "none") {
+      payload.subscriptionId = Number(subscriptionId);
+      const sub = subscriptions.find((s) => String(s.id) === subscriptionId);
+      if (sub) {
+        if (sub.defaultValidityType) {
+          payload.validityType = sub.defaultValidityType;
+          if (sub.defaultValidityType === "DURATION" && sub.defaultValidityDurationMinutes != null) {
+            payload.validityDurationMinutes = sub.defaultValidityDurationMinutes;
+          }
+        }
+        if (sub.areaIds?.length && accessAreaId === "none") {
+          payload.accessAreaId = sub.areaIds[0];
+        }
+      }
     }
-    if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
-    if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
-    if (form.validityType === "TIME_SLOT") {
-      if (form.slotStart) payload.slotStart = form.slotStart;
-      if (form.slotEnd) payload.slotEnd = form.slotEnd;
-    }
-    if (form.validityType === "DURATION" && form.validityDurationMinutes) {
-      payload.validityDurationMinutes = Number(form.validityDurationMinutes);
+
+    if (accessAreaId !== "none") {
+      payload.accessAreaId = Number(accessAreaId);
     }
 
     try {
@@ -1718,7 +1714,8 @@ function AddTicketOverlay({
         const data = await res.json();
         setError(data.error?.formErrors?.[0] ?? "Fehler beim Erstellen");
       } else {
-        setForm(ADD_EMPTY);
+        setFirstName(""); setLastName(""); setCode("");
+        setServiceId("none"); setSubscriptionId("none"); setAccessAreaId("none");
         onCreated();
       }
     } catch {
@@ -1727,8 +1724,6 @@ function AddTicketOverlay({
       setLoading(false);
     }
   }
-
-  const hideResource = form.subscriptionId !== "none" || form.serviceId !== "none";
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -1747,14 +1742,13 @@ function AddTicketOverlay({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Name */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400">Vorname <span className="text-rose-500">*</span></label>
               <input
                 type="text"
-                value={form.firstName}
-                onChange={(e) => set("firstName", e.target.value)}
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
                 placeholder="Max"
                 required
                 autoFocus
@@ -1765,8 +1759,8 @@ function AddTicketOverlay({
               <label className="text-xs font-medium text-slate-400">Nachname <span className="text-rose-500">*</span></label>
               <input
                 type="text"
-                value={form.lastName}
-                onChange={(e) => set("lastName", e.target.value)}
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
                 placeholder="Mustermann"
                 required
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
@@ -1774,25 +1768,17 @@ function AddTicketOverlay({
             </div>
           </div>
 
-          {/* Service + Code */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400">Ticket-Typ</label>
               {services.length > 0 ? (
                 <select
-                  value={form.serviceId}
+                  value={serviceId}
                   onChange={(e) => {
-                    const v = e.target.value;
-                    set("serviceId", v);
-                    if (v !== "none") {
-                      const svc = services.find((s) => String(s.id) === v);
-                      if (svc) {
-                        set("ticketTypeName", svc.name);
-                        applyDefaults(svc);
-                        if (svc.areaIds?.length) set("accessAreaId", String(svc.areaIds[0]));
-                      }
-                    } else {
-                      set("ticketTypeName", "");
+                    setServiceId(e.target.value);
+                    if (e.target.value !== "none") {
+                      const svc = services.find((s) => String(s.id) === e.target.value);
+                      if (svc?.areaIds?.length) setAccessAreaId(String(svc.areaIds[0]));
                     }
                   }}
                   className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
@@ -1805,8 +1791,6 @@ function AddTicketOverlay({
               ) : (
                 <input
                   type="text"
-                  value={form.ticketTypeName}
-                  onChange={(e) => set("ticketTypeName", e.target.value)}
                   placeholder="z.B. Tageskarte"
                   className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
                 />
@@ -1819,31 +1803,26 @@ function AddTicketOverlay({
               </label>
               <input
                 type="text"
-                value={form.code}
-                onChange={(e) => set("code", e.target.value)}
-                placeholder="Scannen / eingeben"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="RFID / Barcode / QR"
                 autoComplete="off"
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
               />
             </div>
           </div>
 
-          {/* Abo + Resource + Status */}
           <div className="grid grid-cols-2 gap-3">
             {subscriptions.length > 0 && (
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-400">Abo</label>
                 <select
-                  value={form.subscriptionId}
+                  value={subscriptionId}
                   onChange={(e) => {
-                    const v = e.target.value;
-                    set("subscriptionId", v);
-                    if (v !== "none") {
-                      const sub = subscriptions.find((s) => String(s.id) === v);
-                      if (sub) {
-                        applyDefaults(sub);
-                        if (sub.areaIds?.length) set("accessAreaId", String(sub.areaIds[0]));
-                      }
+                    setSubscriptionId(e.target.value);
+                    if (e.target.value !== "none") {
+                      const sub = subscriptions.find((s) => String(s.id) === e.target.value);
+                      if (sub?.areaIds?.length) setAccessAreaId(String(sub.areaIds[0]));
                     }
                   }}
                   className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
@@ -1855,118 +1834,20 @@ function AddTicketOverlay({
                 </select>
               </div>
             )}
-            {!hideResource && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">Bereich</label>
-                <select
-                  value={form.accessAreaId}
-                  onChange={(e) => set("accessAreaId", e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                >
-                  <option value="none">Keiner</option>
-                  {areas.map((a) => (
-                    <option key={a.id} value={String(a.id)}>{a.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Status</label>
+              <label className="text-xs font-medium text-slate-400">Bereich</label>
               <select
-                value={form.status}
-                onChange={(e) => set("status", e.target.value)}
+                value={accessAreaId}
+                onChange={(e) => setAccessAreaId(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               >
-                <option value="VALID">Gültig</option>
-                <option value="INVALID">Ungültig</option>
-                <option value="PROTECTED">Geschützt</option>
+                <option value="none">Keiner</option>
+                {areas.map((a) => (
+                  <option key={a.id} value={String(a.id)}>{a.name}</option>
+                ))}
               </select>
             </div>
           </div>
-
-          {/* Validity Type */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-400">Gültigkeitstyp</label>
-            <select
-              value={form.validityType}
-              onChange={(e) => set("validityType", e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-            >
-              <option value="DATE_RANGE">Zeitraum (Tage)</option>
-              <option value="TIME_SLOT">Zeitslot (Uhrzeit)</option>
-              <option value="DURATION">Dauer ab 1. Scan</option>
-            </select>
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Gültig ab</label>
-              <input
-                type="date"
-                value={form.startDate}
-                onChange={(e) => set("startDate", e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Gültig bis</label>
-              <input
-                type="date"
-                value={form.endDate}
-                onChange={(e) => set("endDate", e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
-              />
-            </div>
-          </div>
-
-          {/* Time Slot */}
-          {form.validityType === "TIME_SLOT" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">Slot von</label>
-                <input
-                  type="time"
-                  value={form.slotStart}
-                  onChange={(e) => set("slotStart", e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">Slot bis</label>
-                <input
-                  type="time"
-                  value={form.slotEnd}
-                  onChange={(e) => set("slotEnd", e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [color-scheme:dark]"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Duration */}
-          {form.validityType === "DURATION" && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Dauer (Minuten)</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  value={form.validityDurationMinutes}
-                  onChange={(e) => set("validityDurationMinutes", e.target.value)}
-                  placeholder="z.B. 120"
-                  className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-                />
-                <button
-                  type="button"
-                  onClick={() => set("validityDurationMinutes", "1440")}
-                  className="px-3 py-2 bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-xs font-medium hover:bg-slate-700 transition-colors"
-                >
-                  1 Tag
-                </button>
-              </div>
-            </div>
-          )}
 
           {error && (
             <div className="bg-rose-950 border border-rose-700/50 rounded-xl p-3 text-sm text-rose-200">
@@ -1985,10 +1866,10 @@ function AddTicketOverlay({
             </button>
             <button
               type="submit"
-              disabled={loading || (!form.firstName.trim() && !form.lastName.trim())}
+              disabled={loading || (!firstName.trim() && !lastName.trim())}
               className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Ticket erstellen"}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}
             </button>
           </div>
         </form>
