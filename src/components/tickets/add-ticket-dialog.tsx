@@ -12,15 +12,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Plus, Loader2, Camera, ScanLine } from "lucide-react";
-import { CameraCapture } from "./camera-capture";
+import { Plus, Loader2, ScanLine } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Area {
   id: number;
@@ -60,101 +53,80 @@ interface AddTicketDialogProps {
   services?: Svc[];
 }
 
-const EMPTY = {
-  firstName: "",
-  lastName: "",
-  ticketTypeName: "",
-  code: "",
-  accessAreaId: "none",
-  subscriptionId: "none",
-  serviceId: "none",
-  status: "VALID",
-  startDate: "",
-  endDate: "",
-  validityType: "DATE_RANGE",
-  slotStart: "",
-  slotEnd: "",
-  validityDurationMinutes: "",
-};
-
 export function AddTicketDialog({ areas, subscriptions = [], services = [] }: AddTicketDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [code, setCode] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<"service" | "subscription" | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  function set(key: keyof typeof EMPTY, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
+  const allOptions = [
+    ...services.map((s) => ({ id: String(s.id), name: s.name, type: "service" as const, data: s })),
+    ...subscriptions.map((s) => ({ id: String(s.id), name: s.name, type: "subscription" as const, data: s })),
+  ];
 
-  function applyDefaultValidity(def: DefaultValidity | undefined) {
-    if (!def?.defaultValidityType) return;
-    set("validityType", def.defaultValidityType);
-    if (def.defaultValidityType === "DATE_RANGE") {
-      set("startDate", toDateInput(def.defaultStartDate));
-      set("endDate", toDateInput(def.defaultEndDate));
-      set("slotStart", "");
-      set("slotEnd", "");
-      set("validityDurationMinutes", "");
-    } else if (def.defaultValidityType === "TIME_SLOT") {
-      set("startDate", "");
-      set("endDate", "");
-      set("slotStart", def.defaultSlotStart ?? "");
-      set("slotEnd", def.defaultSlotEnd ?? "");
-      set("validityDurationMinutes", "");
-    } else if (def.defaultValidityType === "DURATION") {
-      set("startDate", "");
-      set("endDate", "");
-      set("slotStart", "");
-      set("slotEnd", "");
-      set("validityDurationMinutes", def.defaultValidityDurationMinutes != null ? String(def.defaultValidityDurationMinutes) : "");
-    }
+  function reset() {
+    setFirstName("");
+    setLastName("");
+    setCode("");
+    setSelectedId(null);
+    setSelectedType(null);
+    setError("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.firstName.trim() && !form.lastName.trim()) return;
+    if (!firstName.trim() && !lastName.trim()) return;
     setLoading(true);
     setError("");
 
-    const fullName = `${form.firstName} ${form.lastName}`.trim() || "Ticket";
+    const fullName = `${firstName} ${lastName}`.trim() || "Ticket";
     const payload: Record<string, unknown> = {
       name: fullName,
-      status: form.status,
-      validityType: form.validityType,
+      firstName: firstName || undefined,
+      lastName: lastName || undefined,
+      status: "VALID",
     };
-    if (form.firstName) payload.firstName = form.firstName;
-    if (form.lastName) payload.lastName = form.lastName;
-    if (form.serviceId && form.serviceId !== "none") {
-      payload.serviceId = Number(form.serviceId);
-      const svc = services.find((s) => String(s.id) === form.serviceId);
-      if (svc) payload.ticketTypeName = svc.name;
-    } else if (form.ticketTypeName) {
-      payload.ticketTypeName = form.ticketTypeName;
+
+    if (code) {
+      payload.barcode = code;
+      payload.qrCode = code;
+      payload.rfidCode = code;
     }
-    if (form.code) {
-      payload.barcode = form.code;
-      payload.qrCode = form.code;
-      payload.rfidCode = form.code;
+
+    const selected = allOptions.find((o) => o.id === selectedId && o.type === selectedType);
+    if (selected) {
+      if (selected.type === "service") {
+        payload.serviceId = Number(selected.id);
+        payload.ticketTypeName = selected.name;
+        if (selected.data.areaIds?.length) {
+          payload.accessAreaId = selected.data.areaIds[0];
+        }
+      } else {
+        payload.subscriptionId = Number(selected.id);
+        if (selected.data.areaIds?.length) {
+          payload.accessAreaId = selected.data.areaIds[0];
+        }
+      }
+
+      const def = selected.data as DefaultValidity;
+      if (def.defaultValidityType) {
+        payload.validityType = def.defaultValidityType;
+        if (def.defaultValidityType === "DATE_RANGE") {
+          if (def.defaultStartDate) payload.startDate = new Date(def.defaultStartDate).toISOString();
+          if (def.defaultEndDate) payload.endDate = new Date(def.defaultEndDate).toISOString();
+        } else if (def.defaultValidityType === "TIME_SLOT") {
+          if (def.defaultSlotStart) payload.slotStart = def.defaultSlotStart;
+          if (def.defaultSlotEnd) payload.slotEnd = def.defaultSlotEnd;
+        } else if (def.defaultValidityType === "DURATION" && def.defaultValidityDurationMinutes != null) {
+          payload.validityDurationMinutes = def.defaultValidityDurationMinutes;
+        }
+      }
     }
-    if (form.subscriptionId && form.subscriptionId !== "none") {
-      payload.subscriptionId = Number(form.subscriptionId);
-    } else if (form.accessAreaId && form.accessAreaId !== "none") {
-      payload.accessAreaId = Number(form.accessAreaId);
-    }
-    if (form.startDate) payload.startDate = new Date(form.startDate).toISOString();
-    if (form.endDate) payload.endDate = new Date(form.endDate).toISOString();
-    if (form.validityType === "TIME_SLOT") {
-      if (form.slotStart) payload.slotStart = form.slotStart;
-      if (form.slotEnd) payload.slotEnd = form.slotEnd;
-    }
-    if (form.validityType === "DURATION" && form.validityDurationMinutes) {
-      payload.validityDurationMinutes = Number(form.validityDurationMinutes);
-    }
-    if (profileImage) payload.profileImage = profileImage;
 
     try {
       const res = await fetch("/api/tickets", {
@@ -168,8 +140,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
         setError(data.error?.formErrors?.[0] ?? "Fehler beim Erstellen");
       } else {
         setOpen(false);
-        setForm(EMPTY);
-        setProfileImage(null);
+        reset();
         router.refresh();
       }
     } catch {
@@ -180,7 +151,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
       <DialogTrigger asChild>
         <Button className="bg-indigo-600 hover:bg-indigo-700 gap-2">
           <Plus className="h-4 w-4" />
@@ -188,272 +159,79 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Neues Ticket erstellen</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="flex gap-4 items-start">
-            <div className="shrink-0">
-              <div
-                className="relative group h-16 w-16 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-colors"
-                onClick={() => setCameraOpen(true)}
-              >
-                {profileImage ? (
-                  <>
-                    <img src={profileImage} alt="" className="h-full w-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Camera className="h-4 w-4 text-white" />
-                    </div>
-                  </>
-                ) : (
-                  <Camera className="h-5 w-5 text-slate-400" />
-                )}
-              </div>
-              {profileImage && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setProfileImage(null); }}
-                  className="mt-1 text-[10px] text-slate-400 hover:text-rose-500 transition-colors w-full text-center"
-                >
-                  Entfernen
-                </button>
-              )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="t-first">Vorname <span className="text-rose-500">*</span></Label>
+              <Input
+                id="t-first"
+                placeholder="Max"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+                autoFocus
+              />
             </div>
-            <div className="flex-1 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="t-first">Vorname <span className="text-rose-500">*</span></Label>
-                  <Input
-                    id="t-first"
-                    placeholder="Max"
-                    value={form.firstName}
-                    onChange={(e) => set("firstName", e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="t-last">Nachname <span className="text-rose-500">*</span></Label>
-                  <Input
-                    id="t-last"
-                    placeholder="Mustermann"
-                    value={form.lastName}
-                    onChange={(e) => set("lastName", e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="t-last">Nachname <span className="text-rose-500">*</span></Label>
+              <Input
+                id="t-last"
+                placeholder="Mustermann"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+              />
             </div>
           </div>
 
-          {cameraOpen && (
-            <CameraCapture
-              onCapture={(dataUrl) => { setProfileImage(dataUrl); setCameraOpen(false); }}
-              onClose={() => setCameraOpen(false)}
+          <div className="space-y-1.5">
+            <Label htmlFor="t-code" className="flex items-center gap-1.5">
+              <ScanLine className="h-3.5 w-3.5 text-slate-400" />
+              Code
+            </Label>
+            <Input
+              id="t-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="font-mono text-sm"
+              placeholder="RFID / Barcode / QR"
+              autoComplete="off"
             />
-          )}
+          </div>
 
-          {/* Service / Ticket Type + Code */}
-          <div className="grid grid-cols-2 gap-3">
+          {allOptions.length > 0 && (
             <div className="space-y-1.5">
               <Label>Ticket-Typ</Label>
-              {services.length > 0 ? (
-                <Select value={form.serviceId} onValueChange={(v) => {
-                  set("serviceId", v);
-                  if (v !== "none") {
-                    const svc = services.find((s) => String(s.id) === v);
-                    if (svc) {
-                      set("ticketTypeName", svc.name);
-                      applyDefaultValidity(svc);
-                      if (svc.areaIds?.length) {
-                        set("accessAreaId", String(svc.areaIds[0]));
+              <div className="flex flex-wrap gap-2">
+                {allOptions.map((opt) => (
+                  <button
+                    key={`${opt.type}-${opt.id}`}
+                    type="button"
+                    onClick={() => {
+                      if (selectedId === opt.id && selectedType === opt.type) {
+                        setSelectedId(null);
+                        setSelectedType(null);
+                      } else {
+                        setSelectedId(opt.id);
+                        setSelectedType(opt.type);
                       }
-                    }
-                  } else {
-                    set("ticketTypeName", "");
-                  }
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Kein Service" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Kein Service</SelectItem>
-                    {services.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  id="t-type"
-                  placeholder="z.B. Tageskarte"
-                  value={form.ticketTypeName}
-                  onChange={(e) => set("ticketTypeName", e.target.value)}
-                />
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="t-code" className="flex items-center gap-1.5">
-                <ScanLine className="h-3.5 w-3.5 text-slate-400" />
-                Code
-              </Label>
-              <Input
-                id="t-code"
-                value={form.code}
-                onChange={(e) => set("code", e.target.value)}
-                className="font-mono text-sm"
-                placeholder="Scannen / eingeben"
-                autoComplete="off"
-              />
-            </div>
-          </div>
-
-          {/* Abo + Resource/Status */}
-          {(() => {
-            const hideResource = form.subscriptionId !== "none" || form.serviceId !== "none";
-            const cols = subscriptions.length > 0 ? (hideResource ? 2 : 3) : (hideResource ? 1 : 2);
-            return (
-              <div className={`grid gap-3 grid-cols-${cols}`}>
-                {subscriptions.length > 0 && (
-                  <div className="space-y-1.5">
-                    <Label>Abo</Label>
-                    <Select value={form.subscriptionId} onValueChange={(v) => {
-                      set("subscriptionId", v);
-                      if (v !== "none") {
-                        const sub = subscriptions.find((s) => String(s.id) === v);
-                        if (sub) {
-                          applyDefaultValidity(sub);
-                          if (sub.areaIds?.length) {
-                            set("accessAreaId", String(sub.areaIds[0]));
-                          }
-                        }
-                      }
-                    }}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Kein Abo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Kein Abo</SelectItem>
-                        {subscriptions.map((s) => (
-                          <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {!hideResource && (
-                  <div className="space-y-1.5">
-                    <Label>Resource</Label>
-                    <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Keine" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Keine</SelectItem>
-                        {areas.map((a) => (
-                          <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <Label>Status</Label>
-                  <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="VALID">Gültig</SelectItem>
-                      <SelectItem value="INVALID">Ungültig</SelectItem>
-                      <SelectItem value="PROTECTED">Geschützt</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
+                      selectedId === opt.id && selectedType === opt.type
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:text-indigo-600",
+                    )}
+                  >
+                    {opt.name}
+                  </button>
+                ))}
               </div>
-            );
-          })()}
-
-          {/* Validity Type */}
-          <div className="space-y-1.5">
-            <Label>Gültigkeitstyp</Label>
-            <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="DATE_RANGE">Zeitraum (Tage)</SelectItem>
-                <SelectItem value="TIME_SLOT">Zeitslot (Uhrzeit)</SelectItem>
-                <SelectItem value="DURATION">Dauer ab 1. Scan</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="t-start">Gültig ab</Label>
-              <Input
-                id="t-start"
-                type="date"
-                value={form.startDate}
-                onChange={(e) => set("startDate", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="t-end">Gültig bis</Label>
-              <Input
-                id="t-end"
-                type="date"
-                value={form.endDate}
-                onChange={(e) => set("endDate", e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Time Slot */}
-          {form.validityType === "TIME_SLOT" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="t-slot-start">Slot von</Label>
-                <Input
-                  id="t-slot-start"
-                  type="time"
-                  value={form.slotStart}
-                  onChange={(e) => set("slotStart", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="t-slot-end">Slot bis</Label>
-                <Input
-                  id="t-slot-end"
-                  type="time"
-                  value={form.slotEnd}
-                  onChange={(e) => set("slotEnd", e.target.value)}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Duration */}
-          {form.validityType === "DURATION" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="t-duration">Gültigkeitsdauer (Minuten)</Label>
-              <div className="flex gap-2 items-center">
-                <Input
-                  id="t-duration"
-                  type="number"
-                  min="1"
-                  placeholder="z.B. 120 für 2 Stunden"
-                  value={form.validityDurationMinutes}
-                  onChange={(e) => set("validityDurationMinutes", e.target.value)}
-                  className="flex-1"
-                />
-                <Button type="button" variant="outline" size="sm" onClick={() => set("validityDurationMinutes", "1440")}>
-                  1 Tag
-                </Button>
-              </div>
-              <p className="text-xs text-slate-400">1 Tag = 1440 Minuten</p>
             </div>
           )}
 
@@ -469,10 +247,10 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
             </Button>
             <Button
               type="submit"
-              disabled={loading || (!form.firstName.trim() && !form.lastName.trim())}
+              disabled={loading || (!firstName.trim() && !lastName.trim())}
               className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Ticket erstellen"}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}
             </Button>
           </div>
         </form>
