@@ -315,7 +315,7 @@ export default function PublicMonitorPage({ params }: Props) {
         groups.push({
           groupKey: key,
           ticketId,
-          ticketName: scan.ticket?.name || scan.note || scan.code,
+          ticketName: scan.ticket?.name || scan.note || scan.code.replace(/^[#%]+/, ""),
           personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.note || "",
           birthDate: scan.ticket?.birthDate,
           ticketTypeName: scan.ticket?.ticketTypeName || "",

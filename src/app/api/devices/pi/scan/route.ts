@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const rawCode = String(body.code ?? "").trim();
   const code = rawCode.replace(/\s+/g, "");
-  const stripped = code.replace(/^#+/, "");
+  const stripped = code.replace(/^[#%]+/, "");
   const deviceId = Number(body.deviceId);
 
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
