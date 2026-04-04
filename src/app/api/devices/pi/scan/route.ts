@@ -87,10 +87,16 @@ export async function POST(request: NextRequest) {
   if (!ticket) {
     const wakesys = await checkWakesys(db as Parameters<typeof checkWakesys>[0], accountId, stripped || code);
     if (wakesys?.valid) {
+      const noteData: Record<string, string | number> = {};
+      if (wakesys.name) noteData.name = wakesys.name;
+      if (wakesys.picture) noteData.picture = wakesys.picture;
+      if (wakesys.age) noteData.age = wakesys.age;
+      const note = Object.keys(noteData).length > 0 ? JSON.stringify(noteData) : wakesys.name || null;
+
       await db.scan.create({
         data: {
           code: stripped || code,
-          note: wakesys.name || null,
+          note,
           deviceId,
           result: "GRANTED",
           accountId,

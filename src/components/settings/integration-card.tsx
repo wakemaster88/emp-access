@@ -108,6 +108,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     valid: boolean;
     code?: string;
     name?: string | null;
+    picture?: string | null;
+    age?: number | null;
     category?: string | null;
     cardName?: string | null;
     validUntil?: string | null;
@@ -277,7 +279,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       const res = await fetch("/api/integrations/wakesys", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticketId, rfidCode: testResult.code }),
+        body: JSON.stringify({ ticketId, rfidCode: testResult.code, profileImage: testResult.picture }),
       });
       if (res.ok) {
         setTestResult((prev) => prev ? {
@@ -310,6 +312,8 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
           valid: json.valid,
           code: json.code,
           name: json.name,
+          picture: json.picture,
+          age: json.age,
           category: json.category,
           cardName: json.cardName,
           validUntil: json.validUntil,
@@ -509,12 +513,17 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       </span>
                     </div>
                     {testResult.valid && (
-                      <div className="text-xs text-slate-600 dark:text-slate-400 space-y-0.5 pl-6">
-                        {testResult.name && <p><strong>Name:</strong> {testResult.name}</p>}
-                        {testResult.cardName && <p><strong>Karte:</strong> {testResult.cardName}</p>}
-                        {testResult.category && <p><strong>Kategorie:</strong> {testResult.category}</p>}
-                        {testResult.validUntil && <p><strong>Gültig bis:</strong> {testResult.validUntil}</p>}
-                        {testResult.interfaceNames && <p><strong>Interface:</strong> {testResult.interfaceNames.join(", ")}</p>}
+                      <div className="flex items-start gap-3 pl-6">
+                        {testResult.picture && (
+                          <img src={testResult.picture} alt="" className="h-14 w-14 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+                        )}
+                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-0.5">
+                          {testResult.name && <p><strong>Name:</strong> {testResult.name}{testResult.age != null && <span className="ml-1 text-slate-400">({testResult.age} Jahre)</span>}</p>}
+                          {testResult.cardName && <p><strong>Karte:</strong> {testResult.cardName}</p>}
+                          {testResult.category && <p><strong>Kategorie:</strong> {testResult.category}</p>}
+                          {testResult.validUntil && <p><strong>Gültig bis:</strong> {testResult.validUntil}</p>}
+                          {testResult.interfaceNames && <p><strong>Interface:</strong> {testResult.interfaceNames.join(", ")}</p>}
+                        </div>
                       </div>
                     )}
                     {testResult.message && !testResult.valid && (

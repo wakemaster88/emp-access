@@ -19,11 +19,14 @@ export function isValueValid(value: { card_valid?: string; next_tickets?: unknow
   return false;
 }
 
-export type WakesysCheckResult = { valid: true; interfaceId?: number; name?: string } | { valid: false } | null;
+export type WakesysCheckResult =
+  | { valid: true; interfaceId?: number; name?: string; picture?: string; age?: number }
+  | { valid: false }
+  | null;
 
 /**
  * Prüft bei Wakesys, ob der Scan-Code ein gültiges Ticket hat.
- * @returns { valid: true } wenn gültig, { valid: false } wenn ungültig, null wenn Wakesys nicht konfiguriert
+ * @returns { valid: true, ... } wenn gültig, { valid: false } wenn ungültig, null wenn Wakesys nicht konfiguriert
  */
 export async function checkWakesys(
   db: DbWithApiConfig,
@@ -61,7 +64,10 @@ export async function checkWakesys(
         const firstName = value?.col_first_name || "";
         const lastName = value?.col_last_name || "";
         const name = [firstName, lastName].filter(Boolean).join(" ") || undefined;
-        return { valid: true, interfaceId, name };
+        const picture = value?.col_picture || undefined;
+        const ageRaw = value?.col_age;
+        const age = ageRaw ? parseInt(String(ageRaw), 10) : undefined;
+        return { valid: true, interfaceId, name, picture, age: age && !isNaN(age) ? age : undefined };
       }
     }
     return { valid: false };

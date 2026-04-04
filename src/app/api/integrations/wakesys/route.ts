@@ -132,6 +132,10 @@ export async function POST(request: NextRequest) {
           });
         }
 
+        const picture = value.col_picture || null;
+        const ageRaw = value.col_age;
+        const age = ageRaw ? parseInt(String(ageRaw), 10) : null;
+
         return NextResponse.json({
           valid: true,
           code,
@@ -139,6 +143,8 @@ export async function POST(request: NextRequest) {
           name: [firstName, lastName].filter(Boolean).join(" ") || null,
           firstName,
           lastName,
+          picture,
+          age: age && !isNaN(age) ? age : null,
           category: value.col_category_name || null,
           cardName: value.card_name || null,
           validUntil: value.valid_until || null,
@@ -170,6 +176,7 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const ticketId = Number(body.ticketId);
   const rfidCode = String(body.rfidCode ?? "").trim().replace(/^#+/, "");
+  const profileImage = body.profileImage ? String(body.profileImage) : undefined;
 
   if (!ticketId || !rfidCode) {
     return NextResponse.json({ error: "ticketId und rfidCode erforderlich" }, { status: 400 });
@@ -177,16 +184,21 @@ export async function PATCH(request: NextRequest) {
 
   const ticket = await db.ticket.findFirst({
     where: { id: ticketId, accountId },
-    select: { id: true, name: true, rfidCode: true },
+    select: { id: true, name: true, rfidCode: true, profileImage: true },
   });
   if (!ticket) {
     return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 404 });
   }
 
+  const updateData: Record<string, unknown> = { rfidCode };
+  if (profileImage && !ticket.profileImage) {
+    updateData.profileImage = profileImage;
+  }
+
   await db.ticket.update({
     where: { id: ticketId },
-    data: { rfidCode },
+    data: updateData,
   });
 
-  return NextResponse.json({ ok: true, ticketId, rfidCode });
+  return NextResponse.json({ ok: true, ticketId, rfidCode, profileImageUpdated: !!updateData.profileImage });
 }

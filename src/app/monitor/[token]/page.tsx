@@ -78,8 +78,8 @@ interface ScanGroup {
   firstScanAt?: string | null;
   endDate?: string | null;
   subscriptionId?: number | null;
-  /** Profilbild aus Check-in / DB (Letzte Scans / Gruppierung) */
   profileImage?: string | null;
+  noteAge?: number;
 }
 
 interface Props {
@@ -306,22 +306,32 @@ export default function PublicMonitorPage({ params }: Props) {
   }, [tickets, ticketSearch]);
 
   const groupedScans = useMemo(() => {
+    function parseNote(note?: string | null): { name?: string; picture?: string; age?: number } {
+      if (!note) return {};
+      try {
+        const parsed = JSON.parse(note);
+        if (typeof parsed === "object" && parsed !== null) return parsed;
+      } catch { /* plain text note */ }
+      return { name: note };
+    }
+
     const groups: ScanGroup[] = [];
     for (const scan of scans) {
       const lastGroup = groups[groups.length - 1];
       const ticketId = scan.ticket?.id ?? null;
       const key = ticketId != null ? `t:${ticketId}` : `c:${scan.code}`;
+      const noteData = parseNote(scan.note);
 
       if (lastGroup && lastGroup.groupKey === key && lastGroup.result === scan.result) {
         lastGroup.scans.push(scan);
-        const img = scan.ticket?.profileImage;
+        const img = scan.ticket?.profileImage || noteData.picture;
         if (img && !lastGroup.profileImage) lastGroup.profileImage = img;
       } else {
         groups.push({
           groupKey: key,
           ticketId,
-          ticketName: scan.ticket?.name || scan.note || scan.code.replace(/^[#%]+/, ""),
-          personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.note || "",
+          ticketName: scan.ticket?.name || noteData.name || scan.code.replace(/^[#%]+/, ""),
+          personName: [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || noteData.name || "",
           birthDate: scan.ticket?.birthDate,
           ticketTypeName: scan.ticket?.ticketTypeName || "",
           result: scan.result,
@@ -332,7 +342,8 @@ export default function PublicMonitorPage({ params }: Props) {
           firstScanAt: scan.ticket?.firstScanAt,
           endDate: scan.ticket?.endDate,
           subscriptionId: scan.ticket?.subscriptionId,
-          profileImage: scan.ticket?.profileImage ?? undefined,
+          profileImage: scan.ticket?.profileImage || noteData.picture || undefined,
+          noteAge: noteData.age,
         });
       }
     }
@@ -553,7 +564,7 @@ export default function PublicMonitorPage({ params }: Props) {
                             <p className={cn("font-extrabold text-2xl sm:text-3xl leading-tight truncate", styles.scanName)}>
                               {group.personName || group.ticketName}
                             </p>
-                            {(() => { const a = calcAge(group.birthDate); return a != null ? <p className={cn("text-lg font-medium mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>Alter: {a}</p> : null; })()}
+                            {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <p className={cn("text-lg font-medium mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>Alter: {a}</p> : null; })()}
                             {group.ticketTypeName && (
                               <p className={cn("text-base sm:text-lg font-semibold mt-1 truncate", styles.scanSub)}>{group.ticketTypeName}</p>
                             )}
@@ -614,7 +625,7 @@ export default function PublicMonitorPage({ params }: Props) {
                       <div className="min-w-0">
                         <p className={cn("font-bold text-[15px] leading-tight truncate", styles.scanName)}>
                           {group.personName || group.ticketName}
-                          {(() => { const a = calcAge(group.birthDate); return a != null ? <span className={cn("ml-1 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
+                          {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <span className={cn("ml-1 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                         </p>
                         <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
                           {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device?.name ?? "Web-Scanner"}
