@@ -353,10 +353,21 @@ export async function POST(request: NextRequest) {
         if (claimed.count > 0) {
           updated++;
         } else {
+          const siblingTicket = await db.ticket.findFirst({
+            where: {
+              accountId,
+              uuid: { startsWith: `anny:${customerId}:` },
+              NOT: { rfidCode: null, profileImage: null },
+            },
+            select: { rfidCode: true, profileImage: true },
+          });
+          const inherited: Record<string, unknown> = {};
+          if (siblingTicket?.rfidCode) inherited.rfidCode = siblingTicket.rfidCode;
+          if (siblingTicket?.profileImage) inherited.profileImage = siblingTicket.profileImage;
+          const createData = { ...ticketData, ...inherited, uuid, accountId };
+
           try {
-            await db.ticket.create({
-              data: { ...ticketData, uuid, accountId },
-            });
+            await db.ticket.create({ data: createData });
           } catch (createErr: unknown) {
             const isUnique =
               createErr != null &&
@@ -365,7 +376,7 @@ export async function POST(request: NextRequest) {
               (createErr as { code: string }).code === "P2002";
             if (isUnique) {
               await db.ticket.create({
-                data: { ...ticketData, barcode: null, uuid, accountId },
+                data: { ...createData, barcode: null },
               });
             } else {
               throw createErr;

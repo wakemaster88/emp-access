@@ -536,6 +536,36 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   const existingByUuid = new Map(existingTickets.map((t) => [t.uuid, t.id]));
   const claimedLegacy = new Set<string>();
 
+  const customerIds = [...new Set(
+    [...groups.keys()].map((k) => k.split(":")[1]).filter(Boolean)
+  )];
+  const customerDataMap = new Map<string, { rfidCode: string | null; profileImage: string | null }>();
+  if (customerIds.length > 0) {
+    const prefixConditions = customerIds.map((cid) => ({ uuid: { startsWith: `anny:${cid}:` } }));
+    const existingCustomerTickets = await prisma.ticket.findMany({
+      where: {
+        accountId,
+        OR: prefixConditions,
+        NOT: { rfidCode: null, profileImage: null },
+      },
+      select: { uuid: true, rfidCode: true, profileImage: true },
+    });
+
+    for (const t of existingCustomerTickets) {
+      const cid = t.uuid?.split(":")[1];
+      if (!cid) continue;
+      const prev = customerDataMap.get(cid);
+      if (!prev || (!prev.rfidCode && t.rfidCode)) {
+        customerDataMap.set(cid, {
+          rfidCode: t.rfidCode ?? prev?.rfidCode ?? null,
+          profileImage: t.profileImage ?? prev?.profileImage ?? null,
+        });
+      } else if (!prev.profileImage && t.profileImage) {
+        prev.profileImage = t.profileImage;
+      }
+    }
+  }
+
   for (const group of groups.values()) {
     const uuid = group.key;
     const count = group.entries.length;
@@ -605,6 +635,9 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       || (subscriptionId && subDefaults.get(subscriptionId))
       || {};
 
+    const custId = uuid.split(":")[1];
+    const custData = custId ? customerDataMap.get(custId) : null;
+
     const ticketData = {
       name: group.customerName || `Buchung ${group.entries[0].id}`,
       firstName: group.firstName || null,
@@ -633,21 +666,26 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         await prisma.ticket.update({ where: { id: existingId }, data: { ...ticketData, uuid } });
         updated++;
       } else {
+        const inherited: Record<string, unknown> = {};
+        if (custData?.rfidCode) inherited.rfidCode = custData.rfidCode;
+        if (custData?.profileImage) inherited.profileImage = custData.profileImage;
+        const createData = { ...ticketData, ...inherited };
+
         const legacy = uuid.split(":").slice(0, 3).join(":");
         if (!claimedLegacy.has(legacy) && existingByUuid.has(legacy)) {
           const claimed = await prisma.ticket.updateMany({
             where: { id: existingByUuid.get(legacy)!, uuid: legacy },
-            data: { ...ticketData, uuid },
+            data: { ...createData, uuid },
           });
           if (claimed.count > 0) {
             claimedLegacy.add(legacy);
             updated++;
           } else {
-            await createTicketSafe(ticketData, uuid, accountId);
+            await createTicketSafe(createData, uuid, accountId);
             created++;
           }
         } else {
-          await createTicketSafe(ticketData, uuid, accountId);
+          await createTicketSafe(createData, uuid, accountId);
           created++;
         }
       }
@@ -724,7 +762,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         await prisma.ticket.update({ where: { id: existingId }, data: ticketData });
         subUpdated++;
       } else {
-        await prisma.ticket.create({ data: { ...ticketData, uuid, accountId } });
+        const subCustData = customerDataMap.get(String(customerId));
+        const inherited: Record<string, unknown> = {};
+        if (subCustData?.rfidCode) inherited.rfidCode = subCustData.rfidCode;
+        if (subCustData?.profileImage) inherited.profileImage = subCustData.profileImage;
+        await prisma.ticket.create({ data: { ...ticketData, ...inherited, uuid, accountId } });
         subCreated++;
       }
     } catch { /* skip */ }
