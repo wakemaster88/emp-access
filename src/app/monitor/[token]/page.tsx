@@ -542,6 +542,10 @@ export default function PublicMonitorPage({ params }: Props) {
                     const isNew = group.scans.some((s) => newIds.has(s.id));
                     const scanCount = group.scans.length;
                     const deviceName = group.scans[0].device?.name ?? "Web-Scanner";
+                    const endMs = group.endDate ? new Date(group.endDate).getTime() : null;
+                    const daysLeft = endMs != null ? Math.ceil((endMs - Date.now()) / 86_400_000) : null;
+                    const aboExpiring = group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
+                    const aboExpired = group.subscriptionId != null && daysLeft != null && daysLeft < 0;
                     return (
                       <div
                         key={group.scans[0].id}
@@ -574,6 +578,14 @@ export default function PublicMonitorPage({ params }: Props) {
                                 <> &middot; bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
                               )}
                             </p>
+                            {aboExpired && (
+                              <span className={cn("inline-block mt-1.5 text-sm font-bold px-3 py-1 rounded-lg", dark ? "bg-rose-500/25 text-rose-200" : "bg-rose-200 text-rose-900")}>Abo abgelaufen</span>
+                            )}
+                            {aboExpiring && (
+                              <span className={cn("inline-block mt-1.5 text-sm font-bold px-3 py-1 rounded-lg", dark ? "bg-amber-500/25 text-amber-200" : "bg-amber-200 text-amber-900")}>
+                                Abo läuft ab {daysLeft === 0 ? "heute" : daysLeft === 1 ? "morgen" : `in ${daysLeft} Tagen`}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 px-5 pb-4 pt-1 flex-wrap">
@@ -602,6 +614,10 @@ export default function PublicMonitorPage({ params }: Props) {
                 const Icon = rc.icon;
                 const isNew = group.scans.some((s) => newIds.has(s.id));
                 const scanCount = group.scans.length;
+                const endMs = group.endDate ? new Date(group.endDate).getTime() : null;
+                const daysLeft = endMs != null ? Math.ceil((endMs - Date.now()) / 86_400_000) : null;
+                const aboExpiring = group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
+                const aboExpired = group.subscriptionId != null && daysLeft != null && daysLeft < 0;
 
                 return (
                   <div
@@ -636,6 +652,14 @@ export default function PublicMonitorPage({ params }: Props) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {aboExpired && (
+                        <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-rose-500/20 text-rose-200 border border-rose-500/30" : "bg-rose-100 text-rose-700 border border-rose-200")}>Abo abgelaufen</span>
+                      )}
+                      {aboExpiring && (
+                        <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-amber-500/20 text-amber-200 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>
+                          {daysLeft === 0 ? "Abo läuft heute ab" : daysLeft === 1 ? "Abo läuft morgen ab" : `Abo läuft in ${daysLeft}d ab`}
+                        </span>
+                      )}
                       {group.result === "GRANTED" && !group.ticketId && (
                         <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
                       )}
