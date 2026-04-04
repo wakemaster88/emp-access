@@ -571,16 +571,13 @@ export default function PublicMonitorPage({ params }: Props) {
                               <span className={cn("text-xs font-bold px-2.5 py-1 rounded-lg", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
                             )}
                             {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
-                              <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
+                              <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} size="lg" />
                             )}
                             {scanCount > 1 && (
                               <span className={cn("text-base font-mono font-bold px-3.5 py-1.5 rounded-xl tabular-nums", styles.scanCountBg)}>&times;{scanCount}</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2.5">
-                            <span className={cn("text-base font-bold px-5 py-2 rounded-xl", rc.badge)}>{rc.label}</span>
-                            <span className={cn("text-lg tabular-nums font-mono font-bold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
-                          </div>
+                          <span className={cn("text-lg tabular-nums font-mono font-bold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
                         </div>
                       </div>
                     );
@@ -637,7 +634,6 @@ export default function PublicMonitorPage({ params }: Props) {
                       {scanCount > 1 && (
                         <span className={cn("text-xs font-mono font-bold px-2.5 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>×{scanCount}</span>
                       )}
-                      <span className={cn("text-xs font-bold px-3 py-1 rounded-lg", rc.badge)}>{rc.label}</span>
                       <span className={cn("text-sm tabular-nums font-mono font-semibold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
                     </div>
                   </div>
@@ -842,7 +838,7 @@ function calcAge(birthDate: string | null | undefined): number | null {
   return age;
 }
 
-function DurationCountdown({ firstScanAt, durationMinutes, dark }: { firstScanAt: string; durationMinutes: number; dark: boolean }) {
+function DurationCountdown({ firstScanAt, durationMinutes, dark, size }: { firstScanAt: string; durationMinutes: number; dark: boolean; size?: "lg" }) {
   const [remaining, setRemaining] = useState("");
   const [expired, setExpired] = useState(false);
 
@@ -866,13 +862,17 @@ function DurationCountdown({ firstScanAt, durationMinutes, dark }: { firstScanAt
     return () => clearInterval(id);
   }, [firstScanAt, durationMinutes]);
 
+  const isLg = size === "lg";
+
   return (
     <span className={cn(
-      "text-xs font-mono px-2.5 py-1 rounded-lg tabular-nums font-bold",
+      "font-mono tabular-nums font-bold rounded-xl flex items-center gap-1.5",
+      isLg ? "text-xl sm:text-2xl px-4 py-2" : "text-xs px-2.5 py-1 rounded-lg",
       expired
         ? dark ? "bg-rose-500/25 text-rose-200" : "bg-rose-200 text-rose-900"
         : dark ? "bg-violet-500/25 text-violet-200" : "bg-violet-200 text-violet-900"
     )}>
+      {isLg && <Clock className={cn("h-5 w-5 sm:h-6 sm:w-6", expired ? "text-rose-300" : "text-violet-300")} />}
       {remaining}
     </span>
   );
