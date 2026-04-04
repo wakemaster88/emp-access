@@ -173,6 +173,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [addTicketPrefill, setAddTicketPrefill] = useState<{ firstName?: string; lastName?: string; rfidCode?: string; profileImage?: string | null } | undefined>();
   const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -518,11 +519,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
       {/* ANNY Sync Status */}
       {data?.annySyncStatus && (() => {
-        const s = data.annySyncStatus!;
-        const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
+        const syncSt = data.annySyncStatus!;
+        const syncAge = syncSt.lastSync ? Date.now() - new Date(syncSt.lastSync).getTime() : Infinity;
         const isStale = syncAge > 2 * 60 * 60_000;
-        const hasErrors = (s.errors ?? 0) > 0;
-        const details = s.errorDetails ?? [];
+        const hasErrors = (syncSt.errors ?? 0) > 0;
+        const details = syncSt.errorDetails ?? [];
         const fmtAgo = (iso: string | null) => {
           if (!iso) return "Nie";
           const diff = Date.now() - new Date(iso).getTime();
@@ -533,6 +534,15 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           if (hrs < 24) return `vor ${hrs} Std.`;
           return `vor ${Math.floor(hrs / 24)} Tagen`;
         };
+        const triggerSync = async () => {
+          if (syncing) return;
+          setSyncing(true);
+          try {
+            await fetch(`/api/checkin/public/${token}/anny-sync`, { method: "POST" });
+            refreshRef.current?.();
+          } catch { /* ignore */ }
+          setSyncing(false);
+        };
         return (
           <div className={cn(
             "border-b text-xs",
@@ -542,15 +552,29 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 ? "border-amber-900/50 bg-amber-950/20 text-amber-400"
                 : "border-slate-800 bg-slate-900/50 text-slate-400",
           )}>
-            <div
-              className={cn("flex items-center gap-2 px-4 py-1.5", hasErrors && details.length > 0 && "cursor-pointer")}
-              onClick={() => { if (hasErrors && details.length > 0) setSyncErrorsOpen((v) => !v); }}
-            >
-              <RefreshCw className="h-3 w-3 shrink-0" />
-              <span>ANNY Sync: {fmtAgo(s.lastSync)}</span>
-              {(s.created ?? 0) > 0 && <span className="text-emerald-400">+{s.created} neu</span>}
-              {hasErrors && <span className="text-rose-400">{s.errors} Fehler</span>}
-              {hasErrors && details.length > 0 && <span className="ml-auto text-rose-500">{syncErrorsOpen ? "▲" : "▼"}</span>}
+            <div className="flex items-center gap-2 px-4 py-1.5">
+              <div
+                className={cn("flex items-center gap-2 flex-1 min-w-0", hasErrors && details.length > 0 && "cursor-pointer")}
+                onClick={() => { if (hasErrors && details.length > 0) setSyncErrorsOpen((v) => !v); }}
+              >
+                <RefreshCw className={cn("h-3 w-3 shrink-0", syncing && "animate-spin")} />
+                <span className="truncate">ANNY Sync: {fmtAgo(syncSt.lastSync)}</span>
+                {(syncSt.created ?? 0) > 0 && <span className="text-emerald-400 shrink-0">+{syncSt.created} neu</span>}
+                {hasErrors && <span className="text-rose-400 shrink-0">{syncSt.errors} Fehler</span>}
+                {hasErrors && details.length > 0 && <span className="text-rose-500">{syncErrorsOpen ? "▲" : "▼"}</span>}
+              </div>
+              <button
+                onClick={triggerSync}
+                disabled={syncing}
+                className={cn(
+                  "shrink-0 px-2.5 py-0.5 rounded-lg font-semibold transition-colors active:scale-95",
+                  syncing
+                    ? "bg-slate-700 text-slate-500 cursor-wait"
+                    : "bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 border border-indigo-500/30",
+                )}
+              >
+                {syncing ? "Sync..." : "Jetzt synchronisieren"}
+              </button>
             </div>
             {syncErrorsOpen && details.length > 0 && (
               <div className="px-4 pb-2 space-y-0.5">
