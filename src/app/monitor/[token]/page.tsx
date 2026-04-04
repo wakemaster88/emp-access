@@ -573,8 +573,10 @@ export default function PublicMonitorPage({ params }: Props) {
                               {group.personName || group.ticketName}
                             </p>
                             {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <p className={cn("text-lg font-medium mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>Alter: {a}</p> : null; })()}
-                            {group.ticketTypeName && (
-                              <p className={cn("text-base sm:text-lg font-semibold mt-1 truncate", styles.scanSub)}>{group.ticketTypeName}</p>
+                            {(group.ticketTypeName || (!group.ticketId && group.personName)) && (
+                              <p className={cn("text-base sm:text-lg font-semibold mt-1 truncate", styles.scanSub)}>
+                                {group.ticketTypeName || "Wakesys"}
+                              </p>
                             )}
                             {(group.subscriptionName || group.endDate) && (
                               <p className={cn("text-sm sm:text-base mt-0.5 truncate", styles.scanSub)}>
@@ -655,7 +657,8 @@ export default function PublicMonitorPage({ params }: Props) {
                             if (group.ticketTypeName) parts.push(group.ticketTypeName);
                             if (group.subscriptionName && group.subscriptionName !== group.ticketTypeName) parts.push(group.subscriptionName);
                             if (group.subscriptionId && group.endDate) parts.push(`bis ${new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`);
-                            return parts.join(" · ") || (group.scans[0].device?.name ?? "");
+                            if (parts.length === 0 && !group.ticketId && group.personName) parts.push("Wakesys");
+                            return parts.join(" · ");
                           })()}
                         </p>
                       </div>
