@@ -209,7 +209,7 @@ export async function GET(
     areaIds: s.areas.map((a) => a.id),
   }));
 
-  let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number } | null = null;
+  let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; errorDetails?: string[] } | null = null;
   try {
     const annyConfig = await prisma.apiConfig.findFirst({
       where: { accountId, provider: "ANNY" },
@@ -223,6 +223,7 @@ export async function GET(
         created: sr?.created,
         updated: sr?.updated,
         errors: sr?.errors,
+        errorDetails: sr?.errorDetails,
       };
     }
   } catch { /* non-critical */ }

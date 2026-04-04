@@ -402,7 +402,7 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; total?: number } | null = null;
+  let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; errorDetails?: string[]; total?: number } | null = null;
   if (annyConfig) {
     try {
       const extra = annyConfig.extraConfig ? JSON.parse(annyConfig.extraConfig) : {};
@@ -412,6 +412,7 @@ export async function GET(request: NextRequest) {
         created: sr?.created,
         updated: sr?.updated,
         errors: sr?.errors,
+        errorDetails: sr?.errorDetails,
         total: sr?.total,
       };
     } catch {

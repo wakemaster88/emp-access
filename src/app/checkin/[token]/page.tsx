@@ -111,6 +111,7 @@ interface AnnySyncStatus {
   created?: number;
   updated?: number;
   errors?: number;
+  errorDetails?: string[];
 }
 
 interface CheckinData {
@@ -171,6 +172,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [addTicketPrefill, setAddTicketPrefill] = useState<{ firstName?: string; lastName?: string; rfidCode?: string; profileImage?: string | null } | undefined>();
+  const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
   const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -520,6 +522,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
         const isStale = syncAge > 2 * 60 * 60_000;
         const hasErrors = (s.errors ?? 0) > 0;
+        const details = s.errorDetails ?? [];
         const fmtAgo = (iso: string | null) => {
           if (!iso) return "Nie";
           const diff = Date.now() - new Date(iso).getTime();
@@ -532,17 +535,30 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         };
         return (
           <div className={cn(
-            "flex items-center gap-2 px-4 py-1.5 border-b text-xs",
+            "border-b text-xs",
             hasErrors
               ? "border-rose-900/50 bg-rose-950/20 text-rose-400"
               : isStale
                 ? "border-amber-900/50 bg-amber-950/20 text-amber-400"
                 : "border-slate-800 bg-slate-900/50 text-slate-400",
           )}>
-            <RefreshCw className="h-3 w-3 shrink-0" />
-            <span>ANNY Sync: {fmtAgo(s.lastSync)}</span>
-            {(s.created ?? 0) > 0 && <span className="text-emerald-400">+{s.created} neu</span>}
-            {hasErrors && <span className="text-rose-400">{s.errors} Fehler</span>}
+            <div
+              className={cn("flex items-center gap-2 px-4 py-1.5", hasErrors && details.length > 0 && "cursor-pointer")}
+              onClick={() => { if (hasErrors && details.length > 0) setSyncErrorsOpen((v) => !v); }}
+            >
+              <RefreshCw className="h-3 w-3 shrink-0" />
+              <span>ANNY Sync: {fmtAgo(s.lastSync)}</span>
+              {(s.created ?? 0) > 0 && <span className="text-emerald-400">+{s.created} neu</span>}
+              {hasErrors && <span className="text-rose-400">{s.errors} Fehler</span>}
+              {hasErrors && details.length > 0 && <span className="ml-auto text-rose-500">{syncErrorsOpen ? "▲" : "▼"}</span>}
+            </div>
+            {syncErrorsOpen && details.length > 0 && (
+              <div className="px-4 pb-2 space-y-0.5">
+                {details.map((d, i) => (
+                  <p key={i} className="text-[10px] text-rose-300/80 font-mono truncate">{d}</p>
+                ))}
+              </div>
+            )}
           </div>
         );
       })()}

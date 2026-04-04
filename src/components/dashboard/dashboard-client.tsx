@@ -91,6 +91,7 @@ interface AnnySyncStatus {
   created?: number;
   updated?: number;
   errors?: number;
+  errorDetails?: string[];
   total?: number;
 }
 
@@ -464,6 +465,7 @@ export function DashboardClient() {
   const [svcs, setSvcs] = useState<{ id: number; name: string }[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
   const [ticketLoading, setTicketLoading] = useState(false);
+  const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
 
   const fetchData = useCallback(async (d: string) => {
     setLoading(true);
@@ -665,53 +667,66 @@ export function DashboardClient() {
         const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
         const isStale = syncAge > 2 * 60 * 60_000;
         const hasErrors = (s.errors ?? 0) > 0;
+        const details = s.errorDetails ?? [];
         return (
           <div className={cn(
-            "flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm",
+            "rounded-xl border text-sm",
             hasErrors
               ? "border-rose-200 bg-rose-50/50 dark:border-rose-900/50 dark:bg-rose-950/10"
               : isStale
                 ? "border-amber-200 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/10"
                 : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/10",
           )}>
-            <RefreshCw className={cn(
-              "h-4 w-4 shrink-0",
-              hasErrors ? "text-rose-500" : isStale ? "text-amber-500" : "text-emerald-500",
-            )} />
-            <div className="flex-1 min-w-0">
-              <span className="font-semibold text-slate-800 dark:text-slate-200">ANNY Sync</span>
-              <span className="text-slate-500 dark:text-slate-400 ml-2">
-                {fmtSyncAgo(s.lastSync)}
-                {s.lastSync && (
-                  <span className="hidden sm:inline"> ({new Date(s.lastSync).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr)</span>
+            <div
+              className={cn("flex items-center gap-3 px-4 py-2.5", hasErrors && details.length > 0 && "cursor-pointer")}
+              onClick={() => { if (hasErrors && details.length > 0) setSyncErrorsOpen((v) => !v); }}
+            >
+              <RefreshCw className={cn(
+                "h-4 w-4 shrink-0",
+                hasErrors ? "text-rose-500" : isStale ? "text-amber-500" : "text-emerald-500",
+              )} />
+              <div className="flex-1 min-w-0">
+                <span className="font-semibold text-slate-800 dark:text-slate-200">ANNY Sync</span>
+                <span className="text-slate-500 dark:text-slate-400 ml-2">
+                  {fmtSyncAgo(s.lastSync)}
+                  {s.lastSync && (
+                    <span className="hidden sm:inline"> ({new Date(s.lastSync).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr)</span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 text-xs">
+                {s.total != null && (
+                  <span className="text-slate-500 dark:text-slate-400">{s.total} Buchungen</span>
                 )}
-              </span>
+                {(s.created ?? 0) > 0 && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                    +{s.created} neu
+                  </Badge>
+                )}
+                {(s.updated ?? 0) > 0 && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">
+                    {s.updated} aktualisiert
+                  </Badge>
+                )}
+                {hasErrors && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                    {s.errors} Fehler {details.length > 0 && (syncErrorsOpen ? "▲" : "▼")}
+                  </Badge>
+                )}
+                {!s.lastSync && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    Kein Sync
+                  </Badge>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0 text-xs">
-              {s.total != null && (
-                <span className="text-slate-500 dark:text-slate-400">{s.total} Buchungen</span>
-              )}
-              {(s.created ?? 0) > 0 && (
-                <Badge className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                  +{s.created} neu
-                </Badge>
-              )}
-              {(s.updated ?? 0) > 0 && (
-                <Badge className="text-[10px] px-1.5 py-0 bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">
-                  {s.updated} aktualisiert
-                </Badge>
-              )}
-              {hasErrors && (
-                <Badge className="text-[10px] px-1.5 py-0 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
-                  {s.errors} Fehler
-                </Badge>
-              )}
-              {!s.lastSync && (
-                <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                  Kein Sync
-                </Badge>
-              )}
-            </div>
+            {syncErrorsOpen && details.length > 0 && (
+              <div className="px-4 pb-3 space-y-1 border-t border-rose-200/50 dark:border-rose-900/30 pt-2">
+                {details.map((d, i) => (
+                  <p key={i} className="text-xs text-rose-600 dark:text-rose-400 font-mono truncate">{d}</p>
+                ))}
+              </div>
+            )}
           </div>
         );
       })()}
