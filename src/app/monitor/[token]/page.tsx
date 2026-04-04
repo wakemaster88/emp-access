@@ -35,8 +35,11 @@ interface Scan {
     firstScanAt?: string | null;
     endDate?: string | null;
     subscriptionId?: number | null;
+    serviceId?: number | null;
     status?: string;
     profileImage?: string | null;
+    subscription?: { name: string } | null;
+    service?: { name: string } | null;
   } | null;
 }
 
@@ -78,6 +81,7 @@ interface ScanGroup {
   firstScanAt?: string | null;
   endDate?: string | null;
   subscriptionId?: number | null;
+  subscriptionName?: string | null;
   profileImage?: string | null;
   noteAge?: number;
 }
@@ -342,6 +346,7 @@ export default function PublicMonitorPage({ params }: Props) {
           firstScanAt: scan.ticket?.firstScanAt,
           endDate: scan.ticket?.endDate,
           subscriptionId: scan.ticket?.subscriptionId,
+          subscriptionName: scan.ticket?.subscription?.name || null,
           profileImage: scan.ticket?.profileImage || noteData.picture || undefined,
           noteAge: noteData.age,
         });
@@ -541,7 +546,6 @@ export default function PublicMonitorPage({ params }: Props) {
                     const Icon = rc.icon;
                     const isNew = group.scans.some((s) => newIds.has(s.id));
                     const scanCount = group.scans.length;
-                    const deviceName = group.scans[0].device?.name ?? "Web-Scanner";
                     const endMs = group.endDate ? new Date(group.endDate).getTime() : null;
                     const daysLeft = endMs != null ? Math.ceil((endMs - Date.now()) / 86_400_000) : null;
                     const aboExpiring = group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
@@ -572,12 +576,14 @@ export default function PublicMonitorPage({ params }: Props) {
                             {group.ticketTypeName && (
                               <p className={cn("text-base sm:text-lg font-semibold mt-1 truncate", styles.scanSub)}>{group.ticketTypeName}</p>
                             )}
-                            <p className={cn("text-sm sm:text-base mt-0.5 truncate", styles.scanSub)}>
-                              {deviceName}
-                              {group.subscriptionId && group.endDate && (
-                                <> &middot; bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
-                              )}
-                            </p>
+                            {(group.subscriptionName || group.endDate) && (
+                              <p className={cn("text-sm sm:text-base mt-0.5 truncate", styles.scanSub)}>
+                                {group.subscriptionName}
+                                {group.subscriptionId && group.endDate && (
+                                  <>{group.subscriptionName ? " · " : ""}bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
+                                )}
+                              </p>
+                            )}
                             {aboExpired && (
                               <span className={cn("inline-block mt-1.5 text-sm font-bold px-3 py-1 rounded-lg", dark ? "bg-rose-500/25 text-rose-200" : "bg-rose-200 text-rose-900")}>Abo abgelaufen</span>
                             )}
@@ -644,10 +650,13 @@ export default function PublicMonitorPage({ params }: Props) {
                           {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <span className={cn("ml-1 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                         </p>
                         <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
-                          {group.ticketTypeName ? `${group.ticketTypeName} · ` : ""}{group.scans[0].device?.name ?? "Web-Scanner"}
-                          {group.subscriptionId && group.endDate && (
-                            <> · bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
-                          )}
+                          {(() => {
+                            const parts: string[] = [];
+                            if (group.ticketTypeName) parts.push(group.ticketTypeName);
+                            if (group.subscriptionName && group.subscriptionName !== group.ticketTypeName) parts.push(group.subscriptionName);
+                            if (group.subscriptionId && group.endDate) parts.push(`bis ${new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`);
+                            return parts.join(" · ") || group.scans[0].device?.name ?? "";
+                          })()}
                         </p>
                       </div>
                     </div>
