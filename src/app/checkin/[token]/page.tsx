@@ -170,6 +170,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
+  const [addTicketPrefill, setAddTicketPrefill] = useState<{ firstName?: string; lastName?: string; rfidCode?: string; profileImage?: string | null } | undefined>();
   const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -489,7 +490,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             </div>
           )}
           <button
-            onClick={() => setAddTicketOpen(true)}
+            onClick={() => { setAddTicketPrefill(undefined); setAddTicketOpen(true); }}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
           >
             <Plus className="h-5 w-5" />
@@ -696,6 +697,16 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           onForceRfid={() => { if (rfidConflict) { handleUpdateTicket(rfidConflict.ticketId, { rfidCode: rfidConflict.rfidCode }, true); } }}
           onCancelRfid={() => setRfidConflict(null)}
           ticketScans={(data?.recentScans ?? []).filter((s) => s.ticketId === selectedTicket.id)}
+          onAddTicket={() => {
+            setAddTicketPrefill({
+              firstName: selectedTicket.firstName ?? undefined,
+              lastName: selectedTicket.lastName ?? undefined,
+              rfidCode: selectedTicket.rfidCode ?? undefined,
+              profileImage: selectedTicket.profileImage,
+            });
+            setSelectedTicket(null);
+            setAddTicketOpen(true);
+          }}
         />
       )}
 
@@ -713,8 +724,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           services={data?.services ?? []}
           areas={data?.areas ?? []}
           subscriptions={data?.allSubscriptions ?? []}
-          onClose={() => setAddTicketOpen(false)}
-          onCreated={() => { setAddTicketOpen(false); refreshRef.current?.(); }}
+          onClose={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); }}
+          onCreated={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); refreshRef.current?.(); }}
+          prefill={addTicketPrefill}
         />
       )}
 
@@ -1176,6 +1188,7 @@ function TicketOverlay({
   onForceRfid,
   onCancelRfid,
   ticketScans,
+  onAddTicket,
 }: {
   ticket: CheckinTicket;
   onClose: () => void;
@@ -1193,6 +1206,7 @@ function TicketOverlay({
   onForceRfid: () => void;
   onCancelRfid: () => void;
   ticketScans: ScanEntry[];
+  onAddTicket: () => void;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isSub = !!ticket.subscriptionId;
@@ -1389,6 +1403,15 @@ function TicketOverlay({
           >
             <Printer className="h-4 w-4" />
             Ticket drucken
+          </button>
+
+          {/* New ticket for same person */}
+          <button
+            onClick={onAddTicket}
+            className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+          >
+            <Plus className="h-4 w-4" />
+            Neues Ticket hinzufügen
           </button>
         </div>
       </div>
@@ -1668,6 +1691,7 @@ function AddTicketOverlay({
   subscriptions,
   onClose,
   onCreated,
+  prefill,
 }: {
   token: string;
   services: ServiceData[];
@@ -1675,10 +1699,11 @@ function AddTicketOverlay({
   subscriptions: SubOption[];
   onClose: () => void;
   onCreated: () => void;
+  prefill?: { firstName?: string; lastName?: string; rfidCode?: string; profileImage?: string | null };
 }) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [code, setCode] = useState("");
+  const [firstName, setFirstName] = useState(prefill?.firstName ?? "");
+  const [lastName, setLastName] = useState(prefill?.lastName ?? "");
+  const [code, setCode] = useState(prefill?.rfidCode ?? "");
   const [serviceId, setServiceId] = useState("none");
   const [subscriptionId, setSubscriptionId] = useState("none");
   const [accessAreaId, setAccessAreaId] = useState("none");
@@ -1723,6 +1748,10 @@ function AddTicketOverlay({
       payload.barcode = code;
       payload.qrCode = code;
       payload.rfidCode = code;
+    }
+
+    if (prefill?.profileImage) {
+      payload.profileImage = prefill.profileImage;
     }
 
     if (subscriptionId !== "none") {
