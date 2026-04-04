@@ -134,6 +134,7 @@ async function loadTickets(
 
 /**
  * Ein kurzer Poll (ohne SSE) – hält Vercel & Neon pro Request unter ~10s.
+ * scansOnly=true: nur neue Scans laden (1 Query), Devices/Tickets skippen.
  */
 export async function runPublicMonitorPoll(
   prisma: PrismaClient,
@@ -143,11 +144,11 @@ export async function runPublicMonitorPoll(
     monitorName: string;
     sinceScanId: number;
     includeTickets: boolean;
+    scansOnly?: boolean;
   }
 ): Promise<PublicMonitorPollResult> {
-  const { accountId, deviceIds, monitorName, sinceScanId, includeTickets } = opts;
+  const { accountId, deviceIds, monitorName, sinceScanId, includeTickets, scansOnly } = opts;
 
-  const devices = await loadDevices(prisma, accountId, deviceIds);
   const scans = await loadScans(prisma, accountId, deviceIds, sinceScanId);
 
   let lastScanId = sinceScanId;
@@ -155,6 +156,17 @@ export async function runPublicMonitorPoll(
     lastScanId = Math.max(...scans.map((s) => s.id));
   }
 
+  if (scansOnly) {
+    return {
+      name: monitorName,
+      devices: [],
+      scans,
+      tickets: null,
+      lastScanId,
+    };
+  }
+
+  const devices = await loadDevices(prisma, accountId, deviceIds);
   const tickets = includeTickets ? await loadTickets(prisma, accountId, devices) : null;
 
   return {

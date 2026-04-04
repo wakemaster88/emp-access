@@ -195,8 +195,10 @@ export default function PublicMonitorPage({ params }: Props) {
       if (cancelled || document.hidden) return;
       const tick = pollTickRef.current;
       pollTickRef.current += 1;
-      const includeTickets = tick === 0 || tick % 6 === 0;
-      const url = `/api/monitor/public/${encodeURIComponent(token)}?poll=1&since=${lastScanIdRef.current}&tickets=${includeTickets ? 1 : 0}`;
+      const isFullPoll = tick === 0 || tick % 10 === 0;
+      const includeTickets = isFullPoll;
+      const scansOnly = !isFullPoll;
+      const url = `/api/monitor/public/${encodeURIComponent(token)}?poll=1&since=${lastScanIdRef.current}&tickets=${includeTickets ? 1 : 0}${scansOnly ? "&scansOnly=1" : ""}`;
       try {
         const res = await fetch(url, { cache: "no-store" });
         if (cancelled) return;
@@ -214,8 +216,10 @@ export default function PublicMonitorPage({ params }: Props) {
           lastScanId: number;
         };
         if (cancelled) return;
-        setMonitorName(data.name);
-        setDevices(data.devices);
+        if (!scansOnly) {
+          setMonitorName(data.name);
+          setDevices(data.devices);
+        }
         if (data.scans?.length) {
           const incoming = data.scans;
           setScans((prev) => {
@@ -247,7 +251,7 @@ export default function PublicMonitorPage({ params }: Props) {
     }
 
     doPoll();
-    pollTimerRef.current = setInterval(doPoll, 8000);
+    pollTimerRef.current = setInterval(doPoll, 3000);
 
     const handleVisibility = () => {
       if (document.hidden) {
@@ -257,9 +261,10 @@ export default function PublicMonitorPage({ params }: Props) {
         }
         setConnected(false);
       } else {
+        pollTickRef.current = 0;
         void doPoll();
         if (!pollTimerRef.current) {
-          pollTimerRef.current = setInterval(doPoll, 8000);
+          pollTimerRef.current = setInterval(doPoll, 3000);
         }
       }
     };

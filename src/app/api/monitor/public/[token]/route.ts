@@ -23,6 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (isPoll) {
     const sinceScanId = Number(request.nextUrl.searchParams.get("since") ?? "0") || 0;
     const includeTickets = request.nextUrl.searchParams.get("tickets") !== "0";
+    const scansOnly = request.nextUrl.searchParams.get("scansOnly") === "1";
 
     const data = await runPublicMonitorPoll(prisma, {
       accountId,
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       monitorName: monitor.name,
       sinceScanId,
       includeTickets,
+      scansOnly,
     });
 
     return NextResponse.json(data, {
