@@ -50,6 +50,15 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const data = parsed.data;
 
+  let serviceAreaIds: number[] = [];
+  if (data.serviceId) {
+    const svcAreas = await db.serviceArea.findMany({
+      where: { serviceId: data.serviceId },
+      select: { accessAreaId: true },
+    });
+    serviceAreaIds = svcAreas.map((sa: { accessAreaId: number }) => sa.accessAreaId);
+  }
+
   const ticket = await db.ticket.create({
     data: {
       name: data.name,
@@ -71,6 +80,11 @@ export async function POST(request: NextRequest) {
       validityDurationMinutes: data.validityDurationMinutes,
       profileImage: data.profileImage,
       accountId: accountId!,
+      ...(serviceAreaIds.length > 0 ? {
+        ticketAreas: {
+          create: serviceAreaIds.map((areaId) => ({ accessAreaId: areaId })),
+        },
+      } : {}),
     },
   });
 
