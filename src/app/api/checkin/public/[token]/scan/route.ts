@@ -22,7 +22,7 @@ export async function POST(
   const codesToTry = [code, rawCode];
   let ticket = null;
   for (const c of codesToTry) {
-    ticket = await prisma.ticket.findFirst({
+    const candidates = await prisma.ticket.findMany({
       where: {
         accountId: monitor.accountId,
         OR: [
@@ -38,7 +38,21 @@ export async function POST(
         service: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
       },
     });
-    if (ticket) break;
+    if (candidates.length > 0) {
+      const now = new Date();
+      function ticketScore(t: typeof candidates[0]): number {
+        if (t.status === "INVALID" || t.status === "PROTECTED") return 0;
+        const endOk = !t.endDate || new Date(new Date(t.endDate).setUTCHours(23, 59, 59, 999)) >= now;
+        const startOk = !t.startDate || new Date(t.startDate) <= now;
+        if (endOk && startOk && t.status === "VALID") return 4;
+        if (endOk && startOk && t.status === "REDEEMED") return 3;
+        if (endOk && startOk) return 2;
+        return 1;
+      }
+      candidates.sort((a, b) => ticketScore(b) - ticketScore(a));
+      ticket = candidates[0];
+      break;
+    }
   }
 
   if (!ticket) {
