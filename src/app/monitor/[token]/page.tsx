@@ -7,6 +7,12 @@ import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay } from "@/lib/berlin-day";
 import { monitorTicketTypeLine } from "@/lib/monitor-ticket-subtitle";
 
+function endOfDayMs(dateStr: string): number {
+  const d = new Date(dateStr);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
 interface Device {
   id: number;
   name: string;
@@ -546,7 +552,7 @@ export default function PublicMonitorPage({ params }: Props) {
                     const Icon = rc.icon;
                     const isNew = group.scans.some((s) => newIds.has(s.id));
                     const scanCount = group.scans.length;
-                    const endMs = group.endDate ? new Date(group.endDate).getTime() : null;
+                    const endMs = group.endDate ? endOfDayMs(group.endDate) : null;
                     const daysLeft = endMs != null ? Math.ceil((endMs - Date.now()) / 86_400_000) : null;
                     const aboExpiring = group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
                     const aboExpired = group.subscriptionId != null && daysLeft != null && daysLeft < 0;
@@ -622,7 +628,7 @@ export default function PublicMonitorPage({ params }: Props) {
                 const Icon = rc.icon;
                 const isNew = group.scans.some((s) => newIds.has(s.id));
                 const scanCount = group.scans.length;
-                const endMs = group.endDate ? new Date(group.endDate).getTime() : null;
+                const endMs = group.endDate ? endOfDayMs(group.endDate) : null;
                 const daysLeft = endMs != null ? Math.ceil((endMs - Date.now()) / 86_400_000) : null;
                 const aboExpiring = group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
                 const aboExpired = group.subscriptionId != null && daysLeft != null && daysLeft < 0;
@@ -746,7 +752,7 @@ export default function PublicMonitorPage({ params }: Props) {
                 const isScanning = scanningId === ticket.id;
 
                 const now = Date.now();
-                const endMs = ticket.endDate ? new Date(ticket.endDate).getTime() : null;
+                const endMs = ticket.endDate ? endOfDayMs(ticket.endDate) : null;
                 const isExpired = endMs != null && endMs < now;
                 const isWarning = endMs != null && !isExpired && (endMs - now) < 15 * 60_000;
 
