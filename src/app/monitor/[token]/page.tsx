@@ -522,60 +522,64 @@ export default function PublicMonitorPage({ params }: Props) {
               </div>
             )}
             <div className="max-h-[calc(100vh-9rem)] overflow-y-auto pr-1 monitor-scrollbar">
-              {/* Top 2 scans side-by-side */}
+              {/* Top 2 hero scans */}
               {groupedScans.length > 0 && (
-                <div className="grid grid-cols-2 gap-2 mb-2">
+                <div className="grid grid-cols-2 gap-3 mb-3" style={{ minHeight: "calc(50vh - 5rem)" }}>
                   {groupedScans.slice(0, 2).map((group) => {
                     const rc = resultConfig[group.result];
                     const Icon = rc.icon;
                     const isNew = group.scans.some((s) => newIds.has(s.id));
                     const scanCount = group.scans.length;
+                    const deviceName = group.scans[0].device?.name ?? "Web-Scanner";
                     return (
                       <div
                         key={group.scans[0].id}
                         className={cn(
-                          "flex flex-col rounded-2xl border overflow-hidden transition-all duration-200",
+                          "flex flex-col rounded-3xl border-2 overflow-hidden transition-all duration-200",
                           rc.bg,
-                          isNew && `animate-scan-flash ring-2 ring-offset-1 ${styles.ringOffset}`,
+                          isNew && `animate-scan-flash ring-3 ring-offset-2 ${styles.ringOffset}`,
                           isNew && rc.ring,
                         )}
                       >
-                        <div className="flex items-center gap-3 px-4 pt-4 pb-2 min-w-0">
-                          <div className={cn("h-14 w-14 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden", dark ? "bg-white/10" : "bg-slate-200")}>
+                        <div className="flex flex-col items-center justify-center flex-1 px-5 pt-5 pb-3 gap-3">
+                          <div className={cn("h-24 w-24 sm:h-28 sm:w-28 rounded-3xl flex items-center justify-center shrink-0 overflow-hidden shadow-lg", dark ? "bg-white/10" : "bg-slate-200")}>
                             {group.profileImage ? (
                               <img src={group.profileImage} alt="" className="h-full w-full object-cover" />
                             ) : (
-                              <Icon className={cn("h-7 w-7", rc.text)} />
+                              <Icon className={cn("h-12 w-12 sm:h-14 sm:w-14", rc.text)} />
                             )}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <p className={cn("font-bold text-lg leading-tight truncate", styles.scanName)}>
+                          <div className="text-center min-w-0 w-full">
+                            <p className={cn("font-extrabold text-2xl sm:text-3xl leading-tight truncate", styles.scanName)}>
                               {group.personName || group.ticketName}
-                              {(() => { const a = calcAge(group.birthDate); return a != null ? <span className={cn("ml-1.5 text-sm font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                             </p>
-                            <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
-                              {group.ticketTypeName || group.scans[0].device?.name || ""}
+                            {(() => { const a = calcAge(group.birthDate); return a != null ? <p className={cn("text-lg font-medium mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>Alter: {a}</p> : null; })()}
+                            {group.ticketTypeName && (
+                              <p className={cn("text-base sm:text-lg font-semibold mt-1 truncate", styles.scanSub)}>{group.ticketTypeName}</p>
+                            )}
+                            <p className={cn("text-sm sm:text-base mt-0.5 truncate", styles.scanSub)}>
+                              {deviceName}
                               {group.subscriptionId && group.endDate && (
-                                <> · bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
+                                <> &middot; bis {new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</>
                               )}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-1">
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between gap-2 px-5 pb-4 pt-1 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {group.result === "GRANTED" && !group.ticketId && (
-                              <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
+                              <span className={cn("text-xs font-bold px-2.5 py-1 rounded-lg", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
                             )}
                             {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
                               <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
                             )}
                             {scanCount > 1 && (
-                              <span className={cn("text-sm font-mono font-bold px-3 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>×{scanCount}</span>
+                              <span className={cn("text-base font-mono font-bold px-3.5 py-1.5 rounded-xl tabular-nums", styles.scanCountBg)}>&times;{scanCount}</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className={cn("text-sm font-bold px-4 py-1.5 rounded-lg", rc.badge)}>{rc.label}</span>
-                            <span className={cn("text-base tabular-nums font-mono font-semibold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
+                          <div className="flex items-center gap-2.5">
+                            <span className={cn("text-base font-bold px-5 py-2 rounded-xl", rc.badge)}>{rc.label}</span>
+                            <span className={cn("text-lg tabular-nums font-mono font-bold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
                           </div>
                         </div>
                       </div>
