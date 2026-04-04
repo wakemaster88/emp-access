@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
     }),
     db.apiConfig.findFirst({
       where: { ...(isSuperAdmin ? {} : { accountId: accountId! }), provider: "ANNY" },
-      select: { token: true, baseUrl: true, extraConfig: true },
+      select: { token: true, baseUrl: true, extraConfig: true, lastUpdate: true },
     }),
     db.scan.findMany({
       where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
@@ -402,12 +402,30 @@ export async function GET(request: NextRequest) {
     };
   });
 
+  let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; total?: number } | null = null;
+  if (annyConfig) {
+    try {
+      const extra = annyConfig.extraConfig ? JSON.parse(annyConfig.extraConfig) : {};
+      const sr = extra.lastSyncResult;
+      annySyncStatus = {
+        lastSync: sr?.at || annyConfig.lastUpdate?.toISOString() || null,
+        created: sr?.created,
+        updated: sr?.updated,
+        errors: sr?.errors,
+        total: sr?.total,
+      };
+    } catch {
+      annySyncStatus = { lastSync: annyConfig.lastUpdate?.toISOString() || null };
+    }
+  }
+
   return NextResponse.json({
     date: dateStr,
     scansToday,
     checkedInCount: checkedInToday.length,
     newTicketsCount: newTicketsToday.length,
     activeDevices,
+    annySyncStatus,
     recentScans: recentScans.map((s) => ({
       id: s.id,
       result: s.result,

@@ -763,11 +763,23 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     resourceIds: { ...(annyConfig.resourceIds || {}), ...discoveredResourceIds },
   };
 
+  const syncResult = {
+    at: new Date().toISOString(),
+    created,
+    updated,
+    skipped,
+    errors,
+    invalidated: orphaned.count,
+    total: uniqueBookings.length,
+    groups: groups.size,
+    planSubs: allPlanSubscriptions.length,
+  };
+
   await prisma.apiConfig.update({
     where: { id: config.id },
     data: {
       lastUpdate: new Date(),
-      extraConfig: JSON.stringify(updatedAnnyConfig),
+      extraConfig: JSON.stringify({ ...updatedAnnyConfig, lastSyncResult: syncResult }),
     },
   });
 

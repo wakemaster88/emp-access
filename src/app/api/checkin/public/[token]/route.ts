@@ -209,6 +209,24 @@ export async function GET(
     areaIds: s.areas.map((a) => a.id),
   }));
 
+  let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number } | null = null;
+  try {
+    const annyConfig = await prisma.apiConfig.findFirst({
+      where: { accountId, provider: "ANNY" },
+      select: { lastUpdate: true, extraConfig: true },
+    });
+    if (annyConfig) {
+      const extra = annyConfig.extraConfig ? JSON.parse(annyConfig.extraConfig) : {};
+      const sr = extra.lastSyncResult;
+      annySyncStatus = {
+        lastSync: sr?.at || annyConfig.lastUpdate?.toISOString() || null,
+        created: sr?.created,
+        updated: sr?.updated,
+        errors: sr?.errors,
+      };
+    }
+  } catch { /* non-critical */ }
+
   return NextResponse.json({
     monitorName: monitor.name,
     accountName: monitor.account.name,
@@ -219,5 +237,6 @@ export async function GET(
     areas,
     allSubscriptions: subsWithAreas,
     recentScans,
+    annySyncStatus,
   });
 }

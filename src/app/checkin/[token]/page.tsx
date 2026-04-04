@@ -106,6 +106,13 @@ interface SubOption extends DefaultValidity {
   areaIds?: number[];
 }
 
+interface AnnySyncStatus {
+  lastSync: string | null;
+  created?: number;
+  updated?: number;
+  errors?: number;
+}
+
 interface CheckinData {
   monitorName: string;
   accountName: string;
@@ -116,6 +123,7 @@ interface CheckinData {
   areas: { id: number; name: string }[];
   allSubscriptions?: SubOption[];
   recentScans: ScanEntry[];
+  annySyncStatus?: AnnySyncStatus | null;
 }
 
 function toDateStr(d: Date): string {
@@ -504,6 +512,39 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           </button>
         </div>
       </header>
+
+      {/* ANNY Sync Status */}
+      {data?.annySyncStatus && (() => {
+        const s = data.annySyncStatus!;
+        const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
+        const isStale = syncAge > 2 * 60 * 60_000;
+        const hasErrors = (s.errors ?? 0) > 0;
+        const fmtAgo = (iso: string | null) => {
+          if (!iso) return "Nie";
+          const diff = Date.now() - new Date(iso).getTime();
+          const mins = Math.floor(diff / 60_000);
+          if (mins < 1) return "Gerade eben";
+          if (mins < 60) return `vor ${mins} Min.`;
+          const hrs = Math.floor(mins / 60);
+          if (hrs < 24) return `vor ${hrs} Std.`;
+          return `vor ${Math.floor(hrs / 24)} Tagen`;
+        };
+        return (
+          <div className={cn(
+            "flex items-center gap-2 px-4 py-1.5 border-b text-xs",
+            hasErrors
+              ? "border-rose-900/50 bg-rose-950/20 text-rose-400"
+              : isStale
+                ? "border-amber-900/50 bg-amber-950/20 text-amber-400"
+                : "border-slate-800 bg-slate-900/50 text-slate-400",
+          )}>
+            <RefreshCw className="h-3 w-3 shrink-0" />
+            <span>ANNY Sync: {fmtAgo(s.lastSync)}</span>
+            {(s.created ?? 0) > 0 && <span className="text-emerald-400">+{s.created} neu</span>}
+            {hasErrors && <span className="text-rose-400">{s.errors} Fehler</span>}
+          </div>
+        );
+      })()}
 
       {/* Day selector */}
       <DaySelector date={date} onChange={setDate} />
