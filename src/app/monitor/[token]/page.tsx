@@ -655,7 +655,7 @@ export default function PublicMonitorPage({ params }: Props) {
                             if (group.ticketTypeName) parts.push(group.ticketTypeName);
                             if (group.subscriptionName && group.subscriptionName !== group.ticketTypeName) parts.push(group.subscriptionName);
                             if (group.subscriptionId && group.endDate) parts.push(`bis ${new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`);
-                            return parts.join(" · ") || group.scans[0].device?.name ?? "";
+                            return parts.join(" · ") || (group.scans[0].device?.name ?? "");
                           })()}
                         </p>
                       </div>
