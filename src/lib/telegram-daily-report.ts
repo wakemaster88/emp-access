@@ -46,7 +46,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     }),
     prisma.ticket.findMany({
       where: { accountId, createdAt: { gte: dayStart, lte: dayEnd } },
-      select: { ticketTypeName: true, subscriptionId: true, subscription: { select: { name: true } } },
+      select: { firstName: true, lastName: true, name: true, ticketTypeName: true, subscriptionId: true, subscription: { select: { name: true } } },
     }),
     prisma.ticket.findMany({
       where: {
@@ -134,9 +134,14 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
   }
   msg += `\n`;
 
+  const todayAbos = bookingsToday.filter((t) => t.subscriptionId);
   msg += `<b>📋 Neue Abos heute</b> (${todayAboCount})\n`;
-  if (todayGroups.abos.size > 0) {
-    msg += fmtServiceGroup(todayGroups.abos) + "\n";
+  if (todayAbos.length > 0) {
+    for (const t of todayAbos) {
+      const personName = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+      const aboName = t.subscription?.name ?? t.ticketTypeName ?? "Abo";
+      msg += `  • ${personName} (${aboName})\n`;
+    }
   } else {
     msg += `  • Keine\n`;
   }
@@ -144,19 +149,10 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
 
   const tomorrowGroups = groupByService(bookingsTomorrow);
   const tomorrowTicketCount = bookingsTomorrow.filter((t) => !t.subscriptionId).length;
-  const tomorrowAboCount = bookingsTomorrow.filter((t) => t.subscriptionId).length;
 
   msg += `<b>📅 Tickets morgen</b> (${tomorrowTicketCount})\n`;
   if (tomorrowGroups.singles.size > 0) {
     msg += fmtServiceGroup(tomorrowGroups.singles) + "\n";
-  } else {
-    msg += `  • Keine\n`;
-  }
-  msg += `\n`;
-
-  msg += `<b>📋 Abos morgen</b> (${tomorrowAboCount})\n`;
-  if (tomorrowGroups.abos.size > 0) {
-    msg += fmtServiceGroup(tomorrowGroups.abos) + "\n";
   } else {
     msg += `  • Keine\n`;
   }
