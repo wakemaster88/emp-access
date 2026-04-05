@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { berlinDayStart } from "@/lib/berlin-day";
 
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -31,7 +32,9 @@ export async function GET(request: NextRequest) {
 
           const scanWhere: Record<string, unknown> = {
             accountId: accountId!,
-            ...(lastScanId > 0 ? { id: { gt: lastScanId } } : {}),
+            ...(lastScanId > 0
+              ? { id: { gt: lastScanId } }
+              : { scanTime: { gte: berlinDayStart() } }),
           };
           if (deviceIds?.length) scanWhere.deviceId = { in: deviceIds };
 

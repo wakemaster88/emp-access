@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, MapPin, Maximize, Minimize, Pause, Play, Ticket, Volume2, VolumeX, Wifi } from "lucide-react";
 import { fmtTime } from "@/lib/utils";
+import { berlinYmd, isSameBerlinDay } from "@/lib/berlin-day";
 
 interface MonitorScan {
   id: number;
@@ -60,6 +61,7 @@ export default function MonitorPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [dayKey, setDayKey] = useState(() => berlinYmd(new Date()));
   const containerRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -106,16 +108,17 @@ export default function MonitorPage() {
         const msg = JSON.parse(event.data);
 
         if (msg.type === "scans" && msg.data.length > 0) {
-          const incoming = msg.data as MonitorScan[];
+          const incoming = (msg.data as MonitorScan[]).filter((s) => isSameBerlinDay(s.scanTime));
           setScans((prev) => {
-            const existing = new Set(prev.map((s) => s.id));
+            const todayPrev = prev.filter((s) => isSameBerlinDay(s.scanTime));
+            const existing = new Set(todayPrev.map((s) => s.id));
             const fresh = incoming.filter((s) => !existing.has(s.id));
             if (!isFirstLoad.current && fresh.length > 0) {
               setNewIds(new Set(fresh.map((s) => s.id)));
               setTimeout(() => setNewIds(new Set()), 1500);
             }
             isFirstLoad.current = false;
-            return [...fresh, ...prev].slice(0, 100);
+            return [...fresh, ...todayPrev].slice(0, 100);
           });
 
           if (soundEnabled && incoming.some((s) => s.result === "DENIED")) {
@@ -143,13 +146,28 @@ export default function MonitorPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
       es?.close();
     };
-  }, [isPaused, soundEnabled, playAlertSound, selectedDeviceIds]);
+  }, [isPaused, soundEnabled, playAlertSound, selectedDeviceIds, dayKey]);
 
   useEffect(() => {
     if (feedRef.current) {
       feedRef.current.scrollTop = 0;
     }
   }, [scans]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const nowDay = berlinYmd(new Date());
+      setDayKey((prev) => {
+        if (prev !== nowDay) {
+          setScans([]);
+          isFirstLoad.current = true;
+          return nowDay;
+        }
+        return prev;
+      });
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
