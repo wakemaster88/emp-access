@@ -62,18 +62,29 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const ticketInfo = {
+    name: ticket.name,
+    firstName: ticket.firstName,
+    lastName: ticket.lastName,
+    ticketTypeName: ticket.ticketTypeName,
+    status: ticket.status,
+    areaName: ticket.accessArea?.name ?? null,
+    serviceName: ticket.service?.name ?? null,
+    subscriptionName: ticket.subscription?.name ?? null,
+  };
+
   if (ticket.status === "INVALID") {
     await db.scan.create({
       data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
     });
-    return NextResponse.json({ granted: false, message: "Ticket ungültig" });
+    return NextResponse.json({ granted: false, message: "Ticket ungültig", ticket: ticketInfo });
   }
 
   if (ticket.status === "PROTECTED") {
     await db.scan.create({
       data: { code, result: "PROTECTED", ticketId: ticket.id, accountId: accountId! },
     });
-    return NextResponse.json({ granted: false, message: "Ticket gesperrt" });
+    return NextResponse.json({ granted: false, message: "Ticket gesperrt", ticket: ticketInfo });
   }
 
   const now = new Date();
@@ -86,7 +97,7 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
       });
-      return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig" });
+      return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig", ticket: ticketInfo });
     }
   }
 
@@ -97,7 +108,7 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
       });
-      return NextResponse.json({ granted: false, message: "Ticket abgelaufen" });
+      return NextResponse.json({ granted: false, message: "Ticket abgelaufen", ticket: ticketInfo });
     }
   }
 
@@ -115,6 +126,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         granted: false,
         message: `Zeitslot ${ticket.slotStart}–${ticket.slotEnd} Uhr`,
+        ticket: ticketInfo,
       });
     }
   }
@@ -126,7 +138,7 @@ export async function POST(request: NextRequest) {
         await db.scan.create({
           data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
         });
-        return NextResponse.json({ granted: false, message: "Zeitgültigkeit abgelaufen" });
+        return NextResponse.json({ granted: false, message: "Zeitgültigkeit abgelaufen", ticket: ticketInfo });
       }
     }
   }
@@ -143,7 +155,7 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
       });
-      return NextResponse.json({ granted: false, message: "Resource nicht erlaubt" });
+      return NextResponse.json({ granted: false, message: "Resource nicht erlaubt", ticket: ticketInfo });
     }
   }
 
@@ -162,15 +174,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     granted: true,
     message: "Zutritt gewährt",
-    ticket: {
-      name: ticket.name,
-      firstName: ticket.firstName,
-      lastName: ticket.lastName,
-      ticketTypeName: ticket.ticketTypeName,
-      status: ticket.status,
-      areaName: ticket.accessArea?.name ?? null,
-      serviceName: ticket.service?.name ?? null,
-      subscriptionName: ticket.subscription?.name ?? null,
-    },
+    ticket: ticketInfo,
   });
 }

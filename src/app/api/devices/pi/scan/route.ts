@@ -77,7 +77,8 @@ export async function POST(request: NextRequest) {
         ],
       },
       include: {
-        service: { select: { allowReentry: true } },
+        service: { select: { allowReentry: true, name: true } },
+        subscription: { select: { name: true } },
         ticketAreas: { select: { accessAreaId: true } },
       },
     });
@@ -127,25 +128,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ticket nicht gefunden" });
   }
 
-  // Ticket status check (VALID and REDEEMED are both accepted)
+  const ticketInfo = {
+    name: ticket.name,
+    firstName: ticket.firstName,
+    lastName: ticket.lastName,
+    ticketTypeName: ticket.ticketTypeName,
+    subscriptionName: ticket.subscription?.name ?? null,
+    serviceName: ticket.service?.name ?? null,
+  };
+
   if (ticket.status === "INVALID") {
     await db.scan.create({
       data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
     });
-    return NextResponse.json({ granted: false, message: "Ticket ungültig" });
+    return NextResponse.json({ granted: false, message: "Ticket ungültig", ticket: ticketInfo });
   }
 
   if (ticket.status === "PROTECTED") {
     await db.scan.create({
       data: { code, deviceId, result: "PROTECTED", ticketId: ticket.id, accountId },
     });
-    return NextResponse.json({ granted: false, message: "Ticket gesperrt" });
+    return NextResponse.json({ granted: false, message: "Ticket gesperrt", ticket: ticketInfo });
   }
 
   const now = new Date();
   const vType = ticket.validityType ?? "DATE_RANGE";
 
-  // --- Date range check (all types use startDate/endDate as outer bounds) ---
   if (ticket.startDate) {
     const start = new Date(ticket.startDate);
     start.setUTCHours(0, 0, 0, 0);
@@ -153,7 +161,7 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
-      return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig" });
+      return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig", ticket: ticketInfo });
     }
   }
   if (ticket.endDate) {
@@ -163,11 +171,10 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
-      return NextResponse.json({ granted: false, message: "Ticket abgelaufen" });
+      return NextResponse.json({ granted: false, message: "Ticket abgelaufen", ticket: ticketInfo });
     }
   }
 
-  // --- TIME_SLOT: check current time is within slotStart–slotEnd (Europe/Berlin) ---
   if (vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
     const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
     const currentMinutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
@@ -182,11 +189,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         granted: false,
         message: `Zeitslot ${ticket.slotStart}–${ticket.slotEnd} Uhr`,
+        ticket: ticketInfo,
       });
     }
   }
 
-  // --- DURATION: check if within X minutes after first scan ---
   if (vType === "DURATION" && ticket.validityDurationMinutes) {
     if (ticket.firstScanAt) {
       const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
@@ -194,15 +201,13 @@ export async function POST(request: NextRequest) {
         await db.scan.create({
           data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
         });
-        return NextResponse.json({ granted: false, message: "Zeitgültigkeit abgelaufen" });
+        return NextResponse.json({ granted: false, message: "Zeitgültigkeit abgelaufen", ticket: ticketInfo });
       }
     }
-    // firstScanAt will be set below on first GRANTED scan
   }
 
   const isEmployee = ticket.source === "EMP_CONTROL";
 
-  // Access area check (only if device has areas configured)
   if (device.accessIn || device.accessOut) {
     const deviceAreas = [device.accessIn, device.accessOut].filter(Boolean) as number[];
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
@@ -214,11 +219,10 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
-      return NextResponse.json({ granted: false, message: "Resource nicht erlaubt" });
+      return NextResponse.json({ granted: false, message: "Resource nicht erlaubt", ticket: ticketInfo });
     }
   }
 
-  // Re-entry check (employees always allowed; otherwise check device setting)
   if (!device.allowReentry && !isEmployee) {
     const existingScan = await db.scan.findFirst({
       where: { ticketId: ticket.id, deviceId, result: "GRANTED" },
@@ -227,7 +231,7 @@ export async function POST(request: NextRequest) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
-      return NextResponse.json({ granted: false, message: "Kein Wiedereintritt" });
+      return NextResponse.json({ granted: false, message: "Kein Wiedereintritt", ticket: ticketInfo });
     }
   }
 
@@ -262,10 +266,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     granted: true,
     message: "Zutritt gewährt",
-    ticket: {
-      name: ticket.name,
-      firstName: ticket.firstName,
-      lastName: ticket.lastName,
-    },
+    ticket: ticketInfo,
   });
 }
