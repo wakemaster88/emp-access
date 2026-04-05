@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera, Search } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
-import { isSameBerlinDay } from "@/lib/berlin-day";
+import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine } from "@/lib/monitor-ticket-subtitle";
 
 function endOfDayMs(dateStr: string): number {
@@ -287,6 +287,21 @@ export default function PublicMonitorPage({ params }: Props) {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [token]);
+
+  useEffect(() => {
+    let currentDay = berlinYmd(new Date());
+    const id = setInterval(() => {
+      const nowDay = berlinYmd(new Date());
+      if (nowDay !== currentDay) {
+        currentDay = nowDay;
+        setScans([]);
+        lastScanIdRef.current = 0;
+        pollTickRef.current = 0;
+        isFirstLoad.current = true;
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   /** Nach Check-in: Profilbild aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen */
   useEffect(() => {

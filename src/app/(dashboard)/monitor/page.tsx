@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, MapPin, Maximize, Minimize, Pause, Play, Ticket, Volume2, VolumeX, Wifi } from "lucide-react";
 import { fmtTime } from "@/lib/utils";
+import { berlinYmd } from "@/lib/berlin-day";
 
 interface MonitorScan {
   id: number;
@@ -60,6 +61,7 @@ export default function MonitorPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [dayKey, setDayKey] = useState(() => berlinYmd(new Date()));
   const containerRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -143,13 +145,28 @@ export default function MonitorPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
       es?.close();
     };
-  }, [isPaused, soundEnabled, playAlertSound, selectedDeviceIds]);
+  }, [isPaused, soundEnabled, playAlertSound, selectedDeviceIds, dayKey]);
 
   useEffect(() => {
     if (feedRef.current) {
       feedRef.current.scrollTop = 0;
     }
   }, [scans]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const nowDay = berlinYmd(new Date());
+      setDayKey((prev) => {
+        if (prev !== nowDay) {
+          setScans([]);
+          isFirstLoad.current = true;
+          return nowDay;
+        }
+        return prev;
+      });
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 

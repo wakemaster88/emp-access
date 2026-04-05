@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { berlinDayStart } from "@/lib/berlin-day";
 
 const MAX_TICKETS = 2500;
 
@@ -31,7 +32,9 @@ async function loadScans(
   const scanWhere: Record<string, unknown> = {
     accountId,
     ...(deviceIds.length ? { deviceId: { in: deviceIds } } : {}),
-    ...(sinceScanId > 0 ? { id: { gt: sinceScanId } } : {}),
+    ...(sinceScanId > 0
+      ? { id: { gt: sinceScanId } }
+      : { scanTime: { gte: berlinDayStart() } }),
   };
   return prisma.scan.findMany({
     where: scanWhere,
