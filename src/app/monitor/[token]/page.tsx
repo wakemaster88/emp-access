@@ -569,9 +569,9 @@ export default function PublicMonitorPage({ params }: Props) {
                     const isNew = group.scans.some((s) => newIds.has(s.id));
                     const scanCount = group.scans.length;
                     const endMs = group.endDate ? endOfDayMs(group.endDate) : null;
+                    const aboExpired = group.subscriptionId != null && endMs != null && Date.now() > endMs;
                     const daysLeft = endMs != null ? Math.ceil((endMs - Date.now()) / 86_400_000) : null;
-                    const aboExpiring = group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
-                    const aboExpired = group.subscriptionId != null && daysLeft != null && daysLeft < 0;
+                    const aboExpiring = !aboExpired && group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
                     return (
                       <div
                         key={group.scans[0].id}
@@ -645,9 +645,9 @@ export default function PublicMonitorPage({ params }: Props) {
                 const isNew = group.scans.some((s) => newIds.has(s.id));
                 const scanCount = group.scans.length;
                 const endMs = group.endDate ? endOfDayMs(group.endDate) : null;
+                const aboExpired = group.subscriptionId != null && endMs != null && Date.now() > endMs;
                 const daysLeft = endMs != null ? Math.ceil((endMs - Date.now()) / 86_400_000) : null;
-                const aboExpiring = group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
-                const aboExpired = group.subscriptionId != null && daysLeft != null && daysLeft < 0;
+                const aboExpiring = !aboExpired && group.subscriptionId != null && daysLeft != null && daysLeft >= 0 && daysLeft <= 7;
 
                 return (
                   <div
