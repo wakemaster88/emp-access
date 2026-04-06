@@ -53,6 +53,63 @@ export async function POST(request: NextRequest) {
   }
 
   if (!ticket) {
+    // Gutschein-Einlösung: Code beginnt mit "GS-"
+    if (code.startsWith("GS-")) {
+      const voucher = await db.voucher.findUnique({ where: { code, accountId: accountId! } });
+      if (voucher && !voucher.redeemedAt) {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const todayEnd = new Date(today);
+        todayEnd.setUTCHours(23, 59, 59, 999);
+
+        const newTicket = await db.ticket.create({
+          data: {
+            name: voucher.ticketTypeName ?? "Gutschein-Ticket",
+            ticketTypeName: voucher.ticketTypeName,
+            startDate: today,
+            endDate: todayEnd,
+            validityType: voucher.validityType,
+            validityDurationMinutes: voucher.validityDurationMinutes,
+            serviceId: voucher.serviceId,
+            accessAreaId: voucher.accessAreaId,
+            status: "REDEEMED",
+            accountId: accountId!,
+          },
+        });
+
+        await db.voucher.update({
+          where: { id: voucher.id },
+          data: { redeemedAt: new Date(), redeemedTicketId: newTicket.id },
+        });
+
+        await db.scan.create({
+          data: { code, result: "GRANTED", ticketId: newTicket.id, accountId: accountId! },
+        });
+
+        return NextResponse.json({
+          granted: true,
+          message: "Gutschein eingelöst",
+          ticket: {
+            name: newTicket.name,
+            firstName: null,
+            lastName: null,
+            ticketTypeName: newTicket.ticketTypeName,
+            status: newTicket.status,
+            areaName: null,
+            serviceName: null,
+            subscriptionName: null,
+          },
+        });
+      }
+
+      if (voucher?.redeemedAt) {
+        await db.scan.create({
+          data: { code, result: "DENIED", accountId: accountId! },
+        });
+        return NextResponse.json({ granted: false, message: "Gutschein bereits eingelöst" });
+      }
+    }
+
     await db.scan.create({
       data: { code, result: "DENIED", accountId: accountId! },
     });

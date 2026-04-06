@@ -22,7 +22,9 @@ import {
   Fingerprint,
   Image as ImageIcon,
   CalendarDays,
+  Pencil,
   Printer,
+  TicketX,
   RefreshCw,
   Pause,
   Plus,
@@ -160,8 +162,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [checkingIn, setCheckingIn] = useState<number | null>(null);
   const [updatingTicket, setUpdatingTicket] = useState<number | null>(null);
   const [rfidInput, setRfidInput] = useState("");
-  const [editMode, setEditMode] = useState<"photo" | "rfid" | null>(null);
+  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cancellingVoucher, setCancellingVoucher] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanBufferRef = useRef("");
@@ -337,7 +340,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     existingType: string | null;
   } | null>(null);
 
-  const handleUpdateTicket = useCallback(async (ticketId: number, update: { profileImage?: string; rfidCode?: string }, force?: boolean) => {
+  const handleUpdateTicket = useCallback(async (ticketId: number, update: { profileImage?: string; rfidCode?: string; startDate?: string | null; endDate?: string | null }, force?: boolean) => {
     setUpdatingTicket(ticketId);
     try {
       const res = await fetch(`/api/checkin/public/${token}/update`, {
@@ -361,7 +364,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       setRfidConflict(null);
       refreshRef.current?.();
       if (selectedTicket?.id === ticketId) {
-        setSelectedTicket((prev) => prev ? { ...prev, ...update } : null);
+        const patch: Record<string, unknown> = {};
+        if (update.profileImage !== undefined) patch.profileImage = update.profileImage;
+        if (update.rfidCode !== undefined) patch.rfidCode = update.rfidCode;
+        if (update.startDate !== undefined) patch.startDate = json.ticket?.startDate ?? update.startDate;
+        if (update.endDate !== undefined) patch.endDate = json.ticket?.endDate ?? update.endDate;
+        setSelectedTicket((prev) => prev ? { ...prev, ...patch } : null);
       }
     } finally {
       setUpdatingTicket(null);
@@ -375,6 +383,26 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     setEditMode("photo");
     handleUpdateTicket(selectedTicket.id, { profileImage: dataUrl });
   }, [selectedTicket, handleUpdateTicket]);
+
+  const handleCancelVoucher = useCallback(async () => {
+    if (!selectedTicket) return;
+    setCancellingVoucher(true);
+    try {
+      const res = await fetch(`/api/checkin/public/${token}/voucher`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketId: selectedTicket.id }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await printVoucher(json.voucher.code, json.voucher.ticketTypeName, data?.accountName ?? "");
+        setSelectedTicket(null);
+        refreshRef.current?.();
+      }
+    } finally {
+      setCancellingVoucher(false);
+    }
+  }, [selectedTicket, token, data?.accountName]);
 
   const dayTickets = data?.tickets ?? [];
   const subscriptions = data?.subscriptions ?? [];
@@ -730,6 +758,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           rfidInput={rfidInput}
           setRfidInput={setRfidInput}
           onSaveRfid={(code?: string) => handleUpdateTicket(selectedTicket.id, { rfidCode: code ?? rfidInput })}
+          onSaveDates={(startDate, endDate) => handleUpdateTicket(selectedTicket.id, { startDate, endDate })}
           onOpenCamera={() => setCameraOpen(true)}
           updatingTicket={updatingTicket === selectedTicket.id}
           accountName={data?.accountName ?? ""}
@@ -747,6 +776,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             setSelectedTicket(null);
             setAddTicketOpen(true);
           }}
+          onCancelVoucher={handleCancelVoucher}
+          cancellingVoucher={cancellingVoucher}
         />
       )}
 
@@ -1211,6 +1242,98 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   };
 }
 
+async function printVoucher(voucherCode: string, ticketTypeName: string | null, accountName: string) {
+  let qrDataUrl = "";
+  try {
+    qrDataUrl = await QRCode.toDataURL(voucherCode, {
+      width: 400,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+  } catch { /* ignore */ }
+
+  const pw = 72;
+  const margin = 4;
+  const contentW = pw - margin * 2;
+  const doc = new jsPDF({ unit: "mm", format: [pw, 160] });
+
+  let y = 5;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(accountName, pw / 2, y, { align: "center" });
+  y += 5;
+
+  doc.setDrawColor(0);
+  doc.setLineDashPattern([1, 1], 0);
+  doc.line(margin, y, pw - margin, y);
+  y += 5;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("GUTSCHEIN", pw / 2, y, { align: "center" });
+  y += 6;
+
+  if (ticketTypeName) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    const typeLines = doc.splitTextToSize(ticketTypeName, contentW);
+    doc.text(typeLines, pw / 2, y, { align: "center" });
+    y += typeLines.length * 4;
+  }
+
+  y += 2;
+  doc.line(margin, y, pw - margin, y);
+  y += 3;
+
+  if (qrDataUrl) {
+    const qrSize = 38;
+    const qrX = (pw - qrSize) / 2;
+    doc.addImage(qrDataUrl, "PNG", qrX, y, qrSize, qrSize);
+    y += qrSize + 2;
+  }
+
+  doc.setFont("courier", "bold");
+  doc.setFontSize(10);
+  doc.text(voucherCode, pw / 2, y, { align: "center" });
+  y += 5;
+
+  doc.line(margin, y, pw - margin, y);
+  y += 4;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.text("Einmalig einlösbar. Beim Scannen wird", pw / 2, y, { align: "center" });
+  y += 3;
+  doc.text("ein Tagesticket erstellt.", pw / 2, y, { align: "center" });
+  y += 4;
+
+  const now = new Date().toLocaleString("de-DE", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+  doc.text(`Erstellt: ${now}`, pw / 2, y, { align: "center" });
+  y += 8;
+
+  doc.setLineDashPattern([1, 1], 0);
+  doc.line(margin, y, pw - margin, y);
+
+  const blob = doc.output("blob");
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement("iframe");
+  iframe.style.display = "none";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    iframe.contentWindow?.print();
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      URL.revokeObjectURL(url);
+    }, 5000);
+  };
+}
+
 function TicketOverlay({
   ticket,
   onClose,
@@ -1221,6 +1344,7 @@ function TicketOverlay({
   rfidInput,
   setRfidInput,
   onSaveRfid,
+  onSaveDates,
   onOpenCamera,
   updatingTicket,
   accountName,
@@ -1229,13 +1353,16 @@ function TicketOverlay({
   onCancelRfid,
   ticketScans,
   onAddTicket,
+  onCancelVoucher,
+  cancellingVoucher,
 }: {
   ticket: CheckinTicket;
   onClose: () => void;
   onCheckin: () => void;
   checkingIn: boolean;
-  editMode: "photo" | "rfid" | null;
-  setEditMode: (m: "photo" | "rfid" | null) => void;
+  editMode: "photo" | "rfid" | "dates" | null;
+  setEditMode: (m: "photo" | "rfid" | "dates" | null) => void;
+  onSaveDates: (startDate: string | null, endDate: string | null) => void;
   rfidInput: string;
   setRfidInput: (v: string) => void;
   onSaveRfid: (code?: string) => void;
@@ -1247,10 +1374,20 @@ function TicketOverlay({
   onCancelRfid: () => void;
   ticketScans: ScanEntry[];
   onAddTicket: () => void;
+  onCancelVoucher: () => void;
+  cancellingVoucher: boolean;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isSub = !!ticket.subscriptionId;
   const isChecked = isSub ? ticket.checkedIn : (ticket.checkedIn || ticket.status === "REDEEMED");
+
+  const toDateValue = (d: string | null) => d ? new Date(d).toISOString().slice(0, 10) : "";
+  const [dateStart, setDateStart] = useState(toDateValue(ticket.startDate));
+  const [dateEnd, setDateEnd] = useState(toDateValue(ticket.endDate));
+  useEffect(() => {
+    setDateStart(toDateValue(ticket.startDate));
+    setDateEnd(toDateValue(ticket.endDate));
+  }, [ticket.startDate, ticket.endDate]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -1310,16 +1447,68 @@ function TicketOverlay({
           <InfoRow label="RFID" value={ticket.rfidCode ?? "–"} icon={Fingerprint} />
           {ticket.accessArea && <InfoRow label="Bereich" value={ticket.accessArea.name} icon={Users} />}
           {ticket.barcode && <InfoRow label="Barcode" value={ticket.barcode} icon={ScanLine} />}
-          {ticket.startDate && (
-            <InfoRow
-              label="Gültig"
-              value={
-                ticket.endDate
+          {editMode === "dates" ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span className="font-medium w-16 shrink-0">Gültig</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={dateStart}
+                  onChange={(e) => setDateStart(e.target.value)}
+                  className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                />
+                <span className="text-slate-500 self-center">–</span>
+                <input
+                  type="date"
+                  value={dateEnd}
+                  onChange={(e) => setDateEnd(e.target.value)}
+                  className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    onSaveDates(
+                      dateStart ? new Date(dateStart).toISOString() : null,
+                      dateEnd ? new Date(dateEnd).toISOString() : null,
+                    );
+                  }}
+                  disabled={updatingTicket}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
+                >
+                  {updatingTicket && editMode === "dates" ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Speichern"}
+                </button>
+                <button
+                  onClick={() => {
+                    setDateStart(toDateValue(ticket.startDate));
+                    setDateEnd(toDateValue(ticket.endDate));
+                    setEditMode(null);
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditMode("dates")}
+              className="flex items-center gap-2 text-xs w-full text-left group"
+            >
+              <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span className="text-slate-400 font-medium w-16 shrink-0">Gültig</span>
+              <span className="text-slate-200 truncate">
+                {ticket.startDate && ticket.endDate
                   ? `${new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })} – ${new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}${new Date(ticket.endDate) < new Date() ? " (abgelaufen)" : ""}`
-                  : `ab ${new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`
-              }
-              icon={Clock}
-            />
+                  : ticket.startDate
+                    ? `ab ${new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`
+                    : "Nicht gesetzt"}
+              </span>
+              <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+            </button>
           )}
         </div>
 
@@ -1453,6 +1642,17 @@ function TicketOverlay({
             <Plus className="h-4 w-4" />
             Neues Ticket hinzufügen
           </button>
+
+          {ticket.status !== "CANCELED" && (
+            <button
+              onClick={onCancelVoucher}
+              disabled={cancellingVoucher}
+              className="w-full bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-50"
+            >
+              <TicketX className="h-4 w-4" />
+              {cancellingVoucher ? "Wird storniert..." : "Stornieren & Gutschein"}
+            </button>
+          )}
         </div>
       </div>
     </div>

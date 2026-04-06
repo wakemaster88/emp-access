@@ -71,6 +71,7 @@ model Account {
   monitors      MonitorConfig[]
   subscriptions Subscription[]
   services      Service[]
+  vouchers      Voucher[]
   telegramConfigs TelegramConfig[]
 }
 
@@ -340,6 +341,25 @@ model AnnyResourceLink {
   @@unique([accessAreaId, annyName])
   @@index([accountId])
   @@index([accessAreaId])
+}
+
+model Voucher {
+  id               Int       @id @default(autoincrement())
+  code             String    @unique
+  ticketTypeName   String?
+  serviceId        Int?
+  accessAreaId     Int?
+  validityType     ValidityType @default(DATE_RANGE)
+  validityDurationMinutes Int?
+  sourceTicketId   Int?
+  redeemedAt       DateTime?
+  redeemedTicketId Int?
+  accountId        Int
+  account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+
+  @@index([accountId])
+  @@index([code])
 }
 
 model ApiConfig {

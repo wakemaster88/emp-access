@@ -66,6 +66,13 @@ export async function PUT(
     updateData.rfidCode = rfid;
   }
 
+  if (body.startDate !== undefined) {
+    updateData.startDate = body.startDate ? new Date(body.startDate) : null;
+  }
+  if (body.endDate !== undefined) {
+    updateData.endDate = body.endDate ? new Date(body.endDate) : null;
+  }
+
   if (Object.keys(updateData).length === 0) {
     return NextResponse.json({ error: "Keine Änderungen" }, { status: 400 });
   }
@@ -83,6 +90,8 @@ export async function PUT(
       id: updated.id,
       profileImage: updated.profileImage,
       rfidCode: updated.rfidCode,
+      startDate: updated.startDate,
+      endDate: updated.endDate,
     },
   });
 }
