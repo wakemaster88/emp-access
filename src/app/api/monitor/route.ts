@@ -40,9 +40,10 @@ export async function GET(request: NextRequest) {
 
           const scans = await db.scan.findMany({
             where: scanWhere,
-            include: {
-              device: true,
-              ticket: { include: { accessArea: { select: { name: true } } } },
+            select: {
+              id: true, code: true, note: true, scanTime: true, result: true, deviceId: true, ticketId: true,
+              device: { select: { id: true, name: true, type: true, accessIn: true, accessOut: true } },
+              ticket: { select: { id: true, name: true, firstName: true, lastName: true, ticketTypeName: true, status: true, accessAreaId: true, subscriptionId: true, profileImage: true, startDate: true, endDate: true, accessArea: { select: { name: true } } } },
             },
             orderBy: { id: "desc" },
             take: lastScanId === 0 ? 100 : 20,
@@ -54,28 +55,14 @@ export async function GET(request: NextRequest) {
           }
 
           if (areaIds?.length) {
+            const today = berlinDayStart();
+            const baseWhere = { accountId: accountId!, scanTime: { gte: today }, result: { in: ["GRANTED" as const, "PROTECTED" as const] } };
             const counts = await Promise.all(
               areaIds.map(async (areaId) => {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-
-                const entries = await db.scan.count({
-                  where: {
-                    accountId: accountId!,
-                    scanTime: { gte: today },
-                    result: { in: ["GRANTED", "PROTECTED"] },
-                    device: { accessIn: areaId },
-                  },
-                });
-                const exits = await db.scan.count({
-                  where: {
-                    accountId: accountId!,
-                    scanTime: { gte: today },
-                    result: { in: ["GRANTED", "PROTECTED"] },
-                    device: { accessOut: areaId },
-                  },
-                });
-
+                const [entries, exits] = await Promise.all([
+                  db.scan.count({ where: { ...baseWhere, device: { accessIn: areaId } } }),
+                  db.scan.count({ where: { ...baseWhere, device: { accessOut: areaId } } }),
+                ]);
                 return { areaId, current: entries - exits, entries, exits };
               })
             );

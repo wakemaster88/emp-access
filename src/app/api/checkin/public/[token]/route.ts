@@ -52,7 +52,7 @@ export async function GET(
     accessAreaId: true,
   } as const;
 
-  const [tickets, subscriptions, services, areas, allSubscriptions, recentScans] = await Promise.all([
+  const [tickets, allSubscriptions, services, areas, recentScans] = await Promise.all([
     prisma.ticket.findMany({
       where: {
         accountId,
@@ -86,6 +86,13 @@ export async function GET(
         name: true,
         requiresPhoto: true,
         requiresRfid: true,
+        defaultValidityType: true,
+        defaultStartDate: true,
+        defaultEndDate: true,
+        defaultSlotStart: true,
+        defaultSlotEnd: true,
+        defaultValidityDurationMinutes: true,
+        areas: { select: { id: true } },
         tickets: {
           where: {
             status: { in: ["VALID", "REDEEMED", "PAUSED"] },
@@ -125,21 +132,6 @@ export async function GET(
       select: { id: true, name: true },
     }),
 
-    prisma.subscription.findMany({
-      where: { accountId },
-      select: {
-        id: true,
-        name: true,
-        defaultValidityType: true,
-        defaultStartDate: true,
-        defaultEndDate: true,
-        defaultSlotStart: true,
-        defaultSlotEnd: true,
-        defaultValidityDurationMinutes: true,
-        areas: { select: { id: true } },
-      },
-    }),
-
     prisma.scan.findMany({
       where: {
         accountId,
@@ -177,6 +169,7 @@ export async function GET(
     checkedIn: checkedInForTicket(t),
   }));
 
+  const subscriptions = allSubscriptions;
   const enrichedSubscriptions = subscriptions.map((sub) => ({
     ...sub,
     tickets: sub.tickets.map((t) => ({

@@ -80,16 +80,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Ungültiger Modus" }, { status: 400 });
   }
 
-  const [scans, tickets, areas, devices] = await Promise.all([
+  const scanWhere = { ...where, scanTime: { gte: rangeStart, lte: rangeEnd } };
+  const [scansForTimeline, tickets, areas, devices] = await Promise.all([
     db.scan.findMany({
-      where: { ...where, scanTime: { gte: rangeStart, lte: rangeEnd } },
+      where: scanWhere,
       select: {
-        id: true,
         scanTime: true,
         result: true,
         deviceId: true,
         ticketId: true,
-        device: { select: { name: true } },
       },
       orderBy: { scanTime: "asc" },
     }),
@@ -130,10 +129,10 @@ export async function GET(request: NextRequest) {
   ]);
 
   // --- Summary ---
-  const totalScans = scans.length;
-  const grantedScans = scans.filter((s) => s.result === "GRANTED").length;
-  const deniedScans = scans.filter((s) => s.result === "DENIED").length;
-  const uniqueTicketsScanned = new Set(scans.filter((s) => s.ticketId).map((s) => s.ticketId)).size;
+  const totalScans = scansForTimeline.length;
+  const grantedScans = scansForTimeline.filter((s) => s.result === "GRANTED").length;
+  const deniedScans = scansForTimeline.filter((s) => s.result === "DENIED").length;
+  const uniqueTicketsScanned = new Set(scansForTimeline.filter((s) => s.ticketId).map((s) => s.ticketId)).size;
   const totalTickets = tickets.length;
   const validTickets = tickets.filter((t) => t.status === "VALID").length;
   const redeemedTickets = tickets.filter((t) => t.status === "REDEEMED").length;
@@ -196,7 +195,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  for (const scan of scans) {
+  for (const scan of scansForTimeline) {
     const d = new Date(scan.scanTime);
     const key = bucketKey(d);
     const bucket = timelineMap.get(key) || { label: bucketLabel(d), granted: 0, denied: 0, total: 0 };
@@ -214,7 +213,7 @@ export async function GET(request: NextRequest) {
     if (t.accessArea) ticketAreaMap.set(t.id, t.accessArea.name);
   }
   const areaScanCounts = new Map<string, number>();
-  for (const scan of scans) {
+  for (const scan of scansForTimeline) {
     if (scan.ticketId && ticketAreaMap.has(scan.ticketId)) {
       const name = ticketAreaMap.get(scan.ticketId)!;
       areaScanCounts.set(name, (areaScanCounts.get(name) || 0) + 1);
@@ -225,9 +224,10 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => b.scans - a.scans);
 
   // --- Scans by device ---
+  const deviceNameMap = new Map(devices.map(d => [d.id, d.name]));
   const deviceScanCounts = new Map<string, { granted: number; denied: number }>();
-  for (const scan of scans) {
-    const name = scan.device?.name ?? "Web-Scanner";
+  for (const scan of scansForTimeline) {
+    const name = (scan.deviceId ? deviceNameMap.get(scan.deviceId) : null) ?? "Web-Scanner";
     const entry = deviceScanCounts.get(name) || { granted: 0, denied: 0 };
     if (scan.result === "GRANTED") entry.granted++;
     else if (scan.result === "DENIED") entry.denied++;
@@ -249,7 +249,7 @@ export async function GET(request: NextRequest) {
 
   // --- Peak hours ---
   const hourCounts = new Array(24).fill(0);
-  for (const scan of scans) {
+  for (const scan of scansForTimeline) {
     hourCounts[new Date(scan.scanTime).getHours()]++;
   }
   const peakHours = hourCounts.map((count, hour) => ({

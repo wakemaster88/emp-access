@@ -78,17 +78,30 @@ export async function GET(request: NextRequest) {
   });
 
   const ticketIds = tickets.map((t) => t.id);
+
+  let scanTimeRange: { gte?: Date; lte?: Date } | undefined;
+  if (tickets.length > 0) {
+    const starts = tickets.map(t => effectiveValidityStart(t)).filter(Boolean) as Date[];
+    const ends = tickets.map(t => effectiveValidityEnd(t)).filter(Boolean) as Date[];
+    if (starts.length > 0) scanTimeRange = { ...scanTimeRange, gte: new Date(Math.min(...starts.map(d => d.getTime()))) };
+    if (ends.length > 0) {
+      const maxEnd = new Date(Math.max(...ends.map(d => d.getTime())));
+      maxEnd.setUTCHours(23, 59, 59, 999);
+      scanTimeRange = { ...scanTimeRange, lte: maxEnd };
+    }
+  }
+
   const scans =
     ticketIds.length === 0
       ? []
       : await db.scan.findMany({
-          where: { ...whereAccount, ticketId: { in: ticketIds } },
+          where: { ...whereAccount, ticketId: { in: ticketIds }, ...(scanTimeRange ? { scanTime: scanTimeRange } : {}) },
           select: {
             id: true,
             ticketId: true,
             scanTime: true,
             result: true,
-            device: { select: { name: true } },
+            deviceId: true,
           },
         });
 
@@ -215,9 +228,13 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([, v]) => v);
 
+  const deviceIds = [...new Set(validScans.map(s => s.deviceId).filter(Boolean))] as number[];
+  const deviceLookup = deviceIds.length > 0
+    ? new Map((await db.device.findMany({ where: { id: { in: deviceIds } }, select: { id: true, name: true } })).map(d => [d.id, d.name]))
+    : new Map<number, string>();
   const deviceMap = new Map<string, { granted: number; denied: number }>();
   for (const s of validScans) {
-    const name = s.device?.name ?? "Web / unbekannt";
+    const name = (s.deviceId ? deviceLookup.get(s.deviceId) : null) ?? "Web / unbekannt";
     const e = deviceMap.get(name) || { granted: 0, denied: 0 };
     if (s.result === "GRANTED") e.granted++;
     else if (s.result === "DENIED") e.denied++;

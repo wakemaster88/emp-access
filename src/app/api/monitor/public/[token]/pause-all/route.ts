@@ -18,22 +18,22 @@ export async function POST(
 
     if (action === "pause") {
       const now = new Date();
-      const tickets = await prisma.ticket.findMany({
+      const durationTickets = await prisma.ticket.findMany({
         where: {
           accountId: monitor.accountId,
           status: { in: ["VALID", "REDEEMED"] },
+          validityType: "DURATION",
+          firstScanAt: { not: null },
+          validityDurationMinutes: { not: null },
         },
-        select: { id: true, validityType: true, firstScanAt: true, validityDurationMinutes: true, extras: true },
+        select: { id: true, firstScanAt: true, validityDurationMinutes: true, extras: true },
       });
 
-      for (const t of tickets) {
+      for (const t of durationTickets) {
         const ext = (t.extras as Record<string, unknown>) ?? {};
-        if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
-          const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
-          const remainingMs = Math.max(0, expiresAt - now.getTime());
-          ext.pausedAtMs = now.getTime();
-          ext.remainingMs = remainingMs;
-        }
+        const expiresAt = new Date(t.firstScanAt!).getTime() + t.validityDurationMinutes! * 60_000;
+        ext.pausedAtMs = now.getTime();
+        ext.remainingMs = Math.max(0, expiresAt - now.getTime());
         ext.previousStatus = "VALID";
         await prisma.ticket.update({
           where: { id: t.id },
@@ -41,41 +41,57 @@ export async function POST(
         });
       }
 
-      return NextResponse.json({ success: true, action: "paused", count: tickets.length });
+      const durationIds = durationTickets.map(t => t.id);
+      const bulk = await prisma.ticket.updateMany({
+        where: {
+          accountId: monitor.accountId,
+          status: { in: ["VALID", "REDEEMED"] },
+          id: { notIn: durationIds },
+        },
+        data: { status: "PAUSED" },
+      });
+
+      return NextResponse.json({ success: true, action: "paused", count: durationTickets.length + bulk.count });
     }
 
     if (action === "resume") {
       const now = new Date();
-      const tickets = await prisma.ticket.findMany({
+      const durationTickets = await prisma.ticket.findMany({
         where: {
           accountId: monitor.accountId,
           status: "PAUSED",
+          validityType: "DURATION",
+          validityDurationMinutes: { not: null },
         },
-        select: { id: true, validityType: true, validityDurationMinutes: true, extras: true },
+        select: { id: true, validityDurationMinutes: true, extras: true },
       });
 
-      for (const t of tickets) {
+      for (const t of durationTickets) {
         const ext = (t.extras as Record<string, unknown>) ?? {};
         let firstScanAt: Date | undefined;
-        if (t.validityType === "DURATION" && typeof ext.remainingMs === "number" && t.validityDurationMinutes) {
+        if (typeof ext.remainingMs === "number" && t.validityDurationMinutes) {
           firstScanAt = new Date(now.getTime() - (t.validityDurationMinutes * 60_000 - ext.remainingMs));
         }
-
         delete ext.pausedAtMs;
         delete ext.remainingMs;
         delete ext.previousStatus;
-
         await prisma.ticket.update({
           where: { id: t.id },
-          data: {
-            status: "VALID",
-            extras: ext as Prisma.InputJsonValue,
-            ...(firstScanAt ? { firstScanAt } : {}),
-          },
+          data: { status: "VALID", extras: ext as Prisma.InputJsonValue, ...(firstScanAt ? { firstScanAt } : {}) },
         });
       }
 
-      return NextResponse.json({ success: true, action: "resumed", count: tickets.length });
+      const durationIds = durationTickets.map(t => t.id);
+      const bulk = await prisma.ticket.updateMany({
+        where: {
+          accountId: monitor.accountId,
+          status: "PAUSED",
+          id: { notIn: durationIds },
+        },
+        data: { status: "VALID" },
+      });
+
+      return NextResponse.json({ success: true, action: "resumed", count: durationTickets.length + bulk.count });
     }
 
     return NextResponse.json({ error: "Ungültige Aktion" }, { status: 400 });
