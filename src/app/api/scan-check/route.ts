@@ -137,6 +137,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Ticket ungültig", ticket: ticketInfo });
   }
 
+  if (ticket.status === "PAUSED") {
+    await db.scan.create({
+      data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
+    });
+    return NextResponse.json({ granted: false, message: "Abo pausiert", ticket: ticketInfo });
+  }
+
+  if (ticket.status === "CANCELED") {
+    await db.scan.create({
+      data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
+    });
+    return NextResponse.json({ granted: false, message: "Ticket storniert", ticket: ticketInfo });
+  }
+
   if (ticket.status === "PROTECTED") {
     await db.scan.create({
       data: { code, result: "PROTECTED", ticketId: ticket.id, accountId: accountId! },

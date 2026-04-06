@@ -709,10 +709,10 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   const existingSubTickets = subUuids.length > 0
     ? await prisma.ticket.findMany({
         where: { accountId, uuid: { in: subUuids } },
-        select: { id: true, uuid: true },
+        select: { id: true, uuid: true, status: true, extras: true, endDate: true },
       })
     : [];
-  const existingSubByUuid = new Map(existingSubTickets.map((t) => [t.uuid, t.id]));
+  const existingSubByUuid = new Map(existingSubTickets.map((t) => [t.uuid, t]));
 
   for (const ps of allPlanSubscriptions) {
     const customerId = ps.customer?.id;
@@ -731,7 +731,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       : ("INVALID" as const);
 
     const uuid = `anny-sub:${customerId}:${ps.id ?? planName}`;
-    if (ticketStatus === "VALID") activeUuids.push(uuid);
+    if (ticketStatus === "VALID" || ticketStatus === "PAUSED") activeUuids.push(uuid);
 
     const customerName = ps.customer?.full_name ?? "";
     const firstName = ps.customer?.given_name ?? customerName.split(/\s+/)[0] ?? "";
@@ -757,9 +757,33 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     };
 
     try {
-      const existingId = existingSubByUuid.get(uuid);
-      if (existingId) {
-        await prisma.ticket.update({ where: { id: existingId }, data: ticketData });
+      const existing = existingSubByUuid.get(uuid);
+      if (existing) {
+        const prevExtras = (existing.extras as Record<string, unknown>) ?? {};
+
+        if (ticketStatus === "PAUSED" && existing.status !== "PAUSED") {
+          // Abo wird pausiert: pausedAt merken
+          ticketData.endDate = existing.endDate;
+          (ticketData as Record<string, unknown>).extras = {
+            ...prevExtras,
+            pausedAt: new Date().toISOString(),
+          };
+        } else if (ticketStatus === "PAUSED" && existing.status === "PAUSED") {
+          // Abo bleibt pausiert: endDate und pausedAt beibehalten
+          ticketData.endDate = existing.endDate;
+          (ticketData as Record<string, unknown>).extras = prevExtras;
+        } else if (ticketStatus === "VALID" && existing.status === "PAUSED" && prevExtras.pausedAt) {
+          // Abo wird fortgesetzt: endDate um Pausendauer verlängern
+          const pausedAt = new Date(prevExtras.pausedAt as string);
+          const pauseMs = Date.now() - pausedAt.getTime();
+          if (existing.endDate && pauseMs > 0) {
+            ticketData.endDate = new Date(existing.endDate.getTime() + pauseMs);
+          }
+          const { pausedAt: _, ...restExtras } = prevExtras;
+          (ticketData as Record<string, unknown>).extras = restExtras;
+        }
+
+        await prisma.ticket.update({ where: { id: existing.id }, data: ticketData });
         subUpdated++;
       } else {
         const subCustData = customerDataMap.get(String(customerId));
