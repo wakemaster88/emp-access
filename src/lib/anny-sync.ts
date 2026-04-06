@@ -663,7 +663,16 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     try {
       const existingId = existingByUuid.get(uuid);
       if (existingId) {
-        await prisma.ticket.update({ where: { id: existingId }, data: { ...ticketData, uuid } });
+        try {
+          await prisma.ticket.update({ where: { id: existingId }, data: { ...ticketData, uuid } });
+        } catch (ue: unknown) {
+          const isBarcode = ue != null && typeof ue === "object" && "code" in ue && (ue as { code: string }).code === "P2002";
+          if (isBarcode) {
+            await prisma.ticket.update({ where: { id: existingId }, data: { ...ticketData, barcode: null, uuid } });
+          } else {
+            throw ue;
+          }
+        }
         updated++;
       } else {
         const inherited: Record<string, unknown> = {};
@@ -673,16 +682,26 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
         const legacy = uuid.split(":").slice(0, 3).join(":");
         if (!claimedLegacy.has(legacy) && existingByUuid.has(legacy)) {
-          const claimed = await prisma.ticket.updateMany({
-            where: { id: existingByUuid.get(legacy)!, uuid: legacy },
-            data: { ...createData, uuid },
-          });
-          if (claimed.count > 0) {
-            claimedLegacy.add(legacy);
-            updated++;
-          } else {
-            await createTicketSafe(createData, uuid, accountId);
-            created++;
+          try {
+            const claimed = await prisma.ticket.updateMany({
+              where: { id: existingByUuid.get(legacy)!, uuid: legacy },
+              data: { ...createData, uuid },
+            });
+            if (claimed.count > 0) {
+              claimedLegacy.add(legacy);
+              updated++;
+            } else {
+              await createTicketSafe(createData, uuid, accountId);
+              created++;
+            }
+          } catch (le: unknown) {
+            const isBarcode = le != null && typeof le === "object" && "code" in le && (le as { code: string }).code === "P2002";
+            if (isBarcode) {
+              await createTicketSafe({ ...createData, barcode: null }, uuid, accountId);
+              created++;
+            } else {
+              throw le;
+            }
           }
         } else {
           await createTicketSafe(createData, uuid, accountId);
