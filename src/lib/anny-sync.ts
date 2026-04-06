@@ -165,6 +165,26 @@ function calcSubscriptionEndDate(
   return null;
 }
 
+function ticketChanged(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  existing: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  incoming: Record<string, any>,
+): boolean {
+  const keys = ["name", "firstName", "lastName", "ticketTypeName", "barcode",
+    "status", "accessAreaId", "subscriptionId", "serviceId", "qrCode"];
+  for (const k of keys) {
+    if ((incoming[k] ?? null) !== (existing[k] ?? null)) return true;
+  }
+  const eStart = existing.startDate ? new Date(existing.startDate).getTime() : null;
+  const iStart = incoming.startDate ? new Date(incoming.startDate).getTime() : null;
+  if (eStart !== iStart) return true;
+  const eEnd = existing.endDate ? new Date(existing.endDate).getTime() : null;
+  const iEnd = incoming.endDate ? new Date(incoming.endDate).getTime() : null;
+  if (eEnd !== iEnd) return true;
+  return false;
+}
+
 async function createTicketSafe(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ticketData: any,
@@ -530,10 +550,15 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   const existingTickets = allLookupUuids.length > 0
     ? await prisma.ticket.findMany({
         where: { accountId, uuid: { in: allLookupUuids } },
-        select: { id: true, uuid: true },
+        select: {
+          id: true, uuid: true, name: true, firstName: true, lastName: true,
+          startDate: true, endDate: true, status: true, ticketTypeName: true,
+          barcode: true, accessAreaId: true, subscriptionId: true, serviceId: true,
+          qrCode: true,
+        },
       })
     : [];
-  const existingByUuid = new Map(existingTickets.map((t) => [t.uuid, t.id]));
+  const existingByUuid = new Map(existingTickets.map((t) => [t.uuid, t]));
   const claimedLegacy = new Set<string>();
 
   const customerIds = [...new Set(
@@ -661,14 +686,18 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     };
 
     try {
-      const existingId = existingByUuid.get(uuid);
-      if (existingId) {
+      const existing = existingByUuid.get(uuid);
+      if (existing) {
+        if (!ticketChanged(existing, ticketData)) {
+          skipped++;
+          continue;
+        }
         try {
-          await prisma.ticket.update({ where: { id: existingId }, data: { ...ticketData, uuid } });
+          await prisma.ticket.update({ where: { id: existing.id }, data: { ...ticketData, uuid } });
         } catch (ue: unknown) {
           const isBarcode = ue != null && typeof ue === "object" && "code" in ue && (ue as { code: string }).code === "P2002";
           if (isBarcode) {
-            await prisma.ticket.update({ where: { id: existingId }, data: { ...ticketData, barcode: null, uuid } });
+            await prisma.ticket.update({ where: { id: existing.id }, data: { ...ticketData, barcode: null, uuid } });
           } else {
             throw ue;
           }
@@ -681,10 +710,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         const createData = { ...ticketData, ...inherited };
 
         const legacy = uuid.split(":").slice(0, 3).join(":");
-        if (!claimedLegacy.has(legacy) && existingByUuid.has(legacy)) {
+        const legacyTicket = existingByUuid.get(legacy);
+        if (!claimedLegacy.has(legacy) && legacyTicket) {
           try {
             const claimed = await prisma.ticket.updateMany({
-              where: { id: existingByUuid.get(legacy)!, uuid: legacy },
+              where: { id: legacyTicket.id, uuid: legacy },
               data: { ...createData, uuid },
             });
             if (claimed.count > 0) {
@@ -728,7 +758,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   const existingSubTickets = subUuids.length > 0
     ? await prisma.ticket.findMany({
         where: { accountId, uuid: { in: subUuids } },
-        select: { id: true, uuid: true, status: true, extras: true, endDate: true },
+        select: {
+          id: true, uuid: true, status: true, extras: true, endDate: true,
+          name: true, firstName: true, lastName: true, startDate: true,
+          ticketTypeName: true, subscriptionId: true,
+        },
       })
     : [];
   const existingSubByUuid = new Map(existingSubTickets.map((t) => [t.uuid, t]));
@@ -780,20 +814,19 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       const existing = existingSubByUuid.get(uuid);
       if (existing) {
         const prevExtras = (existing.extras as Record<string, unknown>) ?? {};
+        const statusChanged = ticketStatus !== existing.status;
 
         if (ticketStatus === "PAUSED" && existing.status !== "PAUSED") {
-          // Abo wird pausiert: pausedAt merken
           ticketData.endDate = existing.endDate;
           (ticketData as Record<string, unknown>).extras = {
             ...prevExtras,
             pausedAt: new Date().toISOString(),
           };
         } else if (ticketStatus === "PAUSED" && existing.status === "PAUSED") {
-          // Abo bleibt pausiert: endDate und pausedAt beibehalten
           ticketData.endDate = existing.endDate;
           (ticketData as Record<string, unknown>).extras = prevExtras;
+          if (!ticketChanged(existing, ticketData)) { skipped++; continue; }
         } else if (ticketStatus === "VALID" && existing.status === "PAUSED" && prevExtras.pausedAt) {
-          // Abo wird fortgesetzt: endDate um Pausendauer verlängern
           const pausedAt = new Date(prevExtras.pausedAt as string);
           const pauseMs = Date.now() - pausedAt.getTime();
           if (existing.endDate && pauseMs > 0) {
@@ -801,6 +834,9 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
           }
           const { pausedAt: _, ...restExtras } = prevExtras;
           (ticketData as Record<string, unknown>).extras = restExtras;
+        } else if (!statusChanged && !ticketChanged(existing, ticketData)) {
+          skipped++;
+          continue;
         }
 
         await prisma.ticket.update({ where: { id: existing.id }, data: ticketData });
