@@ -836,6 +836,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     updated,
     skipped,
     errors,
+    errorDetails: errorDetails.length > 0 ? errorDetails.slice(0, 20) : undefined,
     invalidated: orphaned.count,
     total: uniqueBookings.length,
     groups: groups.size,
