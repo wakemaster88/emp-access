@@ -724,10 +724,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     const subscriptionId = subNameMap.get(planName) ?? null;
     if (!subscriptionId) continue;
 
+    const psStatus = (ps.status ?? "").toLowerCase();
     const ticketStatus =
-      ps.status === "active" || ps.status === "trialing" ? ("VALID" as const)
-      : ps.status === "paused" ? ("PAUSED" as const)
-      : ps.status === "canceled" || ps.status === "cancelled" ? ("CANCELED" as const)
+      psStatus === "active" || psStatus === "trialing" ? ("VALID" as const)
+      : psStatus === "paused" || psStatus === "on_hold" || psStatus === "suspended" || psStatus === "frozen" ? ("PAUSED" as const)
+      : psStatus === "canceled" || psStatus === "cancelled" ? ("CANCELED" as const)
       : ("INVALID" as const);
 
     const uuid = `anny-sub:${customerId}:${ps.id ?? planName}`;
@@ -810,7 +811,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       accountId,
       source: "ANNY",
       uuid: { notIn: activeUuids },
-      status: { not: "INVALID" },
+      status: { notIn: ["INVALID", "PAUSED", "CANCELED"] },
       OR: [
         { startDate: { gte: syncCutoff } },
         { uuid: { startsWith: "anny-sub:" } },
