@@ -26,7 +26,6 @@ import {
   Printer,
   TicketX,
   RefreshCw,
-  Pause,
   Plus,
 } from "lucide-react";
 import QRCode from "qrcode";
@@ -639,21 +638,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe monitor-scrollbar">
-        {/* Pause Alert */}
-        {(() => {
-          const pausedCount = dayTickets.filter((t) => t.status === "PAUSED").length
-            + subscriptions.reduce((a, s) => a + s.tickets.filter((t: { status: string }) => t.status === "PAUSED").length, 0);
-          if (pausedCount === 0) return null;
-          return (
-            <div className="rounded-2xl bg-orange-950 border border-orange-700/50 p-4 flex items-center gap-3">
-              <Pause className="h-6 w-6 text-orange-400 shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-orange-200">Tickets pausiert</p>
-                <p className="text-xs text-orange-400">{pausedCount} {pausedCount === 1 ? "Ticket ist" : "Tickets sind"} aktuell pausiert. Check-in nicht möglich.</p>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Upcoming */}
         {filteredUpcoming.length > 0 && (
