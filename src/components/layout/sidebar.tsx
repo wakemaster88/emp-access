@@ -21,6 +21,7 @@ import {
   Package,
   BarChart3,
   QrCode,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ const navItems = [
   { href: "/analytics", label: "Auswertung", icon: BarChart3 },
   { href: "/monitor", label: "Live Monitor", icon: Monitor },
   { href: "/monitors", label: "Monitore", icon: MonitorCog },
+  { href: "/automation", label: "Automation", icon: Zap },
   { href: "/settings", label: "Einstellungen", icon: Settings },
 ];
 

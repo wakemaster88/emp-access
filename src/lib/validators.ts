@@ -103,3 +103,52 @@ export const adminUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   role: z.enum(["USER", "ADMIN"]).optional(),
 });
+
+// ─── Shelly-Automation Schemas ───────────────────────────────────────────────
+
+const hhmmRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export const shellyGroupMemberSchema = z.object({
+  deviceId: z.coerce.number().int().positive(),
+  action: z.enum(["ON", "OFF", "TOGGLE"]),
+  timerSeconds: z.coerce.number().int().min(1).max(86400).nullable().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+});
+
+export const shellyGroupCreateSchema = z.object({
+  name: z.string().min(1).max(80),
+  description: z.string().max(500).nullable().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  members: z.array(shellyGroupMemberSchema).default([]),
+});
+
+export const shellyGroupUpdateSchema = shellyGroupCreateSchema.partial();
+
+export const shellyAutomationCreateSchema = z
+  .object({
+    name: z.string().min(1).max(80),
+    groupId: z.coerce.number().int().positive(),
+    isActive: z.boolean().optional(),
+    trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET"]),
+    daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
+    timeOfDay: z
+      .string()
+      .regex(hhmmRegex, "Format HH:mm")
+      .nullable()
+      .optional(),
+    offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
+  })
+  .refine(
+    (v) => v.trigger !== "SCHEDULE" || (typeof v.timeOfDay === "string" && hhmmRegex.test(v.timeOfDay)),
+    { message: "timeOfDay erforderlich bei Trigger=SCHEDULE", path: ["timeOfDay"] }
+  );
+
+export const shellyAutomationUpdateSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  groupId: z.coerce.number().int().positive().optional(),
+  isActive: z.boolean().optional(),
+  trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET"]).optional(),
+  daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
+  timeOfDay: z.string().regex(hhmmRegex).nullable().optional(),
+  offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
+});

@@ -55,24 +55,31 @@ enum ApiProvider {
 }
 
 model Account {
-  id         Int         @id @default(autoincrement())
-  subdomain  String      @unique
-  name       String
-  apiToken   String      @unique @default(cuid())
-  isActive   Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  admins        Admin[]
-  devices       Device[]
-  tickets       Ticket[]
-  scans         Scan[]
-  areas         AccessArea[]
-  apiConfigs    ApiConfig[]
-  monitors      MonitorConfig[]
-  subscriptions Subscription[]
-  services      Service[]
-  vouchers      Voucher[]
+  id              Int                   @id @default(autoincrement())
+  subdomain       String                @unique
+  name            String
+  apiToken        String                @unique @default(cuid())
+  isActive        Boolean               @default(true)
+  // Standort für Sonnenauf-/-untergangs-Automationen (Default: Berlin).
+  latitude        Float?
+  longitude       Float?
+  timezone        String? // IANA TZ, z.B. "Europe/Berlin"; null = Europe/Berlin
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  admins          Admin[]
+  devices         Device[]
+  tickets         Ticket[]
+  scans           Scan[]
+  areas           AccessArea[]
+  apiConfigs      ApiConfig[]
+  monitors        MonitorConfig[]
+  subscriptions   Subscription[]
+  services        Service[]
+  vouchers        Voucher[]
   telegramConfigs TelegramConfig[]
+  shellyGroups    ShellyGroup[]
+  automations     ShellyAutomation[]
+  automationRuns  ShellyAutomationRun[]
 }
 
 model Admin {
@@ -92,27 +99,28 @@ model Admin {
 }
 
 model Device {
-  id            Int             @id @default(autoincrement())
+  id            Int                 @id @default(autoincrement())
   name          String
   type          DeviceType
   category      DeviceCategory?
   ipAddress     String?
   shellyId      String?
   shellyAuthKey String?
-  isActive      Boolean         @default(true)
-  task          Int             @default(0)
+  isActive      Boolean             @default(true)
+  task          Int                 @default(0)
   accessIn      Int?
   accessOut     Int?
-  allowReentry  Boolean         @default(false)
+  allowReentry  Boolean             @default(false)
   firmware      String?
   schedule      Json?
   systemInfo    Json?
   lastUpdate    DateTime?
   accountId     Int
-  account       Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account       Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   scans         Scan[]
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  groupMembers  ShellyGroupMember[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@index([accountId])
   @@index([accessIn])
@@ -120,40 +128,40 @@ model Device {
 }
 
 model Ticket {
-  id                      Int          @id @default(autoincrement())
+  id                      Int           @id @default(autoincrement())
   name                    String
   qrCode                  String?
   rfidCode                String?
   startDate               DateTime?
   endDate                 DateTime?
-  validityType            ValidityType @default(DATE_RANGE)
-  slotStart               String?      // HH:mm for TIME_SLOT
-  slotEnd                 String?      // HH:mm for TIME_SLOT
-  validityDurationMinutes Int?         // minutes for DURATION
-  firstScanAt             DateTime?    // auto-set on first GRANTED scan for DURATION
+  validityType            ValidityType  @default(DATE_RANGE)
+  slotStart               String? // HH:mm for TIME_SLOT
+  slotEnd                 String? // HH:mm for TIME_SLOT
+  validityDurationMinutes Int? // minutes for DURATION
+  firstScanAt             DateTime? // auto-set on first GRANTED scan for DURATION
   accessAreaId            Int?
   subscriptionId          Int?
   serviceId               Int?
-  status                  TicketStatus @default(VALID)
-  version                 Int          @default(0)
-  uuid                    String?      @unique
-  barcode                 String?      @unique
+  status                  TicketStatus  @default(VALID)
+  version                 Int           @default(0)
+  uuid                    String?       @unique
+  barcode                 String?       @unique
   firstName               String?
   lastName                String?
   birthDate               DateTime?
   ticketTypeName          String?
-  profileImage            String?      @db.Text
+  profileImage            String?       @db.Text
   extras                  Json?
   source                  ApiProvider?
   accountId               Int
-  account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accessArea              AccessArea?  @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
+  account                 Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accessArea              AccessArea?   @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
   subscription            Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
   service                 Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   ticketAreas             TicketArea[]
   scans                   Scan[]
-  createdAt               DateTime     @default(now())
-  updatedAt               DateTime     @updatedAt
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
   @@index([accountId])
   @@index([rfidCode])
@@ -192,24 +200,24 @@ model Scan {
 }
 
 model AccessArea {
-  id              Int          @id @default(autoincrement())
+  id              Int                @id @default(autoincrement())
   name            String
   parentId        Int?
-  allowReentry    Boolean      @default(false)
+  allowReentry    Boolean            @default(false)
   personLimit     Int?
-  showOnDashboard Boolean      @default(true)
+  showOnDashboard Boolean            @default(true)
   openingHours    String?
   accountId       Int
-  account         Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  parent          AccessArea?  @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children        AccessArea[] @relation("AreaHierarchy")
+  account         Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  parent          AccessArea?        @relation("AreaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children        AccessArea[]       @relation("AreaHierarchy")
   tickets         Ticket[]
   ticketAreas     TicketArea[]
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
   annyLinks       AnnyResourceLink[]
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   @@index([accountId])
   @@index([parentId])
@@ -228,39 +236,39 @@ model TicketArea {
 }
 
 model Subscription {
-  id                          Int          @id @default(autoincrement())
-  name                        String
-  annyNames                   String?
-  defaultValidityType         ValidityType?
-  defaultStartDate            DateTime?
-  defaultEndDate              DateTime?
-  defaultSlotStart            String?      // HH:mm
-  defaultSlotEnd              String?      // HH:mm
+  id                             Int           @id @default(autoincrement())
+  name                           String
+  annyNames                      String?
+  defaultValidityType            ValidityType?
+  defaultStartDate               DateTime?
+  defaultEndDate                 DateTime?
+  defaultSlotStart               String? // HH:mm
+  defaultSlotEnd                 String? // HH:mm
   defaultValidityDurationMinutes Int?
-  requiresPhoto               Boolean      @default(false)
-  requiresRfid                Boolean      @default(false)
-  accountId                   Int
-  account                     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  areas                       AccessArea[]
-  tickets                     Ticket[]
-  createdAt                   DateTime     @default(now())
-  updatedAt                   DateTime     @updatedAt
+  requiresPhoto                  Boolean       @default(false)
+  requiresRfid                   Boolean       @default(false)
+  accountId                      Int
+  account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  areas                          AccessArea[]
+  tickets                        Ticket[]
+  createdAt                      DateTime      @default(now())
+  updatedAt                      DateTime      @updatedAt
 
   @@index([accountId])
 }
 
 model ServiceArea {
-  id                             Int          @id @default(autoincrement())
+  id                             Int           @id @default(autoincrement())
   serviceId                      Int
   accessAreaId                   Int
   defaultValidityType            ValidityType?
   defaultStartDate               DateTime?
   defaultEndDate                 DateTime?
-  defaultSlotStart               String?      // HH:mm
-  defaultSlotEnd                 String?      // HH:mm
+  defaultSlotStart               String? // HH:mm
+  defaultSlotEnd                 String? // HH:mm
   defaultValidityDurationMinutes Int?
-  service                        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  area                           AccessArea   @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
+  service                        Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  area                           AccessArea    @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
 
   @@unique([serviceId, accessAreaId])
   @@index([serviceId])
@@ -268,25 +276,25 @@ model ServiceArea {
 }
 
 model Service {
-  id                          Int           @id @default(autoincrement())
-  name                        String
-  annyNames                   String?
-  defaultValidityType         ValidityType?
-  defaultStartDate            DateTime?
-  defaultEndDate              DateTime?
-  defaultSlotStart            String?       // HH:mm
-  defaultSlotEnd              String?       // HH:mm
+  id                             Int           @id @default(autoincrement())
+  name                           String
+  annyNames                      String?
+  defaultValidityType            ValidityType?
+  defaultStartDate               DateTime?
+  defaultEndDate                 DateTime?
+  defaultSlotStart               String? // HH:mm
+  defaultSlotEnd                 String? // HH:mm
   defaultValidityDurationMinutes Int?
-  allowReentry                Boolean       @default(false)
-  allowManualCheckin          Boolean       @default(true)
-  requiresPhoto               Boolean       @default(false)
-  requiresRfid                Boolean       @default(false)
-  accountId                   Int
-  account                     Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  serviceAreas                ServiceArea[]
-  tickets                     Ticket[]
-  createdAt                   DateTime      @default(now())
-  updatedAt                   DateTime      @updatedAt
+  allowReentry                   Boolean       @default(false)
+  allowManualCheckin             Boolean       @default(true)
+  requiresPhoto                  Boolean       @default(false)
+  requiresRfid                   Boolean       @default(false)
+  accountId                      Int
+  account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  serviceAreas                   ServiceArea[]
+  tickets                        Ticket[]
+  createdAt                      DateTime      @default(now())
+  updatedAt                      DateTime      @updatedAt
 
   @@index([accountId])
 }
@@ -323,20 +331,20 @@ model TelegramConfig {
 }
 
 model AnnyResourceLink {
-  id              Int        @id @default(autoincrement())
-  accessAreaId    Int
-  accessArea      AccessArea @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
-  annyResourceId  String
-  annyName        String
-  label           String
-  isPublic        Boolean    @default(false)
-  splitSlots      Boolean    @default(false)
-  bookingInterval Int?
-  priceLabel         String?
-  priceLabelWeekend  String?
-  accountId          Int
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id                Int        @id @default(autoincrement())
+  accessAreaId      Int
+  accessArea        AccessArea @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
+  annyResourceId    String
+  annyName          String
+  label             String
+  isPublic          Boolean    @default(false)
+  splitSlots        Boolean    @default(false)
+  bookingInterval   Int?
+  priceLabel        String?
+  priceLabelWeekend String?
+  accountId         Int
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   @@unique([accessAreaId, annyName])
   @@index([accountId])
@@ -344,19 +352,19 @@ model AnnyResourceLink {
 }
 
 model Voucher {
-  id               Int       @id @default(autoincrement())
-  code             String    @unique
-  ticketTypeName   String?
-  serviceId        Int?
-  accessAreaId     Int?
-  validityType     ValidityType @default(DATE_RANGE)
+  id                      Int          @id @default(autoincrement())
+  code                    String       @unique
+  ticketTypeName          String?
+  serviceId               Int?
+  accessAreaId            Int?
+  validityType            ValidityType @default(DATE_RANGE)
   validityDurationMinutes Int?
-  sourceTicketId   Int?
-  redeemedAt       DateTime?
-  redeemedTicketId Int?
-  accountId        Int
-  account          Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt        DateTime  @default(now())
+  sourceTicketId          Int?
+  redeemedAt              DateTime?
+  redeemedTicketId        Int?
+  accountId               Int
+  account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt               DateTime     @default(now())
 
   @@index([accountId])
   @@index([code])
@@ -379,4 +387,102 @@ model ApiConfig {
   @@index([accountId])
   @@index([provider])
   @@index([accountId, provider])
+}
+
+// ── Shelly-Automationen ──────────────────────────────────────────────────────
+
+enum ShellyAction {
+  ON
+  OFF
+  TOGGLE
+}
+
+enum AutomationTrigger {
+  SCHEDULE
+  SUNRISE
+  SUNSET
+}
+
+/// Eine Gruppe fungiert als Szene: mehrere Shelly-Geräte mit jeweils eigener
+/// Aktion (ON/OFF/TOGGLE) und optionalem Timer. Gruppen können manuell per
+/// Button oder über Automationen ausgeführt werden.
+model ShellyGroup {
+  id          Int                 @id @default(autoincrement())
+  accountId   Int
+  account     Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  sortOrder   Int                 @default(0)
+  members     ShellyGroupMember[]
+  automations ShellyAutomation[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([accountId])
+}
+
+model ShellyGroupMember {
+  id           Int          @id @default(autoincrement())
+  groupId      Int
+  group        ShellyGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  deviceId     Int
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  action       ShellyAction @default(ON)
+  /// Optionaler Auto-Off-Timer in Sekunden (Shelly-native `timer`-Param bei ON).
+  timerSeconds Int?
+  sortOrder    Int          @default(0)
+
+  @@unique([groupId, deviceId])
+  @@index([groupId])
+  @@index([deviceId])
+}
+
+/// Eine Automation triggert eine Gruppe (Szene) nach einem Zeitplan oder
+/// relativ zu Sonnenauf-/Sonnenuntergang.
+model ShellyAutomation {
+  id            Int                   @id @default(autoincrement())
+  accountId     Int
+  account       Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  groupId       Int
+  group         ShellyGroup           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name          String
+  isActive      Boolean               @default(true)
+  trigger       AutomationTrigger
+  /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
+  daysOfWeek    Int                   @default(127)
+  /// "HH:mm" (nur relevant für trigger=SCHEDULE).
+  timeOfDay     String?
+  /// Offset in Minuten zum Sonnenauf/-untergang (nur SUNRISE/SUNSET).
+  /// Negativ = vor dem Ereignis, positiv = danach.
+  offsetMinutes Int                   @default(0)
+  /// Letzter Lauf – dient als Idempotenz-Guard im Cron (verhindert Doppel-Ausführung).
+  lastRunAt     DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  runs          ShellyAutomationRun[]
+
+  @@index([accountId, isActive])
+  @@index([groupId])
+}
+
+model ShellyAutomationRun {
+  id           Int               @id @default(autoincrement())
+  automationId Int?
+  automation   ShellyAutomation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+  /// Auch manuelle Gruppen-Ausführungen werden hier geloggt – dann ohne Automation.
+  groupId      Int?
+  accountId    Int
+  account      Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  triggeredAt  DateTime          @default(now())
+  /// "schedule" | "sunrise" | "sunset" | "manual"
+  triggerKind  String
+  success      Boolean
+  /// Strukturierte Member-Ergebnisse: [{ deviceId, deviceName, action, ok, error? }]
+  details      Json?
+  durationMs   Int?
+  errorMessage String?
+
+  @@index([accountId, triggeredAt])
+  @@index([automationId])
+  @@index([groupId])
 }
