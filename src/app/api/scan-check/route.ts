@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -62,39 +63,62 @@ export async function POST(request: NextRequest) {
         const todayEnd = new Date(today);
         todayEnd.setUTCHours(23, 59, 59, 999);
 
-        const newTicket = await db.ticket.create({
-          data: {
-            name: voucher.ticketTypeName ?? "Gutschein-Ticket",
-            ticketTypeName: voucher.ticketTypeName,
-            startDate: today,
-            endDate: todayEnd,
-            validityType: voucher.validityType,
-            validityDurationMinutes: voucher.validityDurationMinutes,
-            serviceId: voucher.serviceId,
-            accessAreaId: voucher.accessAreaId,
-            status: "REDEEMED",
-            accountId: accountId!,
-          },
+        // Atomar einlösen (s. pi/scan): Ticket + Voucher-Update + Scan in einer
+        // Transaktion; Voucher nur via conditional updateMany einlösen.
+        // set_config für RLS innerhalb der interaktiven Transaktion.
+        const redeemed = await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId!)}, TRUE)`;
+          const newTicket = await tx.ticket.create({
+            data: {
+              name: voucher.ticketTypeName ?? "Gutschein-Ticket",
+              ticketTypeName: voucher.ticketTypeName,
+              startDate: today,
+              endDate: todayEnd,
+              validityType: voucher.validityType,
+              validityDurationMinutes: voucher.validityDurationMinutes,
+              serviceId: voucher.serviceId,
+              accessAreaId: voucher.accessAreaId,
+              status: "REDEEMED",
+              accountId: accountId!,
+            },
+          });
+
+          const res = await tx.voucher.updateMany({
+            where: { id: voucher.id, redeemedAt: null },
+            data: { redeemedAt: new Date(), redeemedTicketId: newTicket.id },
+          });
+          if (res.count === 0) {
+            throw new Error("VOUCHER_ALREADY_REDEEMED");
+          }
+
+          await tx.scan.create({
+            data: { code, result: "GRANTED", ticketId: newTicket.id, accountId: accountId! },
+          });
+
+          return newTicket;
+        }).catch((e) => {
+          if (e instanceof Error && e.message === "VOUCHER_ALREADY_REDEEMED") {
+            return null;
+          }
+          throw e;
         });
 
-        await db.voucher.update({
-          where: { id: voucher.id },
-          data: { redeemedAt: new Date(), redeemedTicketId: newTicket.id },
-        });
-
-        await db.scan.create({
-          data: { code, result: "GRANTED", ticketId: newTicket.id, accountId: accountId! },
-        });
+        if (!redeemed) {
+          await db.scan.create({
+            data: { code, result: "DENIED", accountId: accountId! },
+          });
+          return NextResponse.json({ granted: false, message: "Gutschein bereits eingelöst" });
+        }
 
         return NextResponse.json({
           granted: true,
           message: "Gutschein eingelöst",
           ticket: {
-            name: newTicket.name,
+            name: redeemed.name,
             firstName: null,
             lastName: null,
-            ticketTypeName: newTicket.ticketTypeName,
-            status: newTicket.status,
+            ticketTypeName: redeemed.ticketTypeName,
+            status: redeemed.status,
             areaName: null,
             serviceName: null,
             subscriptionName: null,
@@ -230,16 +254,45 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await db.scan.create({
-    data: { code, result: "GRANTED", ticketId: ticket.id, accountId: accountId! },
+  // Atomar: Scan + optionale Statusänderung in einer Transaktion mit version-Check,
+  // um Doppel-Einlösung bei parallelen Scans zu verhindern.
+  // prisma.$transaction + manuelles set_config (s. pi/scan).
+  const shouldRedeem =
+    ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null;
+
+  const txResult = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId!)}, TRUE)`;
+    if (shouldRedeem) {
+      const data: { status: "REDEEMED"; version: { increment: number }; firstScanAt?: Date } = {
+        status: "REDEEMED",
+        version: { increment: 1 },
+      };
+      if (vType === "DURATION" && !ticket.firstScanAt) {
+        data.firstScanAt = now;
+      }
+      const res = await tx.ticket.updateMany({
+        where: { id: ticket.id, status: "VALID", version: ticket.version },
+        data,
+      });
+      if (res.count === 0) {
+        return { conflict: true as const };
+      }
+    }
+    await tx.scan.create({
+      data: { code, result: "GRANTED", ticketId: ticket.id, accountId: accountId! },
+    });
+    return { conflict: false as const };
   });
 
-  if (ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null) {
-    const updateData: Record<string, unknown> = { status: "REDEEMED" };
-    if (vType === "DURATION" && !ticket.firstScanAt) {
-      updateData.firstScanAt = now;
-    }
-    await db.ticket.update({ where: { id: ticket.id }, data: updateData });
+  if (txResult.conflict) {
+    await db.scan.create({
+      data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },
+    });
+    return NextResponse.json({
+      granted: false,
+      message: "Konflikt: Ticket wurde bereits verarbeitet",
+      ticket: ticketInfo,
+    });
   }
 
   return NextResponse.json({

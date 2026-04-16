@@ -42,42 +42,56 @@ export async function POST(request: NextRequest) {
     }
 
     const tickets = await res.json();
+    const ticketArr: Array<Record<string, unknown>> = Array.isArray(tickets) ? tickets : [];
+
+    // Batch-Lookup statt findFirst pro Ticket (N+1 → 1 Query).
+    const uuids = ticketArr
+      .map((t) => t.uuid)
+      .filter((u): u is string => typeof u === "string" && u.length > 0);
+    const existingRows = uuids.length
+      ? await db.ticket.findMany({
+          where: { uuid: { in: uuids }, accountId: accountId! },
+          select: { id: true, uuid: true },
+        })
+      : [];
+    const existingByUuid = new Map(existingRows.map((r) => [r.uuid!, r.id]));
+
     let created = 0;
     let updated = 0;
 
-    for (const t of Array.isArray(tickets) ? tickets : []) {
-      const existing = await db.ticket.findFirst({ where: { uuid: t.uuid } });
-
+    for (const t of ticketArr) {
       const startDate = t.entryBeginAt
-        ? new Date(t.entryBeginAt)
+        ? new Date(t.entryBeginAt as string)
         : t.beginAt
-          ? new Date(t.beginAt)
+          ? new Date(t.beginAt as string)
           : undefined;
       const endDate = t.entryEndAt
-        ? new Date(t.entryEndAt)
+        ? new Date(t.entryEndAt as string)
         : t.endAt
-          ? new Date(t.endAt)
+          ? new Date(t.endAt as string)
           : undefined;
 
-      const barcode = t.masterBarcode || t.barcode;
+      const barcode = (t.masterBarcode || t.barcode) as string | undefined;
 
       const ticketData = {
         name: `${t.firstName || ""} ${t.lastName || ""}`.trim() || "Binarytec Ticket",
         barcode,
         qrCode: barcode,
-        firstName: t.firstName,
-        lastName: t.lastName,
+        firstName: t.firstName as string | undefined,
+        lastName: t.lastName as string | undefined,
         startDate,
         endDate,
         status: t.isValid === 1 ? ("VALID" as const) : ("INVALID" as const),
-        ticketTypeName: t.ticketTypeName,
+        ticketTypeName: t.ticketTypeName as string | undefined,
         source: "BINARYTEC" as const,
       };
 
-      if (existing) {
-        await db.ticket.update({ where: { id: existing.id }, data: ticketData });
+      const existingId = typeof t.uuid === "string" ? existingByUuid.get(t.uuid) : undefined;
+
+      if (existingId) {
+        await db.ticket.update({ where: { id: existingId }, data: ticketData });
         updated++;
-      } else if (t.isValid === 1) {
+      } else if (t.isValid === 1 && typeof t.uuid === "string") {
         await db.ticket.create({
           data: { ...ticketData, uuid: t.uuid, accountId: accountId! },
         });

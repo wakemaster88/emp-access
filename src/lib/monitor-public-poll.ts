@@ -100,42 +100,56 @@ async function loadTickets(
     });
   }
 
-  const rawTickets = await prisma.ticket.findMany({
-    where: ticketWhere,
-    select: {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      birthDate: true,
-      ticketTypeName: true,
-      status: true,
-      validityType: true,
-      validityDurationMinutes: true,
-      firstScanAt: true,
-      startDate: true,
-      endDate: true,
-      slotStart: true,
-      slotEnd: true,
-      subscriptionId: true,
-      source: true,
-      extras: true,
-      service: { select: { name: true } },
-      subscription: { select: { name: true } },
-      accessArea: { select: { name: true } },
-      profileImage: true,
-    },
-    orderBy: { name: "asc" },
-    take: MAX_TICKETS,
-  });
+  // profileImage (Base64) wird NICHT mehr pro Ticket ausgeliefert – würde bei
+  // take=2500 ggf. MB-große Payloads pro Poll erzeugen. Stattdessen nur ein
+  // hasPhoto-Flag via zweitem schlankem ID-Query; Client lädt das Foto lazy
+  // über /api/monitor/public/[token]/photo?ticketId=... bei Bedarf.
+  const [rawTickets, ticketIdsWithPhoto] = await Promise.all([
+    prisma.ticket.findMany({
+      where: ticketWhere,
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        ticketTypeName: true,
+        status: true,
+        validityType: true,
+        validityDurationMinutes: true,
+        firstScanAt: true,
+        startDate: true,
+        endDate: true,
+        slotStart: true,
+        slotEnd: true,
+        subscriptionId: true,
+        source: true,
+        extras: true,
+        service: { select: { name: true } },
+        subscription: { select: { name: true } },
+        accessArea: { select: { name: true } },
+      },
+      orderBy: { name: "asc" },
+      take: MAX_TICKETS,
+    }),
+    prisma.ticket.findMany({
+      where: { ...ticketWhere, profileImage: { not: null } },
+      select: { id: true },
+      take: MAX_TICKETS,
+    }),
+  ]);
 
-  return rawTickets.filter((t) => {
-    if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
-      const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
-      if (now.getTime() > expiresAt) return false;
-    }
-    return true;
-  });
+  const photoIds = new Set(ticketIdsWithPhoto.map((r) => r.id));
+
+  return rawTickets
+    .filter((t) => {
+      if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
+        const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
+        if (now.getTime() > expiresAt) return false;
+      }
+      return true;
+    })
+    .map((t) => ({ ...t, hasPhoto: photoIds.has(t.id) }));
 }
 
 /**

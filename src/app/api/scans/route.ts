@@ -46,20 +46,26 @@ export async function POST(request: NextRequest) {
   }
 
   const { db } = auth;
-  const results = [];
 
-  for (const scan of parsed.data) {
-    const result = await db.scan.create({
-      data: {
-        code: scan.sca_code,
-        deviceId: scan.sca_location,
-        scanTime: new Date(scan.sca_scan_time * 1000),
-        result: scan.sca_grant === 1 ? "GRANTED" : scan.sca_grant === 9 ? "PROTECTED" : "DENIED",
-        accountId: auth.account.id,
-      },
-    });
-    results.push(result.id);
-  }
+  const rows = parsed.data.map((scan) => ({
+    code: scan.sca_code,
+    deviceId: scan.sca_location,
+    scanTime: new Date(scan.sca_scan_time * 1000),
+    result: (scan.sca_grant === 1
+      ? "GRANTED"
+      : scan.sca_grant === 9
+        ? "PROTECTED"
+        : "DENIED") as "GRANTED" | "PROTECTED" | "DENIED",
+    accountId: auth.account.id,
+  }));
 
-  return NextResponse.json({ inserted: results.length, ids: results });
+  // Einzel-Inserts → ein createManyAndReturn spart bei N Scans N−1 Roundtrips.
+  const inserted = rows.length
+    ? await db.scan.createManyAndReturn({ data: rows, select: { id: true } })
+    : [];
+
+  return NextResponse.json({
+    inserted: inserted.length,
+    ids: inserted.map((r) => r.id),
+  });
 }

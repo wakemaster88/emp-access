@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { prisma } from "@/lib/prisma";
 import { checkWakesys } from "@/lib/wakesys";
 import { checkBinarytec } from "@/lib/binarytec";
 
@@ -109,38 +110,63 @@ export async function POST(request: NextRequest) {
         const todayEnd = new Date(today);
         todayEnd.setUTCHours(23, 59, 59, 999);
 
-        const newTicket = await db.ticket.create({
-          data: {
-            name: voucher.ticketTypeName ?? "Gutschein-Ticket",
-            ticketTypeName: voucher.ticketTypeName,
-            startDate: today,
-            endDate: todayEnd,
-            validityType: voucher.validityType,
-            validityDurationMinutes: voucher.validityDurationMinutes,
-            serviceId: voucher.serviceId,
-            accessAreaId: voucher.accessAreaId,
-            status: "REDEEMED",
-            accountId,
-          },
+        // Atomar: Ticket anlegen + Voucher nur einlösen, wenn noch nicht eingelöst.
+        // Bei paralleler Einlösung gewinnt genau einer (updateMany count=1).
+        // set_config in der Transaktion, damit RLS weiterhin greift (vgl. Hinweis oben).
+        const redeemed = await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
+          const newTicket = await tx.ticket.create({
+            data: {
+              name: voucher.ticketTypeName ?? "Gutschein-Ticket",
+              ticketTypeName: voucher.ticketTypeName,
+              startDate: today,
+              endDate: todayEnd,
+              validityType: voucher.validityType,
+              validityDurationMinutes: voucher.validityDurationMinutes,
+              serviceId: voucher.serviceId,
+              accessAreaId: voucher.accessAreaId,
+              status: "REDEEMED",
+              accountId,
+            },
+          });
+
+          const res = await tx.voucher.updateMany({
+            where: { id: voucher.id, redeemedAt: null },
+            data: { redeemedAt: new Date(), redeemedTicketId: newTicket.id },
+          });
+          if (res.count === 0) {
+            // Paralleler Request hat den Gutschein bereits eingelöst → rollback
+            // über Exception; Ticket wird dadurch nicht persistiert.
+            throw new Error("VOUCHER_ALREADY_REDEEMED");
+          }
+
+          await tx.scan.create({
+            data: { code, deviceId, result: "GRANTED", ticketId: newTicket.id, accountId },
+          });
+
+          return newTicket;
+        }).catch((e) => {
+          if (e instanceof Error && e.message === "VOUCHER_ALREADY_REDEEMED") {
+            return null;
+          }
+          throw e;
         });
 
-        await db.voucher.update({
-          where: { id: voucher.id },
-          data: { redeemedAt: new Date(), redeemedTicketId: newTicket.id },
-        });
-
-        await db.scan.create({
-          data: { code, deviceId, result: "GRANTED", ticketId: newTicket.id, accountId },
-        });
+        if (!redeemed) {
+          await db.scan.create({
+            data: { code, deviceId, result: "DENIED", accountId },
+          });
+          return NextResponse.json({ granted: false, message: "Gutschein bereits eingelöst" });
+        }
 
         return NextResponse.json({
           granted: true,
           message: "Gutschein eingelöst",
           ticket: {
-            name: newTicket.name,
+            name: redeemed.name,
             firstName: null,
             lastName: null,
-            ticketTypeName: newTicket.ticketTypeName,
+            ticketTypeName: redeemed.ticketTypeName,
             subscriptionName: null,
             serviceName: null,
           },
@@ -304,31 +330,72 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // All checks passed → GRANTED
-  await db.scan.create({
-    data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId },
-  });
-
   const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
 
-  if (ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null) {
-    const updateData: Record<string, unknown> = { status: "REDEEMED" };
-    if (vType === "DURATION" && !ticket.firstScanAt) {
-      updateData.firstScanAt = now;
+  // Atomar: Scan + Ticket-State-Transition in einer Transaktion.
+  // - Wir nutzen absichtlich `prisma.$transaction` (nicht `db.$transaction`),
+  //   weil die tenantClient-Extension pro Einzel-Query ein eigenes $transaction
+  //   öffnet – verschachtelt ginge das schief.
+  // - Damit RLS im Transaktions-Scope weiterhin greift, setzen wir
+  //   set_config manuell als erste Query in der Transaktion.
+  // - Optimistic Locking via version verhindert Doppel-Einlösung bei
+  //   parallelen Scans (updateMany.count=0 = Konflikt).
+  const shouldRedeem =
+    ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null;
+  const shouldResetValid =
+    ticket.status === "REDEEMED" && isExitScan && !!ticket.service?.allowReentry;
+
+  const txResult = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
+
+    if (shouldRedeem) {
+      const data: { status: "REDEEMED"; version: { increment: number }; firstScanAt?: Date } = {
+        status: "REDEEMED",
+        version: { increment: 1 },
+      };
+      if (vType === "DURATION" && !ticket.firstScanAt) {
+        data.firstScanAt = now;
+      }
+      const res = await tx.ticket.updateMany({
+        where: { id: ticket.id, status: "VALID", version: ticket.version },
+        data,
+      });
+      if (res.count === 0) {
+        return { conflict: true as const };
+      }
+    } else if (shouldResetValid) {
+      const data: { status: "VALID"; version: { increment: number }; firstScanAt?: null } = {
+        status: "VALID",
+        version: { increment: 1 },
+      };
+      if (vType === "DURATION") {
+        data.firstScanAt = null;
+      }
+      const res = await tx.ticket.updateMany({
+        where: { id: ticket.id, status: "REDEEMED", version: ticket.version },
+        data,
+      });
+      if (res.count === 0) {
+        return { conflict: true as const };
+      }
     }
-    await db.ticket.update({
-      where: { id: ticket.id },
-      data: updateData,
+
+    await tx.scan.create({
+      data: { code, deviceId, result: "GRANTED", ticketId: ticket.id, accountId },
     });
-  } else if (ticket.status === "REDEEMED" && isExitScan && ticket.service?.allowReentry) {
-    // Ausgangsscan + Service erlaubt Wiedereinlass: Gültigkeit zurücksetzen
-    const updateData: Record<string, unknown> = { status: "VALID" };
-    if (vType === "DURATION") {
-      updateData.firstScanAt = null;
-    }
-    await db.ticket.update({
-      where: { id: ticket.id },
-      data: updateData,
+    return { conflict: false as const };
+  });
+
+  if (txResult.conflict) {
+    // Paralleler Scan hat den Status bereits geändert → als DENIED loggen (außerhalb
+    // der Transaktion, damit der Konflikt-Scan trotzdem erfasst wird).
+    await db.scan.create({
+      data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+    });
+    return NextResponse.json({
+      granted: false,
+      message: "Konflikt: Ticket wurde bereits verarbeitet",
+      ticket: ticketInfo,
     });
   }
 

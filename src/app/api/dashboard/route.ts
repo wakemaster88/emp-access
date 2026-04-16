@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     rfidCode: true,
   };
 
-  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, , annyConfig, recentScans, checkedInToday, newTicketsToday, activeDevices] = await Promise.all([
+  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, annyConfig, recentScans, checkedInToday, newTicketsToday, activeDevices] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: {
@@ -120,15 +120,6 @@ export async function GET(request: NextRequest) {
         service: { select: { name: true, requiresPhoto: true, requiresRfid: true, serviceAreas: { select: { area: { select: { id: true } } } } } },
       },
       orderBy: { name: "asc" },
-    }),
-    db.ticketArea.findMany({
-      where: {
-        ticket: { ...where, source: "EMP_CONTROL", ...ticketDateFilter },
-      },
-      select: {
-        accessAreaId: true,
-        ticket: { select: ticketSelect },
-      },
     }),
     db.apiConfig.findFirst({
       where: { ...(isSuperAdmin ? {} : { accountId: accountId! }), provider: "ANNY" },

@@ -69,7 +69,8 @@ interface TicketInfo {
   service?: { name: string } | null;
   subscription?: { name: string } | null;
   accessArea?: { name: string } | null;
-  profileImage?: string | null;
+  /** Flag aus dem Poll – Bild wird bei Bedarf lazy via /photo-Endpoint geladen. */
+  hasPhoto?: boolean;
 }
 
 interface ScanGroup {
@@ -304,14 +305,15 @@ export default function PublicMonitorPage({ params }: Props) {
     return () => clearInterval(id);
   }, []);
 
-  /** Nach Check-in: Profilbild aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen */
+  /** Nach Check-in: hasPhoto-Flag aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen.
+   *  Das eigentliche Bild wird vom Overlay selbst via /photo-Endpoint nachgeladen. */
   useEffect(() => {
     setSelectedTicket((prev) => {
       if (!prev) return prev;
       const fresh = tickets.find((t) => t.id === prev.id);
       if (!fresh) return prev;
-      if (prev.profileImage === fresh.profileImage) return prev;
-      return { ...prev, profileImage: fresh.profileImage };
+      if (prev.hasPhoto === fresh.hasPhoto) return prev;
+      return { ...prev, hasPhoto: fresh.hasPhoto };
     });
   }, [tickets]);
 
@@ -833,8 +835,12 @@ export default function PublicMonitorPage({ params }: Props) {
                     )}
                   >
                     <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden", styles.ticketAvatarBg)}>
-                      {ticket.profileImage ? (
-                        <img src={ticket.profileImage} alt="" className="h-full w-full object-cover" />
+                      {ticket.hasPhoto ? (
+                        // Bild wird beim Scroll per native lazy-loading über den
+                        // /photo-Endpoint nachgeladen (statt Base64 im Poll).
+                        // Der Endpoint antwortet mit JSON, nicht mit Image – deshalb
+                        // lazy via einen TicketAvatar-Helper darunter.
+                        <TicketAvatarLazy token={token} ticketId={ticket.id} className="h-full w-full object-cover" />
                       ) : (
                         <Users className={cn("h-4 w-4", styles.ticketAvatarIcon)} />
                       )}
@@ -947,6 +953,60 @@ function DurationCountdown({ firstScanAt, durationMinutes, dark, size }: { first
   );
 }
 
+/**
+ * Lazy-Avatar: Lädt das Profilbild erst beim Scroll in den Viewport via
+ * IntersectionObserver. Cached pro Ticket-ID, damit erneutes Ein/Aus-blenden
+ * keinen weiteren Request auslöst.
+ */
+const lazyAvatarCache = new Map<number, string | null>();
+
+function TicketAvatarLazy({
+  token,
+  ticketId,
+  className,
+}: {
+  token: string;
+  ticketId: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [src, setSrc] = useState<string | null>(() => lazyAvatarCache.get(ticketId) ?? null);
+  const loadedRef = useRef(lazyAvatarCache.has(ticketId));
+
+  useEffect(() => {
+    if (loadedRef.current) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && !loadedRef.current) {
+          loadedRef.current = true;
+          io.disconnect();
+          fetch(
+            `/api/monitor/public/${encodeURIComponent(token)}/photo?ticketId=${ticketId}`,
+            { cache: "no-store" }
+          )
+            .then((r) => r.json())
+            .then((d) => {
+              const img = (d?.profileImage as string | null) ?? null;
+              lazyAvatarCache.set(ticketId, img);
+              setSrc(img);
+            })
+            .catch(() => {});
+        }
+      }
+    }, { rootMargin: "200px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [token, ticketId]);
+
+  return (
+    <div ref={ref} className="h-full w-full">
+      {src ? <img src={src} alt="" className={className} /> : null}
+    </div>
+  );
+}
+
 function TicketDetailOverlay({
   ticket,
   scans,
@@ -974,18 +1034,18 @@ function TicketDetailOverlay({
   const [pauseLoading, setPauseLoading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photoSaving, setPhotoSaving] = useState(false);
-  const [currentImage, setCurrentImage] = useState<string | null>(() => ticket.profileImage ?? null);
+  const [currentImage, setCurrentImage] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
 
   useEffect(() => {
-    setCurrentImage(ticket.profileImage ?? null);
+    setCurrentImage(null);
     setImageLoading(true);
     fetch(`/api/monitor/public/${encodeURIComponent(token)}/photo?ticketId=${ticket.id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setCurrentImage(d.profileImage ?? null))
       .catch(() => {})
       .finally(() => setImageLoading(false));
-  }, [token, ticket.id, ticket.profileImage]);
+  }, [token, ticket.id]);
 
   const handleCapture = useCallback(async (dataUrl: string) => {
     setCameraOpen(false);
