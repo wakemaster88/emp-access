@@ -24,7 +24,6 @@ export async function GET(
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   }
 
-  const withHistory = request.nextUrl.searchParams.get("withHistory") === "1";
   const year = currentYearBerlin();
 
   const [lockers, aboTickets] = await Promise.all([
@@ -32,7 +31,8 @@ export async function GET(
       where: { accountId: monitor.accountId },
       include: {
         rentals: {
-          where: withHistory ? undefined : { year },
+          /// Volle Historie laden, damit das Overlay aus früheren Jahren
+          /// noch ausstehende Schlüssel/Schlösser anzeigen kann.
           include: {
             ticket: {
               select: {

@@ -11,7 +11,7 @@ import {
 } from "./locker-dialog";
 import {
   Lock, Plus, Search, MapPin, Hash, Ticket as TicketIcon, CreditCard,
-  Calendar, History, Key,
+  Calendar, History, Key, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,22 +44,35 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
   const [selectedRentals, setSelectedRentals] = useState<RentalRow[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "assigned" | "free">("all");
+  const [filter, setFilter] = useState<"all" | "assigned" | "free" | "openKeys">("all");
 
-  /// Annotiertes Set: aktuelle Vermietung (=> currentYear) sowie Historien-Count.
+  /// Annotiertes Set: aktuelle Vermietung (=> currentYear), Historien-Liste sowie
+  /// alle Vermietungen aus vergangenen Jahren mit offenen Schlüsseln/Schlössern
+  /// (`keysIssued > keysReturned`). Daraus wird die Warnung gespeist.
   const enriched = useMemo(() => {
     return lockers.map((l) => {
       const current = l.rentals.find((r) => r.year === currentYear) ?? null;
       const past = l.rentals.filter((r) => r.year !== currentYear);
-      return { ...l, current, past };
+      const openPast = past
+        .filter((r) => r.keysIssued - r.keysReturned > 0)
+        .sort((a, b) => b.year - a.year);
+      const openPastCount = openPast.reduce((acc, r) => acc + (r.keysIssued - r.keysReturned), 0);
+      return { ...l, current, past, openPast, openPastCount };
     });
   }, [lockers, currentYear]);
+
+  const lockersWithOpenPast = useMemo(
+    () => enriched.filter((l) => l.openPast.length > 0),
+    [enriched],
+  );
+  const totalOpenKeys = lockersWithOpenPast.reduce((acc, l) => acc + l.openPastCount, 0);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return enriched.filter((l) => {
       if (filter === "assigned" && !l.current) return false;
       if (filter === "free" && l.current) return false;
+      if (filter === "openKeys" && l.openPast.length === 0) return false;
       if (!s) return true;
       const hay = [
         l.name,
@@ -135,6 +148,22 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           >
             Frei {currentYear} ({freeCount})
           </button>
+          {lockersWithOpenPast.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilter("openKeys")}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1.5",
+                filter === "openKeys"
+                  ? "bg-amber-600 text-white"
+                  : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-950/60"
+              )}
+              title="Schließfächer mit ausstehenden Schlüsseln aus früheren Jahren"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Offene Schlüssel ({lockersWithOpenPast.length})
+            </button>
+          )}
         </div>
 
         <div className="relative sm:ml-auto sm:w-64">
@@ -159,6 +188,53 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           </Button>
         )}
       </div>
+
+      {lockersWithOpenPast.length > 0 && (
+        <div className="mb-3 rounded-lg border border-amber-300 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/20 p-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                {totalOpenKeys} {totalOpenKeys === 1 ? "Schlüssel" : "Schlüssel/Schlösser"} aus
+                früheren Jahren noch nicht zurückgegeben
+                {" "}
+                <span className="font-normal text-amber-800/80 dark:text-amber-300/70">
+                  ({lockersWithOpenPast.length} {lockersWithOpenPast.length === 1 ? "Schließfach" : "Schließfächer"})
+                </span>
+              </p>
+              <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-amber-900/90 dark:text-amber-200/90">
+                {lockersWithOpenPast.slice(0, 12).map((l) => {
+                  const newest = l.openPast[0];
+                  return (
+                    <li key={l.id} className="inline-flex items-center gap-1">
+                      <span className="font-mono">#{l.number}</span>
+                      <span className="text-amber-700/70 dark:text-amber-300/60">·</span>
+                      <span className="font-medium">{ticketDisplayName(newest.ticket)}</span>
+                      <span className="text-amber-700/70 dark:text-amber-300/60">
+                        ({newest.year}, {newest.keysIssued - newest.keysReturned} offen)
+                      </span>
+                    </li>
+                  );
+                })}
+                {lockersWithOpenPast.length > 12 && (
+                  <li className="text-amber-700 dark:text-amber-300/70">
+                    +{lockersWithOpenPast.length - 12} weitere
+                  </li>
+                )}
+              </ul>
+              {filter !== "openKeys" && (
+                <button
+                  type="button"
+                  onClick={() => setFilter("openKeys")}
+                  className="mt-2 text-[11px] font-medium text-amber-800 dark:text-amber-300 underline hover:text-amber-900 dark:hover:text-amber-200"
+                >
+                  Nur betroffene Schließfächer anzeigen
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
         <Table>
@@ -323,21 +399,59 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                       Frei
                     </Badge>
                   )}
+                  {l.openPast.length > 0 && (
+                    <div
+                      className="mt-1 inline-flex items-start gap-1 text-[10px] leading-tight px-1.5 py-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 max-w-full"
+                      title={l.openPast
+                        .map((r) => `${r.year}: ${ticketDisplayName(r.ticket)} – ${r.keysIssued - r.keysReturned} offen`)
+                        .join("\n")}
+                    >
+                      <AlertTriangle className="h-3 w-3 shrink-0 mt-px" />
+                      <span className="min-w-0">
+                        <span className="font-semibold">Alt-Vermietung offen:</span>{" "}
+                        {l.openPast.slice(0, 2).map((r, i) => (
+                          <span key={r.id}>
+                            {i > 0 && ", "}
+                            <span className="font-mono tabular-nums">{r.year}</span>{" "}
+                            {ticketDisplayName(r.ticket)}{" "}
+                            <span className="opacity-70">({r.keysIssued - r.keysReturned})</span>
+                          </span>
+                        ))}
+                        {l.openPast.length > 2 && (
+                          <span className="opacity-70"> +{l.openPast.length - 2}</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell w-[140px]">
                   {l.past.length === 0 ? (
                     <span className="text-[11px] text-slate-400">–</span>
                   ) : (
                     <div className="flex flex-wrap gap-0.5">
-                      {l.past.slice(0, 4).map((r) => (
-                        <span
-                          key={r.id}
-                          className="font-mono text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
-                          title={`${r.year}: ${ticketDisplayName(r.ticket)}`}
-                        >
-                          {r.year}
-                        </span>
-                      ))}
+                      {l.past.slice(0, 4).map((r) => {
+                        const open = r.keysIssued - r.keysReturned;
+                        const isOpen = open > 0;
+                        return (
+                          <span
+                            key={r.id}
+                            className={cn(
+                              "font-mono text-[10px] tabular-nums px-1.5 py-0.5 rounded inline-flex items-center gap-0.5",
+                              isOpen
+                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 ring-1 ring-amber-300 dark:ring-amber-800"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                            )}
+                            title={
+                              isOpen
+                                ? `${r.year}: ${ticketDisplayName(r.ticket)} – ${open} ${l.lockType === "PADLOCK" ? "Schloss/Schlösser" : "Schlüssel"} noch nicht zurück`
+                                : `${r.year}: ${ticketDisplayName(r.ticket)}`
+                            }
+                          >
+                            {isOpen && <AlertTriangle className="h-2.5 w-2.5" />}
+                            {r.year}
+                          </span>
+                        );
+                      })}
                       {l.past.length > 4 && (
                         <span className="text-[10px] text-slate-400 px-1">+{l.past.length - 4}</span>
                       )}

@@ -88,7 +88,7 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "assigned" | "free">("all");
+  const [filter, setFilter] = useState<"all" | "assigned" | "free" | "openKeys">("all");
   const [activeId, setActiveId] = useState<number | null>(null);
 
   const load = useCallback(async (silent = false) => {
@@ -112,10 +112,18 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
   const year = data?.year ?? new Date().getFullYear();
 
   const enriched = useMemo(() => {
-    return lockers.map((l) => ({
-      ...l,
-      current: l.rentals.find((r) => r.year === year) ?? null,
-    }));
+    return lockers.map((l) => {
+      const current = l.rentals.find((r) => r.year === year) ?? null;
+      const past = l.rentals.filter((r) => r.year !== year);
+      const openPast = past
+        .filter((r) => r.keysIssued - r.keysReturned > 0)
+        .sort((a, b) => b.year - a.year);
+      const openPastCount = openPast.reduce(
+        (acc, r) => acc + (r.keysIssued - r.keysReturned),
+        0,
+      );
+      return { ...l, current, openPast, openPastCount };
+    });
   }, [lockers, year]);
 
   const filtered = useMemo(() => {
@@ -123,6 +131,7 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
     return enriched.filter((l) => {
       if (filter === "assigned" && !l.current) return false;
       if (filter === "free" && l.current) return false;
+      if (filter === "openKeys" && l.openPast.length === 0) return false;
       if (!q) return true;
       const hay = [
         l.name, l.number, l.location ?? "", l.notes ?? "", l.lockNumber ?? "",
@@ -135,6 +144,8 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
 
   const assignedCount = enriched.filter((l) => l.current).length;
   const freeCount = lockers.length - assignedCount;
+  const openKeyLockers = enriched.filter((l) => l.openPast.length > 0);
+  const openKeyCount = openKeyLockers.reduce((acc, l) => acc + l.openPastCount, 0);
 
   const active = activeId != null ? enriched.find((l) => l.id === activeId) ?? null : null;
 
@@ -224,6 +235,8 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
               total={lockers.length}
               assignedCount={assignedCount}
               freeCount={freeCount}
+              openKeyLockers={openKeyLockers}
+              openKeyCount={openKeyCount}
               filter={filter}
               setFilter={setFilter}
               search={search}
@@ -240,6 +253,21 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
               tickets={data.tickets}
               onSaved={handleSavedRental}
               onError={setError}
+              onPastUpdated={(rental) => {
+                setData((prev) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    lockers: prev.lockers.map((l) => {
+                      if (l.id !== activeId) return l;
+                      return {
+                        ...l,
+                        rentals: l.rentals.map((r) => (r.id === rental.id ? rental : r)),
+                      };
+                    }),
+                  };
+                });
+              }}
             />
           )}
         </div>
@@ -251,24 +279,59 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
 /* ───────── List ───────── */
 
 function ListView({
-  lockers, total, assignedCount, freeCount, filter, setFilter, search, setSearch, onPick,
+  lockers, total, assignedCount, freeCount, openKeyLockers, openKeyCount,
+  filter, setFilter, search, setSearch, onPick,
 }: {
-  lockers: (LockerApi & { current: LockerRentalApi | null })[];
+  lockers: (LockerApi & { current: LockerRentalApi | null; openPast: LockerRentalApi[]; openPastCount: number })[];
   total: number;
   assignedCount: number;
   freeCount: number;
-  filter: "all" | "assigned" | "free";
-  setFilter: (f: "all" | "assigned" | "free") => void;
+  openKeyLockers: (LockerApi & { current: LockerRentalApi | null; openPast: LockerRentalApi[]; openPastCount: number })[];
+  openKeyCount: number;
+  filter: "all" | "assigned" | "free" | "openKeys";
+  setFilter: (f: "all" | "assigned" | "free" | "openKeys") => void;
   search: string;
   setSearch: (s: string) => void;
   onPick: (id: number) => void;
 }) {
   return (
     <div className="p-4 space-y-3">
-      <div className="grid grid-cols-3 gap-1.5">
+      {openKeyLockers.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setFilter("openKeys")}
+          className="w-full text-left rounded-xl border border-amber-700/50 bg-amber-950/30 hover:bg-amber-950/40 p-3 transition-colors active:scale-[0.99]"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 text-amber-200">
+              <p className="text-sm font-semibold">
+                {openKeyCount} {openKeyCount === 1 ? "Schlüssel" : "Schlüssel/Schlösser"} aus früheren Jahren offen
+              </p>
+              <p className="text-[11px] text-amber-200/80 truncate">
+                {openKeyLockers.slice(0, 4).map((l) => {
+                  const r = l.openPast[0];
+                  return `#${l.number} ${ticketDisplayName(r.ticket)} (${r.year})`;
+                }).join(" · ")}
+                {openKeyLockers.length > 4 && ` · +${openKeyLockers.length - 4}`}
+              </p>
+            </div>
+          </div>
+        </button>
+      )}
+
+      <div className={cn("grid gap-1.5", openKeyLockers.length > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
         <FilterChip label={`Alle ${total}`} active={filter === "all"} color="indigo" onClick={() => setFilter("all")} />
         <FilterChip label={`Belegt ${assignedCount}`} active={filter === "assigned"} color="emerald" onClick={() => setFilter("assigned")} />
         <FilterChip label={`Frei ${freeCount}`} active={filter === "free"} color="slate" onClick={() => setFilter("free")} />
+        {openKeyLockers.length > 0 && (
+          <FilterChip
+            label={`Offen ${openKeyLockers.length}`}
+            active={filter === "openKeys"}
+            color="amber"
+            onClick={() => setFilter("openKeys")}
+          />
+        )}
       </div>
 
       <div className="relative">
@@ -348,6 +411,25 @@ function ListView({
                 ) : (
                   <p className="mt-1 text-xs text-slate-500 italic">Frei</p>
                 )}
+                {l.openPast.length > 0 && (
+                  <div className="mt-1 flex items-start gap-1 text-[10px] text-amber-300 leading-tight">
+                    <AlertTriangle className="h-3 w-3 shrink-0 mt-px" />
+                    <span className="min-w-0">
+                      <span className="font-semibold">Offen:</span>{" "}
+                      {l.openPast.slice(0, 2).map((r, i) => (
+                        <span key={r.id}>
+                          {i > 0 && ", "}
+                          <span className="font-mono tabular-nums">{r.year}</span>{" "}
+                          {ticketDisplayName(r.ticket)}{" "}
+                          <span className="opacity-70">({r.keysIssued - r.keysReturned})</span>
+                        </span>
+                      ))}
+                      {l.openPast.length > 2 && (
+                        <span className="opacity-70"> +{l.openPast.length - 2}</span>
+                      )}
+                    </span>
+                  </div>
+                )}
               </div>
               {l.current && l.current.keysIssued > 0 && (
                 <span
@@ -375,7 +457,7 @@ function FilterChip({
 }: {
   label: string;
   active: boolean;
-  color: "indigo" | "emerald" | "slate";
+  color: "indigo" | "emerald" | "slate" | "amber";
   onClick: () => void;
 }) {
   const cls = active
@@ -383,8 +465,12 @@ function FilterChip({
       ? "bg-emerald-600 text-white"
       : color === "slate"
         ? "bg-slate-600 text-white"
-        : "bg-indigo-600 text-white"
-    : "bg-slate-800/60 text-slate-400 hover:bg-slate-800";
+        : color === "amber"
+          ? "bg-amber-600 text-white"
+          : "bg-indigo-600 text-white"
+    : color === "amber"
+      ? "bg-amber-950/40 text-amber-300 hover:bg-amber-950/60 border border-amber-800/60"
+      : "bg-slate-800/60 text-slate-400 hover:bg-slate-800";
   return (
     <button
       type="button"
@@ -399,16 +485,18 @@ function FilterChip({
 /* ───────── Detail ───────── */
 
 function DetailView({
-  token, year, locker, tickets, onSaved, onError,
+  token, year, locker, tickets, onSaved, onError, onPastUpdated,
 }: {
   token: string;
   year: number;
-  locker: LockerApi & { current: LockerRentalApi | null };
+  locker: LockerApi & { current: LockerRentalApi | null; openPast: LockerRentalApi[] };
   tickets: PickerTicket[];
   onSaved: (rental: LockerRentalApi | null) => void;
   onError: (msg: string) => void;
+  onPastUpdated: (rental: LockerRentalApi) => void;
 }) {
   const current = locker.current;
+  const openPast = locker.openPast;
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(!current);
   const [search, setSearch] = useState("");
@@ -535,6 +623,37 @@ function DetailView({
     setPickerOpen(true);
   }
 
+  /// Quick-Action: alle ausstehenden Schlüssel einer Alt-Vermietung als
+  /// zurückgegeben markieren (setzt keysReturned = keysIssued, returnedAt = jetzt).
+  async function markPastReturned(rental: LockerRentalApi) {
+    setBusy(true);
+    onError("");
+    try {
+      const res = await fetch(
+        `/api/checkin/public/${token}/lockers/${locker.id}/rentals/${rental.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            keysReturned: rental.keysIssued,
+            returnedAt: todayIso(),
+          }),
+        },
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        onError(typeof j?.error === "string" ? j.error : `Server-Fehler (${res.status})`);
+        return;
+      }
+      const j = await res.json();
+      onPastUpdated(j.rental as LockerRentalApi);
+    } catch (err) {
+      onError(`Netzwerkfehler: ${err instanceof Error ? err.message : "unbekannt"}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="p-4 space-y-3">
       {/* Locker-Header */}
@@ -576,6 +695,57 @@ function DetailView({
           </div>
         </div>
       </div>
+
+      {/* Warnung: Alt-Vermietungen mit offenen Schlüsseln */}
+      {openPast.length > 0 && (
+        <div className="rounded-2xl border border-amber-700/60 bg-amber-950/20 p-4 space-y-2">
+          <p className="text-sm font-semibold text-amber-200 inline-flex items-center gap-1.5">
+            <AlertTriangle className="h-4 w-4" />
+            Schlüssel aus früheren Jahren noch offen
+          </p>
+          <ul className="space-y-1.5">
+            {openPast.map((r) => {
+              const open = r.keysIssued - r.keysReturned;
+              return (
+                <li
+                  key={r.id}
+                  className="flex items-center justify-between gap-2 rounded-xl bg-amber-950/30 border border-amber-800/40 px-3 py-2"
+                >
+                  <div className="min-w-0 text-amber-100">
+                    <p className="text-sm font-medium truncate">
+                      <span className="font-mono tabular-nums text-amber-300">{r.year}</span>
+                      <span className="mx-1.5 text-amber-400/60">·</span>
+                      {ticketDisplayName(r.ticket)}
+                    </p>
+                    <p className="text-[11px] text-amber-200/80 inline-flex items-center gap-1">
+                      {locker.lockType === "KEY"
+                        ? <Key className="h-2.5 w-2.5" />
+                        : <Lock className="h-2.5 w-2.5" />}
+                      <span className="font-mono tabular-nums">{r.keysReturned}/{r.keysIssued}</span>
+                      <span>· {open} offen</span>
+                      {r.ticket.subscription && (
+                        <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-300">
+                          <CreditCard className="h-2.5 w-2.5" />
+                          {r.ticket.subscription.name}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => markPastReturned(r)}
+                    disabled={busy}
+                    className="shrink-0 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1 active:scale-95 disabled:opacity-50"
+                    title="Alle als zurückgegeben markieren"
+                  >
+                    <ArrowLeftCircle className="h-3.5 w-3.5" />
+                    Zurück
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Aktueller Mieter ODER Picker */}
       {current && !pickerOpen ? (
