@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Trash2, Save, Settings2, Ticket as TicketIcon,
-  Check, Users, Search, MapPin, Clock,
+  Check, Users, Search, MapPin, Clock, UserPlus, ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -168,6 +168,13 @@ export function VereinDialog({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
 
+  // Quick-Add: Mitglied direkt aus dem Dialog anlegen (Ticket ohne Tickettyp).
+  const [qaFirst, setQaFirst] = useState("");
+  const [qaLast, setQaLast] = useState("");
+  const [qaCode, setQaCode] = useState("");
+  const [qaAdding, setQaAdding] = useState(false);
+  const [qaError, setQaError] = useState("");
+
   useEffect(() => {
     if (open) {
       setError("");
@@ -182,6 +189,7 @@ export function VereinDialog({
         setSelectedAccessTickets(new Set());
         setSelectedMembers(new Set());
       }
+      setQaFirst(""); setQaLast(""); setQaCode(""); setQaError("");
     }
   }, [open, verein, initialAccessTicketIds, initialMemberIds]);
 
@@ -198,6 +206,55 @@ export function VereinDialog({
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
+  }
+
+  async function handleQuickAddMember() {
+    if (!verein) return;
+    const first = qaFirst.trim();
+    const last = qaLast.trim();
+    if (!first && !last) {
+      setQaError("Vor- oder Nachname angeben");
+      return;
+    }
+    setQaAdding(true);
+    setQaError("");
+    try {
+      const fullName = [first, last].filter(Boolean).join(" ") || "Mitglied";
+      const code = qaCode.trim();
+      const payload: Record<string, unknown> = {
+        name: fullName,
+        firstName: first || undefined,
+        lastName: last || undefined,
+        status: "VALID",
+        vereinId: verein.id,
+      };
+      if (code) {
+        payload.barcode = code;
+        payload.qrCode = code;
+        payload.rfidCode = code;
+      }
+      const res = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setQaError(typeof data?.error === "string" ? data.error : `Server-Fehler (${res.status})`);
+        return;
+      }
+      const created = await res.json().catch(() => null);
+      if (created?.id) {
+        // Direkt als Mitglied vormerken; finale Persistenz erfolgt beim Speichern.
+        setSelectedMembers((prev) => new Set(prev).add(String(created.id)));
+      }
+      setQaFirst(""); setQaLast(""); setQaCode("");
+      router.refresh();
+    } catch (err) {
+      setQaError(`Netzwerkfehler: ${err instanceof Error ? err.message : "unbekannt"}`);
+    } finally {
+      setQaAdding(false);
+    }
   }
 
   async function handleSave() {
@@ -396,10 +453,68 @@ export function VereinDialog({
         )}
 
         {tab === "members" && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-[11px] text-slate-500">
               Wähle Tickets, die diesem Verein angehören. Tickets, die bereits einem anderen Verein zugeordnet sind, werden hier verschoben.
             </p>
+
+            {!isNew ? (
+              <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 p-2.5 space-y-2 bg-slate-50/40 dark:bg-slate-900/30">
+                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 inline-flex items-center gap-1.5">
+                  <UserPlus className="h-3 w-3 text-slate-400" />
+                  Mitglied ohne Tickettyp anlegen
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <Input
+                    value={qaFirst}
+                    onChange={(e) => setQaFirst(e.target.value)}
+                    placeholder="Vorname"
+                    className="h-8 text-xs"
+                    disabled={qaAdding}
+                  />
+                  <Input
+                    value={qaLast}
+                    onChange={(e) => setQaLast(e.target.value)}
+                    placeholder="Nachname"
+                    className="h-8 text-xs"
+                    disabled={qaAdding}
+                  />
+                </div>
+                <div className="flex gap-1.5">
+                  <div className="relative flex-1">
+                    <ScanLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                    <Input
+                      value={qaCode}
+                      onChange={(e) => setQaCode(e.target.value)}
+                      placeholder="RFID / Barcode (optional)"
+                      className="h-8 text-xs font-mono pl-7"
+                      disabled={qaAdding}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleQuickAddMember}
+                    disabled={qaAdding || (!qaFirst.trim() && !qaLast.trim())}
+                    className="h-8 bg-violet-600 hover:bg-violet-700 text-xs"
+                  >
+                    {qaAdding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Anlegen"}
+                  </Button>
+                </div>
+                {qaError && (
+                  <p className="text-[10px] text-rose-600">{qaError}</p>
+                )}
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  Ohne Tickettyp/Areas. Zutritt kommt ausschließlich über die Vereins-Zutritts-Tickets im Tab „Tickets“.
+                </p>
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-400 italic">
+                Verein erst speichern, danach können Mitglieder direkt hier angelegt werden.
+              </p>
+            )}
+
             <CheckList
               items={memberItems}
               selected={selectedMembers}
