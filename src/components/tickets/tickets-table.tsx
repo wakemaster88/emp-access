@@ -36,7 +36,6 @@ interface Svc {
 interface VereinRef {
   id: number;
   name: string;
-  areaIds?: number[];
 }
 
 interface TicketsTableProps {

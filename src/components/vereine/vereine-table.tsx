@@ -6,16 +6,22 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { VereinDialog, type VereinData } from "./verein-dialog";
+import { VereinDialog, type VereinData, type VereinAccessTicketConfig, formatAccessWindow } from "./verein-dialog";
 import {
-  Users, MapPin, Plus, ChevronDown, ChevronRight,
+  Users, Plus, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Search, Fingerprint, ScanLine,
+  Ticket as TicketIcon, MapPin, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface AreaRef {
+interface AccessTicketRef {
   id: number;
   name: string;
+  ticketTypeName: string | null;
+  areaNames: string[];
+  daysOfWeek: number;
+  slotStart: string | null;
+  slotEnd: string | null;
 }
 
 interface MemberRow {
@@ -35,7 +41,7 @@ interface VereinRow {
   id: number;
   name: string;
   description: string | null;
-  areas: AreaRef[];
+  accessTickets: AccessTicketRef[];
   members: MemberRow[];
   _count: { members: number };
 }
@@ -47,11 +53,11 @@ interface TicketRef {
   lastName: string | null;
   ticketTypeName: string | null;
   vereinId: number | null;
+  areaNames: string[];
 }
 
 interface VereineTableProps {
   vereine: VereinRow[];
-  areas: AreaRef[];
   allTickets: TicketRef[];
   readonly?: boolean;
 }
@@ -68,9 +74,9 @@ function memberValidity(t: MemberRow): "valid" | "expired" | "invalid" | "paused
   return "valid";
 }
 
-export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTableProps) {
+export function VereineTable({ vereine, allTickets, readonly }: VereineTableProps) {
   const [selected, setSelected] = useState<VereinData | null>(null);
-  const [selectedAreas, setSelectedAreas] = useState<number[]>([]);
+  const [selectedAccessTickets, setSelectedAccessTickets] = useState<VereinAccessTicketConfig[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -86,24 +92,56 @@ export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTa
 
   function openEdit(v: VereinRow) {
     setSelected({ id: v.id, name: v.name, description: v.description });
-    setSelectedAreas(v.areas.map((a) => a.id));
+    setSelectedAccessTickets(v.accessTickets.map((t) => ({
+      ticketId: t.id,
+      daysOfWeek: t.daysOfWeek,
+      slotStart: t.slotStart,
+      slotEnd: t.slotEnd,
+    })));
     setSelectedMembers(v.members.map((m) => m.id));
   }
 
   const maxBadges = 4;
 
-  function ResourceBadges({ areas: areaList }: { areas: AreaRef[] }) {
-    if (!areaList?.length) return <span className="text-slate-400 text-sm">–</span>;
-    const show = areaList.slice(0, maxBadges);
-    const rest = areaList.length - maxBadges;
+  function AccessTicketBadges({ tickets }: { tickets: AccessTicketRef[] }) {
+    if (!tickets?.length) return <span className="text-slate-400 text-sm">–</span>;
+    const show = tickets.slice(0, maxBadges);
+    const rest = tickets.length - maxBadges;
     return (
       <div className="flex flex-wrap gap-1">
-        {show.map((a) => (
-          <span key={a.id} className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300">
-            <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-            {a.name}
-          </span>
-        ))}
+        {show.map((t) => {
+          const window = formatAccessWindow({
+            daysOfWeek: t.daysOfWeek,
+            slotStart: t.slotStart,
+            slotEnd: t.slotEnd,
+          });
+          const restricted = window !== "Alle Tage";
+          return (
+            <span
+              key={t.id}
+              className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
+              title={[
+                t.areaNames.length > 0 ? `Areas: ${t.areaNames.join(", ")}` : null,
+                restricted ? `Nur: ${window}` : null,
+              ].filter(Boolean).join(" · ") || undefined}
+            >
+              <TicketIcon className="h-3 w-3 text-slate-400 shrink-0" />
+              {t.name}
+              {t.areaNames.length > 0 && (
+                <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5">
+                  <MapPin className="h-2.5 w-2.5" />
+                  {t.areaNames.length}
+                </span>
+              )}
+              {restricted && (
+                <span className="text-[10px] text-violet-600 dark:text-violet-400 inline-flex items-center gap-0.5">
+                  <Clock className="h-2.5 w-2.5" />
+                  {window}
+                </span>
+              )}
+            </span>
+          );
+        })}
         {rest > 0 && (
           <span className="inline-flex items-center rounded-md bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">
             +{rest}
@@ -118,7 +156,8 @@ export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTa
       {!readonly && (
         <div className="flex justify-end mb-4">
           <Button
-            onClick={() => { setSelected(null); setSelectedAreas([]); setSelectedMembers([]); setAddOpen(true); }}
+            onClick={() => { setSelected(null); setSelectedAccessTickets([]); setSelectedMembers([]); setAddOpen(true); }}
+            type="button"
             className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm"
           >
             <Plus className="h-4 w-4" />
@@ -140,8 +179,8 @@ export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTa
               </TableHead>
               <TableHead className="hidden md:table-cell min-w-[200px] text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <MapPin className="h-4 w-4 text-slate-400" />
-                  Bulk-Resourcen
+                  <TicketIcon className="h-4 w-4 text-slate-400" />
+                  Zutritts-Tickets
                 </span>
               </TableHead>
               <TableHead className="w-[110px] text-right text-slate-600 dark:text-slate-400 font-medium">
@@ -159,7 +198,7 @@ export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTa
                   <div className="flex flex-col items-center gap-3 text-slate-500">
                     <Users className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                     <p className="font-medium text-slate-600 dark:text-slate-400">Noch keine Vereine angelegt</p>
-                    <p className="text-sm">Lege einen Verein an, um Mitgliedern Bulk-Zutritt zu Resourcen zu geben.</p>
+                    <p className="text-sm">Lege einen Verein an, um Mitgliedern Bulk-Zutritt über Tickets (z. B. „Bahnmiete“) zu geben.</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -213,12 +252,12 @@ export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTa
                             <p className="ml-6 text-[11px] text-slate-400 truncate">{v.description}</p>
                           )}
                           <div className="md:hidden mt-1 ml-6">
-                            <ResourceBadges areas={v.areas} />
+                            <AccessTicketBadges tickets={v.accessTickets} />
                           </div>
                         </div>
                       </div>
                       <div className="hidden md:block min-w-[200px] py-2 px-3">
-                        <ResourceBadges areas={v.areas} />
+                        <AccessTicketBadges tickets={v.accessTickets} />
                       </div>
                       <div className="w-[110px] shrink-0 text-right pr-3">
                         {members.length > 0 ? (
@@ -344,9 +383,8 @@ export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTa
 
       <VereinDialog
         verein={null}
-        initialAreaIds={[]}
+        initialAccessTickets={[]}
         initialMemberIds={[]}
-        areas={areas}
         allTickets={allTickets}
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -354,9 +392,8 @@ export function VereineTable({ vereine, areas, allTickets, readonly }: VereineTa
 
       <VereinDialog
         verein={selected}
-        initialAreaIds={selectedAreas}
+        initialAccessTickets={selectedAccessTickets}
         initialMemberIds={selectedMembers}
-        areas={areas}
         allTickets={allTickets}
         open={!!selected}
         onClose={() => setSelected(null)}

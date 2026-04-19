@@ -14,12 +14,23 @@ export default async function VereinePage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [vereine, areas, allTickets] = await Promise.all([
+  const [vereine, allTickets] = await Promise.all([
     db.verein.findMany({
       where: accountFilter,
       include: {
-        areas: {
-          include: { accessArea: { select: { id: true, name: true } } },
+        accessTickets: {
+          include: {
+            ticket: {
+              select: {
+                id: true,
+                name: true,
+                ticketTypeName: true,
+                accessAreaId: true,
+                accessArea: { select: { id: true, name: true } },
+                ticketAreas: { select: { accessArea: { select: { id: true, name: true } } } },
+              },
+            },
+          },
         },
         members: {
           select: {
@@ -40,11 +51,6 @@ export default async function VereinePage() {
       },
       orderBy: { name: "asc" },
     }),
-    db.accessArea.findMany({
-      where: accountFilter,
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
     db.ticket.findMany({
       where: { ...accountFilter, status: { in: ["VALID", "REDEEMED", "PAUSED"] } },
       select: {
@@ -54,10 +60,26 @@ export default async function VereinePage() {
         lastName: true,
         ticketTypeName: true,
         vereinId: true,
+        accessArea: { select: { id: true, name: true } },
+        ticketAreas: { select: { accessArea: { select: { id: true, name: true } } } },
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
   ]);
+
+  // Tickets, die als Zutritts-Ticket auswählbar sind (alle aktiven Tickets).
+  const allTicketsForUI = allTickets.map((t) => ({
+    id: t.id,
+    name: t.name,
+    firstName: t.firstName,
+    lastName: t.lastName,
+    ticketTypeName: t.ticketTypeName,
+    vereinId: t.vereinId,
+    areaNames: [
+      ...(t.accessArea ? [t.accessArea.name] : []),
+      ...t.ticketAreas.map((ta) => ta.accessArea.name),
+    ],
+  }));
 
   return (
     <>
@@ -67,7 +89,7 @@ export default async function VereinePage() {
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Vereine ({vereine.length})</CardTitle>
             <CardDescription>
-              Vereine bündeln <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Mitglieds-Tickets</Link> und gewähren ihnen automatisch Zutritt zu den ausgewählten <Link href="/areas" className="text-indigo-600 dark:text-indigo-400 hover:underline">Resourcen</Link> (z. B. Bahnmiete).
+              Vereine bündeln <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Mitglieds-Tickets</Link> und erben beim Scan automatisch den Zutritt der hinterlegten <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Zutritts-Tickets</Link> (z. B. „Bahnmiete“).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -76,12 +98,22 @@ export default async function VereinePage() {
                 id: v.id,
                 name: v.name,
                 description: v.description,
-                areas: v.areas.map((va) => va.accessArea),
+                accessTickets: v.accessTickets.map((at) => ({
+                  id: at.ticket.id,
+                  name: at.ticket.name,
+                  ticketTypeName: at.ticket.ticketTypeName,
+                  areaNames: [
+                    ...(at.ticket.accessArea ? [at.ticket.accessArea.name] : []),
+                    ...at.ticket.ticketAreas.map((ta) => ta.accessArea.name),
+                  ],
+                  daysOfWeek: at.daysOfWeek,
+                  slotStart: at.slotStart,
+                  slotEnd: at.slotEnd,
+                })),
                 members: v.members,
                 _count: v._count,
               }))}
-              areas={areas}
-              allTickets={allTickets}
+              allTickets={allTicketsForUI}
               readonly={isSuperAdmin}
             />
           </CardContent>

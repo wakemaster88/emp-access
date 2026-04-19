@@ -2,6 +2,80 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 
+/** Aktuelle Berliner Lokalzeit (Wochentag-Bit + Minuten seit Mitternacht). */
+function berlinTimeFacts(now: Date): { dayBit: number; minutes: number } {
+  const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
+  // JS getDay(): 0=So … 6=Sa. Wir mappen auf bit0=Mo … bit6=So.
+  const jsDay = berlinNow.getDay();
+  const dayBit = (jsDay + 6) % 7;
+  const minutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
+  return { dayBit, minutes };
+}
+
+/** HH:mm → Minuten seit Mitternacht. */
+function hhmmToMinutes(s: string): number {
+  const [h, m] = s.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * Prüft, ob ein Verein-Zutritts-Ticket aktuell gültig ist (Status + Zeitraum
+ * des Tickets). Nur dann dürfen seine Areas an Vereinsmitglieder vererbt werden.
+ */
+function isAccessTicketCurrentlyValid(t: {
+  status: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  validityType: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+  validityDurationMinutes: number | null;
+  firstScanAt: Date | null;
+}, now: Date): boolean {
+  if (t.status !== "VALID" && t.status !== "REDEEMED") return false;
+
+  if (t.startDate) {
+    const start = new Date(t.startDate);
+    start.setUTCHours(0, 0, 0, 0);
+    if (now < start) return false;
+  }
+  if (t.endDate) {
+    const end = new Date(t.endDate);
+    end.setUTCHours(23, 59, 59, 999);
+    if (now > end) return false;
+  }
+
+  const vType = t.validityType ?? "DATE_RANGE";
+  if (vType === "TIME_SLOT" && t.slotStart && t.slotEnd) {
+    const { minutes } = berlinTimeFacts(now);
+    if (minutes < hhmmToMinutes(t.slotStart) || minutes > hhmmToMinutes(t.slotEnd)) return false;
+  }
+  if (vType === "DURATION" && t.validityDurationMinutes && t.firstScanAt) {
+    const expiresAt = new Date(t.firstScanAt.getTime() + t.validityDurationMinutes * 60_000);
+    if (now > expiresAt) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Prüft die optionale Wochentag/Tageszeit-Restriktion einer Verein↔Ticket-
+ * Verbindung (z. B. „Bahnmiete nur So 10–12“).
+ */
+function matchesAccessWindow(link: {
+  daysOfWeek: number;
+  slotStart: string | null;
+  slotEnd: string | null;
+}, now: Date): boolean {
+  const { dayBit, minutes } = berlinTimeFacts(now);
+  const dow = link.daysOfWeek ?? 127;
+  if (dow !== 127 && ((dow >> dayBit) & 1) === 0) return false;
+  if (link.slotStart && link.slotEnd) {
+    if (minutes < hhmmToMinutes(link.slotStart) || minutes > hhmmToMinutes(link.slotEnd)) return false;
+  }
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
@@ -37,7 +111,32 @@ export async function POST(request: NextRequest) {
         verein: {
           select: {
             name: true,
-            areas: { select: { accessAreaId: true } },
+            // Areas der hinterlegten Zutritts-Tickets (z. B. „Bahnmiete“) –
+            // werden beim Access-Check nur dann hinzu-vereinigt, wenn das
+            // Ticket selbst gerade gültig ist UND der pro Verbindung
+            // hinterlegte Wochentag/Slot-Filter passt.
+            accessTickets: {
+              select: {
+                daysOfWeek: true,
+                slotStart: true,
+                slotEnd: true,
+                ticket: {
+                  select: {
+                    id: true,
+                    status: true,
+                    startDate: true,
+                    endDate: true,
+                    validityType: true,
+                    slotStart: true,
+                    slotEnd: true,
+                    validityDurationMinutes: true,
+                    firstScanAt: true,
+                    accessAreaId: true,
+                    ticketAreas: { select: { accessAreaId: true } },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -249,13 +348,29 @@ export async function POST(request: NextRequest) {
 
   if (accessAreaId) {
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
-    const vereinAreaIds = ticket.verein?.areas?.map((va) => va.accessAreaId) ?? [];
+    // Areas, die das Mitglied per Verein-Zutritts-Ticket erbt – nur wenn das
+    // Ticket selbst gerade gültig ist UND der pro Verbindung hinterlegte
+    // Wochentag/Slot-Filter passt (z. B. „Bahnmiete nur So 10–12“).
+    const vereinAreaIds: number[] = [];
+    for (const at of ticket.verein?.accessTickets ?? []) {
+      if (!isAccessTicketCurrentlyValid(at.ticket, now)) continue;
+      if (!matchesAccessWindow(at, now)) continue;
+      if (at.ticket.accessAreaId) vereinAreaIds.push(at.ticket.accessAreaId);
+      for (const ta of at.ticket.ticketAreas) vereinAreaIds.push(ta.accessAreaId);
+    }
     const allTicketAreas = [
       ...(ticket.accessAreaId ? [ticket.accessAreaId] : []),
       ...ticketAreaIds,
       ...vereinAreaIds,
     ];
-    const hasAccess = allTicketAreas.length === 0 || allTicketAreas.includes(accessAreaId);
+    // Verein-Mitglieder werden strikt geprüft: leer = nirgends. Damit greift die
+    // optionale Wochentag/Slot-Restriktion zuverlässig, auch wenn das
+    // Mitglieds-Ticket selbst keine eigenen Areas hat. Für andere Tickets
+    // bleibt die Legacy-Semantik (leere Liste = überall) erhalten.
+    const isVereinMember = !!ticket.vereinId;
+    const hasAccess = isVereinMember
+      ? allTicketAreas.includes(accessAreaId)
+      : allTicketAreas.length === 0 || allTicketAreas.includes(accessAreaId);
     if (!hasAccess) {
       await db.scan.create({
         data: { code, result: "DENIED", ticketId: ticket.id, accountId: accountId! },

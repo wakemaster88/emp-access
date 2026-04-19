@@ -1,5 +1,6 @@
--- Verein (club/association) and VereinArea (m:n bulk-access mapping)
--- Adds Ticket.vereinId so members inherit access to all VereinAreas.
+-- Verein (club/association) und VereinAccessTicket (m:n Verein ↔ Zutritts-Ticket)
+-- Mitglieder werden über Ticket.vereinId verknüpft. Beim Scan erben sie die
+-- Areas aller in VereinAccessTicket verknüpften Tickets (z. B. „Bahnmiete“).
 
 CREATE TABLE IF NOT EXISTS "Verein" (
   "id" SERIAL PRIMARY KEY,
@@ -15,19 +16,31 @@ CREATE TABLE IF NOT EXISTS "Verein" (
 CREATE UNIQUE INDEX IF NOT EXISTS "Verein_accountId_name_key" ON "Verein"("accountId", "name");
 CREATE INDEX IF NOT EXISTS "Verein_accountId_idx" ON "Verein"("accountId");
 
-CREATE TABLE IF NOT EXISTS "VereinArea" (
+-- Falls eine alte VereinArea-Tabelle aus früherem db-push existiert: weg damit.
+DROP TABLE IF EXISTS "VereinArea";
+
+CREATE TABLE IF NOT EXISTS "VereinAccessTicket" (
   "id" SERIAL PRIMARY KEY,
   "vereinId" INTEGER NOT NULL,
-  "accessAreaId" INTEGER NOT NULL,
-  CONSTRAINT "VereinArea_vereinId_fkey" FOREIGN KEY ("vereinId")
+  "ticketId" INTEGER NOT NULL,
+  -- Bitmaske: bit0=Mo … bit6=So. 127 = jeden Tag.
+  "daysOfWeek" INTEGER NOT NULL DEFAULT 127,
+  "slotStart" TEXT,
+  "slotEnd" TEXT,
+  CONSTRAINT "VereinAccessTicket_vereinId_fkey" FOREIGN KEY ("vereinId")
     REFERENCES "Verein"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "VereinArea_accessAreaId_fkey" FOREIGN KEY ("accessAreaId")
-    REFERENCES "AccessArea"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "VereinAccessTicket_ticketId_fkey" FOREIGN KEY ("ticketId")
+    REFERENCES "Ticket"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "VereinArea_vereinId_accessAreaId_key" ON "VereinArea"("vereinId", "accessAreaId");
-CREATE INDEX IF NOT EXISTS "VereinArea_vereinId_idx" ON "VereinArea"("vereinId");
-CREATE INDEX IF NOT EXISTS "VereinArea_accessAreaId_idx" ON "VereinArea"("accessAreaId");
+-- Idempotent: Spalten nachziehen, falls Tabelle schon existiert (älterer db push).
+ALTER TABLE "VereinAccessTicket" ADD COLUMN IF NOT EXISTS "daysOfWeek" INTEGER NOT NULL DEFAULT 127;
+ALTER TABLE "VereinAccessTicket" ADD COLUMN IF NOT EXISTS "slotStart" TEXT;
+ALTER TABLE "VereinAccessTicket" ADD COLUMN IF NOT EXISTS "slotEnd" TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "VereinAccessTicket_vereinId_ticketId_key" ON "VereinAccessTicket"("vereinId", "ticketId");
+CREATE INDEX IF NOT EXISTS "VereinAccessTicket_vereinId_idx" ON "VereinAccessTicket"("vereinId");
+CREATE INDEX IF NOT EXISTS "VereinAccessTicket_ticketId_idx" ON "VereinAccessTicket"("ticketId");
 
 ALTER TABLE "Ticket" ADD COLUMN IF NOT EXISTS "vereinId" INTEGER;
 

@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { vereinCreateSchema } from "@/lib/validators";
 
+const accessTicketInclude = {
+  ticket: {
+    select: {
+      id: true,
+      name: true,
+      ticketTypeName: true,
+      accessAreaId: true,
+      accessArea: { select: { id: true, name: true } },
+      ticketAreas: { select: { accessArea: { select: { id: true, name: true } } } },
+    },
+  },
+} as const;
+
 export async function GET() {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
@@ -10,7 +23,7 @@ export async function GET() {
   const vereine = await db.verein.findMany({
     where: { accountId: accountId! },
     include: {
-      areas: { include: { accessArea: { select: { id: true, name: true } } } },
+      accessTickets: { include: accessTicketInclude },
       _count: { select: { members: true } },
     },
     orderBy: { name: "asc" },
@@ -30,18 +43,34 @@ export async function POST(request: NextRequest) {
 
   const { db, accountId } = session;
   const data = parsed.data;
-  const areaIds = data.areaIds ?? [];
+  const accessTickets = data.accessTickets ?? [];
   const memberIds = data.memberTicketIds ?? [];
 
   try {
+    // Tenant-Check für Ticket-IDs.
+    const validIds = new Set(
+      accessTickets.length > 0
+        ? (await db.ticket.findMany({
+            where: { id: { in: accessTickets.map((a) => a.ticketId) }, accountId: accountId! },
+            select: { id: true },
+          })).map((t) => t.id)
+        : []
+    );
+    const safeAccess = accessTickets.filter((a) => validIds.has(a.ticketId));
+
     const verein = await db.verein.create({
       data: {
         name: data.name.trim(),
         description: data.description ?? null,
         accountId: accountId!,
-        ...(areaIds.length > 0 && {
-          areas: {
-            create: areaIds.map((accessAreaId) => ({ accessAreaId })),
+        ...(safeAccess.length > 0 && {
+          accessTickets: {
+            create: safeAccess.map((a) => ({
+              ticketId: a.ticketId,
+              daysOfWeek: a.daysOfWeek ?? 127,
+              slotStart: a.slotStart ?? null,
+              slotEnd: a.slotEnd ?? null,
+            })),
           },
         }),
         ...(memberIds.length > 0 && {
@@ -49,7 +78,7 @@ export async function POST(request: NextRequest) {
         }),
       },
       include: {
-        areas: { include: { accessArea: { select: { id: true, name: true } } } },
+        accessTickets: { include: accessTicketInclude },
         _count: { select: { members: true } },
       },
     });

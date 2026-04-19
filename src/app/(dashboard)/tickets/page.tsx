@@ -108,11 +108,7 @@ export default async function TicketsPage({ searchParams }: Props) {
     db.verein.findMany({
       where: baseWhere,
       orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        areas: { select: { accessAreaId: true } },
-      },
+      select: { id: true, name: true },
     }),
     showInactive
       ? Promise.resolve(0)
@@ -127,11 +123,7 @@ export default async function TicketsPage({ searchParams }: Props) {
     ...s,
     areaIds: s.serviceAreas.map((sa) => sa.accessAreaId),
   }));
-  const vereineWithAreas = vereine.map((v) => ({
-    id: v.id,
-    name: v.name,
-    areaIds: v.areas.map((va) => va.accessAreaId),
-  }));
+  const vereineList = vereine.map((v) => ({ id: v.id, name: v.name }));
 
   const filterArea = areaId ? areas.find((a) => a.id === areaId) : null;
   const toggleHref = showInactive
@@ -180,7 +172,7 @@ export default async function TicketsPage({ searchParams }: Props) {
                     : <><Eye className="h-4 w-4 mr-1.5" /><span className="hidden xs:inline">Auch inaktive</span><span className="xs:hidden">Alle</span></>}
                 </Link>
               </Button>
-              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} vereine={vereineWithAreas} />}
+              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} vereine={vereineList} />}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -194,7 +186,7 @@ export default async function TicketsPage({ searchParams }: Props) {
               areas={areas}
               subscriptions={subsWithAreas}
               services={svcsWithAreas}
-              vereine={vereineWithAreas}
+              vereine={vereineList}
               readonly={isSuperAdmin}
               searchCode={codeTrim || undefined}
             />

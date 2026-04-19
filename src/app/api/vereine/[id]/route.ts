@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { vereinUpdateSchema } from "@/lib/validators";
 
+const accessTicketInclude = {
+  ticket: {
+    select: {
+      id: true,
+      name: true,
+      ticketTypeName: true,
+      accessAreaId: true,
+      accessArea: { select: { id: true, name: true } },
+      ticketAreas: { select: { accessArea: { select: { id: true, name: true } } } },
+    },
+  },
+} as const;
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -17,7 +30,7 @@ export async function GET(
   const verein = await db.verein.findFirst({
     where: { id: vereinId, accountId: accountId! },
     include: {
-      areas: { include: { accessArea: { select: { id: true, name: true } } } },
+      accessTickets: { include: accessTicketInclude },
       members: {
         select: {
           id: true,
@@ -66,12 +79,27 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   try {
-    if (data.areaIds !== undefined) {
-      await db.vereinArea.deleteMany({ where: { vereinId } });
-      if (data.areaIds.length > 0) {
-        await db.vereinArea.createMany({
-          data: data.areaIds.map((accessAreaId) => ({ vereinId, accessAreaId })),
+    if (data.accessTickets !== undefined) {
+      // Komplett ersetzen: erst alle löschen, dann neu anlegen.
+      await db.vereinAccessTicket.deleteMany({ where: { vereinId } });
+      if (data.accessTickets.length > 0) {
+        const validTickets = await db.ticket.findMany({
+          where: { id: { in: data.accessTickets.map((a) => a.ticketId) }, accountId: accountId! },
+          select: { id: true },
         });
+        const validIds = new Set(validTickets.map((t) => t.id));
+        const rows = data.accessTickets
+          .filter((a) => validIds.has(a.ticketId))
+          .map((a) => ({
+            vereinId,
+            ticketId: a.ticketId,
+            daysOfWeek: a.daysOfWeek ?? 127,
+            slotStart: a.slotStart ?? null,
+            slotEnd: a.slotEnd ?? null,
+          }));
+        if (rows.length > 0) {
+          await db.vereinAccessTicket.createMany({ data: rows });
+        }
       }
     }
 
@@ -96,7 +124,7 @@ export async function PUT(
         ...(data.description !== undefined && { description: data.description }),
       },
       include: {
-        areas: { include: { accessArea: { select: { id: true, name: true } } } },
+        accessTickets: { include: accessTicketInclude },
         _count: { select: { members: true } },
       },
     });

@@ -162,6 +162,7 @@ model Ticket {
   service                 Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   verein                  Verein?       @relation(fields: [vereinId], references: [id], onDelete: SetNull)
   ticketAreas             TicketArea[]
+  vereinAccess            VereinAccessTicket[] // Vereine, die über DIESES Ticket Zutritt erhalten
   scans                   Scan[]
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
@@ -219,7 +220,6 @@ model AccessArea {
   ticketAreas     TicketArea[]
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
-  vereinAreas     VereinArea[]
   annyLinks       AnnyResourceLink[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
@@ -470,34 +470,44 @@ model ShellyAutomation {
   @@index([groupId])
 }
 
-/// Vereinigung mehrerer Mitglieds-Tickets, die per `VereinArea` Bulk-Zutritt zu
-/// einer oder mehreren Resourcen erhalten. Mitglieder bleiben individuelle
-/// Tickets (mit eigenem QR/RFID), erben aber zusätzlich die Areas ihres Vereins.
+/// Vereinigung mehrerer Mitglieds-Tickets. Über `VereinAccessTicket` werden
+/// dem Verein ein oder mehrere "Zutritts-Tickets" (z. B. Bahnmiete) zugeordnet
+/// – alle Mitglieder erben beim Scan automatisch die Areas dieser Tickets.
+/// Mitglieder bleiben eigenständige Tickets (eigener QR/RFID).
 model Verein {
-  id          Int          @id @default(autoincrement())
-  name        String
-  description String?
-  accountId   Int
-  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  members     Ticket[]
-  areas       VereinArea[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id            Int                  @id @default(autoincrement())
+  name          String
+  description   String?
+  accountId     Int
+  account       Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members       Ticket[] // Mitglieds-Tickets via Ticket.vereinId
+  accessTickets VereinAccessTicket[] // Zutritts-Tickets, deren Areas alle Mitglieder erben
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
 }
 
-model VereinArea {
-  id           Int        @id @default(autoincrement())
-  vereinId     Int
-  accessAreaId Int
-  verein       Verein     @relation(fields: [vereinId], references: [id], onDelete: Cascade)
-  accessArea   AccessArea @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
+/// Verknüpfung Verein ↔ Ticket: Mitglieder des Vereins erben beim Scan die
+/// Areas dieses Tickets (eigener accessAreaId + alle ticketAreas) – aber nur,
+/// wenn das Ticket aktuell gültig ist UND der optionale Wochentag/Slot-Filter
+/// dieser Verbindung passt (z. B. „Bahnmiete nur So 10–12“).
+model VereinAccessTicket {
+  id       Int    @id @default(autoincrement())
+  vereinId Int
+  ticketId Int
+  /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
+  daysOfWeek Int     @default(127)
+  /// Optionaler Tageszeit-Slot in Berlin-Zeit (HH:mm). Beide oder keiner gesetzt.
+  slotStart  String?
+  slotEnd    String?
+  verein     Verein  @relation(fields: [vereinId], references: [id], onDelete: Cascade)
+  ticket     Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
-  @@unique([vereinId, accessAreaId])
+  @@unique([vereinId, ticketId])
   @@index([vereinId])
-  @@index([accessAreaId])
+  @@index([ticketId])
 }
 
 model ShellyAutomationRun {
