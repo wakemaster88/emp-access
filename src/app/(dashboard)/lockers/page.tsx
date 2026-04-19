@@ -75,11 +75,17 @@ export default async function LockersPage() {
     number: l.number,
     location: l.location,
     notes: l.notes,
+    lockType: l.lockType,
+    keyCount: l.keyCount,
     rentals: l.rentals.map((r) => ({
       id: r.id,
       year: r.year,
       notes: r.notes,
       ticketId: r.ticketId,
+      keysIssued: r.keysIssued,
+      keysReturned: r.keysReturned,
+      issuedAt: r.issuedAt ? r.issuedAt.toISOString() : null,
+      returnedAt: r.returnedAt ? r.returnedAt.toISOString() : null,
       ticket: {
         id: r.ticket.id,
         name: r.ticket.name,

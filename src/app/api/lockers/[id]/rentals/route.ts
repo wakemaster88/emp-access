@@ -74,6 +74,10 @@ export async function POST(
         ticketId: data.ticketId,
         year: data.year,
         notes: data.notes?.trim() || null,
+        ...(data.keysIssued !== undefined && { keysIssued: data.keysIssued }),
+        ...(data.keysReturned !== undefined && { keysReturned: data.keysReturned }),
+        ...(data.issuedAt !== undefined && { issuedAt: data.issuedAt ? new Date(data.issuedAt) : null }),
+        ...(data.returnedAt !== undefined && { returnedAt: data.returnedAt ? new Date(data.returnedAt) : null }),
       },
       include: { ticket: { select: rentalTicketSelect } },
     });

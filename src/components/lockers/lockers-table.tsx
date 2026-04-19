@@ -7,11 +7,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  LockerDialog, type LockerData, type AboTicketRef, type RentalRow,
+  LockerDialog, type LockerData, type AboTicketRef, type RentalRow, type LockerType,
 } from "./locker-dialog";
 import {
   Lock, Plus, Search, MapPin, Hash, Ticket as TicketIcon, CreditCard,
-  Calendar, History,
+  Calendar, History, Key,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,8 @@ interface LockerRow {
   number: string;
   location: string | null;
   notes: string | null;
+  lockType: LockerType;
+  keyCount: number;
   rentals: RentalRow[];
 }
 
@@ -84,6 +86,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
       number: l.number,
       location: l.location,
       notes: l.notes,
+      lockType: l.lockType,
+      keyCount: l.keyCount,
     });
     setSelectedRentals(l.rentals);
   }
@@ -228,6 +232,19 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                     <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
                       <Lock className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
                       {l.name}
+                      <span
+                        className="text-[10px] inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums"
+                        title={
+                          l.lockType === "KEY"
+                            ? `Schlüsselschloss · ${l.keyCount} Schlüssel`
+                            : `Vorhängeschloss · ${l.keyCount} Stück`
+                        }
+                      >
+                        {l.lockType === "KEY"
+                          ? <Key className="h-2.5 w-2.5" />
+                          : <Lock className="h-2.5 w-2.5" />}
+                        {l.keyCount}×
+                      </span>
                     </span>
                     <div className="sm:hidden ml-6 mt-0.5 text-[11px] text-slate-400 font-mono">
                       Nr. {l.number}
@@ -262,12 +279,36 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                         <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
                         {ticketDisplayName(l.current.ticket)}
                       </span>
-                      {l.current.ticket.subscription && (
-                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0 self-start">
-                          <CreditCard className="h-2.5 w-2.5" />
-                          {l.current.ticket.subscription.name}
-                        </Badge>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {l.current.ticket.subscription && (
+                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0">
+                            <CreditCard className="h-2.5 w-2.5" />
+                            {l.current.ticket.subscription.name}
+                          </Badge>
+                        )}
+                        {l.current.keysIssued > 0 && (() => {
+                          const open = l.current.keysIssued - l.current.keysReturned;
+                          const allBack = open <= 0;
+                          return (
+                            <span
+                              className={cn(
+                                "text-[10px] inline-flex items-center gap-0.5 px-1 rounded tabular-nums",
+                                allBack
+                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                              )}
+                              title={
+                                allBack
+                                  ? "Alle zurück"
+                                  : `${open} ${l.lockType === "PADLOCK" ? "Schloss/Schlösser" : "Schlüssel"} draußen`
+                              }
+                            >
+                              {l.lockType === "KEY" ? <Key className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
+                              {l.current.keysReturned}/{l.current.keysIssued}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
                   ) : (
                     <Badge variant="outline" className="text-slate-400 border-slate-200 dark:border-slate-700 text-xs">

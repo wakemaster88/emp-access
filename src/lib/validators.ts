@@ -123,12 +123,22 @@ export const vereinUpdateSchema = vereinCreateSchema.partial();
 
 /// Plausibles Vermietungsjahr (vermeidet Tippfehler wie "20226" oder "1990").
 const lockerYear = z.coerce.number().int().min(2000).max(2100);
+const lockerType = z.enum(["KEY", "PADLOCK"]);
+/// Anzahl Schlüssel/Schlösser – realistisch 0–20.
+const keyCount = z.coerce.number().int().min(0).max(20);
+/// ISO-Datum/-Datetime (akzeptiert "2026-04-19" und volle ISO).
+const isoDateTime = z
+  .string()
+  .min(1)
+  .refine((s) => !isNaN(new Date(s).getTime()), "Ungültiges Datum");
 
 export const lockerCreateSchema = z.object({
   name: z.string().min(1).max(120),
   number: z.string().min(1).max(40),
   location: z.string().max(120).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
+  lockType: lockerType.optional(),
+  keyCount: keyCount.optional(),
   /// Optionales Bootstrap: bei Anlage direkt eine Vermietung für ein Jahr setzen.
   initialRental: z
     .object({
@@ -144,18 +154,28 @@ export const lockerUpdateSchema = z.object({
   number: z.string().min(1).max(40).optional(),
   location: z.string().max(120).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
+  lockType: lockerType.optional(),
+  keyCount: keyCount.optional(),
 });
 
 export const lockerRentalCreateSchema = z.object({
   year: lockerYear,
   ticketId: z.coerce.number().int().positive(),
   notes: z.string().max(500).nullable().optional(),
+  keysIssued: keyCount.optional(),
+  keysReturned: keyCount.optional(),
+  issuedAt: isoDateTime.nullable().optional(),
+  returnedAt: isoDateTime.nullable().optional(),
 });
 
 export const lockerRentalUpdateSchema = z.object({
   year: lockerYear.optional(),
   ticketId: z.coerce.number().int().positive().optional(),
   notes: z.string().max(500).nullable().optional(),
+  keysIssued: keyCount.optional(),
+  keysReturned: keyCount.optional(),
+  issuedAt: isoDateTime.nullable().optional(),
+  returnedAt: isoDateTime.nullable().optional(),
 });
 
 // ─── Shelly-Automation Schemas ───────────────────────────────────────────────

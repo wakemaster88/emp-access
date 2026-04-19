@@ -264,6 +264,14 @@ model Subscription {
   @@index([accountId])
 }
 
+/// Art der Schließfach-Sicherung.
+enum LockerType {
+  /// Klassisches Schlüsselschloss – meist 2 Schlüssel pro Schließfach.
+  KEY
+  /// Vorhängeschloss – wird häufig nur als ein Stück ausgegeben.
+  PADLOCK
+}
+
 /// Schließfach (locker). Vermietung läuft jahresweise über `LockerRental`
 /// (1 Mieter-Ticket pro Schließfach pro Jahr) – damit ergibt sich automatisch
 /// eine Historie, welcher Mieter das Schließfach in welchem Jahr hatte.
@@ -277,6 +285,11 @@ model Locker {
   number    String
   /// Optionale Notiz / Kommentar (z. B. Schloss-Code).
   notes     String?
+  /// Art der Sicherung (Schlüssel- oder Vorhängeschloss).
+  lockType  LockerType     @default(KEY)
+  /// Wie viele Schlüssel/Vorhängeschlösser gehören insgesamt zu diesem
+  /// Schließfach (Soll-Bestand). Default: 2 für Schlüssel, 1 für Vorhänge.
+  keyCount  Int            @default(2)
   accountId Int
   account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
   rentals   LockerRental[]
@@ -292,17 +305,25 @@ model Locker {
 /// Beim Löschen des Tickets verschwindet auch der Vermietungs-Eintrag (Cascade);
 /// der Verlauf für andere Jahre bleibt erhalten.
 model LockerRental {
-  id        Int      @id @default(autoincrement())
-  lockerId  Int
-  ticketId  Int
+  id           Int       @id @default(autoincrement())
+  lockerId     Int
+  ticketId     Int
   /// Vermietungsjahr als Kalenderjahr (z. B. 2026).
-  year      Int
+  year         Int
   /// Optionale Notiz für genau diese Vermietungs-Periode.
-  notes     String?
-  locker    Locker   @relation(fields: [lockerId], references: [id], onDelete: Cascade)
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  notes        String?
+  /// Anzahl bei Mietbeginn ausgegebener Schlüssel/Vorhängeschlösser.
+  keysIssued   Int       @default(0)
+  /// Anzahl davon, die bisher zurückgegeben wurden.
+  keysReturned Int       @default(0)
+  /// Zeitpunkt der Schlüssel-/Schlossausgabe (NULL = noch nicht ausgegeben).
+  issuedAt     DateTime?
+  /// Zeitpunkt der vollständigen Rücknahme (NULL = noch nicht zurück).
+  returnedAt   DateTime?
+  locker       Locker    @relation(fields: [lockerId], references: [id], onDelete: Cascade)
+  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@unique([lockerId, year])
   @@index([lockerId])

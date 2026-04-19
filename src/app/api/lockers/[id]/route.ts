@@ -73,6 +73,8 @@ export async function PUT(
         ...(data.number !== undefined && { number: data.number.trim() }),
         ...(data.location !== undefined && { location: data.location?.trim() || null }),
         ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
+        ...(data.lockType !== undefined && { lockType: data.lockType }),
+        ...(data.keyCount !== undefined && { keyCount: data.keyCount }),
       },
       include: lockerInclude,
     });

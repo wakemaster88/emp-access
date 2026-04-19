@@ -13,8 +13,11 @@ import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Trash2, Save, Lock, MapPin, Hash, Ticket as TicketIcon,
   CreditCard, FileText, Search, X, Check, Plus, Calendar, History, Pencil,
+  Key, KeyRound, ArrowRightCircle, ArrowLeftCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+export type LockerType = "KEY" | "PADLOCK";
 
 export interface LockerData {
   id: number;
@@ -22,6 +25,8 @@ export interface LockerData {
   number: string;
   location: string | null;
   notes: string | null;
+  lockType: LockerType;
+  keyCount: number;
 }
 
 export interface AboTicketRef {
@@ -40,7 +45,31 @@ export interface RentalRow {
   year: number;
   notes: string | null;
   ticketId: number;
+  keysIssued: number;
+  keysReturned: number;
+  /// ISO-String oder null.
+  issuedAt: string | null;
+  returnedAt: string | null;
   ticket: AboTicketRef;
+}
+
+/// Helfer: Singular/Plural-Label je nach Schloss-Typ.
+function itemLabel(lockType: LockerType, plural: boolean): string {
+  if (lockType === "PADLOCK") return plural ? "Vorhängeschlösser" : "Vorhängeschloss";
+  return plural ? "Schlüssel" : "Schlüssel";
+}
+
+/// Datum als „YYYY-MM-DD" für <input type="date">.
+function isoToDateInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function todayDateInput(): string {
+  return isoToDateInput(new Date().toISOString());
 }
 
 interface LockerDialogProps {
@@ -245,6 +274,11 @@ interface RentalEditorState {
   year: number;
   ticketId: number | null;
   notes: string;
+  keysIssued: number;
+  keysReturned: number;
+  /// "YYYY-MM-DD" oder leer.
+  issuedAtDate: string;
+  returnedAtDate: string;
 }
 
 export function LockerDialog({
@@ -256,6 +290,8 @@ export function LockerDialog({
   const [number, setNumber] = useState("");
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
+  const [lockType, setLockType] = useState<LockerType>("KEY");
+  const [keyCount, setKeyCount] = useState<number>(2);
   const [rentals, setRentals] = useState<RentalRow[]>([]);
   /// Bei NEU-Anlage optional eine erste Vermietung mitgeben.
   const [initialRentalTicketId, setInitialRentalTicketId] = useState<number | null>(null);
@@ -280,9 +316,12 @@ export function LockerDialog({
         setNumber(locker.number);
         setLocation(locker.location ?? "");
         setNotes(locker.notes ?? "");
+        setLockType(locker.lockType);
+        setKeyCount(locker.keyCount);
         setRentals(initialRentals);
       } else {
         setName(""); setNumber(""); setLocation(""); setNotes("");
+        setLockType("KEY"); setKeyCount(2);
         setRentals([]);
       }
     }
@@ -297,6 +336,8 @@ export function LockerDialog({
         number: number.trim(),
         location: location.trim() || null,
         notes: notes.trim() || null,
+        lockType,
+        keyCount,
       };
       if (isNew && initialRentalTicketId) {
         payload.initialRental = {
@@ -348,6 +389,10 @@ export function LockerDialog({
         year: editor.year,
         ticketId: editor.ticketId,
         notes: editor.notes.trim() || null,
+        keysIssued: editor.keysIssued,
+        keysReturned: editor.keysReturned,
+        issuedAt: editor.issuedAtDate ? editor.issuedAtDate : null,
+        returnedAt: editor.returnedAtDate ? editor.returnedAtDate : null,
       };
       const isNewRental = editor.id === "new";
       const url = isNewRental
@@ -401,12 +446,49 @@ export function LockerDialog({
     const used = new Set(rentals.map((r) => r.year));
     let candidate = currentYear;
     while (used.has(candidate)) candidate++;
-    setEditor({ id: "new", year: candidate, ticketId: null, notes: "" });
+    setEditor({
+      id: "new",
+      year: candidate,
+      ticketId: null,
+      notes: "",
+      keysIssued: 0,
+      keysReturned: 0,
+      issuedAtDate: "",
+      returnedAtDate: "",
+    });
   }
 
   function startEditRental(r: RentalRow) {
     setRentalError("");
-    setEditor({ id: r.id, year: r.year, ticketId: r.ticketId, notes: r.notes ?? "" });
+    setEditor({
+      id: r.id,
+      year: r.year,
+      ticketId: r.ticketId,
+      notes: r.notes ?? "",
+      keysIssued: r.keysIssued,
+      keysReturned: r.keysReturned,
+      issuedAtDate: isoToDateInput(r.issuedAt),
+      returnedAtDate: isoToDateInput(r.returnedAt),
+    });
+  }
+
+  /// Quick-Action: Schlüssel/Schloss ausgeben → Soll-Anzahl + heutiges Datum.
+  function quickIssue() {
+    if (!editor) return;
+    setEditor({
+      ...editor,
+      keysIssued: editor.keysIssued > 0 ? editor.keysIssued : Math.max(keyCount, 1),
+      issuedAtDate: editor.issuedAtDate || todayDateInput(),
+    });
+  }
+  /// Quick-Action: Komplette Rücknahme → keysReturned = keysIssued + heutiges Datum.
+  function quickReturn() {
+    if (!editor) return;
+    setEditor({
+      ...editor,
+      keysReturned: editor.keysIssued,
+      returnedAtDate: editor.returnedAtDate || todayDateInput(),
+    });
   }
 
   const usedYearsForOtherRentals = useMemo(() => {
@@ -468,6 +550,62 @@ export function LockerDialog({
               id="l-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional, z. B. Schloss-Code" className="h-9"
             />
+          </div>
+
+          {/* Schlosstyp + Anzahl */}
+          <div className="grid grid-cols-[1fr_120px] gap-3 items-end">
+            <div className="space-y-1">
+              <Label className="text-xs inline-flex items-center gap-1">
+                <KeyRound className="h-3 w-3 text-slate-400" />
+                Schlosstyp
+              </Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLockType("KEY");
+                    if (keyCount === 0) setKeyCount(2);
+                  }}
+                  className={cn(
+                    "h-9 px-2 rounded-md border text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors",
+                    lockType === "KEY"
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
+                      : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                  )}
+                >
+                  <Key className="h-3.5 w-3.5" />
+                  Schlüssel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLockType("PADLOCK");
+                    if (keyCount > 1) setKeyCount(1);
+                  }}
+                  className={cn(
+                    "h-9 px-2 rounded-md border text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors",
+                    lockType === "PADLOCK"
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
+                      : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                  )}
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  Vorhängeschloss
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="l-keycount" className="text-xs">
+                Anzahl {itemLabel(lockType, true)}
+              </Label>
+              <Input
+                id="l-keycount"
+                type="number" min={0} max={20}
+                value={keyCount}
+                onChange={(e) => setKeyCount(Math.max(0, Number(e.target.value) || 0))}
+                className="h-9 text-sm tabular-nums"
+              />
+            </div>
           </div>
         </div>
 
@@ -566,6 +704,28 @@ export function LockerDialog({
                             {r.ticket.subscription.name}
                           </span>
                         )}
+                        {r.keysIssued > 0 && (() => {
+                          const open = r.keysIssued - r.keysReturned;
+                          const allBack = open <= 0;
+                          return (
+                            <span
+                              className={cn(
+                                "text-[10px] inline-flex items-center gap-0.5 px-1 rounded",
+                                allBack
+                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                              )}
+                              title={
+                                allBack
+                                  ? `Alle ${itemLabel(lockType, r.keysIssued !== 1)} zurück`
+                                  : `${open} ${itemLabel(lockType, open !== 1)} noch draußen`
+                              }
+                            >
+                              {lockType === "KEY" ? <Key className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
+                              {r.keysReturned}/{r.keysIssued}
+                            </span>
+                          );
+                        })()}
                         {r.notes && (
                           <span className="text-[10px] text-slate-400 truncate">· {r.notes}</span>
                         )}
@@ -620,6 +780,101 @@ export function LockerDialog({
                       />
                     </div>
                   </div>
+
+                  {/* Schlüssel/Schloss-Ausgabe + Rücknahme */}
+                  {keyCount > 0 && (
+                    <div className="rounded-md border border-amber-200 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/10 p-2 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium text-amber-800 dark:text-amber-300 inline-flex items-center gap-1">
+                          {lockType === "KEY"
+                            ? <Key className="h-3 w-3" />
+                            : <Lock className="h-3 w-3" />}
+                          {itemLabel(lockType, true)} (Soll: {keyCount})
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={quickIssue}
+                            disabled={editor.keysIssued >= editor.keysReturned && editor.keysReturned > 0}
+                            className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Ausgabe erfassen (heute, Soll-Anzahl)"
+                          >
+                            <ArrowRightCircle className="h-3 w-3" />
+                            Ausgeben
+                          </button>
+                          <button
+                            type="button"
+                            onClick={quickReturn}
+                            disabled={editor.keysIssued === 0 || editor.keysReturned >= editor.keysIssued}
+                            className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950/30 dark:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Komplette Rücknahme (heute)"
+                          >
+                            <ArrowLeftCircle className="h-3 w-3" />
+                            Zurück
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-0.5">
+                            <ArrowRightCircle className="h-2.5 w-2.5" />
+                            Ausgegeben
+                          </span>
+                          <div className="flex gap-1">
+                            <Input
+                              type="number" min={0} max={20}
+                              value={editor.keysIssued}
+                              onChange={(e) => {
+                                const v = Math.max(0, Number(e.target.value) || 0);
+                                setEditor({
+                                  ...editor,
+                                  keysIssued: v,
+                                  keysReturned: Math.min(editor.keysReturned, v),
+                                });
+                              }}
+                              className="h-7 w-12 text-xs tabular-nums"
+                            />
+                            <Input
+                              type="date"
+                              value={editor.issuedAtDate}
+                              onChange={(e) => setEditor({ ...editor, issuedAtDate: e.target.value })}
+                              className="h-7 text-xs flex-1 min-w-0"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-0.5">
+                            <ArrowLeftCircle className="h-2.5 w-2.5" />
+                            Zurückgegeben
+                          </span>
+                          <div className="flex gap-1">
+                            <Input
+                              type="number" min={0} max={editor.keysIssued}
+                              value={editor.keysReturned}
+                              onChange={(e) => setEditor({
+                                ...editor,
+                                keysReturned: Math.min(editor.keysIssued, Math.max(0, Number(e.target.value) || 0)),
+                              })}
+                              className="h-7 w-12 text-xs tabular-nums"
+                            />
+                            <Input
+                              type="date"
+                              value={editor.returnedAtDate}
+                              onChange={(e) => setEditor({ ...editor, returnedAtDate: e.target.value })}
+                              className="h-7 text-xs flex-1 min-w-0"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      {editor.keysIssued > 0 && editor.keysReturned < editor.keysIssued && (
+                        <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                          Noch {editor.keysIssued - editor.keysReturned} {itemLabel(lockType, editor.keysIssued - editor.keysReturned !== 1)} draußen.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <span className="text-[10px] text-slate-500 dark:text-slate-400">Notiz (optional)</span>
                     <Input

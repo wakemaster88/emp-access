@@ -64,6 +64,8 @@ export async function POST(request: NextRequest) {
         number: data.number.trim(),
         location: data.location?.trim() || null,
         notes: data.notes?.trim() || null,
+        ...(data.lockType !== undefined && { lockType: data.lockType }),
+        ...(data.keyCount !== undefined && { keyCount: data.keyCount }),
         accountId: accountId!,
         ...(data.initialRental && {
           rentals: {
