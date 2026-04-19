@@ -164,7 +164,7 @@ model Ticket {
   verein                  Verein?       @relation(fields: [vereinId], references: [id], onDelete: SetNull)
   ticketAreas             TicketArea[]
   vereinAccess            VereinAccessTicket[] // Vereine, die über DIESES Ticket Zutritt erhalten
-  lockers                 Locker[] // Schließfächer, die diesem Ticket (Abo-Inhaber) zugeordnet sind
+  lockerRentals           LockerRental[] // Schließfach-Vermietungen, in denen dieses Ticket Mieter ist (jahresweise)
   scans                   Scan[]
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
@@ -264,11 +264,11 @@ model Subscription {
   @@index([accountId])
 }
 
-/// Schließfach (locker). Optional einem konkreten Abo-Ticket (Mieter) zugeordnet.
-/// 1 Ticket kann mehrere Schließfächer haben. Beim Löschen des Tickets bleibt
-/// das Schließfach erhalten (ticketId = null), damit es neu vergeben werden kann.
+/// Schließfach (locker). Vermietung läuft jahresweise über `LockerRental`
+/// (1 Mieter-Ticket pro Schließfach pro Jahr) – damit ergibt sich automatisch
+/// eine Historie, welcher Mieter das Schließfach in welchem Jahr hatte.
 model Locker {
-  id        Int      @id @default(autoincrement())
+  id        Int            @id @default(autoincrement())
   /// Bezeichnung des Schließfachs (frei wählbar, z. B. „Spind 12“).
   name      String
   /// Optionaler Standort (z. B. „Umkleide UG“, „Halle Ost“).
@@ -277,17 +277,37 @@ model Locker {
   number    String
   /// Optionale Notiz / Kommentar (z. B. Schloss-Code).
   notes     String?
-  /// Verknüpftes Abo-Ticket (Mieter). NULL = Schließfach ist frei.
-  ticketId  Int?
   accountId Int
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  ticket    Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  rentals   LockerRental[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
   @@unique([accountId, number])
   @@index([accountId])
+}
+
+/// Eine Vermietung eines Schließfachs an einen Mieter (Abo-Ticket) für ein
+/// bestimmtes Kalenderjahr. Pro `(lockerId, year)` ist nur ein Eintrag möglich.
+/// Beim Löschen des Tickets verschwindet auch der Vermietungs-Eintrag (Cascade);
+/// der Verlauf für andere Jahre bleibt erhalten.
+model LockerRental {
+  id        Int      @id @default(autoincrement())
+  lockerId  Int
+  ticketId  Int
+  /// Vermietungsjahr als Kalenderjahr (z. B. 2026).
+  year      Int
+  /// Optionale Notiz für genau diese Vermietungs-Periode.
+  notes     String?
+  locker    Locker   @relation(fields: [lockerId], references: [id], onDelete: Cascade)
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([lockerId, year])
+  @@index([lockerId])
   @@index([ticketId])
+  @@index([year])
 }
 
 model ServiceArea {

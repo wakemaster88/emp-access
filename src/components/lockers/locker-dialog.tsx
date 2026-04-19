@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Trash2, Save, Lock, MapPin, Hash, Ticket as TicketIcon,
-  CreditCard, FileText, Search, X, Check,
+  CreditCard, FileText, Search, X, Check, Plus, Calendar, History, Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +22,6 @@ export interface LockerData {
   number: string;
   location: string | null;
   notes: string | null;
-  ticketId: number | null;
 }
 
 export interface AboTicketRef {
@@ -36,9 +35,19 @@ export interface AboTicketRef {
   subscription: { id: number; name: string } | null;
 }
 
+export interface RentalRow {
+  id: number;
+  year: number;
+  notes: string | null;
+  ticketId: number;
+  ticket: AboTicketRef;
+}
+
 interface LockerDialogProps {
   locker: LockerData | null;
+  initialRentals: RentalRow[];
   aboTickets: AboTicketRef[];
+  currentYear: number;
   open: boolean;
   onClose: () => void;
 }
@@ -61,48 +70,26 @@ function ticketStatusBadge(t: AboTicketRef): { label: string; cls: string } | nu
   return null;
 }
 
-export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialogProps) {
-  const router = useRouter();
-  const isNew = !locker;
-  const [name, setName] = useState("");
-  const [number, setNumber] = useState("");
-  const [location, setLocation] = useState("");
-  const [notes, setNotes] = useState("");
-  const [ticketId, setTicketId] = useState<number | null>(null);
-  const [ticketQuery, setTicketQuery] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState("");
+/// Wiederverwendbarer Ticket-Picker mit Suche.
+function TicketPicker({
+  aboTickets, value, onChange, placeholder, autoFocus,
+}: {
+  aboTickets: AboTicketRef[];
+  value: number | null;
+  onChange: (id: number | null) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    if (open) {
-      setError("");
-      setTicketQuery("");
-      setPickerOpen(false);
-      if (locker) {
-        setName(locker.name);
-        setNumber(locker.number);
-        setLocation(locker.location ?? "");
-        setNotes(locker.notes ?? "");
-        setTicketId(locker.ticketId);
-      } else {
-        setName("");
-        setNumber("");
-        setLocation("");
-        setNotes("");
-        setTicketId(null);
-      }
-    }
-  }, [open, locker]);
-
-  const selectedTicket = useMemo(
-    () => (ticketId ? aboTickets.find((t) => t.id === ticketId) ?? null : null),
-    [ticketId, aboTickets]
+  const selected = useMemo(
+    () => (value ? aboTickets.find((t) => t.id === value) ?? null : null),
+    [value, aboTickets]
   );
 
-  const filteredTickets = useMemo(() => {
-    const q = ticketQuery.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
     if (!q) return aboTickets.slice(0, 100);
     return aboTickets.filter((t) => {
       const hay = [
@@ -113,9 +100,195 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
       ].join(" ").toLowerCase();
       return hay.includes(q);
     }).slice(0, 100);
-  }, [aboTickets, ticketQuery]);
+  }, [aboTickets, query]);
 
-  async function handleSave() {
+  if (selected && !open) {
+    const sb = ticketStatusBadge(selected);
+    return (
+      <div className="rounded-md border border-violet-200 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/10 p-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate inline-flex items-center gap-1.5">
+              <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+              {ticketDisplayName(selected)}
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {selected.subscription && (
+                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0">
+                  <CreditCard className="h-2.5 w-2.5" />
+                  {selected.subscription.name}
+                </Badge>
+              )}
+              {selected.ticketTypeName && (
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                  {selected.ticketTypeName}
+                </span>
+              )}
+              {sb && <Badge className={cn("text-[10px] py-0", sb.cls)}>{sb.label}</Badge>}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="text-slate-400 hover:text-indigo-500 p-1"
+              aria-label="Anderes Ticket wählen"
+              title="Anderes Ticket wählen"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="text-slate-400 hover:text-rose-500 p-1"
+              aria-label="Ticket entfernen"
+              title="Ticket entfernen"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {!open && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full text-left h-9 px-3 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-slate-500 hover:border-indigo-300 transition-colors inline-flex items-center justify-between"
+        >
+          <span className="text-slate-400">{placeholder ?? "— Ticket wählen —"}</span>
+          <Search className="h-3.5 w-3.5 text-slate-400" />
+        </button>
+      )}
+      {open && (
+        <div className="rounded-md border border-slate-200 dark:border-slate-700 p-1.5 space-y-1.5">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              autoFocus={autoFocus ?? true}
+              placeholder="Mieter, Abo, Tickettyp suchen…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="max-h-[220px] overflow-y-auto space-y-0.5">
+            {filtered.length === 0 ? (
+              <p className="text-[11px] text-slate-400 py-4 text-center">
+                {aboTickets.length === 0 ? "Noch keine Abo-Tickets vorhanden." : "Keine Treffer."}
+              </p>
+            ) : filtered.map((t) => {
+              const isSel = t.id === value;
+              const sb = ticketStatusBadge(t);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => { onChange(t.id); setOpen(false); setQuery(""); }}
+                  className={cn(
+                    "w-full flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
+                    isSel ? "bg-violet-50 dark:bg-violet-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  )}
+                >
+                  <div className={cn(
+                    "h-4 w-4 rounded-full border flex items-center justify-center shrink-0",
+                    isSel ? "bg-violet-500 border-violet-500" : "border-slate-300 dark:border-slate-600"
+                  )}>
+                    {isSel && <Check className="h-2.5 w-2.5 text-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                      {ticketDisplayName(t)}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                      {t.subscription && (
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-0.5">
+                          <CreditCard className="h-2.5 w-2.5" />
+                          {t.subscription.name}
+                        </span>
+                      )}
+                      {t.ticketTypeName && (
+                        <span className="text-[10px] text-slate-400 truncate">· {t.ticketTypeName}</span>
+                      )}
+                      {sb && <span className={cn("text-[9px] px-1 rounded", sb.cls)}>{sb.label}</span>}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {value && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 px-1"
+              >
+                Abbrechen
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface RentalEditorState {
+  /// id = "new" für neue Vermietungen, sonst die rental.id als string.
+  id: number | "new";
+  year: number;
+  ticketId: number | null;
+  notes: string;
+}
+
+export function LockerDialog({
+  locker, initialRentals, aboTickets, currentYear, open, onClose,
+}: LockerDialogProps) {
+  const router = useRouter();
+  const isNew = !locker;
+  const [name, setName] = useState("");
+  const [number, setNumber] = useState("");
+  const [location, setLocation] = useState("");
+  const [notes, setNotes] = useState("");
+  const [rentals, setRentals] = useState<RentalRow[]>([]);
+  /// Bei NEU-Anlage optional eine erste Vermietung mitgeben.
+  const [initialRentalTicketId, setInitialRentalTicketId] = useState<number | null>(null);
+  const [initialRentalYear, setInitialRentalYear] = useState<number>(currentYear);
+  /// Inline-Editor-State für vorhandene Schließfächer.
+  const [editor, setEditor] = useState<RentalEditorState | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savingRental, setSavingRental] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const [rentalError, setRentalError] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setError("");
+      setRentalError("");
+      setEditor(null);
+      setInitialRentalTicketId(null);
+      setInitialRentalYear(currentYear);
+      if (locker) {
+        setName(locker.name);
+        setNumber(locker.number);
+        setLocation(locker.location ?? "");
+        setNotes(locker.notes ?? "");
+        setRentals(initialRentals);
+      } else {
+        setName(""); setNumber(""); setLocation(""); setNotes("");
+        setRentals([]);
+      }
+    }
+  }, [open, locker, initialRentals, currentYear]);
+
+  async function handleSaveLocker() {
     setSaving(true);
     setError("");
     try {
@@ -124,8 +297,13 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
         number: number.trim(),
         location: location.trim() || null,
         notes: notes.trim() || null,
-        ticketId,
       };
+      if (isNew && initialRentalTicketId) {
+        payload.initialRental = {
+          year: initialRentalYear,
+          ticketId: initialRentalTicketId,
+        };
+      }
       const url = isNew ? "/api/lockers" : `/api/lockers/${locker!.id}`;
       const method = isNew ? "POST" : "PUT";
       const res = await fetch(url, {
@@ -148,7 +326,7 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
   }
 
   async function handleDelete() {
-    if (!locker || !confirm(`Schließfach "${locker.name}" (Nr. ${locker.number}) wirklich löschen?`)) return;
+    if (!locker || !confirm(`Schließfach "${locker.name}" (Nr. ${locker.number}) inkl. gesamter Vermietungs-Historie wirklich löschen?`)) return;
     setDeleting(true);
     try {
       await fetch(`/api/lockers/${locker.id}`, { method: "DELETE" });
@@ -161,9 +339,86 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
     }
   }
 
+  async function handleSaveRental() {
+    if (!editor || !locker || !editor.ticketId) return;
+    setSavingRental(true);
+    setRentalError("");
+    try {
+      const payload = {
+        year: editor.year,
+        ticketId: editor.ticketId,
+        notes: editor.notes.trim() || null,
+      };
+      const isNewRental = editor.id === "new";
+      const url = isNewRental
+        ? `/api/lockers/${locker.id}/rentals`
+        : `/api/lockers/${locker.id}/rentals/${editor.id}`;
+      const res = await fetch(url, {
+        method: isNewRental ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setRentalError(typeof data?.error === "string" ? data.error : `Server-Fehler (${res.status})`);
+        return;
+      }
+      const saved = (await res.json()) as RentalRow;
+      setRentals((prev) => {
+        const others = prev.filter((r) => r.id !== saved.id);
+        return [...others, saved].sort((a, b) => b.year - a.year);
+      });
+      setEditor(null);
+      router.refresh();
+    } catch (err) {
+      setRentalError(`Netzwerkfehler: ${err instanceof Error ? err.message : "unbekannt"}`);
+    } finally {
+      setSavingRental(false);
+    }
+  }
+
+  async function handleDeleteRental(rental: RentalRow) {
+    if (!locker) return;
+    if (!confirm(`Vermietung ${rental.year} (${ticketDisplayName(rental.ticket)}) wirklich entfernen?`)) return;
+    setRentalError("");
+    try {
+      const res = await fetch(`/api/lockers/${locker.id}/rentals/${rental.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setRentalError(typeof data?.error === "string" ? data.error : `Server-Fehler (${res.status})`);
+        return;
+      }
+      setRentals((prev) => prev.filter((r) => r.id !== rental.id));
+      router.refresh();
+    } catch (err) {
+      setRentalError(`Netzwerkfehler: ${err instanceof Error ? err.message : "unbekannt"}`);
+    }
+  }
+
+  function startNewRental() {
+    setRentalError("");
+    // Default-Jahr: nächstes freies Jahr nach dem höchsten bestehenden (mind. currentYear).
+    const used = new Set(rentals.map((r) => r.year));
+    let candidate = currentYear;
+    while (used.has(candidate)) candidate++;
+    setEditor({ id: "new", year: candidate, ticketId: null, notes: "" });
+  }
+
+  function startEditRental(r: RentalRow) {
+    setRentalError("");
+    setEditor({ id: r.id, year: r.year, ticketId: r.ticketId, notes: r.notes ?? "" });
+  }
+
+  const usedYearsForOtherRentals = useMemo(() => {
+    if (!editor) return new Set<number>();
+    return new Set(rentals.filter((r) => r.id !== editor.id).map((r) => r.year));
+  }, [rentals, editor]);
+
+  const editorYearConflict = editor && usedYearsForOtherRentals.has(editor.year);
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-0">
           <DialogTitle className="text-base">
             {isNew ? "Neues Schließfach anlegen" : "Schließfach bearbeiten"}
@@ -178,175 +433,30 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
                 Name <span className="text-rose-500">*</span>
               </Label>
               <Input
-                id="l-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="z. B. Spind 12"
-                required
-                autoFocus
-                className="h-9"
+                id="l-name" value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="z. B. Spind 12" required autoFocus className="h-9"
               />
             </div>
-
             <div className="space-y-1">
               <Label htmlFor="l-number" className="text-xs inline-flex items-center gap-1">
                 <Hash className="h-3 w-3 text-slate-400" />
                 Nummer <span className="text-rose-500">*</span>
               </Label>
               <Input
-                id="l-number"
-                value={number}
-                onChange={(e) => setNumber(e.target.value)}
-                placeholder="A12"
-                required
-                className="h-9"
+                id="l-number" value={number} onChange={(e) => setNumber(e.target.value)}
+                placeholder="A12" required className="h-9"
               />
             </div>
-
             <div className="space-y-1">
               <Label htmlFor="l-location" className="text-xs inline-flex items-center gap-1">
                 <MapPin className="h-3 w-3 text-slate-400" />
                 Standort
               </Label>
               <Input
-                id="l-location"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="z. B. Umkleide UG"
-                className="h-9"
+                id="l-location" value={location} onChange={(e) => setLocation(e.target.value)}
+                placeholder="z. B. Umkleide UG" className="h-9"
               />
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs inline-flex items-center gap-1">
-              <TicketIcon className="h-3 w-3 text-slate-400" />
-              Verknüpftes Abo-Ticket
-            </Label>
-
-            {selectedTicket ? (
-              <div className="rounded-md border border-violet-200 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/10 p-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate inline-flex items-center gap-1.5">
-                      <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                      {ticketDisplayName(selectedTicket)}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1">
-                      {selectedTicket.subscription && (
-                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0">
-                          <CreditCard className="h-2.5 w-2.5" />
-                          {selectedTicket.subscription.name}
-                        </Badge>
-                      )}
-                      {selectedTicket.ticketTypeName && (
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                          {selectedTicket.ticketTypeName}
-                        </span>
-                      )}
-                      {(() => {
-                        const sb = ticketStatusBadge(selectedTicket);
-                        return sb
-                          ? <Badge className={cn("text-[10px] py-0", sb.cls)}>{sb.label}</Badge>
-                          : null;
-                      })()}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setTicketId(null); setPickerOpen(true); }}
-                    className="text-slate-400 hover:text-rose-500 shrink-0"
-                    aria-label="Verknüpfung entfernen"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setPickerOpen((v) => !v)}
-                className="w-full text-left h-9 px-3 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-slate-500 hover:border-indigo-300 transition-colors inline-flex items-center justify-between"
-              >
-                <span className="text-slate-400">— Kein Ticket — (Schließfach ist frei)</span>
-                <Search className="h-3.5 w-3.5 text-slate-400" />
-              </button>
-            )}
-
-            {pickerOpen && (
-              <div className="rounded-md border border-slate-200 dark:border-slate-700 p-1.5 space-y-1.5">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder="Mieter, Abo, Tickettyp suchen…"
-                    value={ticketQuery}
-                    onChange={(e) => setTicketQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-                <div className="max-h-[220px] overflow-y-auto space-y-0.5">
-                  {filteredTickets.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 py-4 text-center">
-                      {aboTickets.length === 0
-                        ? "Noch keine Abo-Tickets vorhanden."
-                        : "Keine Treffer."}
-                    </p>
-                  ) : filteredTickets.map((t) => {
-                    const isSel = t.id === ticketId;
-                    const sb = ticketStatusBadge(t);
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => { setTicketId(t.id); setPickerOpen(false); setTicketQuery(""); }}
-                        className={cn(
-                          "w-full flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
-                          isSel
-                            ? "bg-violet-50 dark:bg-violet-900/20"
-                            : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                        )}
-                      >
-                        <div className={cn(
-                          "h-4 w-4 rounded-full border flex items-center justify-center shrink-0",
-                          isSel ? "bg-violet-500 border-violet-500" : "border-slate-300 dark:border-slate-600"
-                        )}>
-                          {isSel && <Check className="h-2.5 w-2.5 text-white" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-slate-700 dark:text-slate-300 truncate">
-                            {ticketDisplayName(t)}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                            {t.subscription && (
-                              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-0.5">
-                                <CreditCard className="h-2.5 w-2.5" />
-                                {t.subscription.name}
-                              </span>
-                            )}
-                            {t.ticketTypeName && (
-                              <span className="text-[10px] text-slate-400 truncate">
-                                · {t.ticketTypeName}
-                              </span>
-                            )}
-                            {sb && (
-                              <span className={cn("text-[9px] px-1 rounded", sb.cls)}>{sb.label}</span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {aboTickets.length === 0 && !selectedTicket && (
-              <p className="text-[11px] text-slate-400">
-                Es existieren noch keine Tickets mit Abo. Du kannst das Schließfach trotzdem anlegen und später verknüpfen.
-              </p>
-            )}
           </div>
 
           <div className="space-y-1">
@@ -355,14 +465,202 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
               Notiz
             </Label>
             <Input
-              id="l-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional, z. B. Schloss-Code"
-              className="h-9"
+              id="l-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional, z. B. Schloss-Code" className="h-9"
             />
           </div>
         </div>
+
+        <Separator className="dark:bg-slate-800" />
+
+        {/* Vermietungs-Block */}
+        {isNew ? (
+          <div className="space-y-2">
+            <Label className="text-xs inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <Calendar className="h-3 w-3 text-slate-400" />
+              Erste Vermietung (optional)
+            </Label>
+            <div className="grid grid-cols-[100px_1fr] gap-2 items-start">
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400">Jahr</span>
+                <Input
+                  type="number"
+                  value={initialRentalYear}
+                  onChange={(e) => setInitialRentalYear(Number(e.target.value) || currentYear)}
+                  min={2000} max={2100}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400">Mieter-Ticket</span>
+                <TicketPicker
+                  aboTickets={aboTickets}
+                  value={initialRentalTicketId}
+                  onChange={setInitialRentalTicketId}
+                  placeholder="— Frei lassen oder Ticket wählen —"
+                  autoFocus={false}
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Weitere Jahre kannst du nach dem Anlegen hinzufügen.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                <History className="h-3.5 w-3.5 text-slate-400" />
+                Vermietungs-Historie ({rentals.length})
+              </Label>
+              {!editor && (
+                <button
+                  type="button"
+                  onClick={startNewRental}
+                  className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5"
+                >
+                  <Plus className="h-3 w-3" />
+                  Jahr hinzufügen
+                </button>
+              )}
+            </div>
+
+            {rentals.length === 0 && !editor && (
+              <p className="text-[11px] text-slate-400 py-3 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-md">
+                Noch keine Vermietung hinterlegt.
+              </p>
+            )}
+
+            <div className="space-y-1.5">
+              {rentals.map((r) => {
+                const isCurrent = r.year === currentYear;
+                const isEditing = editor && editor.id === r.id;
+                if (isEditing) return null;
+                return (
+                  <div
+                    key={r.id}
+                    className={cn(
+                      "rounded-md border p-2 flex items-center gap-2",
+                      isCurrent
+                        ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/10"
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40"
+                    )}
+                  >
+                    <div className={cn(
+                      "shrink-0 px-2 py-1 rounded font-mono text-xs font-semibold tabular-nums",
+                      isCurrent
+                        ? "bg-emerald-500 text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                    )}>
+                      {r.year}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate inline-flex items-center gap-1.5">
+                        <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                        {ticketDisplayName(r.ticket)}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                        {r.ticket.subscription && (
+                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-0.5">
+                            <CreditCard className="h-2.5 w-2.5" />
+                            {r.ticket.subscription.name}
+                          </span>
+                        )}
+                        {r.notes && (
+                          <span className="text-[10px] text-slate-400 truncate">· {r.notes}</span>
+                        )}
+                      </div>
+                    </div>
+                    {!editor && (
+                      <div className="shrink-0 flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => startEditRental(r)}
+                          className="text-slate-400 hover:text-indigo-500 p-1"
+                          title="Bearbeiten"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRental(r)}
+                          className="text-slate-400 hover:text-rose-500 p-1"
+                          title="Entfernen"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {editor && (
+                <div className="rounded-md border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/10 p-3 space-y-2">
+                  <div className="grid grid-cols-[100px_1fr] gap-2 items-start">
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">Jahr</span>
+                      <Input
+                        type="number"
+                        value={editor.year}
+                        onChange={(e) => setEditor({ ...editor, year: Number(e.target.value) || currentYear })}
+                        min={2000} max={2100}
+                        className="h-9 text-sm"
+                      />
+                      {editorYearConflict && (
+                        <p className="text-[10px] text-amber-600">Jahr bereits vergeben.</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">Mieter-Ticket *</span>
+                      <TicketPicker
+                        aboTickets={aboTickets}
+                        value={editor.ticketId}
+                        onChange={(id) => setEditor({ ...editor, ticketId: id })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">Notiz (optional)</span>
+                    <Input
+                      value={editor.notes}
+                      onChange={(e) => setEditor({ ...editor, notes: e.target.value })}
+                      placeholder="z. B. Bezahlt am 15.03."
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  {rentalError && (
+                    <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-2 py-1 rounded">{rentalError}</p>
+                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button" variant="outline" size="sm"
+                      onClick={() => { setEditor(null); setRentalError(""); }}
+                      disabled={savingRental}
+                      className="h-7 text-xs"
+                    >
+                      Abbrechen
+                    </Button>
+                    <Button
+                      type="button" size="sm"
+                      onClick={handleSaveRental}
+                      disabled={savingRental || !editor.ticketId || !!editorYearConflict}
+                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+                    >
+                      {savingRental
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <><Check className="h-3 w-3 mr-1" />{editor.id === "new" ? "Hinzufügen" : "Speichern"}</>}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {rentalError && !editor && (
+              <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-2 py-1 rounded">{rentalError}</p>
+            )}
+          </div>
+        )}
 
         {error && (
           <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
@@ -373,10 +671,7 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
         <div className="flex items-center justify-between">
           {!isNew ? (
             <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleDelete}
+              type="button" variant="ghost" size="sm" onClick={handleDelete}
               disabled={deleting || saving}
               className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs"
             >
@@ -385,13 +680,14 @@ export function LockerDialog({ locker, aboTickets, open, onClose }: LockerDialog
             </Button>
           ) : <div />}
           <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-8">
-              Abbrechen
+            <Button
+              type="button" variant="outline" size="sm" onClick={onClose}
+              disabled={saving || deleting} className="h-8"
+            >
+              {isNew ? "Abbrechen" : "Schließen"}
             </Button>
             <Button
-              type="button"
-              size="sm"
-              onClick={handleSave}
+              type="button" size="sm" onClick={handleSaveLocker}
               disabled={saving || deleting || !name.trim() || !number.trim()}
               className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8"
             >

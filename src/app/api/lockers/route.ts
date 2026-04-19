@@ -2,16 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { lockerCreateSchema } from "@/lib/validators";
 
+const rentalTicketSelect = {
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  ticketTypeName: true,
+  status: true,
+  endDate: true,
+  subscription: { select: { id: true, name: true } },
+} as const;
+
 const lockerInclude = {
-  ticket: {
-    select: {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      ticketTypeName: true,
-      subscription: { select: { id: true, name: true } },
-    },
+  rentals: {
+    include: { ticket: { select: rentalTicketSelect } },
+    orderBy: { year: "desc" as const },
   },
 } as const;
 
@@ -41,17 +46,15 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const data = parsed.data;
 
-  // Tenant-Check für Ticket, falls gesetzt.
-  let ticketId: number | null = null;
-  if (data.ticketId) {
+  // Tenant-Check für initial-Rental, falls gesetzt.
+  if (data.initialRental) {
     const ticket = await db.ticket.findFirst({
-      where: { id: data.ticketId, accountId: accountId! },
+      where: { id: data.initialRental.ticketId, accountId: accountId! },
       select: { id: true },
     });
     if (!ticket) {
       return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
     }
-    ticketId = ticket.id;
   }
 
   try {
@@ -61,8 +64,16 @@ export async function POST(request: NextRequest) {
         number: data.number.trim(),
         location: data.location?.trim() || null,
         notes: data.notes?.trim() || null,
-        ticketId,
         accountId: accountId!,
+        ...(data.initialRental && {
+          rentals: {
+            create: {
+              year: data.initialRental.year,
+              ticketId: data.initialRental.ticketId,
+              notes: data.initialRental.notes?.trim() || null,
+            },
+          },
+        }),
       },
       include: lockerInclude,
     });

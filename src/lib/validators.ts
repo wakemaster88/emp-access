@@ -121,16 +121,42 @@ export const vereinUpdateSchema = vereinCreateSchema.partial();
 
 // ─── Locker (Schließfach) Schemas ────────────────────────────────────────────
 
+/// Plausibles Vermietungsjahr (vermeidet Tippfehler wie "20226" oder "1990").
+const lockerYear = z.coerce.number().int().min(2000).max(2100);
+
 export const lockerCreateSchema = z.object({
   name: z.string().min(1).max(120),
   number: z.string().min(1).max(40),
   location: z.string().max(120).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
-  /// ID eines Abo-Tickets (Mieter). NULL = freies Schließfach.
-  ticketId: z.coerce.number().int().positive().nullable().optional(),
+  /// Optionales Bootstrap: bei Anlage direkt eine Vermietung für ein Jahr setzen.
+  initialRental: z
+    .object({
+      year: lockerYear,
+      ticketId: z.coerce.number().int().positive(),
+      notes: z.string().max(500).nullable().optional(),
+    })
+    .optional(),
 });
 
-export const lockerUpdateSchema = lockerCreateSchema.partial();
+export const lockerUpdateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  number: z.string().min(1).max(40).optional(),
+  location: z.string().max(120).nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
+});
+
+export const lockerRentalCreateSchema = z.object({
+  year: lockerYear,
+  ticketId: z.coerce.number().int().positive(),
+  notes: z.string().max(500).nullable().optional(),
+});
+
+export const lockerRentalUpdateSchema = z.object({
+  year: lockerYear.optional(),
+  ticketId: z.coerce.number().int().positive().optional(),
+  notes: z.string().max(500).nullable().optional(),
+});
 
 // ─── Shelly-Automation Schemas ───────────────────────────────────────────────
 

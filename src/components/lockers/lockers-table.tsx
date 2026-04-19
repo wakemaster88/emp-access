@@ -6,22 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { LockerDialog, type LockerData, type AboTicketRef } from "./locker-dialog";
+import {
+  LockerDialog, type LockerData, type AboTicketRef, type RentalRow,
+} from "./locker-dialog";
 import {
   Lock, Plus, Search, MapPin, Hash, Ticket as TicketIcon, CreditCard,
+  Calendar, History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface LockerTicketRef {
-  id: number;
-  name: string;
-  firstName: string | null;
-  lastName: string | null;
-  ticketTypeName: string | null;
-  status: string;
-  endDate: string | null;
-  subscription: { id: number; name: string } | null;
-}
 
 interface LockerRow {
   id: number;
@@ -29,47 +21,60 @@ interface LockerRow {
   number: string;
   location: string | null;
   notes: string | null;
-  ticketId: number | null;
-  ticket: LockerTicketRef | null;
+  rentals: RentalRow[];
 }
 
 interface LockersTableProps {
   lockers: LockerRow[];
   aboTickets: AboTicketRef[];
+  currentYear: number;
   readonly?: boolean;
 }
 
-function ticketDisplayName(t: LockerTicketRef): string {
+function ticketDisplayName(t: AboTicketRef): string {
   const personName = [t.firstName, t.lastName].filter(Boolean).join(" ");
   return personName || t.name;
 }
 
-export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProps) {
+export function LockersTable({ lockers, aboTickets, currentYear, readonly }: LockersTableProps) {
   const [selected, setSelected] = useState<LockerData | null>(null);
+  const [selectedRentals, setSelectedRentals] = useState<RentalRow[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "assigned" | "free">("all");
 
+  /// Annotiertes Set: aktuelle Vermietung (=> currentYear) sowie Historien-Count.
+  const enriched = useMemo(() => {
+    return lockers.map((l) => {
+      const current = l.rentals.find((r) => r.year === currentYear) ?? null;
+      const past = l.rentals.filter((r) => r.year !== currentYear);
+      return { ...l, current, past };
+    });
+  }, [lockers, currentYear]);
+
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return lockers.filter((l) => {
-      if (filter === "assigned" && !l.ticketId) return false;
-      if (filter === "free" && l.ticketId) return false;
+    return enriched.filter((l) => {
+      if (filter === "assigned" && !l.current) return false;
+      if (filter === "free" && l.current) return false;
       if (!s) return true;
       const hay = [
         l.name,
         l.number,
         l.location ?? "",
         l.notes ?? "",
-        l.ticket ? ticketDisplayName(l.ticket) : "",
-        l.ticket?.subscription?.name ?? "",
-        l.ticket?.ticketTypeName ?? "",
+        ...l.rentals.flatMap((r) => [
+          ticketDisplayName(r.ticket),
+          r.ticket.subscription?.name ?? "",
+          r.ticket.ticketTypeName ?? "",
+          String(r.year),
+        ]),
       ].join(" ").toLowerCase();
       return hay.includes(s);
     });
-  }, [lockers, search, filter]);
+  }, [enriched, search, filter]);
 
-  const assignedCount = lockers.filter((l) => l.ticketId).length;
+  const assignedCount = enriched.filter((l) => l.current).length;
   const freeCount = lockers.length - assignedCount;
 
   function openEdit(l: LockerRow) {
@@ -79,8 +84,8 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
       number: l.number,
       location: l.location,
       notes: l.notes,
-      ticketId: l.ticketId,
     });
+    setSelectedRentals(l.rentals);
   }
 
   return (
@@ -109,7 +114,7 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
                 : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             )}
           >
-            Belegt ({assignedCount})
+            Belegt {currentYear} ({assignedCount})
           </button>
           <button
             type="button"
@@ -121,7 +126,7 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
                 : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             )}
           >
-            Frei ({freeCount})
+            Frei {currentYear} ({freeCount})
           </button>
         </div>
 
@@ -129,7 +134,7 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
           <input
             type="text"
-            placeholder="Nr., Standort, Mieter, Abo…"
+            placeholder="Nr., Standort, Mieter, Abo, Jahr…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -172,8 +177,14 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
               </TableHead>
               <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <TicketIcon className="h-4 w-4 text-slate-400" />
-                  Mieter / Abo
+                  <Calendar className="h-4 w-4 text-slate-400" />
+                  Mieter {currentYear}
+                </span>
+              </TableHead>
+              <TableHead className="hidden lg:table-cell w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+                <span className="inline-flex items-center gap-1.5">
+                  <History className="h-4 w-4 text-slate-400" />
+                  Historie
                 </span>
               </TableHead>
             </TableRow>
@@ -181,14 +192,14 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
           <TableBody>
             {filtered.length === 0 && (
               <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-700">
-                <TableCell colSpan={4} className="text-center py-16">
+                <TableCell colSpan={5} className="text-center py-16">
                   <div className="flex flex-col items-center gap-3 text-slate-500">
                     <Lock className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                     {lockers.length === 0 ? (
                       <>
                         <p className="font-medium text-slate-600 dark:text-slate-400">Noch keine Schließfächer angelegt</p>
                         <p className="text-sm">
-                          Lege ein Schließfach an und verknüpfe es optional mit einem Abo-Ticket.
+                          Lege ein Schließfach an und vermiete es jahresweise an Abo-Tickets.
                         </p>
                       </>
                     ) : (
@@ -245,16 +256,16 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
                   )}
                 </TableCell>
                 <TableCell>
-                  {l.ticket ? (
+                  {l.current ? (
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
                         <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                        {ticketDisplayName(l.ticket)}
+                        {ticketDisplayName(l.current.ticket)}
                       </span>
-                      {l.ticket.subscription && (
+                      {l.current.ticket.subscription && (
                         <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0 self-start">
                           <CreditCard className="h-2.5 w-2.5" />
-                          {l.ticket.subscription.name}
+                          {l.current.ticket.subscription.name}
                         </Badge>
                       )}
                     </div>
@@ -262,6 +273,26 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
                     <Badge variant="outline" className="text-slate-400 border-slate-200 dark:border-slate-700 text-xs">
                       Frei
                     </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell w-[140px]">
+                  {l.past.length === 0 ? (
+                    <span className="text-[11px] text-slate-400">–</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-0.5">
+                      {l.past.slice(0, 4).map((r) => (
+                        <span
+                          key={r.id}
+                          className="font-mono text-[10px] tabular-nums px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                          title={`${r.year}: ${ticketDisplayName(r.ticket)}`}
+                        >
+                          {r.year}
+                        </span>
+                      ))}
+                      {l.past.length > 4 && (
+                        <span className="text-[10px] text-slate-400 px-1">+{l.past.length - 4}</span>
+                      )}
+                    </div>
                   )}
                 </TableCell>
               </TableRow>
@@ -272,16 +303,20 @@ export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProp
 
       <LockerDialog
         locker={null}
+        initialRentals={[]}
         aboTickets={aboTickets}
+        currentYear={currentYear}
         open={addOpen}
         onClose={() => setAddOpen(false)}
       />
 
       <LockerDialog
         locker={selected}
+        initialRentals={selectedRentals}
         aboTickets={aboTickets}
+        currentYear={currentYear}
         open={!!selected}
-        onClose={() => setSelected(null)}
+        onClose={() => { setSelected(null); setSelectedRentals([]); }}
       />
     </>
   );

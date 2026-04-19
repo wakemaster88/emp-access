@@ -2,16 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { lockerUpdateSchema } from "@/lib/validators";
 
+const rentalTicketSelect = {
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  ticketTypeName: true,
+  status: true,
+  endDate: true,
+  subscription: { select: { id: true, name: true } },
+} as const;
+
 const lockerInclude = {
-  ticket: {
-    select: {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      ticketTypeName: true,
-      subscription: { select: { id: true, name: true } },
-    },
+  rentals: {
+    include: { ticket: { select: rentalTicketSelect } },
+    orderBy: { year: "desc" as const },
   },
 } as const;
 
@@ -60,21 +65,6 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  // Tenant-Check für Ticket, falls explizit gesetzt.
-  let ticketUpdate: { ticketId?: number | null } = {};
-  if (data.ticketId !== undefined) {
-    if (data.ticketId === null) {
-      ticketUpdate = { ticketId: null };
-    } else {
-      const ticket = await db.ticket.findFirst({
-        where: { id: data.ticketId, accountId: accountId! },
-        select: { id: true },
-      });
-      if (!ticket) return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
-      ticketUpdate = { ticketId: ticket.id };
-    }
-  }
-
   try {
     const locker = await db.locker.update({
       where: { id: lockerId },
@@ -83,7 +73,6 @@ export async function PUT(
         ...(data.number !== undefined && { number: data.number.trim() }),
         ...(data.location !== undefined && { location: data.location?.trim() || null }),
         ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
-        ...ticketUpdate,
       },
       include: lockerInclude,
     });
