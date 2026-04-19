@@ -286,10 +286,12 @@ model Locker {
   /// Optionale Notiz / Kommentar (z. B. Schloss-Code).
   notes     String?
   /// Art der Sicherung (Schlüssel- oder Vorhängeschloss).
-  lockType  LockerType     @default(KEY)
+  lockType   LockerType    @default(KEY)
   /// Wie viele Schlüssel/Vorhängeschlösser gehören insgesamt zu diesem
   /// Schließfach (Soll-Bestand). Default: 2 für Schlüssel, 1 für Vorhänge.
-  keyCount  Int            @default(2)
+  keyCount   Int           @default(2)
+  /// Aufgedruckte Schloss-/Zylindernummer (nur sinnvoll bei Schlüsselschloss).
+  lockNumber String?
   accountId Int
   account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
   rentals   LockerRental[]

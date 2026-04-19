@@ -27,6 +27,7 @@ export interface LockerData {
   notes: string | null;
   lockType: LockerType;
   keyCount: number;
+  lockNumber: string | null;
 }
 
 export interface AboTicketRef {
@@ -292,6 +293,7 @@ export function LockerDialog({
   const [notes, setNotes] = useState("");
   const [lockType, setLockType] = useState<LockerType>("KEY");
   const [keyCount, setKeyCount] = useState<number>(2);
+  const [lockNumber, setLockNumber] = useState("");
   const [rentals, setRentals] = useState<RentalRow[]>([]);
   /// Bei NEU-Anlage optional eine erste Vermietung mitgeben.
   const [initialRentalTicketId, setInitialRentalTicketId] = useState<number | null>(null);
@@ -318,10 +320,11 @@ export function LockerDialog({
         setNotes(locker.notes ?? "");
         setLockType(locker.lockType);
         setKeyCount(locker.keyCount);
+        setLockNumber(locker.lockNumber ?? "");
         setRentals(initialRentals);
       } else {
         setName(""); setNumber(""); setLocation(""); setNotes("");
-        setLockType("KEY"); setKeyCount(2);
+        setLockType("KEY"); setKeyCount(2); setLockNumber("");
         setRentals([]);
       }
     }
@@ -338,6 +341,7 @@ export function LockerDialog({
         notes: notes.trim() || null,
         lockType,
         keyCount,
+        lockNumber: lockType === "KEY" ? (lockNumber.trim() || null) : null,
       };
       if (isNew && initialRentalTicketId) {
         payload.initialRental = {
@@ -607,6 +611,22 @@ export function LockerDialog({
               />
             </div>
           </div>
+
+          {lockType === "KEY" && (
+            <div className="space-y-1">
+              <Label htmlFor="l-locknumber" className="text-xs inline-flex items-center gap-1">
+                <Key className="h-3 w-3 text-slate-400" />
+                Schlossnummer
+              </Label>
+              <Input
+                id="l-locknumber"
+                value={lockNumber}
+                onChange={(e) => setLockNumber(e.target.value)}
+                placeholder="z. B. 6897"
+                className="h-9 font-mono"
+              />
+            </div>
+          )}
         </div>
 
         <Separator className="dark:bg-slate-800" />

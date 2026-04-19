@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
         notes: data.notes?.trim() || null,
         ...(data.lockType !== undefined && { lockType: data.lockType }),
         ...(data.keyCount !== undefined && { keyCount: data.keyCount }),
+        ...(data.lockNumber !== undefined && { lockNumber: data.lockNumber?.trim() || null }),
         accountId: accountId!,
         ...(data.initialRental && {
           rentals: {

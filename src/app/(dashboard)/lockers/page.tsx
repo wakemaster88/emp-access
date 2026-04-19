@@ -77,6 +77,7 @@ export default async function LockersPage() {
     notes: l.notes,
     lockType: l.lockType,
     keyCount: l.keyCount,
+    lockNumber: l.lockNumber,
     rentals: l.rentals.map((r) => ({
       id: r.id,
       year: r.year,

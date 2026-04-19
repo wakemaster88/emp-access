@@ -23,6 +23,7 @@ interface LockerRow {
   notes: string | null;
   lockType: LockerType;
   keyCount: number;
+  lockNumber: string | null;
   rentals: RentalRow[];
 }
 
@@ -65,6 +66,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
         l.number,
         l.location ?? "",
         l.notes ?? "",
+        l.lockNumber ?? "",
         ...l.rentals.flatMap((r) => [
           ticketDisplayName(r.ticket),
           r.ticket.subscription?.name ?? "",
@@ -88,6 +90,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
       notes: l.notes,
       lockType: l.lockType,
       keyCount: l.keyCount,
+      lockNumber: l.lockNumber,
     });
     setSelectedRentals(l.rentals);
   }
@@ -249,6 +252,11 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                     <div className="sm:hidden ml-6 mt-0.5 text-[11px] text-slate-400 font-mono">
                       Nr. {l.number}
                     </div>
+                    {l.lockType === "KEY" && l.lockNumber && (
+                      <p className="ml-6 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                        Schloss-Nr. {l.lockNumber}
+                      </p>
+                    )}
                     {l.notes && (
                       <p className="ml-6 text-[11px] text-slate-400 truncate">{l.notes}</p>
                     )}

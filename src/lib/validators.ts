@@ -139,6 +139,7 @@ export const lockerCreateSchema = z.object({
   notes: z.string().max(500).nullable().optional(),
   lockType: lockerType.optional(),
   keyCount: keyCount.optional(),
+  lockNumber: z.string().max(60).nullable().optional(),
   /// Optionales Bootstrap: bei Anlage direkt eine Vermietung für ein Jahr setzen.
   initialRental: z
     .object({
@@ -156,6 +157,7 @@ export const lockerUpdateSchema = z.object({
   notes: z.string().max(500).nullable().optional(),
   lockType: lockerType.optional(),
   keyCount: keyCount.optional(),
+  lockNumber: z.string().max(60).nullable().optional(),
 });
 
 export const lockerRentalCreateSchema = z.object({
