@@ -41,6 +41,7 @@ export const ticketCreateSchema = z.object({
   accessAreaId: z.coerce.number().int().optional().nullable(),
   subscriptionId: z.coerce.number().int().optional().nullable(),
   serviceId: z.coerce.number().int().optional().nullable(),
+  vereinId: z.coerce.number().int().optional().nullable(),
   status: z.enum(["VALID", "REDEEMED", "INVALID", "PROTECTED"]).optional(),
   barcode: z.string().optional().nullable(),
   firstName: z.string().optional().nullable(),
@@ -103,6 +104,17 @@ export const adminUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   role: z.enum(["USER", "ADMIN"]).optional(),
 });
+
+// ─── Verein-Schemas ──────────────────────────────────────────────────────────
+
+export const vereinCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).nullable().optional(),
+  areaIds: z.array(z.coerce.number().int().positive()).optional(),
+  memberTicketIds: z.array(z.coerce.number().int().positive()).optional(),
+});
+
+export const vereinUpdateSchema = vereinCreateSchema.partial();
 
 // ─── Shelly-Automation Schemas ───────────────────────────────────────────────
 

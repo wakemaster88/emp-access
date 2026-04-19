@@ -80,6 +80,7 @@ model Account {
   shellyGroups    ShellyGroup[]
   automations     ShellyAutomation[]
   automationRuns  ShellyAutomationRun[]
+  vereine         Verein[]
 }
 
 model Admin {
@@ -142,6 +143,7 @@ model Ticket {
   accessAreaId            Int?
   subscriptionId          Int?
   serviceId               Int?
+  vereinId                Int?
   status                  TicketStatus  @default(VALID)
   version                 Int           @default(0)
   uuid                    String?       @unique
@@ -158,6 +160,7 @@ model Ticket {
   accessArea              AccessArea?   @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
   subscription            Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
   service                 Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  verein                  Verein?       @relation(fields: [vereinId], references: [id], onDelete: SetNull)
   ticketAreas             TicketArea[]
   scans                   Scan[]
   createdAt               DateTime      @default(now())
@@ -170,6 +173,7 @@ model Ticket {
   @@index([accessAreaId])
   @@index([subscriptionId])
   @@index([serviceId])
+  @@index([vereinId])
   @@index([status])
   @@index([accountId, uuid])
   @@index([accountId, status])
@@ -215,6 +219,7 @@ model AccessArea {
   ticketAreas     TicketArea[]
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
+  vereinAreas     VereinArea[]
   annyLinks       AnnyResourceLink[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
@@ -463,6 +468,36 @@ model ShellyAutomation {
 
   @@index([accountId, isActive])
   @@index([groupId])
+}
+
+/// Vereinigung mehrerer Mitglieds-Tickets, die per `VereinArea` Bulk-Zutritt zu
+/// einer oder mehreren Resourcen erhalten. Mitglieder bleiben individuelle
+/// Tickets (mit eigenem QR/RFID), erben aber zusätzlich die Areas ihres Vereins.
+model Verein {
+  id          Int          @id @default(autoincrement())
+  name        String
+  description String?
+  accountId   Int
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  members     Ticket[]
+  areas       VereinArea[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId])
+}
+
+model VereinArea {
+  id           Int        @id @default(autoincrement())
+  vereinId     Int
+  accessAreaId Int
+  verein       Verein     @relation(fields: [vereinId], references: [id], onDelete: Cascade)
+  accessArea   AccessArea @relation(fields: [accessAreaId], references: [id], onDelete: Cascade)
+
+  @@unique([vereinId, accessAreaId])
+  @@index([vereinId])
+  @@index([accessAreaId])
 }
 
 model ShellyAutomationRun {

@@ -12,7 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Loader2, ScanLine } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Plus, Loader2, ScanLine, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Area {
@@ -47,13 +50,19 @@ function toDateInput(val: string | Date | null | undefined): string {
   return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 }
 
+interface VereinRef {
+  id: number;
+  name: string;
+}
+
 interface AddTicketDialogProps {
   areas: Area[];
   subscriptions?: Sub[];
   services?: Svc[];
+  vereine?: VereinRef[];
 }
 
-export function AddTicketDialog({ areas, subscriptions = [], services = [] }: AddTicketDialogProps) {
+export function AddTicketDialog({ areas, subscriptions = [], services = [], vereine = [] }: AddTicketDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -61,6 +70,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
   const [code, setCode] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<"service" | "subscription" | null>(null);
+  const [vereinId, setVereinId] = useState<string>("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -75,6 +85,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
     setCode("");
     setSelectedId(null);
     setSelectedType(null);
+    setVereinId("none");
     setError("");
   }
 
@@ -96,6 +107,10 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
       payload.barcode = code;
       payload.qrCode = code;
       payload.rfidCode = code;
+    }
+
+    if (vereinId && vereinId !== "none") {
+      payload.vereinId = Number(vereinId);
     }
 
     const selected = allOptions.find((o) => o.id === selectedId && o.type === selectedType);
@@ -232,6 +247,24 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [] }: Ad
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {vereine.length > 0 && (
+            <div className="space-y-1.5">
+              <Label htmlFor="t-verein" className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-slate-400" />
+                Verein <span className="text-slate-400 font-normal">(optional)</span>
+              </Label>
+              <Select value={vereinId} onValueChange={setVereinId}>
+                <SelectTrigger id="t-verein" className="h-9 text-sm"><SelectValue placeholder="Kein Verein" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Kein Verein</SelectItem>
+                  {vereine.map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 

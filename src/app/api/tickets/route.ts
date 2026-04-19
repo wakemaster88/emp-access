@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
       accessAreaId: data.accessAreaId,
       subscriptionId: data.subscriptionId,
       serviceId: data.serviceId,
+      vereinId: data.vereinId,
       status: data.status ?? "VALID",
       barcode: data.barcode,
       firstName: data.firstName,

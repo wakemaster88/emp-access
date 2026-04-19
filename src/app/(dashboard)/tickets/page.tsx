@@ -62,7 +62,7 @@ export default async function TicketsPage({ searchParams }: Props) {
     return { source: source as "ANNY" | "WAKESYS" | "EMP_CONTROL" | "BINARYTEC" | "SHELLY" };
   })();
 
-  const [tickets, areas, subscriptions, services, inactiveCount] = await Promise.all([
+  const [tickets, areas, subscriptions, services, vereine, inactiveCount] = await Promise.all([
     db.ticket.findMany({
       where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, ...codeFilter, ...sourceFilter },
       include: { accessArea: true, subscription: true, service: true, ticketAreas: { include: { accessArea: true } }, _count: { select: { scans: true } } },
@@ -105,6 +105,15 @@ export default async function TicketsPage({ searchParams }: Props) {
         serviceAreas: { select: { accessAreaId: true } },
       },
     }),
+    db.verein.findMany({
+      where: baseWhere,
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        areas: { select: { accessAreaId: true } },
+      },
+    }),
     showInactive
       ? Promise.resolve(0)
       : db.ticket.count({ where: { ...baseWhere, ...areaFilter, status: { notIn: ["VALID", "REDEEMED"] } } }),
@@ -117,6 +126,11 @@ export default async function TicketsPage({ searchParams }: Props) {
   const svcsWithAreas = services.map((s) => ({
     ...s,
     areaIds: s.serviceAreas.map((sa) => sa.accessAreaId),
+  }));
+  const vereineWithAreas = vereine.map((v) => ({
+    id: v.id,
+    name: v.name,
+    areaIds: v.areas.map((va) => va.accessAreaId),
   }));
 
   const filterArea = areaId ? areas.find((a) => a.id === areaId) : null;
@@ -166,7 +180,7 @@ export default async function TicketsPage({ searchParams }: Props) {
                     : <><Eye className="h-4 w-4 mr-1.5" /><span className="hidden xs:inline">Auch inaktive</span><span className="xs:hidden">Alle</span></>}
                 </Link>
               </Button>
-              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} />}
+              {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} vereine={vereineWithAreas} />}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -180,6 +194,7 @@ export default async function TicketsPage({ searchParams }: Props) {
               areas={areas}
               subscriptions={subsWithAreas}
               services={svcsWithAreas}
+              vereine={vereineWithAreas}
               readonly={isSuperAdmin}
               searchCode={codeTrim || undefined}
             />

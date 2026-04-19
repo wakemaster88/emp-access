@@ -33,11 +33,18 @@ interface Svc {
   requiresPhoto?: boolean;
 }
 
+interface VereinRef {
+  id: number;
+  name: string;
+  areaIds?: number[];
+}
+
 interface TicketsTableProps {
   tickets: TicketData[];
   areas: Area[];
   subscriptions?: Sub[];
   services?: Svc[];
+  vereine?: VereinRef[];
   readonly?: boolean;
   /** Bei Code-Suche: wenn genau ein Ticket gefunden, Bearbeiten-Dialog automatisch öffnen */
   searchCode?: string;
@@ -193,7 +200,7 @@ type TicketWithArea = TicketData & {
   ticketAreas?: { accessArea: { id: number; name: string } }[];
 };
 
-export function TicketsTable({ tickets, areas, subscriptions = [], services = [], readonly, searchCode }: TicketsTableProps) {
+export function TicketsTable({ tickets, areas, subscriptions = [], services = [], vereine = [], readonly, searchCode }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
   const openedForCodeRef = useRef<string | null>(null);
 
@@ -439,6 +446,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
           areas={areas}
           subscriptions={subscriptions}
           services={services}
+          vereine={vereine}
           onClose={() => setSelected(null)}
         />
       )}

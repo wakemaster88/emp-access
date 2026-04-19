@@ -34,6 +34,12 @@ export async function POST(request: NextRequest) {
         subscription: { select: { name: true } },
         accessArea: { select: { name: true } },
         ticketAreas: { select: { accessAreaId: true } },
+        verein: {
+          select: {
+            name: true,
+            areas: { select: { accessAreaId: true } },
+          },
+        },
       },
     });
     if (candidates.length > 0) {
@@ -152,6 +158,7 @@ export async function POST(request: NextRequest) {
     areaName: ticket.accessArea?.name ?? null,
     serviceName: ticket.service?.name ?? null,
     subscriptionName: ticket.subscription?.name ?? null,
+    vereinName: ticket.verein?.name ?? null,
   };
 
   if (ticket.status === "INVALID") {
@@ -242,9 +249,12 @@ export async function POST(request: NextRequest) {
 
   if (accessAreaId) {
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
-    const allTicketAreas = ticket.accessAreaId
-      ? [ticket.accessAreaId, ...ticketAreaIds]
-      : ticketAreaIds;
+    const vereinAreaIds = ticket.verein?.areas?.map((va) => va.accessAreaId) ?? [];
+    const allTicketAreas = [
+      ...(ticket.accessAreaId ? [ticket.accessAreaId] : []),
+      ...ticketAreaIds,
+      ...vereinAreaIds,
+    ];
     const hasAccess = allTicketAreas.length === 0 || allTicketAreas.includes(accessAreaId);
     if (!hasAccess) {
       await db.scan.create({

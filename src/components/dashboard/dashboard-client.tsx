@@ -463,6 +463,7 @@ export function DashboardClient() {
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [subs, setSubs] = useState<{ id: number; name: string }[]>([]);
   const [svcs, setSvcs] = useState<{ id: number; name: string }[]>([]);
+  const [vereine, setVereine] = useState<{ id: number; name: string }[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
   const [ticketLoading, setTicketLoading] = useState(false);
   const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
@@ -490,6 +491,10 @@ export function DashboardClient() {
     fetch("/api/services")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setSvcs(d); })
+      .catch(() => {});
+    fetch("/api/vereine")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setVereine(d); })
       .catch(() => {});
   }, []);
 
@@ -855,6 +860,7 @@ export function DashboardClient() {
         areas={areas}
         subscriptions={subs}
         services={svcs}
+        vereine={vereine}
         autoFocusCode
         onClose={() => {
           setSelectedTicket(null);

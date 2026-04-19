@@ -94,6 +94,7 @@ export interface TicketData {
   accessAreaId: number | null;
   subscriptionId: number | null;
   serviceId: number | null;
+  vereinId: number | null;
   startDate: Date | string | null;
   endDate: Date | string | null;
   validityType: string;
@@ -127,6 +128,12 @@ interface Svc {
   areaIds?: number[];
 }
 
+interface VereinRef {
+  id: number;
+  name: string;
+  areaIds?: number[];
+}
+
 interface ScanRecord {
   id: number;
   code: string;
@@ -140,6 +147,7 @@ interface EditTicketDialogProps {
   areas: Area[];
   subscriptions?: Sub[];
   services?: Svc[];
+  vereine?: VereinRef[];
   autoFocusCode?: boolean;
   onClose: () => void;
 }
@@ -150,7 +158,7 @@ function toDateInput(val: Date | string | null | undefined): string {
   return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 }
 
-export function EditTicketDialog({ ticket, areas, subscriptions = [], services = [], autoFocusCode, onClose }: EditTicketDialogProps) {
+export function EditTicketDialog({ ticket, areas, subscriptions = [], services = [], vereine = [], autoFocusCode, onClose }: EditTicketDialogProps) {
   const router = useRouter();
   const [tab, setTab] = useState<"edit" | "bookings" | "scans">("edit");
   const [form, setForm] = useState({
@@ -162,6 +170,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
     accessAreaId: "none",
     subscriptionId: "none",
     serviceId: "none",
+    vereinId: "none",
     startDate: "",
     endDate: "",
     validityType: "DATE_RANGE",
@@ -192,6 +201,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
         accessAreaId: ticket.accessAreaId ? String(ticket.accessAreaId) : "none",
         subscriptionId: ticket.subscriptionId ? String(ticket.subscriptionId) : "none",
         serviceId: ticket.serviceId ? String(ticket.serviceId) : "none",
+        vereinId: ticket.vereinId ? String(ticket.vereinId) : "none",
         startDate: toDateInput(ticket.startDate),
         endDate: toDateInput(ticket.endDate),
         validityType: ticket.validityType ?? "DATE_RANGE",
@@ -253,6 +263,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       rfidCode: form.code || null,
       accessAreaId: form.accessAreaId && form.accessAreaId !== "none" ? Number(form.accessAreaId) : null,
       subscriptionId: form.subscriptionId && form.subscriptionId !== "none" ? Number(form.subscriptionId) : null,
+      vereinId: form.vereinId && form.vereinId !== "none" ? Number(form.vereinId) : null,
       startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
       endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
       validityType: form.validityType,
@@ -550,6 +561,22 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                       </Select>
                     </div>
                   </div>
+
+                  {vereine.length > 0 && (
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-slate-500">Verein (Bulk-Zutritt)</Label>
+                      <Select value={form.vereinId} onValueChange={(v) => set("vereinId", v)}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Kein Verein" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Kein Verein</SelectItem>
+                          {vereine.map((v) => (
+                            <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-slate-400">Mitglied erbt automatisch alle Resourcen des Vereins.</p>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
