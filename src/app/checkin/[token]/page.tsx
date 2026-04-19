@@ -31,6 +31,8 @@ import {
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { LockerOverlay } from "@/components/checkin/locker-overlay";
+import { Lock } from "lucide-react";
 
 interface TicketExtra {
   name: string;
@@ -173,6 +175,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
+  const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
   const [addTicketPrefill, setAddTicketPrefill] = useState<{ firstName?: string; lastName?: string; rfidCode?: string; profileImage?: string | null } | undefined>();
   const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -527,6 +530,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <span className="hidden sm:inline">Ticket</span>
           </button>
           <button
+            onClick={() => setLockerOverlayOpen(true)}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+          >
+            <Lock className="h-5 w-5" />
+            <span className="hidden sm:inline">Schließfächer</span>
+          </button>
+          <button
             onClick={() => setScanMode(true)}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
           >
@@ -782,6 +792,14 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           onClose={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); }}
           onCreated={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); refreshRef.current?.(); }}
           prefill={addTicketPrefill}
+        />
+      )}
+
+      {/* Locker overlay */}
+      {lockerOverlayOpen && (
+        <LockerOverlay
+          token={token}
+          onClose={() => setLockerOverlayOpen(false)}
         />
       )}
 
