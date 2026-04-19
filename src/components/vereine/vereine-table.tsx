@@ -10,7 +10,7 @@ import { VereinDialog, type VereinData, formatTicketValidity } from "./verein-di
 import {
   Users, Plus, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Search, Fingerprint, ScanLine,
-  Ticket as TicketIcon, MapPin, Clock,
+  Ticket as TicketIcon, MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -105,44 +105,42 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
     setSelectedMembers(v.members.map((m) => m.id));
   }
 
-  const maxBadges = 4;
+  const maxRows = 3;
 
   function AccessTicketBadges({ tickets }: { tickets: AccessTicketRef[] }) {
     if (!tickets?.length) return <span className="text-slate-400 text-sm">–</span>;
-    const show = tickets.slice(0, maxBadges);
-    const rest = tickets.length - maxBadges;
+    const show = tickets.slice(0, maxRows);
+    const rest = tickets.length - maxRows;
     return (
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-col gap-0.5 text-xs leading-tight">
         {show.map((t) => {
           const validity = formatTicketValidity(t);
+          const tooltip = [
+            t.areaNames.length > 0 ? `Areas: ${t.areaNames.join(", ")}` : null,
+            `Gültigkeit: ${validity}`,
+          ].filter(Boolean).join(" · ");
           return (
-            <span
+            <div
               key={t.id}
-              className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
-              title={[
-                t.areaNames.length > 0 ? `Areas: ${t.areaNames.join(", ")}` : null,
-                `Gültigkeit: ${validity}`,
-              ].filter(Boolean).join(" · ")}
+              className="flex items-center gap-1.5 min-w-0"
+              title={tooltip}
             >
               <TicketIcon className="h-3 w-3 text-slate-400 shrink-0" />
-              {t.name}
+              <span className="truncate text-slate-700 dark:text-slate-300">{t.name}</span>
               {t.areaNames.length > 0 && (
-                <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5">
+                <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 shrink-0">
                   <MapPin className="h-2.5 w-2.5" />
                   {t.areaNames.length}
                 </span>
               )}
-              <span className="text-[10px] text-violet-600 dark:text-violet-400 inline-flex items-center gap-0.5">
-                <Clock className="h-2.5 w-2.5" />
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums shrink-0 ml-auto">
                 {validity}
               </span>
-            </span>
+            </div>
           );
         })}
         {rest > 0 && (
-          <span className="inline-flex items-center rounded-md bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">
-            +{rest}
-          </span>
+          <span className="text-[10px] text-slate-400 pl-4">+{rest} weitere</span>
         )}
       </div>
     );
@@ -174,7 +172,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                   Verein
                 </span>
               </TableHead>
-              <TableHead className="hidden md:table-cell min-w-[200px] text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden md:table-cell w-[280px] text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
                   <TicketIcon className="h-4 w-4 text-slate-400" />
                   Zutritts-Tickets
@@ -241,9 +239,9 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                         onClick={() => !readonly && openEdit(v)}
                       >
                         <div className="min-w-0 flex-1">
-                          <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
+                          <span className="flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100 min-w-0">
                             <Users className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
-                            {v.name}
+                            <span className="truncate">{v.name}</span>
                           </span>
                           {v.description && (
                             <p className="ml-6 text-[11px] text-slate-400 truncate">{v.description}</p>
@@ -253,7 +251,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                           </div>
                         </div>
                       </div>
-                      <div className="hidden md:block min-w-[200px] py-2 px-3">
+                      <div className="hidden md:block w-[280px] shrink-0 py-2 px-3 min-w-0">
                         <AccessTicketBadges tickets={v.accessTickets} />
                       </div>
                       <div className="w-[110px] shrink-0 text-right pr-3">
