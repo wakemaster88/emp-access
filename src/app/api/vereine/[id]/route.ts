@@ -8,6 +8,12 @@ const accessTicketInclude = {
       id: true,
       name: true,
       ticketTypeName: true,
+      validityType: true,
+      slotStart: true,
+      slotEnd: true,
+      startDate: true,
+      endDate: true,
+      validityDurationMinutes: true,
       accessAreaId: true,
       accessArea: { select: { id: true, name: true } },
       ticketAreas: { select: { accessArea: { select: { id: true, name: true } } } },
@@ -79,32 +85,22 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   try {
-    if (data.accessTickets !== undefined) {
-      // Komplett ersetzen: erst alle löschen, dann neu anlegen.
+    if (data.accessTicketIds !== undefined) {
       await db.vereinAccessTicket.deleteMany({ where: { vereinId } });
-      if (data.accessTickets.length > 0) {
+      if (data.accessTicketIds.length > 0) {
         const validTickets = await db.ticket.findMany({
-          where: { id: { in: data.accessTickets.map((a) => a.ticketId) }, accountId: accountId! },
+          where: { id: { in: data.accessTicketIds }, accountId: accountId! },
           select: { id: true },
         });
-        const validIds = new Set(validTickets.map((t) => t.id));
-        const rows = data.accessTickets
-          .filter((a) => validIds.has(a.ticketId))
-          .map((a) => ({
-            vereinId,
-            ticketId: a.ticketId,
-            daysOfWeek: a.daysOfWeek ?? 127,
-            slotStart: a.slotStart ?? null,
-            slotEnd: a.slotEnd ?? null,
-          }));
-        if (rows.length > 0) {
-          await db.vereinAccessTicket.createMany({ data: rows });
+        if (validTickets.length > 0) {
+          await db.vereinAccessTicket.createMany({
+            data: validTickets.map((t) => ({ vereinId, ticketId: t.id })),
+          });
         }
       }
     }
 
     if (data.memberTicketIds !== undefined) {
-      // Erst alle bestehenden Mitglieder lösen, dann neue setzen.
       await db.ticket.updateMany({
         where: { vereinId, accountId: accountId! },
         data: { vereinId: null },

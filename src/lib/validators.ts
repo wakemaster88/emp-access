@@ -107,33 +107,29 @@ export const adminUpdateSchema = z.object({
 
 // ─── Verein-Schemas ──────────────────────────────────────────────────────────
 
-const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-/**
- * Eine Verein↔Ticket-Verbindung mit optionaler Wochentag/Slot-Restriktion.
- * `daysOfWeek` ist eine Bitmaske (bit0=Mo … bit6=So), 127 = alle Tage.
- * `slotStart`/`slotEnd` sind optional, müssen aber paarweise gesetzt sein.
- */
-export const vereinAccessTicketSchema = z.object({
-  ticketId: z.coerce.number().int().positive(),
-  daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
-  slotStart: z.string().regex(hhmm).nullable().optional(),
-  slotEnd: z.string().regex(hhmm).nullable().optional(),
-}).refine(
-  (v) => (v.slotStart == null) === (v.slotEnd == null),
-  { message: "slotStart und slotEnd müssen entweder beide gesetzt oder beide leer sein" },
-);
-
 export const vereinCreateSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(500).nullable().optional(),
-  // Tickets, deren Areas Mitglieder beim Scan erben (z. B. „Bahnmiete“),
-  // optional eingeschränkt auf Wochentage / Tageszeit.
-  accessTickets: z.array(vereinAccessTicketSchema).optional(),
+  // IDs der Tickets, deren Areas die Mitglieder beim Scan erben (z. B.
+  // „Bahnmiete“). Restriktionen kommen direkt vom Ticket (Datumsrange,
+  // TIME_SLOT, DURATION).
+  accessTicketIds: z.array(z.coerce.number().int().positive()).optional(),
   memberTicketIds: z.array(z.coerce.number().int().positive()).optional(),
 });
 
 export const vereinUpdateSchema = vereinCreateSchema.partial();
+
+// ─── Locker (Schließfach) Schemas ────────────────────────────────────────────
+
+export const lockerCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  number: z.string().min(1).max(40),
+  location: z.string().max(120).nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
+  subscriptionId: z.coerce.number().int().positive().nullable().optional(),
+});
+
+export const lockerUpdateSchema = lockerCreateSchema.partial();
 
 // ─── Shelly-Automation Schemas ───────────────────────────────────────────────
 

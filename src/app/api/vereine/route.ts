@@ -8,6 +8,12 @@ const accessTicketInclude = {
       id: true,
       name: true,
       ticketTypeName: true,
+      validityType: true,
+      slotStart: true,
+      slotEnd: true,
+      startDate: true,
+      endDate: true,
+      validityDurationMinutes: true,
       accessAreaId: true,
       accessArea: { select: { id: true, name: true } },
       ticketAreas: { select: { accessArea: { select: { id: true, name: true } } } },
@@ -43,34 +49,25 @@ export async function POST(request: NextRequest) {
 
   const { db, accountId } = session;
   const data = parsed.data;
-  const accessTickets = data.accessTickets ?? [];
+  const accessTicketIds = data.accessTicketIds ?? [];
   const memberIds = data.memberTicketIds ?? [];
 
   try {
-    // Tenant-Check für Ticket-IDs.
-    const validIds = new Set(
-      accessTickets.length > 0
-        ? (await db.ticket.findMany({
-            where: { id: { in: accessTickets.map((a) => a.ticketId) }, accountId: accountId! },
-            select: { id: true },
-          })).map((t) => t.id)
-        : []
-    );
-    const safeAccess = accessTickets.filter((a) => validIds.has(a.ticketId));
+    const validIds = accessTicketIds.length > 0
+      ? (await db.ticket.findMany({
+          where: { id: { in: accessTicketIds }, accountId: accountId! },
+          select: { id: true },
+        })).map((t) => t.id)
+      : [];
 
     const verein = await db.verein.create({
       data: {
         name: data.name.trim(),
         description: data.description ?? null,
         accountId: accountId!,
-        ...(safeAccess.length > 0 && {
+        ...(validIds.length > 0 && {
           accessTickets: {
-            create: safeAccess.map((a) => ({
-              ticketId: a.ticketId,
-              daysOfWeek: a.daysOfWeek ?? 127,
-              slotStart: a.slotStart ?? null,
-              slotEnd: a.slotEnd ?? null,
-            })),
+            create: validIds.map((ticketId) => ({ ticketId })),
           },
         }),
         ...(memberIds.length > 0 && {

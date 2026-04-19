@@ -81,6 +81,7 @@ model Account {
   automations     ShellyAutomation[]
   automationRuns  ShellyAutomationRun[]
   vereine         Verein[]
+  lockers         Locker[]
 }
 
 model Admin {
@@ -256,10 +257,35 @@ model Subscription {
   account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   areas                          AccessArea[]
   tickets                        Ticket[]
+  lockers                        Locker[]
   createdAt                      DateTime      @default(now())
   updatedAt                      DateTime      @updatedAt
 
   @@index([accountId])
+}
+
+/// Schließfach (locker). Wird optional einem Abo zugeordnet (1 Abo → n Schließfächer).
+/// Beim Löschen eines Abos bleibt das Schließfach erhalten (subscriptionId = null).
+model Locker {
+  id             Int           @id @default(autoincrement())
+  /// Bezeichnung des Schließfachs (frei wählbar, z. B. „Spind 12“ oder Mieter-Name).
+  name           String
+  /// Optionaler Standort (z. B. „Umkleide UG“, „Halle Ost“).
+  location       String?
+  /// Schließfach-Nummer (frei: „A12“, „007“ etc.). Eindeutig pro Account.
+  number         String
+  /// Optionale Notiz / Kommentar.
+  notes          String?
+  subscriptionId Int?
+  accountId      Int
+  account        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([accountId, number])
+  @@index([accountId])
+  @@index([subscriptionId])
 }
 
 model ServiceArea {
@@ -490,20 +516,15 @@ model Verein {
 }
 
 /// Verknüpfung Verein ↔ Ticket: Mitglieder des Vereins erben beim Scan die
-/// Areas dieses Tickets (eigener accessAreaId + alle ticketAreas) – aber nur,
-/// wenn das Ticket aktuell gültig ist UND der optionale Wochentag/Slot-Filter
-/// dieser Verbindung passt (z. B. „Bahnmiete nur So 10–12“).
+/// Areas dieses Tickets (eigener accessAreaId + alle ticketAreas), sofern
+/// das Ticket aktuell gültig ist (Status, Datumsrange, TIME_SLOT, DURATION).
+/// Restriktionen werden direkt vom Ticket selbst übernommen.
 model VereinAccessTicket {
   id       Int    @id @default(autoincrement())
   vereinId Int
   ticketId Int
-  /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
-  daysOfWeek Int     @default(127)
-  /// Optionaler Tageszeit-Slot in Berlin-Zeit (HH:mm). Beide oder keiner gesetzt.
-  slotStart  String?
-  slotEnd    String?
-  verein     Verein  @relation(fields: [vereinId], references: [id], onDelete: Cascade)
-  ticket     Ticket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  verein   Verein @relation(fields: [vereinId], references: [id], onDelete: Cascade)
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@unique([vereinId, ticketId])
   @@index([vereinId])

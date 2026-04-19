@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Trash2, Save, Settings2, Ticket as TicketIcon,
-  Check, Users, Search, MapPin, Clock, Calendar,
+  Check, Users, Search, MapPin, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +22,7 @@ export interface VereinData {
   description: string | null;
 }
 
-interface TicketRef {
+export interface TicketRef {
   id: number;
   name: string;
   firstName: string | null;
@@ -31,19 +31,18 @@ interface TicketRef {
   vereinId: number | null;
   /** Aufgelöste Area-Namen dieses Tickets (eigene + ticketAreas). */
   areaNames: string[];
-}
-
-export interface VereinAccessTicketConfig {
-  ticketId: number;
-  /** Bitmaske bit0=Mo … bit6=So. 127 = alle Tage. */
-  daysOfWeek: number;
+  /** Gültigkeit des Tickets selbst – wird als Restriktion für Bulk-Zutritt genutzt. */
+  validityType: string | null;
   slotStart: string | null;
   slotEnd: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  validityDurationMinutes: number | null;
 }
 
 interface VereinDialogProps {
   verein: VereinData | null;
-  initialAccessTickets: VereinAccessTicketConfig[];
+  initialAccessTicketIds: number[];
   initialMemberIds: number[];
   allTickets: TicketRef[];
   open: boolean;
@@ -52,36 +51,41 @@ interface VereinDialogProps {
 
 type TabId = "settings" | "accessTickets" | "members";
 
-const WEEKDAYS: { bit: number; short: string; long: string }[] = [
-  { bit: 0, short: "Mo", long: "Montag" },
-  { bit: 1, short: "Di", long: "Dienstag" },
-  { bit: 2, short: "Mi", long: "Mittwoch" },
-  { bit: 3, short: "Do", long: "Donnerstag" },
-  { bit: 4, short: "Fr", long: "Freitag" },
-  { bit: 5, short: "Sa", long: "Samstag" },
-  { bit: 6, short: "So", long: "Sonntag" },
-];
-const ALL_DAYS = 127;
-
 function ticketDisplayName(t: TicketRef): string {
   const personName = [t.firstName, t.lastName].filter(Boolean).join(" ");
   return personName || t.name;
 }
 
-/** Kompakte Beschreibung der Wochentag/Slot-Restriktion ("Alle Tage", "So", "Mo–Fr 09:00–17:00"). */
-export function formatAccessWindow(cfg: { daysOfWeek: number; slotStart: string | null; slotEnd: string | null }): string {
-  let dayPart = "";
-  if (cfg.daysOfWeek !== ALL_DAYS) {
-    const selected = WEEKDAYS.filter((d) => (cfg.daysOfWeek >> d.bit) & 1);
-    if (selected.length === 0) dayPart = "Nie";
-    else if (selected.length === 7) dayPart = "";
-    else if (selected.length === 5 && cfg.daysOfWeek === 0b0011111) dayPart = "Mo–Fr";
-    else if (selected.length === 2 && cfg.daysOfWeek === 0b1100000) dayPart = "Sa+So";
-    else dayPart = selected.map((d) => d.short).join(", ");
+function formatDate(s: string | null): string | null {
+  if (!s) return null;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+/**
+ * Kompakte Beschreibung der Ticket-eigenen Gültigkeit – wird im Dialog/Tabelle
+ * als Hinweis auf die effektive Restriktion eines Bulk-Zutritts angezeigt.
+ */
+export function formatTicketValidity(t: Pick<TicketRef,
+  "validityType" | "slotStart" | "slotEnd" | "startDate" | "endDate" | "validityDurationMinutes"
+>): string {
+  const vType = t.validityType ?? "DATE_RANGE";
+  if (vType === "TIME_SLOT" && t.slotStart && t.slotEnd) {
+    return `Täglich ${t.slotStart}–${t.slotEnd}`;
   }
-  const slotPart = cfg.slotStart && cfg.slotEnd ? `${cfg.slotStart}–${cfg.slotEnd}` : "";
-  if (!dayPart && !slotPart) return "Alle Tage";
-  return [dayPart, slotPart].filter(Boolean).join(" ");
+  if (vType === "DURATION" && t.validityDurationMinutes) {
+    const h = Math.floor(t.validityDurationMinutes / 60);
+    const m = t.validityDurationMinutes % 60;
+    const dur = h > 0 ? (m > 0 ? `${h}h ${m}min` : `${h}h`) : `${m}min`;
+    return `${dur} ab erstem Scan`;
+  }
+  const from = formatDate(t.startDate);
+  const to = formatDate(t.endDate);
+  if (from && to) return `${from}–${to}`;
+  if (from) return `ab ${from}`;
+  if (to) return `bis ${to}`;
+  return "Unbegrenzt";
 }
 
 function CheckList({
@@ -114,7 +118,7 @@ function CheckList({
           />
         </div>
       )}
-      <div className="max-h-[220px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 dark:border-slate-800 p-1">
+      <div className="max-h-[260px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 dark:border-slate-800 p-1">
         {filtered.map(({ key, label, sublabel, disabled }) => {
           const isSelected = selected.has(key);
           return (
@@ -148,123 +152,8 @@ function CheckList({
   );
 }
 
-/** Editor für daysOfWeek + Slot pro Verein↔Ticket-Verbindung. */
-function AccessWindowEditor({
-  cfg, ticket, onChange,
-}: {
-  cfg: VereinAccessTicketConfig;
-  ticket: TicketRef;
-  onChange: (next: VereinAccessTicketConfig) => void;
-}) {
-  function toggleDay(bit: number) {
-    const next = cfg.daysOfWeek ^ (1 << bit);
-    onChange({ ...cfg, daysOfWeek: next });
-  }
-  function setSlot(start: string, end: string) {
-    onChange({
-      ...cfg,
-      slotStart: start.trim() || null,
-      slotEnd: end.trim() || null,
-    });
-  }
-
-  const isAllDays = cfg.daysOfWeek === ALL_DAYS;
-  const hasSlot = !!(cfg.slotStart && cfg.slotEnd);
-
-  return (
-    <div className="rounded-md border border-violet-200 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/10 p-2 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate">
-          <TicketIcon className="h-3 w-3 text-violet-500 shrink-0" />
-          {ticketDisplayName(ticket)}
-          {ticket.areaNames.length > 0 && (
-            <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5">
-              <MapPin className="h-2.5 w-2.5" />
-              {ticket.areaNames.join(", ")}
-            </span>
-          )}
-        </span>
-      </div>
-
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
-            <Calendar className="h-2.5 w-2.5" />
-            Wochentage
-          </span>
-          <button
-            type="button"
-            onClick={() => onChange({ ...cfg, daysOfWeek: ALL_DAYS })}
-            className={cn("text-[10px] hover:underline", isAllDays ? "text-slate-300 cursor-default" : "text-indigo-600 dark:text-indigo-400")}
-            disabled={isAllDays}
-          >
-            Alle
-          </button>
-        </div>
-        <div className="flex gap-0.5">
-          {WEEKDAYS.map((d) => {
-            const active = ((cfg.daysOfWeek >> d.bit) & 1) === 1;
-            return (
-              <button
-                key={d.bit}
-                type="button"
-                onClick={() => toggleDay(d.bit)}
-                title={d.long}
-                className={cn(
-                  "flex-1 h-6 text-[10px] font-medium rounded transition-colors",
-                  active
-                    ? "bg-violet-500 text-white hover:bg-violet-600"
-                    : "bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-violet-300"
-                )}
-              >
-                {d.short}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
-            <Clock className="h-2.5 w-2.5" />
-            Tageszeit (optional)
-          </span>
-          {hasSlot && (
-            <button
-              type="button"
-              onClick={() => setSlot("", "")}
-              className="text-[10px] text-slate-400 hover:text-rose-500"
-            >
-              Ganztags
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <input
-            type="time"
-            value={cfg.slotStart ?? ""}
-            onChange={(e) => setSlot(e.target.value, cfg.slotEnd ?? "")}
-            className="flex-1 h-7 px-2 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-          <span className="text-[10px] text-slate-400">bis</span>
-          <input
-            type="time"
-            value={cfg.slotEnd ?? ""}
-            onChange={(e) => setSlot(cfg.slotStart ?? "", e.target.value)}
-            className="flex-1 h-7 px-2 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-        {(cfg.slotStart && !cfg.slotEnd) || (!cfg.slotStart && cfg.slotEnd) ? (
-          <p className="text-[10px] text-amber-600">Beide Zeiten setzen oder beide leer lassen.</p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 export function VereinDialog({
-  verein, initialAccessTickets, initialMemberIds,
+  verein, initialAccessTicketIds, initialMemberIds,
   allTickets,
   open, onClose,
 }: VereinDialogProps) {
@@ -273,8 +162,7 @@ export function VereinDialog({
   const [tab, setTab] = useState<TabId>("settings");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  // ticketId → Konfig. Vorhandensein = ausgewählt.
-  const [accessConfigs, setAccessConfigs] = useState<Map<number, VereinAccessTicketConfig>>(new Map());
+  const [selectedAccessTickets, setSelectedAccessTickets] = useState<Set<string>>(new Set());
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -287,29 +175,20 @@ export function VereinDialog({
       if (verein) {
         setName(verein.name);
         setDescription(verein.description ?? "");
-        setAccessConfigs(new Map(initialAccessTickets.map((c) => [c.ticketId, { ...c }])));
+        setSelectedAccessTickets(new Set(initialAccessTicketIds.map(String)));
         setSelectedMembers(new Set(initialMemberIds.map(String)));
       } else {
         setName(""); setDescription("");
-        setAccessConfigs(new Map());
+        setSelectedAccessTickets(new Set());
         setSelectedMembers(new Set());
       }
     }
-  }, [open, verein, initialAccessTickets, initialMemberIds]);
+  }, [open, verein, initialAccessTicketIds, initialMemberIds]);
 
-  function toggleAccessTicket(idStr: string) {
-    const id = Number(idStr);
-    setAccessConfigs((prev) => {
-      const next = new Map(prev);
-      if (next.has(id)) next.delete(id);
-      else next.set(id, { ticketId: id, daysOfWeek: ALL_DAYS, slotStart: null, slotEnd: null });
-      return next;
-    });
-  }
-  function updateAccessConfig(id: number, cfg: VereinAccessTicketConfig) {
-    setAccessConfigs((prev) => {
-      const next = new Map(prev);
-      next.set(id, cfg);
+  function toggleAccessTicket(key: string) {
+    setSelectedAccessTickets((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }
@@ -325,16 +204,10 @@ export function VereinDialog({
     setSaving(true);
     setError("");
     try {
-      const accessTickets = [...accessConfigs.values()].map((c) => ({
-        ticketId: c.ticketId,
-        daysOfWeek: c.daysOfWeek,
-        slotStart: c.slotStart || null,
-        slotEnd: c.slotEnd || null,
-      }));
       const payload: Record<string, unknown> = {
         name: name.trim(),
         description: description.trim() || null,
-        accessTickets,
+        accessTicketIds: [...selectedAccessTickets].map(Number),
         memberTicketIds: [...selectedMembers].map(Number),
       };
       const url = isNew ? "/api/vereine" : `/api/vereine/${verein!.id}`;
@@ -369,20 +242,16 @@ export function VereinDialog({
     }
   }
 
-  const selectedAccessTicketIds = useMemo(
-    () => new Set([...accessConfigs.keys()].map(String)),
-    [accessConfigs]
-  );
-
   const accessTicketItems = useMemo(
     () => allTickets.map((t) => {
       const subParts: string[] = [];
       if (t.ticketTypeName) subParts.push(t.ticketTypeName);
       if (t.areaNames.length > 0) subParts.push(`→ ${t.areaNames.join(", ")}`);
+      subParts.push(formatTicketValidity(t));
       return {
         key: String(t.id),
         label: ticketDisplayName(t),
-        sublabel: subParts.join(" · ") || undefined,
+        sublabel: subParts.join(" · "),
       };
     }),
     [allTickets]
@@ -407,7 +276,7 @@ export function VereinDialog({
              : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
     }`;
 
-  const accessCount = accessConfigs.size;
+  const accessCount = selectedAccessTickets.size;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -456,19 +325,24 @@ export function VereinDialog({
               </div>
               {accessCount > 0 ? (
                 <div className="space-y-1">
-                  {[...accessConfigs.values()].map((cfg) => {
-                    const t = allTickets.find((x) => x.id === cfg.ticketId);
+                  {[...selectedAccessTickets].map((idStr) => {
+                    const t = allTickets.find((x) => String(x.id) === idStr);
                     if (!t) return null;
-                    const window = formatAccessWindow(cfg);
                     return (
-                      <div key={cfg.ticketId} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 truncate">
+                      <div key={idStr} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 truncate min-w-0">
                           <TicketIcon className="h-3 w-3 text-slate-400 shrink-0" />
-                          {ticketDisplayName(t)}
+                          <span className="truncate">{ticketDisplayName(t)}</span>
+                          {t.areaNames.length > 0 && (
+                            <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 shrink-0">
+                              <MapPin className="h-2.5 w-2.5" />
+                              {t.areaNames.join(", ")}
+                            </span>
+                          )}
                         </span>
                         <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 shrink-0">
                           <Clock className="h-2.5 w-2.5" />
-                          {window}
+                          {formatTicketValidity(t)}
                         </span>
                       </div>
                     );
@@ -500,40 +374,23 @@ export function VereinDialog({
         )}
 
         {tab === "accessTickets" && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             <p className="text-[11px] text-slate-500">
-              Wähle <strong>Zutritts-Tickets</strong>. Mitglieder erben die Areas dieser Tickets beim Scan – optional eingeschränkt auf Wochentage und Uhrzeit (z. B. „Bahnmiete nur So 10–12“).
+              Wähle <strong>Zutritts-Tickets</strong>. Mitglieder erben die Areas dieser Tickets beim Scan –
+              die zeitliche Restriktion (Datum, Tageszeit, Dauer) ergibt sich direkt aus dem jeweiligen Ticket.
             </p>
             <CheckList
               items={accessTicketItems}
-              selected={selectedAccessTicketIds}
+              selected={selectedAccessTickets}
               onToggle={toggleAccessTicket}
               emptyText="Keine Tickets vorhanden."
               searchable
             />
-
-            {accessConfigs.size > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Restriktionen</p>
-                <div className="space-y-2 max-h-[260px] overflow-y-auto">
-                  {[...accessConfigs.values()].map((cfg) => {
-                    const t = allTickets.find((x) => x.id === cfg.ticketId);
-                    if (!t) return null;
-                    return (
-                      <AccessWindowEditor
-                        key={cfg.ticketId}
-                        cfg={cfg}
-                        ticket={t}
-                        onChange={(next) => updateAccessConfig(cfg.ticketId, next)}
-                      />
-                    );
-                  })}
-                </div>
-                <button type="button" onClick={() => setAccessConfigs(new Map())}
-                        className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors">
-                  Alle abwählen
-                </button>
-              </div>
+            {accessCount > 0 && (
+              <button type="button" onClick={() => setSelectedAccessTickets(new Set())}
+                      className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors">
+                Alle abwählen
+              </button>
             )}
           </div>
         )}

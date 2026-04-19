@@ -2,25 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 
-/** Aktuelle Berliner Lokalzeit (Wochentag-Bit + Minuten seit Mitternacht). */
-function berlinTimeFacts(now: Date): { dayBit: number; minutes: number } {
-  const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
-  // JS getDay(): 0=So … 6=Sa. Wir mappen auf bit0=Mo … bit6=So.
-  const jsDay = berlinNow.getDay();
-  const dayBit = (jsDay + 6) % 7;
-  const minutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
-  return { dayBit, minutes };
-}
-
-/** HH:mm → Minuten seit Mitternacht. */
-function hhmmToMinutes(s: string): number {
-  const [h, m] = s.split(":").map(Number);
-  return h * 60 + m;
-}
-
 /**
  * Prüft, ob ein Verein-Zutritts-Ticket aktuell gültig ist (Status + Zeitraum
- * des Tickets). Nur dann dürfen seine Areas an Vereinsmitglieder vererbt werden.
+ * des Tickets selbst). Nur dann dürfen seine Areas an Vereinsmitglieder
+ * vererbt werden. Restriktionen kommen direkt vom Ticket (DATE_RANGE,
+ * TIME_SLOT, DURATION).
  */
 function isAccessTicketCurrentlyValid(t: {
   status: string;
@@ -47,32 +33,17 @@ function isAccessTicketCurrentlyValid(t: {
 
   const vType = t.validityType ?? "DATE_RANGE";
   if (vType === "TIME_SLOT" && t.slotStart && t.slotEnd) {
-    const { minutes } = berlinTimeFacts(now);
-    if (minutes < hhmmToMinutes(t.slotStart) || minutes > hhmmToMinutes(t.slotEnd)) return false;
+    const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
+    const minutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
+    const [sh, sm] = t.slotStart.split(":").map(Number);
+    const [eh, em] = t.slotEnd.split(":").map(Number);
+    if (minutes < sh * 60 + sm || minutes > eh * 60 + em) return false;
   }
   if (vType === "DURATION" && t.validityDurationMinutes && t.firstScanAt) {
     const expiresAt = new Date(t.firstScanAt.getTime() + t.validityDurationMinutes * 60_000);
     if (now > expiresAt) return false;
   }
 
-  return true;
-}
-
-/**
- * Prüft die optionale Wochentag/Tageszeit-Restriktion einer Verein↔Ticket-
- * Verbindung (z. B. „Bahnmiete nur So 10–12“).
- */
-function matchesAccessWindow(link: {
-  daysOfWeek: number;
-  slotStart: string | null;
-  slotEnd: string | null;
-}, now: Date): boolean {
-  const { dayBit, minutes } = berlinTimeFacts(now);
-  const dow = link.daysOfWeek ?? 127;
-  if (dow !== 127 && ((dow >> dayBit) & 1) === 0) return false;
-  if (link.slotStart && link.slotEnd) {
-    if (minutes < hhmmToMinutes(link.slotStart) || minutes > hhmmToMinutes(link.slotEnd)) return false;
-  }
   return true;
 }
 
@@ -112,14 +83,11 @@ export async function POST(request: NextRequest) {
           select: {
             name: true,
             // Areas der hinterlegten Zutritts-Tickets (z. B. „Bahnmiete“) –
-            // werden beim Access-Check nur dann hinzu-vereinigt, wenn das
-            // Ticket selbst gerade gültig ist UND der pro Verbindung
-            // hinterlegte Wochentag/Slot-Filter passt.
+            // werden beim Access-Check hinzu-vereinigt, sofern das Ticket
+            // selbst gerade gültig ist (Status, Datumsrange, TIME_SLOT,
+            // DURATION). Restriktionen liegen am Ticket selbst.
             accessTickets: {
               select: {
-                daysOfWeek: true,
-                slotStart: true,
-                slotEnd: true,
                 ticket: {
                   select: {
                     id: true,
@@ -349,12 +317,11 @@ export async function POST(request: NextRequest) {
   if (accessAreaId) {
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
     // Areas, die das Mitglied per Verein-Zutritts-Ticket erbt – nur wenn das
-    // Ticket selbst gerade gültig ist UND der pro Verbindung hinterlegte
-    // Wochentag/Slot-Filter passt (z. B. „Bahnmiete nur So 10–12“).
+    // Ticket selbst gerade gültig ist (Status, Datumsrange, TIME_SLOT,
+    // DURATION). Restriktionen kommen direkt vom Ticket.
     const vereinAreaIds: number[] = [];
     for (const at of ticket.verein?.accessTickets ?? []) {
       if (!isAccessTicketCurrentlyValid(at.ticket, now)) continue;
-      if (!matchesAccessWindow(at, now)) continue;
       if (at.ticket.accessAreaId) vereinAreaIds.push(at.ticket.accessAreaId);
       for (const ta of at.ticket.ticketAreas) vereinAreaIds.push(ta.accessAreaId);
     }

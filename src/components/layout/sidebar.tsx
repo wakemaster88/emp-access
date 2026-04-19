@@ -23,6 +23,7 @@ import {
   BarChart3,
   QrCode,
   Zap,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ const navItems = [
   { href: "/subscriptions", label: "Abos", icon: CreditCard },
   { href: "/services", label: "Services", icon: Package },
   { href: "/vereine", label: "Vereine", icon: Users },
+  { href: "/lockers", label: "Schließfächer", icon: Lock },
   { href: "/devices", label: "Geräte", icon: HardDrive },
   { href: "/areas", label: "Resourcen", icon: MapPin },
   { href: "/scanner", label: "Scanner", icon: QrCode },

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { VereinDialog, type VereinData, type VereinAccessTicketConfig, formatAccessWindow } from "./verein-dialog";
+import { VereinDialog, type VereinData, formatTicketValidity } from "./verein-dialog";
 import {
   Users, Plus, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Search, Fingerprint, ScanLine,
@@ -19,9 +19,12 @@ interface AccessTicketRef {
   name: string;
   ticketTypeName: string | null;
   areaNames: string[];
-  daysOfWeek: number;
+  validityType: string | null;
   slotStart: string | null;
   slotEnd: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  validityDurationMinutes: number | null;
 }
 
 interface MemberRow {
@@ -54,6 +57,12 @@ interface TicketRef {
   ticketTypeName: string | null;
   vereinId: number | null;
   areaNames: string[];
+  validityType: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  validityDurationMinutes: number | null;
 }
 
 interface VereineTableProps {
@@ -76,7 +85,7 @@ function memberValidity(t: MemberRow): "valid" | "expired" | "invalid" | "paused
 
 export function VereineTable({ vereine, allTickets, readonly }: VereineTableProps) {
   const [selected, setSelected] = useState<VereinData | null>(null);
-  const [selectedAccessTickets, setSelectedAccessTickets] = useState<VereinAccessTicketConfig[]>([]);
+  const [selectedAccessTicketIds, setSelectedAccessTicketIds] = useState<number[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -92,12 +101,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
 
   function openEdit(v: VereinRow) {
     setSelected({ id: v.id, name: v.name, description: v.description });
-    setSelectedAccessTickets(v.accessTickets.map((t) => ({
-      ticketId: t.id,
-      daysOfWeek: t.daysOfWeek,
-      slotStart: t.slotStart,
-      slotEnd: t.slotEnd,
-    })));
+    setSelectedAccessTicketIds(v.accessTickets.map((t) => t.id));
     setSelectedMembers(v.members.map((m) => m.id));
   }
 
@@ -110,20 +114,15 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
     return (
       <div className="flex flex-wrap gap-1">
         {show.map((t) => {
-          const window = formatAccessWindow({
-            daysOfWeek: t.daysOfWeek,
-            slotStart: t.slotStart,
-            slotEnd: t.slotEnd,
-          });
-          const restricted = window !== "Alle Tage";
+          const validity = formatTicketValidity(t);
           return (
             <span
               key={t.id}
               className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
               title={[
                 t.areaNames.length > 0 ? `Areas: ${t.areaNames.join(", ")}` : null,
-                restricted ? `Nur: ${window}` : null,
-              ].filter(Boolean).join(" · ") || undefined}
+                `Gültigkeit: ${validity}`,
+              ].filter(Boolean).join(" · ")}
             >
               <TicketIcon className="h-3 w-3 text-slate-400 shrink-0" />
               {t.name}
@@ -133,12 +132,10 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                   {t.areaNames.length}
                 </span>
               )}
-              {restricted && (
-                <span className="text-[10px] text-violet-600 dark:text-violet-400 inline-flex items-center gap-0.5">
-                  <Clock className="h-2.5 w-2.5" />
-                  {window}
-                </span>
-              )}
+              <span className="text-[10px] text-violet-600 dark:text-violet-400 inline-flex items-center gap-0.5">
+                <Clock className="h-2.5 w-2.5" />
+                {validity}
+              </span>
             </span>
           );
         })}
@@ -156,7 +153,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
       {!readonly && (
         <div className="flex justify-end mb-4">
           <Button
-            onClick={() => { setSelected(null); setSelectedAccessTickets([]); setSelectedMembers([]); setAddOpen(true); }}
+            onClick={() => { setSelected(null); setSelectedAccessTicketIds([]); setSelectedMembers([]); setAddOpen(true); }}
             type="button"
             className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm"
           >
@@ -383,7 +380,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
 
       <VereinDialog
         verein={null}
-        initialAccessTickets={[]}
+        initialAccessTicketIds={[]}
         initialMemberIds={[]}
         allTickets={allTickets}
         open={addOpen}
@@ -392,7 +389,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
 
       <VereinDialog
         verein={selected}
-        initialAccessTickets={selectedAccessTickets}
+        initialAccessTicketIds={selectedAccessTicketIds}
         initialMemberIds={selectedMembers}
         allTickets={allTickets}
         open={!!selected}

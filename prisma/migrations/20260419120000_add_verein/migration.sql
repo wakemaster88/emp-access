@@ -23,20 +23,17 @@ CREATE TABLE IF NOT EXISTS "VereinAccessTicket" (
   "id" SERIAL PRIMARY KEY,
   "vereinId" INTEGER NOT NULL,
   "ticketId" INTEGER NOT NULL,
-  -- Bitmaske: bit0=Mo … bit6=So. 127 = jeden Tag.
-  "daysOfWeek" INTEGER NOT NULL DEFAULT 127,
-  "slotStart" TEXT,
-  "slotEnd" TEXT,
   CONSTRAINT "VereinAccessTicket_vereinId_fkey" FOREIGN KEY ("vereinId")
     REFERENCES "Verein"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "VereinAccessTicket_ticketId_fkey" FOREIGN KEY ("ticketId")
     REFERENCES "Ticket"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Idempotent: Spalten nachziehen, falls Tabelle schon existiert (älterer db push).
-ALTER TABLE "VereinAccessTicket" ADD COLUMN IF NOT EXISTS "daysOfWeek" INTEGER NOT NULL DEFAULT 127;
-ALTER TABLE "VereinAccessTicket" ADD COLUMN IF NOT EXISTS "slotStart" TEXT;
-ALTER TABLE "VereinAccessTicket" ADD COLUMN IF NOT EXISTS "slotEnd" TEXT;
+-- Idempotent: ältere Iterationen mit Wochentag/Slot-Spalten zurückbauen.
+-- Restriktionen werden inzwischen direkt am Ticket selbst geführt.
+ALTER TABLE "VereinAccessTicket" DROP COLUMN IF EXISTS "daysOfWeek";
+ALTER TABLE "VereinAccessTicket" DROP COLUMN IF EXISTS "slotStart";
+ALTER TABLE "VereinAccessTicket" DROP COLUMN IF EXISTS "slotEnd";
 
 CREATE UNIQUE INDEX IF NOT EXISTS "VereinAccessTicket_vereinId_ticketId_key" ON "VereinAccessTicket"("vereinId", "ticketId");
 CREATE INDEX IF NOT EXISTS "VereinAccessTicket_vereinId_idx" ON "VereinAccessTicket"("vereinId");
