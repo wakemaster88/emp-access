@@ -3,7 +3,16 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { lockerUpdateSchema } from "@/lib/validators";
 
 const lockerInclude = {
-  subscription: { select: { id: true, name: true } },
+  ticket: {
+    select: {
+      id: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      ticketTypeName: true,
+      subscription: { select: { id: true, name: true } },
+    },
+  },
 } as const;
 
 export async function GET(
@@ -51,18 +60,18 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  // Tenant-Check für Subscription, falls explizit gesetzt.
-  let subscriptionUpdate: { subscriptionId?: number | null } = {};
-  if (data.subscriptionId !== undefined) {
-    if (data.subscriptionId === null) {
-      subscriptionUpdate = { subscriptionId: null };
+  // Tenant-Check für Ticket, falls explizit gesetzt.
+  let ticketUpdate: { ticketId?: number | null } = {};
+  if (data.ticketId !== undefined) {
+    if (data.ticketId === null) {
+      ticketUpdate = { ticketId: null };
     } else {
-      const sub = await db.subscription.findFirst({
-        where: { id: data.subscriptionId, accountId: accountId! },
+      const ticket = await db.ticket.findFirst({
+        where: { id: data.ticketId, accountId: accountId! },
         select: { id: true },
       });
-      if (!sub) return NextResponse.json({ error: "Abo nicht gefunden" }, { status: 400 });
-      subscriptionUpdate = { subscriptionId: sub.id };
+      if (!ticket) return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
+      ticketUpdate = { ticketId: ticket.id };
     }
   }
 
@@ -74,7 +83,7 @@ export async function PUT(
         ...(data.number !== undefined && { number: data.number.trim() }),
         ...(data.location !== undefined && { location: data.location?.trim() || null }),
         ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
-        ...subscriptionUpdate,
+        ...ticketUpdate,
       },
       include: lockerInclude,
     });

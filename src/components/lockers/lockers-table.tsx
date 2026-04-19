@@ -1,21 +1,26 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { LockerDialog, type LockerData } from "./locker-dialog";
+import { LockerDialog, type LockerData, type AboTicketRef } from "./locker-dialog";
 import {
-  Lock, Plus, Search, MapPin, Hash, CreditCard,
+  Lock, Plus, Search, MapPin, Hash, Ticket as TicketIcon, CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface SubscriptionRef {
+interface LockerTicketRef {
   id: number;
   name: string;
+  firstName: string | null;
+  lastName: string | null;
+  ticketTypeName: string | null;
+  status: string;
+  endDate: string | null;
+  subscription: { id: number; name: string } | null;
 }
 
 interface LockerRow {
@@ -24,17 +29,22 @@ interface LockerRow {
   number: string;
   location: string | null;
   notes: string | null;
-  subscriptionId: number | null;
-  subscription: SubscriptionRef | null;
+  ticketId: number | null;
+  ticket: LockerTicketRef | null;
 }
 
 interface LockersTableProps {
   lockers: LockerRow[];
-  subscriptions: SubscriptionRef[];
+  aboTickets: AboTicketRef[];
   readonly?: boolean;
 }
 
-export function LockersTable({ lockers, subscriptions, readonly }: LockersTableProps) {
+function ticketDisplayName(t: LockerTicketRef): string {
+  const personName = [t.firstName, t.lastName].filter(Boolean).join(" ");
+  return personName || t.name;
+}
+
+export function LockersTable({ lockers, aboTickets, readonly }: LockersTableProps) {
   const [selected, setSelected] = useState<LockerData | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -43,21 +53,23 @@ export function LockersTable({ lockers, subscriptions, readonly }: LockersTableP
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return lockers.filter((l) => {
-      if (filter === "assigned" && !l.subscriptionId) return false;
-      if (filter === "free" && l.subscriptionId) return false;
+      if (filter === "assigned" && !l.ticketId) return false;
+      if (filter === "free" && l.ticketId) return false;
       if (!s) return true;
       const hay = [
         l.name,
         l.number,
         l.location ?? "",
         l.notes ?? "",
-        l.subscription?.name ?? "",
+        l.ticket ? ticketDisplayName(l.ticket) : "",
+        l.ticket?.subscription?.name ?? "",
+        l.ticket?.ticketTypeName ?? "",
       ].join(" ").toLowerCase();
       return hay.includes(s);
     });
   }, [lockers, search, filter]);
 
-  const assignedCount = lockers.filter((l) => l.subscriptionId).length;
+  const assignedCount = lockers.filter((l) => l.ticketId).length;
   const freeCount = lockers.length - assignedCount;
 
   function openEdit(l: LockerRow) {
@@ -67,7 +79,7 @@ export function LockersTable({ lockers, subscriptions, readonly }: LockersTableP
       number: l.number,
       location: l.location,
       notes: l.notes,
-      subscriptionId: l.subscriptionId,
+      ticketId: l.ticketId,
     });
   }
 
@@ -117,7 +129,7 @@ export function LockersTable({ lockers, subscriptions, readonly }: LockersTableP
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
           <input
             type="text"
-            placeholder="Name, Nummer, Standort, Abo…"
+            placeholder="Nr., Standort, Mieter, Abo…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -160,8 +172,8 @@ export function LockersTable({ lockers, subscriptions, readonly }: LockersTableP
               </TableHead>
               <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <CreditCard className="h-4 w-4 text-slate-400" />
-                  Abo
+                  <TicketIcon className="h-4 w-4 text-slate-400" />
+                  Mieter / Abo
                 </span>
               </TableHead>
             </TableRow>
@@ -176,7 +188,7 @@ export function LockersTable({ lockers, subscriptions, readonly }: LockersTableP
                       <>
                         <p className="font-medium text-slate-600 dark:text-slate-400">Noch keine Schließfächer angelegt</p>
                         <p className="text-sm">
-                          Lege ein Schließfach an und verknüpfe es optional mit einem Abo.
+                          Lege ein Schließfach an und verknüpfe es optional mit einem Abo-Ticket.
                         </p>
                       </>
                     ) : (
@@ -233,17 +245,19 @@ export function LockersTable({ lockers, subscriptions, readonly }: LockersTableP
                   )}
                 </TableCell>
                 <TableCell>
-                  {l.subscription ? (
-                    <Link
-                      href="/subscriptions"
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1.5"
-                    >
-                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 hover:bg-emerald-200 dark:hover:bg-emerald-950/60">
-                        <CreditCard className="h-3 w-3" />
-                        {l.subscription.name}
-                      </Badge>
-                    </Link>
+                  {l.ticket ? (
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                        <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                        {ticketDisplayName(l.ticket)}
+                      </span>
+                      {l.ticket.subscription && (
+                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0 self-start">
+                          <CreditCard className="h-2.5 w-2.5" />
+                          {l.ticket.subscription.name}
+                        </Badge>
+                      )}
+                    </div>
                   ) : (
                     <Badge variant="outline" className="text-slate-400 border-slate-200 dark:border-slate-700 text-xs">
                       Frei
@@ -258,14 +272,14 @@ export function LockersTable({ lockers, subscriptions, readonly }: LockersTableP
 
       <LockerDialog
         locker={null}
-        subscriptions={subscriptions}
+        aboTickets={aboTickets}
         open={addOpen}
         onClose={() => setAddOpen(false)}
       />
 
       <LockerDialog
         locker={selected}
-        subscriptions={subscriptions}
+        aboTickets={aboTickets}
         open={!!selected}
         onClose={() => setSelected(null)}
       />

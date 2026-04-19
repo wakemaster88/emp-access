@@ -14,18 +14,43 @@ export default async function LockersPage() {
   const db = isSuperAdmin ? superAdminClient : tenantClient(session.user.accountId!);
   const accountFilter = isSuperAdmin ? {} : { accountId: session.user.accountId! };
 
-  const [lockers, subscriptions] = await Promise.all([
+  // Wir laden nur Abo-Tickets (subscriptionId != null), denn Schließfächer
+  // werden konkreten Abo-Inhabern zugeordnet, nicht Tagesgästen.
+  const [lockers, aboTickets] = await Promise.all([
     db.locker.findMany({
       where: accountFilter,
       include: {
-        subscription: { select: { id: true, name: true } },
+        ticket: {
+          select: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            ticketTypeName: true,
+            status: true,
+            endDate: true,
+            subscription: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: [{ location: "asc" }, { number: "asc" }],
     }),
-    db.subscription.findMany({
-      where: accountFilter,
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
+    db.ticket.findMany({
+      where: {
+        ...accountFilter,
+        subscriptionId: { not: null },
+      },
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        ticketTypeName: true,
+        status: true,
+        endDate: true,
+        subscription: { select: { id: true, name: true } },
+      },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { name: "asc" }],
     }),
   ]);
 
@@ -37,9 +62,9 @@ export default async function LockersPage() {
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Schließfächer ({lockers.length})</CardTitle>
             <CardDescription>
-              Verwalte Schließfächer mit Name, Standort und Nummer und verknüpfe sie optional mit{" "}
-              <Link href="/subscriptions" className="text-indigo-600 dark:text-indigo-400 hover:underline">
-                Abos
+              Verwalte Schließfächer mit Name, Standort und Nummer und verknüpfe sie optional mit einem{" "}
+              <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                Abo-Ticket
               </Link>
               .
             </CardDescription>
@@ -52,10 +77,30 @@ export default async function LockersPage() {
                 number: l.number,
                 location: l.location,
                 notes: l.notes,
-                subscriptionId: l.subscriptionId,
-                subscription: l.subscription,
+                ticketId: l.ticketId,
+                ticket: l.ticket
+                  ? {
+                      id: l.ticket.id,
+                      name: l.ticket.name,
+                      firstName: l.ticket.firstName,
+                      lastName: l.ticket.lastName,
+                      ticketTypeName: l.ticket.ticketTypeName,
+                      status: l.ticket.status,
+                      endDate: l.ticket.endDate ? l.ticket.endDate.toISOString() : null,
+                      subscription: l.ticket.subscription,
+                    }
+                  : null,
               }))}
-              subscriptions={subscriptions}
+              aboTickets={aboTickets.map((t) => ({
+                id: t.id,
+                name: t.name,
+                firstName: t.firstName,
+                lastName: t.lastName,
+                ticketTypeName: t.ticketTypeName,
+                status: t.status,
+                endDate: t.endDate ? t.endDate.toISOString() : null,
+                subscription: t.subscription,
+              }))}
               readonly={isSuperAdmin}
             />
           </CardContent>

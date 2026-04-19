@@ -3,7 +3,16 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import { lockerCreateSchema } from "@/lib/validators";
 
 const lockerInclude = {
-  subscription: { select: { id: true, name: true } },
+  ticket: {
+    select: {
+      id: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      ticketTypeName: true,
+      subscription: { select: { id: true, name: true } },
+    },
+  },
 } as const;
 
 export async function GET() {
@@ -32,17 +41,17 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const data = parsed.data;
 
-  // Tenant-Check für Subscription, falls gesetzt.
-  let subscriptionId: number | null = null;
-  if (data.subscriptionId) {
-    const sub = await db.subscription.findFirst({
-      where: { id: data.subscriptionId, accountId: accountId! },
+  // Tenant-Check für Ticket, falls gesetzt.
+  let ticketId: number | null = null;
+  if (data.ticketId) {
+    const ticket = await db.ticket.findFirst({
+      where: { id: data.ticketId, accountId: accountId! },
       select: { id: true },
     });
-    if (!sub) {
-      return NextResponse.json({ error: "Abo nicht gefunden" }, { status: 400 });
+    if (!ticket) {
+      return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
     }
-    subscriptionId = sub.id;
+    ticketId = ticket.id;
   }
 
   try {
@@ -52,7 +61,7 @@ export async function POST(request: NextRequest) {
         number: data.number.trim(),
         location: data.location?.trim() || null,
         notes: data.notes?.trim() || null,
-        subscriptionId,
+        ticketId,
         accountId: accountId!,
       },
       include: lockerInclude,

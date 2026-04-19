@@ -126,7 +126,8 @@ export const lockerCreateSchema = z.object({
   number: z.string().min(1).max(40),
   location: z.string().max(120).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
-  subscriptionId: z.coerce.number().int().positive().nullable().optional(),
+  /// ID eines Abo-Tickets (Mieter). NULL = freies Schließfach.
+  ticketId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 export const lockerUpdateSchema = lockerCreateSchema.partial();

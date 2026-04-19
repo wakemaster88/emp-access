@@ -164,6 +164,7 @@ model Ticket {
   verein                  Verein?       @relation(fields: [vereinId], references: [id], onDelete: SetNull)
   ticketAreas             TicketArea[]
   vereinAccess            VereinAccessTicket[] // Vereine, die über DIESES Ticket Zutritt erhalten
+  lockers                 Locker[] // Schließfächer, die diesem Ticket (Abo-Inhaber) zugeordnet sind
   scans                   Scan[]
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
@@ -257,35 +258,36 @@ model Subscription {
   account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   areas                          AccessArea[]
   tickets                        Ticket[]
-  lockers                        Locker[]
   createdAt                      DateTime      @default(now())
   updatedAt                      DateTime      @updatedAt
 
   @@index([accountId])
 }
 
-/// Schließfach (locker). Wird optional einem Abo zugeordnet (1 Abo → n Schließfächer).
-/// Beim Löschen eines Abos bleibt das Schließfach erhalten (subscriptionId = null).
+/// Schließfach (locker). Optional einem konkreten Abo-Ticket (Mieter) zugeordnet.
+/// 1 Ticket kann mehrere Schließfächer haben. Beim Löschen des Tickets bleibt
+/// das Schließfach erhalten (ticketId = null), damit es neu vergeben werden kann.
 model Locker {
-  id             Int           @id @default(autoincrement())
-  /// Bezeichnung des Schließfachs (frei wählbar, z. B. „Spind 12“ oder Mieter-Name).
-  name           String
+  id        Int      @id @default(autoincrement())
+  /// Bezeichnung des Schließfachs (frei wählbar, z. B. „Spind 12“).
+  name      String
   /// Optionaler Standort (z. B. „Umkleide UG“, „Halle Ost“).
-  location       String?
+  location  String?
   /// Schließfach-Nummer (frei: „A12“, „007“ etc.). Eindeutig pro Account.
-  number         String
-  /// Optionale Notiz / Kommentar.
-  notes          String?
-  subscriptionId Int?
-  accountId      Int
-  account        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  number    String
+  /// Optionale Notiz / Kommentar (z. B. Schloss-Code).
+  notes     String?
+  /// Verknüpftes Abo-Ticket (Mieter). NULL = Schließfach ist frei.
+  ticketId  Int?
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([accountId, number])
   @@index([accountId])
-  @@index([subscriptionId])
+  @@index([ticketId])
 }
 
 model ServiceArea {
