@@ -295,26 +295,63 @@ export function VereinDialog({
               />
             </div>
 
-            {verein && (
-              <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-1">
-                <p className="text-[11px] text-slate-500">Zusammenfassung</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedAreas.size > 0 && (
-                    <Badge variant="outline" className="text-[10px]">
-                      {selectedAreas.size} {selectedAreas.size === 1 ? "Resource" : "Resourcen"}
-                    </Badge>
-                  )}
-                  {selectedMembers.size > 0 && (
-                    <Badge variant="secondary" className="text-[10px]">
-                      {selectedMembers.size} {selectedMembers.size === 1 ? "Mitglied" : "Mitglieder"}
-                    </Badge>
-                  )}
-                  {selectedAreas.size === 0 && selectedMembers.size === 0 && (
-                    <span className="text-[10px] text-slate-400">Noch keine Verknüpfungen</span>
-                  )}
-                </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                  <MapPin className="h-3 w-3 text-slate-400" />
+                  Bulk-Zutritt zu {selectedAreas.size === 1 ? "1 Resource" : `${selectedAreas.size} Resourcen`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTab("areas")}
+                  className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  Bearbeiten
+                </button>
               </div>
-            )}
+              {selectedAreas.size > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {[...selectedAreas].map((id) => {
+                    const area = areas.find((a) => String(a.id) === id);
+                    if (!area) return null;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
+                      >
+                        <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                        {area.name}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400">
+                  Noch keine Resourcen zugeordnet. Im Tab „Resourcen“ hinzufügen, damit alle Mitglieder Zutritt erhalten.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-1">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                  <Users className="h-3 w-3 text-slate-400" />
+                  {selectedMembers.size === 1 ? "1 Mitglied" : `${selectedMembers.size} Mitglieder`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTab("members")}
+                  className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  Bearbeiten
+                </button>
+              </div>
+              {selectedMembers.size === 0 && (
+                <p className="text-[11px] text-slate-400">
+                  Noch keine Mitglieds-Tickets zugeordnet.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
