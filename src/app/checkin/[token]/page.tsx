@@ -1926,6 +1926,60 @@ function toDateInput(val: string | Date | null | undefined): string {
   return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 }
 
+async function safeJson(res: Response): Promise<Record<string, unknown> | null> {
+  try {
+    const text = await res.text();
+    if (!text) return null;
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/// Robuster POST für Tickets aus dem Shop-Monitor: Timeout via AbortController
+/// und ein Retry mit Backoff bei transienten Fehlern (Netz/Abort/5xx).
+/// Mutationen sind hier safe zu wiederholen, weil im Erfolgsfall die zweite
+/// Anfrage nicht mehr ausgelöst wird – nur bei *fehlgeschlagener* Antwort
+/// wird erneut gesendet.
+async function postTicketWithRetry(
+  token: string,
+  payload: Record<string, unknown>,
+  { timeoutMs = 12_000, retries = 1 }: { timeoutMs?: number; retries?: number } = {}
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`/api/checkin/public/${token}/ticket`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+        cache: "no-store",
+        keepalive: true,
+      });
+      if (res.status >= 500 && res.status <= 599 && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastErr = err;
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      const isNetwork = err instanceof TypeError;
+      if ((isAbort || isNetwork) && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr ?? new Error("Unbekannter Fehler");
+}
+
 function AddTicketOverlay({
   token,
   services,
@@ -2017,21 +2071,40 @@ function AddTicketOverlay({
     }
 
     try {
-      const res = await fetch(`/api/checkin/public/${token}/ticket`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await postTicketWithRetry(token, payload);
+
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error?.formErrors?.[0] ?? "Fehler beim Erstellen");
+        const data = await safeJson(res);
+        const errVal = (data?.error ?? null) as
+          | string
+          | { formErrors?: string[]; fieldErrors?: Record<string, string[]> }
+          | null;
+        const formErr = typeof errVal === "object" && errVal ? errVal.formErrors?.[0] : undefined;
+        const fieldErr =
+          typeof errVal === "object" && errVal?.fieldErrors
+            ? Object.values(errVal.fieldErrors).flat()[0]
+            : undefined;
+        setError(
+          formErr ??
+            fieldErr ??
+            (typeof errVal === "string" ? errVal : undefined) ??
+            `Fehler beim Erstellen (HTTP ${res.status})`
+        );
       } else {
         setFirstName(""); setLastName(""); setCode("");
         setServiceId("none"); setSubscriptionId("none"); setAccessAreaId("none");
         onCreated();
       }
-    } catch {
-      setError("Netzwerkfehler");
+    } catch (err) {
+      console.error("[shop-monitor] Ticket-Erstellung fehlgeschlagen", err);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("Zeitüberschreitung – Server antwortet nicht. Bitte erneut versuchen.");
+      } else if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        setError("Keine Internetverbindung – bitte WLAN prüfen und erneut senden.");
+      } else {
+        const msg = err instanceof Error ? err.message : "unbekannt";
+        setError(`Netzwerkfehler: ${msg}`);
+      }
     } finally {
       setLoading(false);
     }
