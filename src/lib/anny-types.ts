@@ -48,4 +48,19 @@ export interface AnnyBooking {
   line_items?: AnnyLineItem[];
   products?: AnnyLineItem[];
   extras?: AnnyLineItem[];
+  /** ANNY-Begriffe für zugebuchte Artikel (Neoprenanzug, Flex-Option, …) */
+  add_ons?: AnnyLineItem[];
+  addOns?: AnnyLineItem[];
+  addons?: AnnyLineItem[];
+  modifications?: AnnyLineItem[];
+  modifiers?: AnnyLineItem[];
+  additional_services?: AnnyLineItem[];
+  additionalServices?: AnnyLineItem[];
+  /** Manche Webhook-Payloads liefern Add-Ons unter `order.bookings[].add_ons` */
+  order?: {
+    add_ons?: AnnyLineItem[];
+    addOns?: AnnyLineItem[];
+    modifications?: AnnyLineItem[];
+    line_items?: AnnyLineItem[];
+  };
 }

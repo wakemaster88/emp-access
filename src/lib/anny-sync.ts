@@ -94,13 +94,42 @@ export interface AnnySyncResult {
 }
 
 function extractExtras(booking: AnnyBooking): TicketExtra[] {
-  const items = booking.line_items ?? booking.products ?? booking.extras ?? [];
-  const result: TicketExtra[] = [];
-  for (const item of items) {
-    const name = item.name ?? item.title ?? item.product?.name ?? item.product?.title;
-    if (name) result.push({ name, quantity: item.quantity ?? 1 });
+  // ANNY benennt zugebuchte Artikel (Neoprenanzug, Flex-Option, …) je nach
+  // Endpoint/Webhook unterschiedlich. Wir sammeln aus allen bekannten Quellen
+  // und deduplizieren über den Namen.
+  const sources: (AnnyBooking[keyof AnnyBooking] | undefined)[] = [
+    booking.line_items,
+    booking.products,
+    booking.extras,
+    booking.add_ons,
+    booking.addOns,
+    booking.addons,
+    booking.modifications,
+    booking.modifiers,
+    booking.additional_services,
+    booking.additionalServices,
+    booking.order?.add_ons,
+    booking.order?.addOns,
+    booking.order?.modifications,
+    booking.order?.line_items,
+  ];
+
+  const byName = new Map<string, TicketExtra>();
+  for (const src of sources) {
+    if (!Array.isArray(src)) continue;
+    for (const item of src) {
+      const name = item.name ?? item.title ?? item.product?.name ?? item.product?.title;
+      if (!name) continue;
+      const qty = item.quantity ?? 1;
+      const existing = byName.get(name);
+      if (existing) {
+        existing.quantity = Math.max(existing.quantity, qty);
+      } else {
+        byName.set(name, { name, quantity: qty });
+      }
+    }
   }
-  return result;
+  return [...byName.values()];
 }
 
 function mapGroupStatus(statuses: string[]): "VALID" | "INVALID" | "REDEEMED" {

@@ -33,6 +33,19 @@ interface AnnyBooking {
   line_items?: AnnyLineItem[];
   products?: AnnyLineItem[];
   extras?: AnnyLineItem[];
+  add_ons?: AnnyLineItem[];
+  addOns?: AnnyLineItem[];
+  addons?: AnnyLineItem[];
+  modifications?: AnnyLineItem[];
+  modifiers?: AnnyLineItem[];
+  additional_services?: AnnyLineItem[];
+  additionalServices?: AnnyLineItem[];
+  order?: {
+    add_ons?: AnnyLineItem[];
+    addOns?: AnnyLineItem[];
+    modifications?: AnnyLineItem[];
+    line_items?: AnnyLineItem[];
+  };
 }
 
 
@@ -300,13 +313,50 @@ export async function POST(request: NextRequest) {
     const endDate = booking.end_date ? new Date(booking.end_date) : null;
     const status = mapStatus(booking.status);
 
-    const rawItems = booking.line_items ?? booking.products ?? booking.extras ?? [];
-    const extras = rawItems
-      .map((item) => ({
-        name: item.name ?? item.title ?? item.product?.name ?? item.product?.title ?? "",
-        quantity: item.quantity ?? 1,
-      }))
-      .filter((e) => e.name);
+    // ANNY benennt zugebuchte Artikel je Endpoint/Webhook unterschiedlich –
+    // wir schauen in alle bekannten Felder und mergen über den Namen.
+    const rawSources: (AnnyLineItem[] | undefined)[] = [
+      booking.line_items,
+      booking.products,
+      booking.extras,
+      booking.add_ons,
+      booking.addOns,
+      booking.addons,
+      booking.modifications,
+      booking.modifiers,
+      booking.additional_services,
+      booking.additionalServices,
+      booking.order?.add_ons,
+      booking.order?.addOns,
+      booking.order?.modifications,
+      booking.order?.line_items,
+    ];
+    const extrasByName = new Map<string, { name: string; quantity: number }>();
+    for (const arr of rawSources) {
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) {
+        const name = item.name ?? item.title ?? item.product?.name ?? item.product?.title ?? "";
+        if (!name) continue;
+        const qty = item.quantity ?? 1;
+        const existing = extrasByName.get(name);
+        if (existing) existing.quantity = Math.max(existing.quantity, qty);
+        else extrasByName.set(name, { name, quantity: qty });
+      }
+    }
+    const extras = [...extrasByName.values()];
+
+    // Debug-Log: Wenn ANNY ein Add-On-/Modifications-Feld liefert, möchten wir
+    // das genau einmal sehen, um die Payload-Struktur zu lernen.
+    const addOnFieldsPresent = ([
+      "add_ons", "addOns", "addons", "modifications", "modifiers",
+      "additional_services", "additionalServices",
+    ] as const).filter((k) => Array.isArray((booking as Record<string, unknown>)[k]));
+    if (addOnFieldsPresent.length > 0 || (booking.order && Object.keys(booking.order).length > 0)) {
+      console.log(
+        `[anny webhook] booking=${booking.id} addOnFields=${addOnFieldsPresent.join(",") || "-"} ` +
+        `extrasFound=${extras.length} orderKeys=${booking.order ? Object.keys(booking.order).join(",") : "-"}`,
+      );
+    }
 
     const birthDate = customer?.birth_date ? new Date(customer.birth_date) : null;
 
