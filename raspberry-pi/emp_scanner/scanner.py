@@ -147,6 +147,10 @@ class ScannerInput:
                             continue
                         char_map = KEY_MAP_SHIFT if shift else KEY_MAP
                         char = char_map.get(scancode)
+                        # KEY_MAP_SHIFT enthält nur Symbole; Großbuchstaben (Shift+letter)
+                        # liefern hier None und müssen aus KEY_MAP geholt werden.
+                        if char is None and shift:
+                            char = KEY_MAP.get(scancode)
                         if char:
                             buffer.append(char.upper() if shift else char)
                         shift = False
