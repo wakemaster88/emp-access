@@ -78,8 +78,19 @@ export async function POST(request: NextRequest) {
         ],
       },
       include: {
-        service: { select: { allowReentry: true, name: true } },
-        subscription: { select: { name: true } },
+        service: {
+          select: {
+            allowReentry: true,
+            name: true,
+            serviceAreas: { select: { accessAreaId: true } },
+          },
+        },
+        subscription: {
+          select: {
+            name: true,
+            areas: { select: { id: true } },
+          },
+        },
         ticketAreas: { select: { accessAreaId: true } },
       },
     });
@@ -306,9 +317,14 @@ export async function POST(request: NextRequest) {
   if (device.accessIn || device.accessOut) {
     const deviceAreas = [device.accessIn, device.accessOut].filter(Boolean) as number[];
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
-    const allTicketAreas = ticket.accessAreaId
-      ? [ticket.accessAreaId, ...ticketAreaIds]
-      : ticketAreaIds;
+    const subscriptionAreaIds = ticket.subscription?.areas?.map((a) => a.id) ?? [];
+    const serviceAreaIds = ticket.service?.serviceAreas?.map((sa) => sa.accessAreaId) ?? [];
+    const allTicketAreas = [
+      ...(ticket.accessAreaId ? [ticket.accessAreaId] : []),
+      ...ticketAreaIds,
+      ...subscriptionAreaIds,
+      ...serviceAreaIds,
+    ];
     const hasAccess = allTicketAreas.length === 0 || allTicketAreas.some((a) => deviceAreas.includes(a));
     if (!hasAccess) {
       await db.scan.create({

@@ -75,8 +75,19 @@ export async function POST(request: NextRequest) {
         ],
       },
       include: {
-        service: { select: { allowReentry: true, name: true } },
-        subscription: { select: { name: true } },
+        service: {
+          select: {
+            allowReentry: true,
+            name: true,
+            serviceAreas: { select: { accessAreaId: true } },
+          },
+        },
+        subscription: {
+          select: {
+            name: true,
+            areas: { select: { id: true } },
+          },
+        },
         accessArea: { select: { name: true } },
         ticketAreas: { select: { accessAreaId: true } },
         verein: {
@@ -325,9 +336,13 @@ export async function POST(request: NextRequest) {
       if (at.ticket.accessAreaId) vereinAreaIds.push(at.ticket.accessAreaId);
       for (const ta of at.ticket.ticketAreas) vereinAreaIds.push(ta.accessAreaId);
     }
+    const subscriptionAreaIds = ticket.subscription?.areas?.map((a) => a.id) ?? [];
+    const serviceAreaIds = ticket.service?.serviceAreas?.map((sa) => sa.accessAreaId) ?? [];
     const allTicketAreas = [
       ...(ticket.accessAreaId ? [ticket.accessAreaId] : []),
       ...ticketAreaIds,
+      ...subscriptionAreaIds,
+      ...serviceAreaIds,
       ...vereinAreaIds,
     ];
     // Verein-Mitglieder werden strikt geprüft: leer = nirgends. Damit greift die
