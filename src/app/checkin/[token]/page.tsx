@@ -241,7 +241,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   } | undefined>();
   const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const refreshRef = useRef<(() => void) | null>(null);
+  const refreshRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,7 +292,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       }
     };
 
-    refreshRef.current = () => { doFetch(); };
+    refreshRef.current = () => doFetch();
 
     doFetch();
     let interval: ReturnType<typeof setInterval> | null = setInterval(doFetch, 8000);
@@ -889,7 +889,43 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           areas={data?.areas ?? []}
           subscriptions={data?.allSubscriptions ?? []}
           onClose={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); }}
-          onCreated={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); refreshRef.current?.(); }}
+          onCreated={async (newTicketId) => {
+            // Saubere Refresh-Choreographie nach Ticket-Create:
+            // 1) Overlay sofort schliessen (Mitarbeiter sieht kurz die
+            //    Liste).
+            // 2) Falls der Monitor gerade nicht "heute" anzeigt, auf
+            //    heute springen - nur dort taucht das neue Ticket auf
+            //    (Default-Datum ist heute).
+            // 3) Refresh-Indikator anstellen, Daten neu laden.
+            // 4) Neu erstelltes Ticket kurz hervorheben (gleiche
+            //    Highlight-Logik wie bei einem Live-Scan).
+            setAddTicketOpen(false);
+            setAddTicketPrefill(undefined);
+            const today = toDateStr(new Date());
+            if (date !== today) {
+              setDate(today);
+            }
+            setRefreshing(true);
+            try {
+              await refreshRef.current?.();
+            } finally {
+              setRefreshing(false);
+            }
+            if (newTicketId) {
+              setScanHighlights((prev) => {
+                const next = new Map(prev);
+                next.set(newTicketId, "GRANTED");
+                return next;
+              });
+              setTimeout(() => {
+                setScanHighlights((prev) => {
+                  const next = new Map(prev);
+                  next.delete(newTicketId);
+                  return next;
+                });
+              }, 4000);
+            }
+          }}
           prefill={addTicketPrefill}
         />
       )}
@@ -2204,7 +2240,7 @@ function AddTicketOverlay({
   areas: { id: number; name: string }[];
   subscriptions: SubOption[];
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (newTicketId?: number) => void;
   prefill?: {
     firstName?: string;
     lastName?: string;
@@ -2407,10 +2443,15 @@ function AddTicketOverlay({
           `Fehler beim Erstellen (HTTP ${res.status})`;
         setError(serverMsg ? `${baseMsg}\n${serverMsg}` : baseMsg);
       } else {
+        const created = await safeJson(res);
+        const newId =
+          created && typeof created === "object" && typeof created.id === "number"
+            ? created.id
+            : undefined;
         setFirstName(""); setLastName(""); setCode("");
         setServiceId("none"); setSubscriptionId("none"); setAccessAreaId("none");
         setPendingConflict(null);
-        onCreated();
+        onCreated(newId);
       }
     } catch (err) {
       console.error("[shop-monitor] Ticket-Erstellung fehlgeschlagen", err);
