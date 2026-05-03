@@ -165,6 +165,9 @@ export async function POST(
         if (!voucher || voucher.accountId !== monitor.accountId) {
           throw new Error("VOUCHER_NOT_FOUND");
         }
+        if (voucher.disabledAt) {
+          throw new Error("VOUCHER_DISABLED");
+        }
         if (voucher.redeemedAt) {
           throw new Error("VOUCHER_ALREADY_REDEEMED");
         }
@@ -201,6 +204,12 @@ export async function POST(
       if (msg === "VOUCHER_ALREADY_REDEEMED") {
         return NextResponse.json(
           { error: { formErrors: ["Gutschein wurde bereits eingelöst."] } },
+          { status: 409 },
+        );
+      }
+      if (msg === "VOUCHER_DISABLED") {
+        return NextResponse.json(
+          { error: { formErrors: ["Gutschein wurde deaktiviert."] } },
           { status: 409 },
         );
       }

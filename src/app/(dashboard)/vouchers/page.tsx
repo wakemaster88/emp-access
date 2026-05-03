@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { VouchersTable } from "@/components/vouchers/vouchers-table";
-import { Gift, Check, Clock } from "lucide-react";
+import { Gift, Check, Clock, Ban } from "lucide-react";
 
 interface Props {
   searchParams: Promise<{
@@ -36,13 +36,17 @@ export default async function VouchersPage({ searchParams }: Props) {
 
   const statusFilter = (() => {
     if (status === "redeemed") return { redeemedAt: { not: null } };
-    if (status === "open") return { redeemedAt: null };
+    if (status === "open") {
+      return { redeemedAt: null, disabledAt: null };
+    }
     if (status === "expired") {
       return {
         redeemedAt: null,
+        disabledAt: null,
         expiresAt: { lt: new Date() },
       };
     }
+    if (status === "disabled") return { disabledAt: { not: null } };
     return {};
   })();
 
@@ -83,13 +87,19 @@ export default async function VouchersPage({ searchParams }: Props) {
     Promise.all([
       db.voucher.count({ where: baseWhere }),
       db.voucher.count({ where: { ...baseWhere, redeemedAt: { not: null } } }),
-      db.voucher.count({ where: { ...baseWhere, redeemedAt: null } }),
+      db.voucher.count({
+        where: { ...baseWhere, redeemedAt: null, disabledAt: null },
+      }),
       db.voucher.count({
         where: {
           ...baseWhere,
           redeemedAt: null,
+          disabledAt: null,
           expiresAt: { lt: new Date() },
         },
+      }),
+      db.voucher.count({
+        where: { ...baseWhere, disabledAt: { not: null } },
       }),
     ]),
     db.service.findMany({
@@ -102,7 +112,7 @@ export default async function VouchersPage({ searchParams }: Props) {
     }),
   ]);
 
-  const [totalAll, totalRedeemed, totalOpen, totalExpired] = totals;
+  const [totalAll, totalRedeemed, totalOpen, totalExpired, totalDisabled] = totals;
 
   const serviceMap = new Map(services.map((s) => [s.id, s.name]));
   const areaMap = new Map(accessAreas.map((a) => [a.id, a.name]));
@@ -111,7 +121,9 @@ export default async function VouchersPage({ searchParams }: Props) {
     id: v.id,
     code: v.code,
     ticketTypeName: v.ticketTypeName,
+    serviceId: v.serviceId,
     serviceName: v.serviceId ? serviceMap.get(v.serviceId) ?? null : null,
+    accessAreaId: v.accessAreaId,
     accessAreaName: v.accessAreaId ? areaMap.get(v.accessAreaId) ?? null : null,
     discountPercent: v.discountPercent,
     validityType: v.validityType,
@@ -119,6 +131,7 @@ export default async function VouchersPage({ searchParams }: Props) {
     createdAt: v.createdAt.toISOString(),
     redeemedAt: v.redeemedAt ? v.redeemedAt.toISOString() : null,
     expiresAt: v.expiresAt ? v.expiresAt.toISOString() : null,
+    disabledAt: v.disabledAt ? v.disabledAt.toISOString() : null,
     notes: v.notes,
     sourceTicketId: v.sourceTicketId,
     redeemedTicketId: v.redeemedTicketId,
@@ -129,6 +142,7 @@ export default async function VouchersPage({ searchParams }: Props) {
     { id: "open", label: "Offen", count: totalOpen, icon: Clock },
     { id: "redeemed", label: "Eingelöst", count: totalRedeemed, icon: Check },
     { id: "expired", label: "Abgelaufen", count: totalExpired, icon: Clock },
+    { id: "disabled", label: "Deaktiviert", count: totalDisabled, icon: Ban },
   ];
 
   return (
@@ -181,6 +195,8 @@ export default async function VouchersPage({ searchParams }: Props) {
           <CardContent>
             <VouchersTable
               vouchers={enrichedVouchers}
+              services={services}
+              accessAreas={accessAreas}
               currentQuery={queryTrim}
               currentStatus={status}
               currentSort={sort}

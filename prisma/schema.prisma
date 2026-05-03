@@ -569,6 +569,10 @@ model Voucher {
   expiresAt               DateTime?
   /// Freitextnotiz, etwa "Followup Tagesgast 04/2026".
   notes                   String?
+  /// Wenn gesetzt: Gutschein wurde manuell deaktiviert (z. B. als
+  /// ungueltig erklaert). Beim Scan wird er wie "bereits eingeloest"
+  /// behandelt und erlaubt keine Ticket-Erstellung mehr.
+  disabledAt              DateTime?
   accountId               Int
   account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   emailSends              EmailSend[]

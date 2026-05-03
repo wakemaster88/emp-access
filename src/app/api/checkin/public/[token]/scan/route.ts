@@ -76,6 +76,12 @@ export async function POST(
       },
     });
     if (voucher) {
+      if (voucher.disabledAt) {
+        return NextResponse.json({
+          found: false,
+          message: "Gutschein wurde deaktiviert",
+        });
+      }
       if (voucher.redeemedAt) {
         return NextResponse.json({
           found: false,
