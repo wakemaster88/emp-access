@@ -177,7 +177,22 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
-  const [addTicketPrefill, setAddTicketPrefill] = useState<{ firstName?: string; lastName?: string; rfidCode?: string; profileImage?: string | null } | undefined>();
+  const [addTicketPrefill, setAddTicketPrefill] = useState<{
+    firstName?: string;
+    lastName?: string;
+    rfidCode?: string;
+    profileImage?: string | null;
+    voucher?: {
+      code: string;
+      ticketTypeName: string | null;
+      serviceId: number | null;
+      serviceName: string | null;
+      accessAreaId: number | null;
+      accessAreaName: string | null;
+      validityType: string | null;
+      validityDurationMinutes: number | null;
+    };
+  } | undefined>();
   const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const refreshRef = useRef<(() => void) | null>(null);
@@ -327,6 +342,16 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       if (json.found && json.ticket) {
         setSelectedTicket(json.ticket);
         setScanMode(false);
+      } else if (json.voucher) {
+        // Gutschein erkannt: Ticket-Maske oeffnen, vorausgefuellt mit
+        // Voucher-Daten. Eingeloest wird der Voucher dann beim Submit
+        // im /ticket-Endpoint.
+        setAddTicketPrefill({
+          voucher: json.voucher,
+        });
+        setAddTicketOpen(true);
+        setScanMode(false);
+        setScanResult(null);
       }
     } finally {
       setScanLoading(false);
@@ -1984,14 +2009,34 @@ function AddTicketOverlay({
   subscriptions: SubOption[];
   onClose: () => void;
   onCreated: () => void;
-  prefill?: { firstName?: string; lastName?: string; rfidCode?: string; profileImage?: string | null };
+  prefill?: {
+    firstName?: string;
+    lastName?: string;
+    rfidCode?: string;
+    profileImage?: string | null;
+    voucher?: {
+      code: string;
+      ticketTypeName: string | null;
+      serviceId: number | null;
+      serviceName: string | null;
+      accessAreaId: number | null;
+      accessAreaName: string | null;
+      validityType: string | null;
+      validityDurationMinutes: number | null;
+    };
+  };
 }) {
+  const voucher = prefill?.voucher;
   const [firstName, setFirstName] = useState(prefill?.firstName ?? "");
   const [lastName, setLastName] = useState(prefill?.lastName ?? "");
   const [code, setCode] = useState(prefill?.rfidCode ?? "");
-  const [serviceId, setServiceId] = useState("none");
+  const [serviceId, setServiceId] = useState(
+    voucher?.serviceId != null ? String(voucher.serviceId) : "none",
+  );
   const [subscriptionId, setSubscriptionId] = useState("none");
-  const [accessAreaId, setAccessAreaId] = useState("none");
+  const [accessAreaId, setAccessAreaId] = useState(
+    voucher?.accessAreaId != null ? String(voucher.accessAreaId) : "none",
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -2057,6 +2102,26 @@ function AddTicketOverlay({
 
     if (accessAreaId !== "none") {
       payload.accessAreaId = Number(accessAreaId);
+    }
+
+    if (voucher) {
+      // Gutschein einloesen: Code mitsenden, Backend macht es atomar mit
+      // Optimistic Locking. Voucher-Defaults greifen auch dann, wenn der
+      // Mitarbeiter keinen Service explizit ausgewaehlt hat.
+      payload.voucherCode = voucher.code;
+      if (!payload.ticketTypeName && voucher.ticketTypeName) {
+        payload.ticketTypeName = voucher.ticketTypeName;
+      }
+      if (!payload.validityType && voucher.validityType) {
+        payload.validityType = voucher.validityType;
+      }
+      if (
+        payload.validityType === "DURATION"
+        && payload.validityDurationMinutes == null
+        && voucher.validityDurationMinutes != null
+      ) {
+        payload.validityDurationMinutes = voucher.validityDurationMinutes;
+      }
     }
 
     // Fallback: aktuellen Tag als Datum setzen, wenn kein Datum aus
@@ -2136,7 +2201,7 @@ function AddTicketOverlay({
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <Plus className="h-5 w-5 text-emerald-400" />
-            Ticket erstellen
+            {voucher ? "Gutschein einlösen" : "Ticket erstellen"}
           </h2>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
             <X className="h-5 w-5" />
@@ -2144,6 +2209,21 @@ function AddTicketOverlay({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {voucher && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-amber-100 text-xs space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <ScanLine className="h-3.5 w-3.5" />
+                Gutschein {voucher.code}
+              </p>
+              <p className="text-amber-200/90">
+                {voucher.ticketTypeName ?? voucher.serviceName ?? "Gutschein-Ticket"}
+                {voucher.accessAreaName ? ` · ${voucher.accessAreaName}` : ""}
+              </p>
+              <p className="text-amber-300/70">
+                Wird beim Erstellen automatisch eingelöst und mit dem neuen Ticket verknüpft.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400">Vorname <span className="text-rose-500">*</span></label>

@@ -56,76 +56,49 @@ export async function POST(
   }
 
   if (!ticket) {
-    // Gutschein-Einlösung: Code beginnt mit "GS-"
+    // Gutschein: nicht automatisch einlösen, sondern dem Frontend
+    // Voucher-Infos zurueckgeben, damit der Mitarbeiter Vor-/Nachname
+    // erfasst und das Ticket bewusst erstellt. Eingeloest wird der
+    // Voucher dann atomar im /ticket-Endpoint (mit voucherCode-Param).
     if (code.startsWith("GS-")) {
-      const voucher = await prisma.voucher.findUnique({
-        where: { code, accountId: monitor.accountId },
-      });
-      if (voucher && !voucher.redeemedAt) {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-        const todayEnd = new Date(today);
-        todayEnd.setUTCHours(23, 59, 59, 999);
-
-        const newTicket = await prisma.ticket.create({
-          data: {
-            name: voucher.ticketTypeName ?? "Gutschein-Ticket",
-            ticketTypeName: voucher.ticketTypeName,
-            startDate: today,
-            endDate: todayEnd,
-            validityType: voucher.validityType,
-            validityDurationMinutes: voucher.validityDurationMinutes,
-            serviceId: voucher.serviceId,
-            accessAreaId: voucher.accessAreaId,
-            status: "VALID",
-            accountId: monitor.accountId,
-          },
-          include: {
-            accessArea: { select: { id: true, name: true } },
-            subscription: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
-            service: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
-          },
-        });
-
-        await prisma.voucher.update({
-          where: { id: voucher.id },
-          data: { redeemedAt: new Date(), redeemedTicketId: newTicket.id },
-        });
-
-        return NextResponse.json({
-          found: true,
-          voucherRedeemed: true,
-          message: "Gutschein eingelöst",
-          ticket: {
-            id: newTicket.id,
-            name: newTicket.name,
-            firstName: newTicket.firstName,
-            lastName: newTicket.lastName,
-            ticketTypeName: newTicket.ticketTypeName,
-            status: newTicket.status,
-            validityType: newTicket.validityType,
-            slotStart: newTicket.slotStart,
-            slotEnd: newTicket.slotEnd,
-            validityDurationMinutes: newTicket.validityDurationMinutes,
-            firstScanAt: newTicket.firstScanAt,
-            startDate: newTicket.startDate,
-            endDate: newTicket.endDate,
-            profileImage: newTicket.profileImage,
-            rfidCode: newTicket.rfidCode,
-            extras: newTicket.extras,
-            source: newTicket.source,
-            subscriptionId: newTicket.subscriptionId,
-            accessArea: newTicket.accessArea,
-            subscription: newTicket.subscription,
-            service: newTicket.service,
-            checkedIn: false,
-          },
-        });
+      const voucher = await prisma.voucher.findUnique({ where: { code } });
+      if (!voucher || voucher.accountId !== monitor.accountId) {
+        return NextResponse.json({ found: false, message: "Gutschein nicht gefunden" });
       }
-
-      if (voucher?.redeemedAt) {
+      if (voucher.redeemedAt) {
         return NextResponse.json({ found: false, message: "Gutschein bereits eingelöst" });
       }
+
+      const [service, accessArea] = await Promise.all([
+        voucher.serviceId
+          ? prisma.service.findUnique({
+              where: { id: voucher.serviceId },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+        voucher.accessAreaId
+          ? prisma.accessArea.findUnique({
+              where: { id: voucher.accessAreaId },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+      ]);
+
+      return NextResponse.json({
+        found: false,
+        voucher: {
+          code: voucher.code,
+          ticketTypeName: voucher.ticketTypeName,
+          serviceId: voucher.serviceId,
+          serviceName: service?.name ?? null,
+          accessAreaId: voucher.accessAreaId,
+          accessAreaName: accessArea?.name ?? null,
+          validityType: voucher.validityType,
+          validityDurationMinutes: voucher.validityDurationMinutes,
+          discountPercent: voucher.discountPercent,
+        },
+        message: "Gutschein erkannt – bitte Ticket vervollständigen",
+      });
     }
 
     return NextResponse.json({ found: false, message: "Ticket nicht gefunden" });
