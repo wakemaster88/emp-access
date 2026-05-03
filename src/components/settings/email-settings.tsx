@@ -1149,7 +1149,18 @@ function RuleDialog({
   }
 
   const showVoucherFields = createVoucher;
-  const showRenewUrl = trigger === "SUBSCRIPTION_EXPIRING";
+  const renewUrlLabel =
+    trigger === "SUBSCRIPTION_EXPIRING" || trigger === "SUBSCRIPTION_EXPIRED"
+      ? "Verlängerungs-Link"
+      : "CTA-Link";
+  const renewUrlHelper =
+    trigger === "SUBSCRIPTION_EXPIRING"
+      ? "Wird im Template als {{renewUrl}} eingesetzt – z. B. dein Abo-Verlängerungs-Flow."
+      : trigger === "SUBSCRIPTION_EXPIRED"
+        ? "Wird im Template als {{renewUrl}} eingesetzt – idealerweise Wiedereinstiegs-Seite."
+        : trigger === "DAY_VISIT_FOLLOWUP"
+          ? "Wird im Template als {{renewUrl}} eingesetzt – z. B. Buchung des nächsten Besuchs."
+          : "Wird im Template als {{renewUrl}} eingesetzt – z. B. die Startseite oder eine Begrüßungs-Landingpage.";
   const filterRelevant = trigger === "SUBSCRIPTION_EXPIRING" || trigger === "SUBSCRIPTION_EXPIRED" || trigger === "DAY_VISIT_FOLLOWUP" || trigger === "TICKET_WELCOME";
 
   const variableHints = useMemo(() => {
@@ -1158,8 +1169,9 @@ function RuleDialog({
       base.push("{{subscriptionName}}", "{{endDate}}", "{{daysUntilExpiry}}");
     }
     if (trigger === "DAY_VISIT_FOLLOWUP") base.push("{{daysSinceVisit}}", "{{ticketTypeName}}");
+    if (trigger === "TICKET_WELCOME") base.push("{{ticketTypeName}}");
     if (createVoucher) base.push("{{voucherCode}}", "{{voucherDiscountPercent}}", "{{voucherExpiresAt}}");
-    if (trigger === "SUBSCRIPTION_EXPIRING") base.push("{{renewUrl}}");
+    base.push("{{renewUrl}}");
     return base;
   }, [trigger, createVoucher]);
 
@@ -1276,21 +1288,17 @@ function RuleDialog({
               </>
             )}
 
-            {showRenewUrl && (
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="rule-renew">Renew-URL</Label>
-                <Input
-                  id="rule-renew"
-                  type="url"
-                  placeholder="https://verein.de/abo-verlaengern"
-                  value={renewUrl}
-                  onChange={(e) => setRenewUrl(e.target.value)}
-                />
-                <p className="text-xs text-slate-400">
-                  Verfügbar im Template als <code className="font-mono">{"{{renewUrl}}"}</code>.
-                </p>
-              </div>
-            )}
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="rule-renew">{renewUrlLabel}</Label>
+              <Input
+                id="rule-renew"
+                type="url"
+                placeholder="https://www.tuttenbrocksee.com"
+                value={renewUrl}
+                onChange={(e) => setRenewUrl(e.target.value)}
+              />
+              <p className="text-xs text-slate-400">{renewUrlHelper}</p>
+            </div>
           </div>
 
           <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
