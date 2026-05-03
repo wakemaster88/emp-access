@@ -16,6 +16,20 @@ export async function POST(request: NextRequest) {
   const code = rawCode.replace(/\s+/g, "");
   const stripped = code.replace(/^[#%]+/, "");
   const deviceId = Number(body.deviceId);
+  // Optional: Drehkreuz/Pi schickt explizit die Bewegungs-Richtung mit
+  // ("IN" = Eintritt, "OUT" = Austritt). Dadurch laesst sich auch ein
+  // bidirektionales Geraet (accessIn UND accessOut gesetzt) eindeutig
+  // einer Richtung zuordnen, statt nur ueber die Geraete-Konfiguration
+  // zu raten. Faellt zurueck auf die alte Heuristik, wenn der Pi keine
+  // Richtung mitschickt.
+  const declaredDirection: "IN" | "OUT" | null =
+    typeof body.direction === "string"
+      ? body.direction.toUpperCase() === "OUT"
+        ? "OUT"
+        : body.direction.toUpperCase() === "IN"
+          ? "IN"
+          : null
+      : null;
 
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
   if (isNaN(deviceId)) return NextResponse.json({ error: "Missing deviceId" }, { status: 400 });
@@ -334,21 +348,28 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
+  // Exit-Scan-Definition (defensiv):
+  // 1) Wenn der Pi/Drehkreuz eine explizite Richtung mitschickt, gilt
+  //    die. Das ist der robusteste Fall - das Geraet weiss am besten,
+  //    in welche Richtung sich die Person bewegt hat.
+  // 2) Sonst nur dann Exit, wenn das Geraet AUSSCHLIESSLICH Exit ist
+  //    (`accessOut != null` und `accessIn == null`). Bei bidirektional
+  //    konfigurierten Geraeten (beide Felder gesetzt) ist die Richtung
+  //    nicht eindeutig - wir behandeln den Scan dann defensiv als
+  //    Eintritt, damit der Reentry-Schutz greift, statt einen
+  //    REDEEMED↔VALID-Toggle zu erlauben.
+  const isExitScan =
+    declaredDirection === "OUT"
+    || (
+      declaredDirection !== "IN"
+      && device.accessOut != null
+      && device.accessIn == null
+    );
   const serviceAllowsReentry = ticket.service?.allowReentry === true;
 
-  // Reentry-Check: GLOBAL pro Ticket, nicht pro Device. Sonst koennte
-  // ein User mit demselben Ticket an Eingang A scannen und kurz darauf
-  // an Eingang B – beide Scans wuerden GRANTED sein, weil der frueher
-  // device-lokale Check an Eingang B keinen vorherigen Scan sieht.
-  //
-  // Wir machen den Check fuer JEDEN Nicht-Exit-Scan (also Eingang +
-  // mehrdeutige/bidirektionale Geraete). Ein frueherer Filter auf
-  // `isEntryScan` (nur wenn device.accessIn === ticket.accessAreaId)
-  // war zu restriktiv: wenn das Ticket einen Ober-Bereich hat
-  // ("Strandbad") und das Geraet einen spezifischeren ("Strandbad
-  // Eingang B"), passt der Vergleich nicht und der ganze Reentry-Block
-  // wurde uebersprungen → Mehrfacheinlass.
+  // Reentry-Check: GLOBAL pro Ticket, nicht pro Device. Greift fuer
+  // JEDEN Nicht-Exit-Scan (Eingang + bidirektionale/mehrdeutige
+  // Geraete ohne explizite IN-Direction).
   if (!isEmployee && !isExitScan && ticket.status === "REDEEMED") {
     if (!serviceAllowsReentry && !device.allowReentry) {
       await db.scan.create({
@@ -362,9 +383,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Reentry erlaubt: Eintritt nur, wenn der letzte GRANTED-Scan ein
-    // Exit-Scan war (User ist gerade draussen). Sonst ist er bereits
-    // drin und versucht das Ticket fuer einen zweiten Eintritt zu
-    // nutzen.
+    // klar erkennbarer Exit war. Wir nutzen die gleiche defensive
+    // Definition wie oben - bidirektionale Geraete zaehlen NICHT als
+    // Exit, weil sie eben auch ein Eintritt sein koennten. Damit kann
+    // ein REDEEMED-Ticket an einem bidirektionalen Geraet nicht mehr
+    // versehentlich auf VALID zurueckspringen und unbegrenzt rein.
     const lastScan = await db.scan.findFirst({
       where: { ticketId: ticket.id, result: "GRANTED" },
       orderBy: { scanTime: "desc" },
@@ -376,13 +399,7 @@ export async function POST(request: NextRequest) {
     const lastWasExit =
       !!lastDev
       && lastDev.accessOut != null
-      // Reines Exit-Geraet (kein accessIn) ist eindeutig Exit. Sonst
-      // muss der Bereich passen, oder das Ticket hat keinen Bereich.
-      && (
-        lastDev.accessIn == null
-        || ticket.accessAreaId == null
-        || lastDev.accessOut === ticket.accessAreaId
-      );
+      && lastDev.accessIn == null;
     if (!lastWasExit) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
