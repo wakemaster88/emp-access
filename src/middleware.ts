@@ -12,7 +12,9 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/integrations") ||
     pathname.startsWith("/api/monitor/public") ||
     pathname.startsWith("/api/checkin/public") ||
+    pathname.startsWith("/api/scanner/public") ||
     pathname.startsWith("/monitor/") ||
+    pathname.startsWith("/scanner/") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");
 

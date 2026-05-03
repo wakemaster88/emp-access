@@ -379,7 +379,7 @@ model MonitorConfig {
   id        Int      @id @default(autoincrement())
   name      String
   token     String   @unique @default(cuid())
-  type      String   @default("MONITOR") // MONITOR | CHECKIN
+  type      String   @default("MONITOR") // MONITOR | CHECKIN | RESOURCE_MONITOR | SCANNER
   deviceIds Json     @default("[]")
   isActive  Boolean  @default(true)
   accountId Int

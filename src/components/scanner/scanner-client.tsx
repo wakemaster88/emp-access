@@ -79,7 +79,25 @@ interface AccessArea {
   name: string;
 }
 
-export function ScannerClient() {
+export interface ScannerClientProps {
+  /**
+   * URL fuer das Areas-Listing.
+   * Default: "/api/areas" (Session-Auth).
+   * Token-Scanner: "/api/scanner/public/{token}/areas".
+   */
+  areasUrl?: string;
+  /**
+   * URL fuer den Scan-Check.
+   * Default: "/api/scan-check" (Session-Auth).
+   * Token-Scanner: "/api/scanner/public/{token}/scan-check".
+   */
+  scanCheckUrl?: string;
+}
+
+export function ScannerClient({
+  areasUrl = "/api/areas",
+  scanCheckUrl = "/api/scan-check",
+}: ScannerClientProps = {}) {
   const [isScanning, setIsScanning] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
@@ -97,13 +115,13 @@ export function ScannerClient() {
   const mountedRef = useRef(true);
 
   useEffect(() => {
-    fetch("/api/areas")
+    fetch(areasUrl)
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data)) setAreas(data);
       })
       .catch(() => {});
-  }, []);
+  }, [areasUrl]);
 
   const checkCode = useCallback(
     async (code: string) => {
@@ -116,7 +134,7 @@ export function ScannerClient() {
       }, 3000);
 
       try {
-        const res = await fetch("/api/scan-check", {
+        const res = await fetch(scanCheckUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -154,7 +172,7 @@ export function ScannerClient() {
         playTone(false);
       }
     },
-    [selectedArea]
+    [selectedArea, scanCheckUrl]
   );
 
   const stopScannerSafe = useCallback(async () => {

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
-  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid,
+  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -100,7 +100,14 @@ function MonitorDialog({
     }
   }
 
-  const urlPath = type === "CHECKIN" ? "checkin" : type === "RESOURCE_MONITOR" ? "resource-monitor" : "monitor";
+  const urlPath =
+    type === "CHECKIN"
+      ? "checkin"
+      : type === "RESOURCE_MONITOR"
+        ? "resource-monitor"
+        : type === "SCANNER"
+          ? "scanner"
+          : "monitor";
   const monitorUrl = monitor ? `${baseUrl}/${urlPath}/${monitor.token}` : "";
 
   return (
@@ -124,7 +131,7 @@ function MonitorDialog({
 
         <div className="space-y-2">
           <Label>Typ</Label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => setType("MONITOR")}
@@ -173,11 +180,32 @@ function MonitorDialog({
                 <p className="text-xs text-slate-400">Tagesübersicht</p>
               </div>
             </button>
+            <button
+              type="button"
+              onClick={() => setType("SCANNER")}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
+                type === "SCANNER"
+                  ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30"
+                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+              )}
+            >
+              <ScanLine className={cn("h-4 w-4 shrink-0", type === "SCANNER" ? "text-amber-600" : "text-slate-400")} />
+              <div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Scanner</p>
+                <p className="text-xs text-slate-400">QR-Kamera, Token</p>
+              </div>
+            </button>
           </div>
         </div>
 
-        {type === "MONITOR" && <div className="space-y-2">
+        {(type === "MONITOR" || type === "SCANNER") && <div className="space-y-2">
           <Label>Geräte auswählen</Label>
+          {type === "SCANNER" && (
+            <p className="text-xs text-slate-400">
+              Optional: Das erste ausgewählte Gerät wird als Scan-Quelle in der Historie hinterlegt.
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
             {devices.length === 0 && (
               <p className="text-sm text-slate-500">Keine Geräte vorhanden</p>
@@ -399,7 +427,14 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
       {monitors.map((monitor) => {
         const isCheckin = monitor.type === "CHECKIN";
         const isResource = monitor.type === "RESOURCE_MONITOR";
-        const urlPath = isCheckin ? "checkin" : isResource ? "resource-monitor" : "monitor";
+        const isScanner = monitor.type === "SCANNER";
+        const urlPath = isCheckin
+          ? "checkin"
+          : isResource
+            ? "resource-monitor"
+            : isScanner
+              ? "scanner"
+              : "monitor";
         const url = `${baseUrl}/${urlPath}/${monitor.token}`;
         const deviceNames = isResource
           ? accessAreas
@@ -408,7 +443,34 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
           : devices
               .filter((d) => (monitor.deviceIds as number[]).includes(d.id))
               .map((d) => d.name);
-        const TypeIcon = isCheckin ? ClipboardCheck : isResource ? LayoutGrid : Monitor;
+        const TypeIcon = isCheckin
+          ? ClipboardCheck
+          : isResource
+            ? LayoutGrid
+            : isScanner
+              ? ScanLine
+              : Monitor;
+        const typeIconColor = isCheckin
+          ? "text-emerald-500"
+          : isResource
+            ? "text-sky-500"
+            : isScanner
+              ? "text-amber-500"
+              : "text-indigo-500";
+        const typeBadgeClass = isCheckin
+          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+          : isResource
+            ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
+            : isScanner
+              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+              : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400";
+        const typeLabel = isCheckin
+          ? "Check-in"
+          : isResource
+            ? "Ressourcen"
+            : isScanner
+              ? "Scanner"
+              : "Monitor";
 
         return (
           <Card key={monitor.id} className="border-slate-200 dark:border-slate-800">
@@ -416,15 +478,10 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center gap-2">
-                    <TypeIcon className={cn("h-4 w-4 shrink-0", isCheckin ? "text-emerald-500" : isResource ? "text-sky-500" : "text-indigo-500")} />
+                    <TypeIcon className={cn("h-4 w-4 shrink-0", typeIconColor)} />
                     <span className="font-medium text-slate-900 dark:text-slate-100">{monitor.name}</span>
-                    <Badge className={cn("text-xs", isCheckin
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                      : isResource
-                        ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
-                        : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                    )}>
-                      {isCheckin ? "Check-in" : isResource ? "Ressourcen" : "Monitor"}
+                    <Badge className={cn("text-xs", typeBadgeClass)}>
+                      {typeLabel}
                     </Badge>
                     <Badge className={monitor.isActive
                       ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs"
