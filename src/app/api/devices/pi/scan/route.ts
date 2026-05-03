@@ -335,19 +335,22 @@ export async function POST(request: NextRequest) {
   }
 
   const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
-  const isEntryScan =
-    device.accessIn != null
-    && (ticket.accessAreaId == null || ticket.accessAreaId === device.accessIn);
   const serviceAllowsReentry = ticket.service?.allowReentry === true;
 
-  // Reentry-Check: Wir schauen GLOBAL pro Ticket, nicht pro Device.
-  // Sonst kann ein User mit demselben Ticket an Eingang A scannen und
-  // 11 Sekunden spaeter an Eingang B – beide Scans wuerden GRANTED sein,
-  // weil der frueher device-lokale Check an Eingang B keinen vorherigen
-  // Scan sieht.
+  // Reentry-Check: GLOBAL pro Ticket, nicht pro Device. Sonst koennte
+  // ein User mit demselben Ticket an Eingang A scannen und kurz darauf
+  // an Eingang B – beide Scans wuerden GRANTED sein, weil der frueher
+  // device-lokale Check an Eingang B keinen vorherigen Scan sieht.
+  //
+  // Wir machen den Check fuer JEDEN Nicht-Exit-Scan (also Eingang +
+  // mehrdeutige/bidirektionale Geraete). Ein frueherer Filter auf
+  // `isEntryScan` (nur wenn device.accessIn === ticket.accessAreaId)
+  // war zu restriktiv: wenn das Ticket einen Ober-Bereich hat
+  // ("Strandbad") und das Geraet einen spezifischeren ("Strandbad
+  // Eingang B"), passt der Vergleich nicht und der ganze Reentry-Block
+  // wurde uebersprungen → Mehrfacheinlass.
   if (!isEmployee && !isExitScan && ticket.status === "REDEEMED") {
     if (!serviceAllowsReentry && !device.allowReentry) {
-      // Kein Wiedereintritt erlaubt → Ticket schon eingeloest, fertig.
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
@@ -358,30 +361,37 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Reentry erlaubt: Eintritt nur, wenn der letzte Scan ein Exit-Scan
-    // war (User ist also gerade draussen). Sonst ist er bereits drin und
-    // versucht das Ticket fuer eine zweite Person zu nutzen.
-    if (isEntryScan) {
-      const lastScan = await db.scan.findFirst({
-        where: { ticketId: ticket.id, result: "GRANTED" },
-        orderBy: { scanTime: "desc" },
-        select: {
-          device: { select: { accessIn: true, accessOut: true } },
-        },
+    // Reentry erlaubt: Eintritt nur, wenn der letzte GRANTED-Scan ein
+    // Exit-Scan war (User ist gerade draussen). Sonst ist er bereits
+    // drin und versucht das Ticket fuer einen zweiten Eintritt zu
+    // nutzen.
+    const lastScan = await db.scan.findFirst({
+      where: { ticketId: ticket.id, result: "GRANTED" },
+      orderBy: { scanTime: "desc" },
+      select: {
+        device: { select: { accessIn: true, accessOut: true } },
+      },
+    });
+    const lastDev = lastScan?.device;
+    const lastWasExit =
+      !!lastDev
+      && lastDev.accessOut != null
+      // Reines Exit-Geraet (kein accessIn) ist eindeutig Exit. Sonst
+      // muss der Bereich passen, oder das Ticket hat keinen Bereich.
+      && (
+        lastDev.accessIn == null
+        || ticket.accessAreaId == null
+        || lastDev.accessOut === ticket.accessAreaId
+      );
+    if (!lastWasExit) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
-      const lastWasExit =
-        lastScan?.device?.accessOut != null
-        && (ticket.accessAreaId == null || lastScan.device.accessOut === ticket.accessAreaId);
-      if (!lastWasExit) {
-        await db.scan.create({
-          data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
-        });
-        return NextResponse.json({
-          granted: false,
-          message: "Bereits drin (kein Ausgang registriert)",
-          ticket: ticketInfo,
-        });
-      }
+      return NextResponse.json({
+        granted: false,
+        message: "Bereits drin (kein Ausgang registriert)",
+        ticket: ticketInfo,
+      });
     }
   }
 
