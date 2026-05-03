@@ -24,6 +24,7 @@ import {
   QrCode,
   Zap,
   Lock,
+  Gift,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tickets", label: "Tickets", icon: Ticket },
+  { href: "/vouchers", label: "Gutscheine", icon: Gift },
   { href: "/subscriptions", label: "Abos", icon: CreditCard },
   { href: "/services", label: "Services", icon: Package },
   { href: "/vereine", label: "Vereine", icon: Users },
