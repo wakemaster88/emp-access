@@ -149,6 +149,52 @@ function calcAge(birthDate: string | null | undefined): number | null {
   return age;
 }
 
+/**
+ * Liefert eine kompakte Uhrzeit-Beschriftung fuer die Ticket-Card im
+ * Shop Monitor. Reihenfolge:
+ *   1. slotStart/slotEnd (TIME_SLOT-Tickets, z. B. "10:00–12:00").
+ *   2. startDate/endDate, wenn beide am gleichen Tag liegen und nicht
+ *      einen "ganzen Tag" abdecken (00:00–23:59). Das deckt die aus Anny
+ *      synchronisierten Bahnmieten/Kursplaetze ab, die ihre Uhrzeit als
+ *      Timestamp tragen.
+ *   3. Sonst leer (Mehrtages-Tickets ohne Slot-Zeit).
+ */
+function formatTicketTimeLabel(ticket: {
+  slotStart: string | null;
+  slotEnd: string | null;
+  startDate: string | null;
+  endDate: string | null;
+}): string {
+  if (ticket.slotStart && ticket.slotEnd) {
+    return `${ticket.slotStart}–${ticket.slotEnd}`;
+  }
+  if (ticket.startDate && ticket.endDate) {
+    const s = new Date(ticket.startDate);
+    const e = new Date(ticket.endDate);
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) return "";
+    const sameDay =
+      s.getFullYear() === e.getFullYear()
+      && s.getMonth() === e.getMonth()
+      && s.getDate() === e.getDate();
+    if (!sameDay) return "";
+    const isFullDay =
+      s.getHours() === 0 && s.getMinutes() === 0
+      && (
+        (e.getHours() === 23 && e.getMinutes() === 59)
+        || (e.getHours() === 0 && e.getMinutes() === 0)
+      );
+    if (isFullDay) return "";
+    const fmt = (d: Date) =>
+      d.toLocaleTimeString("de-DE", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Europe/Berlin",
+      });
+    return `${fmt(s)}–${fmt(e)}`;
+  }
+  return "";
+}
+
 export default function CheckinPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const [data, setData] = useState<CheckinData | null>(null);
@@ -1103,11 +1149,16 @@ function TicketCard({
           {personName(ticket)}
           {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-slate-500">({a})</span> : null; })()}
         </p>
-        <p className="text-xs text-slate-400 truncate">
-          {ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd}` : ""}
-          {ticket.slotStart && ticket.ticketTypeName ? " · " : ""}
-          {ticket.ticketTypeName ?? ""}
-        </p>
+        {(() => {
+          const timeLabel = formatTicketTimeLabel(ticket);
+          return (
+            <p className="text-xs text-slate-400 truncate">
+              {timeLabel}
+              {timeLabel && ticket.ticketTypeName ? " · " : ""}
+              {ticket.ticketTypeName ?? ""}
+            </p>
+          );
+        })()}
         {isSub && ticket.startDate && ticket.endDate && (
           <p className="text-[11px] text-slate-500 mt-0.5">
             {new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
@@ -1473,9 +1524,12 @@ function TicketOverlay({
                 return a != null ? <span className="ml-1 text-slate-500">· {a} J.</span> : null;
               })()}
             </p>
-            {ticket.slotStart && ticket.slotEnd && (
-              <p className="text-sm text-slate-500 mt-0.5">{ticket.slotStart} – {ticket.slotEnd} Uhr</p>
-            )}
+            {(() => {
+              const label = formatTicketTimeLabel(ticket);
+              return label ? (
+                <p className="text-sm text-slate-500 mt-0.5">{label} Uhr</p>
+              ) : null;
+            })()}
             <div className="flex gap-1.5 mt-2">
               <Badge className={cn(
                 "text-xs px-2 py-0.5 font-bold",
