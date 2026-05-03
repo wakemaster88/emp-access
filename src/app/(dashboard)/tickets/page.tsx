@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AddTicketDialog } from "@/components/tickets/add-ticket-dialog";
+import { BulkTicketDialog } from "@/components/tickets/bulk-ticket-dialog";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { TicketCodeSearch } from "@/components/tickets/ticket-code-search";
 import { TicketSortFilter } from "@/components/tickets/ticket-sort-filter";
@@ -172,6 +173,14 @@ export default async function TicketsPage({ searchParams }: Props) {
                     : <><Eye className="h-4 w-4 mr-1.5" /><span className="hidden xs:inline">Auch inaktive</span><span className="xs:hidden">Alle</span></>}
                 </Link>
               </Button>
+              {!isSuperAdmin && (
+                <BulkTicketDialog
+                  areas={areas}
+                  subscriptions={subsWithAreas}
+                  services={svcsWithAreas}
+                  accountName={session.user.accountName}
+                />
+              )}
               {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} vereine={vereineList} />}
             </div>
           </CardHeader>

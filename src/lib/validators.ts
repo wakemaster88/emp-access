@@ -52,6 +52,26 @@ export const ticketCreateSchema = z.object({
 
 export const ticketUpdateSchema = ticketCreateSchema.partial();
 
+export const ticketBulkCreateSchema = z.object({
+  count: z.coerce.number().int().min(1).max(100),
+  /** Namens-Praefix (z. B. "Tagesgast" → "Tagesgast 1", "Tagesgast 2", ...). */
+  namePrefix: z.string().min(1).max(60).optional(),
+  /** Optional: explizite Liste (Laenge muss `count` entsprechen, sonst Praefix). */
+  names: z.array(z.string().min(1).max(120)).optional(),
+  ticketTypeName: z.string().max(120).optional().nullable(),
+  accessAreaId: z.coerce.number().int().optional().nullable(),
+  subscriptionId: z.coerce.number().int().optional().nullable(),
+  serviceId: z.coerce.number().int().optional().nullable(),
+  validityType: z.enum(["DATE_RANGE", "TIME_SLOT", "DURATION"]).optional(),
+  startDate: z.string().datetime().optional().nullable(),
+  endDate: z.string().datetime().optional().nullable(),
+  slotStart: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+  slotEnd: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+  validityDurationMinutes: z.coerce.number().int().min(1).optional().nullable(),
+  /** Optionales Praefix fuer den auto-generierten Barcode (Default "BLK"). */
+  codePrefix: z.string().min(1).max(8).regex(/^[A-Z0-9-]+$/i).optional(),
+});
+
 export const deviceCreateSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["RASPBERRY_PI", "SHELLY"]),
