@@ -60,9 +60,12 @@ export async function GET(
         AND: [
           { OR: [{ source: null }, { source: { notIn: ["EMP_CONTROL"] } }] },
           {
+            // Tickets ohne jegliches Datum (startDate=null UND endDate=null)
+            // werden im Shop-Monitor NICHT mehr angezeigt – sie liessen sich
+            // sonst keinem konkreten Tag zuordnen und tauchten irrefuehrend
+            // im Tagesueberblick auf.
             OR: [
               { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-              { startDate: null, endDate: null, createdAt: { gte: dayStart, lte: dayEnd } },
               { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
               { startDate: null, endDate: { gte: dayStart } },
             ],
@@ -96,9 +99,10 @@ export async function GET(
         tickets: {
           where: {
             status: { in: ["VALID", "REDEEMED", "PAUSED"] },
+            // Auch Abo-Tickets ohne jegliches Datum werden ausgeblendet,
+            // damit der Shop-Monitor pro Tag konsistent ist.
             OR: [
               { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
-              { startDate: null, endDate: null, createdAt: { gte: dayStart, lte: dayEnd } },
               { startDate: { gte: dayStart, lte: dayEnd }, endDate: null },
               { startDate: null, endDate: { gte: dayStart } },
             ],
