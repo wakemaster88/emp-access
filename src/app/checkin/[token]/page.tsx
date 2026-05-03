@@ -33,7 +33,11 @@ import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import { LockerOverlay } from "@/components/checkin/locker-overlay";
 import { Lock } from "lucide-react";
-import { printPdfBlob, type PrintResult } from "@/lib/print-tickets";
+import {
+  openPrintWindow,
+  printPdfBlob,
+  type PrintResult,
+} from "@/lib/print-tickets";
 
 interface TicketExtra {
   name: string;
@@ -390,6 +394,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const handleCancelVoucher = useCallback(async () => {
     if (!selectedTicket) return;
     setCancellingVoucher(true);
+    // Synchron beim Click ein Print-Window oeffnen, damit die
+    // Browser-User-Activation fuer den spaeteren window.print()-Aufruf
+    // erhalten bleibt (sonst zeigt Chrome einen "Drucken nicht moeglich"-
+    // Toast bzw. ignoriert print() beim zweiten Versuch silent).
+    const printWin = openPrintWindow();
     try {
       const res = await fetch(`/api/checkin/public/${token}/voucher`, {
         method: "POST",
@@ -398,10 +407,33 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       });
       const json = await res.json();
       if (json.success) {
-        await printVoucher(json.voucher.code, json.voucher.ticketTypeName, data?.accountName ?? "");
+        const result = await printVoucher(
+          json.voucher.code,
+          json.voucher.ticketTypeName,
+          data?.accountName ?? "",
+          printWin,
+        );
+        if (
+          printWin &&
+          !printWin.closed &&
+          result.transport !== "popup" &&
+          result.transport !== "newTab"
+        ) {
+          try { printWin.close(); } catch { /* ignore */ }
+        }
         setSelectedTicket(null);
         refreshRef.current?.();
+      } else {
+        // Fetch fehlgeschlagen – verwaisten Popup wieder schliessen.
+        if (printWin && !printWin.closed) {
+          try { printWin.close(); } catch { /* ignore */ }
+        }
       }
+    } catch (err) {
+      if (printWin && !printWin.closed) {
+        try { printWin.close(); } catch { /* ignore */ }
+      }
+      throw err;
     } finally {
       setCancellingVoucher(false);
     }
@@ -1128,7 +1160,11 @@ function buildPrintFilename(prefix: string, code: string): string {
   return `${prefix}_${slug}.pdf`;
 }
 
-async function printTicket(ticket: CheckinTicket, accountName: string): Promise<PrintResult> {
+async function printTicket(
+  ticket: CheckinTicket,
+  accountName: string,
+  preOpenedWindow: Window | null = null,
+): Promise<PrintResult> {
   const code = ticket.barcode || ticket.qrCode || ticket.uuid || String(ticket.id);
   let qrDataUrl = "";
   try {
@@ -1237,13 +1273,16 @@ async function printTicket(ticket: CheckinTicket, accountName: string): Promise<
   doc.line(margin, y, pw - margin, y);
 
   const blob = doc.output("blob");
-  return printPdfBlob(blob, buildPrintFilename("ticket", code));
+  return printPdfBlob(blob, buildPrintFilename("ticket", code), {
+    preOpenedWindow,
+  });
 }
 
 async function printVoucher(
   voucherCode: string,
   ticketTypeName: string | null,
   accountName: string,
+  preOpenedWindow: Window | null = null,
 ): Promise<PrintResult> {
   let qrDataUrl = "";
   try {
@@ -1322,7 +1361,9 @@ async function printVoucher(
   doc.line(margin, y, pw - margin, y);
 
   const blob = doc.output("blob");
-  return printPdfBlob(blob, buildPrintFilename("gutschein", voucherCode));
+  return printPdfBlob(blob, buildPrintFilename("gutschein", voucherCode), {
+    preOpenedWindow,
+  });
 }
 
 function TicketOverlay({
@@ -1618,7 +1659,24 @@ function TicketOverlay({
 
           {/* Print button */}
           <button
-            onClick={() => printTicket(ticket, accountName)}
+            onClick={() => {
+              // Wichtig: window.open SYNCHRON im onClick aufrufen, damit
+              // die Browser-User-Activation voll erhalten bleibt. Erst
+              // danach die (asynchrone) PDF-Generierung anstossen und das
+              // Ergebnis ins bereits geoeffnete Window schreiben.
+              const win = openPrintWindow();
+              void printTicket(ticket, accountName, win).then((result) => {
+                if (
+                  win &&
+                  !win.closed &&
+                  result.transport !== "popup" &&
+                  result.transport !== "newTab"
+                ) {
+                  // Iframe / Download Pfad – Popup nicht mehr noetig.
+                  try { win.close(); } catch { /* ignore */ }
+                }
+              });
+            }}
             className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
           >
             <Printer className="h-4 w-4" />
