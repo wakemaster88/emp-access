@@ -33,6 +33,7 @@ import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import { LockerOverlay } from "@/components/checkin/locker-overlay";
 import { Lock } from "lucide-react";
+import { printPdfBlob, type PrintResult } from "@/lib/print-tickets";
 
 interface TicketExtra {
   name: string;
@@ -1121,7 +1122,13 @@ function TicketCard({
   );
 }
 
-async function printTicket(ticket: CheckinTicket, accountName: string) {
+/// Erzeugt einen Datei-Slug aus Tickettyp/Code fuer den Download-Fallback.
+function buildPrintFilename(prefix: string, code: string): string {
+  const slug = code.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60) || "ticket";
+  return `${prefix}_${slug}.pdf`;
+}
+
+async function printTicket(ticket: CheckinTicket, accountName: string): Promise<PrintResult> {
   const code = ticket.barcode || ticket.qrCode || ticket.uuid || String(ticket.id);
   let qrDataUrl = "";
   try {
@@ -1230,21 +1237,14 @@ async function printTicket(ticket: CheckinTicket, accountName: string) {
   doc.line(margin, y, pw - margin, y);
 
   const blob = doc.output("blob");
-  const url = URL.createObjectURL(blob);
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  iframe.onload = () => {
-    iframe.contentWindow?.print();
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-      URL.revokeObjectURL(url);
-    }, 5000);
-  };
+  return printPdfBlob(blob, buildPrintFilename("ticket", code));
 }
 
-async function printVoucher(voucherCode: string, ticketTypeName: string | null, accountName: string) {
+async function printVoucher(
+  voucherCode: string,
+  ticketTypeName: string | null,
+  accountName: string,
+): Promise<PrintResult> {
   let qrDataUrl = "";
   try {
     qrDataUrl = await QRCode.toDataURL(voucherCode, {
@@ -1322,18 +1322,7 @@ async function printVoucher(voucherCode: string, ticketTypeName: string | null, 
   doc.line(margin, y, pw - margin, y);
 
   const blob = doc.output("blob");
-  const url = URL.createObjectURL(blob);
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  iframe.onload = () => {
-    iframe.contentWindow?.print();
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-      URL.revokeObjectURL(url);
-    }, 5000);
-  };
+  return printPdfBlob(blob, buildPrintFilename("gutschein", voucherCode));
 }
 
 function TicketOverlay({

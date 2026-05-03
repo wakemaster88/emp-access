@@ -237,7 +237,7 @@ async function buildTicketsPdfBlob(
 }
 
 /** Versucht das PDF in einem versteckten iframe zu drucken. */
-function tryIframePrint(blobUrl: string): Promise<{ ok: boolean; error?: string }> {
+export function tryIframePrint(blobUrl: string): Promise<{ ok: boolean; error?: string }> {
   return new Promise((resolve) => {
     const iframe = document.createElement("iframe");
     iframe.style.position = "fixed";
@@ -292,7 +292,7 @@ function tryIframePrint(blobUrl: string): Promise<{ ok: boolean; error?: string 
 }
 
 /** Loest einen Klassischen Browser-Download fuer das Blob aus. */
-function downloadBlob(blobUrl: string, filename: string) {
+export function downloadBlob(blobUrl: string, filename: string) {
   const a = document.createElement("a");
   a.href = blobUrl;
   a.download = filename;
@@ -312,6 +312,45 @@ function buildFilename(count: number): string {
 }
 
 /**
+ * Generischer Print-Pipeline-Helper: nimmt ein bereits gerendertes PDF-Blob
+ * (z. B. von `printTicket` im Public Checkin) und feuert es durch die selbe
+ * robuste iframe → newTab → download Kette wie `printTicketsBulk`.
+ *
+ * Damit verschwindet der Browser-Druckfehler-Dialog, der erscheint wenn
+ * `iframe.contentWindow.print()` ohne focus() und vor dem PDF-Load
+ * aufgerufen wird (Chrome zeigt dann einen "Fehler beim Drucken"-Toast,
+ * obwohl die Testseite an den Drucker kommt).
+ */
+export async function printPdfBlob(
+  blob: Blob,
+  filename: string,
+): Promise<PrintResult> {
+  const url = URL.createObjectURL(blob);
+
+  const printAttempt = await tryIframePrint(url);
+  if (printAttempt.ok) {
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { ok: true, transport: "iframe" };
+  }
+
+  const newTab = typeof window !== "undefined" ? window.open(url, "_blank", "noopener") : null;
+  if (newTab) {
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { ok: true, transport: "newTab", error: printAttempt.error };
+  }
+
+  downloadBlob(url, filename);
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return {
+    ok: false,
+    transport: "download",
+    error: printAttempt.error,
+    fallbackUrl: url,
+    fallbackFilename: filename,
+  };
+}
+
+/**
  * Erzeugt die Tickets-PDF und triggert den Druckdialog. Bei Fehlern wird
  * automatisch auf "neuer Tab" und – falls Popup geblockt – auf Download
  * zurueckgefallen.
@@ -325,35 +364,5 @@ export async function printTicketsBulk(
   }
 
   const blob = await buildTicketsPdfBlob(tickets, accountName);
-  const url = URL.createObjectURL(blob);
-  const filename = buildFilename(tickets.length);
-
-  const printAttempt = await tryIframePrint(url);
-  if (printAttempt.ok) {
-    // URL nicht direkt revoken – das iframe haelt sie noch.
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    return { ok: true, transport: "iframe" };
-  }
-
-  // Fallback 1: PDF in neuem Tab oeffnen, User kann selbst Strg+P druecken
-  const newTab = typeof window !== "undefined" ? window.open(url, "_blank", "noopener") : null;
-  if (newTab) {
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    return {
-      ok: true,
-      transport: "newTab",
-      error: printAttempt.error,
-    };
-  }
-
-  // Fallback 2: Download anbieten
-  downloadBlob(url, filename);
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return {
-    ok: false,
-    transport: "download",
-    error: printAttempt.error,
-    fallbackUrl: url,
-    fallbackFilename: filename,
-  };
+  return printPdfBlob(blob, buildFilename(tickets.length));
 }
