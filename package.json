@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npx prisma generate && next build",
+    "build": "npx prisma migrate deploy && npx prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "db:push": "npx prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "npx prisma studio",
+    "db:migrate": "npx prisma migrate deploy",
     "db:setup": "npx prisma db push && npx tsx prisma/seed.ts"
   },
   "prisma": {
