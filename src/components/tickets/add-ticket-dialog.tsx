@@ -74,6 +74,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
   const [vereinId, setVereinId] = useState<string>("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pendingConflict, setPendingConflict] = useState<{
+    label: string;
+    type: string | null;
+    payload: Record<string, unknown>;
+  } | null>(null);
 
   const allOptions = [
     ...services.map((s) => ({ id: String(s.id), name: s.name, type: "service" as const, data: s })),
@@ -89,6 +94,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
     setSelectedType(null);
     setVereinId("none");
     setError("");
+    setPendingConflict(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -146,6 +152,10 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
       }
     }
 
+    await submitWithPayload(payload);
+  }
+
+  async function submitWithPayload(payload: Record<string, unknown>) {
     try {
       const res = await fetch("/api/tickets", {
         method: "POST",
@@ -154,8 +164,33 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error?.formErrors?.[0] ?? "Fehler beim Erstellen");
+        const data = await res.json().catch(() => ({}));
+        const errVal = data?.error as
+          | {
+              formErrors?: string[];
+              fieldErrors?: Record<string, string[]>;
+              code?: string;
+              conflictTicketLabel?: string;
+              conflictTicketType?: string | null;
+            }
+          | undefined;
+
+        if (
+          res.status === 409
+          && errVal?.code === "CODE_CONFLICT"
+          && !payload.transferCode
+        ) {
+          setPendingConflict({
+            label: errVal.conflictTicketLabel ?? "ein anderes Ticket",
+            type: errVal.conflictTicketType ?? null,
+            payload,
+          });
+          setError("");
+          setLoading(false);
+          return;
+        }
+
+        setError(errVal?.formErrors?.[0] ?? "Fehler beim Erstellen");
       } else {
         setOpen(false);
         reset();
@@ -166,6 +201,19 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
     } finally {
       setLoading(false);
     }
+  }
+
+  async function confirmTransfer() {
+    if (!pendingConflict) return;
+    setLoading(true);
+    setError("");
+    const retryPayload = { ...pendingConflict.payload, transferCode: true };
+    setPendingConflict(null);
+    await submitWithPayload(retryPayload);
+  }
+
+  function cancelTransfer() {
+    setPendingConflict(null);
   }
 
   return (
@@ -285,6 +333,46 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
             </div>
           )}
 
+          {pendingConflict && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-lg p-3 text-sm space-y-2">
+              <p className="font-semibold text-amber-800 dark:text-amber-200">
+                Bändchen bereits vergeben
+              </p>
+              <p className="text-amber-700 dark:text-amber-100/90">
+                Der Code ist aktuell Ticket{" "}
+                <span className="font-semibold">{pendingConflict.label}</span>
+                {pendingConflict.type ? (
+                  <span className="opacity-80"> ({pendingConflict.type})</span>
+                ) : null}{" "}
+                zugeordnet. Bändchen auf das neue Ticket umhängen? Das alte
+                Ticket verliert dann seinen Code.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelTransfer}
+                  disabled={loading}
+                  className="flex-1"
+                >
+                  Abbrechen
+                </Button>
+                <Button
+                  type="button"
+                  onClick={confirmTransfer}
+                  disabled={loading}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Bändchen umhängen"
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {error && (
             <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
               {error}
@@ -297,7 +385,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
             </Button>
             <Button
               type="submit"
-              disabled={loading || (!firstName.trim() && !lastName.trim())}
+              disabled={
+                loading
+                || pendingConflict !== null
+                || (!firstName.trim() && !lastName.trim())
+              }
               className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}

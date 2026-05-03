@@ -5,6 +5,10 @@ import { ticketCreateSchema } from "@/lib/validators";
 
 const publicTicketCreateSchema = ticketCreateSchema.extend({
   voucherCode: z.string().min(1).optional(),
+  // Bei Code-Konflikt mit einem bestehenden Ticket: wenn `transferCode`
+  // true ist, wird der Code vom alten Ticket abgezogen und auf das neue
+  // umgehaengt. Genutzt z.B. bei recycelten Tagesgast-Baendchen.
+  transferCode: z.boolean().optional(),
 });
 
 export async function POST(
@@ -25,6 +29,7 @@ export async function POST(
 
   const data = parsed.data;
   const voucherCode = data.voucherCode?.trim() || null;
+  const transferCode = data.transferCode === true;
 
   let serviceAreaIds: number[] = [];
   if (data.serviceId) {
@@ -36,12 +41,15 @@ export async function POST(
   }
 
   // Pre-Check: Wenn barcode/qrCode/rfidCode bereits einem Ticket im
-  // gleichen Account gehoeren, brechen wir mit 409 ab statt 500.
+  // gleichen Account gehoeren, brechen wir mit 409 ab statt 500 - es sei
+  // denn der Aufrufer setzt `transferCode: true`, dann wird der Code
+  // vom alten Ticket abgezogen und auf das neue uebertragen.
   // (Frueher hat Prisma einen Unique-Constraint-Fehler ungebremst zum
   // 500 durchgereicht.)
   const codes = [data.barcode, data.qrCode, data.rfidCode].filter(
     (c): c is string => !!c,
   );
+  let conflictTicketId: number | null = null;
   if (codes.length > 0) {
     const conflict = await prisma.ticket.findFirst({
       where: {
@@ -53,6 +61,7 @@ export async function POST(
         ],
       },
       select: {
+        id: true,
         name: true,
         firstName: true,
         lastName: true,
@@ -60,21 +69,28 @@ export async function POST(
       },
     });
     if (conflict) {
-      const owner =
-        [conflict.firstName, conflict.lastName].filter(Boolean).join(" ")
-        || conflict.name;
-      return NextResponse.json(
-        {
-          error: {
-            formErrors: [
-              `Code ist bereits Ticket "${owner}" zugeordnet${
-                conflict.ticketTypeName ? ` (${conflict.ticketTypeName})` : ""
-              }.`,
-            ],
+      if (!transferCode) {
+        const owner =
+          [conflict.firstName, conflict.lastName].filter(Boolean).join(" ")
+          || conflict.name;
+        return NextResponse.json(
+          {
+            error: {
+              formErrors: [
+                `Code ist bereits Ticket "${owner}" zugeordnet${
+                  conflict.ticketTypeName ? ` (${conflict.ticketTypeName})` : ""
+                }.`,
+              ],
+              code: "CODE_CONFLICT",
+              conflictTicketId: conflict.id,
+              conflictTicketLabel: owner,
+              conflictTicketType: conflict.ticketTypeName,
+            },
           },
-        },
-        { status: 409 },
-      );
+          { status: 409 },
+        );
+      }
+      conflictTicketId = conflict.id;
     }
   }
 
@@ -153,6 +169,13 @@ export async function POST(
           throw new Error("VOUCHER_ALREADY_REDEEMED");
         }
 
+        if (conflictTicketId != null) {
+          await tx.ticket.update({
+            where: { id: conflictTicketId },
+            data: { barcode: null, qrCode: null, rfidCode: null },
+          });
+        }
+
         const newTicket = await tx.ticket.create({ data: ticketData });
 
         const updated = await tx.voucher.updateMany({
@@ -186,6 +209,20 @@ export async function POST(
   }
 
   try {
+    if (conflictTicketId != null) {
+      // Code-Transfer: in einer Transaktion alten Code abziehen und
+      // neues Ticket mit dem Code erstellen.
+      const ticket = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(monitor.accountId)}, TRUE)`;
+        await tx.ticket.update({
+          where: { id: conflictTicketId! },
+          data: { barcode: null, qrCode: null, rfidCode: null },
+        });
+        return tx.ticket.create({ data: ticketData });
+      });
+      return NextResponse.json(ticket, { status: 201 });
+    }
+
     const ticket = await prisma.ticket.create({ data: ticketData });
     return NextResponse.json(ticket, { status: 201 });
   } catch (e) {

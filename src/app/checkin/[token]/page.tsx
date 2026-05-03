@@ -2225,12 +2225,18 @@ function AddTicketOverlay({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pendingConflict, setPendingConflict] = useState<{
+    label: string;
+    type: string | null;
+    payload: Record<string, unknown>;
+  } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!firstName.trim() && !lastName.trim()) return;
     setLoading(true);
     setError("");
+    setPendingConflict(null);
 
     const fullName = `${firstName} ${lastName}`.trim() || "Ticket";
     const payload: Record<string, unknown> = {
@@ -2338,6 +2344,10 @@ function AddTicketOverlay({
       payload.validityType = "DATE_RANGE";
     }
 
+    await submitWithPayload(payload);
+  }
+
+  async function submitWithPayload(payload: Record<string, unknown>) {
     try {
       const res = await postTicketWithRetry(token, payload);
 
@@ -2349,8 +2359,30 @@ function AddTicketOverlay({
               formErrors?: string[];
               fieldErrors?: Record<string, string[]>;
               serverMessage?: string;
+              code?: string;
+              conflictTicketLabel?: string;
+              conflictTicketType?: string | null;
             }
           | null;
+
+        // Code-Konflikt: Bestaetigungsdialog statt Fehlermeldung anzeigen
+        if (
+          res.status === 409
+          && typeof errVal === "object"
+          && errVal
+          && errVal.code === "CODE_CONFLICT"
+          && !payload.transferCode
+        ) {
+          setPendingConflict({
+            label: errVal.conflictTicketLabel ?? "ein anderes Ticket",
+            type: errVal.conflictTicketType ?? null,
+            payload,
+          });
+          setError("");
+          setLoading(false);
+          return;
+        }
+
         const formErr = typeof errVal === "object" && errVal ? errVal.formErrors?.[0] : undefined;
         const fieldErr =
           typeof errVal === "object" && errVal?.fieldErrors
@@ -2367,6 +2399,7 @@ function AddTicketOverlay({
       } else {
         setFirstName(""); setLastName(""); setCode("");
         setServiceId("none"); setSubscriptionId("none"); setAccessAreaId("none");
+        setPendingConflict(null);
         onCreated();
       }
     } catch (err) {
@@ -2382,6 +2415,19 @@ function AddTicketOverlay({
     } finally {
       setLoading(false);
     }
+  }
+
+  async function confirmTransfer() {
+    if (!pendingConflict) return;
+    setLoading(true);
+    setError("");
+    const retryPayload = { ...pendingConflict.payload, transferCode: true };
+    setPendingConflict(null);
+    await submitWithPayload(retryPayload);
+  }
+
+  function cancelTransfer() {
+    setPendingConflict(null);
   }
 
   return (
@@ -2523,6 +2569,45 @@ function AddTicketOverlay({
             </div>
           </div>
 
+          {pendingConflict && (
+            <div className="bg-amber-950/80 border border-amber-600/60 rounded-xl p-4 text-sm text-amber-100 space-y-3">
+              <div className="font-semibold text-amber-200">
+                Bändchen bereits vergeben
+              </div>
+              <div className="text-amber-100/90">
+                Der Code ist aktuell Ticket{" "}
+                <span className="font-semibold">{pendingConflict.label}</span>
+                {pendingConflict.type ? (
+                  <span className="text-amber-200/80"> ({pendingConflict.type})</span>
+                ) : null}{" "}
+                zugeordnet. Bändchen auf das neue Ticket umhängen? Das alte Ticket
+                verliert dann seinen Code.
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={cancelTransfer}
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-lg border border-amber-500/50 text-amber-100 text-xs font-semibold hover:bg-amber-900/50 transition-colors disabled:opacity-50"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmTransfer}
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Bändchen umhängen"
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="bg-rose-950 border border-rose-700/50 rounded-xl p-3 text-sm text-rose-200 whitespace-pre-line">
               {error}
@@ -2540,7 +2625,11 @@ function AddTicketOverlay({
             </button>
             <button
               type="submit"
-              disabled={loading || (!firstName.trim() && !lastName.trim())}
+              disabled={
+                loading
+                || pendingConflict !== null
+                || (!firstName.trim() && !lastName.trim())
+              }
               className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}

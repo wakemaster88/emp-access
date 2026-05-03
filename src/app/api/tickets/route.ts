@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { validateApiToken } from "@/lib/api-auth";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
+
+// Backoffice: gleiche Schema-Erweiterung wie im Public-Endpoint, damit
+// auch hier ein "Baendchen umhaengen" moeglich ist (transferCode=true).
+const backofficeTicketCreateSchema = ticketCreateSchema.extend({
+  transferCode: z.boolean().optional(),
+});
 
 export async function GET(request: NextRequest) {
   const hasToken = request.nextUrl.searchParams.has("token") ||
@@ -42,13 +49,14 @@ export async function POST(request: NextRequest) {
   if ("error" in session) return session.error;
 
   const body = await request.json();
-  const parsed = ticketCreateSchema.safeParse(body);
+  const parsed = backofficeTicketCreateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
   const { db, accountId } = session;
   const data = parsed.data;
+  const transferCode = data.transferCode === true;
 
   let serviceAreaIds: number[] = [];
   if (data.serviceId) {
@@ -61,7 +69,9 @@ export async function POST(request: NextRequest) {
 
   // Vor dem Insert pruefen, ob Code bereits vergeben ist. So kommt der
   // klassische "RFID schon in Verwendung"-Fall nicht als 500 raus, sondern
-  // als 409 mit klarer Meldung.
+  // als 409 mit klarer Meldung. Mit transferCode=true wird der Code vom
+  // alten Ticket abgezogen und auf das neue umgehaengt.
+  let conflictTicketId: number | null = null;
   if (data.barcode || data.qrCode || data.rfidCode) {
     const codes = [data.barcode, data.qrCode, data.rfidCode].filter(
       (c): c is string => !!c,
@@ -76,55 +86,56 @@ export async function POST(request: NextRequest) {
             { rfidCode: { in: codes } },
           ],
         },
-        select: { id: true, name: true, barcode: true, qrCode: true, rfidCode: true },
+        select: {
+          id: true,
+          name: true,
+          firstName: true,
+          lastName: true,
+          ticketTypeName: true,
+        },
       });
       if (conflict) {
-        return NextResponse.json(
-          {
-            error: {
-              formErrors: [
-                `Code ist bereits Ticket "${conflict.name}" zugeordnet. Bitte einen anderen Code verwenden oder das bestehende Ticket bearbeiten.`,
-              ],
+        if (!transferCode) {
+          const owner =
+            [conflict.firstName, conflict.lastName].filter(Boolean).join(" ")
+            || conflict.name;
+          return NextResponse.json(
+            {
+              error: {
+                formErrors: [
+                  `Code ist bereits Ticket "${owner}" zugeordnet${
+                    conflict.ticketTypeName ? ` (${conflict.ticketTypeName})` : ""
+                  }.`,
+                ],
+                code: "CODE_CONFLICT",
+                conflictTicketId: conflict.id,
+                conflictTicketLabel: owner,
+                conflictTicketType: conflict.ticketTypeName,
+              },
             },
-          },
-          { status: 409 },
-        );
+            { status: 409 },
+          );
+        }
+        conflictTicketId = conflict.id;
       }
     }
   }
 
   try {
+    if (conflictTicketId != null) {
+      // Code-Transfer: alten Code zuerst abziehen, dann neues Ticket
+      // erstellen. Sequenziell statt atomar, weil der extended Prisma-
+      // Client den Callback-Stil von $transaction nicht typisiert
+      // erlaubt. Im Fehlerfall des Create laesst sich das alte Ticket
+      // manuell neu mit einem Code versehen.
+      await db.ticket.update({
+        where: { id: conflictTicketId },
+        data: { barcode: null, qrCode: null, rfidCode: null },
+      });
+    }
+
     const ticket = await db.ticket.create({
-      data: {
-        name: data.name,
-        qrCode: data.qrCode,
-        rfidCode: data.rfidCode,
-        startDate: data.startDate ? new Date(data.startDate) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
-        accessAreaId: data.accessAreaId,
-        subscriptionId: data.subscriptionId,
-        serviceId: data.serviceId,
-        vereinId: data.vereinId,
-        status: data.status ?? "VALID",
-        barcode: data.barcode,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        ticketTypeName: data.ticketTypeName,
-        validityType: data.validityType ?? "DATE_RANGE",
-        slotStart: data.slotStart,
-        slotEnd: data.slotEnd,
-        validityDurationMinutes: data.validityDurationMinutes,
-        profileImage: data.profileImage,
-        email: data.email,
-        accountId: accountId!,
-        ...(serviceAreaIds.length > 0
-          ? {
-              ticketAreas: {
-                create: serviceAreaIds.map((areaId) => ({ accessAreaId: areaId })),
-              },
-            }
-          : {}),
-      },
+      data: buildTicketData(),
     });
 
     return NextResponse.json(ticket, { status: 201 });
@@ -156,5 +167,38 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 },
     );
+  }
+
+  function buildTicketData() {
+    return {
+      name: data.name,
+      qrCode: data.qrCode,
+      rfidCode: data.rfidCode,
+      startDate: data.startDate ? new Date(data.startDate) : undefined,
+      endDate: data.endDate ? new Date(data.endDate) : undefined,
+      accessAreaId: data.accessAreaId,
+      subscriptionId: data.subscriptionId,
+      serviceId: data.serviceId,
+      vereinId: data.vereinId,
+      status: data.status ?? "VALID",
+      barcode: data.barcode,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      ticketTypeName: data.ticketTypeName,
+      validityType: data.validityType ?? "DATE_RANGE",
+      slotStart: data.slotStart,
+      slotEnd: data.slotEnd,
+      validityDurationMinutes: data.validityDurationMinutes,
+      profileImage: data.profileImage,
+      email: data.email,
+      accountId: accountId!,
+      ...(serviceAreaIds.length > 0
+        ? {
+            ticketAreas: {
+              create: serviceAreaIds.map((areaId) => ({ accessAreaId: areaId })),
+            },
+          }
+        : {}),
+    };
   }
 }
