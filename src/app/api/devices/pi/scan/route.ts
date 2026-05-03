@@ -334,19 +334,78 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (!device.allowReentry && !isEmployee) {
-    const existingScan = await db.scan.findFirst({
-      where: { ticketId: ticket.id, deviceId, result: "GRANTED" },
-    });
-    if (existingScan) {
+  const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
+  const isEntryScan =
+    device.accessIn != null
+    && (ticket.accessAreaId == null || ticket.accessAreaId === device.accessIn);
+  const serviceAllowsReentry = ticket.service?.allowReentry === true;
+
+  // Reentry-Check: Wir schauen GLOBAL pro Ticket, nicht pro Device.
+  // Sonst kann ein User mit demselben Ticket an Eingang A scannen und
+  // 11 Sekunden spaeter an Eingang B – beide Scans wuerden GRANTED sein,
+  // weil der frueher device-lokale Check an Eingang B keinen vorherigen
+  // Scan sieht.
+  if (!isEmployee && !isExitScan && ticket.status === "REDEEMED") {
+    if (!serviceAllowsReentry && !device.allowReentry) {
+      // Kein Wiedereintritt erlaubt → Ticket schon eingeloest, fertig.
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
       });
-      return NextResponse.json({ granted: false, message: "Kein Wiedereintritt", ticket: ticketInfo });
+      return NextResponse.json({
+        granted: false,
+        message: "Ticket bereits eingelöst",
+        ticket: ticketInfo,
+      });
+    }
+
+    // Reentry erlaubt: Eintritt nur, wenn der letzte Scan ein Exit-Scan
+    // war (User ist also gerade draussen). Sonst ist er bereits drin und
+    // versucht das Ticket fuer eine zweite Person zu nutzen.
+    if (isEntryScan) {
+      const lastScan = await db.scan.findFirst({
+        where: { ticketId: ticket.id, result: "GRANTED" },
+        orderBy: { scanTime: "desc" },
+        select: {
+          device: { select: { accessIn: true, accessOut: true } },
+        },
+      });
+      const lastWasExit =
+        lastScan?.device?.accessOut != null
+        && (ticket.accessAreaId == null || lastScan.device.accessOut === ticket.accessAreaId);
+      if (!lastWasExit) {
+        await db.scan.create({
+          data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        });
+        return NextResponse.json({
+          granted: false,
+          message: "Bereits drin (kein Ausgang registriert)",
+          ticket: ticketInfo,
+        });
+      }
     }
   }
 
-  const isExitScan = device.accessOut != null && ticket.accessAreaId === device.accessOut;
+  // Wenn ein Ticket noch VALID ist, aber das aktuelle Device explizit
+  // "kein Reentry" konfiguriert hat UND es bereits einen GRANTED-Scan an
+  // diesem Ticket gibt, blockieren wir auch das (Schutzhuelle fuer
+  // ungewohnliche Konfigurationen, in denen der Statuswechsel oben
+  // ausnahmsweise nicht greift).
+  if (!device.allowReentry && !isEmployee && !isExitScan) {
+    const existingScan = await db.scan.findFirst({
+      where: { ticketId: ticket.id, result: "GRANTED" },
+      select: { id: true },
+    });
+    if (existingScan && !serviceAllowsReentry) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({
+        granted: false,
+        message: "Kein Wiedereintritt",
+        ticket: ticketInfo,
+      });
+    }
+  }
 
   // Atomar: Scan + Ticket-State-Transition in einer Transaktion.
   // - Wir nutzen absichtlich `prisma.$transaction` (nicht `db.$transaction`),
