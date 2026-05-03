@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { berlinOffset } from "@/lib/anny-availability";
+import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 
 export async function POST(
   request: NextRequest,
@@ -14,18 +15,14 @@ export async function POST(
 
   const body = await request.json();
   const rawCode = String(body.code ?? "").trim();
-  const code = rawCode.replace(/\s+/g, "");
-  // Manche Barcode-/RFID-Scanner senden Praefix-Zeichen wie "#" oder
-  // "%" voraus. Damit sowohl Tickets als auch Gutscheine zuverlaessig
-  // gefunden werden, probieren wir mehrere Varianten durch.
-  const stripped = code.replace(/^[#%]+/, "");
-  if (!code) {
+  if (!rawCode) {
     return NextResponse.json({ found: false, message: "Kein Code" });
   }
 
-  const codesToTry = stripped && stripped !== code
-    ? [code, rawCode, stripped]
-    : [code, rawCode];
+  // Robust gegen DE/US-Tastaturlayout des Scanners (z.B. "GS-1234"
+  // wird auf DE-Layout zu "gsß1234"), Praefix-Zeichen wie "#"/"%" und
+  // unterschiedliche Schreibweisen.
+  const codesToTry = buildScanCodeVariants(rawCode);
   let ticket = null;
   for (const c of codesToTry) {
     const candidates = await prisma.ticket.findMany({
