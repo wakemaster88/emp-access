@@ -30,7 +30,7 @@ export interface PrintableTicket {
   validityDurationMinutes?: number | null;
 }
 
-export type PrintTransport = "popup" | "iframe" | "newTab" | "download";
+export type PrintTransport = "iframe" | "newTab" | "download";
 
 export interface PrintResult {
   ok: boolean;
@@ -39,38 +39,6 @@ export interface PrintResult {
   /** Wenn transport=download: blob-URL, damit der Aufrufer einen Link bauen kann. */
   fallbackUrl?: string;
   fallbackFilename?: string;
-}
-
-/**
- * Synchron beim onClick aufrufen, damit der Browser-User-Activation-Token
- * voll erhalten bleibt. Async PDF-Generierung danach und das Ergebnis wird
- * via `loadPdfIntoPrintWindow` in genau dieses Window geschrieben.
- *
- * Wenn der Aufrufer NULL bekommt (Popup-Blocker), faellt
- * `printPdfBlob` automatisch auf iframe + Download zurueck.
- */
-export function openPrintWindow(): Window | null {
-  if (typeof window === "undefined") return null;
-  // Sehr kleines Fenster: Browser darf ein eigenes Window oeffnen statt Tab,
-  // und das Window ist nach `afterprint` schnell wieder weg. Auf manchen
-  // Browsern (Safari) wird das trotzdem als Tab interpretiert – funktional
-  // beides ok.
-  const features = "width=420,height=600,menubar=no,toolbar=no,location=no";
-  const win = window.open("about:blank", "_blank", features);
-  if (!win) return null;
-  try {
-    win.document.write(
-      `<!DOCTYPE html><html><head><title>Drucke…</title>` +
-        `<style>html,body{margin:0;height:100%;background:#0f172a;color:#cbd5e1;` +
-        `font-family:system-ui,sans-serif;display:flex;align-items:center;` +
-        `justify-content:center}div{font-size:13px;opacity:.85}</style></head>` +
-        `<body><div>PDF wird vorbereitet…</div></body></html>`,
-    );
-    win.document.close();
-  } catch {
-    /* document write blocked – egal, content kommt gleich */
-  }
-  return win;
 }
 
 const PAPER_WIDTH_MM = 72;
@@ -356,102 +324,6 @@ export function tryIframePrint(blobUrl: string): Promise<{ ok: boolean; error?: 
   });
 }
 
-/**
- * Laedt das PDF in ein bereits synchron geoeffnetes Window
- * (`openPrintWindow`) und triggert dort `window.print()` automatisch.
- *
- * Das umgeht alle iframe-print-Quirks (User-Activation-Verlust,
- * Chrome-Toast bei iframe.contentWindow.print() ueber Blob-URLs etc.):
- *
- *   1. Window wurde synchron beim Klick geoeffnet -> User-Activation erhalten.
- *   2. PDF wird via `<embed>` eingebunden – stable PDF-Viewer-Init.
- *   3. `window.print()` im eigenen Window-Context laeuft direkt mit
- *      vollwertiger User-Activation des popup window.
- *   4. `afterprint` schliesst das Window automatisch.
- */
-export function loadPdfIntoPrintWindow(
-  win: Window,
-  blobUrl: string,
-  filename: string,
-): Promise<{ ok: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    if (win.closed) {
-      resolve({ ok: false, error: "Druck-Fenster wurde vom Nutzer geschlossen" });
-      return;
-    }
-    let settled = false;
-    const settle = (ok: boolean, error?: string) => {
-      if (settled) return;
-      settled = true;
-      resolve({ ok, error });
-    };
-
-    try {
-      win.document.open();
-      win.document.write(
-        `<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<title>${escapeHtml(filename)}</title>
-<style>
-  html,body { margin:0; padding:0; height:100%; background:#0f172a; }
-  embed { width:100%; height:100vh; border:0; background:#fff; }
-  .err { color:#fca5a5; font-family:system-ui,sans-serif; padding:18px;
-    line-height:1.5; font-size:13px; }
-</style>
-</head>
-<body>
-  <embed type="application/pdf" src="${escapeAttr(blobUrl)}#toolbar=0&navpanes=0">
-  <script>
-    (function () {
-      var printed = false;
-      function doPrint() {
-        if (printed) return;
-        printed = true;
-        // Etwas Zeit fuer den PDF-Viewer-Init geben, sonst blockt Chrome
-        // print() auf nicht-fertig gerenderten embed-Inhalt.
-        setTimeout(function () {
-          try { window.focus(); } catch (e) {}
-          try { window.print(); } catch (e) {}
-        }, 350);
-      }
-      window.addEventListener("load", doPrint);
-      // Backup falls "load" wegen embed-Plugin nie fired:
-      setTimeout(doPrint, 1500);
-      window.addEventListener("afterprint", function () {
-        setTimeout(function () { try { window.close(); } catch (e) {} }, 250);
-      });
-    })();
-  </script>
-</body>
-</html>`,
-      );
-      win.document.close();
-    } catch (e) {
-      settle(false, e instanceof Error ? e.message : String(e));
-      return;
-    }
-
-    // Fenster schliesst sich nach dem Drucken selbst – wir warten max. 60s
-    // und werten dann als Erfolg (PDF ist drin, User kann manuell drucken
-    // wenn er den Druckdialog gecancelt hat).
-    setTimeout(() => settle(true), 1500);
-  });
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function escapeAttr(s: string): string {
-  return escapeHtml(s).replace(/'/g, "&#39;");
-}
-
 /** Loest einen Klassischen Browser-Download fuer das Blob aus. */
 export function downloadBlob(blobUrl: string, filename: string) {
   const a = document.createElement("a");
@@ -472,75 +344,35 @@ function buildFilename(count: number): string {
   return `tickets_${count}_${stamp}.pdf`;
 }
 
-export interface PrintPdfOptions {
-  /**
-   * Ein bereits SYNCHRON beim onClick mit `openPrintWindow()` geoeffnetes
-   * Window. Wenn vorhanden, wird darin gedruckt – das ist der robusteste
-   * Pfad, weil die Browser-User-Activation voll erhalten bleibt. Wenn der
-   * Popup-Blocker das Window verhindert hat, sollte der Caller `null`
-   * uebergeben; dann wird auf den iframe-Pfad zurueckgefallen.
-   */
-  preOpenedWindow?: Window | null;
-}
-
 /**
  * Generischer Print-Pipeline-Helper: nimmt ein bereits gerendertes PDF-Blob
- * und feuert es durch eine mehrstufige Fallback-Kette:
+ * und feuert es durch die robuste iframe -> newTab -> download Kette.
  *
- *   1. Pre-opened popup window (per `openPrintWindow` synchron beim Click).
- *      Bester Pfad: User-Activation bleibt erhalten, eigenes window.print().
- *   2. Versteckter iframe (legacy). Klappt manchmal, manchmal blockt
- *      Chrome silent.
- *   3. Neuer Tab via window.open(blobUrl).
- *   4. Datei-Download.
- *
- * Damit verschwindet der Browser-Druckfehler-Dialog, der erscheint wenn
- * iframe.contentWindow.print() Chrome's User-Activation-Check nicht
- * besteht ("Testseite druckt, aber Browser zeigt Fehler" / "zweiter
- * Klick zeigt nichts an, druckt aber auch nicht").
+ * Wichtig: Wir drucken IMMER direkt das PDF-Document (iframe.contentWindow.
+ * print() bzw. nativer PDF-Viewer im neuen Tab). NIEMALS einen HTML-Wrapper
+ * mit eingebettetem `<embed>`-PDF + `window.print()` -- das druckt das
+ * HTML-Dokument im Default-A4-Format, der Bondrucker-Treiber lehnt das ab.
+ * Das im PDF eingebackene 72-mm-Format aus `buildTicketsPdfBlob` muss bis
+ * zum Drucker durchkommen.
  */
 export async function printPdfBlob(
   blob: Blob,
   filename: string,
-  options: PrintPdfOptions = {},
 ): Promise<PrintResult> {
   const url = URL.createObjectURL(blob);
 
-  // 1. Pre-opened popup mit eigener User-Activation: sauberster Pfad.
-  if (options.preOpenedWindow && !options.preOpenedWindow.closed) {
-    const popupAttempt = await loadPdfIntoPrintWindow(
-      options.preOpenedWindow,
-      url,
-      filename,
-    );
-    if (popupAttempt.ok) {
-      setTimeout(() => URL.revokeObjectURL(url), 120_000);
-      return { ok: true, transport: "popup" };
-    }
-    // Popup hat es nicht geschafft – manuell schliessen, damit kein
-    // verwaister Tab herumliegt, und auf iframe fallen.
-    try {
-      options.preOpenedWindow.close();
-    } catch {
-      /* already closed */
-    }
-  }
-
-  // 2. Iframe-Print (Legacy, fuer den Fall dass kein Popup verfuegbar ist).
   const printAttempt = await tryIframePrint(url);
   if (printAttempt.ok) {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return { ok: true, transport: "iframe" };
   }
 
-  // 3. Neuer Tab.
   const newTab = typeof window !== "undefined" ? window.open(url, "_blank", "noopener") : null;
   if (newTab) {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return { ok: true, transport: "newTab", error: printAttempt.error };
   }
 
-  // 4. Letzte Chance: Download.
   downloadBlob(url, filename);
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return {
@@ -560,12 +392,11 @@ export async function printPdfBlob(
 export async function printTicketsBulk(
   tickets: PrintableTicket[],
   accountName: string,
-  options: PrintPdfOptions = {},
 ): Promise<PrintResult> {
   if (tickets.length === 0) {
     return { ok: false, transport: "iframe", error: "Keine Tickets zum Drucken." };
   }
 
   const blob = await buildTicketsPdfBlob(tickets, accountName);
-  return printPdfBlob(blob, buildFilename(tickets.length), options);
+  return printPdfBlob(blob, buildFilename(tickets.length));
 }

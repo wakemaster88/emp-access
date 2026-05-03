@@ -32,12 +32,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  openPrintWindow,
-  printTicketsBulk,
-  type PrintableTicket,
-  type PrintResult,
-} from "@/lib/print-tickets";
+import { printTicketsBulk, type PrintableTicket, type PrintResult } from "@/lib/print-tickets";
 
 interface Area {
   id: number;
@@ -127,18 +122,6 @@ export function BulkTicketDialog({
     setDoneCount(null);
     setPrintResult(null);
 
-    // Wenn gedruckt werden soll: Print-Window SYNCHRON beim Klick oeffnen,
-    // damit die Browser-User-Activation fuer den spaeteren window.print()-
-    // Aufruf erhalten bleibt. Andernfalls blockt Chrome den Druckdialog
-    // beim zweiten Versuch silent und beim ersten Versuch erscheint ein
-    // "Drucken nicht moeglich"-Toast.
-    const printWin = opts.print ? openPrintWindow() : null;
-    const closePrintWin = () => {
-      if (printWin && !printWin.closed) {
-        try { printWin.close(); } catch { /* ignore */ }
-      }
-    };
-
     const payload: Record<string, unknown> = {
       count,
       namePrefix: namePrefix.trim(),
@@ -191,7 +174,6 @@ export function BulkTicketDialog({
             (typeof data?.error === "string" ? data.error : null) ??
             "Fehler beim Erstellen der Tickets",
         );
-        closePrintWin();
         setLoading(false);
         return;
       }
@@ -202,30 +184,19 @@ export function BulkTicketDialog({
 
       if (opts.print && tickets.length > 0) {
         try {
-          const result = await printTicketsBulk(
-            tickets,
-            accountName ?? "EMP Access",
-            { preOpenedWindow: printWin },
-          );
+          const result = await printTicketsBulk(tickets, accountName ?? "EMP Access");
           setPrintResult(result);
-          if (result.transport !== "popup" && result.transport !== "newTab") {
-            closePrintWin();
-          }
         } catch (e) {
-          closePrintWin();
           setPrintResult({
             ok: false,
             transport: "iframe",
             error: e instanceof Error ? e.message : "Druckfehler",
           });
         }
-      } else {
-        closePrintWin();
       }
 
       router.refresh();
     } catch {
-      closePrintWin();
       setError("Netzwerkfehler beim Erstellen der Tickets.");
     } finally {
       setLoading(false);
