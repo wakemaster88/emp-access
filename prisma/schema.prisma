@@ -160,6 +160,10 @@ model Ticket {
   extras                  Json?
   email                   String? // optionale Email-Adresse für automatische Mails (Aboablauf, Followup …)
   source                  ApiProvider?
+  /// UUID einer Bulk-Erstellung (alle Tickets aus einem Bulk-Run teilen sich
+  /// die gleiche `bulkBatchId`). Erlaubt Liste/Reprint im Backoffice.
+  /// NULL = kein Bulk-Ticket (manuell oder von Anny synchronisiert).
+  bulkBatchId             String?
   accountId               Int
   account                 Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accessArea              AccessArea?          @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
@@ -186,6 +190,7 @@ model Ticket {
   @@index([accountId, uuid])
   @@index([accountId, status])
   @@index([accountId, source])
+  @@index([accountId, bulkBatchId])
 }
 
 model Scan {

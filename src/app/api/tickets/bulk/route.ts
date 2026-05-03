@@ -6,14 +6,137 @@ import { ticketBulkCreateSchema } from "@/lib/validators";
  * Bulk-Erstellung von Tickets fuer den Bondrucker-Workflow.
  * Erzeugt N Tickets mit auto-generierten, eindeutigen Barcodes.
  * Bei Konflikt (sehr unwahrscheinlich) werden Codes neu generiert.
+ *
+ * Alle Tickets aus einem POST-Request teilen sich eine `bulkBatchId`
+ * (UUID). Damit kann das Backoffice spaeter die Bulks listen und
+ * komplett erneut drucken.
  */
 
-function randomCode(prefix: string): string {
-  const uuid = (typeof globalThis.crypto?.randomUUID === "function")
+function randomUuid(): string {
+  return typeof globalThis.crypto?.randomUUID === "function"
     ? globalThis.crypto.randomUUID()
-    : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-  const compact = uuid.replace(/-/g, "").slice(0, 8).toUpperCase();
+    : `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+}
+
+function randomCode(prefix: string): string {
+  const compact = randomUuid().replace(/-/g, "").slice(0, 8).toUpperCase();
   return `${prefix}-${compact}`;
+}
+
+interface BulkOverview {
+  id: string;
+  count: number;
+  createdAt: string | null;
+  lastCreatedAt: string | null;
+  namePrefix: string | null;
+  ticketTypeName: string | null;
+  serviceId: number | null;
+  serviceName: string | null;
+  subscriptionId: number | null;
+  subscriptionName: string | null;
+  accessAreaId: number | null;
+  accessAreaName: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+  validityType: string | null;
+  validityDurationMinutes: number | null;
+  statusCounts: Record<string, number>;
+}
+
+/**
+ * Liste aller Bulk-Erstellungen fuer das aktuelle Account.
+ * Aggregiert pro `bulkBatchId`: Anzahl, Zeitstempel, Status-Verteilung,
+ * Ticketyp/Service/Subscription, Validity-Felder.
+ *
+ * Hinweis: wir gruppieren in JavaScript anstatt mit Prisma.groupBy, weil
+ * der Tenant-Client-Wrapper fuer groupBy keine kompatible Signatur hat.
+ * Performance ist unkritisch – pro Account selten > paar tausend Bulk-
+ * Tickets, die hier nur mit den fuer die Anzeige noetigen Feldern
+ * geladen werden.
+ */
+export async function GET() {
+  const session = await getSessionWithDb();
+  if ("error" in session) return session.error;
+  const { db, accountId } = session;
+
+  const tickets = await db.ticket.findMany({
+    where: { accountId: accountId!, bulkBatchId: { not: null } },
+    orderBy: { createdAt: "asc" },
+    select: {
+      bulkBatchId: true,
+      name: true,
+      ticketTypeName: true,
+      startDate: true,
+      endDate: true,
+      slotStart: true,
+      slotEnd: true,
+      validityType: true,
+      validityDurationMinutes: true,
+      status: true,
+      serviceId: true,
+      subscriptionId: true,
+      accessAreaId: true,
+      createdAt: true,
+      service: { select: { name: true } },
+      subscription: { select: { name: true } },
+      accessArea: { select: { name: true } },
+    },
+  });
+
+  if (tickets.length === 0) {
+    return NextResponse.json({ bulks: [] });
+  }
+
+  type Row = (typeof tickets)[number];
+  const byBulk = new Map<string, Row[]>();
+  for (const t of tickets) {
+    if (!t.bulkBatchId) continue;
+    const arr = byBulk.get(t.bulkBatchId) ?? [];
+    arr.push(t);
+    byBulk.set(t.bulkBatchId, arr);
+  }
+
+  const bulks: BulkOverview[] = [];
+  for (const [id, rows] of byBulk) {
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const statusCounts: Record<string, number> = {};
+    for (const r of rows) {
+      statusCounts[r.status] = (statusCounts[r.status] ?? 0) + 1;
+    }
+    const prefixes = new Set(
+      rows.map((r) => r.name.replace(/\s+\d+\s*$/, "").trim()),
+    );
+    const namePrefix = prefixes.size === 1 ? [...prefixes][0] : null;
+
+    bulks.push({
+      id,
+      count: rows.length,
+      createdAt: first?.createdAt.toISOString() ?? null,
+      lastCreatedAt: last?.createdAt.toISOString() ?? null,
+      namePrefix,
+      ticketTypeName: first?.ticketTypeName ?? null,
+      serviceId: first?.serviceId ?? null,
+      serviceName: first?.service?.name ?? null,
+      subscriptionId: first?.subscriptionId ?? null,
+      subscriptionName: first?.subscription?.name ?? null,
+      accessAreaId: first?.accessAreaId ?? null,
+      accessAreaName: first?.accessArea?.name ?? null,
+      startDate: first?.startDate?.toISOString() ?? null,
+      endDate: first?.endDate?.toISOString() ?? null,
+      slotStart: first?.slotStart ?? null,
+      slotEnd: first?.slotEnd ?? null,
+      validityType: first?.validityType ?? null,
+      validityDurationMinutes: first?.validityDurationMinutes ?? null,
+      statusCounts,
+    });
+  }
+
+  bulks.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+
+  return NextResponse.json({ bulks });
 }
 
 export async function POST(request: NextRequest) {
@@ -30,6 +153,7 @@ export async function POST(request: NextRequest) {
   const data = parsed.data;
   const codePrefix = (data.codePrefix ?? "BLK").toUpperCase();
   const namePrefix = data.namePrefix?.trim() || "Ticket";
+  const bulkBatchId = randomUuid();
 
   let serviceAreaIds: number[] = [];
   if (data.serviceId) {
@@ -93,6 +217,7 @@ export async function POST(request: NextRequest) {
             slotStart: data.slotStart ?? undefined,
             slotEnd: data.slotEnd ?? undefined,
             validityDurationMinutes: data.validityDurationMinutes ?? undefined,
+            bulkBatchId,
             accountId: accountId!,
             ...(serviceAreaIds.length > 0
               ? {
@@ -137,5 +262,5 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  return NextResponse.json({ tickets: created }, { status: 201 });
+  return NextResponse.json({ tickets: created, bulkBatchId }, { status: 201 });
 }
