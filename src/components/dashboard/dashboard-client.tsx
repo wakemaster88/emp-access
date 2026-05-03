@@ -460,6 +460,17 @@ function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
   );
 }
 
+const MEMBERSHIP_PALETTE = [
+  { bar: "bg-violet-500", dot: "bg-violet-500" },
+  { bar: "bg-indigo-500", dot: "bg-indigo-500" },
+  { bar: "bg-sky-500", dot: "bg-sky-500" },
+  { bar: "bg-emerald-500", dot: "bg-emerald-500" },
+  { bar: "bg-amber-500", dot: "bg-amber-500" },
+  { bar: "bg-rose-500", dot: "bg-rose-500" },
+  { bar: "bg-teal-500", dot: "bg-teal-500" },
+  { bar: "bg-pink-500", dot: "bg-pink-500" },
+] as const;
+
 function MembershipsCard({
   title,
   icon,
@@ -482,8 +493,16 @@ function MembershipsCard({
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return [...map.entries()].sort((a, b) => b[1].length - a[1].length);
   })();
+
+  const total = tickets.length;
+  const colored = grouped.map(([name, group], i) => ({
+    name,
+    group,
+    color: MEMBERSHIP_PALETTE[i % MEMBERSHIP_PALETTE.length],
+    pct: total > 0 ? (group.length / total) * 100 : 0,
+  }));
 
   function toggle(key: string) {
     setOpenGroups((prev) => {
@@ -500,37 +519,69 @@ function MembershipsCard({
           {icon}
           {title}
         </span>
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-          {tickets.length}
-        </Badge>
+        <span className="text-xs font-bold tabular-nums text-slate-700 dark:text-slate-200">
+          {total}
+        </span>
       </div>
+
+      {colored.length > 1 && (
+        <div className="px-3 pt-2.5">
+          <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+            {colored.map((c) => (
+              <div
+                key={c.name}
+                className={cn("h-full transition-all", c.color.bar)}
+                style={{ width: `${c.pct}%` }}
+                title={`${c.name}: ${c.group.length}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[60px]">
-        {grouped.length === 0 ? (
+        {colored.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-slate-400 dark:text-slate-500">
             Keine aktiven Einträge am gewählten Tag.
           </p>
         ) : (
-          <div className="px-3 py-1 space-y-1">
-            {grouped.map(([name, group]) => (
-              <div key={name}>
-                <button
-                  type="button"
-                  onClick={() => toggle(name)}
-                  className="w-full flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-t transition-colors"
-                >
-                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">{name}</span>
-                  <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-0.5">{group.length}</Badge>
-                  <ChevronDown className={cn("h-3 w-3 text-slate-400 ml-auto transition-transform", openGroups.has(name) && "rotate-180")} />
-                </button>
-                {openGroups.has(name) && (
-                  <div className="pl-0.5">
-                    {group.map((ticket) => (
-                      <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} hideTime />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="px-2 py-2 space-y-0.5">
+            {colored.map(({ name, group, color, pct }) => {
+              const isOpen = openGroups.has(name);
+              return (
+                <div key={name}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(name)}
+                    className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    <span className={cn("h-2 w-2 rounded-full shrink-0", color.dot)} aria-hidden />
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate flex-1 min-w-0 text-left">
+                      {name}
+                    </span>
+                    <span className="text-[10px] tabular-nums text-slate-400 shrink-0">
+                      {Math.round(pct)}%
+                    </span>
+                    <span className="text-xs font-semibold tabular-nums text-slate-700 dark:text-slate-200 shrink-0 min-w-[1.5rem] text-right">
+                      {group.length}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3 w-3 text-slate-400 shrink-0 transition-transform",
+                        isOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                  {isOpen && (
+                    <div className="pl-4 pr-1.5 pb-1">
+                      {group.map((ticket) => (
+                        <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} hideTime />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -541,18 +592,45 @@ function MembershipsCard({
 function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: number) => void }) {
   const hasResources = area.resources.length > 0;
   const hasOther = area.otherTickets.length > 0;
-  const isEmpty = !hasResources && !hasOther;
+  const count = area._count.tickets;
+  const limit = area.personLimit;
+  const overLimit = limit != null && count > limit;
+  const utilPct = limit != null && limit > 0 ? Math.min(100, Math.round((count / limit) * 100)) : null;
+  const utilTone = utilPct == null
+    ? null
+    : utilPct >= 100
+      ? "rose"
+      : utilPct >= 80
+        ? "amber"
+        : "indigo";
 
   return (
     <Card
       className={cn(
-        "border-slate-200 dark:border-slate-800 overflow-hidden gap-0 py-0",
-        area.id === null && "border-dashed"
+        "relative border-slate-200 dark:border-slate-800 overflow-hidden gap-0 py-0 shadow-sm",
+        "transition-shadow hover:shadow-md",
+        area.id === null && "border-dashed",
       )}
     >
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+      <span
+        aria-hidden
+        className={cn(
+          "absolute left-0 top-0 bottom-0 w-1",
+          overLimit
+            ? "bg-rose-500"
+            : utilTone === "amber"
+              ? "bg-amber-500"
+              : count > 0
+                ? "bg-indigo-500"
+                : "bg-slate-200 dark:bg-slate-800",
+        )}
+      />
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800 pl-3.5">
         <span className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate text-slate-900 dark:text-slate-100">
-          <MapPin className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+          <MapPin className={cn(
+            "h-3.5 w-3.5 shrink-0",
+            count > 0 ? "text-indigo-500" : "text-slate-400",
+          )} />
           {area.name}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -561,34 +639,57 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
               {area.openingHours}
             </span>
           )}
-          {area.personLimit != null && (
+          {limit != null ? (
             <Badge
               variant="outline"
               className={cn(
-                "text-[10px] px-1.5 py-0 font-mono",
-                area._count.tickets > area.personLimit
-                  ? "border-rose-300 text-rose-600"
-                  : "border-slate-300 text-slate-500"
+                "text-[10px] px-1.5 py-0 font-mono tabular-nums",
+                overLimit
+                  ? "border-rose-300 text-rose-600 dark:border-rose-800 dark:text-rose-400"
+                  : utilTone === "amber"
+                    ? "border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-400"
+                    : count > 0
+                      ? "border-indigo-200 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300"
+                      : "border-slate-200 text-slate-400 dark:border-slate-700",
               )}
             >
-              {area._count.tickets}/{area.personLimit}
+              {count}/{limit}
+            </Badge>
+          ) : (
+            <Badge
+              className={cn(
+                "text-[10px] px-1.5 py-0 tabular-nums",
+                count > 0
+                  ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                  : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500",
+              )}
+            >
+              {count}
             </Badge>
           )}
-          <Badge
-            className={cn(
-              "text-[10px] px-1.5 py-0 tabular-nums",
-              area._count.tickets > 0
-                ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                : "bg-slate-100 text-slate-500 dark:bg-slate-800"
-            )}
-          >
-            {area._count.tickets}
-          </Badge>
         </div>
       </div>
 
-      {!isEmpty && (
-        <div className="px-3 pb-2 pt-1 max-h-[320px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
+      {utilPct != null && count > 0 && (
+        <div className="px-3.5 pt-2">
+          <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                overLimit
+                  ? "bg-rose-500"
+                  : utilTone === "amber"
+                    ? "bg-amber-500"
+                    : "bg-gradient-to-r from-indigo-500 to-violet-500",
+              )}
+              style={{ width: `${utilPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {(hasResources || hasOther) && (
+        <div className="px-3 pb-2 pt-1 pl-3.5 max-h-[320px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
           {area.resources.map((res, ri) => (
             <div key={res.resourceName} className={cn(ri > 0 && "mt-2")}>
               <div className="flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800">
@@ -626,12 +727,44 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
           )}
         </div>
       )}
+    </Card>
+  );
+}
 
-      {isEmpty && (
-        <div className="px-3 pb-2 pt-1">
-          <p className="text-[11px] text-slate-300 dark:text-slate-600">Keine Tickets</p>
-        </div>
-      )}
+function QuietAreasCard({ areas }: { areas: AreaData[] }) {
+  if (areas.length === 0) return null;
+  return (
+    <Card className="py-0 gap-0 overflow-hidden border-dashed border-slate-200 dark:border-slate-800">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dashed border-slate-200 dark:border-slate-800">
+        <span className="text-xs font-semibold flex items-center gap-1.5 text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+          <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          Ruhige Bereiche
+        </span>
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+          {areas.length}
+        </Badge>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-px bg-slate-100 dark:bg-slate-800">
+        {areas.map((area, i) => (
+          <div
+            key={area.id ?? `unassigned-${i}`}
+            className="flex items-center gap-2 px-3 py-2 min-w-0 bg-white dark:bg-slate-950"
+          >
+            <MapPin className="h-3 w-3 text-slate-300 dark:text-slate-600 shrink-0" />
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate flex-1 min-w-0">
+              {area.name}
+            </span>
+            {area.openingHours && (
+              <span className="text-[10px] text-slate-400 font-mono shrink-0 hidden md:inline">
+                {area.openingHours}
+              </span>
+            )}
+            <span className="text-[10px] font-mono tabular-nums text-slate-400 shrink-0">
+              {area.personLimit != null ? `0/${area.personLimit}` : "0"}
+            </span>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
@@ -977,15 +1110,23 @@ export function DashboardClient() {
                 <ScanLine className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                 Letzte Scans
               </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {data.scansToday} am gewählten Tag
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                {data.scansToday}
               </Badge>
             </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[120px]">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
               {data.recentScans.length === 0 ? (
-                <p className="px-3 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
-                  Keine Scans an diesem Tag. Anderes Datum oben wählen oder unter „Scans“ die Historie öffnen.
-                </p>
+                <div className="flex flex-col items-center justify-center px-6 py-10 gap-2 text-center">
+                  <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800/60 flex items-center justify-center">
+                    <ScanLine className="h-5 w-5 text-slate-300 dark:text-slate-600" />
+                  </div>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Keine Scans an diesem Tag
+                  </p>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 max-w-[260px]">
+                    Anderes Datum oben wählen oder die vollständige Historie öffnen.
+                  </p>
+                </div>
               ) : (
                 data.recentScans.map((scan) => (
                   <div key={scan.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
@@ -1027,15 +1168,23 @@ export function DashboardClient() {
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                 Neueste Tickets
               </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {data.newTicketsCount} neu am gewählten Tag
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                {data.newTicketsCount}
               </Badge>
             </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[120px]">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
               {data.newTickets.length === 0 ? (
-                <p className="px-3 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
-                  Keine neu angelegten Tickets an diesem Tag. (Nur Erstellungsdatum, nicht Gültigkeit.)
-                </p>
+                <div className="flex flex-col items-center justify-center px-6 py-10 gap-2 text-center">
+                  <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800/60 flex items-center justify-center">
+                    <Ticket className="h-5 w-5 text-slate-300 dark:text-slate-600" />
+                  </div>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Keine neuen Tickets an diesem Tag
+                  </p>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 max-w-[260px]">
+                    Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden.
+                  </p>
+                </div>
               ) : (
                 data.newTickets.map((ticket) => (
                   <div
@@ -1068,7 +1217,7 @@ export function DashboardClient() {
         </div>
       )}
 
-      {/* Area cards */}
+      {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
       {!loading && allAreas.length === 0 && (
         <div className="text-center py-12 text-slate-400">
           <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -1076,11 +1225,22 @@ export function DashboardClient() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {allAreas.map((area) => (
-          <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
-        ))}
-      </div>
+      {!loading && allAreas.length > 0 && (() => {
+        const activeAreas = allAreas.filter((a) => a._count.tickets > 0);
+        const quietAreas = allAreas.filter((a) => a._count.tickets === 0);
+        return (
+          <div className="space-y-3">
+            {activeAreas.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {activeAreas.map((area) => (
+                  <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
+                ))}
+              </div>
+            )}
+            <QuietAreasCard areas={quietAreas} />
+          </div>
+        );
+      })()}
 
       <EditTicketDialog
         ticket={selectedTicket}
