@@ -38,17 +38,32 @@ export async function PUT(
 
   const existing = await db.lockerRental.findFirst({
     where: { id: rentalId, lockerId, locker: { accountId: accountId! } },
-    select: { id: true },
+    select: { id: true, ticketId: true, renterName: true },
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  // Wenn ein neues Ticket gesetzt wird → Tenant-Check.
-  if (data.ticketId !== undefined) {
+  // Wenn ein neues Ticket gesetzt wird (nicht null) → Tenant-Check.
+  if (data.ticketId !== undefined && data.ticketId !== null) {
     const ticket = await db.ticket.findFirst({
       where: { id: data.ticketId, accountId: accountId! },
       select: { id: true },
     });
     if (!ticket) return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
+  }
+
+  // Sicherstellen, dass nach dem Update mindestens eines von ticketId/renterName
+  // gesetzt ist (sonst waere die Vermietung mieter-los).
+  const finalTicketId =
+    data.ticketId !== undefined ? data.ticketId : existing.ticketId;
+  const finalRenterName =
+    data.renterName !== undefined
+      ? (data.renterName?.trim() || null)
+      : existing.renterName;
+  if (finalTicketId == null && !finalRenterName) {
+    return NextResponse.json(
+      { error: "Bitte ein Ticket auswählen oder einen Namen eintragen." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -57,6 +72,7 @@ export async function PUT(
       data: {
         ...(data.year !== undefined && { year: data.year }),
         ...(data.ticketId !== undefined && { ticketId: data.ticketId }),
+        ...(data.renterName !== undefined && { renterName: data.renterName?.trim() || null }),
         ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
         ...(data.keysIssued !== undefined && { keysIssued: data.keysIssued }),
         ...(data.keysReturned !== undefined && { keysReturned: data.keysReturned }),

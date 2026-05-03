@@ -17,6 +17,7 @@ const rentalSelect = {
   id: true,
   year: true,
   ticketId: true,
+  renterName: true,
   keysIssued: true,
   keysReturned: true,
   issuedAt: true,
@@ -103,10 +104,12 @@ export async function PATCH(
       ...updated,
       issuedAt: updated.issuedAt ? updated.issuedAt.toISOString() : null,
       returnedAt: updated.returnedAt ? updated.returnedAt.toISOString() : null,
-      ticket: {
-        ...updated.ticket,
-        endDate: updated.ticket.endDate ? updated.ticket.endDate.toISOString() : null,
-      },
+      ticket: updated.ticket
+        ? {
+            ...updated.ticket,
+            endDate: updated.ticket.endDate ? updated.ticket.endDate.toISOString() : null,
+          }
+        : null,
     },
   });
 }

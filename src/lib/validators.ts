@@ -162,12 +162,18 @@ export const lockerCreateSchema = z.object({
   keyCount: keyCount.optional(),
   lockNumber: z.string().max(60).nullable().optional(),
   /// Optionales Bootstrap: bei Anlage direkt eine Vermietung für ein Jahr setzen.
+  /// Mindestens eines von `ticketId` oder `renterName` muss gesetzt sein.
   initialRental: z
     .object({
       year: lockerYear,
-      ticketId: z.coerce.number().int().positive(),
+      ticketId: z.coerce.number().int().positive().nullable().optional(),
+      renterName: z.string().min(1).max(180).nullable().optional(),
       notes: z.string().max(500).nullable().optional(),
     })
+    .refine(
+      (v) => (v.ticketId != null) || !!v.renterName?.trim(),
+      { message: "Entweder ein Mieter-Ticket oder ein manueller Name muss angegeben werden." },
+    )
     .optional(),
 });
 
@@ -181,19 +187,30 @@ export const lockerUpdateSchema = z.object({
   lockNumber: z.string().max(60).nullable().optional(),
 });
 
-export const lockerRentalCreateSchema = z.object({
-  year: lockerYear,
-  ticketId: z.coerce.number().int().positive(),
-  notes: z.string().max(500).nullable().optional(),
-  keysIssued: keyCount.optional(),
-  keysReturned: keyCount.optional(),
-  issuedAt: isoDateTime.nullable().optional(),
-  returnedAt: isoDateTime.nullable().optional(),
-});
+/// Locker-Vermietung: entweder Abo-Ticket ODER manueller Mietername (mind. eins).
+export const lockerRentalCreateSchema = z
+  .object({
+    year: lockerYear,
+    ticketId: z.coerce.number().int().positive().nullable().optional(),
+    renterName: z.string().min(1).max(180).nullable().optional(),
+    notes: z.string().max(500).nullable().optional(),
+    keysIssued: keyCount.optional(),
+    keysReturned: keyCount.optional(),
+    issuedAt: isoDateTime.nullable().optional(),
+    returnedAt: isoDateTime.nullable().optional(),
+  })
+  .refine(
+    (v) => (v.ticketId != null) || !!v.renterName?.trim(),
+    { message: "Entweder ein Mieter-Ticket oder ein manueller Name muss angegeben werden." },
+  );
 
+/// Update: ticketId und renterName koennen explizit auf null gesetzt werden,
+/// um den Modus zu wechseln. Wenn beide explizit geschickt werden, muss am
+/// Ende mindestens eines einen Wert haben (Pruefung im Handler).
 export const lockerRentalUpdateSchema = z.object({
   year: lockerYear.optional(),
-  ticketId: z.coerce.number().int().positive().optional(),
+  ticketId: z.coerce.number().int().positive().nullable().optional(),
+  renterName: z.string().max(180).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
   keysIssued: keyCount.optional(),
   keysReturned: keyCount.optional(),

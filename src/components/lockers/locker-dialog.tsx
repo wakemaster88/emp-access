@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Trash2, Save, Lock, MapPin, Hash, Ticket as TicketIcon,
   CreditCard, FileText, Search, X, Check, Plus, Calendar, History, Pencil,
-  Key, KeyRound, ArrowRightCircle, ArrowLeftCircle,
+  Key, KeyRound, ArrowRightCircle, ArrowLeftCircle, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -45,13 +45,24 @@ export interface RentalRow {
   id: number;
   year: number;
   notes: string | null;
-  ticketId: number;
+  /// Optional: verknuepftes Abo-Ticket. Null = manueller Name.
+  ticketId: number | null;
+  /// Manuell eingegebener Mietername (Fallback ohne Ticket).
+  renterName: string | null;
   keysIssued: number;
   keysReturned: number;
   /// ISO-String oder null.
   issuedAt: string | null;
   returnedAt: string | null;
-  ticket: AboTicketRef;
+  ticket: AboTicketRef | null;
+}
+
+/// Anzeigename: bevorzugt Person-Name aus Ticket, danach Ticket-Anzeigename,
+/// danach manueller Name, sonst Fallback "Unbekannt".
+export function rentalDisplayName(r: { ticket: AboTicketRef | null; renterName: string | null }): string {
+  if (r.ticket) return ticketDisplayName(r.ticket);
+  if (r.renterName?.trim()) return r.renterName.trim();
+  return "Unbekannt";
 }
 
 /// Helfer: Singular/Plural-Label je nach Schloss-Typ.
@@ -269,11 +280,71 @@ function TicketPicker({
   );
 }
 
+type RenterMode = "ticket" | "manual";
+
+/// Kleiner Tab-Switch zwischen "Abo-Ticket" und "Manueller Name".
+function RenterModeToggle({
+  mode, onChange, required,
+}: {
+  mode: RenterMode;
+  onChange: (m: RenterMode) => void;
+  /// Wenn true wird ein dezenter "*"-Hinweis angezeigt.
+  required?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+        Mieter{required ? " *" : ""}
+      </span>
+      <div
+        role="tablist"
+        className="inline-flex rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-0.5 gap-0.5"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "ticket"}
+          onClick={() => onChange("ticket")}
+          className={cn(
+            "inline-flex items-center gap-1 px-2 h-6 rounded text-[10px] font-medium transition-colors",
+            mode === "ticket"
+              ? "bg-white dark:bg-slate-800 text-violet-700 dark:text-violet-300 shadow-sm"
+              : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200",
+          )}
+          title="Mieter aus den Abo-Tickets auswählen"
+        >
+          <TicketIcon className="h-3 w-3" />
+          Abo-Ticket
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "manual"}
+          onClick={() => onChange("manual")}
+          className={cn(
+            "inline-flex items-center gap-1 px-2 h-6 rounded text-[10px] font-medium transition-colors",
+            mode === "manual"
+              ? "bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 shadow-sm"
+              : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200",
+          )}
+          title="Mietername frei eingeben (ohne Abo-Verknüpfung)"
+        >
+          <User className="h-3 w-3" />
+          Manuell
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface RentalEditorState {
   /// id = "new" für neue Vermietungen, sonst die rental.id als string.
   id: number | "new";
   year: number;
+  /// Welche Mieter-Variante gerade aktiv ist.
+  mode: RenterMode;
   ticketId: number | null;
+  renterName: string;
   notes: string;
   keysIssued: number;
   keysReturned: number;
@@ -297,6 +368,8 @@ export function LockerDialog({
   const [rentals, setRentals] = useState<RentalRow[]>([]);
   /// Bei NEU-Anlage optional eine erste Vermietung mitgeben.
   const [initialRentalTicketId, setInitialRentalTicketId] = useState<number | null>(null);
+  const [initialRentalRenterName, setInitialRentalRenterName] = useState("");
+  const [initialRentalMode, setInitialRentalMode] = useState<RenterMode>("ticket");
   const [initialRentalYear, setInitialRentalYear] = useState<number>(currentYear);
   /// Inline-Editor-State für vorhandene Schließfächer.
   const [editor, setEditor] = useState<RentalEditorState | null>(null);
@@ -312,6 +385,8 @@ export function LockerDialog({
       setRentalError("");
       setEditor(null);
       setInitialRentalTicketId(null);
+      setInitialRentalRenterName("");
+      setInitialRentalMode("ticket");
       setInitialRentalYear(currentYear);
       if (locker) {
         setName(locker.name);
@@ -343,11 +418,17 @@ export function LockerDialog({
         keyCount,
         lockNumber: lockType === "KEY" ? (lockNumber.trim() || null) : null,
       };
-      if (isNew && initialRentalTicketId) {
-        payload.initialRental = {
-          year: initialRentalYear,
-          ticketId: initialRentalTicketId,
-        };
+      if (isNew) {
+        const wantsTicket = initialRentalMode === "ticket" && initialRentalTicketId != null;
+        const wantsManual = initialRentalMode === "manual" && initialRentalRenterName.trim().length > 0;
+        if (wantsTicket || wantsManual) {
+          payload.initialRental = {
+            year: initialRentalYear,
+            ...(wantsTicket
+              ? { ticketId: initialRentalTicketId }
+              : { renterName: initialRentalRenterName.trim() }),
+          };
+        }
       }
       const url = isNew ? "/api/lockers" : `/api/lockers/${locker!.id}`;
       const method = isNew ? "POST" : "PUT";
@@ -385,13 +466,20 @@ export function LockerDialog({
   }
 
   async function handleSaveRental() {
-    if (!editor || !locker || !editor.ticketId) return;
+    if (!editor || !locker) return;
+    const useTicket = editor.mode === "ticket";
+    const useManual = editor.mode === "manual";
+    if (useTicket && !editor.ticketId) return;
+    if (useManual && !editor.renterName.trim()) return;
     setSavingRental(true);
     setRentalError("");
     try {
       const payload = {
         year: editor.year,
-        ticketId: editor.ticketId,
+        // Beim Modus-Wechsel das jeweils andere Feld explizit auf null setzen,
+        // damit der Server den alten Wert nicht stehen laesst.
+        ticketId: useTicket ? editor.ticketId : null,
+        renterName: useManual ? editor.renterName.trim() : null,
         notes: editor.notes.trim() || null,
         keysIssued: editor.keysIssued,
         keysReturned: editor.keysReturned,
@@ -428,7 +516,7 @@ export function LockerDialog({
 
   async function handleDeleteRental(rental: RentalRow) {
     if (!locker) return;
-    if (!confirm(`Vermietung ${rental.year} (${ticketDisplayName(rental.ticket)}) wirklich entfernen?`)) return;
+    if (!confirm(`Vermietung ${rental.year} (${rentalDisplayName(rental)}) wirklich entfernen?`)) return;
     setRentalError("");
     try {
       const res = await fetch(`/api/lockers/${locker.id}/rentals/${rental.id}`, { method: "DELETE" });
@@ -453,7 +541,9 @@ export function LockerDialog({
     setEditor({
       id: "new",
       year: candidate,
+      mode: "ticket",
       ticketId: null,
+      renterName: "",
       notes: "",
       keysIssued: 0,
       keysReturned: 0,
@@ -467,7 +557,11 @@ export function LockerDialog({
     setEditor({
       id: r.id,
       year: r.year,
+      // Wenn ein Ticket existiert, erstmal Ticket-Modus; wenn nicht, manueller
+      // Modus mit dem gespeicherten Namen (oder leer falls beides fehlt).
+      mode: r.ticketId ? "ticket" : "manual",
       ticketId: r.ticketId,
+      renterName: r.renterName ?? "",
       notes: r.notes ?? "",
       keysIssued: r.keysIssued,
       keysReturned: r.keysReturned,
@@ -649,15 +743,31 @@ export function LockerDialog({
                   className="h-9 text-sm"
                 />
               </div>
-              <div className="space-y-1">
-                <span className="text-[10px] text-slate-400">Mieter-Ticket</span>
-                <TicketPicker
-                  aboTickets={aboTickets}
-                  value={initialRentalTicketId}
-                  onChange={setInitialRentalTicketId}
-                  placeholder="— Frei lassen oder Ticket wählen —"
-                  autoFocus={false}
+              <div className="space-y-1.5">
+                <RenterModeToggle
+                  mode={initialRentalMode}
+                  onChange={(m) => {
+                    setInitialRentalMode(m);
+                    if (m === "ticket") setInitialRentalRenterName("");
+                    else setInitialRentalTicketId(null);
+                  }}
                 />
+                {initialRentalMode === "ticket" ? (
+                  <TicketPicker
+                    aboTickets={aboTickets}
+                    value={initialRentalTicketId}
+                    onChange={setInitialRentalTicketId}
+                    placeholder="— Frei lassen oder Ticket wählen —"
+                    autoFocus={false}
+                  />
+                ) : (
+                  <Input
+                    value={initialRentalRenterName}
+                    onChange={(e) => setInitialRentalRenterName(e.target.value)}
+                    placeholder="z. B. Familie Mustermann"
+                    className="h-9 text-sm"
+                  />
+                )}
               </div>
             </div>
             <p className="text-[10px] text-slate-400">
@@ -714,14 +824,22 @@ export function LockerDialog({
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate inline-flex items-center gap-1.5">
-                        <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                        {ticketDisplayName(r.ticket)}
+                        {r.ticket
+                          ? <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                          : <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
+                        {rentalDisplayName(r)}
                       </p>
                       <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                        {r.ticket.subscription && (
+                        {r.ticket?.subscription && (
                           <span className="text-[10px] text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-0.5">
                             <CreditCard className="h-2.5 w-2.5" />
                             {r.ticket.subscription.name}
+                          </span>
+                        )}
+                        {!r.ticket && r.renterName && (
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-0.5">
+                            <User className="h-2.5 w-2.5" />
+                            Manuell
                           </span>
                         )}
                         {r.keysIssued > 0 && (() => {
@@ -791,13 +909,34 @@ export function LockerDialog({
                         <p className="text-[10px] text-amber-600">Jahr bereits vergeben.</p>
                       )}
                     </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">Mieter-Ticket *</span>
-                      <TicketPicker
-                        aboTickets={aboTickets}
-                        value={editor.ticketId}
-                        onChange={(id) => setEditor({ ...editor, ticketId: id })}
+                    <div className="space-y-1.5">
+                      <RenterModeToggle
+                        mode={editor.mode}
+                        onChange={(m) => setEditor({
+                          ...editor,
+                          mode: m,
+                          // Beim Umschalten den jeweils anderen Wert leeren,
+                          // damit beim Speichern eindeutig ist, was gemeint ist.
+                          ticketId: m === "ticket" ? editor.ticketId : null,
+                          renterName: m === "manual" ? editor.renterName : "",
+                        })}
+                        required
                       />
+                      {editor.mode === "ticket" ? (
+                        <TicketPicker
+                          aboTickets={aboTickets}
+                          value={editor.ticketId}
+                          onChange={(id) => setEditor({ ...editor, ticketId: id })}
+                        />
+                      ) : (
+                        <Input
+                          value={editor.renterName}
+                          onChange={(e) => setEditor({ ...editor, renterName: e.target.value })}
+                          placeholder="z. B. Familie Mustermann"
+                          autoFocus
+                          className="h-9 text-sm"
+                        />
+                      )}
                     </div>
                   </div>
 
@@ -919,7 +1058,13 @@ export function LockerDialog({
                     <Button
                       type="button" size="sm"
                       onClick={handleSaveRental}
-                      disabled={savingRental || !editor.ticketId || !!editorYearConflict}
+                      disabled={
+                        savingRental
+                        || !!editorYearConflict
+                        || (editor.mode === "ticket"
+                          ? !editor.ticketId
+                          : !editor.renterName.trim())
+                      }
                       className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
                     >
                       {savingRental

@@ -314,7 +314,13 @@ model Locker {
 model LockerRental {
   id           Int       @id @default(autoincrement())
   lockerId     Int
-  ticketId     Int
+  /// Optional: verknuepftes Mieter-Ticket (Abo). Mindestens eines von
+  /// `ticketId` oder `renterName` muss gesetzt sein (App-Validator).
+  /// Wird das Ticket geloescht, bleibt die Vermietung als Historie erhalten
+  /// (ticketId -> NULL); fuer Anzeige greift dann `renterName` (sofern gesetzt).
+  ticketId     Int?
+  /// Manuell eingegebener Mietername (Fallback ohne Abo-Ticket).
+  renterName   String?
   /// Vermietungsjahr als Kalenderjahr (z. B. 2026).
   year         Int
   /// Optionale Notiz für genau diese Vermietungs-Periode.
@@ -328,7 +334,7 @@ model LockerRental {
   /// Zeitpunkt der vollständigen Rücknahme (NULL = noch nicht zurück).
   returnedAt   DateTime?
   locker       Locker    @relation(fields: [lockerId], references: [id], onDelete: Cascade)
-  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket       Ticket?   @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

@@ -89,22 +89,25 @@ export async function GET(
       id: r.id,
       year: r.year,
       ticketId: r.ticketId,
+      renterName: r.renterName,
       keysIssued: r.keysIssued,
       keysReturned: r.keysReturned,
       issuedAt: r.issuedAt ? r.issuedAt.toISOString() : null,
       returnedAt: r.returnedAt ? r.returnedAt.toISOString() : null,
       notes: r.notes,
-      ticket: {
-        id: r.ticket.id,
-        name: r.ticket.name,
-        firstName: r.ticket.firstName,
-        lastName: r.ticket.lastName,
-        ticketTypeName: r.ticket.ticketTypeName,
-        status: r.ticket.status,
-        endDate: r.ticket.endDate ? r.ticket.endDate.toISOString() : null,
-        profileImage: r.ticket.profileImage,
-        subscription: r.ticket.subscription,
-      },
+      ticket: r.ticket
+        ? {
+            id: r.ticket.id,
+            name: r.ticket.name,
+            firstName: r.ticket.firstName,
+            lastName: r.ticket.lastName,
+            ticketTypeName: r.ticket.ticketTypeName,
+            status: r.ticket.status,
+            endDate: r.ticket.endDate ? r.ticket.endDate.toISOString() : null,
+            profileImage: r.ticket.profileImage,
+            subscription: r.ticket.subscription,
+          }
+        : null,
     })),
   }));
 

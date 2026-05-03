@@ -8,20 +8,27 @@ function currentYearBerlin(): number {
   return Number.isFinite(y) ? y : new Date().getFullYear();
 }
 
-const upsertSchema = z.object({
-  ticketId: z.coerce.number().int().positive(),
-  keysIssued: z.coerce.number().int().min(0).max(20).optional(),
-  keysReturned: z.coerce.number().int().min(0).max(20).optional(),
-  /// Akzeptiert ISO-Datum/-DateTime; "" oder null entfernt das Datum.
-  issuedAt: z.union([z.string(), z.null()]).optional(),
-  returnedAt: z.union([z.string(), z.null()]).optional(),
-  notes: z.string().max(500).nullable().optional(),
-});
+const upsertSchema = z
+  .object({
+    ticketId: z.coerce.number().int().positive().nullable().optional(),
+    renterName: z.string().min(1).max(180).nullable().optional(),
+    keysIssued: z.coerce.number().int().min(0).max(20).optional(),
+    keysReturned: z.coerce.number().int().min(0).max(20).optional(),
+    /// Akzeptiert ISO-Datum/-DateTime; "" oder null entfernt das Datum.
+    issuedAt: z.union([z.string(), z.null()]).optional(),
+    returnedAt: z.union([z.string(), z.null()]).optional(),
+    notes: z.string().max(500).nullable().optional(),
+  })
+  .refine(
+    (v) => (v.ticketId != null) || !!v.renterName?.trim(),
+    { message: "Entweder ein Mieter-Ticket oder ein manueller Name muss angegeben werden." },
+  );
 
 const rentalSelect = {
   id: true,
   year: true,
   ticketId: true,
+  renterName: true,
   keysIssued: true,
   keysReturned: true,
   issuedAt: true,
@@ -79,29 +86,32 @@ export async function POST(
   const data = parsed.data;
   const year = currentYearBerlin();
 
-  // Tenant-Check für Locker und Ticket parallel.
-  const [locker, ticket] = await Promise.all([
-    prisma.locker.findFirst({
-      where: { id: lockerId, accountId: monitor.accountId },
-      select: { id: true },
-    }),
-    prisma.ticket.findFirst({
+  // Tenant-Check fuer Locker; Ticket nur wenn gesetzt.
+  const locker = await prisma.locker.findFirst({
+    where: { id: lockerId, accountId: monitor.accountId },
+    select: { id: true },
+  });
+  if (!locker) return NextResponse.json({ error: "Schließfach nicht gefunden" }, { status: 404 });
+
+  if (data.ticketId != null) {
+    const ticket = await prisma.ticket.findFirst({
       where: { id: data.ticketId, accountId: monitor.accountId },
       select: { id: true },
-    }),
-  ]);
-  if (!locker) return NextResponse.json({ error: "Schließfach nicht gefunden" }, { status: 404 });
-  if (!ticket) return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
+    });
+    if (!ticket) return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
+  }
 
   const issuedAt = parseDate(data.issuedAt);
   const returnedAt = parseDate(data.returnedAt);
+  const renterName = data.renterName?.trim() || null;
 
   try {
     const rental = await prisma.lockerRental.upsert({
       where: { lockerId_year: { lockerId, year } },
       create: {
         lockerId,
-        ticketId: data.ticketId,
+        ticketId: data.ticketId ?? null,
+        renterName,
         year,
         keysIssued: data.keysIssued ?? 0,
         keysReturned: data.keysReturned ?? 0,
@@ -110,7 +120,8 @@ export async function POST(
         notes: data.notes?.trim() || null,
       },
       update: {
-        ticketId: data.ticketId,
+        ticketId: data.ticketId ?? null,
+        renterName,
         ...(data.keysIssued !== undefined && { keysIssued: data.keysIssued }),
         ...(data.keysReturned !== undefined && { keysReturned: data.keysReturned }),
         ...(data.issuedAt !== undefined && { issuedAt: issuedAt }),
@@ -125,10 +136,12 @@ export async function POST(
         ...rental,
         issuedAt: rental.issuedAt ? rental.issuedAt.toISOString() : null,
         returnedAt: rental.returnedAt ? rental.returnedAt.toISOString() : null,
-        ticket: {
-          ...rental.ticket,
-          endDate: rental.ticket.endDate ? rental.ticket.endDate.toISOString() : null,
-        },
+        ticket: rental.ticket
+          ? {
+              ...rental.ticket,
+              endDate: rental.ticket.endDate ? rental.ticket.endDate.toISOString() : null,
+            }
+          : null,
       },
     });
   } catch (e) {

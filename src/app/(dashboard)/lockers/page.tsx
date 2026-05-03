@@ -83,20 +83,23 @@ export default async function LockersPage() {
       year: r.year,
       notes: r.notes,
       ticketId: r.ticketId,
+      renterName: r.renterName,
       keysIssued: r.keysIssued,
       keysReturned: r.keysReturned,
       issuedAt: r.issuedAt ? r.issuedAt.toISOString() : null,
       returnedAt: r.returnedAt ? r.returnedAt.toISOString() : null,
-      ticket: {
-        id: r.ticket.id,
-        name: r.ticket.name,
-        firstName: r.ticket.firstName,
-        lastName: r.ticket.lastName,
-        ticketTypeName: r.ticket.ticketTypeName,
-        status: r.ticket.status,
-        endDate: r.ticket.endDate ? r.ticket.endDate.toISOString() : null,
-        subscription: r.ticket.subscription,
-      },
+      ticket: r.ticket
+        ? {
+            id: r.ticket.id,
+            name: r.ticket.name,
+            firstName: r.ticket.firstName,
+            lastName: r.ticket.lastName,
+            ticketTypeName: r.ticket.ticketTypeName,
+            status: r.ticket.status,
+            endDate: r.ticket.endDate ? r.ticket.endDate.toISOString() : null,
+            subscription: r.ticket.subscription,
+          }
+        : null,
     })),
   }));
 

@@ -16,7 +16,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Loader2, Search, X, Lock, Key, MapPin, Hash, ChevronLeft,
   Ticket as TicketIcon, CreditCard, ArrowRightCircle, ArrowLeftCircle,
-  Trash2, Check, AlertTriangle, RefreshCw,
+  Trash2, Check, AlertTriangle, RefreshCw, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,13 +37,15 @@ interface PickerTicket {
 interface LockerRentalApi {
   id: number;
   year: number;
-  ticketId: number;
+  /// Optional: bei manuellen Mietern ist `ticketId` null und `renterName` gesetzt.
+  ticketId: number | null;
+  renterName: string | null;
   keysIssued: number;
   keysReturned: number;
   issuedAt: string | null;
   returnedAt: string | null;
   notes: string | null;
-  ticket: PickerTicket;
+  ticket: PickerTicket | null;
 }
 
 interface LockerApi {
@@ -71,6 +73,13 @@ interface LockerOverlayProps {
 
 function ticketDisplayName(t: PickerTicket): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+}
+
+/// Anzeigename einer Vermietung: Ticket bevorzugt, dann manueller Name, dann Fallback.
+function rentalDisplayName(r: { ticket: PickerTicket | null; renterName: string | null }): string {
+  if (r.ticket) return ticketDisplayName(r.ticket);
+  if (r.renterName?.trim()) return r.renterName.trim();
+  return "Unbekannt";
 }
 
 function itemLabel(lockType: LockerType, plural: boolean): string {
@@ -135,8 +144,8 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
       if (!q) return true;
       const hay = [
         l.name, l.number, l.location ?? "", l.notes ?? "", l.lockNumber ?? "",
-        l.current ? ticketDisplayName(l.current.ticket) : "",
-        l.current?.ticket.subscription?.name ?? "",
+        l.current ? rentalDisplayName(l.current) : "",
+        l.current?.ticket?.subscription?.name ?? "",
       ].join(" ").toLowerCase();
       return hay.includes(q);
     });
@@ -311,7 +320,7 @@ function ListView({
               <p className="text-[11px] text-amber-200/80 truncate">
                 {openKeyLockers.slice(0, 4).map((l) => {
                   const r = l.openPast[0];
-                  return `#${l.number} ${ticketDisplayName(r.ticket)} (${r.year})`;
+                  return `#${l.number} ${rentalDisplayName(r)} (${r.year})`;
                 }).join(" · ")}
                 {openKeyLockers.length > 4 && ` · +${openKeyLockers.length - 4}`}
               </p>
@@ -355,7 +364,8 @@ function ListView({
           <p className="text-sm text-slate-500 text-center py-12">Keine Treffer.</p>
         )}
         {lockers.map((l) => {
-          const t = l.current?.ticket;
+          const t = l.current?.ticket ?? null;
+          const manualName = !t && l.current?.renterName ? l.current.renterName : null;
           const open = l.current ? l.current.keysIssued - l.current.keysReturned : 0;
           const allBack = l.current ? open <= 0 : false;
           return (
@@ -408,6 +418,15 @@ function ListView({
                       </span>
                     )}
                   </div>
+                ) : manualName ? (
+                  <div className="mt-1 flex items-center gap-1.5 min-w-0">
+                    <User className="h-3 w-3 text-amber-400 shrink-0" />
+                    <span className="text-xs text-slate-200 truncate">{manualName}</span>
+                    <span className="text-[10px] text-amber-300/80 inline-flex items-center gap-0.5 shrink-0">
+                      <User className="h-2.5 w-2.5" />
+                      Manuell
+                    </span>
+                  </div>
                 ) : (
                   <p className="mt-1 text-xs text-slate-500 italic">Frei</p>
                 )}
@@ -420,7 +439,7 @@ function ListView({
                         <span key={r.id}>
                           {i > 0 && ", "}
                           <span className="font-mono tabular-nums">{r.year}</span>{" "}
-                          {ticketDisplayName(r.ticket)}{" "}
+                          {rentalDisplayName(r)}{" "}
                           <span className="opacity-70">({r.keysIssued - r.keysReturned})</span>
                         </span>
                       ))}
@@ -506,6 +525,12 @@ function DetailView({
   const [keysReturned, setKeysReturned] = useState(current?.keysReturned ?? 0);
   const [issuedAt, setIssuedAt] = useState<string | null>(current?.issuedAt ?? null);
   const [returnedAt, setReturnedAt] = useState<string | null>(current?.returnedAt ?? null);
+  // Mieter-Modus + Eingabe: bei keinem aktuellen Mieter starten wir im Ticket-Modus,
+  // ansonsten im Modus, der zur aktuellen Vermietung passt.
+  const [pickerMode, setPickerMode] = useState<"ticket" | "manual">(
+    current?.renterName && !current.ticket ? "manual" : "ticket",
+  );
+  const [manualName, setManualName] = useState(current?.renterName ?? "");
 
   useEffect(() => {
     setKeysIssued(current?.keysIssued ?? 0);
@@ -513,6 +538,8 @@ function DetailView({
     setIssuedAt(current?.issuedAt ?? null);
     setReturnedAt(current?.returnedAt ?? null);
     setPickerOpen(!current);
+    setPickerMode(current?.renterName && !current.ticket ? "manual" : "ticket");
+    setManualName(current?.renterName ?? "");
   }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = !!current && (
@@ -572,6 +599,8 @@ function DetailView({
   async function assignTicket(t: PickerTicket) {
     const ok = await persist({
       ticketId: t.id,
+      // Beim Wechsel zu einem Ticket etwaigen manuellen Namen leeren.
+      renterName: null,
       keysIssued: 0,
       keysReturned: 0,
       issuedAt: null,
@@ -580,10 +609,33 @@ function DetailView({
     if (ok) setPickerOpen(false);
   }
 
+  /// Manueller Name als Mieter ohne Abo-Ticket-Verknuepfung.
+  async function assignManual(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const ok = await persist({
+      ticketId: null,
+      renterName: trimmed,
+      keysIssued: 0,
+      keysReturned: 0,
+      issuedAt: null,
+      returnedAt: null,
+    });
+    if (ok) setPickerOpen(false);
+  }
+
+  /// Aktuellen Mieter beibehalten – egal ob Ticket oder manueller Name.
+  function currentRenterPayload(): { ticketId: number | null; renterName: string | null } {
+    return {
+      ticketId: current?.ticketId ?? null,
+      renterName: current?.renterName ?? null,
+    };
+  }
+
   async function saveKeyChanges() {
     if (!current) return;
     await persist({
-      ticketId: current.ticketId,
+      ...currentRenterPayload(),
       keysIssued,
       keysReturned,
       issuedAt: issuedAt,
@@ -597,7 +649,7 @@ function DetailView({
     setKeysIssued(target);
     setIssuedAt(todayIso());
     await persist({
-      ticketId: current.ticketId,
+      ...currentRenterPayload(),
       keysIssued: target,
       keysReturned,
       issuedAt: todayIso(),
@@ -609,7 +661,7 @@ function DetailView({
     setKeysReturned(keysIssued);
     setReturnedAt(todayIso());
     await persist({
-      ticketId: current.ticketId,
+      ...currentRenterPayload(),
       keysIssued,
       keysReturned: keysIssued,
       issuedAt,
@@ -715,7 +767,7 @@ function DetailView({
                     <p className="text-sm font-medium truncate">
                       <span className="font-mono tabular-nums text-amber-300">{r.year}</span>
                       <span className="mx-1.5 text-amber-400/60">·</span>
-                      {ticketDisplayName(r.ticket)}
+                      {rentalDisplayName(r)}
                     </p>
                     <p className="text-[11px] text-amber-200/80 inline-flex items-center gap-1">
                       {locker.lockType === "KEY"
@@ -723,10 +775,16 @@ function DetailView({
                         : <Lock className="h-2.5 w-2.5" />}
                       <span className="font-mono tabular-nums">{r.keysReturned}/{r.keysIssued}</span>
                       <span>· {open} offen</span>
-                      {r.ticket.subscription && (
+                      {r.ticket?.subscription && (
                         <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-300">
                           <CreditCard className="h-2.5 w-2.5" />
                           {r.ticket.subscription.name}
+                        </span>
+                      )}
+                      {!r.ticket && r.renterName && (
+                        <span className="ml-1 inline-flex items-center gap-0.5 text-amber-200/80">
+                          <User className="h-2.5 w-2.5" />
+                          Manuell
                         </span>
                       )}
                     </p>
@@ -752,31 +810,41 @@ function DetailView({
         <div className="rounded-2xl bg-slate-800/40 border border-slate-800 p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              {current.ticket.profileImage ? (
+              {current.ticket?.profileImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={current.ticket.profileImage}
                   alt=""
                   className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-500/30 shrink-0"
                 />
-              ) : (
+              ) : current.ticket ? (
                 <div className="h-12 w-12 rounded-full bg-violet-500/20 text-violet-300 flex items-center justify-center shrink-0">
                   <TicketIcon className="h-5 w-5" />
+                </div>
+              ) : (
+                <div className="h-12 w-12 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0">
+                  <User className="h-5 w-5" />
                 </div>
               )}
               <div className="min-w-0">
                 <p className="text-base font-semibold text-white truncate">
-                  {ticketDisplayName(current.ticket)}
+                  {rentalDisplayName(current)}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                  {current.ticket.subscription && (
+                  {current.ticket?.subscription && (
                     <span className="inline-flex items-center gap-0.5 text-emerald-300">
                       <CreditCard className="h-2.5 w-2.5" />
                       {current.ticket.subscription.name}
                     </span>
                   )}
-                  {current.ticket.ticketTypeName && (
+                  {current.ticket?.ticketTypeName && (
                     <span>· {current.ticket.ticketTypeName}</span>
+                  )}
+                  {!current.ticket && current.renterName && (
+                    <span className="inline-flex items-center gap-0.5 text-amber-300">
+                      <User className="h-2.5 w-2.5" />
+                      Manuell
+                    </span>
                   )}
                   <span>· Vermietung {year}</span>
                 </div>
@@ -885,9 +953,66 @@ function DetailView({
         <div className="rounded-2xl bg-slate-800/40 border border-slate-800 p-4 space-y-3">
           <p className="text-xs text-slate-400">
             {current
-              ? <>Aktueller Mieter: <strong className="text-slate-200">{ticketDisplayName(current.ticket)}</strong>. Wähle ein anderes Ticket oder breche ab.</>
-              : <>Wähle ein Abo-Ticket, dem dieses Schließfach für <strong>{year}</strong> zugeordnet werden soll.</>}
+              ? <>Aktueller Mieter: <strong className="text-slate-200">{rentalDisplayName(current)}</strong>. Wähle einen anderen Mieter oder brich ab.</>
+              : <>Wähle einen Mieter für <strong>{year}</strong> – per Abo-Ticket oder als manuell eingegebener Name.</>}
           </p>
+
+          {/* Modus-Switch zwischen Abo-Ticket und manuellem Namen. */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPickerMode("ticket")}
+              className={cn(
+                "rounded-xl py-2 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors active:scale-95",
+                pickerMode === "ticket"
+                  ? "bg-violet-600 text-white"
+                  : "bg-slate-900/60 text-slate-400 hover:bg-slate-900 border border-slate-700/50",
+              )}
+            >
+              <TicketIcon className="h-3.5 w-3.5" />
+              Abo-Ticket
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickerMode("manual")}
+              className={cn(
+                "rounded-xl py-2 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors active:scale-95",
+                pickerMode === "manual"
+                  ? "bg-amber-600 text-white"
+                  : "bg-slate-900/60 text-slate-400 hover:bg-slate-900 border border-slate-700/50",
+              )}
+            >
+              <User className="h-3.5 w-3.5" />
+              Manueller Name
+            </button>
+          </div>
+
+          {pickerMode === "manual" ? (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+                placeholder="z. B. Familie Mustermann"
+                autoFocus
+                className="w-full bg-slate-900/60 border border-slate-700/50 text-white rounded-xl px-3 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              />
+              <button
+                type="button"
+                onClick={() => assignManual(manualName)}
+                disabled={busy || !manualName.trim()}
+                className="w-full rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700/60 disabled:text-slate-500 text-white py-2.5 text-sm font-semibold inline-flex items-center justify-center gap-2 active:scale-95"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Mieter speichern
+              </button>
+              <p className="text-[10px] text-slate-500 leading-snug">
+                Manuelle Mieter sind nicht mit einem Abo-Ticket verknüpft – Schlüssel-Tracking
+                und Historie bleiben aber erhalten.
+              </p>
+            </div>
+          ) : (
+          <>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input
@@ -947,6 +1072,8 @@ function DetailView({
               );
             })}
           </div>
+          </>
+          )}
           {current && (
             <button
               onClick={() => setPickerOpen(false)}

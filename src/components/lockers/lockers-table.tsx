@@ -7,11 +7,12 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  LockerDialog, type LockerData, type AboTicketRef, type RentalRow, type LockerType,
+  LockerDialog, rentalDisplayName,
+  type LockerData, type AboTicketRef, type RentalRow, type LockerType,
 } from "./locker-dialog";
 import {
   Lock, Plus, Search, MapPin, Hash, Ticket as TicketIcon, CreditCard,
-  Calendar, History, Key, AlertTriangle,
+  Calendar, History, Key, AlertTriangle, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,19 @@ interface LockersTableProps {
 function ticketDisplayName(t: AboTicketRef): string {
   const personName = [t.firstName, t.lastName].filter(Boolean).join(" ");
   return personName || t.name;
+}
+
+function rentalSearchHay(r: RentalRow): string[] {
+  const parts: string[] = [String(r.year)];
+  if (r.ticket) {
+    parts.push(
+      ticketDisplayName(r.ticket),
+      r.ticket.subscription?.name ?? "",
+      r.ticket.ticketTypeName ?? "",
+    );
+  }
+  if (r.renterName) parts.push(r.renterName);
+  return parts;
 }
 
 export function LockersTable({ lockers, aboTickets, currentYear, readonly }: LockersTableProps) {
@@ -80,12 +94,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
         l.location ?? "",
         l.notes ?? "",
         l.lockNumber ?? "",
-        ...l.rentals.flatMap((r) => [
-          ticketDisplayName(r.ticket),
-          r.ticket.subscription?.name ?? "",
-          r.ticket.ticketTypeName ?? "",
-          String(r.year),
-        ]),
+        ...l.rentals.flatMap((r) => rentalSearchHay(r)),
       ].join(" ").toLowerCase();
       return hay.includes(s);
     });
@@ -209,7 +218,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                     <li key={l.id} className="inline-flex items-center gap-1">
                       <span className="font-mono">#{l.number}</span>
                       <span className="text-amber-700/70 dark:text-amber-300/60">·</span>
-                      <span className="font-medium">{ticketDisplayName(newest.ticket)}</span>
+                      <span className="font-medium">{rentalDisplayName(newest)}</span>
                       <span className="text-amber-700/70 dark:text-amber-300/60">
                         ({newest.year}, {newest.keysIssued - newest.keysReturned} offen)
                       </span>
@@ -360,14 +369,22 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                   {l.current ? (
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
-                        <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                        {ticketDisplayName(l.current.ticket)}
+                        {l.current.ticket
+                          ? <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                          : <User className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                        {rentalDisplayName(l.current)}
                       </span>
                       <div className="flex flex-wrap items-center gap-1">
-                        {l.current.ticket.subscription && (
+                        {l.current.ticket?.subscription && (
                           <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0">
                             <CreditCard className="h-2.5 w-2.5" />
                             {l.current.ticket.subscription.name}
+                          </Badge>
+                        )}
+                        {!l.current.ticket && l.current.renterName && (
+                          <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 gap-1 text-[10px] py-0" title="Manuell hinterlegter Mieter ohne Abo-Verknüpfung">
+                            <User className="h-2.5 w-2.5" />
+                            Manuell
                           </Badge>
                         )}
                         {l.current.keysIssued > 0 && (() => {
@@ -403,7 +420,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                     <div
                       className="mt-1 inline-flex items-start gap-1 text-[10px] leading-tight px-1.5 py-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 max-w-full"
                       title={l.openPast
-                        .map((r) => `${r.year}: ${ticketDisplayName(r.ticket)} – ${r.keysIssued - r.keysReturned} offen`)
+                        .map((r) => `${r.year}: ${rentalDisplayName(r)} – ${r.keysIssued - r.keysReturned} offen`)
                         .join("\n")}
                     >
                       <AlertTriangle className="h-3 w-3 shrink-0 mt-px" />
@@ -413,7 +430,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                           <span key={r.id}>
                             {i > 0 && ", "}
                             <span className="font-mono tabular-nums">{r.year}</span>{" "}
-                            {ticketDisplayName(r.ticket)}{" "}
+                            {rentalDisplayName(r)}{" "}
                             <span className="opacity-70">({r.keysIssued - r.keysReturned})</span>
                           </span>
                         ))}
@@ -443,8 +460,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                             )}
                             title={
                               isOpen
-                                ? `${r.year}: ${ticketDisplayName(r.ticket)} – ${open} ${l.lockType === "PADLOCK" ? "Schloss/Schlösser" : "Schlüssel"} noch nicht zurück`
-                                : `${r.year}: ${ticketDisplayName(r.ticket)}`
+                                ? `${r.year}: ${rentalDisplayName(r)} – ${open} ${l.lockType === "PADLOCK" ? "Schloss/Schlösser" : "Schlüssel"} noch nicht zurück`
+                                : `${r.year}: ${rentalDisplayName(r)}`
                             }
                           >
                             {isOpen && <AlertTriangle className="h-2.5 w-2.5" />}

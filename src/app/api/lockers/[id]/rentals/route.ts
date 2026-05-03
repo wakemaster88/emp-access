@@ -59,19 +59,27 @@ export async function POST(
   const { db, accountId } = session;
   const data = parsed.data;
 
-  // Tenant-Check Locker und Ticket parallel.
-  const [locker, ticket] = await Promise.all([
-    db.locker.findFirst({ where: { id: lockerId, accountId: accountId! }, select: { id: true } }),
-    db.ticket.findFirst({ where: { id: data.ticketId, accountId: accountId! }, select: { id: true } }),
-  ]);
+  // Locker tenant-check; Ticket nur pruefen wenn gesetzt.
+  const locker = await db.locker.findFirst({
+    where: { id: lockerId, accountId: accountId! },
+    select: { id: true },
+  });
   if (!locker) return NextResponse.json({ error: "Schließfach nicht gefunden" }, { status: 404 });
-  if (!ticket) return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
+
+  if (data.ticketId != null) {
+    const ticket = await db.ticket.findFirst({
+      where: { id: data.ticketId, accountId: accountId! },
+      select: { id: true },
+    });
+    if (!ticket) return NextResponse.json({ error: "Ticket nicht gefunden" }, { status: 400 });
+  }
 
   try {
     const rental = await db.lockerRental.create({
       data: {
         lockerId,
-        ticketId: data.ticketId,
+        ticketId: data.ticketId ?? null,
+        renterName: data.renterName?.trim() || null,
         year: data.year,
         notes: data.notes?.trim() || null,
         ...(data.keysIssued !== undefined && { keysIssued: data.keysIssued }),

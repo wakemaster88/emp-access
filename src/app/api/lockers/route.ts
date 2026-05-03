@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
   const { db, accountId } = session;
   const data = parsed.data;
 
-  // Tenant-Check für initial-Rental, falls gesetzt.
-  if (data.initialRental) {
+  // Tenant-Check fuer initial-Rental: nur wenn ticketId gesetzt.
+  if (data.initialRental?.ticketId != null) {
     const ticket = await db.ticket.findFirst({
       where: { id: data.initialRental.ticketId, accountId: accountId! },
       select: { id: true },
@@ -72,7 +72,8 @@ export async function POST(request: NextRequest) {
           rentals: {
             create: {
               year: data.initialRental.year,
-              ticketId: data.initialRental.ticketId,
+              ticketId: data.initialRental.ticketId ?? null,
+              renterName: data.initialRental.renterName?.trim() || null,
               notes: data.initialRental.notes?.trim() || null,
             },
           },
