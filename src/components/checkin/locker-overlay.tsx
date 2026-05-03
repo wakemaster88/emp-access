@@ -12,7 +12,7 @@
  * Tenant-Auflösung über den Monitor-Token wie bei den anderen Overlays.
  */
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Loader2, Search, X, Lock, Key, MapPin, Hash, ChevronLeft,
   Ticket as TicketIcon, CreditCard, ArrowRightCircle, ArrowLeftCircle,
@@ -916,6 +916,7 @@ function DetailView({
                   date={issuedAt}
                   setDate={setIssuedAt}
                   max={20}
+                  instanceKey={`${current?.id ?? "new"}-issued`}
                 />
                 <KeyField
                   label="Zurückgegeben"
@@ -924,6 +925,7 @@ function DetailView({
                   date={returnedAt}
                   setDate={setReturnedAt}
                   max={keysIssued}
+                  instanceKey={`${current?.id ?? "new"}-returned`}
                 />
               </div>
 
@@ -1096,8 +1098,23 @@ function DetailView({
   );
 }
 
+/**
+ * Datum + Anzahl Eingabe.
+ *
+ * Wichtig: Das `<input type="date">` ist UNCONTROLLED (nur `defaultValue`).
+ * Reacts controlled-mode bricht auf vielen Browsern (Chromium, Safari iOS) ab,
+ * wenn der User mitten in der Tastatur-Eingabe ist – der Browser zeigt
+ * intermediate state, React versucht parallel value zurueckzudruecken und
+ * der Wert "springt" optisch zurueck. Mit `defaultValue` + `useRef`-Sync
+ * behaelt der Browser die Hoheit ueber das Input waehrend der Eingabe; wir
+ * pushen nur dann einen neuen Wert in das DOM-Element, wenn dieser sich von
+ * extern aendert (z. B. durch die "Ausgeben"-Quickaction) und das Element
+ * gerade nicht den Fokus hat.
+ *
+ * `instanceKey` setzt den Input neu, wenn die Vermietung wechselt.
+ */
 function KeyField({
-  label, count, setCount, date, setDate, max,
+  label, count, setCount, date, setDate, max, instanceKey,
 }: {
   label: string;
   count: number;
@@ -1105,24 +1122,47 @@ function KeyField({
   date: string | null;
   setDate: (d: string | null) => void;
   max: number;
+  instanceKey?: string | number;
 }) {
   const dateInputValue = date ? toDateInput(date) : "";
+  const numberRef = useRef<HTMLInputElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
+
+  // Externe Aenderung -> in das DOM-Element schreiben, sofern nicht fokussiert.
+  useEffect(() => {
+    if (dateRef.current && document.activeElement !== dateRef.current) {
+      dateRef.current.value = dateInputValue;
+    }
+  }, [dateInputValue]);
+
+  useEffect(() => {
+    if (numberRef.current && document.activeElement !== numberRef.current) {
+      numberRef.current.value = String(count);
+    }
+  }, [count]);
+
   return (
     <div className="space-y-1">
       <span className="block">{label}</span>
       <div className="flex gap-1">
         <input
+          ref={numberRef}
+          key={`${instanceKey ?? "x"}-num`}
           type="number"
           min={0}
           max={max}
-          value={count}
+          defaultValue={count}
           onChange={(e) => setCount(Math.max(0, Math.min(max, Number(e.target.value) || 0)))}
           className="w-12 bg-slate-900 border border-slate-700 text-white rounded-lg px-1.5 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         <input
+          ref={dateRef}
+          key={`${instanceKey ?? "x"}-date`}
           type="date"
-          value={dateInputValue}
-          onChange={(e) => setDate(e.target.value ? new Date(e.target.value).toISOString() : null)}
+          defaultValue={dateInputValue}
+          onChange={(e) =>
+            setDate(e.target.value ? new Date(e.target.value).toISOString() : null)
+          }
           className="flex-1 min-w-0 bg-slate-900 border border-slate-700 text-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>

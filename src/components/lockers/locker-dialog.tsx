@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -82,6 +82,51 @@ function isoToDateInput(iso: string | null): string {
 
 function todayDateInput(): string {
   return isoToDateInput(new Date().toISOString());
+}
+
+/**
+ * Robuste Datum-Eingabe.
+ *
+ * Warum nicht einfach `<Input type="date" value={...} onChange={...} />`?
+ * Reacts controlled-mode kaempft auf einigen Browsern (Chromium, Safari iOS)
+ * mit der nativen Date-Picker-Eingabe: solange das Datum noch nicht
+ * vollstaendig getippt ist, fired der Browser kein onChange, React forciert
+ * aber parallel `value=""` zurueck und das frisch eingegebene Datum
+ * "springt" optisch zurueck. Wir halten das DOM-Element daher uncontrolled
+ * (`defaultValue`) und syncen externen State nur dann hinein, wenn der Input
+ * gerade nicht den Fokus hat.
+ */
+function DateField({
+  value,
+  onChange,
+  className,
+  instanceKey,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  instanceKey?: string | number;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current && document.activeElement !== ref.current) {
+      ref.current.value = value;
+    }
+  }, [value]);
+  return (
+    <input
+      ref={ref}
+      key={instanceKey}
+      type="date"
+      defaultValue={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(
+        "border-input dark:bg-input/30 selection:bg-primary selection:text-primary-foreground h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+        className,
+      )}
+    />
+  );
 }
 
 interface LockerDialogProps {
@@ -994,11 +1039,11 @@ export function LockerDialog({
                               }}
                               className="h-7 w-12 text-xs tabular-nums"
                             />
-                            <Input
-                              type="date"
+                            <DateField
                               value={editor.issuedAtDate}
-                              onChange={(e) => setEditor({ ...editor, issuedAtDate: e.target.value })}
+                              onChange={(v) => setEditor({ ...editor, issuedAtDate: v })}
                               className="h-7 text-xs flex-1 min-w-0"
+                              instanceKey={`${editor.id ?? "new"}-issued`}
                             />
                           </div>
                         </div>
@@ -1017,11 +1062,11 @@ export function LockerDialog({
                               })}
                               className="h-7 w-12 text-xs tabular-nums"
                             />
-                            <Input
-                              type="date"
+                            <DateField
                               value={editor.returnedAtDate}
-                              onChange={(e) => setEditor({ ...editor, returnedAtDate: e.target.value })}
+                              onChange={(v) => setEditor({ ...editor, returnedAtDate: v })}
                               className="h-7 text-xs flex-1 min-w-0"
+                              instanceKey={`${editor.id ?? "new"}-returned`}
                             />
                           </div>
                         </div>
