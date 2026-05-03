@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
-  AlertTriangle,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -62,8 +61,6 @@ interface AreaData {
   openingHours: string | null;
   resources: ResourceBlock[];
   otherTickets: TicketEntry[];
-  aboTickets: TicketEntry[];
-  serviceTickets?: TicketEntry[];
   _count: { tickets: number };
 }
 
@@ -105,6 +102,8 @@ interface DashboardData {
   newTickets: NewTicket[];
   areas: AreaData[];
   unassigned: AreaData;
+  subscriptions: TicketEntry[];
+  services: TicketEntry[];
   annySyncStatus?: AnnySyncStatus | null;
 }
 
@@ -136,80 +135,6 @@ function isToday(dateStr: string): boolean {
 
 function personName(t: TicketEntry): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
-}
-
-function ActionRequiredCard({ tickets, openTicket }: { tickets: TicketEntry[]; openTicket: (id: number) => void }) {
-  const [expanded, setExpanded] = useState(false);
-  if (tickets.length === 0) return null;
-
-  const needsPhotoCount = tickets.filter((t) => t.needsPhoto).length;
-  const needsRfidCount = tickets.filter((t) => t.needsRfid).length;
-  const show = expanded ? tickets : tickets.slice(0, 5);
-
-  return (
-    <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/10 py-0 gap-0">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-amber-200/50 dark:border-amber-900/30">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
-          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-          Daten vervollständigen
-        </span>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {needsPhotoCount > 0 && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-700 dark:text-amber-400 gap-1">
-              <Camera className="h-2.5 w-2.5" /> {needsPhotoCount}
-            </Badge>
-          )}
-          {needsRfidCount > 0 && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-700 dark:text-amber-400 gap-1">
-              <ScanLine className="h-2.5 w-2.5" /> {needsRfidCount}
-            </Badge>
-          )}
-          <Badge className="text-[10px] px-1.5 py-0 bg-amber-200 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-            {tickets.length}
-          </Badge>
-        </div>
-      </div>
-      <div className="px-3 pb-2 pt-1">
-        {show.map((ticket) => (
-          <div
-            key={ticket.id}
-            className="flex items-center gap-2 py-1 cursor-pointer rounded px-1 -mx-1 hover:bg-amber-100/60 dark:hover:bg-amber-950/30 transition-colors"
-            onClick={() => openTicket(ticket.id)}
-          >
-            {ticket.profileImage ? (
-              <img src={ticket.profileImage} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
-            ) : (
-              <div className="h-6 w-6 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-                <span className="text-[10px] font-bold text-amber-600">
-                  {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
-                </span>
-              </div>
-            )}
-            <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1 min-w-0">
-              {personName(ticket)}
-            </span>
-            {(ticket.groupName || ticket.ticketTypeName) && (
-              <span className="text-[10px] text-amber-600/70 dark:text-amber-400/60 truncate max-w-[120px] hidden sm:inline">
-                {ticket.groupName || ticket.ticketTypeName}
-              </span>
-            )}
-            {ticket.needsPhoto && <Camera className="h-3 w-3 text-amber-500 shrink-0" />}
-            {ticket.needsRfid && <ScanLine className="h-3 w-3 text-amber-500 shrink-0" />}
-          </div>
-        ))}
-        {tickets.length > 5 && (
-          <button
-            type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="w-full flex items-center justify-center gap-1 py-1 mt-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 hover:text-amber-900 transition-colors"
-          >
-            {expanded ? "Weniger anzeigen" : `Alle ${tickets.length} anzeigen`}
-            <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
-          </button>
-        )}
-      </div>
-    </Card>
-  );
 }
 
 function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: TicketEntry; onClick: () => void; inSlot?: boolean; hideType?: boolean; hideTime?: boolean }) {
@@ -264,55 +189,30 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
   );
 }
 
-function AboSection({ tickets, openTicket }: { tickets: TicketEntry[]; openTicket: (id: number) => void }) {
-  const [open, setOpen] = useState(false);
-
-  if (tickets.length === 0) return null;
-
-  return (
-    <div className="mt-2">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-t transition-colors"
-      >
-        <CreditCard className="h-2.5 w-2.5 text-violet-400 shrink-0" />
-        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Abos</span>
-        <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-0.5">{tickets.length}</Badge>
-        <ChevronDown className={cn("h-3 w-3 text-slate-400 ml-auto transition-transform", open && "rotate-180")} />
-      </button>
-      {open && (
-        <div className="pl-0.5">
-          {tickets.map((ticket) => (
-            <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ServiceSection({ tickets, openTicket, collapse, hideType, hideTime }: { tickets: TicketEntry[]; openTicket: (id: number) => void; collapse?: boolean; hideType?: boolean; hideTime?: boolean }) {
+function MembershipsCard({
+  title,
+  icon,
+  tickets,
+  openTicket,
+  fallbackGroupName,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  tickets: TicketEntry[];
+  openTicket: (id: number) => void;
+  fallbackGroupName: string;
+}) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
-  if (tickets.length === 0) return null;
-
-  if (!collapse) {
-    return (
-      <div className="mt-2">
-        {tickets.map((ticket) => (
-          <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} hideType={hideType} hideTime={hideTime} />
-        ))}
-      </div>
-    );
-  }
-
-  const grouped = new Map<string, TicketEntry[]>();
-  for (const t of tickets) {
-    const key = t.ticketTypeName?.replace(/\s*\(\d+\s*Termine?\)/, "") || "Service";
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(t);
-  }
+  const grouped = (() => {
+    const map = new Map<string, TicketEntry[]>();
+    for (const t of tickets) {
+      const key = t.groupName || t.ticketTypeName?.replace(/\s*\(\d+\s*Termine?\)/, "") || fallbackGroupName;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  })();
 
   function toggle(key: string) {
     setOpenGroups((prev) => {
@@ -323,42 +223,54 @@ function ServiceSection({ tickets, openTicket, collapse, hideType, hideTime }: {
   }
 
   return (
-    <div className="mt-2 space-y-1">
-      {[...grouped.entries()].map(([name, group]) => (
-        <div key={name}>
-          <button
-            type="button"
-            onClick={() => toggle(name)}
-            className="w-full flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-t transition-colors"
-          >
-            <Users className="h-2.5 w-2.5 text-indigo-400 shrink-0" />
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">{name}</span>
-            <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-0.5">{group.length}</Badge>
-            <ChevronDown className={cn("h-3 w-3 text-slate-400 ml-auto transition-transform", openGroups.has(name) && "rotate-180")} />
-          </button>
-          {openGroups.has(name) && (
-            <div className="pl-0.5">
-              {group.map((ticket) => (
-                <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} />
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+    <Card className="py-0 gap-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+          {icon}
+          {title}
+        </span>
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+          {tickets.length}
+        </Badge>
+      </div>
+      <div className="max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[60px]">
+        {grouped.length === 0 ? (
+          <p className="px-3 py-6 text-center text-xs text-slate-400 dark:text-slate-500">
+            Keine aktiven Einträge am gewählten Tag.
+          </p>
+        ) : (
+          <div className="px-3 py-1 space-y-1">
+            {grouped.map(([name, group]) => (
+              <div key={name}>
+                <button
+                  type="button"
+                  onClick={() => toggle(name)}
+                  className="w-full flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-t transition-colors"
+                >
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">{name}</span>
+                  <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-0.5">{group.length}</Badge>
+                  <ChevronDown className={cn("h-3 w-3 text-slate-400 ml-auto transition-transform", openGroups.has(name) && "rotate-180")} />
+                </button>
+                {openGroups.has(name) && (
+                  <div className="pl-0.5">
+                    {group.map((ticket) => (
+                      <TicketRow key={ticket.id} ticket={ticket} onClick={() => openTicket(ticket.id)} hideTime />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
 function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: number) => void }) {
   const hasResources = area.resources.length > 0;
   const hasOther = area.otherTickets.length > 0;
-  const hasAbos = area.aboTickets.length > 0;
-  const hasServices = (area.serviceTickets?.length ?? 0) > 0;
-  const isEmpty = !hasResources && !hasOther && !hasAbos && !hasServices;
-
-  const isPrimaryServiceArea = !hasResources && !hasOther && hasServices;
-  const svcHideTime = isPrimaryServiceArea && !!area.openingHours;
-  const svcHideType = isPrimaryServiceArea && new Set(area.serviceTickets?.map((t) => t.ticketTypeName?.replace(/\s*\(.*$/, ""))).size <= 1;
+  const isEmpty = !hasResources && !hasOther;
 
   return (
     <Card
@@ -441,9 +353,6 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
               ))}
             </div>
           )}
-
-          <AboSection tickets={area.aboTickets} openTicket={openTicket} />
-          <ServiceSection tickets={area.serviceTickets ?? []} openTicket={openTicket} collapse={hasResources || hasOther} hideType={svcHideType} hideTime={svcHideTime} />
         </div>
       )}
 
@@ -518,22 +427,6 @@ export function DashboardClient() {
     : [];
 
   const totalTickets = allAreas.reduce((sum, a) => sum + a._count.tickets, 0);
-
-  const actionRequired = (() => {
-    const seen = new Set<number>();
-    const result: TicketEntry[] = [];
-    for (const area of allAreas) {
-      const all = [...area.otherTickets, ...area.aboTickets, ...(area.serviceTickets || [])];
-      for (const res of area.resources) all.push(...res.tickets);
-      for (const t of all) {
-        if ((t.needsPhoto || t.needsRfid) && !seen.has(t.id)) {
-          seen.add(t.id);
-          result.push(t);
-        }
-      }
-    }
-    return result;
-  })();
 
   const weekDays = (() => {
     const current = new Date(date + "T12:00:00");
@@ -736,9 +629,28 @@ export function DashboardClient() {
         );
       })()}
 
-      {/* Action required */}
-      {!loading && actionRequired.length > 0 && (
-        <ActionRequiredCard tickets={actionRequired} openTicket={openTicket} />
+      {/* Abos & Services: separate Bereiche, unabhängig von Tages-Areas */}
+      {!loading && data && (data.subscriptions.length > 0 || data.services.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {data.subscriptions.length > 0 && (
+            <MembershipsCard
+              title="Abos"
+              icon={<CreditCard className="h-3.5 w-3.5 text-violet-500 shrink-0" />}
+              tickets={data.subscriptions}
+              openTicket={openTicket}
+              fallbackGroupName="Abo"
+            />
+          )}
+          {data.services.length > 0 && (
+            <MembershipsCard
+              title="Services"
+              icon={<Users className="h-3.5 w-3.5 text-indigo-500 shrink-0" />}
+              tickets={data.services}
+              openTicket={openTicket}
+              fallbackGroupName="Service"
+            />
+          )}
+        </div>
       )}
 
       {/* Live feeds: Recent scans + New bookings (immer sichtbar; Inhalt für gewähltes Datum) */}

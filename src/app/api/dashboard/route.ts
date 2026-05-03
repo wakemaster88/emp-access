@@ -46,14 +46,19 @@ export async function GET(request: NextRequest) {
   const d = String(dayStart.getDate()).padStart(2, "0");
   const dateStr = `${y}-${m}-${d}`;
 
-  const ticketDateFilter = {
+  const dayActiveFilter = {
     status: { in: ["VALID", "REDEEMED"] as ("VALID" | "REDEEMED")[] },
     OR: [
-      { startDate: null, endDate: null },
       { startDate: { lte: dayEnd }, endDate: null },
       { startDate: null, endDate: { gte: dayStart } },
       { startDate: { lte: dayEnd }, endDate: { gte: dayStart } },
     ],
+  };
+
+  const areaTicketDateFilter = {
+    ...dayActiveFilter,
+    subscriptionId: null,
+    serviceId: null,
   };
 
   const ticketSelect = {
@@ -87,12 +92,9 @@ export async function GET(request: NextRequest) {
         allowReentry: true,
         openingHours: true,
         tickets: {
-          where: ticketDateFilter,
+          where: areaTicketDateFilter,
           select: ticketSelect,
           orderBy: { name: "asc" },
-        },
-        _count: {
-          select: { tickets: { where: ticketDateFilter } },
         },
       },
       orderBy: { name: "asc" },
@@ -101,25 +103,25 @@ export async function GET(request: NextRequest) {
       where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
     }),
     db.ticket.findMany({
-      where: { ...where, accessAreaId: null, subscriptionId: null, serviceId: null, ...ticketDateFilter },
+      where: { ...where, accessAreaId: null, subscriptionId: null, serviceId: null, ...dayActiveFilter },
       select: ticketSelect,
       orderBy: { name: "asc" },
     }),
     db.ticket.findMany({
-      where: { ...where, subscriptionId: { not: null }, ...ticketDateFilter },
+      where: { ...where, subscriptionId: { not: null }, ...dayActiveFilter },
       select: {
         ...ticketSelect,
-        subscription: { select: { name: true, requiresPhoto: true, requiresRfid: true, areas: { select: { id: true } } } },
+        subscription: { select: { name: true, requiresPhoto: true, requiresRfid: true } },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ subscription: { name: "asc" } }, { name: "asc" }],
     }),
     db.ticket.findMany({
-      where: { ...where, serviceId: { not: null }, ...ticketDateFilter },
+      where: { ...where, serviceId: { not: null }, ...dayActiveFilter },
       select: {
         ...ticketSelect,
-        service: { select: { name: true, requiresPhoto: true, requiresRfid: true, serviceAreas: { select: { area: { select: { id: true } } } } } },
+        service: { select: { name: true, requiresPhoto: true, requiresRfid: true } },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ service: { name: "asc" } }, { name: "asc" }],
     }),
     db.apiConfig.findFirst({
       where: { ...(isSuperAdmin ? {} : { accountId: accountId! }), provider: "ANNY" },
@@ -165,29 +167,6 @@ export async function GET(request: NextRequest) {
     }),
   ]);
 
-  // Build: areaId → subscription tickets
-  const subTicketsByArea = new Map<number, typeof subscriptionTickets>();
-  for (const ticket of subscriptionTickets) {
-    const subAreas = ticket.subscription?.areas || [];
-    for (const sa of subAreas) {
-      if (!subTicketsByArea.has(sa.id)) subTicketsByArea.set(sa.id, []);
-      subTicketsByArea.get(sa.id)!.push(ticket);
-    }
-  }
-
-  // Build: areaId → service tickets
-  const svcTicketsByArea = new Map<number, typeof serviceTickets>();
-  for (const ticket of serviceTickets) {
-    const serviceAreas = ticket.service?.serviceAreas || [];
-    for (const sa of serviceAreas) {
-      const areaId = sa.area?.id;
-      if (areaId != null) {
-        if (!svcTicketsByArea.has(areaId)) svcTicketsByArea.set(areaId, []);
-        svcTicketsByArea.get(areaId)!.push(ticket);
-      }
-    }
-  }
-
   const annyLinks = await db.annyResourceLink.findMany({
     where: { accountId: accountId! },
   });
@@ -230,26 +209,21 @@ export async function GET(request: NextRequest) {
     return ticketTypeName.startsWith(resourceName);
   }
 
-  // Collect ticket IDs by category for separation
-  const subTicketIds = new Set(subscriptionTickets.map((t) => t.id));
-  const svcTicketIds = new Set(serviceTickets.map((t) => t.id));
+  // Only keep tickets that actually belong to the selected day:
+  // - skip employee tickets entirely
+  // - for ANNY tickets, require a booking entry in the qrCode JSON for dateStr
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function isDayTicket(t: any): boolean {
+    if (t.source === "EMP_CONTROL") return false;
+    if (t.source === "ANNY") return getBookingTimeForDate(t.qrCode, dateStr) !== null;
+    return true;
+  }
 
   // Build structured area responses
   const structuredAreas = areas.map((area) => {
     const areaResources = areaResourceMap[area.id] || [];
-    const areaSubTickets = (subTicketsByArea.get(area.id) || []).map(enrichTicket);
-    const areaSvcTickets = (svcTicketsByArea.get(area.id) || []).map(enrichTicket);
-    const directTickets = area.tickets.filter((t) => t.source !== "EMP_CONTROL").map(enrichTicket);
-    const seenIds = new Set(directTickets.map((t) => t.id));
-    const mergedSubTickets = areaSubTickets.filter((t) => !seenIds.has(t.id));
-    const mergedSvcTickets = areaSvcTickets.filter((t) => !seenIds.has(t.id) && !mergedSubTickets.some((s) => s.id === t.id));
-    const enrichedTickets = [...directTickets, ...mergedSubTickets, ...mergedSvcTickets];
-    const totalCount = area._count.tickets + mergedSubTickets.length + mergedSvcTickets.length;
-
-    // Separate by category; exclude employee tickets entirely
-    const regularTickets = enrichedTickets.filter((t) => !subTicketIds.has(t.id) && !svcTicketIds.has(t.id));
-    const aboTickets = enrichedTickets.filter((t) => subTicketIds.has(t.id));
-    const serviceTickets = enrichedTickets.filter((t) => svcTicketIds.has(t.id));
+    const directTickets = area.tickets.filter(isDayTicket).map(enrichTicket);
+    const totalCount = directTickets.length;
 
     if (areaResources.length === 0) {
       let computedHours = area.openingHours;
@@ -275,9 +249,7 @@ export async function GET(request: NextRequest) {
         allowReentry: area.allowReentry,
         openingHours: computedHours,
         resources: [],
-        otherTickets: regularTickets,
-        aboTickets,
-        serviceTickets,
+        otherTickets: directTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -306,9 +278,8 @@ export async function GET(request: NextRequest) {
           })
           .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-        // Match tickets: only match regular (non-abo) tickets
         const namesForArea = areaAllNames[area.id] || [];
-        const resTickets = regularTickets.filter((t) => {
+        const resTickets = directTickets.filter((t) => {
           if (matched.has(t.id)) return false;
           for (const name of namesForArea) {
             if (ticketMatchesResource(t.ticketTypeName, name)) {
@@ -327,7 +298,7 @@ export async function GET(request: NextRequest) {
         return aTime.localeCompare(bTime);
       });
 
-    const otherTickets = regularTickets.filter((t) => !matched.has(t.id));
+    const otherTickets = directTickets.filter((t) => !matched.has(t.id));
 
     function namesMatch(resName: string, areaName: string): boolean {
       const rLow = resName.toLowerCase();
@@ -350,8 +321,6 @@ export async function GET(request: NextRequest) {
         openingHours: inlineHours,
         resources: [],
         otherTickets: [...r.tickets, ...otherTickets],
-        aboTickets,
-        serviceTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -373,8 +342,6 @@ export async function GET(request: NextRequest) {
         openingHours: inlineHours,
         resources: rest,
         otherTickets: [...primary.tickets, ...otherTickets],
-        aboTickets,
-        serviceTickets,
         _count: { tickets: totalCount },
       };
     }
@@ -387,11 +354,13 @@ export async function GET(request: NextRequest) {
       openingHours: area.openingHours,
       resources,
       otherTickets,
-      aboTickets,
-      serviceTickets,
       _count: { tickets: totalCount },
     };
   });
+
+  const filteredUnassigned = unassignedTickets.filter(isDayTicket).map(enrichTicket);
+  const enrichedSubscriptions = subscriptionTickets.map(enrichTicket);
+  const enrichedServices = serviceTickets.map(enrichTicket);
 
   let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; errorDetails?: string[]; total?: number } | null = null;
   if (annyConfig) {
@@ -443,10 +412,10 @@ export async function GET(request: NextRequest) {
       allowReentry: false,
       openingHours: null,
       resources: [],
-      otherTickets: unassignedTickets.filter((t) => t.source !== "EMP_CONTROL").map(enrichTicket),
-      aboTickets: [],
-      serviceTickets: [],
-      _count: { tickets: unassignedTickets.filter((t) => t.source !== "EMP_CONTROL").length },
+      otherTickets: filteredUnassigned,
+      _count: { tickets: filteredUnassigned.length },
     },
+    subscriptions: enrichedSubscriptions,
+    services: enrichedServices,
   });
 }
