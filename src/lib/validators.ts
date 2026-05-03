@@ -48,6 +48,7 @@ export const ticketCreateSchema = z.object({
   lastName: z.string().optional().nullable(),
   ticketTypeName: z.string().optional().nullable(),
   profileImage: z.string().optional().nullable(),
+  email: z.string().email().max(180).optional().nullable(),
 });
 
 export const ticketUpdateSchema = ticketCreateSchema.partial();
@@ -238,6 +239,55 @@ export const shellyAutomationCreateSchema = z
     (v) => v.trigger !== "SCHEDULE" || (typeof v.timeOfDay === "string" && hhmmRegex.test(v.timeOfDay)),
     { message: "timeOfDay erforderlich bei Trigger=SCHEDULE", path: ["timeOfDay"] }
   );
+
+// ─── Email-Automation Schemas ────────────────────────────────────────────────
+
+export const emailConfigUpdateSchema = z.object({
+  provider: z.enum(["RESEND"]).optional(),
+  apiKey: z.string().min(1).max(200).nullable().optional(),
+  fromEmail: z.string().email().max(180),
+  fromName: z.string().max(120).nullable().optional(),
+  replyTo: z.string().email().max(180).nullable().optional(),
+  isActive: z.boolean().optional(),
+  brandColor: z
+    .string()
+    .regex(/^#?[0-9a-fA-F]{3,8}$/i, "Ungültiger Farbcode")
+    .nullable()
+    .optional(),
+  logoUrl: z.string().url().max(500).nullable().optional(),
+  websiteUrl: z.string().url().max(500).nullable().optional(),
+});
+
+const emailRuleTrigger = z.enum([
+  "SUBSCRIPTION_EXPIRING",
+  "SUBSCRIPTION_EXPIRED",
+  "DAY_VISIT_FOLLOWUP",
+  "TICKET_WELCOME",
+]);
+
+export const emailRuleCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  trigger: emailRuleTrigger,
+  daysOffset: z.coerce.number().int().min(0).max(365),
+  subscriptionId: z.coerce.number().int().positive().nullable().optional(),
+  serviceId: z.coerce.number().int().positive().nullable().optional(),
+  subject: z.string().min(1).max(240),
+  bodyHtml: z.string().min(1).max(20000),
+  createVoucher: z.boolean().optional(),
+  voucherDiscountPercent: z.coerce.number().int().min(1).max(100).nullable().optional(),
+  voucherValidDays: z.coerce.number().int().min(1).max(730).nullable().optional(),
+  voucherTicketTypeName: z.string().max(120).nullable().optional(),
+  renewUrl: z.string().url().max(500).nullable().optional(),
+  isActive: z.boolean().optional(),
+  cooldownDays: z.coerce.number().int().min(0).max(365).optional(),
+});
+
+export const emailRuleUpdateSchema = emailRuleCreateSchema.partial();
+
+export const emailTestSchema = z.object({
+  to: z.string().email(),
+  subject: z.string().min(1).max(240).optional(),
+});
 
 export const shellyAutomationUpdateSchema = z.object({
   name: z.string().min(1).max(80).optional(),

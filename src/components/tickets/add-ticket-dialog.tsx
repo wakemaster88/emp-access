@@ -67,6 +67,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
   const [open, setOpen] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<"service" | "subscription" | null>(null);
@@ -82,6 +83,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
   function reset() {
     setFirstName("");
     setLastName("");
+    setEmail("");
     setCode("");
     setSelectedId(null);
     setSelectedType(null);
@@ -100,6 +102,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
       name: fullName,
       firstName: firstName || undefined,
       lastName: lastName || undefined,
+      email: email.trim() || undefined,
       status: "VALID",
     };
 
@@ -202,6 +205,20 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                 required
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="t-email">
+              Email <span className="text-slate-400 font-normal">(für automatische Mails)</span>
+            </Label>
+            <Input
+              id="t-email"
+              type="email"
+              placeholder="name@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
           </div>
 
           <div className="space-y-1.5">

@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
       slotEnd: data.slotEnd,
       validityDurationMinutes: data.validityDurationMinutes,
       profileImage: data.profileImage,
+      email: data.email,
       accountId: accountId!,
       ...(serviceAreaIds.length > 0 ? {
         ticketAreas: {

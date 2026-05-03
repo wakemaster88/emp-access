@@ -29,6 +29,10 @@
     {
       "path": "/api/cron/shelly-automations",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/email-automations",
+      "schedule": "10 8 * * *"
     }
   ]
 }

@@ -82,6 +82,9 @@ model Account {
   automationRuns  ShellyAutomationRun[]
   vereine         Verein[]
   lockers         Locker[]
+  emailConfig     EmailConfig?
+  emailRules      EmailRule[]
+  emailSends      EmailSend[]
 }
 
 model Admin {
@@ -130,13 +133,13 @@ model Device {
 }
 
 model Ticket {
-  id                      Int           @id @default(autoincrement())
+  id                      Int                  @id @default(autoincrement())
   name                    String
   qrCode                  String?
   rfidCode                String?
   startDate               DateTime?
   endDate                 DateTime?
-  validityType            ValidityType  @default(DATE_RANGE)
+  validityType            ValidityType         @default(DATE_RANGE)
   slotStart               String? // HH:mm for TIME_SLOT
   slotEnd                 String? // HH:mm for TIME_SLOT
   validityDurationMinutes Int? // minutes for DURATION
@@ -145,29 +148,31 @@ model Ticket {
   subscriptionId          Int?
   serviceId               Int?
   vereinId                Int?
-  status                  TicketStatus  @default(VALID)
-  version                 Int           @default(0)
-  uuid                    String?       @unique
-  barcode                 String?       @unique
+  status                  TicketStatus         @default(VALID)
+  version                 Int                  @default(0)
+  uuid                    String?              @unique
+  barcode                 String?              @unique
   firstName               String?
   lastName                String?
   birthDate               DateTime?
   ticketTypeName          String?
-  profileImage            String?       @db.Text
+  profileImage            String?              @db.Text
   extras                  Json?
+  email                   String? // optionale Email-Adresse für automatische Mails (Aboablauf, Followup …)
   source                  ApiProvider?
   accountId               Int
-  account                 Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accessArea              AccessArea?   @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
-  subscription            Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  service                 Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  verein                  Verein?       @relation(fields: [vereinId], references: [id], onDelete: SetNull)
+  account                 Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accessArea              AccessArea?          @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
+  subscription            Subscription?        @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  service                 Service?             @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  verein                  Verein?              @relation(fields: [vereinId], references: [id], onDelete: SetNull)
   ticketAreas             TicketArea[]
   vereinAccess            VereinAccessTicket[] // Vereine, die über DIESES Ticket Zutritt erhalten
   lockerRentals           LockerRental[] // Schließfach-Vermietungen, in denen dieses Ticket Mieter ist (jahresweise)
+  emailSends              EmailSend[] // Historie der an dieses Ticket gesendeten Automation-Mails
   scans                   Scan[]
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
   @@index([accountId])
   @@index([rfidCode])
@@ -276,27 +281,27 @@ enum LockerType {
 /// (1 Mieter-Ticket pro Schließfach pro Jahr) – damit ergibt sich automatisch
 /// eine Historie, welcher Mieter das Schließfach in welchem Jahr hatte.
 model Locker {
-  id        Int            @id @default(autoincrement())
+  id         Int            @id @default(autoincrement())
   /// Bezeichnung des Schließfachs (frei wählbar, z. B. „Spind 12“).
-  name      String
+  name       String
   /// Optionaler Standort (z. B. „Umkleide UG“, „Halle Ost“).
-  location  String?
+  location   String?
   /// Schließfach-Nummer (frei: „A12“, „007“ etc.). Eindeutig pro Account.
-  number    String
+  number     String
   /// Optionale Notiz / Kommentar (z. B. Schloss-Code).
-  notes     String?
+  notes      String?
   /// Art der Sicherung (Schlüssel- oder Vorhängeschloss).
-  lockType   LockerType    @default(KEY)
+  lockType   LockerType     @default(KEY)
   /// Wie viele Schlüssel/Vorhängeschlösser gehören insgesamt zu diesem
   /// Schließfach (Soll-Bestand). Default: 2 für Schlüssel, 1 für Vorhänge.
-  keyCount   Int           @default(2)
+  keyCount   Int            @default(2)
   /// Aufgedruckte Schloss-/Zylindernummer (nur sinnvoll bei Schlüsselschloss).
   lockNumber String?
-  accountId Int
-  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  rentals   LockerRental[]
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  accountId  Int
+  account    Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  rentals    LockerRental[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 
   @@unique([accountId, number])
   @@index([accountId])
@@ -391,6 +396,113 @@ model MonitorConfig {
   @@index([token])
 }
 
+// ── Email-Automationen ───────────────────────────────────────────────────────
+
+/// Pro Account genau eine Konfiguration. Aktuell wird Resend (HTTP API) als
+/// Provider unterstützt – das Feld `provider` ist als Erweiterungspunkt für
+/// SMTP o. ä. vorbereitet.
+model EmailConfig {
+  id         Int      @id @default(autoincrement())
+  accountId  Int      @unique
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// "RESEND" (default). Spätere Werte: "SMTP".
+  provider   String   @default("RESEND")
+  /// Resend API-Key bzw. SMTP-Passwort (verschlüsselt zu speichern wäre besser
+  /// – wir behandeln den Key wie das Telegram-Bot-Token).
+  apiKey     String?
+  /// Optionaler Bot-Mail-Absender, z. B. "no-reply@deindomain.de".
+  fromEmail  String
+  fromName   String?
+  replyTo    String?
+  isActive   Boolean  @default(true)
+  /// Branding-Farbe für HTML-Templates (Hex, z. B. "#4F46E5").
+  brandColor String?
+  /// Optionale Logo-URL und Website (für Footer/Header in HTML).
+  logoUrl    String?
+  websiteUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([accountId])
+}
+
+/// Welcher Lebenszyklus-Event triggert die Mail?
+enum EmailRuleTrigger {
+  /// Tage VOR `Ticket.endDate` einer Subscription (Aboablauf-Erinnerung).
+  SUBSCRIPTION_EXPIRING
+  /// Tage NACH `Ticket.endDate` einer Subscription (Win-Back).
+  SUBSCRIPTION_EXPIRED
+  /// Tage NACH dem ersten Scan eines Tagestickets (Followup mit Voucher).
+  DAY_VISIT_FOLLOWUP
+  /// Tage NACH `Ticket.createdAt` (Welcome / Onboarding).
+  TICKET_WELCOME
+}
+
+/// Eine Regel definiert, wann an welche Tickets eine Email automatisch
+/// verschickt wird. Templates verwenden Platzhalter wie `{{firstName}}`.
+model EmailRule {
+  id                     Int              @id @default(autoincrement())
+  accountId              Int
+  account                Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name                   String
+  trigger                EmailRuleTrigger
+  /// Tage relativ zum Trigger-Ereignis. Beispiel:
+  ///   SUBSCRIPTION_EXPIRING, daysOffset=7  → 7 Tage vor endDate
+  ///   DAY_VISIT_FOLLOWUP,    daysOffset=2  → 2 Tage nach erstem Scan
+  daysOffset             Int              @default(0)
+  /// Optionaler Filter: nur Tickets mit dieser Subscription bzw. Service.
+  subscriptionId         Int?
+  serviceId              Int?
+  /// Subject + HTML-Body. Body wird in einen Mail-Wrapper eingebettet.
+  subject                String
+  bodyHtml               String           @db.Text
+  /// Wenn true, wird vor dem Versand ein `Voucher` mit `discountPercent` und
+  /// optionalem Verfallsdatum erzeugt – Code/Url stehen in den Platzhaltern
+  /// `{{voucherCode}}` und `{{voucherUrl}}` zur Verfügung.
+  createVoucher          Boolean          @default(false)
+  voucherDiscountPercent Int?
+  voucherValidDays       Int?
+  voucherTicketTypeName  String?
+  /// Optionale URL, z. B. zum Abo-Renew-Formular. `{{renewUrl}}` im Template.
+  renewUrl               String?
+  isActive               Boolean          @default(true)
+  /// Mindest-Abstand in Tagen zwischen 2 Sends derselben Regel an dasselbe
+  /// Ticket. Verhindert Doppel-Versand bei Cron-Reruns oder Datenkorrekturen.
+  cooldownDays           Int              @default(30)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  emailSends             EmailSend[]
+
+  @@index([accountId])
+  @@index([accountId, isActive])
+  @@index([trigger, isActive])
+}
+
+/// Persistentes Versand-Log, dient zugleich als Idempotenz-Guard.
+model EmailSend {
+  id           Int        @id @default(autoincrement())
+  accountId    Int
+  account      Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ruleId       Int?
+  rule         EmailRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  ticketId     Int?
+  ticket       Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  voucherId    Int?
+  voucher      Voucher?   @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  /// Empfänger (kopiert, falls Ticket gelöscht wird).
+  to           String
+  subject      String
+  /// "SENT" | "FAILED" | "TEST"
+  status       String
+  errorMessage String?
+  sentAt       DateTime   @default(now())
+
+  @@index([accountId, sentAt])
+  @@index([ticketId])
+  @@index([ruleId])
+  @@index([accountId, ruleId, ticketId])
+}
+
 model TelegramConfig {
   id              Int      @id @default(autoincrement())
   botToken        String
@@ -438,12 +550,21 @@ model Voucher {
   sourceTicketId          Int?
   redeemedAt              DateTime?
   redeemedTicketId        Int?
+  /// Optionaler Rabatt-Anteil (z. B. 10 = 10% Rabatt). Nur informativ – wird beim
+  /// nächsten Besuch manuell durch das Personal eingelöst (kein Auto-Redeem).
+  discountPercent         Int?
+  /// Optionales Verfallsdatum (z. B. 60 Tage nach Versand). NULL = unbegrenzt.
+  expiresAt               DateTime?
+  /// Freitextnotiz, etwa "Followup Tagesgast 04/2026".
+  notes                   String?
   accountId               Int
   account                 Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  emailSends              EmailSend[]
   createdAt               DateTime     @default(now())
 
   @@index([accountId])
   @@index([code])
+  @@index([accountId, expiresAt])
 }
 
 model ApiConfig {

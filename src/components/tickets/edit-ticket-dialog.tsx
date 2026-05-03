@@ -163,6 +163,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
+    email: "",
     ticketTypeName: "",
     code: "",
     status: "VALID",
@@ -194,6 +195,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       setForm({
         firstName: ticket.firstName ?? "",
         lastName: ticket.lastName ?? "",
+        email: (ticket as { email?: string | null }).email ?? "",
         ticketTypeName: ticket.ticketTypeName ?? "",
         code: ticket.barcode || (ticket.source !== "ANNY" ? ticket.qrCode : null) || ticket.rfidCode || "",
         status: ticket.status,
@@ -271,6 +273,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       validityDurationMinutes: form.validityType === "DURATION" && form.validityDurationMinutes
         ? Number(form.validityDurationMinutes) : null,
       profileImage: profileImage,
+      email: form.email.trim() || null,
     };
 
     try {
@@ -456,6 +459,23 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                 <Label htmlFor="e-last" className="text-xs">Nachname</Label>
                 <Input id="e-last" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Nachname" required className="h-9" />
               </div>
+            </div>
+
+            {/* 2b. Email (für automatische Mails) */}
+            <div className="space-y-1">
+              <Label htmlFor="e-email" className="text-xs flex items-center gap-1.5">
+                Email
+                <span className="text-slate-400 font-normal text-[10px]">– für automatische Mails</span>
+              </Label>
+              <Input
+                id="e-email"
+                type="email"
+                value={form.email}
+                onChange={(e) => set("email", e.target.value)}
+                placeholder="name@example.com"
+                className="h-9"
+                autoComplete="email"
+              />
             </div>
 
             {/* 3. Ticket-Typ (Service) */}
