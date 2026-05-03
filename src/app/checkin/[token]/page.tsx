@@ -384,21 +384,31 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         body: JSON.stringify({ code }),
       });
       const json = await res.json();
-      setScanResult(json);
+      if (typeof window !== "undefined") {
+        console.log("[shop-monitor] scan response", json);
+      }
       if (json.found && json.ticket) {
+        setScanResult(json);
         setSelectedTicket(json.ticket);
         setScanMode(false);
       } else if (json.voucher) {
         // Gutschein erkannt: Ticket-Maske oeffnen, vorausgefuellt mit
         // Voucher-Daten. Eingeloest wird der Voucher dann beim Submit
-        // im /ticket-Endpoint.
+        // im /ticket-Endpoint. Reihenfolge wichtig: erst Selected-Ticket
+        // schliessen, dann Prefill setzen, dann Modal oeffnen.
+        setSelectedTicket(null);
+        setScanResult(null);
+        setScanMode(false);
         setAddTicketPrefill({
           voucher: json.voucher,
         });
         setAddTicketOpen(true);
-        setScanMode(false);
-        setScanResult(null);
+      } else {
+        setScanResult(json);
       }
+    } catch (err) {
+      console.error("[shop-monitor] scan failed", err);
+      setScanResult({ found: false, message: "Netzwerkfehler beim Scannen" });
     } finally {
       setScanLoading(false);
       setScanInput("");

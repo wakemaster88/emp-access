@@ -15,11 +15,17 @@ export async function POST(
   const body = await request.json();
   const rawCode = String(body.code ?? "").trim();
   const code = rawCode.replace(/\s+/g, "");
+  // Manche Barcode-/RFID-Scanner senden Praefix-Zeichen wie "#" oder
+  // "%" voraus. Damit sowohl Tickets als auch Gutscheine zuverlaessig
+  // gefunden werden, probieren wir mehrere Varianten durch.
+  const stripped = code.replace(/^[#%]+/, "");
   if (!code) {
     return NextResponse.json({ found: false, message: "Kein Code" });
   }
 
-  const codesToTry = [code, rawCode];
+  const codesToTry = stripped && stripped !== code
+    ? [code, rawCode, stripped]
+    : [code, rawCode];
   let ticket = null;
   for (const c of codesToTry) {
     const candidates = await prisma.ticket.findMany({
@@ -60,13 +66,24 @@ export async function POST(
     // Voucher-Infos zurueckgeben, damit der Mitarbeiter Vor-/Nachname
     // erfasst und das Ticket bewusst erstellt. Eingeloest wird der
     // Voucher dann atomar im /ticket-Endpoint (mit voucherCode-Param).
-    if (code.startsWith("GS-")) {
-      const voucher = await prisma.voucher.findUnique({ where: { code } });
-      if (!voucher || voucher.accountId !== monitor.accountId) {
-        return NextResponse.json({ found: false, message: "Gutschein nicht gefunden" });
-      }
+    //
+    // Wir suchen den Voucher unabhaengig vom "GS-"-Praefix, weil Codes
+    // bei manchen Scannern Sonderzeichen vorne dranhaengen oder per
+    // URL/QR-Code in einer abweichenden Form ankommen koennen. Die
+    // Voucher-Erkennung laeuft jetzt ueber alle codeVarianten -
+    // gefunden = Gutschein.
+    const voucher = await prisma.voucher.findFirst({
+      where: {
+        accountId: monitor.accountId,
+        OR: codesToTry.map((c) => ({ code: c })),
+      },
+    });
+    if (voucher) {
       if (voucher.redeemedAt) {
-        return NextResponse.json({ found: false, message: "Gutschein bereits eingelöst" });
+        return NextResponse.json({
+          found: false,
+          message: "Gutschein bereits eingelöst",
+        });
       }
 
       const [service, accessArea] = await Promise.all([
