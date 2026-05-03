@@ -35,6 +35,49 @@ export async function POST(
     serviceAreaIds = svcAreas.map((sa: { accessAreaId: number }) => sa.accessAreaId);
   }
 
+  // Pre-Check: Wenn barcode/qrCode/rfidCode bereits einem Ticket im
+  // gleichen Account gehoeren, brechen wir mit 409 ab statt 500.
+  // (Frueher hat Prisma einen Unique-Constraint-Fehler ungebremst zum
+  // 500 durchgereicht.)
+  const codes = [data.barcode, data.qrCode, data.rfidCode].filter(
+    (c): c is string => !!c,
+  );
+  if (codes.length > 0) {
+    const conflict = await prisma.ticket.findFirst({
+      where: {
+        accountId: monitor.accountId,
+        OR: [
+          { barcode: { in: codes } },
+          { qrCode: { in: codes } },
+          { rfidCode: { in: codes } },
+        ],
+      },
+      select: {
+        name: true,
+        firstName: true,
+        lastName: true,
+        ticketTypeName: true,
+      },
+    });
+    if (conflict) {
+      const owner =
+        [conflict.firstName, conflict.lastName].filter(Boolean).join(" ")
+        || conflict.name;
+      return NextResponse.json(
+        {
+          error: {
+            formErrors: [
+              `Code ist bereits Ticket "${owner}" zugeordnet${
+                conflict.ticketTypeName ? ` (${conflict.ticketTypeName})` : ""
+              }.`,
+            ],
+          },
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const ticketData = {
     name: data.name,
     qrCode: data.qrCode,
@@ -63,6 +106,34 @@ export async function POST(
         }
       : {}),
   };
+
+  function handleCreateError(e: unknown): NextResponse {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("Unique constraint") || msg.includes("P2002")) {
+      return NextResponse.json(
+        {
+          error: {
+            formErrors: [
+              "Code ist bereits einem anderen Ticket zugeordnet. Bitte einen anderen Code verwenden.",
+            ],
+          },
+        },
+        { status: 409 },
+      );
+    }
+    console.error("[/api/checkin/public/[token]/ticket] create failed", { err: msg });
+    return NextResponse.json(
+      {
+        error: {
+          formErrors: [
+            "Ticket konnte nicht erstellt werden. Bitte erneut versuchen.",
+          ],
+          serverMessage: msg,
+        },
+      },
+      { status: 500 },
+    );
+  }
 
   // Wenn ein Gutschein-Code mitkommt: Ticket erstellen + Voucher atomar
   // einloesen. Bei paralleler Einloesung (z.B. 2 Tabs) gewinnt genau
@@ -110,10 +181,14 @@ export async function POST(
           { status: 409 },
         );
       }
-      throw e;
+      return handleCreateError(e);
     }
   }
 
-  const ticket = await prisma.ticket.create({ data: ticketData });
-  return NextResponse.json(ticket, { status: 201 });
+  try {
+    const ticket = await prisma.ticket.create({ data: ticketData });
+    return NextResponse.json(ticket, { status: 201 });
+  } catch (e) {
+    return handleCreateError(e);
+  }
 }

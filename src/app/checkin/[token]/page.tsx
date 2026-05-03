@@ -2345,19 +2345,25 @@ function AddTicketOverlay({
         const data = await safeJson(res);
         const errVal = (data?.error ?? null) as
           | string
-          | { formErrors?: string[]; fieldErrors?: Record<string, string[]> }
+          | {
+              formErrors?: string[];
+              fieldErrors?: Record<string, string[]>;
+              serverMessage?: string;
+            }
           | null;
         const formErr = typeof errVal === "object" && errVal ? errVal.formErrors?.[0] : undefined;
         const fieldErr =
           typeof errVal === "object" && errVal?.fieldErrors
             ? Object.values(errVal.fieldErrors).flat()[0]
             : undefined;
-        setError(
+        const serverMsg =
+          typeof errVal === "object" && errVal ? errVal.serverMessage : undefined;
+        const baseMsg =
           formErr ??
-            fieldErr ??
-            (typeof errVal === "string" ? errVal : undefined) ??
-            `Fehler beim Erstellen (HTTP ${res.status})`
-        );
+          fieldErr ??
+          (typeof errVal === "string" ? errVal : undefined) ??
+          `Fehler beim Erstellen (HTTP ${res.status})`;
+        setError(serverMsg ? `${baseMsg}\n${serverMsg}` : baseMsg);
       } else {
         setFirstName(""); setLastName(""); setCode("");
         setServiceId("none"); setSubscriptionId("none"); setAccessAreaId("none");
@@ -2518,7 +2524,7 @@ function AddTicketOverlay({
           </div>
 
           {error && (
-            <div className="bg-rose-950 border border-rose-700/50 rounded-xl p-3 text-sm text-rose-200">
+            <div className="bg-rose-950 border border-rose-700/50 rounded-xl p-3 text-sm text-rose-200 whitespace-pre-line">
               {error}
             </div>
           )}
