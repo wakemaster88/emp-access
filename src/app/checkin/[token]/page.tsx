@@ -164,7 +164,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [checkingIn, setCheckingIn] = useState<number | null>(null);
   const [updatingTicket, setUpdatingTicket] = useState<number | null>(null);
   const [rfidInput, setRfidInput] = useState("");
-  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | null>(null);
+  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | "person" | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cancellingVoucher, setCancellingVoucher] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -368,7 +368,19 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     existingType: string | null;
   } | null>(null);
 
-  const handleUpdateTicket = useCallback(async (ticketId: number, update: { profileImage?: string; rfidCode?: string; startDate?: string | null; endDate?: string | null }, force?: boolean) => {
+  const handleUpdateTicket = useCallback(async (
+    ticketId: number,
+    update: {
+      profileImage?: string;
+      rfidCode?: string;
+      startDate?: string | null;
+      endDate?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      birthDate?: string | null;
+    },
+    force?: boolean,
+  ) => {
     setUpdatingTicket(ticketId);
     try {
       const res = await fetch(`/api/checkin/public/${token}/update`, {
@@ -397,6 +409,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         if (update.rfidCode !== undefined) patch.rfidCode = update.rfidCode;
         if (update.startDate !== undefined) patch.startDate = json.ticket?.startDate ?? update.startDate;
         if (update.endDate !== undefined) patch.endDate = json.ticket?.endDate ?? update.endDate;
+        if (update.firstName !== undefined) patch.firstName = json.ticket?.firstName ?? update.firstName;
+        if (update.lastName !== undefined) patch.lastName = json.ticket?.lastName ?? update.lastName;
+        if (update.birthDate !== undefined) patch.birthDate = json.ticket?.birthDate ?? update.birthDate;
+        if (json.ticket?.name) patch.name = json.ticket.name;
         setSelectedTicket((prev) => prev ? { ...prev, ...patch } : null);
       }
     } finally {
@@ -779,6 +795,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           setRfidInput={setRfidInput}
           onSaveRfid={(code?: string) => handleUpdateTicket(selectedTicket.id, { rfidCode: code ?? rfidInput })}
           onSaveDates={(startDate, endDate) => handleUpdateTicket(selectedTicket.id, { startDate, endDate })}
+          onSavePerson={(person) => handleUpdateTicket(selectedTicket.id, person)}
           onOpenCamera={() => setCameraOpen(true)}
           updatingTicket={updatingTicket === selectedTicket.id}
           accountName={data?.accountName ?? ""}
@@ -1361,6 +1378,7 @@ function TicketOverlay({
   setRfidInput,
   onSaveRfid,
   onSaveDates,
+  onSavePerson,
   onOpenCamera,
   updatingTicket,
   accountName,
@@ -1376,9 +1394,10 @@ function TicketOverlay({
   onClose: () => void;
   onCheckin: () => void;
   checkingIn: boolean;
-  editMode: "photo" | "rfid" | "dates" | null;
-  setEditMode: (m: "photo" | "rfid" | "dates" | null) => void;
+  editMode: "photo" | "rfid" | "dates" | "person" | null;
+  setEditMode: (m: "photo" | "rfid" | "dates" | "person" | null) => void;
   onSaveDates: (startDate: string | null, endDate: string | null) => void;
+  onSavePerson: (person: { firstName: string | null; lastName: string | null; birthDate: string | null }) => void;
   rfidInput: string;
   setRfidInput: (v: string) => void;
   onSaveRfid: (code?: string) => void;
@@ -1405,6 +1424,23 @@ function TicketOverlay({
     setDateEnd(toDateValue(ticket.endDate));
   }, [ticket.startDate, ticket.endDate]);
 
+  const [editFirstName, setEditFirstName] = useState(ticket.firstName ?? "");
+  const [editLastName, setEditLastName] = useState(ticket.lastName ?? "");
+  const [editBirthDate, setEditBirthDate] = useState(toDateValue(ticket.birthDate));
+  const birthDateRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editMode !== "person") {
+      setEditFirstName(ticket.firstName ?? "");
+      setEditLastName(ticket.lastName ?? "");
+      setEditBirthDate(toDateValue(ticket.birthDate));
+    }
+  }, [ticket.firstName, ticket.lastName, ticket.birthDate, editMode]);
+  useEffect(() => {
+    if (birthDateRef.current && document.activeElement !== birthDateRef.current) {
+      birthDateRef.current.value = editBirthDate;
+    }
+  }, [editBirthDate]);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
       <div
@@ -1421,8 +1457,22 @@ function TicketOverlay({
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold truncate">{personName(ticket)}</h2>
-            <p className="text-sm text-slate-400 mt-0.5">{ticket.ticketTypeName ?? ticket.service?.name ?? ticket.subscription?.name ?? ""}</p>
+            <button
+              type="button"
+              onClick={() => setEditMode(editMode === "person" ? null : "person")}
+              className="group flex items-center gap-1.5 text-left max-w-full"
+              title="Name & Geburtstag bearbeiten"
+            >
+              <h2 className="text-xl font-bold truncate">{personName(ticket)}</h2>
+              <Pencil className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" />
+            </button>
+            <p className="text-sm text-slate-400 mt-0.5">
+              {ticket.ticketTypeName ?? ticket.service?.name ?? ticket.subscription?.name ?? ""}
+              {(() => {
+                const a = calcAge(ticket.birthDate);
+                return a != null ? <span className="ml-1 text-slate-500">· {a} J.</span> : null;
+              })()}
+            </p>
             {ticket.slotStart && ticket.slotEnd && (
               <p className="text-sm text-slate-500 mt-0.5">{ticket.slotStart} – {ticket.slotEnd} Uhr</p>
             )}
@@ -1441,6 +1491,88 @@ function TicketOverlay({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* Person-Edit */}
+        {editMode === "person" && (
+          <div className="px-5 py-4 border-b border-slate-800 space-y-3 bg-slate-900/60">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <Users className="h-3.5 w-3.5 inline mr-1.5" />
+              Person
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">Vorname</label>
+                <input
+                  type="text"
+                  value={editFirstName}
+                  onChange={(e) => setEditFirstName(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  placeholder="Max"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">Nachname</label>
+                <input
+                  type="text"
+                  value={editLastName}
+                  onChange={(e) => setEditLastName(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  placeholder="Mustermann"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">Geburtsdatum</label>
+              <input
+                ref={birthDateRef}
+                type="date"
+                defaultValue={editBirthDate}
+                onChange={(e) => setEditBirthDate(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+              {(() => {
+                const a = calcAge(editBirthDate || null);
+                return a != null ? (
+                  <p className="text-xs text-slate-500">Alter: {a} Jahre</p>
+                ) : null;
+              })()}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onSavePerson({
+                    firstName: editFirstName.trim() || null,
+                    lastName: editLastName.trim() || null,
+                    birthDate: editBirthDate
+                      ? new Date(editBirthDate).toISOString()
+                      : null,
+                  });
+                }}
+                disabled={updatingTicket}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
+              >
+                {updatingTicket && editMode === "person" ? (
+                  <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                ) : (
+                  "Speichern"
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditFirstName(ticket.firstName ?? "");
+                  setEditLastName(ticket.lastName ?? "");
+                  setEditBirthDate(toDateValue(ticket.birthDate));
+                  setEditMode(null);
+                }}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Extras */}
         {extras.length > 0 && (

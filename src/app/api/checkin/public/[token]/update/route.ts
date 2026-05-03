@@ -73,6 +73,36 @@ export async function PUT(
     updateData.endDate = body.endDate ? new Date(body.endDate) : null;
   }
 
+  if (body.firstName !== undefined) {
+    const v = typeof body.firstName === "string" ? body.firstName.trim() : "";
+    updateData.firstName = v || null;
+  }
+  if (body.lastName !== undefined) {
+    const v = typeof body.lastName === "string" ? body.lastName.trim() : "";
+    updateData.lastName = v || null;
+  }
+  if (body.birthDate !== undefined) {
+    updateData.birthDate = body.birthDate ? new Date(body.birthDate) : null;
+  }
+
+  // Wenn Vor-/Nachname aktualisiert wurden, ziehen wir den `name`
+  // automatisch nach. So bleibt das, was im Listing/Header angezeigt
+  // wird, konsistent.
+  if (body.firstName !== undefined || body.lastName !== undefined) {
+    const newFirst =
+      body.firstName !== undefined
+        ? (typeof body.firstName === "string" ? body.firstName.trim() : "")
+        : ticket.firstName ?? "";
+    const newLast =
+      body.lastName !== undefined
+        ? (typeof body.lastName === "string" ? body.lastName.trim() : "")
+        : ticket.lastName ?? "";
+    const fullName = `${newFirst} ${newLast}`.trim();
+    if (fullName) {
+      updateData.name = fullName;
+    }
+  }
+
   if (Object.keys(updateData).length === 0) {
     return NextResponse.json({ error: "Keine Änderungen" }, { status: 400 });
   }
@@ -88,6 +118,10 @@ export async function PUT(
     success: true,
     ticket: {
       id: updated.id,
+      name: updated.name,
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+      birthDate: updated.birthDate,
       profileImage: updated.profileImage,
       rfidCode: updated.rfidCode,
       startDate: updated.startDate,
