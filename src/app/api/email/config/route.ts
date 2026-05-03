@@ -56,7 +56,7 @@ export async function PUT(request: NextRequest) {
     where: { accountId: accountId! },
     create: {
       accountId: accountId!,
-      provider: data.provider ?? "RESEND",
+      provider: data.provider ?? "GMAIL",
       apiKey: apiKeyValue,
       fromEmail: data.fromEmail,
       fromName: data.fromName ?? null,
@@ -67,7 +67,7 @@ export async function PUT(request: NextRequest) {
       websiteUrl: data.websiteUrl ?? null,
     },
     update: {
-      provider: data.provider ?? existing?.provider ?? "RESEND",
+      provider: data.provider ?? existing?.provider ?? "GMAIL",
       apiKey: apiKeyValue,
       fromEmail: data.fromEmail,
       fromName: data.fromName ?? null,

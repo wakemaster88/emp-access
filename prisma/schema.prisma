@@ -405,10 +405,11 @@ model EmailConfig {
   id         Int      @id @default(autoincrement())
   accountId  Int      @unique
   account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  /// "RESEND" (default). Spätere Werte: "SMTP".
-  provider   String   @default("RESEND")
-  /// Resend API-Key bzw. SMTP-Passwort (verschlüsselt zu speichern wäre besser
-  /// – wir behandeln den Key wie das Telegram-Bot-Token).
+  /// "GMAIL" (default, SMTP via App-Passwort). Erweiterungspunkt fuer weitere
+  /// Provider in Zukunft.
+  provider   String   @default("GMAIL")
+  /// Provider-Credential. Bei GMAIL: das Google-App-Passwort. Wir behandeln
+  /// es analog zum Telegram-Bot-Token (Klartext-Spalte, RLS-isoliert).
   apiKey     String?
   /// Optionaler Bot-Mail-Absender, z. B. "no-reply@deindomain.de".
   fromEmail  String

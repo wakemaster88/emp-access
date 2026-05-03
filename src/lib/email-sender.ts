@@ -1,13 +1,24 @@
 /**
- * Mail-Versand via Resend HTTP API.
+ * Mail-Versand via Gmail SMTP (nodemailer).
  *
- * Wir benutzen `fetch`, um ohne Zusatz-Dependency auszukommen. Sollte später
- * SMTP nötig werden, kann hier ein zweiter Pfad ergänzt werden.
+ * Authentifizierung erfolgt mit einem Google App-Passwort. Voraussetzung
+ * im Gmail-Account:
+ *   1. 2-Faktor-Authentifizierung aktivieren.
+ *   2. App-Passwort generieren (https://myaccount.google.com/apppasswords).
+ *   3. Hier als `apiKey` speichern, `fromEmail` muss die zugehörige
+ *      Gmail-Adresse sein.
+ *
+ * Hinweis: Gmail erlaubt nur den Versand mit der eigenen Adresse als
+ * `From`-Header (oder einem dort verifizierten Alias). Daher prüfen wir
+ * nichts zur Laufzeit – falls Gmail die Mail ablehnt, taucht der Fehler
+ * im `EmailSend`-Log auf.
  */
 
+import nodemailer, { type Transporter } from "nodemailer";
+
 export interface EmailProvider {
-  provider: string; // "RESEND" | "SMTP"
-  apiKey: string | null;
+  provider: string; // "GMAIL" (default) | "RESEND" (legacy)
+  apiKey: string | null; // Gmail App-Passwort
   fromEmail: string;
   fromName: string | null;
   replyTo: string | null;
@@ -29,7 +40,30 @@ export interface SendEmailResult {
 
 function buildFrom(config: EmailProvider): string {
   const name = config.fromName?.trim();
-  return name ? `${name} <${config.fromEmail}>` : config.fromEmail;
+  return name ? `"${name.replace(/"/g, "")}" <${config.fromEmail}>` : config.fromEmail;
+}
+
+/**
+ * Wir cachen Transporter pro (user+pass), um SMTP-Verbindungen wiederzuverwenden,
+ * solange der Lambda/Worker lebt. nodemailer hält den TCP-Pool selbst offen.
+ */
+const transporterCache = new Map<string, Transporter>();
+
+function getGmailTransporter(user: string, pass: string): Transporter {
+  const key = `${user}::${pass.slice(0, 4)}::${pass.length}`;
+  const cached = transporterCache.get(key);
+  if (cached) return cached;
+  const t = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user, pass },
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 30,
+  });
+  transporterCache.set(key, t);
+  return t;
 }
 
 export async function sendEmail({
@@ -40,7 +74,7 @@ export async function sendEmail({
   text,
 }: SendEmailArgs): Promise<SendEmailResult> {
   if (!config.apiKey) {
-    return { ok: false, error: "Kein API-Key konfiguriert." };
+    return { ok: false, error: "Kein Gmail App-Passwort konfiguriert." };
   }
   if (!config.fromEmail) {
     return { ok: false, error: "Kein Absender (fromEmail) konfiguriert." };
@@ -49,34 +83,27 @@ export async function sendEmail({
     return { ok: false, error: `Ungültige Empfängeradresse: ${to}` };
   }
 
-  if (config.provider !== "RESEND") {
-    return { ok: false, error: `Provider ${config.provider} ist nicht implementiert.` };
+  // Nur Gmail-SMTP wird unterstützt. Provider-String dient als Erweiterungspunkt.
+  if (config.provider !== "GMAIL") {
+    return {
+      ok: false,
+      error: `Provider ${config.provider} ist nicht unterstützt. Bitte auf GMAIL umstellen.`,
+    };
   }
 
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        from: buildFrom(config),
-        to: [to],
-        subject,
-        html,
-        text,
-        ...(config.replyTo ? { reply_to: config.replyTo } : {}),
-      }),
+    const transporter = getGmailTransporter(config.fromEmail, config.apiKey);
+    const info = await transporter.sendMail({
+      from: buildFrom(config),
+      to,
+      subject,
+      html,
+      text,
+      ...(config.replyTo ? { replyTo: config.replyTo } : {}),
     });
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return { ok: false, error: `Resend ${res.status}: ${body.slice(0, 300)}` };
-    }
-    const data = (await res.json().catch(() => ({}))) as { id?: string };
-    return { ok: true, id: data.id };
+    return { ok: true, id: info.messageId };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
   }
 }

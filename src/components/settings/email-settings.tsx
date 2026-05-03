@@ -400,14 +400,19 @@ function EmailConfigCard({
             </Badge>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-            <Row label="Provider" value={config.provider} />
-            <Row label="Absender" value={config.fromEmail} />
+            <Row
+              label="Provider"
+              value={config.provider === "GMAIL" ? "Gmail SMTP" : config.provider}
+            />
+            <Row label="Gmail-Adresse" value={config.fromEmail} />
             {config.fromName && <Row label="Name" value={config.fromName} />}
             {config.replyTo && <Row label="Reply-To" value={config.replyTo} />}
             {config.websiteUrl && <Row label="Website" value={config.websiteUrl} />}
             <Row
-              label="API-Key"
-              value={config.hasApiKey ? config.apiKey ?? "•••" : <span className="text-rose-500">fehlt</span>}
+              label="App-Passwort"
+              value={
+                config.hasApiKey ? config.apiKey ?? "•••" : <span className="text-rose-500">fehlt</span>
+              }
               mono
             />
           </div>
@@ -482,41 +487,61 @@ function EmailConfigCard({
             {config ? "Konfiguration bearbeiten" : "Email-Versand einrichten"}
           </span>
         </div>
-        <p className="text-xs text-slate-500">
-          Wir nutzen <a className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline" href="https://resend.com" target="_blank" rel="noopener">Resend</a> als Provider. Du brauchst nur einen verifizierten Domain-Absender und einen API-Key.
-        </p>
+        <div className="rounded-lg border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 px-3 py-2.5 text-xs text-slate-700 dark:text-slate-300 space-y-1">
+          <p className="font-medium text-indigo-700 dark:text-indigo-300">So richtest du Gmail ein:</p>
+          <ol className="list-decimal list-inside space-y-0.5 text-slate-600 dark:text-slate-400">
+            <li>2-Faktor-Authentifizierung im Google-Konto aktivieren</li>
+            <li>
+              Unter{" "}
+              <a
+                href="https://myaccount.google.com/apppasswords"
+                target="_blank"
+                rel="noopener"
+                className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
+              >
+                myaccount.google.com/apppasswords
+              </a>{" "}
+              ein App-Passwort erzeugen
+            </li>
+            <li>App-Passwort + Gmail-Adresse hier eintragen</li>
+          </ol>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="email-api-key">Resend API-Key</Label>
-            <Input
-              id="email-api-key"
-              type="password"
-              autoComplete="new-password"
-              placeholder={keepKey ? "•••• gespeichert (leer lassen = unverändert)" : "re_..."}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-            {keepKey && (
-              <p className="text-xs text-slate-400">
-                <button type="button" onClick={() => setKeepKey(false)} className="underline hover:text-rose-500">
-                  Gespeicherten Key entfernen
-                </button>
-              </p>
-            )}
-          </div>
           <div className="space-y-1.5">
             <Label htmlFor="email-from">
-              Absender-Email <span className="text-rose-500">*</span>
+              Gmail-Adresse <span className="text-rose-500">*</span>
             </Label>
             <Input
               id="email-from"
               type="email"
-              placeholder="no-reply@verein.de"
+              placeholder="dein-account@gmail.com"
               value={fromEmail}
               onChange={(e) => setFromEmail(e.target.value)}
               required
+              autoComplete="email"
             />
+            <p className="text-[11px] text-slate-400">
+              Auch erlaubt: in Gmail verifizierter Alias (z. B. eigene Domain).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="email-api-key">Gmail App-Passwort <span className="text-rose-500">*</span></Label>
+            <Input
+              id="email-api-key"
+              type="password"
+              autoComplete="new-password"
+              placeholder={keepKey ? "•••• gespeichert (leer = unverändert)" : "16-stelliges App-Passwort"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+            {keepKey && (
+              <p className="text-[11px] text-slate-400">
+                <button type="button" onClick={() => setKeepKey(false)} className="underline hover:text-rose-500">
+                  Gespeichertes Passwort entfernen
+                </button>
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email-from-name">Absender-Name</Label>

@@ -243,7 +243,7 @@ export const shellyAutomationCreateSchema = z
 // ─── Email-Automation Schemas ────────────────────────────────────────────────
 
 export const emailConfigUpdateSchema = z.object({
-  provider: z.enum(["RESEND"]).optional(),
+  provider: z.enum(["GMAIL"]).optional(),
   apiKey: z.string().min(1).max(200).nullable().optional(),
   fromEmail: z.string().email().max(180),
   fromName: z.string().max(120).nullable().optional(),
