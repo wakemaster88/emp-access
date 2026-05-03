@@ -28,6 +28,63 @@ export interface TemplateVariables {
   logoUrl?: string | null;
 }
 
+/**
+ * Liefert plausible Beispiel-Variablen für Vorschau-/Test-Mails. Die Werte
+ * werden trigger-spezifisch (Abo vs. Tagesgast) leicht angepasst, damit das
+ * Ergebnis nahe an einer echten Mail ist.
+ */
+export function buildSampleTemplateVariables(args: {
+  trigger?: "SUBSCRIPTION_EXPIRING" | "SUBSCRIPTION_EXPIRED" | "DAY_VISIT_FOLLOWUP" | "TICKET_WELCOME";
+  daysOffset?: number;
+  createVoucher?: boolean;
+  voucherDiscountPercent?: number | null;
+  voucherValidDays?: number | null;
+  renewUrl?: string | null;
+  accountName?: string | null;
+  brandColor?: string | null;
+  logoUrl?: string | null;
+  websiteUrl?: string | null;
+}): TemplateVariables {
+  const trig = args.trigger ?? "SUBSCRIPTION_EXPIRING";
+  const offset = args.daysOffset ?? 7;
+  const today = new Date();
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  const futureDate = new Date(today.getTime() + offset * 86_400_000);
+  const pastDate = new Date(today.getTime() - offset * 86_400_000);
+  const voucherExpires = args.voucherValidDays
+    ? new Date(today.getTime() + args.voucherValidDays * 86_400_000)
+    : new Date(today.getTime() + 60 * 86_400_000);
+
+  return {
+    firstName: "Max",
+    lastName: "Mustermann",
+    fullName: "Max Mustermann",
+    ticketTypeName: trig === "DAY_VISIT_FOLLOWUP" ? "Tagesticket" : "Premium-Abo",
+    subscriptionName: "Premium-Abo",
+    serviceName: trig === "DAY_VISIT_FOLLOWUP" ? "Tagesgast" : null,
+    accountName: args.accountName || "EMP Access",
+    endDate: trig === "SUBSCRIPTION_EXPIRING" ? fmt(futureDate) : trig === "SUBSCRIPTION_EXPIRED" ? fmt(pastDate) : fmt(futureDate),
+    startDate: fmt(new Date(today.getTime() - 365 * 86_400_000)),
+    daysUntilExpiry: trig === "SUBSCRIPTION_EXPIRING" ? String(offset) : "0",
+    daysSinceVisit: trig === "DAY_VISIT_FOLLOWUP" ? String(offset) : "0",
+    voucherCode: args.createVoucher ? "EMP-A1B2C3D4" : null,
+    voucherUrl: args.createVoucher ? "https://emp-access/voucher/EMP-A1B2C3D4" : null,
+    voucherDiscountPercent:
+      args.createVoucher && args.voucherDiscountPercent != null
+        ? String(args.voucherDiscountPercent)
+        : args.createVoucher
+          ? "10"
+          : null,
+    voucherExpiresAt: args.createVoucher ? fmt(voucherExpires) : null,
+    renewUrl: args.renewUrl || (trig === "SUBSCRIPTION_EXPIRING" ? "https://example.com/abo-verlaengern" : null),
+    websiteUrl: args.websiteUrl ?? null,
+    brandColor: args.brandColor ?? null,
+    logoUrl: args.logoUrl ?? null,
+  };
+}
+
 export function renderTemplate(template: string, vars: TemplateVariables): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
     const v = (vars as Record<string, string | null | undefined>)[key];

@@ -36,6 +36,8 @@ import {
   Smile,
   GiftIcon,
   PlayCircle,
+  TestTube2,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PRESET_TEMPLATES, type PresetTemplate } from "@/lib/email-templates";
@@ -45,6 +47,26 @@ type RuleTrigger =
   | "SUBSCRIPTION_EXPIRED"
   | "DAY_VISIT_FOLLOWUP"
   | "TICKET_WELCOME";
+
+const LAST_TEST_TO_KEY = "emp:lastEmailTestTo";
+
+function getLastTestTo(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(LAST_TEST_TO_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function setLastTestTo(value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LAST_TEST_TO_KEY, value);
+  } catch {
+    // ignore
+  }
+}
 
 interface EmailConfigDTO {
   id: number;
@@ -639,10 +661,19 @@ function RuleRow({
   onEdit: () => void;
   onChanged: () => Promise<void> | void;
 }) {
-  const [busy, setBusy] = useState<"toggle" | "delete" | "run" | null>(null);
+  const [busy, setBusy] = useState<"toggle" | "delete" | "run" | "test" | null>(null);
   const [runMsg, setRunMsg] = useState<string | null>(null);
+  const [testOpen, setTestOpen] = useState(false);
+  const [testTo, setTestTo] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const meta = TRIGGER_META[rule.trigger];
   const Icon = meta.icon;
+
+  useEffect(() => {
+    if (testOpen && !testTo) {
+      setTestTo(getLastTestTo());
+    }
+  }, [testOpen, testTo]);
 
   async function toggle() {
     setBusy("toggle");
@@ -689,6 +720,45 @@ function RuleRow({
     }
   }
 
+  async function sendTest() {
+    if (!testTo.trim()) return;
+    setBusy("test");
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/email/rules/test-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: testTo.trim(),
+          subject: rule.subject,
+          bodyHtml: rule.bodyHtml,
+          trigger: rule.trigger,
+          daysOffset: rule.daysOffset,
+          createVoucher: rule.createVoucher,
+          voucherDiscountPercent: rule.voucherDiscountPercent,
+          voucherValidDays: rule.voucherValidDays,
+          voucherTicketTypeName: rule.voucherTicketTypeName,
+          renewUrl: rule.renewUrl,
+          ruleId: rule.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setLastTestTo(testTo.trim());
+        setTestResult({ ok: true, msg: `Vorschau-Mail an ${testTo.trim()} verschickt.` });
+      } else {
+        setTestResult({
+          ok: false,
+          msg: typeof data.error === "string" ? data.error : "Versand fehlgeschlagen.",
+        });
+      }
+    } catch {
+      setTestResult({ ok: false, msg: "Netzwerkfehler." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <li
       className={cn(
@@ -724,6 +794,19 @@ function RuleRow({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <Switch checked={rule.isActive} onCheckedChange={toggle} disabled={busy !== null} size="sm" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              setTestOpen((v) => !v);
+              setTestResult(null);
+            }}
+            disabled={busy !== null}
+            title="Test-Mail mit Beispieldaten senden"
+            className={cn(testOpen && "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400")}
+          >
+            <TestTube2 className="h-4 w-4" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={runNow} disabled={busy !== null} title="Jetzt ausführen">
             {busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
           </Button>
@@ -742,6 +825,66 @@ function RuleRow({
           </Button>
         </div>
       </div>
+      {testOpen && (
+        <div className="border-t border-amber-200 dark:border-amber-900/40 px-3 py-2.5 bg-amber-50/50 dark:bg-amber-950/20 rounded-b-lg space-y-2">
+          <div className="flex items-center gap-2">
+            <TestTube2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
+              Test-Mail mit Beispieldaten (Max Mustermann, fiktive Termine)
+            </span>
+            <button
+              type="button"
+              onClick={() => setTestOpen(false)}
+              className="ml-auto text-amber-600/60 hover:text-amber-700 dark:hover:text-amber-300"
+              aria-label="Test schließen"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              type="email"
+              placeholder="empfaenger@example.com"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && testTo.trim() && busy !== "test") {
+                  e.preventDefault();
+                  sendTest();
+                }
+              }}
+              className="h-9 bg-white dark:bg-slate-900"
+              autoFocus
+            />
+            <Button
+              size="sm"
+              onClick={sendTest}
+              disabled={busy === "test" || !testTo.trim()}
+              className="bg-amber-600 hover:bg-amber-700 gap-1.5 shrink-0"
+            >
+              {busy === "test" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Senden
+            </Button>
+          </div>
+          {testResult && (
+            <div
+              className={cn(
+                "flex items-start gap-2 p-2 rounded-md text-xs font-medium",
+                testResult.ok
+                  ? "bg-emerald-100/60 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
+                  : "bg-rose-100/60 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400",
+              )}
+            >
+              {testResult.ok ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              )}
+              <span>{testResult.msg}</span>
+            </div>
+          )}
+        </div>
+      )}
       {runMsg && (
         <div className="border-t border-slate-100 dark:border-slate-800 px-3 py-2 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/40 rounded-b-lg">
           {runMsg}
@@ -850,6 +993,9 @@ function RuleDialog({
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -901,6 +1047,8 @@ function RuleDialog({
       setIsActive(true);
     }
     setError("");
+    setTestResult(null);
+    setTestTo(getLastTestTo());
   }, [open, rule, preset]);
 
   const triggerInfo = TRIGGER_META[trigger];
@@ -954,6 +1102,49 @@ function RuleDialog({
       setError("Netzwerkfehler.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    if (!testTo.trim()) return;
+    if (!subject.trim() || !bodyHtml.trim()) {
+      setTestResult({ ok: false, msg: "Betreff und HTML-Body müssen ausgefüllt sein." });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/email/rules/test-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: testTo.trim(),
+          subject: subject.trim(),
+          bodyHtml,
+          trigger,
+          daysOffset: Number(daysOffset),
+          createVoucher,
+          voucherDiscountPercent: createVoucher ? Number(voucherDiscount) : null,
+          voucherValidDays: createVoucher ? Number(voucherDays) : null,
+          voucherTicketTypeName: createVoucher ? (voucherTypeName.trim() || null) : null,
+          renewUrl: renewUrl.trim() || null,
+          ruleId: rule?.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setLastTestTo(testTo.trim());
+        setTestResult({ ok: true, msg: `Vorschau-Mail an ${testTo.trim()} verschickt.` });
+      } else {
+        setTestResult({
+          ok: false,
+          msg: typeof data.error === "string" ? data.error : "Versand fehlgeschlagen.",
+        });
+      }
+    } catch {
+      setTestResult({ ok: false, msg: "Netzwerkfehler." });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -1189,6 +1380,61 @@ function RuleDialog({
               <p className="text-xs text-slate-400">Inaktive Regeln werden vom Cron ignoriert.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
+          </div>
+
+          <div className="rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <TestTube2 className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Test-Mail mit Beispieldaten senden
+              </span>
+            </div>
+            <p className="text-xs text-amber-700/80 dark:text-amber-300/70">
+              Rendert Betreff &amp; Body mit Platzhaltern wie <code className="font-mono">Max Mustermann</code> und
+              fiktiven Daten – ohne dass die Regel gespeichert oder Empfänger ausgewählt werden müssen.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="empfaenger@example.com"
+                value={testTo}
+                onChange={(e) => setTestTo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !testing && testTo.trim()) {
+                    e.preventDefault();
+                    handleTest();
+                  }
+                }}
+                className="h-9 bg-white dark:bg-slate-900"
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleTest}
+                disabled={testing || !testTo.trim()}
+                className="bg-amber-600 hover:bg-amber-700 gap-1.5 shrink-0"
+              >
+                {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Test senden
+              </Button>
+            </div>
+            {testResult && (
+              <div
+                className={cn(
+                  "flex items-start gap-2 p-2 rounded-md text-xs font-medium",
+                  testResult.ok
+                    ? "bg-emerald-100/60 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
+                    : "bg-rose-100/60 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400",
+                )}
+              >
+                {testResult.ok ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                ) : (
+                  <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                )}
+                <span>{testResult.msg}</span>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/20 px-3 py-2 rounded-lg">{error}</p>}

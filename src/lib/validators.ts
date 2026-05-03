@@ -289,6 +289,25 @@ export const emailTestSchema = z.object({
   subject: z.string().min(1).max(240).optional(),
 });
 
+/**
+ * Validiert eine Test-Versand-Anfrage für eine konkrete Regel (gespeichert
+ * oder noch im Editor). Wir akzeptieren die kompletten Render-Inputs, damit
+ * der Editor auch unsaved changes testen kann.
+ */
+export const emailRuleTestSchema = z.object({
+  to: z.string().email(),
+  subject: z.string().min(1).max(240),
+  bodyHtml: z.string().min(1).max(20000),
+  trigger: emailRuleTrigger.optional(),
+  daysOffset: z.coerce.number().int().min(0).max(365).optional(),
+  createVoucher: z.boolean().optional(),
+  voucherDiscountPercent: z.coerce.number().int().min(1).max(100).nullable().optional(),
+  voucherValidDays: z.coerce.number().int().min(1).max(730).nullable().optional(),
+  voucherTicketTypeName: z.string().max(120).nullable().optional(),
+  renewUrl: z.string().url().max(500).nullable().optional(),
+  ruleId: z.coerce.number().int().positive().optional(),
+});
+
 export const shellyAutomationUpdateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   groupId: z.coerce.number().int().positive().optional(),
