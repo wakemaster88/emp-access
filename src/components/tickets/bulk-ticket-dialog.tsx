@@ -27,9 +27,12 @@ import {
   Printer,
   CheckCircle2,
   ListPlus,
+  AlertTriangle,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { printTicketsBulk, type PrintableTicket } from "@/lib/print-tickets";
+import { printTicketsBulk, type PrintableTicket, type PrintResult } from "@/lib/print-tickets";
 
 interface Area {
   id: number;
@@ -83,6 +86,7 @@ export function BulkTicketDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [doneCount, setDoneCount] = useState<number | null>(null);
+  const [printResult, setPrintResult] = useState<PrintResult | null>(null);
 
   const allOptions = useMemo(
     () => [
@@ -100,6 +104,7 @@ export function BulkTicketDialog({
     setAreaId("none");
     setError("");
     setDoneCount(null);
+    setPrintResult(null);
   }
 
   function clampCount(n: number): number {
@@ -115,6 +120,7 @@ export function BulkTicketDialog({
     setLoading(true);
     setError("");
     setDoneCount(null);
+    setPrintResult(null);
 
     const payload: Record<string, unknown> = {
       count,
@@ -177,7 +183,16 @@ export function BulkTicketDialog({
       setDoneCount(tickets.length);
 
       if (opts.print && tickets.length > 0) {
-        await printTicketsBulk(tickets, accountName ?? "EMP Access");
+        try {
+          const result = await printTicketsBulk(tickets, accountName ?? "EMP Access");
+          setPrintResult(result);
+        } catch (e) {
+          setPrintResult({
+            ok: false,
+            transport: "iframe",
+            error: e instanceof Error ? e.message : "Druckfehler",
+          });
+        }
       }
 
       router.refresh();
@@ -352,11 +367,67 @@ export function BulkTicketDialog({
             </p>
           )}
 
-          {doneCount != null && !error && (
+          {doneCount != null && !error && !printResult && (
             <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              {doneCount} Tickets erstellt. Druckdialog wurde geoeffnet.
+              {doneCount} Tickets erstellt.
             </p>
+          )}
+
+          {doneCount != null && printResult && (
+            <div className="space-y-2">
+              {printResult.ok && printResult.transport === "iframe" && (
+                <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  {doneCount} Tickets erstellt. Druckdialog wurde geöffnet.
+                </p>
+              )}
+
+              {printResult.ok && printResult.transport === "newTab" && (
+                <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg space-y-1">
+                  <p className="flex items-center gap-2 font-medium">
+                    <ExternalLink className="h-4 w-4 shrink-0" />
+                    {doneCount} Tickets erstellt. PDF wurde im neuen Tab geöffnet.
+                  </p>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                    Drucken funktioniert über Strg/⌘+P im neuen Tab. Direkter Druckdialog war nicht möglich
+                    {printResult.error ? ` (${printResult.error})` : ""}.
+                  </p>
+                </div>
+              )}
+
+              {!printResult.ok && printResult.transport === "download" && (
+                <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg space-y-2">
+                  <p className="flex items-center gap-2 font-medium">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    {doneCount} Tickets erstellt. Druck konnte nicht direkt gestartet werden.
+                  </p>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                    Das PDF wurde stattdessen heruntergeladen
+                    {printResult.error ? ` (${printResult.error})` : ""}. Öffne es manuell und drucke es aus dem
+                    Reader (z. B. Adobe oder Vorschau) – dort kannst du auch das richtige Druckerprofil
+                    auswählen.
+                  </p>
+                  {printResult.fallbackUrl && printResult.fallbackFilename && (
+                    <a
+                      href={printResult.fallbackUrl}
+                      download={printResult.fallbackFilename}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 underline underline-offset-2 hover:text-amber-900"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      PDF erneut herunterladen
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {!printResult.ok && printResult.transport !== "download" && (
+                <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Druck fehlgeschlagen{printResult.error ? `: ${printResult.error}` : ""}.
+                </p>
+              )}
+            </div>
           )}
 
           <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-2">

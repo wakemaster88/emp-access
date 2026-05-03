@@ -2,9 +2,19 @@ import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 
 /**
- * Druckhilfen fuer den 72mm-Bondrucker.
- * Das Format orientiert sich am bestehenden Checkin-Druck und produziert
- * eine PDF, die im Browser direkt in den Druckdialog geschickt wird.
+ * Druckhilfen fuer den 72mm-Bondrucker (z. B. Epson TM-m30/M30).
+ *
+ * Wichtigste Eigenschaften der Implementierung:
+ *  - Die Seitenhoehe wird DYNAMISCH aus dem laengsten Ticket berechnet, damit
+ *    der Druckertreiber nicht ueberlaufende Inhalte abschneidet (Hauptursache
+ *    fuer Treiberfehler beim TM-m30, wenn die Seitenform zu klein ist).
+ *  - Alle Seiten haben die SELBE Hoehe – die meisten Bondrucker-Treiber
+ *    verlangen konsistente Form-Groessen pro Druckjob.
+ *  - QR-Codes werden einmal generiert und beim Dry-Run + echten Render
+ *    wiederverwendet (kein doppelter CPU-Aufwand).
+ *  - Druck wird ueber ein verstecktes iframe ausgeloest. Bei Fehler oder
+ *    geblocktem Druckdialog wird auf "neuer Tab" und im letzten Schritt auf
+ *    Download zurueckgefallen, sodass der User immer ans PDF kommt.
  */
 
 export interface PrintableTicket {
@@ -20,9 +30,21 @@ export interface PrintableTicket {
   validityDurationMinutes?: number | null;
 }
 
+export type PrintTransport = "iframe" | "newTab" | "download";
+
+export interface PrintResult {
+  ok: boolean;
+  transport: PrintTransport;
+  error?: string;
+  /** Wenn transport=download: blob-URL, damit der Aufrufer einen Link bauen kann. */
+  fallbackUrl?: string;
+  fallbackFilename?: string;
+}
+
 const PAPER_WIDTH_MM = 72;
 const MARGIN_MM = 4;
-const PAGE_HEIGHT_MM = 110;
+const MIN_PAGE_HEIGHT_MM = 90;
+const SAFETY_PADDING_MM = 6;
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -31,28 +53,36 @@ function fmtDate(iso: string | null | undefined): string {
   return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-async function drawTicket(
-  doc: jsPDF,
-  ticket: PrintableTicket,
-  accountName: string,
-  index: number,
-  total: number,
-) {
-  const pw = PAPER_WIDTH_MM;
-  const margin = MARGIN_MM;
-  const contentW = pw - margin * 2;
-
-  let qrDataUrl = "";
+/** Erzeugt QR-Code-DataURL einmal pro Barcode (cache-bar in Maps). */
+async function generateQrCode(barcode: string): Promise<string> {
   try {
-    qrDataUrl = await QRCode.toDataURL(ticket.barcode, {
+    return await QRCode.toDataURL(barcode, {
       width: 400,
       margin: 1,
       errorCorrectionLevel: "M",
       color: { dark: "#000000", light: "#ffffff" },
     });
   } catch {
-    /* ignore */
+    return "";
   }
+}
+
+/**
+ * Zeichnet ein Ticket. Gibt den finalen y-Wert (= benoetigte Hoehe in mm)
+ * zurueck. Wenn `qrDataUrl` mit reingegeben wird, wird der QR-Code nicht
+ * erneut generiert (Performance fuer Dry-Run + Real-Pass).
+ */
+function drawTicket(
+  doc: jsPDF,
+  ticket: PrintableTicket,
+  accountName: string,
+  index: number,
+  total: number,
+  qrDataUrl: string,
+): number {
+  const pw = PAPER_WIDTH_MM;
+  const margin = MARGIN_MM;
+  const contentW = pw - margin * 2;
 
   let y = 5;
 
@@ -77,7 +107,7 @@ async function drawTicket(
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  const nameLines = doc.splitTextToSize(ticket.name, contentW);
+  const nameLines = doc.splitTextToSize(ticket.name || "—", contentW);
   doc.text(nameLines, margin, y);
   y += nameLines.length * 4.5;
 
@@ -95,8 +125,9 @@ async function drawTicket(
     y += 3.5;
   }
   if (ticket.accessAreaName) {
-    doc.text(`Bereich: ${ticket.accessAreaName}`, margin, y);
-    y += 3.5;
+    const areaLines = doc.splitTextToSize(`Bereich: ${ticket.accessAreaName}`, contentW);
+    doc.text(areaLines, margin, y);
+    y += areaLines.length * 3.5;
   }
   const startStr = fmtDate(ticket.startDate);
   const endStr = fmtDate(ticket.endDate);
@@ -148,43 +179,181 @@ async function drawTicket(
 
   doc.setLineDashPattern([1, 1], 0);
   doc.line(margin, y, pw - margin, y);
+
+  return y;
 }
 
 /**
- * Erzeugt eine Multi-Page-Bondrucker-PDF (eine Seite pro Ticket) und
- * triggert den nativen Browser-Druckdialog ueber ein verstecktes iframe.
+ * Erzeugt das PDF-Blob fuer die uebergebenen Tickets.
+ * Seitenhoehe wird auf den Inhalt des laengsten Tickets ausgelegt
+ * (mind. 90mm, plus Sicherheitspuffer).
+ */
+async function buildTicketsPdfBlob(
+  tickets: PrintableTicket[],
+  accountName: string,
+): Promise<Blob> {
+  // QR-Codes vorab erzeugen, damit Dry-Run und Real-Pass denselben benutzen
+  const qrCache = new Map<string, string>();
+  await Promise.all(
+    tickets.map(async (t) => {
+      if (!qrCache.has(t.barcode)) {
+        qrCache.set(t.barcode, await generateQrCode(t.barcode));
+      }
+    }),
+  );
+
+  // Pass 1: Dry-Run zur Hoehenmessung mit grosszuegiger Default-Hoehe
+  const measureDoc = new jsPDF({ unit: "mm", format: [PAPER_WIDTH_MM, 250] });
+  let maxHeight = MIN_PAGE_HEIGHT_MM;
+  for (let i = 0; i < tickets.length; i++) {
+    if (i > 0) measureDoc.addPage([PAPER_WIDTH_MM, 250]);
+    const usedY = drawTicket(
+      measureDoc,
+      tickets[i],
+      accountName,
+      i,
+      tickets.length,
+      qrCache.get(tickets[i].barcode) ?? "",
+    );
+    if (usedY > maxHeight) maxHeight = usedY;
+  }
+  const pageHeight = Math.max(MIN_PAGE_HEIGHT_MM, Math.ceil(maxHeight + SAFETY_PADDING_MM));
+
+  // Pass 2: echtes PDF mit konsistenter Seitenhoehe pro Bon
+  const doc = new jsPDF({ unit: "mm", format: [PAPER_WIDTH_MM, pageHeight] });
+  for (let i = 0; i < tickets.length; i++) {
+    if (i > 0) doc.addPage([PAPER_WIDTH_MM, pageHeight]);
+    drawTicket(
+      doc,
+      tickets[i],
+      accountName,
+      i,
+      tickets.length,
+      qrCache.get(tickets[i].barcode) ?? "",
+    );
+  }
+
+  return doc.output("blob");
+}
+
+/** Versucht das PDF in einem versteckten iframe zu drucken. */
+function tryIframePrint(blobUrl: string): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.visibility = "hidden";
+
+    let settled = false;
+    const finish = (ok: boolean, error?: string) => {
+      if (settled) return;
+      settled = true;
+      // Iframe nicht sofort entfernen – manche Druckdialoge brauchen es
+      // weiterhin. Cleanup nach 30s.
+      setTimeout(() => {
+        try {
+          iframe.remove();
+        } catch {
+          /* already removed */
+        }
+      }, 30_000);
+      resolve({ ok, error });
+    };
+
+    iframe.onload = () => {
+      // Kurz warten bis der PDF-Viewer im iframe wirklich geladen ist –
+      // bei Chrome/Edge hilft das gegen "User Activation"-Probleme.
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          // print() ist synchron und blockiert bis der Druckdialog geschlossen wurde.
+          iframe.contentWindow?.print();
+          finish(true);
+        } catch (e) {
+          finish(false, e instanceof Error ? e.message : String(e));
+        }
+      }, 350);
+    };
+
+    iframe.onerror = () => finish(false, "iframe konnte nicht geladen werden");
+
+    iframe.src = blobUrl;
+    document.body.appendChild(iframe);
+
+    // Globale Sicherung: Falls weder onload noch onerror feuert.
+    setTimeout(() => {
+      if (!settled) finish(false, "Druckdialog hat nicht geantwortet (Timeout)");
+    }, 12_000);
+  });
+}
+
+/** Loest einen Klassischen Browser-Download fuer das Blob aus. */
+function downloadBlob(blobUrl: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 5_000);
+}
+
+function buildFilename(count: number): string {
+  const stamp = new Date()
+    .toISOString()
+    .slice(0, 16)
+    .replace("T", "_")
+    .replace(/:/g, "");
+  return `tickets_${count}_${stamp}.pdf`;
+}
+
+/**
+ * Erzeugt die Tickets-PDF und triggert den Druckdialog. Bei Fehlern wird
+ * automatisch auf "neuer Tab" und – falls Popup geblockt – auf Download
+ * zurueckgefallen.
  */
 export async function printTicketsBulk(
   tickets: PrintableTicket[],
   accountName: string,
-): Promise<void> {
-  if (tickets.length === 0) return;
-
-  const doc = new jsPDF({
-    unit: "mm",
-    format: [PAPER_WIDTH_MM, PAGE_HEIGHT_MM],
-  });
-
-  for (let i = 0; i < tickets.length; i++) {
-    if (i > 0) doc.addPage([PAPER_WIDTH_MM, PAGE_HEIGHT_MM]);
-    await drawTicket(doc, tickets[i], accountName, i, tickets.length);
+): Promise<PrintResult> {
+  if (tickets.length === 0) {
+    return { ok: false, transport: "iframe", error: "Keine Tickets zum Drucken." };
   }
 
-  const blob = doc.output("blob");
+  const blob = await buildTicketsPdfBlob(tickets, accountName);
   const url = URL.createObjectURL(blob);
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  iframe.onload = () => {
-    iframe.contentWindow?.print();
-    setTimeout(() => {
-      try {
-        document.body.removeChild(iframe);
-      } catch {
-        /* already removed */
-      }
-      URL.revokeObjectURL(url);
-    }, 8000);
+  const filename = buildFilename(tickets.length);
+
+  const printAttempt = await tryIframePrint(url);
+  if (printAttempt.ok) {
+    // URL nicht direkt revoken – das iframe haelt sie noch.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { ok: true, transport: "iframe" };
+  }
+
+  // Fallback 1: PDF in neuem Tab oeffnen, User kann selbst Strg+P druecken
+  const newTab = typeof window !== "undefined" ? window.open(url, "_blank", "noopener") : null;
+  if (newTab) {
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return {
+      ok: true,
+      transport: "newTab",
+      error: printAttempt.error,
+    };
+  }
+
+  // Fallback 2: Download anbieten
+  downloadBlob(url, filename);
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return {
+    ok: false,
+    transport: "download",
+    error: printAttempt.error,
+    fallbackUrl: url,
+    fallbackFilename: filename,
   };
 }
