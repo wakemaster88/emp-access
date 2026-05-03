@@ -5,13 +5,17 @@ import QRCode from "qrcode";
  * Druckhilfen fuer den 72mm-Bondrucker (z. B. Epson TM-m30/M30).
  *
  * Wichtigste Eigenschaften der Implementierung:
- *  - Die Seitenhoehe wird DYNAMISCH aus dem laengsten Ticket berechnet, damit
- *    der Druckertreiber nicht ueberlaufende Inhalte abschneidet (Hauptursache
- *    fuer Treiberfehler beim TM-m30, wenn die Seitenform zu klein ist).
- *  - Alle Seiten haben die SELBE Hoehe – die meisten Bondrucker-Treiber
- *    verlangen konsistente Form-Groessen pro Druckjob.
+ *  - Jedes Ticket bekommt im PDF eine eigene, exakt passende Page-Hoehe.
+ *    Damit erkennt der Bondrucker-Treiber jeden Bon als eigene Page und
+ *    schneidet zwischen den Bons (sofern "Cut between pages" im Treiber
+ *    aktiv ist – Standardeinstellung beim TM-m30/M30).
  *  - QR-Codes werden einmal generiert und beim Dry-Run + echten Render
  *    wiederverwendet (kein doppelter CPU-Aufwand).
+ *  - `printTicketsBulk` druckt per Default ein einziges PDF mit N Pages.
+ *    Mit `mode: "perTicket"` werden N einzelne PDFs sequentiell gedruckt
+ *    – jeder Druckjob endet beim Treiber mit Cut-Kommando, also wird
+ *    auch dann zwischen den Bons geschnitten, wenn der Treiber
+ *    "End-of-Document"-Cut konfiguriert hat.
  *  - Druck wird ueber ein verstecktes iframe ausgeloest. Bei Fehler oder
  *    geblocktem Druckdialog wird auf "neuer Tab" und im letzten Schritt auf
  *    Download zurueckgefallen, sodass der User immer ans PDF kommt.
@@ -185,8 +189,9 @@ function drawTicket(
 
 /**
  * Erzeugt das PDF-Blob fuer die uebergebenen Tickets.
- * Seitenhoehe wird auf den Inhalt des laengsten Tickets ausgelegt
- * (mind. 90mm, plus Sicherheitspuffer).
+ * Jede Page hat die individuell auf den Inhalt zugeschnittene Hoehe
+ * (mind. MIN_PAGE_HEIGHT_MM, plus Sicherheitspuffer). Damit kann der
+ * Bondrucker-Treiber jede Page als eigenen Bon erkennen.
  */
 async function buildTicketsPdfBlob(
   tickets: PrintableTicket[],
@@ -202,9 +207,10 @@ async function buildTicketsPdfBlob(
     }),
   );
 
-  // Pass 1: Dry-Run zur Hoehenmessung mit grosszuegiger Default-Hoehe
+  // Pass 1: Dry-Run pro Ticket. Wir messen jede Page individuell, damit
+  // sie im finalen PDF exakt so hoch ist, wie das Ticket benoetigt.
   const measureDoc = new jsPDF({ unit: "mm", format: [PAPER_WIDTH_MM, 250] });
-  let maxHeight = MIN_PAGE_HEIGHT_MM;
+  const ticketHeights: number[] = [];
   for (let i = 0; i < tickets.length; i++) {
     if (i > 0) measureDoc.addPage([PAPER_WIDTH_MM, 250]);
     const usedY = drawTicket(
@@ -215,14 +221,15 @@ async function buildTicketsPdfBlob(
       tickets.length,
       qrCache.get(tickets[i].barcode) ?? "",
     );
-    if (usedY > maxHeight) maxHeight = usedY;
+    ticketHeights.push(
+      Math.max(MIN_PAGE_HEIGHT_MM, Math.ceil(usedY + SAFETY_PADDING_MM)),
+    );
   }
-  const pageHeight = Math.max(MIN_PAGE_HEIGHT_MM, Math.ceil(maxHeight + SAFETY_PADDING_MM));
 
-  // Pass 2: echtes PDF mit konsistenter Seitenhoehe pro Bon
-  const doc = new jsPDF({ unit: "mm", format: [PAPER_WIDTH_MM, pageHeight] });
+  // Pass 2: echtes PDF mit individueller Page-Hoehe pro Bon
+  const doc = new jsPDF({ unit: "mm", format: [PAPER_WIDTH_MM, ticketHeights[0]] });
   for (let i = 0; i < tickets.length; i++) {
-    if (i > 0) doc.addPage([PAPER_WIDTH_MM, pageHeight]);
+    if (i > 0) doc.addPage([PAPER_WIDTH_MM, ticketHeights[i]]);
     drawTicket(
       doc,
       tickets[i],
@@ -335,12 +342,15 @@ export function downloadBlob(blobUrl: string, filename: string) {
   setTimeout(() => a.remove(), 5_000);
 }
 
-function buildFilename(count: number): string {
+function buildFilename(count: number, index?: number): string {
   const stamp = new Date()
     .toISOString()
     .slice(0, 16)
     .replace("T", "_")
     .replace(/:/g, "");
+  if (index != null) {
+    return `ticket_${index}_${stamp}.pdf`;
+  }
   return `tickets_${count}_${stamp}.pdf`;
 }
 
@@ -384,6 +394,26 @@ export async function printPdfBlob(
   };
 }
 
+export type PrintMode = "combined" | "perTicket";
+
+export interface PrintBulkOptions {
+  /**
+   * `combined` (Default): ein einziges PDF mit N Pages, ein Druckjob.
+   *   Schneller, aber Cutter haengt vom Treiber-Setting ab.
+   *   Falls der Treiber nur "Cut at end of document" macht, wird das
+   *   gesamte Bulk als ein langer Streifen ausgeworfen.
+   *
+   * `perTicket`: pro Ticket ein eigenes PDF + eigener Druckjob,
+   *   sequentiell. Jeder Druckjob endet beim Treiber mit dem
+   *   Cut-Befehl, also wird auch dann sicher zwischen den Bons
+   *   geschnitten, wenn der Treiber als "Document Cut" konfiguriert
+   *   ist. Trade-off: Browser zeigt pro Druckjob einen Druckdialog
+   *   (Chrome merkt sich nach dem ersten Klick die Auswahl in der
+   *   Regel; bei vielen Tickets bitte ggf. Kiosk-Druckmodus nutzen).
+   */
+  mode?: PrintMode;
+}
+
 /**
  * Erzeugt die Tickets-PDF und triggert den Druckdialog. Bei Fehlern wird
  * automatisch auf "neuer Tab" und – falls Popup geblockt – auf Download
@@ -392,9 +422,33 @@ export async function printPdfBlob(
 export async function printTicketsBulk(
   tickets: PrintableTicket[],
   accountName: string,
+  options: PrintBulkOptions = {},
 ): Promise<PrintResult> {
   if (tickets.length === 0) {
     return { ok: false, transport: "iframe", error: "Keine Tickets zum Drucken." };
+  }
+
+  const mode: PrintMode = options.mode ?? "combined";
+
+  if (mode === "perTicket" && tickets.length > 1) {
+    // Sequentiell: Pro Ticket ein PDF + ein Druckjob. Wir warten zwischen
+    // den Jobs minimal, damit der Treiber den vorherigen Job abschliessen
+    // kann (sonst kann es passieren, dass der Browser zwei iframes
+    // gleichzeitig druckt und Jobs ineinander rutschen).
+    let lastResult: PrintResult = { ok: false, transport: "iframe" };
+    for (let i = 0; i < tickets.length; i++) {
+      const blob = await buildTicketsPdfBlob([tickets[i]], accountName);
+      lastResult = await printPdfBlob(blob, buildFilename(1, i + 1));
+      if (!lastResult.ok && lastResult.transport === "download") {
+        // Wenn der erste Bon schon nicht direkt gedruckt werden konnte,
+        // brechen wir ab statt N Downloads zu erzeugen.
+        return lastResult;
+      }
+      if (i < tickets.length - 1) {
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+    return lastResult;
   }
 
   const blob = await buildTicketsPdfBlob(tickets, accountName);

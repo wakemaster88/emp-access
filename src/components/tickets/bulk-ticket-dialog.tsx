@@ -32,7 +32,13 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { printTicketsBulk, type PrintableTicket, type PrintResult } from "@/lib/print-tickets";
+import {
+  printTicketsBulk,
+  type PrintableTicket,
+  type PrintResult,
+  type PrintMode,
+} from "@/lib/print-tickets";
+import { Scissors } from "lucide-react";
 
 interface Area {
   id: number;
@@ -87,6 +93,17 @@ export function BulkTicketDialog({
   const [error, setError] = useState<string>("");
   const [doneCount, setDoneCount] = useState<number | null>(null);
   const [printResult, setPrintResult] = useState<PrintResult | null>(null);
+  const [cutPerTicket, setCutPerTicket] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("bulk-cut-per-ticket") === "1";
+  });
+
+  function toggleCutPerTicket(v: boolean) {
+    setCutPerTicket(v);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bulk-cut-per-ticket", v ? "1" : "0");
+    }
+  }
 
   const allOptions = useMemo(
     () => [
@@ -183,8 +200,13 @@ export function BulkTicketDialog({
       setDoneCount(tickets.length);
 
       if (opts.print && tickets.length > 0) {
+        const mode: PrintMode = cutPerTicket ? "perTicket" : "combined";
         try {
-          const result = await printTicketsBulk(tickets, accountName ?? "EMP Access");
+          const result = await printTicketsBulk(
+            tickets,
+            accountName ?? "EMP Access",
+            { mode },
+          );
           setPrintResult(result);
         } catch (e) {
           setPrintResult({
@@ -360,6 +382,36 @@ export function BulkTicketDialog({
               </Select>
             </div>
           )}
+
+          <label
+            htmlFor="bulk-cut-mode"
+            className={cn(
+              "flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors",
+              cutPerTicket
+                ? "border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30"
+                : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40",
+            )}
+          >
+            <input
+              id="bulk-cut-mode"
+              type="checkbox"
+              checked={cutPerTicket}
+              onChange={(e) => toggleCutPerTicket(e.target.checked)}
+              disabled={loading}
+              className="mt-0.5 h-4 w-4 accent-indigo-600"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <Scissors className="h-3.5 w-3.5 text-indigo-600" />
+                Nach jedem Ticket schneiden
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Druckt jeden Bon als eigenen Druckjob – der Bondrucker schneidet
+                garantiert dazwischen. Achtung: der Druckdialog kann pro Bon
+                erscheinen.
+              </p>
+            </div>
+          </label>
 
           {error && (
             <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">

@@ -20,12 +20,14 @@ import {
   ExternalLink,
   Layers,
   Inbox,
+  Scissors,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   printTicketsBulk,
   type PrintableTicket,
   type PrintResult,
+  type PrintMode,
 } from "@/lib/print-tickets";
 
 interface BulkOverview {
@@ -131,6 +133,17 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
     bulkId: string;
     result: PrintResult;
   } | null>(null);
+  const [cutPerTicket, setCutPerTicket] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("bulk-cut-per-ticket") === "1";
+  });
+
+  function toggleCutPerTicket(v: boolean) {
+    setCutPerTicket(v);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bulk-cut-per-ticket", v ? "1" : "0");
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -184,7 +197,12 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
         });
         return;
       }
-      const result = await printTicketsBulk(tickets, accountName ?? "EMP Access");
+      const mode: PrintMode = cutPerTicket ? "perTicket" : "combined";
+      const result = await printTicketsBulk(
+        tickets,
+        accountName ?? "EMP Access",
+        { mode },
+      );
       setPrintResult({ bulkId: bulk.id, result });
     } catch (e) {
       setPrintResult({
@@ -257,6 +275,31 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
             </div>
           )}
 
+          {!loading && !error && bulks.length > 0 && (
+            <label
+              htmlFor="reprint-cut-mode"
+              className={cn(
+                "mb-3 flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors text-xs",
+                cutPerTicket
+                  ? "border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30"
+                  : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40",
+              )}
+            >
+              <input
+                id="reprint-cut-mode"
+                type="checkbox"
+                checked={cutPerTicket}
+                onChange={(e) => toggleCutPerTicket(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 accent-indigo-600"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <Scissors className="h-3 w-3 text-indigo-600" />
+                  Nach jedem Ticket schneiden (eigener Druckjob pro Bon)
+                </p>
+              </div>
+            </label>
+          )}
           {!loading && !error && bulks.length > 0 && (
             <ul className="space-y-3 pb-2">
               {bulks.map((b) => {
