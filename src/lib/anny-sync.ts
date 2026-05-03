@@ -26,6 +26,7 @@ interface BookingGroup {
   customerName: string;
   firstName: string;
   lastName: string;
+  email: string | null;
   birthDate: Date | null;
   serviceName: string | null;
   resourceName: string | null;
@@ -68,6 +69,7 @@ interface PlanSubscription {
     full_name?: string;
     given_name?: string;
     family_name?: string;
+    email?: string;
     birth_date?: string;
   };
 }
@@ -200,7 +202,7 @@ function ticketChanged(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   incoming: Record<string, any>,
 ): boolean {
-  const keys = ["name", "firstName", "lastName", "ticketTypeName", "barcode",
+  const keys = ["name", "firstName", "lastName", "email", "ticketTypeName", "barcode",
     "status", "accessAreaId", "subscriptionId", "serviceId", "qrCode"];
   for (const k of keys) {
     if ((incoming[k] ?? null) !== (existing[k] ?? null)) return true;
@@ -496,6 +498,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         customerName,
         firstName: customer?.given_name ?? customer?.first_name ?? nameParts[0] ?? "",
         lastName: customer?.family_name ?? customer?.last_name ?? nameParts.slice(1).join(" ") ?? "",
+        email: customer?.email?.trim() || null,
         birthDate: customer?.birth_date ? new Date(customer.birth_date) : null,
         serviceName,
         resourceName,
@@ -696,6 +699,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       name: group.customerName || `Buchung ${group.entries[0].id}`,
       firstName: group.firstName || null,
       lastName: group.lastName || null,
+      email: group.email,
       birthDate: group.birthDate,
       startDate: group.startDate,
       endDate: group.endDate,
@@ -819,6 +823,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     const customerName = ps.customer?.full_name ?? "";
     const firstName = ps.customer?.given_name ?? customerName.split(/\s+/)[0] ?? "";
     const lastName = ps.customer?.family_name ?? customerName.split(/\s+/).slice(1).join(" ") ?? "";
+    const email = ps.customer?.email?.trim() || null;
 
     const startDate = ps.starts_at ? new Date(ps.starts_at) : null;
     const endDate = calcSubscriptionEndDate(ps, startDate, planName, subscriptionId, subDefaultEndDate);
@@ -828,6 +833,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       name: customerName || `Abo ${ps.id ?? ""}`,
       firstName: firstName || null,
       lastName: lastName || null,
+      email,
       birthDate,
       startDate,
       endDate,
