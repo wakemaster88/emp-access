@@ -21,7 +21,26 @@ import {
   TrendingUp,
   Ticket,
   RefreshCw,
+  Activity,
+  PieChart as PieChartIcon,
+  BarChart3,
+  Smartphone,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+  Legend,
+} from "recharts";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 
@@ -92,6 +111,30 @@ interface AnnySyncStatus {
   total?: number;
 }
 
+interface HourlyBucket {
+  hour: string;
+  granted: number;
+  denied: number;
+  total: number;
+}
+
+interface WeekTrendDay {
+  date: string;
+  dayName: string;
+  scans: number;
+  granted: number;
+  denied: number;
+  tickets: number;
+}
+
+interface TopDevice {
+  id: number;
+  name: string;
+  granted: number;
+  denied: number;
+  total: number;
+}
+
 interface DashboardData {
   date: string;
   scansToday: number;
@@ -104,6 +147,12 @@ interface DashboardData {
   unassigned: AreaData;
   subscriptions: TicketEntry[];
   services: TicketEntry[];
+  scanResults: { granted: number; denied: number; protected: number };
+  grantRate: number;
+  peakHour: { hour: string; count: number } | null;
+  hourly: HourlyBucket[];
+  weekTrend: WeekTrendDay[];
+  topDevices: TopDevice[];
   annySyncStatus?: AnnySyncStatus | null;
 }
 
@@ -186,6 +235,228 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
         )}
       />
     </div>
+  );
+}
+
+const CHART_TOOLTIP_STYLE = {
+  backgroundColor: "#1e293b",
+  border: "none",
+  borderRadius: "8px",
+  fontSize: "12px",
+  color: "#e2e8f0",
+  padding: "6px 10px",
+};
+
+function HourlyChart({ data, peakHour }: { data: HourlyBucket[]; peakHour: { hour: string; count: number } | null }) {
+  const total = data.reduce((s, b) => s + b.total, 0);
+  return (
+    <Card className="py-0 gap-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+          <BarChart3 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+          Scan-Verlauf (Tag)
+        </span>
+        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Erlaubt
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-rose-400" /> Abgelehnt
+          </span>
+        </div>
+      </div>
+      <div className="px-3 pt-3 pb-2">
+        {total === 0 ? (
+          <p className="py-10 text-center text-xs text-slate-400">Keine Scans an diesem Tag.</p>
+        ) : (
+          <>
+            <div className="h-[180px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis
+                    dataKey="hour"
+                    tick={{ fontSize: 9, fill: "#94a3b8" }}
+                    tickLine={false}
+                    axisLine={false}
+                    interval={2}
+                  />
+                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: "rgba(99, 102, 241, 0.08)" }} />
+                  <Bar dataKey="granted" name="Erlaubt" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="denied" name="Abgelehnt" stackId="a" fill="#f87171" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {peakHour && (
+              <p className="text-[10px] text-slate-500 mt-1 text-center">
+                Spitze um <span className="font-semibold text-slate-700 dark:text-slate-300">{peakHour.hour}</span> mit {peakHour.count} Scans
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function ScanResultDonut({ results }: { results: { granted: number; denied: number; protected: number } }) {
+  const total = results.granted + results.denied + results.protected;
+  const data = [
+    { name: "Erlaubt", value: results.granted, color: "#10b981" },
+    { name: "Abgelehnt", value: results.denied, color: "#f87171" },
+    { name: "Geschützt", value: results.protected, color: "#fbbf24" },
+  ].filter((d) => d.value > 0);
+
+  return (
+    <Card className="py-0 gap-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+          <PieChartIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+          Scan-Ergebnisse
+        </span>
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{total}</Badge>
+      </div>
+      <div className="px-3 pt-3 pb-2">
+        {total === 0 ? (
+          <p className="py-10 text-center text-xs text-slate-400">Noch keine Scans an diesem Tag.</p>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="h-[160px] w-[160px] shrink-0 relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2}>
+                    {data.map((d) => <Cell key={d.name} fill={d.color} />)}
+                  </Pie>
+                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-none">{total}</span>
+                <span className="text-[10px] text-slate-400 mt-0.5">Scans</span>
+              </div>
+            </div>
+            <div className="flex-1 space-y-1.5 min-w-0">
+              {data.map((d) => {
+                const pct = Math.round((d.value / total) * 100);
+                return (
+                  <div key={d.name} className="flex items-center gap-2 min-w-0">
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                    <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1">{d.name}</span>
+                    <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{d.value}</span>
+                    <span className="text-[10px] text-slate-400 tabular-nums w-8 text-right">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function WeekTrendChart({ data, selectedDate }: { data: WeekTrendDay[]; selectedDate: string }) {
+  const totalScans = data.reduce((s, d) => s + d.scans, 0);
+  const totalTickets = data.reduce((s, d) => s + d.tickets, 0);
+  return (
+    <Card className="py-0 gap-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+          <Activity className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+          7-Tage-Trend
+        </span>
+        <div className="flex items-center gap-3 text-[10px] text-slate-500">
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-indigo-500" /> Scans
+            <span className="text-slate-700 dark:text-slate-300 font-semibold ml-0.5 tabular-nums">{totalScans}</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Neue Tickets
+            <span className="text-slate-700 dark:text-slate-300 font-semibold ml-0.5 tabular-nums">{totalTickets}</span>
+          </span>
+        </div>
+      </div>
+      <div className="px-3 pt-3 pb-2">
+        {totalScans === 0 && totalTickets === 0 ? (
+          <p className="py-10 text-center text-xs text-slate-400">Keine Aktivität in den letzten 7 Tagen.</p>
+        ) : (
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={data} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="scansGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="ticketsGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis
+                  dataKey="dayName"
+                  tickFormatter={(value: string, index: number) => {
+                    const isSelected = data[index]?.date === selectedDate;
+                    return isSelected ? `▸${value}` : value;
+                  }}
+                  tick={{ fontSize: 10, fill: "#94a3b8" }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                <Area type="monotone" dataKey="scans" name="Scans" stroke="#6366f1" strokeWidth={2} fill="url(#scansGradient)" />
+                <Area type="monotone" dataKey="tickets" name="Neue Tickets" stroke="#10b981" strokeWidth={2} fill="url(#ticketsGradient)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
+  const max = devices.reduce((m, d) => Math.max(m, d.total), 0);
+  return (
+    <Card className="py-0 gap-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+          <Smartphone className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+          Top-Geräte heute
+        </span>
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{devices.length}</Badge>
+      </div>
+      <div className="px-3 pt-2 pb-2 space-y-2">
+        {devices.length === 0 ? (
+          <p className="py-8 text-center text-xs text-slate-400">Noch keine Scans an diesem Tag.</p>
+        ) : (
+          devices.map((d) => {
+            const grantedPct = max > 0 ? (d.granted / max) * 100 : 0;
+            const deniedPct = max > 0 ? (d.denied / max) * 100 : 0;
+            const rate = d.total > 0 ? Math.round((d.granted / d.total) * 100) : 0;
+            return (
+              <div key={d.id} className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="font-medium text-slate-700 dark:text-slate-300 truncate flex-1 min-w-0">{d.name}</span>
+                  <span className="text-slate-400 tabular-nums">{d.total}</span>
+                  <span className={cn(
+                    "tabular-nums w-10 text-right font-semibold",
+                    rate >= 90 ? "text-emerald-500" : rate >= 70 ? "text-amber-500" : "text-rose-500",
+                  )}>{rate}%</span>
+                </div>
+                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                  <div className="bg-emerald-500 h-full" style={{ width: `${grantedPct}%` }} />
+                  <div className="bg-rose-400 h-full" style={{ width: `${deniedPct}%` }} />
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -526,38 +797,62 @@ export function DashboardClient() {
       </div>
 
       {/* Stat cards */}
-      {!loading && data && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="py-3 px-4 gap-0">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Tickets</span>
-              <Ticket className="h-3.5 w-3.5 text-indigo-500" />
-            </div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{totalTickets}</p>
-          </Card>
-          <Card className="py-3 px-4 gap-0">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Scans</span>
-              <ScanLine className="h-3.5 w-3.5 text-sky-500" />
-            </div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{data.scansToday}</p>
-          </Card>
-          <Card className="py-3 px-4 gap-0">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Eingecheckt</span>
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-            </div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{data.checkedInCount}</p>
-          </Card>
-          <Card className="py-3 px-4 gap-0">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Geräte</span>
-              <Wifi className="h-3.5 w-3.5 text-amber-500" />
-            </div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">{data.activeDevices}</p>
-          </Card>
-        </div>
-      )}
+      {!loading && data && (() => {
+        const noShowCount = Math.max(0, totalTickets - data.checkedInCount);
+        const checkInRate = totalTickets > 0 ? Math.round((data.checkedInCount / totalTickets) * 100) : 0;
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card className="py-3 px-4 gap-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Tickets</span>
+                <Ticket className="h-3.5 w-3.5 text-indigo-500" />
+              </div>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{totalTickets}</p>
+              {totalTickets > 0 && (
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {noShowCount > 0 ? <><span className="text-rose-500 font-medium">{noShowCount}</span> No-Show</> : "Alle eingecheckt"}
+                </p>
+              )}
+            </Card>
+            <Card className="py-3 px-4 gap-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Scans</span>
+                <ScanLine className="h-3.5 w-3.5 text-sky-500" />
+              </div>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{data.scansToday}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {data.scansToday > 0 ? (
+                  <><span className="text-emerald-500 font-medium">{data.grantRate}%</span> Erfolgsrate</>
+                ) : "Keine Scans"}
+              </p>
+            </Card>
+            <Card className="py-3 px-4 gap-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Eingecheckt</span>
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              </div>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{data.checkedInCount}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {totalTickets > 0 ? (
+                  <><span className="font-medium text-slate-500">{checkInRate}%</span> der Tickets</>
+                ) : data.peakHour ? (
+                  <>Spitze {data.peakHour.hour}</>
+                ) : "—"}
+              </p>
+            </Card>
+            <Card className="py-3 px-4 gap-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Geräte</span>
+                <Wifi className="h-3.5 w-3.5 text-amber-500" />
+              </div>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{data.activeDevices}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {data.peakHour ? <>Spitze {data.peakHour.hour} ({data.peakHour.count})</> : "online"}
+              </p>
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* ANNY Sync Status */}
       {!loading && data?.annySyncStatus && (() => {
@@ -628,6 +923,26 @@ export function DashboardClient() {
           </div>
         );
       })()}
+
+      {/* Charts: Stundenverlauf + Scan-Ergebnisse */}
+      {!loading && data && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2">
+            <HourlyChart data={data.hourly} peakHour={data.peakHour} />
+          </div>
+          <ScanResultDonut results={data.scanResults} />
+        </div>
+      )}
+
+      {/* 7-Tage-Trend + Top-Geräte */}
+      {!loading && data && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2">
+            <WeekTrendChart data={data.weekTrend} selectedDate={data.date} />
+          </div>
+          <TopDevicesCard devices={data.topDevices} />
+        </div>
+      )}
 
       {/* Abos & Services: separate Bereiche, unabhängig von Tages-Areas */}
       {!loading && data && (data.subscriptions.length > 0 || data.services.length > 0) && (

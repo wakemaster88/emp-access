@@ -46,6 +46,11 @@ export async function GET(request: NextRequest) {
   const d = String(dayStart.getDate()).padStart(2, "0");
   const dateStr = `${y}-${m}-${d}`;
 
+  // 7-Tage-Trend: dayStart - 6 Tage bis dayEnd
+  const weekStart = new Date(dayStart);
+  weekStart.setDate(weekStart.getDate() - 6);
+  weekStart.setHours(0, 0, 0, 0);
+
   const dayActiveFilter = {
     status: { in: ["VALID", "REDEEMED"] as ("VALID" | "REDEEMED")[] },
     OR: [
@@ -82,7 +87,7 @@ export async function GET(request: NextRequest) {
     rfidCode: true,
   };
 
-  const [areas, scansToday, unassignedTickets, subscriptionTickets, serviceTickets, annyConfig, recentScans, checkedInToday, newTicketsToday, activeDevices] = await Promise.all([
+  const [areas, dayScans, unassignedTickets, subscriptionTickets, serviceTickets, annyConfig, recentScans, checkedInToday, newTicketsToday, activeDevices, weekScans, weekTickets, devicesAll] = await Promise.all([
     db.accessArea.findMany({
       where: { ...where, showOnDashboard: true },
       select: {
@@ -99,8 +104,9 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { name: "asc" },
     }),
-    db.scan.count({
+    db.scan.findMany({
       where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
+      select: { scanTime: true, result: true, deviceId: true },
     }),
     db.ticket.findMany({
       where: { ...where, accessAreaId: null, subscriptionId: null, serviceId: null, ...dayActiveFilter },
@@ -164,6 +170,18 @@ export async function GET(request: NextRequest) {
     }),
     db.device.count({
       where: { ...where, isActive: true, lastUpdate: { gte: new Date(Date.now() - 5 * 60_000) } },
+    }),
+    db.scan.findMany({
+      where: { ...where, scanTime: { gte: weekStart, lte: dayEnd } },
+      select: { scanTime: true, result: true },
+    }),
+    db.ticket.findMany({
+      where: { ...where, createdAt: { gte: weekStart, lte: dayEnd } },
+      select: { createdAt: true },
+    }),
+    db.device.findMany({
+      where: { ...where },
+      select: { id: true, name: true },
     }),
   ]);
 
@@ -362,6 +380,82 @@ export async function GET(request: NextRequest) {
   const enrichedSubscriptions = subscriptionTickets.map(enrichTicket);
   const enrichedServices = serviceTickets.map(enrichTicket);
 
+  // Stundenverlauf für den gewählten Tag (24 Buckets)
+  const hourly = Array.from({ length: 24 }, (_, h) => ({
+    hour: `${String(h).padStart(2, "0")}:00`,
+    granted: 0,
+    denied: 0,
+    total: 0,
+  }));
+  let scanGranted = 0;
+  let scanDenied = 0;
+  let scanProtected = 0;
+  const deviceCounts = new Map<number, { granted: number; denied: number; total: number }>();
+  for (const s of dayScans) {
+    const h = new Date(s.scanTime).getHours();
+    const bucket = hourly[h];
+    bucket.total++;
+    if (s.result === "GRANTED") {
+      bucket.granted++;
+      scanGranted++;
+    } else if (s.result === "DENIED") {
+      bucket.denied++;
+      scanDenied++;
+    } else {
+      scanProtected++;
+    }
+    if (s.deviceId != null) {
+      const cur = deviceCounts.get(s.deviceId) || { granted: 0, denied: 0, total: 0 };
+      cur.total++;
+      if (s.result === "GRANTED") cur.granted++;
+      else if (s.result === "DENIED") cur.denied++;
+      deviceCounts.set(s.deviceId, cur);
+    }
+  }
+  const peakHour = hourly.reduce<{ hour: string; total: number } | null>((best, b) => {
+    if (b.total > 0 && (!best || b.total > best.total)) return { hour: b.hour, total: b.total };
+    return best;
+  }, null);
+  const grantRate = dayScans.length > 0 ? Math.round((scanGranted / dayScans.length) * 100) : 0;
+
+  // Top-Geräte heute
+  const deviceNameById = new Map(devicesAll.map((d) => [d.id, d.name]));
+  const topDevices = [...deviceCounts.entries()]
+    .map(([id, c]) => ({ id, name: deviceNameById.get(id) || `Gerät ${id}`, ...c }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
+
+  // 7-Tage-Trend: Scans + neue Tickets pro Tag
+  function dayKey(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const weekTrend: { date: string; dayName: string; scans: number; granted: number; denied: number; tickets: number }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    weekTrend.push({
+      date: dayKey(d),
+      dayName: d.toLocaleDateString("de-DE", { weekday: "short" }),
+      scans: 0,
+      granted: 0,
+      denied: 0,
+      tickets: 0,
+    });
+  }
+  const weekIdxByDate = new Map(weekTrend.map((t, i) => [t.date, i]));
+  for (const s of weekScans) {
+    const idx = weekIdxByDate.get(dayKey(new Date(s.scanTime)));
+    if (idx == null) continue;
+    weekTrend[idx].scans++;
+    if (s.result === "GRANTED") weekTrend[idx].granted++;
+    else if (s.result === "DENIED") weekTrend[idx].denied++;
+  }
+  for (const t of weekTickets) {
+    const idx = weekIdxByDate.get(dayKey(new Date(t.createdAt)));
+    if (idx == null) continue;
+    weekTrend[idx].tickets++;
+  }
+
   let annySyncStatus: { lastSync: string | null; created?: number; updated?: number; errors?: number; errorDetails?: string[]; total?: number } | null = null;
   if (annyConfig) {
     try {
@@ -382,10 +476,16 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     date: dateStr,
-    scansToday,
+    scansToday: dayScans.length,
     checkedInCount: checkedInToday.length,
     newTicketsCount: newTicketsToday.length,
     activeDevices,
+    scanResults: { granted: scanGranted, denied: scanDenied, protected: scanProtected },
+    grantRate,
+    peakHour: peakHour ? { hour: peakHour.hour, count: peakHour.total } : null,
+    hourly,
+    weekTrend,
+    topDevices,
     annySyncStatus,
     recentScans: recentScans.map((s) => ({
       id: s.id,
