@@ -2059,6 +2059,34 @@ function AddTicketOverlay({
       payload.accessAreaId = Number(accessAreaId);
     }
 
+    // Fallback: aktuellen Tag als Datum setzen, wenn kein Datum aus
+    // Service-/Subscription-Defaults gekommen ist. So ist das Ticket
+    // automatisch fuer "heute" gueltig, statt ohne Datum erstellt zu
+    // werden (was im Shop Monitor sonst gar nicht mehr angezeigt wird).
+    const now = new Date();
+    const dayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0, 0, 0, 0,
+    );
+    const dayEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23, 59, 59, 999,
+    );
+    const isDuration = payload.validityType === "DURATION";
+    if (!payload.startDate) {
+      payload.startDate = dayStart.toISOString();
+    }
+    if (!payload.endDate && !isDuration) {
+      payload.endDate = dayEnd.toISOString();
+    }
+    if (!payload.validityType) {
+      payload.validityType = "DATE_RANGE";
+    }
+
     try {
       const res = await postTicketWithRetry(token, payload);
 
