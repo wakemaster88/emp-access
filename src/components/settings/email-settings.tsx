@@ -1150,12 +1150,14 @@ function RuleDialog({
 
   const showVoucherFields = createVoucher;
   const renewUrlLabel =
-    trigger === "SUBSCRIPTION_EXPIRING" || trigger === "SUBSCRIPTION_EXPIRED"
-      ? "Verlängerungs-Link"
-      : "CTA-Link";
+    trigger === "SUBSCRIPTION_EXPIRING"
+      ? "Buchungs-Link für das neue Jahresabo"
+      : trigger === "SUBSCRIPTION_EXPIRED"
+        ? "Wiedereinstiegs-Link"
+        : "CTA-Link";
   const renewUrlHelper =
     trigger === "SUBSCRIPTION_EXPIRING"
-      ? "Wird im Template als {{renewUrl}} eingesetzt – z. B. dein Abo-Verlängerungs-Flow."
+      ? "Wird im Template als {{renewUrl}} eingesetzt – Ziel ist die Buchungsseite des Jahresabos (technisch wird neu gebucht, nicht klick-verlängert)."
       : trigger === "SUBSCRIPTION_EXPIRED"
         ? "Wird im Template als {{renewUrl}} eingesetzt – idealerweise Wiedereinstiegs-Seite."
         : trigger === "DAY_VISIT_FOLLOWUP"

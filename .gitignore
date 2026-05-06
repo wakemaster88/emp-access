@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+/tmp
 
 # old project
 /emp-access-alt
