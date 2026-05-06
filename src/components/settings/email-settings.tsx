@@ -38,6 +38,11 @@ import {
   PlayCircle,
   TestTube2,
   X,
+  History,
+  AlertTriangle,
+  FlaskConical,
+  RefreshCw,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PRESET_TEMPLATES, type PresetTemplate } from "@/lib/email-templates";
@@ -256,6 +261,8 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
         </Card>
       )}
 
+      {config && <EmailHistoryCard rules={rules ?? []} />}
+
       <PresetPickerDialog
         open={presetPickerOpen}
         onOpenChange={setPresetPickerOpen}
@@ -279,6 +286,322 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
         }}
       />
     </div>
+  );
+}
+
+// ── History Card ─────────────────────────────────────────────────────────────
+
+interface EmailSendDTO {
+  id: number;
+  to: string;
+  subject: string;
+  status: "SENT" | "FAILED" | "TEST" | string;
+  errorMessage: string | null;
+  sentAt: string;
+  rule: { id: number; name: string; trigger: RuleTrigger } | null;
+  ticket: {
+    id: number;
+    firstName: string | null;
+    lastName: string | null;
+    name: string | null;
+    email: string | null;
+    ticketTypeName: string | null;
+  } | null;
+  voucher: { id: number; code: string } | null;
+}
+
+type StatusFilter = "ALL" | "SENT" | "FAILED" | "TEST";
+
+function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
+  const [sends, setSends] = useState<EmailSendDTO[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [ruleFilter, setRuleFilter] = useState<string>("ALL");
+  const [search, setSearch] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setSearchDebounced(search.trim()), 280);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  const buildQuery = (cursor: number | null) => {
+    const params = new URLSearchParams();
+    params.set("limit", "50");
+    if (cursor) params.set("cursor", String(cursor));
+    if (statusFilter !== "ALL") params.set("status", statusFilter);
+    if (ruleFilter !== "ALL") params.set("ruleId", ruleFilter);
+    if (searchDebounced) params.set("q", searchDebounced);
+    return params.toString();
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/email/sends?${buildQuery(null)}`);
+        if (!res.ok) {
+          if (!cancelled) setSends([]);
+          return;
+        }
+        const data = (await res.json()) as {
+          sends: EmailSendDTO[];
+          nextCursor: number | null;
+          hasMore: boolean;
+        };
+        if (!cancelled) {
+          setSends(data.sends);
+          setNextCursor(data.nextCursor);
+          setHasMore(data.hasMore);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, ruleFilter, searchDebounced]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(`/api/email/sends?${buildQuery(nextCursor)}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        sends: EmailSendDTO[];
+        nextCursor: number | null;
+        hasMore: boolean;
+      };
+      setSends((prev) => [...(prev ?? []), ...data.sends]);
+      setNextCursor(data.nextCursor);
+      setHasMore(data.hasMore);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/email/sends?${buildQuery(null)}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        sends: EmailSendDTO[];
+        nextCursor: number | null;
+        hasMore: boolean;
+      };
+      setSends(data.sends);
+      setNextCursor(data.nextCursor);
+      setHasMore(data.hasMore);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card className="border-slate-200 dark:border-slate-800">
+      <CardContent className="pt-5 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-slate-500" />
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Mail-Historie</h3>
+              <p className="text-xs text-slate-500">
+                Wer hat wann welche Mail bekommen – inkl. Cron, manuell ausgeloester Sends und Tests.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refresh}
+            disabled={loading}
+            className="gap-1.5 shrink-0"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Aktualisieren
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="E-Mail, Name oder Betreff…"
+              className="pl-8 h-9 text-sm"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                aria-label="Suche leeren"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+            <SelectTrigger className="h-9 w-[140px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Alle Status</SelectItem>
+              <SelectItem value="SENT">Versendet</SelectItem>
+              <SelectItem value="FAILED">Fehler</SelectItem>
+              <SelectItem value="TEST">Test</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={ruleFilter} onValueChange={setRuleFilter}>
+            <SelectTrigger className="h-9 w-[200px] text-sm">
+              <SelectValue placeholder="Alle Regeln" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Alle Regeln</SelectItem>
+              {rules.map((r) => (
+                <SelectItem key={r.id} value={String(r.id)}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {loading && sends == null ? (
+          <div className="py-6 text-center text-sm text-slate-400">
+            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+          </div>
+        ) : sends && sends.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-6 text-center">
+            <Mail className="h-7 w-7 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Noch keine Sends</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Sobald der Cron oder ein Test eine Mail verschickt, taucht sie hier auf.
+            </p>
+          </div>
+        ) : (
+          <>
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+              {sends?.map((s) => <EmailSendRow key={s.id} send={s} />)}
+            </ul>
+            {hasMore && (
+              <div className="text-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="gap-1.5"
+                >
+                  {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Mehr laden
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === "SENT") {
+    return (
+      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 gap-1 font-medium">
+        <CheckCircle2 className="h-3 w-3" />
+        Versendet
+      </Badge>
+    );
+  }
+  if (status === "FAILED") {
+    return (
+      <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 gap-1 font-medium">
+        <AlertTriangle className="h-3 w-3" />
+        Fehler
+      </Badge>
+    );
+  }
+  if (status === "TEST") {
+    return (
+      <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 gap-1 font-medium">
+        <FlaskConical className="h-3 w-3" />
+        Test
+      </Badge>
+    );
+  }
+  return <Badge variant="outline">{status}</Badge>;
+}
+
+function EmailSendRow({ send }: { send: EmailSendDTO }) {
+  const dt = new Date(send.sentAt);
+  const dateLabel = dt.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const recipientName =
+    [send.ticket?.firstName, send.ticket?.lastName].filter(Boolean).join(" ") ||
+    send.ticket?.name ||
+    null;
+
+  return (
+    <li className="px-4 py-3 bg-white dark:bg-slate-950 hover:bg-slate-50/60 dark:hover:bg-slate-900/40 transition-colors">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatusBadge status={send.status} />
+            <span className="text-xs text-slate-500 inline-flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {dateLabel}
+            </span>
+            {send.rule && (
+              <span className="text-xs text-slate-500 inline-flex items-center gap-1 truncate max-w-[200px]">
+                · {send.rule.name}
+              </span>
+            )}
+          </div>
+          <div className="mt-1.5 text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+            {send.subject}
+          </div>
+          <div className="mt-0.5 text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
+            <Mail className="h-3 w-3 shrink-0" />
+            <span className="truncate">
+              {recipientName ? (
+                <>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">{recipientName}</span>
+                  <span className="text-slate-400"> · {send.to}</span>
+                </>
+              ) : (
+                send.to
+              )}
+            </span>
+            {send.voucher && (
+              <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-mono">
+                <GiftIcon className="h-3 w-3" />
+                {send.voucher.code}
+              </span>
+            )}
+          </div>
+          {send.status === "FAILED" && send.errorMessage && (
+            <div className="mt-1.5 text-xs text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-md px-2 py-1">
+              {send.errorMessage}
+            </div>
+          )}
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -1168,7 +1491,15 @@ function RuleDialog({
   const variableHints = useMemo(() => {
     const base = ["{{firstName}}", "{{lastName}}", "{{accountName}}"];
     if (trigger === "SUBSCRIPTION_EXPIRING" || trigger === "SUBSCRIPTION_EXPIRED") {
-      base.push("{{subscriptionName}}", "{{endDate}}", "{{daysUntilExpiry}}");
+      base.push(
+        "{{subscriptionName}}",
+        "{{endDate}}",
+        "{{daysUntilExpiry}}",
+        "{{expiryHeadline}}",
+        "{{expiryStatLabel}}",
+        "{{expiryStatValue}}",
+        "{{expiryStatSublabel}}",
+      );
     }
     if (trigger === "DAY_VISIT_FOLLOWUP") base.push("{{daysSinceVisit}}", "{{ticketTypeName}}");
     if (trigger === "TICKET_WELCOME") base.push("{{ticketTypeName}}");

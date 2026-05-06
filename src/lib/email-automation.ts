@@ -12,6 +12,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail, type EmailProvider } from "@/lib/email-sender";
 import {
+  computeExpiryStatus,
   renderTemplate,
   wrapEmailHtml,
   type TemplateVariables,
@@ -215,9 +216,14 @@ function buildTemplateVars(args: {
   const { candidate, accountName, rule, voucher, brand } = args;
   const t = candidate.ticket;
   const fullName = [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
-  const daysUntilExpiry = candidate.triggerDate
-    ? Math.round((startOfDay(candidate.triggerDate).getTime() - startOfDay(new Date()).getTime()) / MS_PER_DAY)
+  const rawDaysUntilExpiry = t.endDate
+    ? Math.round((startOfDay(t.endDate).getTime() - startOfDay(new Date()).getTime()) / MS_PER_DAY)
     : null;
+  const formattedEndDate = fmtDate(t.endDate);
+  const expiry = computeExpiryStatus({
+    rawDaysUntilExpiry,
+    formattedEndDate,
+  });
   return {
     firstName: t.firstName ?? fullName.split(" ")[0] ?? "",
     lastName: t.lastName ?? "",
@@ -226,9 +232,9 @@ function buildTemplateVars(args: {
     subscriptionName: t.subscription?.name ?? null,
     serviceName: t.service?.name ?? null,
     accountName,
-    endDate: fmtDate(t.endDate),
+    endDate: formattedEndDate,
     startDate: fmtDate(t.startDate),
-    daysUntilExpiry: daysUntilExpiry != null ? String(Math.max(0, daysUntilExpiry)) : null,
+    daysUntilExpiry: rawDaysUntilExpiry != null ? String(Math.max(0, rawDaysUntilExpiry)) : null,
     daysSinceVisit: String(diffDaysAbs(new Date(), candidate.triggerDate)),
     voucherCode: voucher?.code ?? null,
     voucherExpiresAt: voucher?.expiresAt ? fmtDate(voucher.expiresAt) : null,
@@ -238,6 +244,10 @@ function buildTemplateVars(args: {
     websiteUrl: brand?.website ?? null,
     brandColor: brand?.color ?? null,
     logoUrl: brand?.logo ?? null,
+    expiryStatLabel: expiry.statLabel,
+    expiryStatValue: expiry.statValue,
+    expiryStatSublabel: expiry.statSublabel,
+    expiryHeadline: expiry.headline,
   };
 }
 

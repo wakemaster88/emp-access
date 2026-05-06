@@ -12,6 +12,7 @@ import { join } from "node:path";
 import {
   PRESET_TEMPLATES,
   buildSampleTemplateVariables,
+  computeExpiryStatus,
   renderTemplate,
   wrapEmailHtml,
 } from "../src/lib/email-templates";
@@ -20,13 +21,21 @@ const ACCOUNT_NAME = "Tuttenbrocksee";
 const BRAND_COLOR = "#236770";
 const WEBSITE_URL = "https://www.tuttenbrocksee.com";
 
-function renderPreset(presetId: string): { id: string; subject: string; html: string } {
-  const preset = PRESET_TEMPLATES.find((p) => p.id === presetId);
-  if (!preset) throw new Error(`Preset not found: ${presetId}`);
+interface RenderInput {
+  id: string;
+  presetId: string;
+  daysOffsetOverride?: number;
+  expiryDaysOverride?: number;
+}
 
+function renderPreset(input: RenderInput): { id: string; subject: string; html: string } {
+  const preset = PRESET_TEMPLATES.find((p) => p.id === input.presetId);
+  if (!preset) throw new Error(`Preset not found: ${input.presetId}`);
+
+  const offset = input.daysOffsetOverride ?? preset.defaults.daysOffset;
   const vars = buildSampleTemplateVariables({
     trigger: preset.defaults.trigger,
-    daysOffset: preset.defaults.daysOffset,
+    daysOffset: offset,
     createVoucher: preset.defaults.createVoucher,
     voucherDiscountPercent: preset.defaults.voucherDiscountPercent ?? null,
     voucherValidDays: preset.defaults.voucherValidDays ?? null,
@@ -35,6 +44,24 @@ function renderPreset(presetId: string): { id: string; subject: string; html: st
     brandColor: BRAND_COLOR,
     websiteUrl: WEBSITE_URL,
   });
+
+  // Edge-Case-Override: simuliere "heute" oder "bereits abgelaufen", um die
+  // dynamischen expiry-Status-Variablen visuell zu pruefen.
+  if (input.expiryDaysOverride !== undefined && preset.defaults.trigger === "SUBSCRIPTION_EXPIRING") {
+    const today = new Date();
+    const endDate = new Date(today.getTime() + input.expiryDaysOverride * 86_400_000);
+    const fmt = endDate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const expiry = computeExpiryStatus({
+      rawDaysUntilExpiry: input.expiryDaysOverride,
+      formattedEndDate: fmt,
+    });
+    vars.endDate = fmt;
+    vars.daysUntilExpiry = String(Math.max(0, input.expiryDaysOverride));
+    vars.expiryStatLabel = expiry.statLabel;
+    vars.expiryStatValue = expiry.statValue;
+    vars.expiryStatSublabel = expiry.statSublabel;
+    vars.expiryHeadline = expiry.headline;
+  }
 
   const subject = renderTemplate(preset.defaults.subject, vars);
   const inner = renderTemplate(preset.defaults.bodyHtml, vars);
@@ -46,10 +73,14 @@ function renderPreset(presetId: string): { id: string; subject: string; html: st
     preheader: subject,
   });
 
-  return { id: preset.id, subject, html };
+  return { id: input.id, subject, html };
 }
 
-const renders = PRESET_TEMPLATES.map((p) => renderPreset(p.id));
+const renders: { id: string; subject: string; html: string }[] = [
+  ...PRESET_TEMPLATES.map((p) => renderPreset({ id: p.id, presetId: p.id })),
+  renderPreset({ id: "abo-expiring-7-today", presetId: "abo-expiring-7", expiryDaysOverride: 0 }),
+  renderPreset({ id: "abo-expiring-7-overdue", presetId: "abo-expiring-7", expiryDaysOverride: -3 }),
+];
 
 const outDir = join(process.cwd(), "tmp");
 mkdirSync(outDir, { recursive: true });

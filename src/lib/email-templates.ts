@@ -26,6 +26,66 @@ export interface TemplateVariables {
   websiteUrl?: string | null;
   brandColor?: string | null;
   logoUrl?: string | null;
+  /** Dynamische Statuszeile für die Stat-Card – hängt vom Abstand zum endDate ab. */
+  expiryStatLabel?: string | null;
+  expiryStatValue?: string | null;
+  expiryStatSublabel?: string | null;
+  /**
+   * Kurze Suffix-Phrase für die Headline, z. B.
+   *  - in Zukunft : "endet bald"
+   *  - heute      : "endet heute"
+   *  - vergangen  : "ist bereits abgelaufen"
+   */
+  expiryHeadline?: string | null;
+}
+
+/**
+ * Liefert eine konsistente, sprachlich korrekte Status-Anzeige für ein
+ * Abo-Ablaufdatum. `rawDaysUntilExpiry` darf negativ sein (Abo schon
+ * abgelaufen), 0 (endet heute) oder positiv (endet in der Zukunft).
+ */
+export function computeExpiryStatus(args: {
+  rawDaysUntilExpiry: number | null;
+  formattedEndDate: string | null;
+}): {
+  statLabel: string;
+  statValue: string;
+  statSublabel: string;
+  headline: string;
+} {
+  const days = args.rawDaysUntilExpiry;
+  const endDate = args.formattedEndDate ?? "";
+  if (days == null) {
+    return {
+      statLabel: "Endet",
+      statValue: "demnächst",
+      statSublabel: endDate ? `am ${endDate}` : "",
+      headline: "endet bald",
+    };
+  }
+  if (days > 0) {
+    return {
+      statLabel: "Noch",
+      statValue: `${days} ${days === 1 ? "Tag" : "Tage"}`,
+      statSublabel: endDate ? `bis zum ${endDate}` : "",
+      headline: "endet bald",
+    };
+  }
+  if (days === 0) {
+    return {
+      statLabel: "Endet",
+      statValue: "Heute",
+      statSublabel: endDate ? endDate : "",
+      headline: "endet heute",
+    };
+  }
+  const overdue = Math.abs(days);
+  return {
+    statLabel: "Abgelaufen seit",
+    statValue: `${overdue} ${overdue === 1 ? "Tag" : "Tagen"}`,
+    statSublabel: endDate ? `endete am ${endDate}` : "",
+    headline: "ist bereits abgelaufen",
+  };
 }
 
 /**
@@ -57,6 +117,19 @@ export function buildSampleTemplateVariables(args: {
     ? new Date(today.getTime() + args.voucherValidDays * 86_400_000)
     : new Date(today.getTime() + 60 * 86_400_000);
 
+  const sampleEndDate =
+    trig === "SUBSCRIPTION_EXPIRING"
+      ? futureDate
+      : trig === "SUBSCRIPTION_EXPIRED"
+        ? pastDate
+        : futureDate;
+  const sampleRawDays =
+    trig === "SUBSCRIPTION_EXPIRING" ? offset : trig === "SUBSCRIPTION_EXPIRED" ? -offset : null;
+  const expiry = computeExpiryStatus({
+    rawDaysUntilExpiry: sampleRawDays,
+    formattedEndDate: fmt(sampleEndDate),
+  });
+
   return {
     firstName: "Max",
     lastName: "Mustermann",
@@ -65,9 +138,14 @@ export function buildSampleTemplateVariables(args: {
     subscriptionName: "Premium-Abo",
     serviceName: trig === "DAY_VISIT_FOLLOWUP" ? "Tagesgast" : null,
     accountName: args.accountName || "EMP Access",
-    endDate: trig === "SUBSCRIPTION_EXPIRING" ? fmt(futureDate) : trig === "SUBSCRIPTION_EXPIRED" ? fmt(pastDate) : fmt(futureDate),
+    endDate: fmt(sampleEndDate),
     startDate: fmt(new Date(today.getTime() - 365 * 86_400_000)),
-    daysUntilExpiry: trig === "SUBSCRIPTION_EXPIRING" ? String(offset) : "0",
+    daysUntilExpiry:
+      trig === "SUBSCRIPTION_EXPIRING"
+        ? String(Math.max(0, offset))
+        : trig === "SUBSCRIPTION_EXPIRED"
+          ? "0"
+          : "0",
     daysSinceVisit: trig === "DAY_VISIT_FOLLOWUP" ? String(offset) : "0",
     voucherCode: args.createVoucher ? "EMP-A1B2C3D4" : null,
     voucherUrl: args.createVoucher ? "https://emp-access/voucher/EMP-A1B2C3D4" : null,
@@ -82,6 +160,10 @@ export function buildSampleTemplateVariables(args: {
     websiteUrl: args.websiteUrl ?? null,
     brandColor: args.brandColor ?? null,
     logoUrl: args.logoUrl ?? null,
+    expiryStatLabel: expiry.statLabel,
+    expiryStatValue: expiry.statValue,
+    expiryStatSublabel: expiry.statSublabel,
+    expiryHeadline: expiry.headline,
   };
 }
 
@@ -250,11 +332,11 @@ export const PRESET_TEMPLATES: PresetTemplate[] = [
       trigger: "SUBSCRIPTION_EXPIRING",
       daysOffset: 7,
       cooldownDays: 30,
-      subject: "Noch {{daysUntilExpiry}} Tage – sichere dir dein neues Jahresabo am See",
+      subject: "Dein Jahresabo am See – {{expiryStatLabel}} {{expiryStatValue}}",
       bodyHtml: `<div style="font-size:12px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;color:#76716a;margin-bottom:8px;">Dein Sommer am See</div>
-<h1 style="margin:0 0 18px;font-size:26px;font-weight:800;line-height:1.2;color:#0f0f10;letter-spacing:-0.01em;">Hey {{firstName}}, dein Jahresabo endet bald.</h1>
+<h1 style="margin:0 0 18px;font-size:26px;font-weight:800;line-height:1.2;color:#0f0f10;letter-spacing:-0.01em;">Hey {{firstName}}, dein Jahresabo {{expiryHeadline}}.</h1>
 
-${statCard({ label: "Noch", value: "{{daysUntilExpiry}} Tage", sublabel: "bis zum {{endDate}}" })}
+${statCard({ label: "{{expiryStatLabel}}", value: "{{expiryStatValue}}", sublabel: "{{expiryStatSublabel}}" })}
 
 <p style="margin:0 0 14px;color:#3a3a3e;">Damit du nahtlos ins nächste Jahr startest, kannst du dein <strong>{{subscriptionName}}</strong> jetzt direkt erneut buchen – schnell und ohne Umwege.</p>
 
