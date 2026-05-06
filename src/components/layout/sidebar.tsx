@@ -164,7 +164,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
   return (
     <aside
       className={cn(
-        "flex flex-col min-h-full bg-slate-900 border-r border-slate-800 transition-all duration-300 shrink-0",
+        "flex flex-col h-full min-h-0 bg-slate-900 border-r border-slate-800 transition-all duration-300 shrink-0",
         collapsed ? "w-16" : "w-64"
       )}
     >
@@ -188,7 +188,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
 
       <Separator className="bg-slate-800" />
 
-      <nav className="flex-1 p-3 overflow-y-auto">
+      <nav className="flex-1 min-h-0 p-3 overflow-y-auto overscroll-contain">
         {isSuperAdmin ? (
           <div className="space-y-1">
             {adminItems.map((item) => (
