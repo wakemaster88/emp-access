@@ -25,32 +25,70 @@ import {
   Zap,
   Lock,
   Gift,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/tickets", label: "Tickets", icon: Ticket },
-  { href: "/vouchers", label: "Gutscheine", icon: Gift },
-  { href: "/subscriptions", label: "Abos", icon: CreditCard },
-  { href: "/services", label: "Services", icon: Package },
-  { href: "/vereine", label: "Vereine", icon: Users },
-  { href: "/lockers", label: "Schließfächer", icon: Lock },
-  { href: "/devices", label: "Geräte", icon: HardDrive },
-  { href: "/areas", label: "Resourcen", icon: MapPin },
-  { href: "/scanner", label: "Scanner", icon: QrCode },
-  { href: "/scans", label: "Scans", icon: ScanLine },
-  { href: "/analytics", label: "Auswertung", icon: BarChart3 },
-  { href: "/monitor", label: "Live Monitor", icon: Monitor },
-  { href: "/monitors", label: "Monitore", icon: MonitorCog },
-  { href: "/automation", label: "Automation", icon: Zap },
-  { href: "/settings", label: "Einstellungen", icon: Settings },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: "Übersicht",
+    items: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/analytics", label: "Auswertung", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Verkauf",
+    items: [
+      { href: "/tickets", label: "Tickets", icon: Ticket },
+      { href: "/subscriptions", label: "Abos", icon: CreditCard },
+      { href: "/vouchers", label: "Gutscheine", icon: Gift },
+      { href: "/vereine", label: "Vereine", icon: Users },
+    ],
+  },
+  {
+    label: "Erlebnis",
+    items: [
+      { href: "/services", label: "Services", icon: Package },
+      { href: "/areas", label: "Resourcen", icon: MapPin },
+      { href: "/lockers", label: "Schließfächer", icon: Lock },
+    ],
+  },
+  {
+    label: "Betrieb",
+    items: [
+      { href: "/scanner", label: "Scanner", icon: QrCode },
+      { href: "/scans", label: "Scans", icon: ScanLine },
+      { href: "/monitor", label: "Live Monitor", icon: Monitor },
+      { href: "/monitors", label: "Monitore", icon: MonitorCog },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { href: "/devices", label: "Geräte", icon: HardDrive },
+      { href: "/automation", label: "Automation", icon: Zap },
+      { href: "/email", label: "E-Mail", icon: Mail },
+      { href: "/settings", label: "Einstellungen", icon: Settings },
+    ],
+  },
 ];
 
-const adminItems = [
+const adminItems: NavItem[] = [
   { href: "/admin", label: "Admin Dashboard", icon: Shield },
   { href: "/admin/accounts", label: "Mandanten", icon: LayoutDashboard },
 ];
@@ -67,7 +105,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
   const pathname = usePathname();
   const isSuperAdmin = role === "SUPER_ADMIN";
 
-  const NavLink = ({ href, label, icon: Icon }: { href: string; label: string; icon: React.ComponentType<{ className?: string }> }) => {
+  const NavLink = ({ href, label, icon: Icon }: NavItem) => {
     const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
 
     const link = (
@@ -101,6 +139,28 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
     return link;
   };
 
+  const NavGroupBlock = ({ group, isFirst }: { group: NavGroup; isFirst: boolean }) => {
+    if (collapsed) {
+      return (
+        <div className={cn("space-y-1", !isFirst && "pt-2 mt-2 border-t border-slate-800/70")}>
+          {group.items.map((item) => (
+            <NavLink key={item.href} {...item} />
+          ))}
+        </div>
+      );
+    }
+    return (
+      <div className={cn("space-y-1", !isFirst && "pt-3 mt-1")}>
+        <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500/80">
+          {group.label}
+        </div>
+        {group.items.map((item) => (
+          <NavLink key={item.href} {...item} />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <aside
       className={cn(
@@ -128,15 +188,18 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
 
       <Separator className="bg-slate-800" />
 
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {isSuperAdmin
-          ? adminItems.map((item) => (
+      <nav className="flex-1 p-3 overflow-y-auto">
+        {isSuperAdmin ? (
+          <div className="space-y-1">
+            {adminItems.map((item) => (
               <NavLink key={item.href} {...item} />
-            ))
-          : navItems.map((item) => (
-              <NavLink key={item.href} {...item} />
-            ))
-        }
+            ))}
+          </div>
+        ) : (
+          navGroups.map((group, idx) => (
+            <NavGroupBlock key={group.label} group={group} isFirst={idx === 0} />
+          ))
+        )}
       </nav>
 
       <Separator className="bg-slate-800" />

@@ -5,11 +5,10 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Mail } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { TelegramCard } from "@/components/settings/telegram-card";
-import { EmailSettings } from "@/components/settings/email-settings";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"] as const;
 
@@ -22,7 +21,7 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [apiConfigs, account, shellyDevices, telegramConfig, emailConfig, subscriptionRefs, serviceRefs] = await Promise.all([
+  const [apiConfigs, account, shellyDevices, telegramConfig] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
     db.account.findUnique({ where: { id: session.user.accountId } }),
     db.device.findMany({
@@ -33,38 +32,7 @@ export default async function SettingsPage() {
       where: { accountId: session.user.accountId },
       select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true },
     }),
-    db.emailConfig.findUnique({
-      where: { accountId: session.user.accountId },
-    }),
-    db.subscription.findMany({
-      where: { accountId: session.user.accountId },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-    db.service.findMany({
-      where: { accountId: session.user.accountId },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
   ]);
-
-  const emailConfigDto = emailConfig
-    ? {
-        id: emailConfig.id,
-        provider: emailConfig.provider,
-        apiKey: emailConfig.apiKey
-          ? `${emailConfig.apiKey.slice(0, 6)}${"•".repeat(Math.max(0, emailConfig.apiKey.length - 6))}`
-          : null,
-        hasApiKey: !!emailConfig.apiKey,
-        fromEmail: emailConfig.fromEmail,
-        fromName: emailConfig.fromName,
-        replyTo: emailConfig.replyTo,
-        isActive: emailConfig.isActive,
-        brandColor: emailConfig.brandColor,
-        logoUrl: emailConfig.logoUrl,
-        websiteUrl: emailConfig.websiteUrl,
-      }
-    : null;
 
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
@@ -161,26 +129,6 @@ export default async function SettingsPage() {
             )}
           </div>
           <TelegramCard initialConfig={telegramConfig ?? null} />
-        </section>
-
-        {/* Email-Versand & Automationen */}
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Mail className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Email-Versand
-            </h2>
-            {emailConfig?.isActive && emailConfig.apiKey && (
-              <Badge className="ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
-                Aktiv
-              </Badge>
-            )}
-          </div>
-          <EmailSettings
-            initialConfig={emailConfigDto}
-            subscriptions={subscriptionRefs}
-            services={serviceRefs}
-          />
         </section>
 
         {/* Integrations */}
