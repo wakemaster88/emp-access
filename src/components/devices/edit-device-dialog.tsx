@@ -13,7 +13,10 @@ import { Separator } from "@/components/ui/separator";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Trash2, Save, GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb } from "lucide-react";
+import {
+  Loader2, Trash2, Save, GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
+  LogIn, LogOut, ArrowLeftRight, AlertCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface AreaOption {
@@ -48,6 +51,21 @@ const DEVICE_CATEGORIES = [
   { value: "BELEUCHTUNG", label: "Beleuchtung",  icon: Lightbulb },
 ];
 
+type Direction = "in" | "out" | "bidir";
+
+const DIRECTIONS: { value: Direction; label: string; hint: string; icon: typeof LogIn }[] = [
+  { value: "in",    label: "Nur Eingang",   hint: "Drehkreuz lässt nur rein",                       icon: LogIn },
+  { value: "out",   label: "Nur Ausgang",   hint: "Drehkreuz lässt nur raus",                       icon: LogOut },
+  { value: "bidir", label: "Bidirektional", hint: "Beide Richtungen – ohne klare Richtungslogik", icon: ArrowLeftRight },
+];
+
+function inferDirection(accessIn: number | null, accessOut: number | null): Direction {
+  if (accessIn != null && accessOut == null) return "in";
+  if (accessIn == null && accessOut != null) return "out";
+  if (accessIn != null && accessOut != null) return "bidir";
+  return "in";
+}
+
 interface EditDeviceDialogProps {
   device: DeviceData | null;
   areas?: AreaOption[];
@@ -63,6 +81,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
     shellyId: "",
     shellyAuthKey: "",
     isActive: true,
+    direction: "in" as Direction,
     accessIn: "none",
     accessOut: "none",
     allowReentry: false,
@@ -81,6 +100,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
         shellyId: device.shellyId ?? "",
         shellyAuthKey: device.shellyAuthKey ?? "",
         isActive: device.isActive,
+        direction: inferDirection(device.accessIn, device.accessOut),
         accessIn: device.accessIn != null ? String(device.accessIn) : "none",
         accessOut: device.accessOut != null ? String(device.accessOut) : "none",
         allowReentry: device.allowReentry,
@@ -99,6 +119,21 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
     if (!device) return;
     setSaving(true);
     setError("");
+
+    const hasAccess = CAT_HAS_ACCESS.has(form.category);
+    let accessIn: number | null = null;
+    let accessOut: number | null = null;
+    if (hasAccess) {
+      if (form.direction === "in") {
+        accessIn = form.accessIn && form.accessIn !== "none" ? Number(form.accessIn) : null;
+      } else if (form.direction === "out") {
+        accessOut = form.accessOut && form.accessOut !== "none" ? Number(form.accessOut) : null;
+      } else {
+        accessIn  = form.accessIn  && form.accessIn  !== "none" ? Number(form.accessIn)  : null;
+        accessOut = form.accessOut && form.accessOut !== "none" ? Number(form.accessOut) : null;
+      }
+    }
+
     try {
       const res = await fetch(`/api/devices/${device.id}`, {
         method: "PUT",
@@ -110,8 +145,8 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
           shellyId: form.shellyId || null,
           shellyAuthKey: form.shellyAuthKey || null,
           isActive: form.isActive,
-          accessIn: form.accessIn && form.accessIn !== "none" ? Number(form.accessIn) : null,
-          accessOut: form.accessOut && form.accessOut !== "none" ? Number(form.accessOut) : null,
+          accessIn,
+          accessOut,
           allowReentry: form.allowReentry,
           firmware: form.firmware || null,
         }),
@@ -206,10 +241,35 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
           {/* Zugangsbereiche – nur Drehkreuz & Tür */}
           {CAT_HAS_ACCESS.has(form.category) && (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Resourcen</p>
-              <div className="grid grid-cols-2 gap-3">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Resource &amp; Richtung</p>
+
+              <div className="grid grid-cols-3 gap-2">
+                {DIRECTIONS.map((d) => {
+                  const Icon = d.icon;
+                  const selected = form.direction === d.value;
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => set("direction", d.value)}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-2.5 text-center transition-all",
+                        selected
+                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300"
+                          : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                      )}
+                      title={d.hint}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <p className="text-xs font-medium leading-tight">{d.label}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {form.direction === "in" && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Eingang</Label>
+                  <Label className="text-xs">Eingang in Resource</Label>
                   <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
                     <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                     <SelectContent>
@@ -218,8 +278,11 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
                     </SelectContent>
                   </Select>
                 </div>
+              )}
+
+              {form.direction === "out" && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Ausgang</Label>
+                  <Label className="text-xs">Ausgang aus Resource</Label>
                   <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
                     <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                     <SelectContent>
@@ -228,7 +291,38 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
+
+              {form.direction === "bidir" && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Eingang in Resource</Label>
+                      <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
+                        <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Keine Resource</SelectItem>
+                          {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Ausgang aus Resource</Label>
+                      <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
+                        <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Keine Resource</SelectItem>
+                          {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>Bidirektionale Geräte können nicht eindeutig zwischen Eintritt und Austritt unterscheiden. Wenn möglich, lieber separate Geräte für Eingang und Ausgang anlegen.</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

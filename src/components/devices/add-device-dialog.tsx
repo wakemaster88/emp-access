@@ -17,6 +17,7 @@ import {
 import {
   Plus, Loader2, Cpu, Wifi, AlertCircle,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
+  LogIn, LogOut, ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WeekScheduleEditor, emptySchedule } from "@/components/devices/week-schedule-editor";
@@ -63,6 +64,8 @@ const CAT_HAS_ACCESS   = new Set(["DREHKREUZ", "TUER"]);
 const CAT_HAS_REENTRY  = new Set(["DREHKREUZ", "TUER"]);
 const CAT_HAS_SCHEDULE = new Set(["BELEUCHTUNG", "SCHALTER"]);
 
+type Direction = "in" | "out" | "bidir";
+
 const EMPTY = {
   name: "",
   type: "",
@@ -70,11 +73,18 @@ const EMPTY = {
   ipAddress: "",
   shellyId: "",
   shellyAuthKey: "",
+  direction: "in" as Direction,
   accessIn: "none",
   accessOut: "none",
   allowReentry: false,
   isActive: true,
 };
+
+const DIRECTIONS: { value: Direction; label: string; hint: string; icon: typeof LogIn }[] = [
+  { value: "in",    label: "Nur Eingang",   hint: "Drehkreuz lässt nur rein",                       icon: LogIn },
+  { value: "out",   label: "Nur Ausgang",   hint: "Drehkreuz lässt nur raus",                       icon: LogOut },
+  { value: "bidir", label: "Bidirektional", hint: "Beide Richtungen – ohne klare Richtungslogik", icon: ArrowLeftRight },
+];
 
 export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
   const router = useRouter();
@@ -103,6 +113,22 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
     const hasAccess  = CAT_HAS_ACCESS.has(form.category);
     const hasSchedule = CAT_HAS_SCHEDULE.has(form.category);
 
+    // Resourcen je nach Richtung mappen. Damit kann ein Bedienfehler
+    // (z.B. accessIn UND accessOut auf den gleichen Bereich, ohne dass
+    // das Gerät wirklich bidirektional ist) nicht mehr auftreten.
+    let accessIn: number | null = null;
+    let accessOut: number | null = null;
+    if (hasAccess) {
+      if (form.direction === "in") {
+        accessIn = form.accessIn !== "none" ? Number(form.accessIn) : null;
+      } else if (form.direction === "out") {
+        accessOut = form.accessOut !== "none" ? Number(form.accessOut) : null;
+      } else {
+        accessIn  = form.accessIn  !== "none" ? Number(form.accessIn)  : null;
+        accessOut = form.accessOut !== "none" ? Number(form.accessOut) : null;
+      }
+    }
+
     try {
       const res = await fetch("/api/devices", {
         method: "POST",
@@ -114,8 +140,8 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
           ipAddress: form.ipAddress || null,
           shellyId: form.shellyId || null,
           shellyAuthKey: form.shellyAuthKey || null,
-          accessIn:  hasAccess && form.accessIn  !== "none" ? Number(form.accessIn)  : null,
-          accessOut: hasAccess && form.accessOut !== "none" ? Number(form.accessOut) : null,
+          accessIn,
+          accessOut,
           allowReentry: hasAccess ? form.allowReentry : false,
           isActive: form.isActive,
           schedule: hasSchedule ? schedule : null,
@@ -285,10 +311,35 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
               {/* Zugangsbereiche – nur für Drehkreuz & Tür */}
               {CAT_HAS_ACCESS.has(cat) && (
                 <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Resourcen</p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Resource &amp; Richtung</p>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {DIRECTIONS.map((d) => {
+                      const Icon = d.icon;
+                      const selected = form.direction === d.value;
+                      return (
+                        <button
+                          key={d.value}
+                          type="button"
+                          onClick={() => set("direction", d.value)}
+                          className={cn(
+                            "flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-2.5 text-center transition-all",
+                            selected
+                              ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300"
+                              : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                          )}
+                          title={d.hint}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <p className="text-xs font-medium leading-tight">{d.label}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {form.direction === "in" && (
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Eingang</Label>
+                      <Label className="text-xs">Eingang in Resource</Label>
                       <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
                         <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                         <SelectContent>
@@ -297,8 +348,11 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                         </SelectContent>
                       </Select>
                     </div>
+                  )}
+
+                  {form.direction === "out" && (
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Ausgang</Label>
+                      <Label className="text-xs">Ausgang aus Resource</Label>
                       <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
                         <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
                         <SelectContent>
@@ -307,7 +361,38 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
+                  )}
+
+                  {form.direction === "bidir" && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Eingang in Resource</Label>
+                          <Select value={form.accessIn} onValueChange={(v) => set("accessIn", v)}>
+                            <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Keine Resource</SelectItem>
+                              {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Ausgang aus Resource</Label>
+                          <Select value={form.accessOut} onValueChange={(v) => set("accessOut", v)}>
+                            <SelectTrigger><SelectValue placeholder="Keine Resource" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Keine Resource</SelectItem>
+                              {areas.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span>Bidirektionale Geräte können nicht eindeutig zwischen Eintritt und Austritt unterscheiden. Wenn möglich, lieber separate Geräte für Eingang und Ausgang anlegen.</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
