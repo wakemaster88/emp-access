@@ -424,7 +424,17 @@ export async function POST(request: NextRequest) {
   // diesem Ticket gibt, blockieren wir auch das (Schutzhuelle fuer
   // ungewohnliche Konfigurationen, in denen der Statuswechsel oben
   // ausnahmsweise nicht greift).
-  if (!device.allowReentry && !isEmployee && !isExitScan) {
+  // Abo-Tickets (subscriptionId != null) sind absichtlich ausgenommen:
+  // Saisonabos sind dafuer da, beliebig oft genutzt zu werden, und der
+  // Status bleibt bei ihnen dauerhaft VALID. Wuerden wir hier blockieren,
+  // koenne ein Abonnent nach dem allerersten Scan nirgends ohne
+  // Mehrfachzugang-Geraet mehr rein.
+  if (
+    !device.allowReentry
+    && !isEmployee
+    && !isExitScan
+    && ticket.subscriptionId == null
+  ) {
     const existingScan = await db.scan.findFirst({
       where: { ticketId: ticket.id, result: "GRANTED" },
       select: { id: true },
