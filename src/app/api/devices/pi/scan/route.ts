@@ -274,6 +274,18 @@ export async function POST(request: NextRequest) {
   const now = new Date();
   const vType = ticket.validityType ?? "DATE_RANGE";
 
+  // Richtungsbestimmung wird hier vorgezogen, damit zeitbasierte
+  // Eintritts-Schranken (TIME_SLOT-Fenster, DURATION-Ablauf) nur fuer
+  // Eintritte greifen. Ein bereits eingelassener Gast muss durchs
+  // Drehkreuz wieder rauskommen koennen, auch wenn er zu spaet rausgeht.
+  const isExitScan =
+    declaredDirection === "OUT"
+    || (
+      declaredDirection !== "IN"
+      && device.accessOut != null
+      && device.accessIn == null
+    );
+
   if (ticket.startDate) {
     const start = new Date(ticket.startDate);
     start.setUTCHours(0, 0, 0, 0);
@@ -295,7 +307,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
+  // TIME_SLOT-Fenster gilt nur fuer Eintritte. Beim Ausgang darf der
+  // Gast immer raus, solange das Ticket grundsaetzlich gueltig ist.
+  if (!isExitScan && vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
     const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
     const currentMinutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
     const [sh, sm] = ticket.slotStart.split(":").map(Number);
@@ -308,13 +322,15 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({
         granted: false,
-        message: `Zeitslot ${ticket.slotStart}–${ticket.slotEnd} Uhr`,
+        message: `Einlass ${ticket.slotStart}–${ticket.slotEnd} Uhr`,
         ticket: ticketInfo,
       });
     }
   }
 
-  if (vType === "DURATION" && ticket.validityDurationMinutes) {
+  // DURATION-Ablauf greift ebenfalls nur bei Eintritten. Wer drin ist,
+  // darf raus, auch wenn die gebuchte Stunde inzwischen abgelaufen ist.
+  if (!isExitScan && vType === "DURATION" && ticket.validityDurationMinutes) {
     if (ticket.firstScanAt) {
       const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
       if (now > expiresAt) {
@@ -348,23 +364,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Exit-Scan-Definition (defensiv):
-  // 1) Wenn der Pi/Drehkreuz eine explizite Richtung mitschickt, gilt
-  //    die. Das ist der robusteste Fall - das Geraet weiss am besten,
-  //    in welche Richtung sich die Person bewegt hat.
+  // Exit-Scan-Definition: bereits oben berechnet, weil zeitbasierte
+  // Eintritts-Schranken (TIME_SLOT, DURATION) nur fuer Eintritte gelten
+  // duerfen. Definition (defensiv):
+  // 1) Wenn der Pi/Drehkreuz eine explizite Richtung mitschickt, gilt die.
   // 2) Sonst nur dann Exit, wenn das Geraet AUSSCHLIESSLICH Exit ist
   //    (`accessOut != null` und `accessIn == null`). Bei bidirektional
-  //    konfigurierten Geraeten (beide Felder gesetzt) ist die Richtung
-  //    nicht eindeutig - wir behandeln den Scan dann defensiv als
-  //    Eintritt, damit der Reentry-Schutz greift, statt einen
-  //    REDEEMED↔VALID-Toggle zu erlauben.
-  const isExitScan =
-    declaredDirection === "OUT"
-    || (
-      declaredDirection !== "IN"
-      && device.accessOut != null
-      && device.accessIn == null
-    );
+  //    konfigurierten Geraeten ist die Richtung nicht eindeutig - wir
+  //    behandeln den Scan dann defensiv als Eintritt.
   const serviceAllowsReentry = ticket.service?.allowReentry === true;
 
   // Reentry-Check: GLOBAL pro Ticket, nicht pro Device. Greift fuer
