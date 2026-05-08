@@ -20,6 +20,7 @@ import { berlinYmd, isSameBerlinDay } from "@/lib/berlin-day";
 interface MonitorScan {
   id: number;
   code: string;
+  note?: string | null;
   scanTime: string;
   result: "GRANTED" | "DENIED" | "PROTECTED";
   device: { name: string; type: string };
@@ -34,6 +35,22 @@ interface MonitorScan {
     profileImage?: string | null;
     accessArea?: { name: string } | null;
   } | null;
+}
+
+/**
+ * Wakesys-Scans haben kein lokales Ticket, sondern eine `note` mit JSON aus
+ * `checkWakesys` (siehe src/lib/wakesys.ts): { name, picture, age }. Plain-Text-
+ * Notes werden als Name interpretiert (Fallback fuer aeltere Eintraege).
+ */
+function parseScanNote(note?: string | null): { name?: string; picture?: string; age?: number } {
+  if (!note) return {};
+  try {
+    const parsed = JSON.parse(note);
+    if (typeof parsed === "object" && parsed !== null) return parsed;
+  } catch {
+    return { name: note };
+  }
+  return {};
 }
 
 interface AreaCount {
@@ -277,6 +294,16 @@ export default function MonitorPage() {
               )}
               {scans.map((scan) => {
                 const isNew = newIds.has(scan.id);
+                const noteData = parseScanNote(scan.note);
+                // Wakesys-Treffer: GRANTED-Scan ohne lokales Ticket, dafuer aber
+                // angereicherte Note vom Wakesys-Fallback (siehe pi/scan/route.ts).
+                const isWakesys = !scan.ticket && scan.result === "GRANTED" && !!scan.note;
+                const displayImage = scan.ticket?.profileImage || noteData.picture || null;
+                const displayName =
+                  [scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ")
+                  || scan.ticket?.name
+                  || noteData.name
+                  || scan.code;
                 return (
                 <div
                   key={scan.id}
@@ -293,8 +320,8 @@ export default function MonitorPage() {
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    {scan.ticket?.profileImage ? (
-                      <img src={scan.ticket.profileImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-slate-200 dark:ring-slate-700" />
+                    {displayImage ? (
+                      <img src={displayImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-slate-200 dark:ring-slate-700" />
                     ) : (
                       <Badge
                         className={
@@ -310,7 +337,10 @@ export default function MonitorPage() {
                     )}
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
-                        {[scan.ticket?.firstName, scan.ticket?.lastName].filter(Boolean).join(" ") || scan.ticket?.name || scan.code}
+                        {displayName}
+                        {noteData.age != null && (
+                          <span className="ml-1.5 text-xs font-normal text-slate-400">({noteData.age})</span>
+                        )}
                       </p>
                       <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap">
                         {scan.ticket?.ticketTypeName && (
@@ -337,10 +367,26 @@ export default function MonitorPage() {
                             <span className="truncate">{scan.device.name}</span>
                           </span>
                         )}
+                        {isWakesys && (
+                          <>
+                            {scan.device?.name && <span className="text-slate-400 shrink-0">·</span>}
+                            <span className="inline-flex items-center gap-1 shrink-0 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                              {scan.code}
+                            </span>
+                          </>
+                        )}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {isWakesys && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] font-bold uppercase tracking-wider border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-300"
+                      >
+                        Wakesys
+                      </Badge>
+                    )}
                     {scan.ticket?.validityType === "DURATION" && scan.ticket.validityDurationMinutes && scan.ticket.firstScanAt && (
                       <InternalCountdown
                         firstScanAt={scan.ticket.firstScanAt}

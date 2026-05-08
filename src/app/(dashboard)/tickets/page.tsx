@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AddTicketDialog } from "@/components/tickets/add-ticket-dialog";
 import { BulkTicketDialog } from "@/components/tickets/bulk-ticket-dialog";
+import { BulkRfidDialog } from "@/components/tickets/bulk-rfid-dialog";
 import { BulkHistoryDialog } from "@/components/tickets/bulk-history-dialog";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { TicketCodeSearch } from "@/components/tickets/ticket-code-search";
@@ -183,6 +184,13 @@ export default async function TicketsPage({ searchParams }: Props) {
                   subscriptions={subsWithAreas}
                   services={svcsWithAreas}
                   accountName={session.user.accountName}
+                />
+              )}
+              {!isSuperAdmin && (
+                <BulkRfidDialog
+                  areas={areas}
+                  subscriptions={subsWithAreas}
+                  services={svcsWithAreas}
                 />
               )}
               {!isSuperAdmin && <AddTicketDialog areas={areas} subscriptions={subsWithAreas} services={svcsWithAreas} vereine={vereineList} />}

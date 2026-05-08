@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   History,
   Printer,
@@ -21,6 +22,7 @@ import {
   Layers,
   Inbox,
   Scissors,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -50,7 +52,11 @@ interface BulkOverview {
   validityType: string | null;
   validityDurationMinutes: number | null;
   statusCounts: Record<string, number>;
+  /** "PRINT" = Bondrucker-Bulk, "RFID" = Bändchen-Bulk, "MIXED" = Mischform. */
+  kind?: "PRINT" | "RFID" | "MIXED";
 }
+
+type BulkFilter = "PRINT" | "RFID";
 
 interface BulkHistoryDialogProps {
   accountName?: string | null;
@@ -128,6 +134,7 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [bulks, setBulks] = useState<BulkOverview[]>([]);
+  const [filter, setFilter] = useState<BulkFilter>("PRINT");
   const [reprinting, setReprinting] = useState<string | null>(null);
   const [printResult, setPrintResult] = useState<{
     bulkId: string;
@@ -244,70 +251,122 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
             Bulk-Verlauf
           </DialogTitle>
           <p className="text-xs text-slate-500 dark:text-slate-400 pt-1">
-            Übersicht aller per Bulk erstellten Tickets. Pro Bulk lassen sich alle
-            Tickets erneut ausdrucken (z. B. wenn der Drucker einen Bon verschluckt
-            hat).
+            Übersicht aller per Bulk erstellten Tickets. Bondrucker-Bulks
+            lassen sich erneut ausdrucken (z. B. wenn der Drucker einen Bon
+            verschluckt hat). RFID-Bulks werden separat gelistet.
           </p>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto -mx-6 px-6 mt-2">
-          {loading && (
-            <div className="flex items-center justify-center py-12 text-slate-500">
-              <Loader2 className="h-5 w-5 animate-spin mr-2" />
-              Lade Bulks…
-            </div>
-          )}
+        {(() => {
+          const printBulks = bulks.filter((b) => (b.kind ?? "PRINT") !== "RFID");
+          const rfidBulks = bulks.filter((b) => b.kind === "RFID");
+          const visibleBulks = filter === "PRINT" ? printBulks : rfidBulks;
+          const isRfidView = filter === "RFID";
 
-          {!loading && error && (
-            <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
-              {error}
-            </p>
-          )}
-
-          {!loading && !error && bulks.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center text-slate-500">
-              <Inbox className="h-10 w-10 mb-3 text-slate-400" />
-              <p className="text-sm font-medium">Noch keine Bulks erstellt.</p>
-              <p className="text-xs text-slate-400 mt-1">
-                Sobald du über &quot;Bulk &amp; Drucken&quot; mehrere Tickets auf einmal
-                erstellst, erscheinen sie hier.
-              </p>
-            </div>
-          )}
-
-          {!loading && !error && bulks.length > 0 && (
-            <label
-              htmlFor="reprint-cut-mode"
-              className={cn(
-                "mb-3 flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors text-xs",
-                cutPerTicket
-                  ? "border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30"
-                  : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40",
+          return (
+            <>
+              {!loading && !error && bulks.length > 0 && (
+                <Tabs
+                  value={filter}
+                  onValueChange={(v) => setFilter(v as BulkFilter)}
+                  className="mt-2"
+                >
+                  <TabsList className="w-full">
+                    <TabsTrigger value="PRINT" className="gap-1.5">
+                      <Printer className="h-3.5 w-3.5" />
+                      Druck-Bulks
+                      <Badge
+                        variant="secondary"
+                        className="ml-1 px-1.5 h-5 text-[10px] font-normal"
+                      >
+                        {printBulks.length}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="RFID" className="gap-1.5">
+                      <Radio className="h-3.5 w-3.5" />
+                      RFID-Bulks
+                      <Badge
+                        variant="secondary"
+                        className="ml-1 px-1.5 h-5 text-[10px] font-normal"
+                      >
+                        {rfidBulks.length}
+                      </Badge>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
               )}
-            >
-              <input
-                id="reprint-cut-mode"
-                type="checkbox"
-                checked={cutPerTicket}
-                onChange={(e) => toggleCutPerTicket(e.target.checked)}
-                className="mt-0.5 h-3.5 w-3.5 accent-indigo-600"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                  <Scissors className="h-3 w-3 text-indigo-600" />
-                  Nach jedem Ticket schneiden (eigener Druckjob pro Bon)
-                </p>
-              </div>
-            </label>
-          )}
-          {!loading && !error && bulks.length > 0 && (
+
+              <div className="flex-1 overflow-y-auto -mx-6 px-6 mt-2">
+                {loading && (
+                  <div className="flex items-center justify-center py-12 text-slate-500">
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    Lade Bulks…
+                  </div>
+                )}
+
+                {!loading && error && (
+                  <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+                    {error}
+                  </p>
+                )}
+
+                {!loading && !error && bulks.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center text-slate-500">
+                    <Inbox className="h-10 w-10 mb-3 text-slate-400" />
+                    <p className="text-sm font-medium">Noch keine Bulks erstellt.</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Sobald du über &quot;Bulk &amp; Drucken&quot; oder
+                      &quot;Bändchen-Bulk&quot; mehrere Tickets auf einmal
+                      erstellst, erscheinen sie hier.
+                    </p>
+                  </div>
+                )}
+
+                {!loading && !error && bulks.length > 0 && visibleBulks.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-10 text-center text-slate-500">
+                    <Inbox className="h-8 w-8 mb-2 text-slate-400" />
+                    <p className="text-sm font-medium">
+                      {isRfidView
+                        ? "Noch keine RFID-Bulks erstellt."
+                        : "Noch keine Druck-Bulks erstellt."}
+                    </p>
+                  </div>
+                )}
+
+                {!loading && !error && !isRfidView && visibleBulks.length > 0 && (
+                  <label
+                    htmlFor="reprint-cut-mode"
+                    className={cn(
+                      "mb-3 flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors text-xs",
+                      cutPerTicket
+                        ? "border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30"
+                        : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40",
+                    )}
+                  >
+                    <input
+                      id="reprint-cut-mode"
+                      type="checkbox"
+                      checked={cutPerTicket}
+                      onChange={(e) => toggleCutPerTicket(e.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 accent-indigo-600"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                        <Scissors className="h-3 w-3 text-indigo-600" />
+                        Nach jedem Ticket schneiden (eigener Druckjob pro Bon)
+                      </p>
+                    </div>
+                  </label>
+                )}
+                {!loading && !error && visibleBulks.length > 0 && (
             <ul className="space-y-3 pb-2">
-              {bulks.map((b) => {
+              {visibleBulks.map((b) => {
                 const valid = b.statusCounts.VALID ?? 0;
                 const redeemed = b.statusCounts.REDEEMED ?? 0;
                 const otherStatuses = Object.entries(b.statusCounts).filter(
                   ([k]) => k !== "VALID" && k !== "REDEEMED",
                 );
+                const isRfid = b.kind === "RFID";
                 const isReprinting = reprinting === b.id;
                 const result = printResult?.bulkId === b.id ? printResult.result : null;
                 const subline = b.subscriptionName
@@ -329,10 +388,23 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
                           </span>
                           <Badge
                             variant="secondary"
-                            className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900"
+                            className={cn(
+                              isRfid
+                                ? "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900"
+                                : "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900",
+                            )}
                           >
-                            {b.count}× Tickets
+                            {b.count}× {isRfid ? "Bändchen" : "Tickets"}
                           </Badge>
+                          {isRfid && (
+                            <Badge
+                              variant="outline"
+                              className="gap-1 font-normal border-violet-200 text-violet-700 dark:border-violet-900 dark:text-violet-300"
+                            >
+                              <Radio className="h-3 w-3" />
+                              RFID-Bulk
+                            </Badge>
+                          )}
                           {b.accessAreaName && (
                             <Badge variant="outline" className="font-normal">
                               {b.accessAreaName}
@@ -390,20 +462,27 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
                       </div>
 
                       <div className="flex flex-col items-stretch sm:items-end gap-2 sm:min-w-44">
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => handleReprint(b)}
-                          disabled={isReprinting}
-                          className="bg-indigo-600 hover:bg-indigo-700 gap-1.5"
-                        >
-                          {isReprinting ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Printer className="h-4 w-4" />
-                          )}
-                          {isReprinting ? "Drucke…" : "Erneut drucken"}
-                        </Button>
+                        {isRfid ? (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 sm:justify-end">
+                            <Radio className="h-3.5 w-3.5 text-violet-600" />
+                            Kein Druck – RFID-Bändchen
+                          </p>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleReprint(b)}
+                            disabled={isReprinting}
+                            className="bg-indigo-600 hover:bg-indigo-700 gap-1.5"
+                          >
+                            {isReprinting ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Printer className="h-4 w-4" />
+                            )}
+                            {isReprinting ? "Drucke…" : "Erneut drucken"}
+                          </Button>
+                        )}
 
                         {result && (
                           <div className="text-xs">
@@ -451,8 +530,11 @@ export function BulkHistoryDialog({ accountName }: BulkHistoryDialogProps) {
                 );
               })}
             </ul>
-          )}
-        </div>
+                )}
+              </div>
+            </>
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );
