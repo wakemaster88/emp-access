@@ -22,6 +22,7 @@ interface Device {
   id: number;
   name: string;
   type: string;
+  category: "DREHKREUZ" | "TUER" | "SENSOR" | "SCHALTER" | "BELEUCHTUNG" | null;
   isActive: boolean;
 }
 
@@ -198,6 +199,53 @@ function MonitorDialog({
             </button>
           </div>
         </div>
+
+        {type === "CHECKIN" && <div className="space-y-2">
+          <Label>Tür-Schnellzugriff</Label>
+          <p className="text-xs text-slate-400">
+            Ausgewählte Türen erscheinen als direkter Button im Header des Check-in Monitors. Alle übrigen Türen / Drehkreuze sind weiterhin über das &bdquo;Mehr Türen&ldquo;-Menü erreichbar.
+          </p>
+          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+            {devices.filter((d) => d.category === "TUER" || d.category === "DREHKREUZ").length === 0 && (
+              <p className="text-sm text-slate-500">Keine Türen / Drehkreuze vorhanden. Setze die Kategorie eines Gerätes auf Tür oder Drehkreuz.</p>
+            )}
+            {devices
+              .filter((d) => d.category === "TUER" || d.category === "DREHKREUZ")
+              .map((device) => {
+                const selected = selectedDevices.includes(device.id);
+                return (
+                  <button
+                    key={device.id}
+                    type="button"
+                    onClick={() => toggleDevice(device.id)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
+                      selected
+                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                    )}
+                  >
+                    <div className={cn(
+                      "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                      selected ? "bg-emerald-600 border-emerald-600" : "border-slate-300 dark:border-slate-600"
+                    )}>
+                      {selected && <Check className="h-3 w-3 text-white" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{device.name}</p>
+                      <p className="text-xs text-slate-400">{device.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}</p>
+                    </div>
+                    {device.isActive
+                      ? <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
+                      : <WifiOff className="h-4 w-4 text-slate-400 shrink-0" />}
+                  </button>
+                );
+              })}
+          </div>
+          {selectedDevices.length > 0 && (
+            <p className="text-xs text-slate-500">{selectedDevices.length} Tür(en) als Schnellzugriff</p>
+          )}
+        </div>}
 
         {(type === "MONITOR" || type === "SCANNER") && <div className="space-y-2">
           <Label>Geräte auswählen</Label>

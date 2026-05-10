@@ -21,7 +21,7 @@ export default async function MonitorsPage() {
     }),
     db.device.findMany({
       where: { accountId: session.user.accountId },
-      select: { id: true, name: true, type: true, isActive: true },
+      select: { id: true, name: true, type: true, category: true, isActive: true },
       orderBy: { name: "asc" },
     }),
     db.accessArea.findMany({

@@ -154,13 +154,14 @@ export async function GET(
       take: 50,
     }),
 
-    // Quick-Öffnen-Buttons im Header: Tueren + Drehkreuze, optional auf die
-    // im MonitorConfig hinterlegten deviceIds eingeschraenkt.
+    // Türen/Drehkreuze fuer den Quick-Open: ALLE des Accounts. Welche davon
+    // als direkter Header-Button erscheinen, bestimmt MonitorConfig.deviceIds
+    // (Tür-Schnellzugriff). Die uebrigen sind ueber das "Mehr Türen"-Menue
+    // erreichbar.
     prisma.device.findMany({
       where: {
         accountId,
         category: { in: ["TUER", "DREHKREUZ"] },
-        ...(monitorDeviceIds.length ? { id: { in: monitorDeviceIds } } : {}),
       },
       select: { id: true, name: true, category: true, lastUpdate: true },
       orderBy: { name: "asc" },
@@ -250,5 +251,10 @@ export async function GET(
     recentScans,
     annySyncStatus,
     openableDevices,
+    // IDs der "Tür-Schnellzugriff"-Geraete (= MonitorConfig.deviceIds, sofern
+    // gesetzt). Werden im Frontend als direkter Button im Header gerendert.
+    quickDeviceIds: monitorDeviceIds.filter((id) =>
+      openableDevices.some((d) => d.id === id),
+    ),
   });
 }

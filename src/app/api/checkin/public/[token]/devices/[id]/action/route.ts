@@ -15,7 +15,7 @@ export async function POST(
   const { token, id } = await params;
   const monitor = await prisma.monitorConfig.findUnique({
     where: { token },
-    select: { id: true, accountId: true, isActive: true, type: true, deviceIds: true },
+    select: { id: true, accountId: true, isActive: true, type: true },
   });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
@@ -24,11 +24,6 @@ export async function POST(
   const deviceId = Number(id);
   if (isNaN(deviceId)) {
     return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
-  }
-
-  const allowed = (monitor.deviceIds as number[]) ?? [];
-  if (allowed.length > 0 && !allowed.includes(deviceId)) {
-    return NextResponse.json({ error: "Gerät nicht erlaubt" }, { status: 403 });
   }
 
   const body = (await request.json().catch(() => ({}))) as { action?: string };

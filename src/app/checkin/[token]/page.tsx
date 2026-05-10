@@ -140,6 +140,7 @@ interface CheckinData {
   recentScans: ScanEntry[];
   annySyncStatus?: AnnySyncStatus | null;
   openableDevices?: OpenableDevice[];
+  quickDeviceIds?: number[];
 }
 
 function toDateStr(d: Date): string {
@@ -681,108 +682,132 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             const openable = data?.openableDevices ?? [];
             if (openable.length === 0) return null;
 
-            // Bei nur einem Gerät: direkter Button ohne Dropdown.
-            if (openable.length === 1) {
-              const d = openable[0];
+            const quickIds = data?.quickDeviceIds ?? [];
+            const quickDevices = quickIds
+              .map((id) => openable.find((d) => d.id === id))
+              .filter((d): d is OpenableDevice => !!d);
+            const remaining = openable.filter((d) => !quickIds.includes(d.id));
+
+            // Direkt-Button-Renderer (Schnellzugriff oder Single-Door-Fallback).
+            const renderDirectButton = (d: OpenableDevice) => {
               const isLoading = openingDeviceId === d.id;
               const wasOpened = openedDeviceIds.has(d.id);
               return (
                 <button
+                  key={d.id}
                   onClick={() => handleQuickOpen(d.id)}
                   disabled={openingDeviceId !== null}
                   title={`${d.name} öffnen`}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60",
+                    "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60 whitespace-nowrap",
                     wasOpened
                       ? "bg-emerald-600 text-white"
                       : "bg-sky-600 hover:bg-sky-500 text-white",
                   )}
                 >
                   {isLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
                   ) : wasOpened ? (
-                    <Check className="h-5 w-5" />
+                    <Check className="h-5 w-5 shrink-0" />
                   ) : (
-                    <DoorOpen className="h-5 w-5" />
+                    <DoorOpen className="h-5 w-5 shrink-0" />
                   )}
-                  <span className="hidden sm:inline">{d.name}</span>
+                  <span className="hidden md:inline">{d.name}</span>
                 </button>
               );
-            }
+            };
 
-            // Mehrere Geräte: ein Sammel-Button mit Popover.
-            const anyLoading = openingDeviceId !== null;
-            const anyJustOpened = openedDeviceIds.size > 0;
-            return (
-              <div ref={openMenuRef} className="relative">
-                <button
-                  onClick={() => setOpenMenuOpen((v) => !v)}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95",
-                    anyJustOpened
-                      ? "bg-emerald-600 text-white"
-                      : "bg-sky-600 hover:bg-sky-500 text-white",
-                  )}
-                >
-                  {anyLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : anyJustOpened ? (
-                    <Check className="h-5 w-5" />
-                  ) : (
-                    <DoorOpen className="h-5 w-5" />
-                  )}
-                  <span className="hidden sm:inline">Reinlassen</span>
-                  <ChevronDown
-                    className={cn("h-4 w-4 transition-transform", openMenuOpen && "rotate-180")}
-                  />
-                </button>
-                {openMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-72 max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-xl ring-1 ring-black/20 p-2 z-50">
-                    <div className="px-2 pt-1 pb-2 text-[11px] uppercase tracking-wider text-slate-500">
-                      Tür öffnen
-                    </div>
-                    {openable.map((d) => {
-                      const isLoading = openingDeviceId === d.id;
-                      const wasOpened = openedDeviceIds.has(d.id);
-                      return (
-                        <button
-                          key={d.id}
-                          onClick={() => {
-                            handleQuickOpen(d.id);
-                            setOpenMenuOpen(false);
-                          }}
-                          disabled={openingDeviceId !== null}
-                          className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-colors active:scale-[0.98] disabled:opacity-60",
-                            wasOpened
-                              ? "bg-emerald-600/20 text-emerald-300"
-                              : "text-slate-100 hover:bg-slate-800",
-                          )}
-                        >
-                          <span
+            // Dropdown-Renderer fuer "Mehr Türen" / Sammel-Reinlassen.
+            const renderDropdown = (label: string, items: OpenableDevice[]) => {
+              const anyLoading = openingDeviceId !== null && items.some((d) => d.id === openingDeviceId);
+              const anyJustOpened = items.some((d) => openedDeviceIds.has(d.id));
+              return (
+                <div ref={openMenuRef} className="relative">
+                  <button
+                    onClick={() => setOpenMenuOpen((v) => !v)}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 whitespace-nowrap",
+                      anyJustOpened
+                        ? "bg-emerald-600 text-white"
+                        : "bg-slate-700 hover:bg-slate-600 text-white",
+                    )}
+                  >
+                    {anyLoading ? (
+                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                    ) : anyJustOpened ? (
+                      <Check className="h-5 w-5 shrink-0" />
+                    ) : (
+                      <DoorOpen className="h-5 w-5 shrink-0" />
+                    )}
+                    <span className="hidden md:inline">{label}</span>
+                    <ChevronDown
+                      className={cn("h-4 w-4 shrink-0 transition-transform", openMenuOpen && "rotate-180")}
+                    />
+                  </button>
+                  {openMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-72 max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-xl ring-1 ring-black/20 p-2 z-50">
+                      <div className="px-2 pt-1 pb-2 text-[11px] uppercase tracking-wider text-slate-500">
+                        Tür öffnen
+                      </div>
+                      {items.map((d) => {
+                        const isLoading = openingDeviceId === d.id;
+                        const wasOpened = openedDeviceIds.has(d.id);
+                        return (
+                          <button
+                            key={d.id}
+                            onClick={() => {
+                              handleQuickOpen(d.id);
+                              setOpenMenuOpen(false);
+                            }}
+                            disabled={openingDeviceId !== null}
                             className={cn(
-                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                              wasOpened ? "bg-emerald-600 text-white" : "bg-sky-600/20 text-sky-300",
+                              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-colors active:scale-[0.98] disabled:opacity-60",
+                              wasOpened
+                                ? "bg-emerald-600/20 text-emerald-300"
+                                : "text-slate-100 hover:bg-slate-800",
                             )}
                           >
-                            {isLoading ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : wasOpened ? (
-                              <Check className="h-4 w-4" />
-                            ) : (
-                              <DoorOpen className="h-4 w-4" />
-                            )}
-                          </span>
-                          <span className="truncate">{d.name}</span>
-                          <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500">
-                            {d.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                            <span
+                              className={cn(
+                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                                wasOpened ? "bg-emerald-600 text-white" : "bg-sky-600/20 text-sky-300",
+                              )}
+                            >
+                              {isLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : wasOpened ? (
+                                <Check className="h-4 w-4" />
+                              ) : (
+                                <DoorOpen className="h-4 w-4" />
+                              )}
+                            </span>
+                            <span className="truncate">{d.name}</span>
+                            <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500 shrink-0">
+                              {d.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+            // Keine Schnellzugriff-Türen konfiguriert → einzelner Sammel-Button
+            // mit allen Türen im Dropdown.
+            if (quickDevices.length === 0) {
+              if (openable.length === 1) return renderDirectButton(openable[0]);
+              return renderDropdown("Reinlassen", openable);
+            }
+
+            // Schnellzugriff-Türen als direkte Buttons + optional Dropdown fuer
+            // den Rest.
+            return (
+              <>
+                {quickDevices.map(renderDirectButton)}
+                {remaining.length > 0 && renderDropdown(`+${remaining.length}`, remaining)}
+              </>
             );
           })()}
           <button
