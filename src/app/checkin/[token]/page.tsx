@@ -29,6 +29,7 @@ import {
   Plus,
   DoorOpen,
   Check,
+  ChevronDown,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -253,6 +254,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [syncing, setSyncing] = useState(false);
   const [openingDeviceId, setOpeningDeviceId] = useState<number | null>(null);
   const [openedDeviceIds, setOpenedDeviceIds] = useState<Set<number>>(new Set());
+  const [openMenuOpen, setOpenMenuOpen] = useState(false);
+  const openMenuRef = useRef<HTMLDivElement>(null);
   const refreshRef = useRef<(() => Promise<void>) | null>(null);
 
   const handleQuickOpen = useCallback(async (deviceId: number) => {
@@ -277,6 +280,25 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       setOpeningDeviceId(null);
     }
   }, [token]);
+
+  // Schliesst das "Reinlassen"-Dropdown bei Klick ausserhalb / Escape.
+  useEffect(() => {
+    if (!openMenuOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (openMenuRef.current && !openMenuRef.current.contains(e.target as Node)) {
+        setOpenMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openMenuOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -655,33 +677,114 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
               {scanBubble}
             </div>
           )}
-          {(data?.openableDevices ?? []).map((d) => {
-            const isLoading = openingDeviceId === d.id;
-            const wasOpened = openedDeviceIds.has(d.id);
+          {(() => {
+            const openable = data?.openableDevices ?? [];
+            if (openable.length === 0) return null;
+
+            // Bei nur einem Gerät: direkter Button ohne Dropdown.
+            if (openable.length === 1) {
+              const d = openable[0];
+              const isLoading = openingDeviceId === d.id;
+              const wasOpened = openedDeviceIds.has(d.id);
+              return (
+                <button
+                  onClick={() => handleQuickOpen(d.id)}
+                  disabled={openingDeviceId !== null}
+                  title={`${d.name} öffnen`}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60",
+                    wasOpened
+                      ? "bg-emerald-600 text-white"
+                      : "bg-sky-600 hover:bg-sky-500 text-white",
+                  )}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : wasOpened ? (
+                    <Check className="h-5 w-5" />
+                  ) : (
+                    <DoorOpen className="h-5 w-5" />
+                  )}
+                  <span className="hidden sm:inline">{d.name}</span>
+                </button>
+              );
+            }
+
+            // Mehrere Geräte: ein Sammel-Button mit Popover.
+            const anyLoading = openingDeviceId !== null;
+            const anyJustOpened = openedDeviceIds.size > 0;
             return (
-              <button
-                key={d.id}
-                onClick={() => handleQuickOpen(d.id)}
-                disabled={openingDeviceId !== null}
-                title={`${d.name} öffnen`}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60",
-                  wasOpened
-                    ? "bg-emerald-600 text-white"
-                    : "bg-sky-600 hover:bg-sky-500 text-white",
+              <div ref={openMenuRef} className="relative">
+                <button
+                  onClick={() => setOpenMenuOpen((v) => !v)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95",
+                    anyJustOpened
+                      ? "bg-emerald-600 text-white"
+                      : "bg-sky-600 hover:bg-sky-500 text-white",
+                  )}
+                >
+                  {anyLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : anyJustOpened ? (
+                    <Check className="h-5 w-5" />
+                  ) : (
+                    <DoorOpen className="h-5 w-5" />
+                  )}
+                  <span className="hidden sm:inline">Reinlassen</span>
+                  <ChevronDown
+                    className={cn("h-4 w-4 transition-transform", openMenuOpen && "rotate-180")}
+                  />
+                </button>
+                {openMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-72 max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-xl ring-1 ring-black/20 p-2 z-50">
+                    <div className="px-2 pt-1 pb-2 text-[11px] uppercase tracking-wider text-slate-500">
+                      Tür öffnen
+                    </div>
+                    {openable.map((d) => {
+                      const isLoading = openingDeviceId === d.id;
+                      const wasOpened = openedDeviceIds.has(d.id);
+                      return (
+                        <button
+                          key={d.id}
+                          onClick={() => {
+                            handleQuickOpen(d.id);
+                            setOpenMenuOpen(false);
+                          }}
+                          disabled={openingDeviceId !== null}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-colors active:scale-[0.98] disabled:opacity-60",
+                            wasOpened
+                              ? "bg-emerald-600/20 text-emerald-300"
+                              : "text-slate-100 hover:bg-slate-800",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                              wasOpened ? "bg-emerald-600 text-white" : "bg-sky-600/20 text-sky-300",
+                            )}
+                          >
+                            {isLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : wasOpened ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              <DoorOpen className="h-4 w-4" />
+                            )}
+                          </span>
+                          <span className="truncate">{d.name}</span>
+                          <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500">
+                            {d.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
-              >
-                {isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : wasOpened ? (
-                  <Check className="h-5 w-5" />
-                ) : (
-                  <DoorOpen className="h-5 w-5" />
-                )}
-                <span className="hidden sm:inline">{d.name}</span>
-              </button>
+              </div>
             );
-          })}
+          })()}
           <button
             onClick={() => { setAddTicketPrefill(undefined); setAddTicketOpen(true); }}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
