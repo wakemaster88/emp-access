@@ -17,6 +17,7 @@ export async function GET(
   }
 
   const accountId = monitor.accountId;
+  const monitorDeviceIds = (monitor.deviceIds as number[]) ?? [];
   const dateParam = request.nextUrl.searchParams.get("date");
   const now = new Date();
   const berlinDate = dateParam || now.toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
@@ -52,7 +53,7 @@ export async function GET(
     accessAreaId: true,
   } as const;
 
-  const [tickets, allSubscriptions, services, areas, recentScans] = await Promise.all([
+  const [tickets, allSubscriptions, services, areas, recentScans, openableDevices] = await Promise.all([
     prisma.ticket.findMany({
       where: {
         accountId,
@@ -152,6 +153,18 @@ export async function GET(
       orderBy: { scanTime: "desc" },
       take: 50,
     }),
+
+    // Quick-Öffnen-Buttons im Header: Tueren + Drehkreuze, optional auf die
+    // im MonitorConfig hinterlegten deviceIds eingeschraenkt.
+    prisma.device.findMany({
+      where: {
+        accountId,
+        category: { in: ["TUER", "DREHKREUZ"] },
+        ...(monitorDeviceIds.length ? { id: { in: monitorDeviceIds } } : {}),
+      },
+      select: { id: true, name: true, category: true, lastUpdate: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   const checkedInIds = new Set(
@@ -236,5 +249,6 @@ export async function GET(
     allSubscriptions: subsWithAreas,
     recentScans,
     annySyncStatus,
+    openableDevices,
   });
 }

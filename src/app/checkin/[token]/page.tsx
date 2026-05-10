@@ -27,6 +27,8 @@ import {
   TicketX,
   RefreshCw,
   Plus,
+  DoorOpen,
+  Check,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -118,6 +120,13 @@ interface AnnySyncStatus {
   errorDetails?: string[];
 }
 
+interface OpenableDevice {
+  id: number;
+  name: string;
+  category: "TUER" | "DREHKREUZ";
+  lastUpdate: string | null;
+}
+
 interface CheckinData {
   monitorName: string;
   accountName: string;
@@ -129,6 +138,7 @@ interface CheckinData {
   allSubscriptions?: SubOption[];
   recentScans: ScanEntry[];
   annySyncStatus?: AnnySyncStatus | null;
+  openableDevices?: OpenableDevice[];
 }
 
 function toDateStr(d: Date): string {
@@ -241,7 +251,32 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   } | undefined>();
   const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [openingDeviceId, setOpeningDeviceId] = useState<number | null>(null);
+  const [openedDeviceIds, setOpenedDeviceIds] = useState<Set<number>>(new Set());
   const refreshRef = useRef<(() => Promise<void>) | null>(null);
+
+  const handleQuickOpen = useCallback(async (deviceId: number) => {
+    setOpeningDeviceId(deviceId);
+    try {
+      const res = await fetch(`/api/checkin/public/${token}/devices/${deviceId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "open" }),
+      });
+      if (res.ok) {
+        setOpenedDeviceIds((prev) => new Set(prev).add(deviceId));
+        setTimeout(() => {
+          setOpenedDeviceIds((prev) => {
+            const next = new Set(prev);
+            next.delete(deviceId);
+            return next;
+          });
+        }, 2000);
+      }
+    } finally {
+      setOpeningDeviceId(null);
+    }
+  }, [token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -620,6 +655,33 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
               {scanBubble}
             </div>
           )}
+          {(data?.openableDevices ?? []).map((d) => {
+            const isLoading = openingDeviceId === d.id;
+            const wasOpened = openedDeviceIds.has(d.id);
+            return (
+              <button
+                key={d.id}
+                onClick={() => handleQuickOpen(d.id)}
+                disabled={openingDeviceId !== null}
+                title={`${d.name} öffnen`}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60",
+                  wasOpened
+                    ? "bg-emerald-600 text-white"
+                    : "bg-sky-600 hover:bg-sky-500 text-white",
+                )}
+              >
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : wasOpened ? (
+                  <Check className="h-5 w-5" />
+                ) : (
+                  <DoorOpen className="h-5 w-5" />
+                )}
+                <span className="hidden sm:inline">{d.name}</span>
+              </button>
+            );
+          })}
           <button
             onClick={() => { setAddTicketPrefill(undefined); setAddTicketOpen(true); }}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
