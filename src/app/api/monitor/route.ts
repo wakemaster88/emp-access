@@ -21,15 +21,6 @@ export async function GET(request: NextRequest) {
 
       const poll = async () => {
         try {
-          const whereDevice: Record<string, unknown> = {};
-          if (deviceIds?.length) whereDevice.id = { in: deviceIds };
-          if (areaIds?.length) {
-            whereDevice.OR = [
-              { accessIn: { in: areaIds } },
-              { accessOut: { in: areaIds } },
-            ];
-          }
-
           const scanWhere: Record<string, unknown> = {
             accountId: accountId!,
             ...(lastScanId > 0
@@ -69,9 +60,11 @@ export async function GET(request: NextRequest) {
             sendEvent({ type: "counts", data: counts });
           }
 
+          // Geräte-Liste unabhängig vom Feed-Filter (deviceIds/areaIds), damit
+          // Filter-Dropdown und Quick-Öffnen-Buttons immer alle Geräte zeigen.
           const devices = await db.device.findMany({
-            where: { accountId: accountId!, ...whereDevice },
-            select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true },
+            where: { accountId: accountId! },
+            select: { id: true, name: true, type: true, category: true, isActive: true, lastUpdate: true, task: true },
           });
           sendEvent({ type: "devices", data: devices });
         } catch {

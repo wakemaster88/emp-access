@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, MapPin, Maximize, Minimize, Pause, Play, Ticket, Volume2, VolumeX, Wifi } from "lucide-react";
+import { Check, ChevronDown, DoorOpen, Loader2, MapPin, Maximize, Minimize, Pause, Play, Ticket, Volume2, VolumeX, Wifi } from "lucide-react";
 import { fmtTime } from "@/lib/utils";
 import { berlinYmd, isSameBerlinDay } from "@/lib/berlin-day";
 
@@ -64,10 +64,13 @@ interface DeviceStatus {
   id: number;
   name: string;
   type: string;
+  category: "DREHKREUZ" | "TUER" | "SENSOR" | "SCHALTER" | "BELEUCHTUNG" | null;
   isActive: boolean;
   lastUpdate: string | null;
   task: number;
 }
+
+const OPENABLE_CATEGORIES = new Set(["DREHKREUZ", "TUER"]);
 
 export default function MonitorPage() {
   const [scans, setScans] = useState<MonitorScan[]>([]);
@@ -79,6 +82,8 @@ export default function MonitorPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [dayKey, setDayKey] = useState(() => berlinYmd(new Date()));
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const [openedIds, setOpenedIds] = useState<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -100,6 +105,29 @@ export default function MonitorPage() {
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.45);
     } catch {}
+  }, []);
+
+  const handleQuickOpen = useCallback(async (deviceId: number) => {
+    setOpeningId(deviceId);
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "open" }),
+      });
+      if (res.ok) {
+        setOpenedIds((prev) => new Set(prev).add(deviceId));
+        setTimeout(() => {
+          setOpenedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(deviceId);
+            return next;
+          });
+        }, 2000);
+      }
+    } finally {
+      setOpeningId(null);
+    }
   }, []);
 
   const toggleFullscreen = useCallback(() => {
@@ -282,6 +310,57 @@ export default function MonitorPage() {
             ))}
           </div>
         )}
+
+        {(() => {
+          const openable = devices.filter((d) => d.category && OPENABLE_CATEGORIES.has(d.category));
+          if (openable.length === 0) return null;
+          return (
+            <Card className="border-slate-200 dark:border-slate-800">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Schnell-Öffnen</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {openable.map((d) => {
+                    const isLoading = openingId === d.id;
+                    const wasOpened = openedIds.has(d.id);
+                    const online = d.lastUpdate && d.lastUpdate > fiveMinAgo;
+                    return (
+                      <Button
+                        key={d.id}
+                        size="sm"
+                        variant="outline"
+                        disabled={openingId !== null}
+                        onClick={() => handleQuickOpen(d.id)}
+                        className={`gap-1.5 ${
+                          wasOpened
+                            ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+                            : "hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                        }`}
+                      >
+                        {isLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : wasOpened ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <DoorOpen className="h-4 w-4" />
+                        )}
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              online ? "bg-emerald-500" : "bg-slate-400"
+                            }`}
+                          />
+                          {d.name}
+                        </span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         <Card className="border-slate-200 dark:border-slate-800">
           <CardHeader className="pb-2">
