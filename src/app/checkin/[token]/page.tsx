@@ -1074,8 +1074,26 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           )}
         </Section>
 
-        {/* Subscriptions – jedes Abo wie Vereine als eingeklappte Box,
-            direkt unter den Tickets. Bei Suche automatisch aufgeklappt. */}
+        {/* Checked in */}
+        {filteredCheckedIn.length > 0 && (
+          <Section title="Eingecheckt" icon={CheckCircle2} count={filteredCheckedIn.length} color="emerald">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {filteredCheckedIn.map((t) => (
+                <TicketCard
+                  key={t.id}
+                  ticket={t}
+                  onTap={() => setSelectedTicket(t)}
+                  checked
+                  isSub={!!t.subscriptionId}
+                  highlight={scanHighlights.get(t.id)}
+                />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* Subscriptions – jedes Abo wie Vereine als eingeklappte Box.
+            Bei Suche automatisch aufgeklappt. */}
         {filteredSubscriptions.length > 0 && (
           <Section title="Abonnements" icon={CreditCard} count={filteredSubscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet">
             <div className="space-y-2">
@@ -1135,24 +1153,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   </div>
                 );
               })}
-            </div>
-          </Section>
-        )}
-
-        {/* Checked in */}
-        {filteredCheckedIn.length > 0 && (
-          <Section title="Eingecheckt" icon={CheckCircle2} count={filteredCheckedIn.length} color="emerald">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filteredCheckedIn.map((t) => (
-                <TicketCard
-                  key={t.id}
-                  ticket={t}
-                  onTap={() => setSelectedTicket(t)}
-                  checked
-                  isSub={!!t.subscriptionId}
-                  highlight={scanHighlights.get(t.id)}
-                />
-              ))}
             </div>
           </Section>
         )}
