@@ -68,10 +68,12 @@ interface CheckinTicket {
   subscriptionId: number | null;
   serviceId: number | null;
   accessAreaId: number | null;
+  vereinId: number | null;
   checkedIn: boolean;
   accessArea?: { id: number; name: string } | null;
   subscription?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean } | null;
   service?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean; allowManualCheckin?: boolean } | null;
+  verein?: { id: number; name: string } | null;
   _count?: { scans: number };
 }
 
@@ -232,6 +234,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
+  // Welche Vereins-Gruppen sind aktuell aufgeklappt? Standard: alle eingeklappt
+  // (siehe vereinGroups-Rendering). Bei aktiver Suche wird die Logik
+  // ueberbrueckt, damit Treffer immer sichtbar sind.
+  const [expandedVereine, setExpandedVereine] = useState<Set<number>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
@@ -634,14 +640,42 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     })).filter((s) => s.tickets.length > 0);
   }, [subscriptions, matchesSearch]);
 
+  // Reguläre Service-/Tickettyp-Gruppen (alle ohne Vereins-Zugehoerigkeit) –
+  // werden ganz oben in der Tickets-Sektion gerendert wie gewohnt.
   const serviceGroups = useMemo(() => {
     const groups = new Map<string, CheckinTicket[]>();
     for (const t of filteredPending) {
+      if (t.vereinId != null) continue;
       const key = t.service?.name ?? t.subscription?.name ?? t.ticketTypeName ?? "Sonstige";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(t);
     }
     return groups;
+  }, [filteredPending]);
+
+  // Vereins-Gruppen: pro Verein eine eingeklappte Sektion am Ende der
+  // Tickets-Liste. Mitglieder-Tickets eines Vereins koennen schnell zu
+  // hundert Eintraegen anwachsen (z. B. "Tristar Oelde") und sollen den
+  // Tagesueberblick nicht zumuellen. Bei aktiver Suche werden Treffer
+  // automatisch ausgeklappt, damit man trotzdem klicken kann.
+  const vereinGroups = useMemo(() => {
+    const groups = new Map<number, { id: number; name: string; tickets: CheckinTicket[] }>();
+    for (const t of filteredPending) {
+      if (t.vereinId == null) continue;
+      const name = t.verein?.name ?? `Verein #${t.vereinId}`;
+      const entry = groups.get(t.vereinId) ?? { id: t.vereinId, name, tickets: [] };
+      entry.tickets.push(t);
+      groups.set(t.vereinId, entry);
+    }
+    const sorted = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+    for (const g of sorted) {
+      g.tickets.sort((a, b) => {
+        const aN = (a.lastName ?? a.name).toLowerCase();
+        const bN = (b.lastName ?? b.name).toLowerCase();
+        return aN.localeCompare(bN);
+      });
+    }
+    return sorted;
   }, [filteredPending]);
 
   if (error) {
@@ -978,6 +1012,63 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   </div>
                 </div>
               ))}
+
+              {/* Vereine: standardmaessig eingeklappt am Ende. Bei aktiver
+                  Suche immer aufgeklappt, damit Treffer sichtbar sind. */}
+              {vereinGroups.map((g) => {
+                const isSearching = searchQuery.trim().length > 0;
+                const isExpanded = isSearching || expandedVereine.has(g.id);
+                return (
+                  <div key={`verein-${g.id}`} className="rounded-xl border border-slate-800/70 bg-slate-900/40 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isSearching) return;
+                        setExpandedVereine((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(g.id)) next.delete(g.id);
+                          else next.add(g.id);
+                          return next;
+                        });
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left"
+                    >
+                      <Users className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate">
+                        {g.name}
+                      </span>
+                      <Badge className="ml-1 bg-indigo-500/20 text-indigo-300 border-indigo-500/30 font-normal">
+                        {g.tickets.length}
+                      </Badge>
+                      <span className="ml-auto text-[10px] text-slate-500 uppercase tracking-wider">
+                        Verein
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 text-slate-500 shrink-0 transition-transform",
+                          isExpanded && "rotate-180",
+                        )}
+                      />
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-slate-800/70 p-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {g.tickets.map((t) => (
+                            <TicketCard
+                              key={t.id}
+                              ticket={t}
+                              onTap={() => setSelectedTicket(t)}
+                              onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
+                              checkingIn={checkingIn === t.id}
+                              highlight={scanHighlights.get(t.id)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </Section>

@@ -51,6 +51,7 @@ export async function GET(
     subscriptionId: true,
     serviceId: true,
     accessAreaId: true,
+    vereinId: true,
   } as const;
 
   const [tickets, allSubscriptions, services, areas, recentScans, openableDevices] = await Promise.all([
@@ -78,6 +79,7 @@ export async function GET(
         accessArea: { select: { id: true, name: true } },
         subscription: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
         service: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true, allowManualCheckin: true } },
+        verein: { select: { id: true, name: true } },
         _count: { select: { scans: true } },
       },
       orderBy: [{ slotStart: "asc" }, { startDate: "asc" }, { name: "asc" }],
@@ -111,6 +113,7 @@ export async function GET(
           select: {
             ...ticketSelect,
             accessArea: { select: { id: true, name: true } },
+            verein: { select: { id: true, name: true } },
             _count: { select: { scans: true } },
           },
         },
