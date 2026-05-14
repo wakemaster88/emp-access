@@ -234,10 +234,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
-  // Welche Vereins-Gruppen sind aktuell aufgeklappt? Standard: alle eingeklappt
-  // (siehe vereinGroups-Rendering). Bei aktiver Suche wird die Logik
+  // Welche Vereins-/Abo-Gruppen sind aktuell aufgeklappt? Standard: alle
+  // eingeklappt (siehe Rendering). Bei aktiver Suche wird die Logik
   // ueberbrueckt, damit Treffer immer sichtbar sind.
   const [expandedVereine, setExpandedVereine] = useState<Set<number>>(new Set());
+  const [expandedAbos, setExpandedAbos] = useState<Set<number>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
@@ -1073,6 +1074,71 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           )}
         </Section>
 
+        {/* Subscriptions – jedes Abo wie Vereine als eingeklappte Box,
+            direkt unter den Tickets. Bei Suche automatisch aufgeklappt. */}
+        {filteredSubscriptions.length > 0 && (
+          <Section title="Abonnements" icon={CreditCard} count={filteredSubscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet">
+            <div className="space-y-2">
+              {filteredSubscriptions.map((sub) => {
+                const isSearching = searchQuery.trim().length > 0;
+                const isExpanded = isSearching || expandedAbos.has(sub.id);
+                return (
+                  <div key={sub.id} className="rounded-xl border border-slate-800/70 bg-slate-900/40 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isSearching) return;
+                        setExpandedAbos((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(sub.id)) next.delete(sub.id);
+                          else next.add(sub.id);
+                          return next;
+                        });
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left"
+                    >
+                      <CreditCard className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate">
+                        {sub.name}
+                      </span>
+                      <Badge className="ml-1 bg-violet-500/20 text-violet-300 border-violet-500/30 font-normal">
+                        {sub.tickets.length}
+                      </Badge>
+                      <span className="ml-auto text-[10px] text-slate-500 uppercase tracking-wider">
+                        Abo
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 text-slate-500 shrink-0 transition-transform",
+                          isExpanded && "rotate-180",
+                        )}
+                      />
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-slate-800/70 p-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {sub.tickets.map((t) => (
+                            <TicketCard
+                              key={t.id}
+                              ticket={{ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } }}
+                              onTap={() => setSelectedTicket({ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } })}
+                              checked={t.checkedIn}
+                              onCheckin={() => handleCheckin(t.id)}
+                              checkingIn={checkingIn === t.id}
+                              isSub
+                              highlight={scanHighlights.get(t.id)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
         {/* Checked in */}
         {filteredCheckedIn.length > 0 && (
           <Section title="Eingecheckt" icon={CheckCircle2} count={filteredCheckedIn.length} color="emerald">
@@ -1086,33 +1152,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   isSub={!!t.subscriptionId}
                   highlight={scanHighlights.get(t.id)}
                 />
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* Subscriptions */}
-        {filteredSubscriptions.length > 0 && (
-          <Section title="Abonnements" icon={CreditCard} count={filteredSubscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet">
-            <div className="space-y-3">
-              {filteredSubscriptions.map((sub) => (
-                <div key={sub.id}>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-1">{sub.name}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {sub.tickets.map((t) => (
-                      <TicketCard
-                        key={t.id}
-                        ticket={{ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } }}
-                        onTap={() => setSelectedTicket({ ...t, subscription: { id: sub.id, name: sub.name, requiresPhoto: sub.requiresPhoto, requiresRfid: sub.requiresRfid } })}
-                        checked={t.checkedIn}
-                        onCheckin={() => handleCheckin(t.id)}
-                        checkingIn={checkingIn === t.id}
-                        isSub
-                        highlight={scanHighlights.get(t.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
               ))}
             </div>
           </Section>
