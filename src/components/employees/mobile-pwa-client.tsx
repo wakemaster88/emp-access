@@ -4,7 +4,7 @@ import { createElement, useEffect, useMemo, useState, useCallback } from "react"
 import {
   DoorOpen, Lock, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
   Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, KeyRound,
-  RefreshCw, ShieldOff, ChevronDown, Sparkles, Building2,
+  RefreshCw, ChevronDown, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -254,30 +254,30 @@ export function MobileAccessClient({ token, profile }: Props) {
       {/* ─── Header ──────────────────────────────────────────────────── */}
       <header className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600" />
-        <div className="absolute -top-24 -right-16 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-fuchsia-300/20 blur-3xl" />
+        <div className="absolute -top-16 -right-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+        <div className="absolute -bottom-12 -left-6 h-32 w-32 rounded-full bg-fuchsia-300/20 blur-2xl" />
 
-        <div className="relative px-5 pt-6 pb-5 text-white">
-          {/* Tenant + Live-Pill */}
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-medium text-white/70 inline-flex items-center gap-1.5">
-              <Building2 className="h-3 w-3" /> {profile.accountName}
+        <div className="relative px-4 pt-3 pb-3.5 text-white">
+          {/* Top-Row: Tenant + Live */}
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-medium text-white/70 inline-flex items-center gap-1">
+              <Building2 className="h-2.5 w-2.5" /> {profile.accountName}
             </p>
             <button
               type="button"
               onClick={refreshProfile}
               disabled={refreshing}
-              className="h-7 inline-flex items-center gap-1 rounded-full bg-white/10 hover:bg-white/20 px-2.5 text-[10px] font-medium text-white/90 backdrop-blur transition disabled:opacity-50"
+              className="h-5 inline-flex items-center gap-1 rounded-full bg-white/15 hover:bg-white/25 px-2 text-[9px] font-medium text-white/90 backdrop-blur transition disabled:opacity-50"
               aria-label="Aktualisieren"
             >
-              <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+              <RefreshCw className={cn("h-2.5 w-2.5", refreshing && "animate-spin")} />
               live
             </button>
           </div>
 
-          {/* Avatar + Name */}
-          <div className="mt-4 flex items-center gap-3.5">
-            <div className="h-14 w-14 rounded-2xl bg-white/15 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-lg font-bold shrink-0 overflow-hidden">
+          {/* Avatar + Name + Status auf einer Zeile */}
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-white/15 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden">
               {profile.profileImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profile.profileImage} alt="" className="h-full w-full object-cover" />
@@ -286,66 +286,55 @@ export function MobileAccessClient({ token, profile }: Props) {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold leading-tight truncate">{fullName}</h1>
-              <p className="text-xs text-white/70 mt-0.5 truncate">
+              <h1 className="text-base font-bold leading-tight truncate">{fullName}</h1>
+              <p className="text-[10px] text-white/70 truncate">
                 {profile.ticketTypeName ?? "Mitarbeiter"}
-                {profile.endDate && (
-                  <>
-                    <span className="mx-1.5 opacity-50">·</span>
-                    <span>bis {fmtDate(profile.endDate)}</span>
-                  </>
-                )}
+                {profile.endDate && <> · bis {fmtDate(profile.endDate)}</>}
               </p>
             </div>
-          </div>
-
-          {/* Status pill */}
-          <div className="mt-4">
-            {!profile.contractOk ? (
-              <StatusPill kind="err" icon={ShieldOff} text={profile.contractReason ?? "Kein Zutritt"} />
-            ) : scheduleCheck && !scheduleCheck.ok ? (
-              <StatusPill kind="warn" icon={Clock} text={scheduleCheck.reason ?? "Ausserhalb der Zeit"} />
-            ) : (
-              <StatusPill kind="ok" icon={Sparkles} text="Zugriff freigegeben" />
-            )}
+            {/* Status als Inline-Dot */}
+            <HeaderStatusDot
+              kind={!profile.contractOk ? "err" : scheduleCheck && !scheduleCheck.ok ? "warn" : "ok"}
+              label={
+                !profile.contractOk ? (profile.contractReason ?? "Kein Zutritt")
+                : scheduleCheck && !scheduleCheck.ok ? (scheduleCheck.reason ?? "Ausserhalb Zeit")
+                : "Aktiv"
+              }
+            />
           </div>
         </div>
       </header>
 
       {/* ─── Schedule Card (collapsible) ─────────────────────────────── */}
       {scheduleConfigured && (
-        <div className="px-4 -mt-3 relative z-10">
+        <div className="px-3 pt-2">
           <button
             type="button"
             onClick={() => setScheduleOpen((o) => !o)}
             className={cn(
-              "w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg",
-              "px-4 py-2.5 flex items-center justify-between text-sm transition-colors",
-              scheduleCheck && !scheduleCheck.ok
-                ? "ring-2 ring-amber-300 dark:ring-amber-900/60"
-                : "",
+              "w-full rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800",
+              "px-3 py-1.5 flex items-center justify-between text-xs transition-colors",
+              scheduleCheck && !scheduleCheck.ok && "ring-1 ring-amber-300 dark:ring-amber-900/60",
             )}
           >
-            <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
-              <Clock className="h-4 w-4 text-amber-500" />
+            <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium">
+              <Clock className="h-3 w-3 text-amber-500" />
               Arbeitszeiten
             </span>
-            <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", scheduleOpen && "rotate-180")} />
+            <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform", scheduleOpen && "rotate-180")} />
           </button>
           {scheduleOpen && (
-            <div className="mt-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2 shadow">
+            <div className="mt-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-1">
               {DAY_KEYS.map((d) => {
                 const cfg = schedule[d];
                 return (
                   <div key={d} className={cn(
-                    "flex items-center justify-between text-sm py-1.5 px-2",
+                    "flex items-center justify-between text-xs py-0.5 px-2",
                     !cfg.enabled && "opacity-40",
                   )}>
-                    <span className="font-medium text-slate-700 dark:text-slate-300 w-10">{DAY_LABELS[d]}</span>
-                    <span className="text-xs font-mono text-slate-500">
-                      {cfg.enabled
-                        ? `${cfg.on || "00:00"} – ${cfg.off || "24:00"}`
-                        : "—"}
+                    <span className="font-medium text-slate-700 dark:text-slate-300 w-8 text-[11px]">{DAY_LABELS[d]}</span>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      {cfg.enabled ? `${cfg.on || "00:00"} – ${cfg.off || "24:00"}` : "—"}
                     </span>
                   </div>
                 );
@@ -356,23 +345,23 @@ export function MobileAccessClient({ token, profile }: Props) {
       )}
 
       {/* ─── Devices grouped ─────────────────────────────────────────── */}
-      <main className="px-4 pt-4 pb-24 flex-1 space-y-5">
+      <main className="px-3 pt-2 pb-16 flex-1 space-y-2.5">
         {profile.devices.length === 0 && (
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-400">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-center text-sm text-slate-400">
             Keine Geräte freigegeben.
           </div>
         )}
 
         {grouped.map((group) => (
-          <section key={group.meta.label} className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          <section key={group.meta.label}>
+            <div className="flex items-center justify-between px-2 pb-1">
+              <h2 className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
                 {group.meta.label}
               </h2>
-              <span className="text-[10px] text-slate-400">{group.devices.length}</span>
+              <span className="text-[9px] text-slate-400">{group.devices.length}</span>
             </div>
 
-            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden shadow-sm">
+            <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
               {group.devices.map((device) => (
                 <DeviceRow
                   key={device.id}
@@ -388,9 +377,8 @@ export function MobileAccessClient({ token, profile }: Props) {
         ))}
       </main>
 
-      {/* Footer */}
-      <footer className="mt-auto px-5 py-3 text-center text-[10px] text-slate-400">
-        EMP Access · Persönlicher Zugang
+      <footer className="mt-auto px-4 pb-2 text-center text-[9px] text-slate-400">
+        EMP Access
       </footer>
     </div>
   );
@@ -418,31 +406,30 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
   const secondaryLoading = actions?.secondary && loading === `${device.id}:${actions.secondary.key}`;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5">
+    <div className="flex items-center gap-2 px-2.5 py-1.5">
       {/* Icon */}
       <div className={cn(
-        "h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ring-1",
-        accent.bg, accent.text, accent.ring,
+        "h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
+        accent.bg, accent.text,
       )}>
-        {createElement(iconComp, { className: "h-5 w-5" })}
+        {createElement(iconComp, { className: "h-3.5 w-3.5" })}
       </div>
 
-      {/* Name + meta */}
-      <div className="flex-1 min-w-0 mr-1">
-        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight">
+      {/* Name */}
+      <div className="flex-1 min-w-0">
+        <p
+          className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight"
+          title={device.via === "direct" ? `${device.name} · Direktzugang` : `${device.name} · via Bereich`}
+        >
           {device.name}
-        </p>
-        <p className="text-[10px] text-slate-400 truncate mt-0.5">
-          {device.via === "direct" ? "Direktzugang" : "via Bereich"}
         </p>
       </div>
 
       {/* Actions */}
       {actions === null ? (
-        <span className="text-[10px] text-slate-400 italic shrink-0 pr-1">nur Anzeige</span>
+        <span className="text-[9px] text-slate-400 italic shrink-0 pr-1">—</span>
       ) : (
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* Secondary (klein, icon-only) */}
+        <div className="flex items-center gap-1 shrink-0">
           {actions.secondary && (
             <button
               type="button"
@@ -451,41 +438,39 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
               aria-label={actions.secondary.label}
               title={actions.secondary.label}
               className={cn(
-                "h-10 w-10 rounded-xl flex items-center justify-center transition active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed",
+                "h-7 w-7 rounded-lg flex items-center justify-center transition active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed",
                 actions.secondary.tone === "danger"
-                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-1 ring-rose-300/50 dark:ring-rose-900/50 hover:bg-rose-500/20"
-                  : "bg-slate-500/10 text-slate-600 dark:text-slate-300 ring-1 ring-slate-300/50 dark:ring-slate-700 hover:bg-slate-500/20",
+                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20"
+                  : "bg-slate-500/10 text-slate-600 dark:text-slate-300 hover:bg-slate-500/20",
               )}
             >
               {secondaryLoading
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <actions.secondary.icon className="h-4 w-4" />}
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : createElement(actions.secondary.icon, { className: "h-3.5 w-3.5" })}
             </button>
           )}
 
-          {/* Primary (full-color) */}
           <button
             type="button"
             onClick={() => onAction(device, actions.primary.key)}
             disabled={!enabled || loading !== null}
             className={cn(
-              "h-10 min-w-[88px] px-3.5 rounded-xl text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5",
-              "shadow-sm shadow-emerald-900/10 active:scale-95 transition-transform",
-              "bg-gradient-to-b",
+              "h-7 px-2.5 rounded-lg text-white text-[12px] font-semibold inline-flex items-center justify-center gap-1",
+              "active:scale-95 transition-transform bg-gradient-to-b",
               primaryFb?.type === "ok" ? "from-emerald-500 to-emerald-700" :
               primaryFb?.type === "err" ? "from-rose-500 to-rose-700" :
               actions.primary.gradient,
-              "disabled:opacity-30 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-500 disabled:shadow-none",
+              "disabled:opacity-30 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-500",
             )}
           >
             {primaryLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : primaryFb?.type === "ok" ? (
-              <CheckCircle2 className="h-4 w-4" />
+              <CheckCircle2 className="h-3.5 w-3.5" />
             ) : primaryFb?.type === "err" ? (
-              <XCircle className="h-4 w-4" />
+              <XCircle className="h-3.5 w-3.5" />
             ) : (
-              <actions.primary.icon className="h-4 w-4" />
+              createElement(actions.primary.icon, { className: "h-3.5 w-3.5" })
             )}
             <span className="whitespace-nowrap">
               {primaryFb?.type === "ok" ? "OK" : primaryFb?.type === "err" ? "Fehler" : actions.primary.label}
@@ -497,29 +482,25 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
   );
 }
 
-// ─── StatusPill ──────────────────────────────────────────────────────────────
+// ─── HeaderStatusDot ─────────────────────────────────────────────────────────
 
-function StatusPill({
-  kind, icon: Icon, text,
-}: {
-  kind: "ok" | "warn" | "err";
-  icon: React.ComponentType<{ className?: string }>;
-  text: string;
-}) {
+function HeaderStatusDot({ kind, label }: { kind: "ok" | "warn" | "err"; label: string }) {
   const cls = kind === "ok"
-    ? "bg-emerald-400/20 border-emerald-200/30 text-emerald-50"
+    ? "bg-emerald-400/25 text-emerald-50 ring-emerald-200/40"
     : kind === "warn"
-      ? "bg-amber-400/20 border-amber-200/30 text-amber-50"
-      : "bg-rose-400/20 border-rose-200/30 text-rose-50";
+      ? "bg-amber-400/25 text-amber-50 ring-amber-200/40"
+      : "bg-rose-400/25 text-rose-50 ring-rose-200/40";
   const dot = kind === "ok" ? "bg-emerald-300" : kind === "warn" ? "bg-amber-300" : "bg-rose-300";
   return (
-    <div className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 backdrop-blur", cls)}>
-      <span className="relative flex h-2 w-2">
+    <div
+      title={label}
+      className={cn("inline-flex items-center gap-1.5 rounded-full ring-1 backdrop-blur px-2 py-1 shrink-0", cls)}
+    >
+      <span className="relative flex h-1.5 w-1.5">
         {kind === "ok" && <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-60", dot)} />}
-        <span className={cn("relative inline-flex rounded-full h-2 w-2", dot)} />
+        <span className={cn("relative inline-flex rounded-full h-1.5 w-1.5", dot)} />
       </span>
-      <Icon className="h-3.5 w-3.5" />
-      <span className="text-xs font-semibold">{text}</span>
+      <span className="text-[10px] font-semibold whitespace-nowrap max-w-[120px] truncate">{label}</span>
     </div>
   );
 }
