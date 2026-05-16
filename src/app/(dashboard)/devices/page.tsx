@@ -40,6 +40,7 @@ export default async function DevicesPage({ searchParams }: Props) {
         accessIn: true,
         accessOut: true,
         lastUpdate: true,
+        systemInfo: true,
         _count: { select: { scans: true } },
       },
       orderBy: { name: "asc" },

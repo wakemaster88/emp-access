@@ -19,6 +19,7 @@ import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
 import { ScheduleCard } from "@/components/devices/schedule-card";
 import { SystemInfoCard } from "@/components/devices/system-info-card";
+import { NukiStatusCard } from "@/components/devices/nuki-status-card";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
 
 interface Props {
@@ -225,6 +226,20 @@ export default async function DeviceDetailPage({ params }: Props) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Nuki Smart Lock – Status mit Battery/State/Letzte Aktion */}
+        {device.type === "NUKI_SMARTLOCK" && (
+          <NukiStatusCard
+            deviceId={device.id}
+            initialInfo={
+              device.systemInfo && typeof device.systemInfo === "object"
+                ? (device.systemInfo as Parameters<typeof NukiStatusCard>[0]["initialInfo"])
+                : null
+            }
+            firmware={device.firmware ?? null}
+            lastUpdate={device.lastUpdate?.toISOString() ?? null}
+          />
+        )}
 
         {/* Zeitsteuerung – eigene Card für Schalter & Beleuchtung */}
         {(device.category === "SCHALTER" || device.category === "BELEUCHTUNG") && (

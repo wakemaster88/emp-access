@@ -9,6 +9,9 @@ import {
 } from "@/components/ui/table";
 import {
   Activity,
+  Battery,
+  BatteryLow,
+  BatteryWarning,
   ChevronRight,
   Clock,
   Cpu,
@@ -17,11 +20,14 @@ import {
   Globe,
   KeyRound,
   Lightbulb,
+  Lock,
   MapPin,
+  Plug,
   Power,
   PowerOff,
   ScanLine,
   ToggleRight,
+  Unlock,
   Wifi,
   Zap,
 } from "lucide-react";
@@ -42,7 +48,33 @@ interface Device {
   accessIn: number | null;
   accessOut: number | null;
   lastUpdate: Date | string | null;
+  systemInfo?: unknown;
   _count: { scans: number };
+}
+
+// Nuki-Status aus device.systemInfo (Top-Level oder verschachtelt) ableiten.
+function nukiStatus(info: unknown): {
+  state: number | null;
+  charge: number | null;
+  critical: boolean;
+  charging: boolean;
+  keypadCritical: boolean;
+} {
+  if (!info || typeof info !== "object") {
+    return { state: null, charge: null, critical: false, charging: false, keypadCritical: false };
+  }
+  const i = info as Record<string, unknown>;
+  const inner = (i.state && typeof i.state === "object") ? (i.state as Record<string, unknown>) : {};
+  const charge = (typeof i.batteryCharge === "number") ? i.batteryCharge
+    : (typeof inner.batteryCharge === "number") ? inner.batteryCharge
+    : null;
+  return {
+    state: typeof inner.state === "number" ? inner.state : null,
+    charge,
+    critical: !!(i.batteryCritical ?? inner.batteryCritical),
+    charging: !!(i.batteryCharging ?? inner.batteryCharging),
+    keypadCritical: !!(i.keypadBatteryCritical ?? inner.keypadBatteryCritical),
+  };
 }
 
 interface ShellyStatus {
@@ -207,6 +239,51 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     <span className="flex items-center gap-0.5 text-xs text-slate-400">
                       <Zap className="h-3 w-3 text-amber-400" />{shelly.power.toFixed(0)} W
                     </span>
+                  )}
+                </div>
+              );
+            }
+
+            // Nuki Smart Lock: Battery + Zustand
+            if (isNuki) {
+              const ns = nukiStatus(device.systemInfo);
+              const charge = ns.charge;
+              const batCls = ns.critical || (charge != null && charge < 15)
+                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                : (charge != null && charge < 30)
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400";
+              const BatIcon = ns.charging ? Plug
+                : (ns.critical || (charge != null && charge < 15)) ? BatteryWarning
+                : (charge != null && charge < 30) ? BatteryLow
+                : Battery;
+              const stateCls =
+                ns.state === 1 || ns.state === 4 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                : ns.state === 3 || ns.state === 5 || ns.state === 6 || ns.state === 7 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                : ns.state === 254 ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
+              const stateLabel =
+                ns.state === 1 ? "Verschlossen"
+                : ns.state === 3 ? "Entriegelt"
+                : ns.state === 5 ? "Falle offen"
+                : ns.state === 6 ? "Lock'n'Go"
+                : ns.state === 254 ? "Blockiert"
+                : ns.state == null ? "Unbekannt"
+                : `State ${ns.state}`;
+              const StIcon = ns.state === 1 || ns.state === 4 ? Lock : Unlock;
+              return (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge className={cn("gap-1 text-xs h-5", stateCls)}>
+                    <StIcon className="h-3 w-3" /> {stateLabel}
+                  </Badge>
+                  <Badge className={cn("gap-1 text-xs h-5", batCls)}>
+                    <BatIcon className="h-3 w-3" />
+                    {charge != null ? `${Math.round(charge)}%` : (ns.critical ? "schwach" : "OK")}
+                  </Badge>
+                  {ns.keypadCritical && (
+                    <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 gap-1 text-xs h-5">
+                      <KeyRound className="h-3 w-3" /> Keypad
+                    </Badge>
                   )}
                 </div>
               );
