@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       renewUrl: data.renewUrl ?? null,
       isActive: data.isActive ?? true,
       cooldownDays: data.cooldownDays ?? 30,
+      lookbackDays: data.lookbackDays ?? 7,
     },
   });
 

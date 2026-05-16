@@ -310,6 +310,7 @@ export const emailRuleCreateSchema = z.object({
   renewUrl: z.string().url().max(500).nullable().optional(),
   isActive: z.boolean().optional(),
   cooldownDays: z.coerce.number().int().min(0).max(365).optional(),
+  lookbackDays: z.coerce.number().int().min(0).max(365).optional(),
 });
 
 export const emailRuleUpdateSchema = emailRuleCreateSchema.partial();

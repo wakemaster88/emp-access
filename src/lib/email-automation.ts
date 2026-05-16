@@ -56,7 +56,23 @@ interface TicketCandidate {
   daysSinceTrigger: number;
 }
 
-/** Lädt Kandidaten für eine Regel im Fenster [startOfDay(now)+0; +1). */
+/**
+ * Lädt Kandidaten für eine Regel. Das Trigger-Fenster ist `lookbackDays + 1` Tage
+ * breit und erstreckt sich vom exakten Soll-Sendetag rückwärts. So werden auch
+ * verpasste Tage (Cron-Outage, frisch aktivierte Regeln) nachgeholt; Cooldown +
+ * EmailSend-Log verhindern Doppel-Versand.
+ *
+ *   SUBSCRIPTION_EXPIRING (offset = Tage VOR endDate):
+ *     Soll-Sendetag = endDate − offset
+ *     ⇒ endDate ∈ [today + offset − lookback, today + offset + 1)
+ *
+ *   SUBSCRIPTION_EXPIRED  (offset = Tage NACH endDate):
+ *     Soll-Sendetag = endDate + offset
+ *     ⇒ endDate ∈ [today − offset − lookback, today − offset + 1)
+ *
+ *   DAY_VISIT_FOLLOWUP    (offset = Tage NACH firstScanAt):  analog endDate→firstScanAt
+ *   TICKET_WELCOME        (offset = Tage NACH createdAt):    analog endDate→createdAt
+ */
 async function loadCandidates(
   accountId: number,
   rule: EmailRule,
@@ -64,14 +80,8 @@ async function loadCandidates(
 ): Promise<TicketCandidate[]> {
   const today = startOfDay(now);
   const tomorrow = addDays(today, 1);
-
-  // Wir suchen alle Tickets mit Email, deren Trigger-Datum heute innerhalb
-  // des Offsets liegt:
-  //   trigger == SUBSCRIPTION_EXPIRING  → endDate ∈ [today + offset, today + offset + 1)
-  //   trigger == SUBSCRIPTION_EXPIRED   → endDate ∈ [today - offset - 1, today - offset)
-  //   trigger == DAY_VISIT_FOLLOWUP     → firstScanAt ∈ [today - offset - 1, today - offset)
-  //   trigger == TICKET_WELCOME         → createdAt ∈ [today - offset - 1, today - offset)
   const offset = rule.daysOffset;
+  const lookback = Math.max(0, rule.lookbackDays ?? 0);
 
   const baseWhere = {
     accountId,
@@ -86,12 +96,11 @@ async function loadCandidates(
 
   switch (rule.trigger as EmailRuleTrigger) {
     case "SUBSCRIPTION_EXPIRING": {
-      // Nur echte Abos
       where = {
         ...baseWhere,
         subscriptionId: rule.subscriptionId ?? { not: null },
         endDate: {
-          gte: addDays(today, offset),
+          gte: addDays(today, offset - lookback),
           lt: addDays(tomorrow, offset),
         },
       };
@@ -103,8 +112,8 @@ async function loadCandidates(
         ...baseWhere,
         subscriptionId: rule.subscriptionId ?? { not: null },
         endDate: {
-          gte: addDays(today, -offset - 1),
-          lt: addDays(today, -offset),
+          gte: addDays(today, -offset - lookback),
+          lt: addDays(tomorrow, -offset),
         },
       };
       triggerField = "endDate";
@@ -116,8 +125,8 @@ async function loadCandidates(
         // Kein Abo-Ticket – Followup nur für Tagesgäste/Service.
         subscriptionId: null,
         firstScanAt: {
-          gte: addDays(today, -offset - 1),
-          lt: addDays(today, -offset),
+          gte: addDays(today, -offset - lookback),
+          lt: addDays(tomorrow, -offset),
         },
       };
       triggerField = "firstScanAt";
@@ -127,8 +136,8 @@ async function loadCandidates(
       where = {
         ...baseWhere,
         createdAt: {
-          gte: addDays(today, -offset - 1),
-          lt: addDays(today, -offset),
+          gte: addDays(today, -offset - lookback),
+          lt: addDays(tomorrow, -offset),
         },
       };
       triggerField = "createdAt";

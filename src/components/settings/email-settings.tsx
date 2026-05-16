@@ -43,6 +43,7 @@ import {
   FlaskConical,
   RefreshCw,
   Search,
+  Stethoscope,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PRESET_TEMPLATES, type PresetTemplate } from "@/lib/email-templates";
@@ -87,6 +88,45 @@ interface EmailConfigDTO {
   websiteUrl: string | null;
 }
 
+interface DiagnoseResult {
+  rule: {
+    id: number;
+    name: string;
+    trigger: RuleTrigger;
+    daysOffset: number;
+    lookbackDays: number;
+    cooldownDays: number;
+  };
+  now: string;
+  triggerField: "endDate" | "firstScanAt" | "createdAt";
+  triggerWindow: { from: string; to: string };
+  funnel: {
+    ticketsTotal: number;
+    ticketsWithEmail: number;
+    ticketsValidStatus: number;
+    ticketsWithTriggerField: number;
+    ticketsScopeMatch: number;
+    ticketsInWindow: number;
+    cooldownBlocked: number;
+    ticketsWouldSend: number;
+  };
+  samplesInWindow: {
+    id: number;
+    name: string | null;
+    email: string | null;
+    ticketTypeName: string | null;
+    triggerDate: string | null;
+    cooldownBlocked: boolean;
+  }[];
+  upcomingSample: {
+    id: number;
+    name: string | null;
+    email: string | null;
+    triggerDate: string | null;
+  }[];
+  lastSend: { sentAt: string; status: string; to: string; errorMessage: string | null } | null;
+}
+
 interface EmailRuleDTO {
   id: number;
   name: string;
@@ -103,6 +143,7 @@ interface EmailRuleDTO {
   renewUrl: string | null;
   isActive: boolean;
   cooldownDays: number;
+  lookbackDays: number;
   sentCount: number;
   createdAt: string;
 }
@@ -984,11 +1025,12 @@ function RuleRow({
   onEdit: () => void;
   onChanged: () => Promise<void> | void;
 }) {
-  const [busy, setBusy] = useState<"toggle" | "delete" | "run" | "test" | null>(null);
+  const [busy, setBusy] = useState<"toggle" | "delete" | "run" | "test" | "diagnose" | null>(null);
   const [runMsg, setRunMsg] = useState<string | null>(null);
   const [testOpen, setTestOpen] = useState(false);
   const [testTo, setTestTo] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [diagnose, setDiagnose] = useState<DiagnoseResult | null>(null);
   const meta = TRIGGER_META[rule.trigger];
   const Icon = meta.icon;
 
@@ -1038,6 +1080,19 @@ function RuleRow({
         setRunMsg("Regel ausgeführt.");
       }
       await onChanged();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runDiagnose() {
+    setBusy("diagnose");
+    setDiagnose(null);
+    try {
+      const res = await fetch(`/api/email/rules/${rule.id}/diagnose`);
+      if (!res.ok) return;
+      const data = (await res.json()) as DiagnoseResult;
+      setDiagnose(data);
     } finally {
       setBusy(null);
     }
@@ -1133,6 +1188,16 @@ function RuleRow({
           <Button variant="ghost" size="icon" onClick={runNow} disabled={busy !== null} title="Jetzt ausführen">
             {busy === "run" ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={runDiagnose}
+            disabled={busy !== null}
+            title="Diagnose: warum sendet die Regel (nichts)?"
+            className={cn(diagnose && "bg-sky-50 dark:bg-sky-950/30 text-sky-600 dark:text-sky-400")}
+          >
+            {busy === "diagnose" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
+          </Button>
           <Button variant="ghost" size="icon" onClick={onEdit} disabled={busy !== null} title="Bearbeiten">
             <Pencil className="h-4 w-4" />
           </Button>
@@ -1213,7 +1278,244 @@ function RuleRow({
           {runMsg}
         </div>
       )}
+      {diagnose && (
+        <DiagnoseBlock diagnose={diagnose} onClose={() => setDiagnose(null)} />
+      )}
     </li>
+  );
+}
+
+// ── Diagnose Block ──────────────────────────────────────────────────────────
+
+function DiagnoseBlock({
+  diagnose,
+  onClose,
+}: {
+  diagnose: DiagnoseResult;
+  onClose: () => void;
+}) {
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  const f = diagnose.funnel;
+
+  async function runAnnySync() {
+    setBackfillBusy(true);
+    setBackfillResult(null);
+    try {
+      const res = await fetch("/api/integrations/anny", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setBackfillResult(
+          `Anny-Sync abgeschlossen: ${data.created ?? 0} neu, ${data.updated ?? 0} aktualisiert. ` +
+            `Bitte Diagnose erneut ausführen.`,
+        );
+      } else {
+        setBackfillResult(
+          typeof data.error === "string"
+            ? `Fehler: ${data.error}`
+            : "Sync fehlgeschlagen.",
+        );
+      }
+    } catch {
+      setBackfillResult("Netzwerkfehler beim Sync.");
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
+
+  const wouldSend = f.ticketsWouldSend;
+  const tone =
+    wouldSend > 0
+      ? "border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/60 dark:bg-emerald-950/20"
+      : "border-sky-200 dark:border-sky-900/40 bg-sky-50/60 dark:bg-sky-950/20";
+
+  function formatDate(iso: string | null): string {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  const steps: { label: string; value: number; hint?: string }[] = [
+    { label: "Tickets gesamt", value: f.ticketsTotal },
+    { label: "davon mit E-Mail", value: f.ticketsWithEmail, hint: "Ticket.email ist nicht NULL" },
+    { label: "Status VALID/REDEEMED", value: f.ticketsValidStatus },
+    {
+      label: `Trigger-Feld (${diagnose.triggerField}) gesetzt`,
+      value: f.ticketsWithTriggerField,
+    },
+    { label: "Filter (Abo/Service) passt", value: f.ticketsScopeMatch },
+    {
+      label: "Im Trigger-Fenster",
+      value: f.ticketsInWindow,
+      hint: `${formatDate(diagnose.triggerWindow.from)} – ${formatDate(diagnose.triggerWindow.to)}`,
+    },
+    { label: "Cooldown blockiert", value: f.cooldownBlocked },
+  ];
+
+  return (
+    <div className={cn("border-t px-3 py-3 rounded-b-lg space-y-3", tone)}>
+      <div className="flex items-center gap-2">
+        <Stethoscope className="h-3.5 w-3.5 text-sky-700 dark:text-sky-400 shrink-0" />
+        <span className="text-xs font-semibold text-sky-900 dark:text-sky-200">
+          Diagnose
+        </span>
+        <span className="text-xs text-slate-600 dark:text-slate-400">
+          Lookback {diagnose.rule.lookbackDays}d · Cooldown {diagnose.rule.cooldownDays}d
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto text-sky-700/60 hover:text-sky-800 dark:text-sky-300/60 dark:hover:text-sky-200"
+          aria-label="Diagnose schließen"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="grid gap-1.5 text-xs">
+        {steps.map((s, idx) => (
+          <div
+            key={s.label}
+            className={cn(
+              "flex items-center justify-between gap-2 px-2 py-1 rounded",
+              idx === steps.length - 1 || s.value === 0
+                ? "bg-white/60 dark:bg-slate-950/40"
+                : "bg-white/30 dark:bg-slate-950/20",
+            )}
+          >
+            <div className="min-w-0">
+              <span className="text-slate-700 dark:text-slate-300">{s.label}</span>
+              {s.hint && (
+                <span className="text-slate-400 dark:text-slate-500 ml-1.5">({s.hint})</span>
+              )}
+            </div>
+            <span
+              className={cn(
+                "font-mono font-semibold tabular-nums shrink-0",
+                s.value === 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100",
+              )}
+            >
+              {s.value}
+            </span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded bg-emerald-100/70 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-900/50">
+          <span className="font-medium text-emerald-900 dark:text-emerald-200">
+            Würde jetzt versenden
+          </span>
+          <span className="font-mono font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
+            {wouldSend}
+          </span>
+        </div>
+      </div>
+
+      {diagnose.samplesInWindow.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+            Beispiele im Fenster
+          </p>
+          <ul className="space-y-0.5">
+            {diagnose.samplesInWindow.slice(0, 5).map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-slate-950/40"
+              >
+                <span className="truncate flex-1">
+                  {s.name ?? "—"} <span className="text-slate-400">·</span>{" "}
+                  <span className="text-slate-500">{s.email ?? "kein Email"}</span>
+                </span>
+                <span className="text-slate-500 shrink-0">{formatDate(s.triggerDate)}</span>
+                {s.cooldownBlocked && (
+                  <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px]">
+                    Cooldown
+                  </Badge>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {diagnose.samplesInWindow.length === 0 && diagnose.upcomingSample.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+            Nächste passende Tickets (außerhalb Fenster)
+          </p>
+          <ul className="space-y-0.5">
+            {diagnose.upcomingSample.slice(0, 5).map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-slate-950/40"
+              >
+                <span className="truncate flex-1">
+                  {s.name ?? "—"} <span className="text-slate-400">·</span>{" "}
+                  <span className="text-slate-500">{s.email ?? "kein Email"}</span>
+                </span>
+                <span className="text-slate-500 shrink-0">{formatDate(s.triggerDate)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {f.ticketsTotal > 0 && f.ticketsWithEmail < f.ticketsTotal && (
+        <div className="space-y-2">
+          <div className="flex items-start gap-2 p-2 rounded bg-amber-100/80 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>
+              {f.ticketsWithEmail === 0
+                ? `Keines der ${f.ticketsTotal} Tickets hat eine E-Mail-Adresse. `
+                : `${f.ticketsTotal - f.ticketsWithEmail} von ${f.ticketsTotal} Tickets haben keine E-Mail-Adresse. `}
+              Anny-Sync pflegt E-Mails bei jedem Lauf nach – stoße ihn jetzt manuell an, um
+              Altdaten zu backfillen.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={runAnnySync}
+              disabled={backfillBusy}
+              className="gap-1.5"
+            >
+              {backfillBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Anny-Sync jetzt starten
+            </Button>
+            {backfillResult && (
+              <span className="text-xs text-slate-600 dark:text-slate-400">{backfillResult}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {f.ticketsScopeMatch > 0 && f.ticketsInWindow === 0 && (
+        <div className="flex items-start gap-2 p-2 rounded bg-sky-100/80 dark:bg-sky-950/40 text-sky-900 dark:text-sky-200 text-xs">
+          <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            Es gibt {f.ticketsScopeMatch} grundsätzlich passende Tickets, aber gerade keines im
+            Trigger-Fenster. Erhöhe „Nachhol-Fenster (Tage)“ in der Regel, wenn du verpasste Tage
+            rückwirkend abdecken willst.
+          </span>
+        </div>
+      )}
+
+      {diagnose.lastSend && (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          Letzter Send: {formatDate(diagnose.lastSend.sentAt)} an {diagnose.lastSend.to} ·{" "}
+          {diagnose.lastSend.status}
+          {diagnose.lastSend.errorMessage ? ` · ${diagnose.lastSend.errorMessage}` : ""}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1304,6 +1606,7 @@ function RuleDialog({
   const [trigger, setTrigger] = useState<RuleTrigger>("SUBSCRIPTION_EXPIRING");
   const [daysOffset, setDaysOffset] = useState<number>(7);
   const [cooldownDays, setCooldownDays] = useState<number>(30);
+  const [lookbackDays, setLookbackDays] = useState<number>(7);
   const [subscriptionId, setSubscriptionId] = useState<string>("any");
   const [serviceId, setServiceId] = useState<string>("any");
   const [subject, setSubject] = useState("");
@@ -1327,6 +1630,7 @@ function RuleDialog({
       setTrigger(rule.trigger);
       setDaysOffset(rule.daysOffset);
       setCooldownDays(rule.cooldownDays);
+      setLookbackDays(rule.lookbackDays ?? 7);
       setSubscriptionId(rule.subscriptionId ? String(rule.subscriptionId) : "any");
       setServiceId(rule.serviceId ? String(rule.serviceId) : "any");
       setSubject(rule.subject);
@@ -1343,6 +1647,7 @@ function RuleDialog({
       setTrigger(d.trigger);
       setDaysOffset(d.daysOffset);
       setCooldownDays(d.cooldownDays);
+      setLookbackDays(7);
       setSubscriptionId("any");
       setServiceId("any");
       setSubject(d.subject);
@@ -1358,6 +1663,7 @@ function RuleDialog({
       setTrigger("SUBSCRIPTION_EXPIRING");
       setDaysOffset(7);
       setCooldownDays(30);
+      setLookbackDays(7);
       setSubscriptionId("any");
       setServiceId("any");
       setSubject("");
@@ -1389,6 +1695,7 @@ function RuleDialog({
         trigger,
         daysOffset: Number(daysOffset),
         cooldownDays: Number(cooldownDays),
+        lookbackDays: Number(lookbackDays),
         subscriptionId: subscriptionId === "any" ? null : Number(subscriptionId),
         serviceId: serviceId === "any" ? null : Number(serviceId),
         subject: subject.trim(),
@@ -1582,6 +1889,21 @@ function RuleDialog({
                 onChange={(e) => setCooldownDays(Number(e.target.value) || 0)}
               />
               <p className="text-xs text-slate-400">Mindestabstand pro Empfänger.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rule-lookback">Nachhol-Fenster (Tage)</Label>
+              <Input
+                id="rule-lookback"
+                type="number"
+                min={0}
+                max={365}
+                value={lookbackDays}
+                onChange={(e) => setLookbackDays(Number(e.target.value) || 0)}
+              />
+              <p className="text-xs text-slate-400">
+                Holt verpasste Tage rückwirkend nach (0 = nur exakter Soll-Sendetag).
+                Cooldown verhindert Doppel-Sends.
+              </p>
             </div>
 
             {filterRelevant && (

@@ -52,6 +52,7 @@ export async function PUT(
       ...(data.renewUrl !== undefined && { renewUrl: data.renewUrl }),
       ...(data.isActive !== undefined && { isActive: data.isActive }),
       ...(data.cooldownDays !== undefined && { cooldownDays: data.cooldownDays }),
+      ...(data.lookbackDays !== undefined && { lookbackDays: data.lookbackDays }),
     },
   });
 

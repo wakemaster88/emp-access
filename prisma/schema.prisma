@@ -481,6 +481,12 @@ model EmailRule {
   /// Mindest-Abstand in Tagen zwischen 2 Sends derselben Regel an dasselbe
   /// Ticket. Verhindert Doppel-Versand bei Cron-Reruns oder Datenkorrekturen.
   cooldownDays           Int              @default(30)
+  /// Rückwärts-Fenster in Tagen, in dem verpasste Trigger-Tage nachgeholt werden.
+  /// `lookbackDays = 0` ⇒ Mail geht NUR am exakten Soll-Sendetag raus (altes Verhalten).
+  /// `lookbackDays = 7` ⇒ Mail geht auch noch raus, wenn der Soll-Sendetag bis zu
+  /// 7 Tage in der Vergangenheit liegt (z. B. weil Cron einen Tag verpasst hat
+  /// oder die Regel später aktiviert wurde). Cooldown sichert Idempotenz.
+  lookbackDays           Int              @default(7)
   createdAt              DateTime         @default(now())
   updatedAt              DateTime         @updatedAt
   emailSends             EmailSend[]
