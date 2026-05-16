@@ -136,7 +136,11 @@ export default async function DeviceDetailPage({ params }: Props) {
                   <div>
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{device.name}</h2>
                     <p className="text-sm text-slate-500 mt-0.5">
-                      {device.type === "RASPBERRY_PI" ? "Raspberry Pi – Drehkreuz/Tür" : "Shelly – Relais"}
+                      {device.type === "RASPBERRY_PI"
+                        ? "Raspberry Pi – Drehkreuz/Tür"
+                        : device.type === "NUKI_SMARTLOCK"
+                          ? "Nuki Smart Lock"
+                          : "Shelly – Relais"}
                     </p>
                     {device.ipAddress && (
                       <p className="text-xs text-slate-400 font-mono mt-1">{device.ipAddress}</p>

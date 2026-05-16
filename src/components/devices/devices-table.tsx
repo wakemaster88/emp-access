@@ -15,6 +15,7 @@ import {
   DoorOpen,
   GitMerge,
   Globe,
+  KeyRound,
   Lightbulb,
   MapPin,
   Power,
@@ -153,7 +154,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                 <div className="flex flex-col items-center gap-3 text-slate-500">
                   <Cpu className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                   <p className="font-medium text-slate-600 dark:text-slate-400">Keine Geräte konfiguriert</p>
-                  <p className="text-sm">Füge ein Gerät hinzu (Raspberry Pi oder Shelly), um Zugang zu steuern.</p>
+                  <p className="text-sm">Füge ein Gerät hinzu (Raspberry Pi, Shelly oder Nuki), um Zugang zu steuern.</p>
                 </div>
               </TableCell>
             </TableRow>
@@ -162,6 +163,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
         {devices.map((device) => {
           const isShelly = device.type === "SHELLY";
           const isPi     = device.type === "RASPBERRY_PI";
+          const isNuki   = device.type === "NUKI_SMARTLOCK";
           const cat      = device.category ? CATEGORY_META[device.category] : null;
           const lastUpd  = device.lastUpdate ? new Date(device.lastUpdate) : null;
           const piOnline = !!(lastUpd && lastUpd > fiveMinAgo);
@@ -266,9 +268,11 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
                     isShelly
                       ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                      : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                      : isNuki
+                        ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                        : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                   )}>
-                    {isShelly ? <Wifi className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
+                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
                   </div>
                   <div className="min-w-0">
                     <p className="font-medium text-sm text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
@@ -288,7 +292,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     <cat.icon className="h-3 w-3" /> {cat.label}
                   </Badge>
                 ) : (
-                  <span className="text-xs text-slate-400">{isShelly ? "Shelly" : "Pi"}</span>
+                  <span className="text-xs text-slate-400">{isShelly ? "Shelly" : isNuki ? "Nuki" : "Pi"}</span>
                 )}
               </TableCell>
 

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle, DoorOpen, ToggleRight, RotateCcw, Loader2, Pencil,
-  Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw,
+  Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditDeviceDialog, type DeviceData, type AreaOption } from "./edit-device-dialog";
@@ -34,6 +34,12 @@ const ACCESS_ACTIONS = [
   { key: "reset",      label: "Reset",        icon: RotateCcw,     base: "bg-slate-600 hover:bg-slate-700 text-white",   activeTask: 0 },
 ];
 const TUER_ACTIONS = ACCESS_ACTIONS.filter((a) => a.key !== "emergency");
+// Nuki Smart Lock: nur Öffnen/Abschließen – Web-API kennt kein "deaktivieren"
+// und kein "reset", LOCK ist gleich Abschließen.
+const NUKI_ACTIONS = [
+  { key: "open",       label: "Öffnen",      icon: DoorOpen, base: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
+  { key: "deactivate", label: "Abschließen", icon: Lock,     base: "bg-slate-700 hover:bg-slate-800 text-white",     activeTask: 3 },
+];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -45,6 +51,7 @@ export function DeviceDetailClient({ device, areas }: Props) {
 
   // Shelly live status
   const isShelly = device.type === "SHELLY";
+  const isNuki = device.type === "NUKI_SMARTLOCK";
   const isSwitch = device.category === "SCHALTER" || device.category === "BELEUCHTUNG";
   const isSensor = device.category === "SENSOR";
   const isDrehkreuz = device.category === "DREHKREUZ";
@@ -209,8 +216,14 @@ export function DeviceDetailClient({ device, areas }: Props) {
       );
     }
 
-    // Access control (Pi)
-    const actions = isDrehkreuz ? ACCESS_ACTIONS : isTuer ? TUER_ACTIONS : [];
+    // Access control (Pi / Nuki)
+    const actions = isNuki
+      ? NUKI_ACTIONS
+      : isDrehkreuz
+        ? ACCESS_ACTIONS
+        : isTuer
+          ? TUER_ACTIONS
+          : [];
     return (
       <>
         {actions.map((a) => {
