@@ -45,6 +45,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({
     id: employee.id,
     uuid: employee.uuid,
+    mobileToken: employee.mobileToken,
     name: employee.name,
     firstName: employee.firstName,
     lastName: employee.lastName,

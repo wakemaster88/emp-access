@@ -180,6 +180,11 @@ model Ticket {
   /// Zeit am betreffenden Wochentag im on/off-Fenster liegt. Vor allem fuer
   /// Mitarbeiter-Tickets gedacht (Arbeitszeiten).
   weekSchedule            Json?
+  /// Persoenlicher Mobile-PWA-Token. Wer den Token hat, kann auf der
+  /// `/m/<token>`-Seite die ihm zugewiesenen Geraete bedienen. Wird im
+  /// Mitarbeiter-Editor erzeugt/rotiert und kann per QR an den Mitarbeiter
+  /// geteilt werden. NULL = noch kein Token erzeugt.
+  mobileToken             String?              @unique
   accountId               Int
   account                 Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accessArea              AccessArea?          @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
