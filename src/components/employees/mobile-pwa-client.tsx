@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { createElement, useEffect, useMemo, useState, useCallback } from "react";
 import {
   DoorOpen, Lock, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
-  Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, Wifi,
-  Calendar, IdCard, RefreshCw, ShieldOff, Building2,
+  Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, KeyRound,
+  RefreshCw, ShieldOff, ChevronDown, Sparkles, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   parseSchedule, DAY_KEYS, DAY_LABELS, hasAnySchedule,
 } from "@/lib/schedule";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface MobileDevice {
   id: number;
@@ -43,64 +45,142 @@ interface Props {
 
 type ActionKey = "open" | "deactivate" | "reset" | "emergency";
 
-interface ActionButton {
+// ─── Action Defs ─────────────────────────────────────────────────────────────
+
+interface PrimaryAction {
   key: ActionKey;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  color: string;
+  /// Tailwind gradient classes fuer den Primaerbutton.
+  gradient: string;
 }
 
-function actionsFor(device: MobileDevice): ActionButton[] {
+interface SecondaryAction {
+  key: ActionKey;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: "danger" | "neutral";
+}
+
+interface DeviceActions {
+  primary: PrimaryAction;
+  secondary?: SecondaryAction;
+}
+
+function actionsFor(device: MobileDevice): DeviceActions | null {
   const cat = device.category;
-  // Schalter / Beleuchtung: simples Ein/Aus.
+
+  if (cat === "SENSOR") return null;
+
   if (cat === "SCHALTER" || cat === "BELEUCHTUNG") {
-    return [
-      { key: "open", label: cat === "BELEUCHTUNG" ? "Einschalten" : "Ein", icon: Power, color: "bg-amber-500 hover:bg-amber-600" },
-      { key: "reset", label: cat === "BELEUCHTUNG" ? "Ausschalten" : "Aus", icon: PowerOff, color: "bg-slate-700 hover:bg-slate-800" },
-    ];
+    return {
+      primary: {
+        key: "open",
+        label: cat === "BELEUCHTUNG" ? "Anschalten" : "Ein",
+        icon: Power,
+        gradient: "from-amber-400 to-amber-600",
+      },
+      secondary: {
+        key: "reset",
+        label: cat === "BELEUCHTUNG" ? "Aus" : "Aus",
+        icon: PowerOff,
+        tone: "neutral",
+      },
+    };
   }
-  // Sensoren: keine Aktion.
-  if (cat === "SENSOR") return [];
-  // Nuki: Oeffnen / Abschliessen.
+
   if (device.type === "NUKI_SMARTLOCK") {
-    return [
-      { key: "open", label: "Tür öffnen", icon: DoorOpen, color: "bg-emerald-600 hover:bg-emerald-700" },
-      { key: "deactivate", label: "Abschließen", icon: Lock, color: "bg-slate-700 hover:bg-slate-800" },
-    ];
+    return {
+      primary: {
+        key: "open",
+        label: "Tür öffnen",
+        icon: DoorOpen,
+        gradient: "from-emerald-400 to-emerald-600",
+      },
+      secondary: {
+        key: "deactivate",
+        label: "Abschließen",
+        icon: Lock,
+        tone: "neutral",
+      },
+    };
   }
-  // Drehkreuz / Tuer (Pi-basiert oder ohne Kategorie).
+
   if (cat === "DREHKREUZ") {
-    return [
-      { key: "open", label: "Öffnen", icon: DoorOpen, color: "bg-emerald-600 hover:bg-emerald-700" },
-      { key: "emergency", label: "NOT-AUF", icon: AlertTriangle, color: "bg-rose-600 hover:bg-rose-700" },
-    ];
+    return {
+      primary: {
+        key: "open",
+        label: "Öffnen",
+        icon: DoorOpen,
+        gradient: "from-emerald-400 to-emerald-600",
+      },
+      secondary: {
+        key: "emergency",
+        label: "NOT-AUF",
+        icon: AlertTriangle,
+        tone: "danger",
+      },
+    };
   }
-  // Default fuer TUER und unkategorisierte Zugangsgeraete.
-  return [
-    { key: "open", label: "Öffnen", icon: DoorOpen, color: "bg-emerald-600 hover:bg-emerald-700" },
-  ];
+
+  // TUER (Pi-Tuer, kein Drehkreuz)
+  return {
+    primary: {
+      key: "open",
+      label: "Öffnen",
+      icon: DoorOpen,
+      gradient: "from-emerald-400 to-emerald-600",
+    },
+  };
 }
 
 function deviceIcon(device: MobileDevice) {
-  if (device.type === "NUKI_SMARTLOCK") return DoorOpen;
+  if (device.type === "NUKI_SMARTLOCK") return KeyRound;
   if (device.category === "DREHKREUZ") return GitMerge;
   if (device.category === "TUER") return DoorOpen;
   if (device.category === "BELEUCHTUNG") return Lightbulb;
   if (device.category === "SCHALTER") return ToggleRight;
   if (device.category === "SENSOR") return Activity;
-  return Wifi;
+  return DoorOpen;
 }
+
+function categoryMeta(cat: string | null, type: string | null) {
+  if (type === "NUKI_SMARTLOCK") {
+    return { label: "Smart Locks", accent: "rose", order: 1 };
+  }
+  switch (cat) {
+    case "TUER":        return { label: "Türen",        accent: "sky",     order: 0 };
+    case "DREHKREUZ":   return { label: "Drehkreuze",   accent: "indigo",  order: 2 };
+    case "SCHALTER":    return { label: "Schalter",     accent: "amber",   order: 3 };
+    case "BELEUCHTUNG": return { label: "Beleuchtung",  accent: "yellow",  order: 4 };
+    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 5 };
+    default:            return { label: "Sonstige",     accent: "slate",   order: 9 };
+  }
+}
+
+const ACCENT_CLS: Record<string, { bg: string; text: string; ring: string }> = {
+  rose:    { bg: "bg-rose-500/10",    text: "text-rose-600 dark:text-rose-400",       ring: "ring-rose-200/50 dark:ring-rose-900/40" },
+  sky:     { bg: "bg-sky-500/10",     text: "text-sky-600 dark:text-sky-400",         ring: "ring-sky-200/50 dark:ring-sky-900/40" },
+  indigo:  { bg: "bg-indigo-500/10",  text: "text-indigo-600 dark:text-indigo-400",   ring: "ring-indigo-200/50 dark:ring-indigo-900/40" },
+  amber:   { bg: "bg-amber-500/10",   text: "text-amber-600 dark:text-amber-400",     ring: "ring-amber-200/50 dark:ring-amber-900/40" },
+  yellow:  { bg: "bg-yellow-500/10",  text: "text-yellow-600 dark:text-yellow-400",   ring: "ring-yellow-200/50 dark:ring-yellow-900/40" },
+  emerald: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", ring: "ring-emerald-200/50 dark:ring-emerald-900/40" },
+  slate:   { bg: "bg-slate-500/10",   text: "text-slate-600 dark:text-slate-400",     ring: "ring-slate-200/50 dark:ring-slate-700" },
+};
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function MobileAccessClient({ token, profile }: Props) {
   const [scheduleCheck, setScheduleCheck] = useState(profile.scheduleCheck);
   const [feedback, setFeedback] = useState<{ id: string; type: "ok" | "err"; text: string } | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const fullName = [profile.firstName, profile.lastName].filter(Boolean).join(" ") || profile.name;
   const initials = ((profile.firstName?.[0] ?? profile.name[0] ?? "?") + (profile.lastName?.[0] ?? "")).toUpperCase();
@@ -108,9 +188,19 @@ export function MobileAccessClient({ token, profile }: Props) {
   const scheduleConfigured = hasAnySchedule(schedule);
   const isAllowed = profile.contractOk && (!scheduleCheck || scheduleCheck.ok);
 
-  // Schedule-Check minuetlich aktualisieren - der Server hat es initial
-  // berechnet, aber wenn die PWA installiert offen bleibt, muessen die
-  // Buttons trotzdem nach Ablauf "Erst ab 18:00" wieder freigegeben werden.
+  // Gerate nach Kategorie gruppieren.
+  const grouped = useMemo(() => {
+    const map = new Map<string, { meta: ReturnType<typeof categoryMeta>; devices: MobileDevice[] }>();
+    for (const d of profile.devices) {
+      const meta = categoryMeta(d.category, d.type);
+      const cur = map.get(meta.label) ?? { meta, devices: [] };
+      cur.devices.push(d);
+      map.set(meta.label, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => a.meta.order - b.meta.order);
+  }, [profile.devices]);
+
+  // Live-Refresh des Schedule-Checks.
   const refreshProfile = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -120,7 +210,7 @@ export function MobileAccessClient({ token, profile }: Props) {
         setScheduleCheck(data.scheduleCheck ?? null);
       }
     } catch {
-      /* offline ist ok - alter State bleibt */
+      /* offline ok */
     } finally {
       setRefreshing(false);
     }
@@ -143,228 +233,293 @@ export function MobileAccessClient({ token, profile }: Props) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setFeedback({
-          id: key,
-          type: "ok",
-          text: action === "open" ? `${device.name} geöffnet` : action === "deactivate" ? `${device.name} abgeschlossen` : `${device.name}: ${action}`,
-        });
-        // Kurz vibrieren als haptisches Feedback (Mobile-only).
+        setFeedback({ id: key, type: "ok", text: device.name });
         if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(40);
       } else {
         setFeedback({ id: key, type: "err", text: data.error ?? `Fehler (${res.status})` });
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.([60, 30, 60]);
       }
     } catch {
-      setFeedback({ id: key, type: "err", text: "Netzwerkfehler" });
+      setFeedback({ id: key, type: "err", text: "Offline – nicht erreichbar" });
     } finally {
       setLoading(null);
-      setTimeout(() => setFeedback((f) => (f?.id === key ? null : f)), 4000);
+      setTimeout(() => setFeedback((f) => (f?.id === key ? null : f)), 3500);
     }
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="mx-auto max-w-md min-h-[100dvh] flex flex-col">
-      {/* Header */}
-      <header className="px-5 pt-8 pb-6 bg-gradient-to-br from-indigo-600 to-indigo-700 text-white shadow-lg">
-        <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-full bg-white/10 ring-2 ring-white/30 flex items-center justify-center overflow-hidden text-xl font-bold shrink-0">
-            {profile.profileImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={profile.profileImage} alt="" className="h-full w-full object-cover" />
-            ) : (
-              initials
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs text-indigo-200 inline-flex items-center gap-1">
+    <div className="mx-auto max-w-md min-h-[100dvh] flex flex-col text-slate-900 dark:text-slate-100">
+      {/* ─── Header ──────────────────────────────────────────────────── */}
+      <header className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600" />
+        <div className="absolute -top-24 -right-16 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+        <div className="absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-fuchsia-300/20 blur-3xl" />
+
+        <div className="relative px-5 pt-6 pb-5 text-white">
+          {/* Tenant + Live-Pill */}
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-medium text-white/70 inline-flex items-center gap-1.5">
               <Building2 className="h-3 w-3" /> {profile.accountName}
             </p>
-            <h1 className="text-xl font-bold truncate">{fullName}</h1>
-            <p className="text-xs text-indigo-200 inline-flex items-center gap-1">
-              <IdCard className="h-3 w-3" /> {profile.ticketTypeName ?? "Mitarbeiter"}
-            </p>
+            <button
+              type="button"
+              onClick={refreshProfile}
+              disabled={refreshing}
+              className="h-7 inline-flex items-center gap-1 rounded-full bg-white/10 hover:bg-white/20 px-2.5 text-[10px] font-medium text-white/90 backdrop-blur transition disabled:opacity-50"
+              aria-label="Aktualisieren"
+            >
+              <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+              live
+            </button>
           </div>
-        </div>
 
-        {/* Status-Banner */}
-        <div className="mt-5">
-          {!profile.contractOk ? (
-            <StatusBanner kind="err" icon={ShieldOff} title={profile.contractReason ?? "Kein Zutritt"} text="Bitte den Vorgesetzten kontaktieren." />
-          ) : scheduleCheck && !scheduleCheck.ok ? (
-            <StatusBanner kind="warn" icon={Clock} title="Außerhalb der freigegebenen Zeit" text={scheduleCheck.reason ?? ""} />
-          ) : (
-            <StatusBanner kind="ok" icon={CheckCircle2} title="Zutritt aktiv" text={profile.endDate ? `Gültig bis ${fmtDate(profile.endDate)}` : "unbefristet"} />
-          )}
+          {/* Avatar + Name */}
+          <div className="mt-4 flex items-center gap-3.5">
+            <div className="h-14 w-14 rounded-2xl bg-white/15 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-lg font-bold shrink-0 overflow-hidden">
+              {profile.profileImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.profileImage} alt="" className="h-full w-full object-cover" />
+              ) : (
+                initials
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-bold leading-tight truncate">{fullName}</h1>
+              <p className="text-xs text-white/70 mt-0.5 truncate">
+                {profile.ticketTypeName ?? "Mitarbeiter"}
+                {profile.endDate && (
+                  <>
+                    <span className="mx-1.5 opacity-50">·</span>
+                    <span>bis {fmtDate(profile.endDate)}</span>
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Status pill */}
+          <div className="mt-4">
+            {!profile.contractOk ? (
+              <StatusPill kind="err" icon={ShieldOff} text={profile.contractReason ?? "Kein Zutritt"} />
+            ) : scheduleCheck && !scheduleCheck.ok ? (
+              <StatusPill kind="warn" icon={Clock} text={scheduleCheck.reason ?? "Ausserhalb der Zeit"} />
+            ) : (
+              <StatusPill kind="ok" icon={Sparkles} text="Zugriff freigegeben" />
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Schedule-Karte */}
+      {/* ─── Schedule Card (collapsible) ─────────────────────────────── */}
       {scheduleConfigured && (
-        <details className="px-5 mt-4 group" open={!isAllowed && !!scheduleCheck}>
-          <summary className="cursor-pointer flex items-center justify-between rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
-            <span className="inline-flex items-center gap-2 font-medium">
-              <Clock className="h-4 w-4" /> Arbeitszeiten
-            </span>
-            <span className="text-xs text-amber-600 dark:text-amber-500">
-              {scheduleCheck && !scheduleCheck.ok ? "gerade gesperrt" : "anzeigen"}
-            </span>
-          </summary>
-          <div className="mt-2 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-white dark:bg-slate-900 p-3 space-y-1">
-            {DAY_KEYS.map((d) => {
-              const cfg = schedule[d];
-              return (
-                <div key={d} className={cn(
-                  "flex items-center justify-between text-sm py-1 px-2 rounded-md",
-                  cfg.enabled ? "bg-amber-50/60 dark:bg-amber-950/20" : "opacity-50",
-                )}>
-                  <span className="font-medium text-slate-700 dark:text-slate-300">{DAY_LABELS[d]}</span>
-                  <span className="text-xs font-mono text-slate-500">
-                    {cfg.enabled ? `${cfg.on || "00:00"} – ${cfg.off || "24:00"}` : "—"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      )}
-
-      {/* Vertrag */}
-      <div className="px-5 mt-3">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 flex items-center gap-3 text-sm">
-          <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-slate-700 dark:text-slate-300">
-              {fmtDate(profile.startDate)}
-              <span className="text-slate-400 mx-1.5">–</span>
-              {profile.endDate ? fmtDate(profile.endDate) : "unbefristet"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Devices */}
-      <main className="px-5 pt-5 pb-32 flex-1 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Ihre Geräte ({profile.devices.length})
-          </h2>
+        <div className="px-4 -mt-3 relative z-10">
           <button
             type="button"
-            onClick={refreshProfile}
-            className="text-xs text-indigo-600 dark:text-indigo-400 inline-flex items-center gap-1 disabled:opacity-50"
-            disabled={refreshing}
+            onClick={() => setScheduleOpen((o) => !o)}
+            className={cn(
+              "w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg",
+              "px-4 py-2.5 flex items-center justify-between text-sm transition-colors",
+              scheduleCheck && !scheduleCheck.ok
+                ? "ring-2 ring-amber-300 dark:ring-amber-900/60"
+                : "",
+            )}
           >
-            <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
-            Aktualisieren
+            <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
+              <Clock className="h-4 w-4 text-amber-500" />
+              Arbeitszeiten
+            </span>
+            <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", scheduleOpen && "rotate-180")} />
           </button>
+          {scheduleOpen && (
+            <div className="mt-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2 shadow">
+              {DAY_KEYS.map((d) => {
+                const cfg = schedule[d];
+                return (
+                  <div key={d} className={cn(
+                    "flex items-center justify-between text-sm py-1.5 px-2",
+                    !cfg.enabled && "opacity-40",
+                  )}>
+                    <span className="font-medium text-slate-700 dark:text-slate-300 w-10">{DAY_LABELS[d]}</span>
+                    <span className="text-xs font-mono text-slate-500">
+                      {cfg.enabled
+                        ? `${cfg.on || "00:00"} – ${cfg.off || "24:00"}`
+                        : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+      )}
 
+      {/* ─── Devices grouped ─────────────────────────────────────────── */}
+      <main className="px-4 pt-4 pb-24 flex-1 space-y-5">
         {profile.devices.length === 0 && (
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-400">
-            Keine Geräte freigegeben. Bitte den Vorgesetzten kontaktieren.
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-400">
+            Keine Geräte freigegeben.
           </div>
         )}
 
-        {profile.devices.map((device) => {
-          const Icon = deviceIcon(device);
-          const actions = actionsFor(device);
-          const isSensor = device.category === "SENSOR";
-
-          return (
-            <div key={device.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-                <div className={cn(
-                  "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
-                  device.via === "direct"
-                    ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                    : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
-                )}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 dark:text-slate-100 truncate">{device.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {device.category ?? device.type.replace("_", " ").toLowerCase()}
-                    <span className="ml-1.5 text-slate-400">·</span>
-                    <span className="ml-1.5">{device.via === "direct" ? "Direkt" : "via Bereich"}</span>
-                  </p>
-                </div>
-              </div>
-
-              {isSensor ? (
-                <p className="px-4 py-4 text-xs text-slate-400 italic">Sensor – nur Anzeige</p>
-              ) : (
-                <div className="p-3 grid grid-cols-2 gap-2">
-                  {actions.map((a) => {
-                    const Icon = a.icon;
-                    const actionLoading = loading === `${device.id}:${a.key}`;
-                    const fb = feedback?.id === `${device.id}:${a.key}` ? feedback : null;
-                    return (
-                      <button
-                        key={a.key}
-                        type="button"
-                        onClick={() => handleAction(device, a.key)}
-                        disabled={!isAllowed || actionLoading || loading !== null}
-                        className={cn(
-                          "rounded-xl py-4 px-3 flex items-center justify-center gap-2 text-white font-semibold text-sm transition-all shadow",
-                          "min-h-[56px] active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none",
-                          actions.length === 1 && "col-span-2",
-                          fb?.type === "ok" ? "bg-emerald-600" : fb?.type === "err" ? "bg-rose-600" : a.color,
-                        )}
-                      >
-                        {actionLoading ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : fb?.type === "ok" ? (
-                          <CheckCircle2 className="h-5 w-5" />
-                        ) : fb?.type === "err" ? (
-                          <XCircle className="h-5 w-5" />
-                        ) : (
-                          <Icon className="h-5 w-5" />
-                        )}
-                        <span className="truncate">
-                          {fb ? fb.text.split(" ")[fb.text.split(" ").length - 1] || a.label : a.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {feedback && feedback.id.startsWith(`${device.id}:`) && feedback.type === "err" && (
-                <p className="px-4 pb-3 text-xs text-rose-600 dark:text-rose-400">{feedback.text}</p>
-              )}
+        {grouped.map((group) => (
+          <section key={group.meta.label} className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                {group.meta.label}
+              </h2>
+              <span className="text-[10px] text-slate-400">{group.devices.length}</span>
             </div>
-          );
-        })}
+
+            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden shadow-sm">
+              {group.devices.map((device) => (
+                <DeviceRow
+                  key={device.id}
+                  device={device}
+                  loading={loading}
+                  feedback={feedback}
+                  enabled={isAllowed}
+                  onAction={handleAction}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto px-5 py-4 text-center text-[10px] text-slate-400 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-950/50 backdrop-blur">
-        EMP Access · Bei Verlust des Zugangs den Vorgesetzten kontaktieren.
+      <footer className="mt-auto px-5 py-3 text-center text-[10px] text-slate-400">
+        EMP Access · Persönlicher Zugang
       </footer>
     </div>
   );
 }
 
-function StatusBanner({
-  kind, icon: Icon, title, text,
+// ─── DeviceRow ───────────────────────────────────────────────────────────────
+
+interface DeviceRowProps {
+  device: MobileDevice;
+  loading: string | null;
+  feedback: { id: string; type: "ok" | "err"; text: string } | null;
+  enabled: boolean;
+  onAction: (device: MobileDevice, action: ActionKey) => void;
+}
+
+function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowProps) {
+  const iconComp = deviceIcon(device);
+  const actions = actionsFor(device);
+  const meta = categoryMeta(device.category, device.type);
+  const accent = ACCENT_CLS[meta.accent] ?? ACCENT_CLS.slate;
+
+  // Pro Device: zeigen wir den letzten Feedback-Status der primary action.
+  const primaryFb = feedback?.id === `${device.id}:${actions?.primary.key}` ? feedback : null;
+  const primaryLoading = loading === `${device.id}:${actions?.primary.key}`;
+  const secondaryLoading = actions?.secondary && loading === `${device.id}:${actions.secondary.key}`;
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      {/* Icon */}
+      <div className={cn(
+        "h-11 w-11 rounded-xl flex items-center justify-center shrink-0 ring-1",
+        accent.bg, accent.text, accent.ring,
+      )}>
+        {createElement(iconComp, { className: "h-5 w-5" })}
+      </div>
+
+      {/* Name + meta */}
+      <div className="flex-1 min-w-0 mr-1">
+        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight">
+          {device.name}
+        </p>
+        <p className="text-[10px] text-slate-400 truncate mt-0.5">
+          {device.via === "direct" ? "Direktzugang" : "via Bereich"}
+        </p>
+      </div>
+
+      {/* Actions */}
+      {actions === null ? (
+        <span className="text-[10px] text-slate-400 italic shrink-0 pr-1">nur Anzeige</span>
+      ) : (
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Secondary (klein, icon-only) */}
+          {actions.secondary && (
+            <button
+              type="button"
+              onClick={() => onAction(device, actions.secondary!.key)}
+              disabled={!enabled || loading !== null}
+              aria-label={actions.secondary.label}
+              title={actions.secondary.label}
+              className={cn(
+                "h-10 w-10 rounded-xl flex items-center justify-center transition active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed",
+                actions.secondary.tone === "danger"
+                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-1 ring-rose-300/50 dark:ring-rose-900/50 hover:bg-rose-500/20"
+                  : "bg-slate-500/10 text-slate-600 dark:text-slate-300 ring-1 ring-slate-300/50 dark:ring-slate-700 hover:bg-slate-500/20",
+              )}
+            >
+              {secondaryLoading
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <actions.secondary.icon className="h-4 w-4" />}
+            </button>
+          )}
+
+          {/* Primary (full-color) */}
+          <button
+            type="button"
+            onClick={() => onAction(device, actions.primary.key)}
+            disabled={!enabled || loading !== null}
+            className={cn(
+              "h-10 min-w-[88px] px-3.5 rounded-xl text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5",
+              "shadow-sm shadow-emerald-900/10 active:scale-95 transition-transform",
+              "bg-gradient-to-b",
+              primaryFb?.type === "ok" ? "from-emerald-500 to-emerald-700" :
+              primaryFb?.type === "err" ? "from-rose-500 to-rose-700" :
+              actions.primary.gradient,
+              "disabled:opacity-30 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-500 disabled:shadow-none",
+            )}
+          >
+            {primaryLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : primaryFb?.type === "ok" ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : primaryFb?.type === "err" ? (
+              <XCircle className="h-4 w-4" />
+            ) : (
+              <actions.primary.icon className="h-4 w-4" />
+            )}
+            <span className="whitespace-nowrap">
+              {primaryFb?.type === "ok" ? "OK" : primaryFb?.type === "err" ? "Fehler" : actions.primary.label}
+            </span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── StatusPill ──────────────────────────────────────────────────────────────
+
+function StatusPill({
+  kind, icon: Icon, text,
 }: {
   kind: "ok" | "warn" | "err";
   icon: React.ComponentType<{ className?: string }>;
-  title: string;
   text: string;
 }) {
   const cls = kind === "ok"
-    ? "bg-emerald-500/20 border-emerald-300/30 text-emerald-50"
+    ? "bg-emerald-400/20 border-emerald-200/30 text-emerald-50"
     : kind === "warn"
-      ? "bg-amber-500/20 border-amber-300/30 text-amber-50"
-      : "bg-rose-500/20 border-rose-300/30 text-rose-50";
+      ? "bg-amber-400/20 border-amber-200/30 text-amber-50"
+      : "bg-rose-400/20 border-rose-200/30 text-rose-50";
+  const dot = kind === "ok" ? "bg-emerald-300" : kind === "warn" ? "bg-amber-300" : "bg-rose-300";
   return (
-    <div className={cn("rounded-xl border px-3 py-2.5 flex items-start gap-2.5", cls)}>
-      <Icon className="h-5 w-5 shrink-0 mt-0.5" />
-      <div className="min-w-0">
-        <p className="text-sm font-semibold leading-tight">{title}</p>
-        {text && <p className="text-xs opacity-90 mt-0.5">{text}</p>}
-      </div>
+    <div className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 backdrop-blur", cls)}>
+      <span className="relative flex h-2 w-2">
+        {kind === "ok" && <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-60", dot)} />}
+        <span className={cn("relative inline-flex rounded-full h-2 w-2", dot)} />
+      </span>
+      <Icon className="h-3.5 w-3.5" />
+      <span className="text-xs font-semibold">{text}</span>
     </div>
   );
 }
