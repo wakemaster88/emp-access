@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { PrismaClient } from "@prisma/client";
+import { isWithinSchedule } from "@/lib/schedule";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -134,6 +135,7 @@ export async function performScanCheck({
         },
         accessArea: { select: { name: true } },
         ticketAreas: { select: { accessAreaId: true } },
+        ticketDevices: { select: { deviceId: true } },
         verein: {
           select: {
             name: true,
@@ -364,9 +366,29 @@ export async function performScanCheck({
     }
   }
 
+  // Mitarbeiter-Wochenplan: wenn gesetzt, muss aktuelle Berliner Zeit am
+  // entsprechenden Wochentag im freigegebenen Fenster liegen.
+  const weekCheck = isWithinSchedule(ticket.weekSchedule, now);
+  if (weekCheck && !weekCheck.ok) {
+    await db.scan.create({
+      data: { code, result: "DENIED", ticketId: ticket.id, accountId, ...scanDeviceData },
+    });
+    return {
+      granted: false,
+      message: weekCheck.reason ?? "Ausserhalb der freigegebenen Zeit",
+      ticket: ticketInfo,
+    };
+  }
+
   const isEmployee = ticket.source === "EMP_CONTROL";
 
-  if (accessAreaId) {
+  // Direkt-Geraete-Zuweisung (additiv zu Bereichen): Wenn der Scan an einem
+  // konkret zugewiesenen Geraet stattfindet, ist die Bereichs-Pruefung
+  // uebersprungen.
+  const directDeviceIds = ticket.ticketDevices?.map((td) => td.deviceId) ?? [];
+  const hasDirectDeviceMatch = !!deviceId && directDeviceIds.includes(deviceId);
+
+  if (accessAreaId && !hasDirectDeviceMatch) {
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
     const vereinAreaIds: number[] = [];
     for (const at of ticket.verein?.accessTickets ?? []) {

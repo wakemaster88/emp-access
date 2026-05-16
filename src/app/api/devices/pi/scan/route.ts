@@ -3,6 +3,7 @@ import { validateApiToken } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { checkWakesys } from "@/lib/wakesys";
 import { checkBinarytec } from "@/lib/binarytec";
+import { isWithinSchedule } from "@/lib/schedule";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
           },
         },
         ticketAreas: { select: { accessAreaId: true } },
+        ticketDevices: { select: { deviceId: true } },
       },
     });
     if (candidates.length > 0) {
@@ -342,9 +344,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Mitarbeiter-Wochenplan: gleiche Konvention wie TIME_SLOT - nur bei
+  // Eintritten relevant. Wer drin ist, darf raus.
+  if (!isExitScan) {
+    const weekCheck = isWithinSchedule(ticket.weekSchedule, now);
+    if (weekCheck && !weekCheck.ok) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({
+        granted: false,
+        message: weekCheck.reason ?? "Ausserhalb der freigegebenen Zeit",
+        ticket: ticketInfo,
+      });
+    }
+  }
+
   const isEmployee = ticket.source === "EMP_CONTROL";
 
-  if (device.accessIn || device.accessOut) {
+  // Direkt-Geraete-Match (additiv zu Bereichen): Wenn das Ticket fuer dieses
+  // konkrete Geraet whitelisted ist, ueberspringen wir die Bereichs-Pruefung.
+  const directDeviceIds = ticket.ticketDevices?.map((td) => td.deviceId) ?? [];
+  const hasDirectDeviceMatch = directDeviceIds.includes(deviceId);
+
+  if (!hasDirectDeviceMatch && (device.accessIn || device.accessOut)) {
     const deviceAreas = [device.accessIn, device.accessOut].filter(Boolean) as number[];
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
     const subscriptionAreaIds = ticket.subscription?.areas?.map((a) => a.id) ?? [];

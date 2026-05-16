@@ -53,6 +53,58 @@ export const ticketCreateSchema = z.object({
 
 export const ticketUpdateSchema = ticketCreateSchema.partial();
 
+// ─── Mitarbeiter-Schemas ─────────────────────────────────────────────────────
+
+const hhmmOptional = z.union([
+  z.literal(""),
+  z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Format HH:MM"),
+]);
+
+const daySchedule = z.object({
+  enabled: z.boolean().default(false),
+  on: hhmmOptional.default(""),
+  off: hhmmOptional.default(""),
+});
+
+export const weekScheduleSchema = z.object({
+  mon: daySchedule,
+  tue: daySchedule,
+  wed: daySchedule,
+  thu: daySchedule,
+  fri: daySchedule,
+  sat: daySchedule,
+  sun: daySchedule,
+});
+
+/**
+ * Update-Schema fuer Mitarbeiter (gespeichert als Ticket mit source=EMP_CONTROL).
+ * Vorhandene Ticket-Felder kombiniert mit Direkt-Geraete-Whitelist und
+ * Wochenplan.
+ */
+export const employeeUpdateSchema = z.object({
+  name: z.string().min(1).max(180).optional(),
+  firstName: z.string().max(120).nullable().optional(),
+  lastName: z.string().max(120).nullable().optional(),
+  rfidCode: z.string().max(120).nullable().optional(),
+  email: z.union([z.literal(""), z.string().email().max(180)]).nullable().optional(),
+  ticketTypeName: z.string().max(120).nullable().optional(),
+  startDate: z.union([z.literal(""), z.string()]).nullable().optional(),
+  endDate: z.union([z.literal(""), z.string()]).nullable().optional(),
+  status: z.enum(["VALID", "INVALID", "PROTECTED"]).optional(),
+  profileImage: z.string().nullable().optional(),
+  /// IDs der zugewiesenen Bereiche (Vollersetzung).
+  areaIds: z.array(z.coerce.number().int().positive()).optional(),
+  /// IDs der direkt zugewiesenen Geraete (Vollersetzung).
+  deviceIds: z.array(z.coerce.number().int().positive()).optional(),
+  /// Wochenplan (null = entfernen, ansonsten kompletter Plan).
+  weekSchedule: weekScheduleSchema.nullable().optional(),
+});
+
+/// Anlage eines Mitarbeiters von Hand (sonst per EMP_CONTROL-Webhook).
+export const employeeCreateSchema = employeeUpdateSchema.extend({
+  name: z.string().min(1).max(180),
+});
+
 export const ticketBulkCreateSchema = z
   .object({
     /** Bei RFID-Bulks ergibt sich `count` aus `rfidCodes.length`; sonst Pflicht. */

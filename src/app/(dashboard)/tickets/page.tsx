@@ -59,10 +59,22 @@ export default async function TicketsPage({ searchParams }: Props) {
   const codeFilter = codeTrim
     ? { OR: [{ barcode: codeTrim }, { qrCode: codeTrim }, { rfidCode: codeTrim }] }
     : {};
+  // Mitarbeiter (source=EMP_CONTROL) werden standardmaessig ausgeblendet -
+  // die liegen unter /employees. Nur wenn explizit auf "emp-control" gefiltert
+  // wird, tauchen sie hier wieder auf.
   const sourceFilter = (() => {
-    if (!source || source === "all") return {};
+    if (source === "EMP_CONTROL") return { source: "EMP_CONTROL" as const };
     if (source === "Eigenes") return { source: null };
-    return { source: source as "ANNY" | "WAKESYS" | "EMP_CONTROL" | "BINARYTEC" | "SHELLY" };
+    if (!source || source === "all") {
+      // Tickets ohne Source (null) PLUS alle bis auf EMP_CONTROL.
+      return {
+        OR: [
+          { source: null },
+          { source: { in: ["ANNY", "WAKESYS", "BINARYTEC", "SHELLY"] satisfies ("ANNY" | "WAKESYS" | "BINARYTEC" | "SHELLY")[] } },
+        ],
+      };
+    }
+    return { source: source as "ANNY" | "WAKESYS" | "BINARYTEC" | "SHELLY" };
   })();
 
   const [tickets, areas, subscriptions, services, vereine, inactiveCount] = await Promise.all([

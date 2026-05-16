@@ -130,6 +130,10 @@ model Device {
   account         Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   scans           Scan[]
   groupMembers    ShellyGroupMember[]
+  /// Tickets, die diesem Geraet direkt zugewiesen sind (additiv zu Bereichen).
+  /// Wird vor allem fuer Mitarbeiter verwendet, die ohne Bereich-Zugehoerigkeit
+  /// nur ein einzelnes Geraet bedienen sollen.
+  ticketDevices   TicketDevice[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -170,6 +174,12 @@ model Ticket {
   /// die gleiche `bulkBatchId`). Erlaubt Liste/Reprint im Backoffice.
   /// NULL = kein Bulk-Ticket (manuell oder von Anny synchronisiert).
   bulkBatchId             String?
+  /// Wochenplan (gleiches Format wie `Device.schedule` -> `WeekSchedule`):
+  /// {monday: {enabled, on: "HH:MM", off: "HH:MM"}, ...}
+  /// Wenn gesetzt, wird ein Scan nur freigegeben, wenn die aktuelle Berliner
+  /// Zeit am betreffenden Wochentag im on/off-Fenster liegt. Vor allem fuer
+  /// Mitarbeiter-Tickets gedacht (Arbeitszeiten).
+  weekSchedule            Json?
   accountId               Int
   account                 Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accessArea              AccessArea?          @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
@@ -177,6 +187,8 @@ model Ticket {
   service                 Service?             @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   verein                  Verein?              @relation(fields: [vereinId], references: [id], onDelete: SetNull)
   ticketAreas             TicketArea[]
+  /// Direkt zugewiesene Geraete (additiv zu `ticketAreas`).
+  ticketDevices           TicketDevice[]
   vereinAccess            VereinAccessTicket[] // Vereine, die über DIESES Ticket Zutritt erhalten
   lockerRentals           LockerRental[] // Schließfach-Vermietungen, in denen dieses Ticket Mieter ist (jahresweise)
   emailSends              EmailSend[] // Historie der an dieses Ticket gesendeten Automation-Mails
@@ -256,6 +268,24 @@ model TicketArea {
   @@unique([ticketId, accessAreaId])
   @@index([ticketId])
   @@index([accessAreaId])
+}
+
+/// Direkter Zugang Ticket -> Geraet (additiv zu `TicketArea`).
+/// Heisst: Ein Ticket bekommt Zugang am Geraet, wenn entweder seine Bereiche
+/// `Device.accessIn`/`accessOut` matchen **oder** ein passender Eintrag in
+/// dieser Tabelle existiert. Vor allem fuer Mitarbeiter gedacht, die nur ein
+/// einzelnes Geraet (z. B. Nebeneingang) bedienen sollen, ohne dass dafuer ein
+/// eigener Bereich angelegt werden muss.
+model TicketDevice {
+  id        Int    @id @default(autoincrement())
+  ticketId  Int
+  deviceId  Int
+  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  device    Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, deviceId])
+  @@index([ticketId])
+  @@index([deviceId])
 }
 
 model Subscription {

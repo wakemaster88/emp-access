@@ -26,6 +26,7 @@ import {
   Lock,
   Gift,
   Mail,
+  IdCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,7 @@ const navGroups: NavGroup[] = [
       { href: "/subscriptions", label: "Abos", icon: CreditCard },
       { href: "/vouchers", label: "Gutscheine", icon: Gift },
       { href: "/vereine", label: "Vereine", icon: Users },
+      { href: "/employees", label: "Mitarbeiter", icon: IdCard },
     ],
   },
   {
