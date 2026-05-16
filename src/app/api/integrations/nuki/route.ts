@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import {
-  nukiListSmartlocks,
+  nukiListSmartlocksDetailed,
+  nukiGetAccount,
   nukiUpsertWebhook,
   NUKI_DEVICE_TYPE_LABEL,
 } from "@/lib/nuki";
@@ -33,18 +34,55 @@ export async function POST() {
     );
   }
 
-  const smartlocks = await nukiListSmartlocks(config.token);
+  // Account-Info parallel holen, damit wir bei "0 locks" zeigen koennen
+  // welcher Nuki-Account ueberhaupt vom Token getroffen wird.
+  const [accountInfo, lockResult] = await Promise.all([
+    nukiGetAccount(config.token),
+    nukiListSmartlocksDetailed(config.token),
+  ]);
+
+  if (!lockResult.ok) {
+    await db.apiConfig.update({
+      where: { id: config.id },
+      data: { lastUpdate: new Date() },
+    });
+    const hint =
+      lockResult.status === 401 || lockResult.status === 403
+        ? "Token ist ungueltig oder hat keine Berechtigung. Bitte in Nuki Web → API neuen Token erzeugen und hier einfuegen."
+        : lockResult.status === 0
+          ? "Nuki API nicht erreichbar (Timeout / Netzwerkfehler)."
+          : `Nuki API antwortete mit Status ${lockResult.status}.`;
+    return NextResponse.json(
+      {
+        error: `Nuki-Abruf fehlgeschlagen: ${lockResult.error ?? hint}`,
+        status: lockResult.status,
+        account: accountInfo.account,
+      },
+      { status: 502 },
+    );
+  }
+
+  const smartlocks = lockResult.locks;
   if (smartlocks.length === 0) {
     await db.apiConfig.update({
       where: { id: config.id },
       data: { lastUpdate: new Date() },
     });
+    const accountSuffix = accountInfo.account?.email
+      ? ` (Token-Account: ${accountInfo.account.email})`
+      : accountInfo.account?.accountId != null
+        ? ` (Token-Account #${accountInfo.account.accountId})`
+        : "";
     return NextResponse.json({
       created: 0,
       updated: 0,
       total: 0,
       webhookRegistered: false,
-      message: "Keine Smart Locks im Nuki-Account gefunden.",
+      account: accountInfo.account,
+      message:
+        `Nuki API erreichbar, liefert aber 0 Smart Locks${accountSuffix}. ` +
+        `Pruefe: (1) Lock steht im richtigen Nuki-Account, (2) in der Nuki-App ` +
+        `"Server-Funktionalitaet" + "Lock-State abfragen" aktiviert.`,
     });
   }
 
@@ -148,6 +186,7 @@ export async function POST() {
     webhookRegistered,
     webhookError,
     devices: importedNames,
+    account: accountInfo.account,
   });
 }
 

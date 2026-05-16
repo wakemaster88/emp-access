@@ -262,11 +262,21 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
         if (json.syncWindowDays) {
           parts.push(`letzte ${json.syncWindowDays} Tage`);
         }
-        setSyncResult(parts.length ? parts.join(", ") : "Keine neuen Daten");
+        const suffix: string[] = [];
+        if (json.account && typeof json.account === "object") {
+          const acc = json.account as { email?: string; name?: string; accountId?: number };
+          const accLabel = acc.email || acc.name || (acc.accountId != null ? `#${acc.accountId}` : null);
+          if (accLabel) suffix.push(`Account: ${accLabel}`);
+        }
+        if (json.message && typeof json.message === "string") {
+          suffix.push(json.message);
+        }
+        const summary = parts.length ? parts.join(", ") : "Keine neuen Daten";
+        setSyncResult(suffix.length ? `${summary} — ${suffix.join(" · ")}` : summary);
         if (Array.isArray(json.unmapped) && json.unmapped.length > 0) {
           setUnmapped(json.unmapped);
         }
-        setTimeout(() => setSyncResult(null), 12000);
+        setTimeout(() => setSyncResult(null), 20000);
 
         // Reload config to show newly discovered services/resources
         try {

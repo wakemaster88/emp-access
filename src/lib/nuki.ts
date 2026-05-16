@@ -134,9 +134,59 @@ async function nukiFetch(
 
 /** Listet alle Smart Locks/Opener fuer den Account des Tokens. */
 export async function nukiListSmartlocks(token: string): Promise<NukiSmartlock[]> {
+  const res = await nukiListSmartlocksDetailed(token);
+  return res.locks;
+}
+
+/**
+ * Variante mit Diagnose-Infos: zeigt HTTP-Status / Fehlertext, damit ein
+ * 401/403/Empty sauber an die UI durchgereicht werden kann.
+ */
+export async function nukiListSmartlocksDetailed(token: string): Promise<{
+  ok: boolean;
+  status: number;
+  locks: NukiSmartlock[];
+  error?: string;
+  rawSample?: unknown;
+}> {
   const res = await nukiFetch(token, "/smartlock");
-  if (!res.ok || !Array.isArray(res.data)) return [];
-  return res.data as NukiSmartlock[];
+  if (!res.ok) {
+    return { ok: false, status: res.status, locks: [], error: res.error, rawSample: res.data };
+  }
+  if (!Array.isArray(res.data)) {
+    return {
+      ok: false,
+      status: res.status,
+      locks: [],
+      error: `Unerwartete Antwort von /smartlock (kein Array)`,
+      rawSample: res.data,
+    };
+  }
+  return { ok: true, status: res.status, locks: res.data as NukiSmartlock[] };
+}
+
+export interface NukiAccountInfo {
+  accountId?: number;
+  email?: string;
+  name?: string;
+  language?: string;
+}
+
+/**
+ * Holt Account-Infos zum Token (zur Diagnose: zeigt welcher Nuki-Account
+ * mit dem aktuellen Token erreicht wird).
+ */
+export async function nukiGetAccount(token: string): Promise<{
+  ok: boolean;
+  status: number;
+  account: NukiAccountInfo | null;
+  error?: string;
+}> {
+  const res = await nukiFetch(token, "/account");
+  if (!res.ok) {
+    return { ok: false, status: res.status, account: null, error: res.error };
+  }
+  return { ok: true, status: res.status, account: res.data as NukiAccountInfo };
 }
 
 /** Aktuellen State eines Smart Locks holen. */
