@@ -13,10 +13,11 @@ import {
 } from "@/components/ui/select";
 import {
   IdCard, Plus, Search, RefreshCw, Pencil, Clock, MapPin, Cpu, AlertTriangle,
-  CheckCircle2, XCircle, ShieldOff, KeyRound,
+  CheckCircle2, XCircle, ShieldOff, KeyRound, History,
 } from "lucide-react";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { EmployeeEditDialog } from "./employee-edit-dialog";
+import { EmployeeHistoryDialog } from "./employee-history-dialog";
 
 export interface AreaOption {
   id: number;
@@ -64,6 +65,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [areaFilter, setAreaFilter] = useState<string>("all");
   const [editingId, setEditingId] = useState<number | "new" | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<{ id: number; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -374,14 +376,29 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                       </TableCell>
 
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={(ev) => { ev.stopPropagation(); setEditingId(e.id); }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Verlauf"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setHistoryTarget({ id: e.id, name: fullName });
+                            }}
+                          >
+                            <History className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Bearbeiten"
+                            onClick={(ev) => { ev.stopPropagation(); setEditingId(e.id); }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -398,6 +415,16 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
         devices={devices}
         onClose={() => setEditingId(null)}
         onSaved={() => { setEditingId(null); load(); }}
+        onShowHistory={(id, name) => {
+          setEditingId(null);
+          setHistoryTarget({ id, name });
+        }}
+      />
+
+      <EmployeeHistoryDialog
+        employeeId={historyTarget?.id ?? null}
+        employeeName={historyTarget?.name}
+        onClose={() => setHistoryTarget(null)}
       />
     </>
   );

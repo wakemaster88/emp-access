@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
   Save, Loader2, Trash2, Check, MapPin, Cpu, Clock, IdCard, KeyRound,
-  Smartphone, Copy, RefreshCw, ExternalLink,
+  Smartphone, Copy, RefreshCw, ExternalLink, History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WeekScheduleEditor } from "@/components/devices/week-schedule-editor";
@@ -29,6 +29,7 @@ interface EmployeeEditDialogProps {
   devices: DeviceOption[];
   onClose: () => void;
   onSaved: () => void;
+  onShowHistory?: (id: number, name: string) => void;
 }
 
 interface EmployeeDetail {
@@ -80,7 +81,7 @@ function emptyEmployee(): EmployeeDetail {
   };
 }
 
-export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved }: EmployeeEditDialogProps) {
+export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, onShowHistory }: EmployeeEditDialogProps) {
   const open = target !== null;
   const isNew = target === "new";
 
@@ -580,6 +581,20 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved }:
             >
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
               Löschen
+            </Button>
+          )}
+          {!isNew && form.id && onShowHistory && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const display = [form.firstName, form.lastName].filter(Boolean).join(" ") || form.name;
+                onShowHistory(form.id!, display);
+              }}
+              disabled={saving}
+              className="gap-1.5"
+            >
+              <History className="h-4 w-4" />
+              Verlauf
             </Button>
           )}
           <Button variant="outline" onClick={onClose} disabled={saving}>
