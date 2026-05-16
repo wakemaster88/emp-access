@@ -242,22 +242,35 @@ export async function GET(
     }
   } catch { /* non-critical */ }
 
-  return NextResponse.json({
-    monitorName: monitor.name,
-    accountName: monitor.account.name,
-    date: berlinDate,
-    tickets: enrichedTickets,
-    subscriptions: enrichedSubscriptions,
-    services: servicesWithAreas,
-    areas,
-    allSubscriptions: subsWithAreas,
-    recentScans,
-    annySyncStatus,
-    openableDevices,
-    // IDs der "Tür-Schnellzugriff"-Geraete (= MonitorConfig.deviceIds, sofern
-    // gesetzt). Werden im Frontend als direkter Button im Header gerendert.
-    quickDeviceIds: monitorDeviceIds.filter((id) =>
-      openableDevices.some((d) => d.id === id),
-    ),
-  });
+  return NextResponse.json(
+    {
+      monitorName: monitor.name,
+      accountName: monitor.account.name,
+      date: berlinDate,
+      tickets: enrichedTickets,
+      subscriptions: enrichedSubscriptions,
+      services: servicesWithAreas,
+      areas,
+      allSubscriptions: subsWithAreas,
+      recentScans,
+      annySyncStatus,
+      openableDevices,
+      // IDs der "Tür-Schnellzugriff"-Geraete (= MonitorConfig.deviceIds, sofern
+      // gesetzt). Werden im Frontend als direkter Button im Header gerendert.
+      quickDeviceIds: monitorDeviceIds.filter((id) =>
+        openableDevices.some((d) => d.id === id),
+      ),
+    },
+    {
+      // Token-URL ist effektiv ein geteiltes Geheimnis; eine kurze Edge-
+      // Cachezeit beschleunigt das Dauer-Polling im Checkin-Frontend ohne
+      // dass eine Scan-Aenderung sichtbar verzoegert wird. Browser selbst
+      // halten den Body nicht laenger als Sekunden, der CDN-Edge serviert
+      // schnelle 5-Sekunden-Bursts. Aenderungen werden via SWR-Revalidate
+      // im Hintergrund nachgezogen.
+      headers: {
+        "Cache-Control": "public, s-maxage=3, stale-while-revalidate=10",
+      },
+    },
+  );
 }

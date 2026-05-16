@@ -20,9 +20,14 @@ DEFAULT = {
     "led_green_pin": 27,
     "led_red_pin": 22,
     "buzzer_pin": 23,
-    "heartbeat_interval": 30,
-    # Task nur per GET (leichtgewichtig); nicht unter 2 s setzen (Last auf DB/Neon)
-    "task_poll_interval": 5,
+    # Heartbeat (POST) schreibt jeden Tick lastUpdate/systemInfo in die DB.
+    # 60 s reichen: das Dashboard betrachtet ein Geraet bis ~5 Minuten ohne
+    # Heartbeat als online. Nicht unter 30 s ohne Not setzen.
+    "heartbeat_interval": 60,
+    # Task-Poll (GET, ETag/304) – beim Server kostet das ohne Statuswechsel
+    # nichts. 10 s ist ein guter Kompromiss zwischen Reaktionszeit beim
+    # Dashboard-Button und Function-Invocations. Nicht unter 5 s setzen.
+    "task_poll_interval": 10,
     "update_check_interval": 300,
     "scanner_device": "auto",
 }
