@@ -45,8 +45,32 @@ class Config:
                     stored = json.load(f)
                 self._data.update(stored)
                 logger.info("Konfiguration geladen: %s", CONFIG_PATH)
+                self._migrate_polling_defaults(stored)
             except Exception as e:
                 logger.error("Fehler beim Laden der Konfiguration: %s", e)
+
+    def _migrate_polling_defaults(self, stored: dict) -> None:
+        """
+        Hebt die alten Polling-Defaults (heartbeat=30 s, task_poll=5 s) einmalig
+        auf die neuen Defaults (60 s / 10 s) an. Nur wenn der Wert exakt dem
+        alten Default entspricht – individuell gesetzte Werte werden NICHT
+        ueberschrieben. Das spart Vercel-/DB-Last bei bestehenden Pis, ohne
+        SSH-Eingriff.
+        """
+        migrated = False
+        if stored.get("heartbeat_interval") == 30:
+            self._data["heartbeat_interval"] = 60
+            migrated = True
+        if stored.get("task_poll_interval") == 5:
+            self._data["task_poll_interval"] = 10
+            migrated = True
+        if migrated:
+            logger.info(
+                "Polling-Defaults migriert: heartbeat=%ss, task_poll=%ss",
+                self._data["heartbeat_interval"],
+                self._data["task_poll_interval"],
+            )
+            self.save()
 
     def save(self):
         try:

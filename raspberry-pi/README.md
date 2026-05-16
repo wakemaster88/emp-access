@@ -71,8 +71,8 @@ Die Datei `config.json` wird beim ersten QR-Scan automatisch erstellt:
   "led_green_pin": 27,
   "led_red_pin": 22,
   "buzzer_pin": 23,
-  "heartbeat_interval": 30,
-  "task_poll_interval": 5,
+  "heartbeat_interval": 60,
+  "task_poll_interval": 10,
   "update_check_interval": 300,
   "scanner_device": "auto"
 }
@@ -85,22 +85,22 @@ Die Datei `config.json` wird beim ersten QR-Scan automatisch erstellt:
 | `device_id` | Geräte-ID auf dem Server |
 | `relay_pin` | GPIO-Pin für das Relais |
 | `relay_duration` | Öffnungsdauer in Sekunden |
-| `heartbeat_interval` | Sekunden zwischen Heartbeats (POST mit System-Info, inkl. aktueller Task vom Server) |
-| `task_poll_interval` | Sekunden zwischen leichten GET-Abfragen nur für Task/Deaktivierung (Standard **5**, Minimum **2** – kein 1×/s) |
+| `heartbeat_interval` | Sekunden zwischen Heartbeats (POST mit System-Info, inkl. aktueller Task vom Server). **Standard 60** (Dashboard wertet bis ~5 Min ohne Heartbeat als online). |
+| `task_poll_interval` | Sekunden zwischen leichten GET-Abfragen nur für Task/Deaktivierung (Standard **10**, Minimum **5** – nutzt ETag/304, kostet beim Server ohne Statuswechsel nichts). |
 | `scanner_device` | `auto`, `stdin` oder `/dev/input/eventX` |
 
 ### API-Häufigkeit (z. B. Neon / Serverless-DB)
 
 Der Pi nutzt zwei Hintergrund-Schleifen:
 
-1. **Task-Poll:** `GET /api/devices/pi?id=…` alle `task_poll_interval` Sekunden (Standard 5, nie unter 2).
-2. **Heartbeat:** `POST /api/devices/pi` alle `heartbeat_interval` Sekunden (Standard 30) – der Server liefert im POST die Gerätekonfiguration mit, sodass **kein zweiter GET** nötig ist.
+1. **Task-Poll:** `GET /api/devices/pi?id=…` alle `task_poll_interval` Sekunden (Standard 10, nie unter 5). Nutzt `If-None-Match`/ETag → der Server antwortet bei unverändertem State mit `304` ohne DB-Hit.
+2. **Heartbeat:** `POST /api/devices/pi` alle `heartbeat_interval` Sekunden (Standard 60) – der Server liefert im POST die Gerätekonfiguration mit, sodass **kein zweiter GET** nötig ist.
 
-`task_poll_interval: 1` in alter `config.json` erzeugt fast jede Sekunde einen API-Call und unnötige DB-Reads – für „Online“ im Dashboard reichen 5–15 s völlig (Dashboard wertet ohnehin mehrere Minuten als online).
+Ältere `config.json` mit `heartbeat_interval: 30` bzw. `task_poll_interval: 5` (alte Defaults) werden beim ersten Start nach dem Update automatisch auf 60/10 migriert. Individuell gesetzte Werte bleiben unverändert. Sehr kleine Werte (`task_poll_interval: 1`) erzeugen weiterhin fast jede Sekunde einen API-Call – für „Online“ im Dashboard reichen 5–15 s völlig (Dashboard wertet ohnehin mehrere Minuten als online).
 
 ## Version & Auto-Update
 
-- **Scanner-Version:** `raspberry-pi/emp_scanner/__init__.py` → `VERSION` (z. B. `1.2.5`). Nach `git pull` + Neustart meldet der Pi diese Version im Heartbeat (`scanner_version` in den Systeminfos).
+- **Scanner-Version:** `raspberry-pi/emp_scanner/__init__.py` → `VERSION` (z. B. `1.2.7`). Nach `git pull` + Neustart meldet der Pi diese Version im Heartbeat (`scanner_version` in den Systeminfos).
 - **Dashboard „aktuell“:** Der Wert muss mit `src/lib/pi-version.ts` → `LATEST_PI_VERSION` übereinstimmen (beim Release beide anpassen).
 - **API:** `GET/POST /api/devices/pi` liefert zusätzlich `latest_scanner_version` (gleicher Wert wie im Dashboard).
 
