@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   if (!body.name?.trim()) {
     return NextResponse.json({ error: "Name ist erforderlich" }, { status: 400 });
   }
-  if (!["RASPBERRY_PI", "SHELLY"].includes(body.type)) {
+  if (!["RASPBERRY_PI", "SHELLY", "NUKI_SMARTLOCK"].includes(body.type)) {
     return NextResponse.json({ error: "Ungültiger Gerätetyp" }, { status: 400 });
   }
 
@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
       ipAddress: body.ipAddress || null,
       shellyId: body.shellyId || null,
       shellyAuthKey: body.shellyAuthKey || null,
+      nukiSmartlockId: body.nukiSmartlockId || null,
       isActive: body.isActive ?? true,
       accessIn: body.accessIn ? Number(body.accessIn) : null,
       accessOut: body.accessOut ? Number(body.accessOut) : null,

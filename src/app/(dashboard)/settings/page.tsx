@@ -10,7 +10,7 @@ import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { TelegramCard } from "@/components/settings/telegram-card";
 
-const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"] as const;
+const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI"] as const;
 
 export const dynamic = "force-dynamic";
 

@@ -46,5 +46,6 @@ export async function POST(
     action as keyof typeof DEVICE_TASK_MAP,
   );
 
-  return NextResponse.json({ ok: true, task, sent: existing.type === "SHELLY" ? sent : undefined });
+  const hasRemoteAction = existing.type === "SHELLY" || existing.type === "NUKI_SMARTLOCK";
+  return NextResponse.json({ ok: true, task, sent: hasRemoteAction ? sent : undefined });
 }

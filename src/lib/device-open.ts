@@ -1,3 +1,5 @@
+import { nukiAction, NUKI_ACTION } from "./nuki";
+
 // Task codes für Raspberry Pi:
 // 0 = idle, 1 = open once, 2 = emergency open (NOT-AUF), 3 = deactivate
 type TaskAction = "open" | "emergency" | "deactivate" | "reset";
@@ -93,6 +95,7 @@ interface DeviceForAction {
   type: string;
   shellyId: string | null;
   ipAddress: string | null;
+  nukiSmartlockId?: string | null;
 }
 
 /**
@@ -104,7 +107,7 @@ interface DbLike {
   device: { update: (args: { where: { id: number }; data: { task: number } }) => Promise<unknown> };
   apiConfig: {
     findFirst: (args: {
-      where: { accountId: number; provider: "SHELLY" };
+      where: { accountId: number; provider: "SHELLY" | "NUKI" };
     }) => Promise<{ token: string | null; baseUrl: string | null } | null>;
   };
 }
@@ -125,6 +128,22 @@ export async function triggerDeviceAction(
     where: { id: device.id },
     data: { task },
   });
+
+  if (device.type === "NUKI_SMARTLOCK") {
+    if (!device.nukiSmartlockId) return { task, sent: false };
+    const config = await db.apiConfig.findFirst({
+      where: { accountId, provider: "NUKI" },
+    });
+    if (!config?.token) return { task, sent: false };
+
+    // open/emergency => unlatch (kurz aufdruecken), deactivate/reset => lock.
+    const nukiActionId =
+      action === "open" || action === "emergency"
+        ? NUKI_ACTION.UNLATCH
+        : NUKI_ACTION.LOCK;
+    const res = await nukiAction(config.token, device.nukiSmartlockId, nukiActionId);
+    return { task, sent: res.ok };
+  }
 
   if (device.type !== "SHELLY") return { task, sent: false };
 

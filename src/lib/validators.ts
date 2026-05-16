@@ -88,10 +88,11 @@ export const ticketBulkCreateSchema = z
 
 export const deviceCreateSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(["RASPBERRY_PI", "SHELLY"]),
+  type: z.enum(["RASPBERRY_PI", "SHELLY", "NUKI_SMARTLOCK"]),
   ipAddress: z.string().optional(),
   shellyId: z.string().optional(),
   shellyAuthKey: z.string().optional(),
+  nukiSmartlockId: z.string().optional(),
   accessIn: z.coerce.number().int().optional(),
   accessOut: z.coerce.number().int().optional(),
   isActive: z.boolean().optional(),

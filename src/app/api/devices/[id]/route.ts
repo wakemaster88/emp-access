@@ -68,6 +68,7 @@ export async function PUT(
       ipAddress: body.ipAddress ?? existing.ipAddress,
       shellyId: body.shellyId ?? existing.shellyId,
       shellyAuthKey: body.shellyAuthKey ?? existing.shellyAuthKey,
+      nukiSmartlockId: body.nukiSmartlockId ?? existing.nukiSmartlockId,
       isActive: body.isActive ?? existing.isActive,
       accessIn: body.accessIn ?? existing.accessIn,
       accessOut: body.accessOut ?? existing.accessOut,

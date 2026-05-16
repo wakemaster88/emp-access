@@ -36,6 +36,7 @@ interface ProviderMeta {
 const SYNC_ENDPOINTS: Record<string, { method: string; url: string }> = {
   ANNY: { method: "POST", url: "/api/integrations/anny" },
   EMP_CONTROL: { method: "GET", url: "/api/integrations/emp-control" },
+  NUKI: { method: "POST", url: "/api/integrations/nuki" },
 };
 
 const PROVIDER_META: Record<string, ProviderMeta> = {
@@ -80,6 +81,14 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
     },
     tokenOptional: true,
   },
+  NUKI: {
+    label: "Nuki",
+    description: "Smart Locks – Sync, Steuerung & Live-Events via Nuki Web API",
+    color: "bg-rose-500",
+    fields: {
+      token: "Nuki Web API Token (Nuki Web → Account → API)",
+    },
+  },
 };
 
 interface IntegrationCardProps {
@@ -123,7 +132,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     : provider === "EMP_CONTROL" ? !!initialData
     : !!initialData?.token;
 
-  const webhookSecret = (provider === "EMP_CONTROL" || provider === "ANNY") && data.extraConfig
+  const webhookSecret = (provider === "EMP_CONTROL" || provider === "ANNY" || provider === "NUKI") && data.extraConfig
     ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
     : null;
   const webhookBaseUrl = typeof window !== "undefined"
@@ -131,9 +140,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       ? `${window.location.origin}/api/webhook/emp-control`
       : provider === "ANNY"
         ? `${window.location.origin}/api/integrations/anny/webhook`
-        : ""
+        : provider === "NUKI"
+          ? `${window.location.origin}/api/integrations/nuki/webhook`
+          : ""
     : "";
-  const webhookUrl = provider === "ANNY" && webhookSecret
+  const webhookUrl = (provider === "ANNY" || provider === "NUKI") && webhookSecret
     ? `${webhookBaseUrl}?secret=${webhookSecret}`
     : webhookBaseUrl;
 
@@ -145,6 +156,17 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
       <p><strong>Body (JSON):</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaIds": [1, 2, 3] } ] }`}</code></p>
       <p><strong>Ressourcen:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> (Array) – IDs der Access Areas, bei denen der Mitarbeiter Zugang hat. Alternativ: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaId</code> (einzeln) oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">resourceIds</code>.</p>
       <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">emp-&lt;id&gt;</code>) und verknüpft es mit allen angegebenen Ressourcen.</p>
+    </div>
+  );
+
+  const nukiApiDescription = (
+    <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
+      <p className="font-medium text-slate-600 dark:text-slate-300">Nuki Web API</p>
+      <p>1. Token unter <a className="underline" href="https://web.nuki.io" target="_blank" rel="noreferrer">web.nuki.io</a> → Account → API generieren und oben einfügen.</p>
+      <p>2. Auf <strong>Synchronisieren</strong> klicken – alle Smart Locks aus Nuki werden automatisch als Geräte (Typ <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">NUKI_SMARTLOCK</code>, Kategorie <em>Tür</em>) angelegt und mit Akkustand/Firmware befüllt.</p>
+      <p>3. Sync registriert automatisch einen Webhook bei Nuki (sofern die Seite über HTTPS erreichbar ist) – Tür-Events landen dann als <em>Scan</em> in EMP. URL und Secret siehst du unten.</p>
+      <p><strong>Aktionen:</strong> Über das Geräte-Menü kannst du die Tür auf/zu schalten (Web-API: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">unlatch</code>/<code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">lock</code>).</p>
+      <p><strong>Voraussetzung:</strong> Smart Lock Pro (4. Gen) oder Ultra mit WLAN bzw. Smart Lock + Nuki Bridge.</p>
     </div>
   );
 
@@ -376,6 +398,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{webhookUrl || "/api/integrations/anny/webhook"}</code> – Buchungen empfangen. Details beim Öffnen.</p>
                 </div>
               )}
+              {provider === "NUKI" && isConfigured && (
+                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  <p><strong>Sync:</strong> Smart Locks → Geräte. <strong>Webhook:</strong> Tür-Events → Scans. Details beim Öffnen.</p>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 text-slate-400">
@@ -575,17 +602,21 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               </div>
             )}
 
-            {(provider === "EMP_CONTROL" || provider === "ANNY") && (
+            {(provider === "EMP_CONTROL" || provider === "ANNY" || provider === "NUKI") && (
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
                 <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
                   {provider === "EMP_CONTROL"
                     ? "Webhook – Mitarbeiter von emp-control pushen"
-                    : "Webhook – Buchungen von anny.co empfangen"}
+                    : provider === "ANNY"
+                      ? "Webhook – Buchungen von anny.co empfangen"
+                      : "Webhook – Tür-Events von Nuki empfangen"}
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-500">
                   {provider === "ANNY"
                     ? "In anny.co diese URL als Webhook eintragen. Bei neuer/geänderter Buchung sendet anny.co automatisch einen POST und EMP legt daraus ein Ticket an oder aktualisiert es."
-                    : "emp-control sendet Mitarbeiterdaten per POST an diesen Webhook."}
+                    : provider === "NUKI"
+                      ? "Wird beim Sync automatisch bei Nuki registriert. Bei jedem Lock-/Unlock-Event sendet Nuki einen POST – EMP loggt das als Scan und aktualisiert den Akkustand."
+                      : "emp-control sendet Mitarbeiterdaten per POST an diesen Webhook."}
                 </p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
@@ -630,7 +661,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                     )}
                   </div>
                 </div>
-                {provider === "EMP_CONTROL" ? empControlApiDescription : annyApiDescription}
+                {provider === "EMP_CONTROL"
+                  ? empControlApiDescription
+                  : provider === "ANNY"
+                    ? annyApiDescription
+                    : nukiApiDescription}
               </div>
             )}
 

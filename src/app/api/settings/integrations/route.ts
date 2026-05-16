@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const schema = z
   .object({
-    provider: z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL"]),
+    provider: z.enum(["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI"]),
     token: z.string(),
     eventId: z.string().optional().nullable(),
     baseUrl: z.string().url().optional().nullable().or(z.literal("")),
@@ -77,6 +77,32 @@ export async function POST(req: NextRequest) {
         const existingExtra = JSON.parse(existingAnny.extraConfig) as Record<string, unknown>;
         if (existingExtra.webhookSecret && !extra.webhookSecret) {
           extra.webhookSecret = existingExtra.webhookSecret;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!extra.webhookSecret || typeof extra.webhookSecret !== "string") {
+      extra.webhookSecret = randomBytes(32).toString("hex");
+    }
+    extraConfig = JSON.stringify(extra);
+  }
+  if (parsed.data.provider === "NUKI") {
+    let extra: Record<string, unknown> = {};
+    try {
+      if (parsed.data.extraConfig) extra = JSON.parse(parsed.data.extraConfig);
+    } catch { /* ignore */ }
+    const existingNuki = await db.apiConfig.findFirst({
+      where: { accountId: session.user.accountId!, provider: "NUKI" },
+    });
+    if (existingNuki?.extraConfig) {
+      try {
+        const existingExtra = JSON.parse(existingNuki.extraConfig) as Record<string, unknown>;
+        if (existingExtra.webhookSecret && !extra.webhookSecret) {
+          extra.webhookSecret = existingExtra.webhookSecret;
+        }
+        // notificationId aus vorheriger Registrierung mitnehmen, damit
+        // nukiUpsertWebhook beim naechsten Sync das gleiche Token weiterverwendet.
+        if (existingExtra.notificationId && !extra.notificationId) {
+          extra.notificationId = existingExtra.notificationId;
         }
       } catch { /* ignore */ }
     }

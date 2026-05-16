@@ -15,6 +15,7 @@ enum AdminRole {
 enum DeviceType {
   RASPBERRY_PI
   SHELLY
+  NUKI_SMARTLOCK
 }
 
 enum DeviceCategory {
@@ -52,6 +53,7 @@ enum ApiProvider {
   BINARYTEC
   EMP_CONTROL
   SHELLY
+  NUKI
 }
 
 model Account {
@@ -104,28 +106,32 @@ model Admin {
 }
 
 model Device {
-  id            Int                 @id @default(autoincrement())
-  name          String
-  type          DeviceType
-  category      DeviceCategory?
-  ipAddress     String?
-  shellyId      String?
-  shellyAuthKey String?
-  isActive      Boolean             @default(true)
-  task          Int                 @default(0)
-  accessIn      Int?
-  accessOut     Int?
-  allowReentry  Boolean             @default(false)
-  firmware      String?
-  schedule      Json?
-  systemInfo    Json?
-  lastUpdate    DateTime?
-  accountId     Int
-  account       Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  scans         Scan[]
-  groupMembers  ShellyGroupMember[]
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id              Int                 @id @default(autoincrement())
+  name            String
+  type            DeviceType
+  category        DeviceCategory?
+  ipAddress       String?
+  shellyId        String?
+  shellyAuthKey   String?
+  /// Nuki Smart Lock ID (numerische ID aus der Nuki Web API).
+  /// Wird beim Sync aus `GET /smartlock` befuellt; identifiziert das Geraet
+  /// fuer `POST /smartlock/{id}/action` und Webhook-Events.
+  nukiSmartlockId String?
+  isActive        Boolean             @default(true)
+  task            Int                 @default(0)
+  accessIn        Int?
+  accessOut       Int?
+  allowReentry    Boolean             @default(false)
+  firmware        String?
+  schedule        Json?
+  systemInfo      Json?
+  lastUpdate      DateTime?
+  accountId       Int
+  account         Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  scans           Scan[]
+  groupMembers    ShellyGroupMember[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   @@index([accountId])
   @@index([accessIn])
