@@ -87,6 +87,7 @@ model Account {
   emailConfig     EmailConfig?
   emailRules      EmailRule[]
   emailSends      EmailSend[]
+  announcements   MonitorAnnouncement[]
 }
 
 model Admin {
@@ -446,6 +447,28 @@ model MonitorConfig {
 
   @@index([accountId])
   @@index([token])
+}
+
+/// Kurznachricht, die ein Mitarbeiter vom Shop-/Check-in-Monitor an alle
+/// Public-Monitore desselben Accounts schickt (z. B. "Anfaengerkurs gleich an
+/// Seilbahn A"). Wird im Public-Monitor als Banner oben angezeigt, bis ein
+/// Mitarbeiter dort manuell auf X klickt -> `dismissedAt` wird gesetzt und
+/// der Banner verschwindet auf allen Monitoren.
+model MonitorAnnouncement {
+  id          Int       @id @default(autoincrement())
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  message     String
+  /// Optional: Name des Quell-Monitors (Shop-Monitor), rein informativ fuer
+  /// die Anzeige ("Hinweis vom Shop"). Wird kein Fremdschluessel, weil der
+  /// Monitor zwischenzeitlich umbenannt / geloescht werden koennte.
+  sourceLabel String?
+  createdAt   DateTime  @default(now())
+  /// Wenn != null, wurde der Hinweis manuell geschlossen und ist fuer alle
+  /// Public-Monitore aus dem Banner verschwunden.
+  dismissedAt DateTime?
+
+  @@index([accountId, dismissedAt])
 }
 
 // ── Email-Automationen ───────────────────────────────────────────────────────

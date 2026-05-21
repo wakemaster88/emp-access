@@ -30,6 +30,8 @@ import {
   DoorOpen,
   Check,
   ChevronDown,
+  Megaphone,
+  Send,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -234,11 +236,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const knownScanIdsRef = useRef<Set<number>>(new Set());
   const [scanHighlights, setScanHighlights] = useState<Map<number, string>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
-  // Welche Vereins-/Abo-Gruppen sind aktuell aufgeklappt? Standard: alle
-  // eingeklappt (siehe Rendering). Bei aktiver Suche wird die Logik
-  // ueberbrueckt, damit Treffer immer sichtbar sind.
+  // Welche Vereins-/Abo-/Service-Gruppen sind aktuell aufgeklappt? Standard:
+  // alle eingeklappt (siehe Rendering) - im Shop-Workflow waechst die Liste
+  // sonst sehr schnell auf hunderte Eintraege an. Bei aktiver Suche wird die
+  // Logik ueberbrueckt, damit Treffer immer sichtbar sind.
   const [expandedVereine, setExpandedVereine] = useState<Set<number>>(new Set());
   const [expandedAbos, setExpandedAbos] = useState<Set<number>>(new Set());
+  const [expandedServiceGroups, setExpandedServiceGroups] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
@@ -265,6 +269,41 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [openMenuOpen, setOpenMenuOpen] = useState(false);
   const openMenuRef = useRef<HTMLDivElement>(null);
   const refreshRef = useRef<(() => Promise<void>) | null>(null);
+  // Hinweis-an-Seilbahn-Monitor: einfacher Dialog mit freier Textarea. Wird
+  // beim Senden ueber /api/checkin/public/[token]/announcements an alle
+  // Public-Monitore desselben Accounts geschickt.
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [announcementText, setAnnouncementText] = useState("");
+  const [announcementSending, setAnnouncementSending] = useState(false);
+  const [announcementError, setAnnouncementError] = useState<string | null>(null);
+  const [announcementSentAt, setAnnouncementSentAt] = useState<number | null>(null);
+
+  const handleSendAnnouncement = useCallback(async () => {
+    const message = announcementText.trim();
+    if (!message || announcementSending) return;
+    setAnnouncementSending(true);
+    setAnnouncementError(null);
+    try {
+      const res = await fetch(`/api/checkin/public/${token}/announcements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setAnnouncementError(typeof data?.error === "string" ? data.error : "Senden fehlgeschlagen");
+      } else {
+        setAnnouncementText("");
+        setAnnouncementSentAt(Date.now());
+        setAnnouncementOpen(false);
+        setTimeout(() => setAnnouncementSentAt(null), 2500);
+      }
+    } catch {
+      setAnnouncementError("Netzwerkfehler");
+    } finally {
+      setAnnouncementSending(false);
+    }
+  }, [token, announcementText, announcementSending]);
 
   const handleQuickOpen = useCallback(async (deviceId: number) => {
     setOpeningDeviceId(deviceId);
@@ -853,6 +892,21 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <span className="hidden sm:inline">Ticket</span>
           </button>
           <button
+            onClick={() => { setAnnouncementError(null); setAnnouncementOpen(true); }}
+            title="Hinweis an die Live-Monitore schicken"
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95",
+              announcementSentAt
+                ? "bg-emerald-600 text-white"
+                : "bg-amber-600 hover:bg-amber-500 text-white",
+            )}
+          >
+            {announcementSentAt ? <Check className="h-5 w-5" /> : <Megaphone className="h-5 w-5" />}
+            <span className="hidden sm:inline">
+              {announcementSentAt ? "Gesendet" : "Hinweis"}
+            </span>
+          </button>
+          <button
             onClick={() => setLockerOverlayOpen(true)}
             className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
           >
@@ -996,23 +1050,61 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <p className="text-sm text-slate-500 text-center py-6">Keine ausstehenden Tickets</p>
           ) : (
             <div className="space-y-3">
-              {[...serviceGroups.entries()].map(([groupName, tickets]) => (
-                <div key={groupName}>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-1">{groupName}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {tickets.map((t) => (
-                      <TicketCard
-                        key={t.id}
-                        ticket={t}
-                        onTap={() => setSelectedTicket(t)}
-                        onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
-                        checkingIn={checkingIn === t.id}
-                        highlight={scanHighlights.get(t.id)}
+              {[...serviceGroups.entries()].map(([groupName, tickets]) => {
+                // Leere Gruppen werden ohnehin durch das filteredPending-
+                // Verfahren rausgefiltert; defensiv noch ein expliziter Skip
+                // damit kein Header ohne Inhalt erscheint.
+                if (tickets.length === 0) return null;
+                const isSearching = searchQuery.trim().length > 0;
+                const isExpanded = isSearching || expandedServiceGroups.has(groupName);
+                return (
+                  <div key={groupName} className="rounded-xl border border-slate-800/70 bg-slate-900/40 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isSearching) return;
+                        setExpandedServiceGroups((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(groupName)) next.delete(groupName);
+                          else next.add(groupName);
+                          return next;
+                        });
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left"
+                    >
+                      <Ticket className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate">
+                        {groupName}
+                      </span>
+                      <Badge className="ml-1 bg-indigo-500/20 text-indigo-300 border-indigo-500/30 font-normal">
+                        {tickets.length}
+                      </Badge>
+                      <ChevronDown
+                        className={cn(
+                          "ml-auto h-4 w-4 text-slate-500 shrink-0 transition-transform",
+                          isExpanded && "rotate-180",
+                        )}
                       />
-                    ))}
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-slate-800/70 p-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {tickets.map((t) => (
+                            <TicketCard
+                              key={t.id}
+                              ticket={t}
+                              onTap={() => setSelectedTicket(t)}
+                              onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
+                              checkingIn={checkingIn === t.id}
+                              highlight={scanHighlights.get(t.id)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Vereine: standardmaessig eingeklappt am Ende. Bei aktiver
                   Suche immer aufgeklappt, damit Treffer sichtbar sind. */}
@@ -1206,7 +1298,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         <AddTicketOverlay
           token={token}
           services={data?.services ?? []}
-          areas={data?.areas ?? []}
           subscriptions={data?.allSubscriptions ?? []}
           onClose={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); }}
           onCreated={async (newTicketId) => {
@@ -1256,6 +1347,81 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           token={token}
           onClose={() => setLockerOverlayOpen(false)}
         />
+      )}
+
+      {/* Hinweis-an-Monitore Dialog */}
+      {announcementOpen && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setAnnouncementOpen(false); }}
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+                <Megaphone className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-bold text-white">Hinweis an Monitore</h2>
+                <p className="text-xs text-slate-400">
+                  Erscheint als Banner oben in allen Live-Monitoren, bis dort manuell geschlossen.
+                </p>
+              </div>
+              <button
+                onClick={() => setAnnouncementOpen(false)}
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <textarea
+                autoFocus
+                value={announcementText}
+                onChange={(e) => setAnnouncementText(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    void handleSendAnnouncement();
+                  }
+                }}
+                placeholder='z.B. "Anfängerkurs kommt gleich an Seilbahn A"'
+                maxLength={500}
+                rows={4}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 text-white text-sm px-3 py-2.5 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60 resize-none"
+              />
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>{announcementText.length}/500</span>
+                <span>⌘/Ctrl + Enter zum Senden</span>
+              </div>
+              {announcementError && (
+                <div className="rounded-lg bg-rose-950/40 border border-rose-900/60 px-3 py-2 text-xs text-rose-300">
+                  {announcementError}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-800 px-5 py-3">
+              <button
+                onClick={() => setAnnouncementOpen(false)}
+                disabled={announcementSending}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleSendAnnouncement}
+                disabled={announcementSending || !announcementText.trim()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-white transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {announcementSending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Senden
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Scan overlay */}
@@ -2549,7 +2715,6 @@ async function postTicketWithRetry(
 function AddTicketOverlay({
   token,
   services,
-  areas,
   subscriptions,
   onClose,
   onCreated,
@@ -2557,7 +2722,6 @@ function AddTicketOverlay({
 }: {
   token: string;
   services: ServiceData[];
-  areas: { id: number; name: string }[];
   subscriptions: SubOption[];
   onClose: () => void;
   onCreated: (newTicketId?: number) => void;
@@ -2586,9 +2750,16 @@ function AddTicketOverlay({
     voucher?.serviceId != null ? String(voucher.serviceId) : "none",
   );
   const [subscriptionId, setSubscriptionId] = useState("none");
+  // accessAreaId bleibt im State - wird automatisch ueber Service/Abo gesetzt,
+  // hat aber keine UI-Eingabemoeglichkeit mehr (Shop-Workflow: nicht relevant).
   const [accessAreaId, setAccessAreaId] = useState(
     voucher?.accessAreaId != null ? String(voucher.accessAreaId) : "none",
   );
+  // Optionale Datums-Felder (yyyy-mm-dd). Leer = Service-Defaults oder
+  // Fallback "heute". Wichtig fuer im Voraus verkaufte Tickets (z.B.
+  // Anfaengerkurs in zwei Tagen).
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [pendingConflict, setPendingConflict] = useState<{
@@ -2599,12 +2770,20 @@ function AddTicketOverlay({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!firstName.trim() && !lastName.trim()) return;
     setLoading(true);
     setError("");
     setPendingConflict(null);
 
-    const fullName = `${firstName} ${lastName}`.trim() || "Ticket";
+    // Tickets ohne Personalisierung sind im Shop ueblich (anonyme
+    // Tageskarten/Anfaengerkurs-Pl aetze). Wenn weder Vor- noch Nachname
+    // gesetzt sind, leiten wir den Anzeigenamen aus dem Service-/Abo-
+    // Namen ab, sonst Fallback "Ticket".
+    const fullName =
+      `${firstName} ${lastName}`.trim()
+      || services.find((s) => String(s.id) === serviceId)?.name
+      || subscriptions.find((s) => String(s.id) === subscriptionId)?.name
+      || voucher?.ticketTypeName
+      || "Ticket";
     const payload: Record<string, unknown> = {
       name: fullName,
       status: "VALID",
@@ -2682,10 +2861,26 @@ function AddTicketOverlay({
       }
     }
 
+    // Explizit gewaehltes Datum (z.B. Anfaengerkurs in zwei Tagen)
+    // ueberschreibt die Service-/Voucher-Defaults. Wenn nur startDate
+    // angegeben ist, gilt das Ticket nur an diesem Tag.
+    if (startDate) {
+      const sd = new Date(`${startDate}T00:00:00`);
+      if (!isNaN(sd.getTime())) payload.startDate = sd.toISOString();
+    }
+    if (endDate) {
+      const ed = new Date(`${endDate}T23:59:59.999`);
+      if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
+    } else if (startDate && payload.validityType !== "DURATION") {
+      const ed = new Date(`${startDate}T23:59:59.999`);
+      if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
+    }
+
     // Fallback: aktuellen Tag als Datum setzen, wenn kein Datum aus
-    // Service-/Subscription-Defaults gekommen ist. So ist das Ticket
-    // automatisch fuer "heute" gueltig, statt ohne Datum erstellt zu
-    // werden (was im Shop Monitor sonst gar nicht mehr angezeigt wird).
+    // Service-/Subscription-Defaults oder User-Eingabe gekommen ist. So
+    // ist das Ticket automatisch fuer "heute" gueltig, statt ohne Datum
+    // erstellt zu werden (was im Shop Monitor sonst gar nicht mehr
+    // angezeigt wird).
     const now = new Date();
     const dayStart = new Date(
       now.getFullYear(),
@@ -2770,6 +2965,7 @@ function AddTicketOverlay({
             : undefined;
         setFirstName(""); setLastName(""); setCode("");
         setServiceId("none"); setSubscriptionId("none"); setAccessAreaId("none");
+        setStartDate(""); setEndDate("");
         setPendingConflict(null);
         onCreated(newId);
       }
@@ -2835,25 +3031,27 @@ function AddTicketOverlay({
           )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Vorname <span className="text-rose-500">*</span></label>
+              <label className="text-xs font-medium text-slate-400">
+                Vorname <span className="text-slate-600 font-normal">(optional)</span>
+              </label>
               <input
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 placeholder="Max"
-                required
                 autoFocus
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Nachname <span className="text-rose-500">*</span></label>
+              <label className="text-xs font-medium text-slate-400">
+                Nachname <span className="text-slate-600 font-normal">(optional)</span>
+              </label>
               <input
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 placeholder="Mustermann"
-                required
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
               />
             </div>
@@ -2870,6 +3068,11 @@ function AddTicketOverlay({
                     if (e.target.value !== "none") {
                       const svc = services.find((s) => String(s.id) === e.target.value);
                       if (svc?.areaIds?.length) setAccessAreaId(String(svc.areaIds[0]));
+                      // Service-Default-Daten in die UI uebernehmen, damit
+                      // der User sieht, was sonst beim Submit auto-gesetzt
+                      // werden wuerde - und es bei Bedarf umstellen kann.
+                      if (svc?.defaultStartDate) setStartDate(toDateInput(svc.defaultStartDate));
+                      if (svc?.defaultEndDate) setEndDate(toDateInput(svc.defaultEndDate));
                     }
                   }}
                   className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
@@ -2903,40 +3106,52 @@ function AddTicketOverlay({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {subscriptions.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">Abo</label>
-                <select
-                  value={subscriptionId}
-                  onChange={(e) => {
-                    setSubscriptionId(e.target.value);
-                    if (e.target.value !== "none") {
-                      const sub = subscriptions.find((s) => String(s.id) === e.target.value);
-                      if (sub?.areaIds?.length) setAccessAreaId(String(sub.areaIds[0]));
-                    }
-                  }}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                >
-                  <option value="none">Kein Abo</option>
-                  {subscriptions.map((s) => (
-                    <option key={s.id} value={String(s.id)}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+          {subscriptions.length > 0 && (
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Bereich</label>
+              <label className="text-xs font-medium text-slate-400">Abo</label>
               <select
-                value={accessAreaId}
-                onChange={(e) => setAccessAreaId(e.target.value)}
+                value={subscriptionId}
+                onChange={(e) => {
+                  setSubscriptionId(e.target.value);
+                  if (e.target.value !== "none") {
+                    const sub = subscriptions.find((s) => String(s.id) === e.target.value);
+                    if (sub?.areaIds?.length) setAccessAreaId(String(sub.areaIds[0]));
+                  }
+                }}
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               >
-                <option value="none">Keiner</option>
-                {areas.map((a) => (
-                  <option key={a.id} value={String(a.id)}>{a.name}</option>
+                <option value="none">Kein Abo</option>
+                {subscriptions.map((s) => (
+                  <option key={s.id} value={String(s.id)}>{s.name}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Gültig ab <span className="text-slate-600 font-normal">(optional)</span>
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Gültig bis <span className="text-slate-600 font-normal">(optional)</span>
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+              />
             </div>
           </div>
 
@@ -2996,11 +3211,7 @@ function AddTicketOverlay({
             </button>
             <button
               type="submit"
-              disabled={
-                loading
-                || pendingConflict !== null
-                || (!firstName.trim() && !lastName.trim())
-              }
+              disabled={loading || pendingConflict !== null}
               className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}

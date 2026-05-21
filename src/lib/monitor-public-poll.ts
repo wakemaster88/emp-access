@@ -10,7 +10,22 @@ export type PublicMonitorPollResult = {
   tickets: Awaited<ReturnType<typeof loadTickets>> | null;
   /** Höchste Scan-ID in dieser Antwort (für sinceScanId beim nächsten Poll) */
   lastScanId: number;
+  /**
+   * Aktive (noch nicht dismissed) Banner-Hinweise des Accounts. Werden vom
+   * Public-Monitor als Banner oben angezeigt und account-weit per Klick auf
+   * X dismissed. Bei `scansOnly=true` weggelassen (sparen Round-trip).
+   */
+  announcements: Awaited<ReturnType<typeof loadAnnouncements>> | null;
 };
+
+async function loadAnnouncements(prisma: PrismaClient, accountId: number) {
+  return prisma.monitorAnnouncement.findMany({
+    where: { accountId, dismissedAt: null },
+    select: { id: true, message: true, sourceLabel: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+}
 
 async function loadDevices(
   prisma: PrismaClient,
@@ -215,10 +230,14 @@ export async function runPublicMonitorPoll(
       scans,
       tickets: null,
       lastScanId,
+      announcements: null,
     };
   }
 
-  const devices = await loadDevices(prisma, accountId, deviceIds);
+  const [devices, announcements] = await Promise.all([
+    loadDevices(prisma, accountId, deviceIds),
+    loadAnnouncements(prisma, accountId),
+  ]);
   const tickets = includeTickets ? await loadTickets(prisma, accountId, devices) : null;
 
   return {
@@ -227,5 +246,6 @@ export async function runPublicMonitorPoll(
     scans,
     tickets,
     lastScanId,
+    announcements,
   };
 }

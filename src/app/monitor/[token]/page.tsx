@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera, Search } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera, Search, Megaphone, X } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine } from "@/lib/monitor-ticket-subtitle";
@@ -73,6 +73,13 @@ interface TicketInfo {
   hasPhoto?: boolean;
 }
 
+interface Announcement {
+  id: number;
+  message: string;
+  sourceLabel: string | null;
+  createdAt: string;
+}
+
 interface ScanGroup {
   groupKey: string;
   ticketId: number | null;
@@ -103,6 +110,8 @@ export default function PublicMonitorPage({ params }: Props) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
   const [tickets, setTickets] = useState<TicketInfo[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [dismissingIds, setDismissingIds] = useState<Set<number>>(new Set());
   const [newIds, setNewIds] = useState<Set<number>>(new Set());
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
@@ -149,6 +158,24 @@ export default function PublicMonitorPage({ params }: Props) {
       await res.json();
     } catch { /* ignore */ }
     setTimeout(() => setScanningId(null), 800);
+  }
+
+  async function handleDismissAnnouncement(id: number) {
+    if (dismissingIds.has(id)) return;
+    setDismissingIds((prev) => new Set(prev).add(id));
+    // Optimistic remove - sieht direkt aus, dass der Banner weg ist; das
+    // naechste Poll-Result bestaetigt den Server-State.
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    try {
+      await fetch(`/api/monitor/public/${token}/announcements/${id}/dismiss`, {
+        method: "POST",
+      });
+    } catch { /* ignore */ }
+    setDismissingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }
 
   async function handlePauseAll() {
@@ -225,11 +252,15 @@ export default function PublicMonitorPage({ params }: Props) {
           scans: Scan[];
           tickets: TicketInfo[] | null;
           lastScanId: number;
+          announcements: Announcement[] | null;
         };
         if (cancelled) return;
         if (!scansOnly) {
           setMonitorName(data.name);
           setDevices(data.devices);
+        }
+        if (data.announcements !== null && data.announcements !== undefined) {
+          setAnnouncements(data.announcements);
         }
         if (data.scans?.length) {
           const incoming = data.scans.filter((s) => isSameBerlinDay(s.scanTime));
@@ -546,6 +577,69 @@ export default function PublicMonitorPage({ params }: Props) {
           )}
         </div>
       </header>
+
+      {/* Hinweis-Banner vom Shop-Monitor. Bleibt sichtbar bis manuell per X
+          geschlossen - dann account-weit weg, auf allen Monitoren. */}
+      {announcements.length > 0 && (
+        <div className="px-3 sm:px-5 pt-3 space-y-2">
+          {announcements.map((a) => (
+            <div
+              key={a.id}
+              className={cn(
+                "flex items-start gap-3 rounded-2xl border px-4 py-3 shadow-lg",
+                dark
+                  ? "border-amber-500/40 bg-gradient-to-r from-amber-500/15 to-amber-500/5"
+                  : "border-amber-400 bg-amber-50",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl",
+                  dark ? "bg-amber-500/20 text-amber-300" : "bg-amber-200 text-amber-700",
+                )}
+              >
+                <Megaphone className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={cn(
+                    "text-sm sm:text-base font-semibold whitespace-pre-wrap break-words",
+                    dark ? "text-amber-100" : "text-amber-900",
+                  )}
+                >
+                  {a.message}
+                </p>
+                <p
+                  className={cn(
+                    "text-[10px] sm:text-xs mt-1 font-medium tabular-nums",
+                    dark ? "text-amber-300/80" : "text-amber-700",
+                  )}
+                >
+                  {a.sourceLabel ? `${a.sourceLabel} · ` : ""}
+                  {fmtTime(a.createdAt)}
+                </p>
+              </div>
+              <button
+                onClick={() => handleDismissAnnouncement(a.id)}
+                disabled={dismissingIds.has(a.id)}
+                title="Hinweis schliessen"
+                className={cn(
+                  "shrink-0 rounded-lg p-1.5 transition-colors disabled:opacity-50",
+                  dark
+                    ? "text-amber-200/80 hover:bg-amber-500/20 hover:text-amber-100"
+                    : "text-amber-700 hover:bg-amber-200",
+                )}
+              >
+                {dismissingIds.has(a.id) ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 p-3 sm:p-5" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
