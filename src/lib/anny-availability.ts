@@ -254,6 +254,44 @@ export interface AnnyServiceMatch {
 }
 
 /**
+ * Tokenisiert einen Service-Namen fuer den Token-basierten Match. Alle
+ * Trennzeichen werden auf Space normalisiert, Umlaute bleiben erhalten.
+ * Leere Tokens fliegen raus.
+ */
+function tokenizeServiceName(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[\s\-–_/\\&,.()]+/g, " ")
+    .split(" ")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+}
+
+/**
+ * Token-basierter Match zwischen zwei Servicenamen. Idee:
+ *   * "Identifier"-Tokens (Laenge <= 2) wie "A", "B", "1", "2" muessen
+ *     auf beiden Seiten exakt das gleiche Set sein. Damit verhindern wir,
+ *     dass "Bahnmiete A" mit "Bahnmiete B" matched.
+ *   * Mindestens 1 "starker" Token (Laenge >= 5) muss gemeinsam sein.
+ *
+ * Faengt z.B. "Exklusive Bahnmiete B" <-> "Bahnmiete Seilbahn B" oder
+ * "Wake & Ski - Bahnmiete B" - aber nicht "Bahnmiete A" oder "Anfaengerkurs".
+ */
+function tokenServiceMatch(a: string, b: string): boolean {
+  const at = tokenizeServiceName(a);
+  const bt = tokenizeServiceName(b);
+  const idsA = new Set(at.filter((t) => t.length <= 2));
+  const idsB = new Set(bt.filter((t) => t.length <= 2));
+  // Identifier-Sets muessen identisch sein (oder beide leer)
+  if (idsA.size !== idsB.size) return false;
+  for (const t of idsA) if (!idsB.has(t)) return false;
+  const strongA = new Set(at.filter((t) => t.length >= 5));
+  const strongB = new Set(bt.filter((t) => t.length >= 5));
+  for (const t of strongA) if (strongB.has(t)) return true;
+  return false;
+}
+
+/**
  * Sucht in den ANNY-Services nach einem Service mit passendem Namen und gibt
  * dessen UUID zurueck. ANNY's Availability-Search ist serviceId-zentriert
  * (siehe https://developers.anny.co/guides/availability), unsere App
@@ -264,8 +302,11 @@ export interface AnnyServiceMatch {
  *   2. ANNY-Name ist Substring eines gesuchten Namens (z.B. ANNY hat "Anfaengerkurs",
  *      wir suchen "Anfaengerkurs - Uebungslift")
  *   3. gesuchter Name ist Substring eines ANNY-Namens (umgekehrt)
+ *   4. Token-basierter Match: gemeinsame Identifier (A/B) UND mind. 1
+ *      starker gemeinsamer Token (>=5 Zeichen). Faengt z.B.
+ *      "Exklusive Bahnmiete B" <-> "Bahnmiete Seilbahn B".
  *
- * Wir paginieren (page[size]=100) ueber max. 5 Seiten und gehen ALLE Seiten
+ * Wir paginieren (page[size]=50) ueber max. 10 Seiten und gehen ALLE Seiten
  * durch, auch wenn schon ein Match gefunden wurde - so koennen wir bei
  * Nicht-Fund die vollstaendige Namensliste fuer's Debugging zurueckgeben.
  */
@@ -353,7 +394,10 @@ export async function fetchAnnyServiceMatch(
           exactMatch = String(id);
           matchedServiceInfo = info;
         } else if (!substringMatch) {
-          if (wantedLower.some((w) => w.includes(lower) || lower.includes(w))) {
+          if (
+            wantedLower.some((w) => w.includes(lower) || lower.includes(w))
+            || wantedLower.some((w) => tokenServiceMatch(w, lower))
+          ) {
             substringMatch = String(id);
             if (!matchedServiceInfo) matchedServiceInfo = info;
           }
@@ -463,6 +507,7 @@ export async function fetchAllAnnyServices(
  * Spiegelt die Match-Strategie aus fetchAnnyServiceMatch wider:
  *   1. exakter case-insensitive Name-Match
  *   2. Substring-Match (in beide Richtungen)
+ *   3. Token-Match (gemeinsame Identifier + starker Token)
  */
 export function matchAnnyServiceInCatalog(
   catalog: AnnyServiceCatalogEntry[],
@@ -473,6 +518,7 @@ export function matchAnnyServiceInCatalog(
   const wantedSet = new Set(wanted);
   let exact: AnnyServiceCatalogEntry | null = null;
   let substring: AnnyServiceCatalogEntry | null = null;
+  let token: AnnyServiceCatalogEntry | null = null;
   for (const entry of catalog) {
     const lower = entry.name.toLowerCase();
     if (!exact && wantedSet.has(lower)) {
@@ -482,8 +528,47 @@ export function matchAnnyServiceInCatalog(
     if (!substring && wanted.some((w) => w.includes(lower) || lower.includes(w))) {
       substring = entry;
     }
+    if (!token && wanted.some((w) => tokenServiceMatch(w, lower))) {
+      token = entry;
+    }
   }
-  return exact || substring;
+  return exact || substring || token;
+}
+
+/**
+ * Liefert ANNY-Service-Namen, die zu einem der gesuchten Namen "aehnlich"
+ * sind (mind. 1 starker gemeinsamer Token, auch ohne Identifier-Match).
+ * Hilfreich fuer Diagnose: zeigt dem Mitarbeiter, welche ANNY-Namen er
+ * im annyNames-Feld eintragen koennte, wenn der Auto-Match scheitert.
+ */
+export function suggestAnnyServiceNames(
+  catalog: AnnyServiceCatalogEntry[],
+  serviceNames: string[],
+  limit = 6,
+): string[] {
+  if (serviceNames.length === 0 || catalog.length === 0) return [];
+  const wantedTokens = serviceNames.map((n) =>
+    new Set(tokenizeServiceName(n).filter((t) => t.length >= 4)),
+  );
+  if (wantedTokens.every((s) => s.size === 0)) return [];
+  const out: { name: string; score: number }[] = [];
+  for (const entry of catalog) {
+    const annyTokens = new Set(
+      tokenizeServiceName(entry.name).filter((t) => t.length >= 4),
+    );
+    if (annyTokens.size === 0) continue;
+    let best = 0;
+    for (const wts of wantedTokens) {
+      let common = 0;
+      for (const t of wts) if (annyTokens.has(t)) common++;
+      if (common > best) best = common;
+    }
+    if (best > 0) out.push({ name: entry.name, score: best });
+  }
+  return out
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((e) => e.name);
 }
 
 /**

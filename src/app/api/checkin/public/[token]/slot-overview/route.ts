@@ -4,6 +4,7 @@ import {
   resolveAnnyOrganizationId,
   fetchAllAnnyServices,
   matchAnnyServiceInCatalog,
+  suggestAnnyServiceNames,
   fetchAnnyServiceStartSlots,
   fetchAnnyServiceStartDates,
   fetchAnnyServicePeriods,
@@ -213,6 +214,14 @@ export async function GET(
       const match = matchAnnyServiceInCatalog(catalog, annyNames);
 
       if (!match) {
+        // Diagnose: liste ANNY-Services mit aehnlichen Tokens auf, damit
+        // der Mitarbeiter sieht, welche annyNames im Backoffice gepflegt
+        // werden muessten.
+        const suggestions = suggestAnnyServiceNames(catalog, annyNames, 6);
+        const suggestionText =
+          suggestions.length > 0
+            ? ` ANNY-Vorschlaege: ${suggestions.join(", ")}.`
+            : "";
         return {
           serviceId: svc.id,
           name: svc.name,
@@ -226,7 +235,9 @@ export async function GET(
           // nicht beurteilen - lieber anzeigen mit Hinweis als verstecken.
           availableToday: true,
           openingHours: [],
-          note: `ANNY-Service nicht gefunden (gesucht: ${annyNames.slice(0, 3).join(", ")})`,
+          note:
+            `ANNY-Service nicht gefunden (gesucht: ${annyNames.slice(0, 3).join(", ")}).`
+            + suggestionText,
         } satisfies ServiceOverview;
       }
 
