@@ -9,6 +9,7 @@ import {
   fetchAnnyServiceStartSlots,
   fetchAnnyServiceStartDates,
   fetchAnnyServicePeriods,
+  fetchAnnyResourcePeriods,
   ignoreLeadTimeBlocking,
   mergeAvailabilityPeriods,
   fmtTimeBerlin,
@@ -291,7 +292,16 @@ export async function GET(
       //     (Ferienkurs erst im Juli etc.) - dafuer /start-dates
       //  b) die Oeffnungszeiten anzeigen (10:00-18:00 etc.) - dafuer
       //     /availability/periods
+      //
+      // Fuer die Oeffnungszeiten bevorzugen wir die Resource-basierte
+      // Variante (?r[]=<resourceId>), weil die Service-Periods bei einigen
+      // ANNY-Services falsch konfiguriert oder gar nicht hinterlegt sind.
+      // Die Resource-Periods sind das, was die ANNY-Admin-UI selbst
+      // anzeigt - also die "Wahrheit" der Oeffnungszeiten. Fallback auf
+      // Service-Periods nur, wenn der Service keine verknuepfte Resource
+      // hat (z.B. reine virtuelle Tageskarten ohne Resource-Mapping).
       if (serviceType === "day") {
+        const hasResources = match.resourceIds.length > 0;
         const [datesRes, periodsRes] = await Promise.all([
           fetchAnnyServiceStartDates(
             baseUrl,
@@ -301,13 +311,20 @@ export async function GET(
             dateStr,
             organizationId,
           ).catch(() => [] as string[]),
-          fetchAnnyServicePeriods(
-            baseUrl,
-            annyConfig!.token,
-            match.id,
-            dateStr,
-            organizationId,
-          ).catch(() => []),
+          hasResources
+            ? fetchAnnyResourcePeriods(
+                baseUrl,
+                annyConfig!.token,
+                match.resourceIds,
+                dateStr,
+              ).catch(() => [])
+            : fetchAnnyServicePeriods(
+                baseUrl,
+                annyConfig!.token,
+                match.id,
+                dateStr,
+                organizationId,
+              ).catch(() => []),
         ]);
         const availableToday =
           datesRes.length === 0 ? true : datesRes.some((d) => d.startsWith(dateStr));

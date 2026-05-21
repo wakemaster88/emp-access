@@ -898,6 +898,39 @@ export async function fetchAnnyServicePeriods(
 }
 
 /**
+ * Holt die Oeffnungszeiten (Periods) eines Datums fuer eine konkrete Liste
+ * von Resource-IDs. ANNY-Endpoint:
+ *   GET /api/v1/availability/periods?r[]=<id1>&r[]=<id2>&start_date=...&end_date=...
+ *
+ * Das ist die saubere Resource-orientierte Variante - identisch zum
+ * Endpoint, den die ANNY-Admin-UI selbst fuer die Oeffnungszeiten-Anzeige
+ * benutzt. Antwort ist `{ "<resourceId>": Period[] }`; wir flachen das hier
+ * zu einer einzigen Period-Liste, damit der Caller direkt
+ * `mergeAvailabilityPeriods` darauf anwenden kann (z.B. mehrere Bahnen
+ * mit identischer Oeffnungszeit -> 1 Block).
+ *
+ * Beispiel-URL:
+ *   /api/v1/availability/periods?r[]=179465
+ *     &start_date=2026-01-12T00%3A00%3A00%2B01%3A00
+ *     &end_date=2026-01-12T23%3A59%3A59%2B01%3A00
+ *     &timezone=Europe%2FBerlin
+ */
+export async function fetchAnnyResourcePeriods(
+  baseUrl: string,
+  token: string,
+  resourceIds: string[],
+  dateStr: string,
+): Promise<AvailabilityPeriod[]> {
+  if (resourceIds.length === 0) return [];
+  const byResource = await fetchAnnyAvailability(baseUrl, token, resourceIds, dateStr);
+  const all: AvailabilityPeriod[] = [];
+  for (const periods of Object.values(byResource)) {
+    for (const p of periods) all.push(p);
+  }
+  return all;
+}
+
+/**
  * Vereinigt ueberlappende oder anstossende Perioden zu kompakten Bloecken.
  * Bei mehreren Resources liefert /availability/periods oft identische
  * Bloecke mehrfach - deduplizieren + mergen erspart "10:00-18:00, 10:00-18:00"
