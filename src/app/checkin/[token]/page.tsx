@@ -231,25 +231,51 @@ function formatOpeningHours(
 }
 
 /**
- * Uebersetzt ANNY's unavailability_type (booked_out, lead_time_conflict,
- * under_min_duration, staggered_conflict) in ein knappes Label fuer die
+ * Uebersetzt ANNY's unavailability_type in ein knappes Label fuer die
  * Slot-Buttons. Quelle: https://developers.anny.co/guides/availability
+ *
+ * Bekannte Werte aus ANNY:
+ *   - booked_out / overbooked: Kapazitaet erschoepft
+ *   - before_lead_time / after_lead_time / lead_time_conflict: Vorlauf-/Frist-Konflikt
+ *   - under_min_duration / over_max_duration: Dauer-Limits verletzt
+ *   - staggered_conflict / pause_conflict: Slot-Pausen/Zeitversatz-Konflikt
+ *   - outside_opening_hours / closed: ausserhalb Oeffnungszeiten
+ *   - resource_unavailable: keine Ressource verfuegbar
+ *   - blocked: explizit gesperrt
+ *
+ * Fallback: roher Wert wird zu "Title Case" ohne underscores umgewandelt.
  */
 function annyReasonLabel(reason: string | undefined): string {
+  if (!reason) return "";
   switch (reason) {
     case "booked_out":
+    case "overbooked":
       return "voll";
+    case "before_lead_time":
+      return "zu frueh";
+    case "after_lead_time":
+      return "zu spaet";
     case "lead_time_conflict":
       return "Vorlauf";
     case "under_min_duration":
       return "zu kurz";
+    case "over_max_duration":
+      return "zu lang";
     case "staggered_conflict":
+    case "pause_conflict":
       return "Konflikt";
-    case undefined:
-    case "":
-      return "";
+    case "outside_opening_hours":
+    case "closed":
+      return "geschlossen";
+    case "resource_unavailable":
+      return "keine Ressource";
+    case "blocked":
+      return "gesperrt";
     default:
-      return reason;
+      // Generischer Fallback: "before_lead_time" -> "Before Lead Time"
+      return reason
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }
 
