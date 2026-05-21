@@ -52,6 +52,9 @@ export async function GET(
     serviceId: true,
     accessAreaId: true,
     vereinId: true,
+    // ANNY-Sync-Indikator fuer das TicketCard-Badge: gesetzt wenn das
+    // Ticket beim Verkauf in ANNY gegenbucht wurde.
+    annyBookingId: true,
   } as const;
 
   const [tickets, allSubscriptions, services, areas, recentScans, openableDevices] = await Promise.all([
@@ -78,7 +81,21 @@ export async function GET(
         ...ticketSelect,
         accessArea: { select: { id: true, name: true } },
         subscription: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true } },
-        service: { select: { id: true, name: true, requiresPhoto: true, requiresRfid: true, allowManualCheckin: true } },
+        service: {
+          select: {
+            id: true,
+            name: true,
+            requiresPhoto: true,
+            requiresRfid: true,
+            allowManualCheckin: true,
+            // Pro Service mitnehmen, ob mindestens eine AccessArea einen ANNY-
+            // Resource-Link hat. Damit kann das TicketCard ein "ANNY"-Badge
+            // mit Sync-Status (annyBookingId vorhanden?) anzeigen.
+            serviceAreas: {
+              select: { area: { select: { _count: { select: { annyLinks: true } } } } },
+            },
+          },
+        },
         verein: { select: { id: true, name: true } },
         _count: { select: { scans: true } },
       },
@@ -194,20 +211,6 @@ export async function GET(
     return t.status === "REDEEMED" || checkedInIds.has(t.id);
   }
 
-  const enrichedTickets = tickets.map((t) => ({
-    ...t,
-    checkedIn: checkedInForTicket(t),
-  }));
-
-  const subscriptions = allSubscriptions;
-  const enrichedSubscriptions = subscriptions.map((sub) => ({
-    ...sub,
-    tickets: sub.tickets.map((t) => ({
-      ...t,
-      checkedIn: checkedInForTicket(t),
-    })),
-  }));
-
   const servicesWithAreas = services.map((s) => ({
     id: s.id,
     name: s.name,
@@ -221,6 +224,40 @@ export async function GET(
     // true wenn mindestens eine AccessArea des Service einen AnnyResourceLink
     // hat -> Kursbuchung via ANNY-Slots moeglich.
     hasAnnyLink: s.serviceAreas.some((sa) => (sa.area?._count.annyLinks ?? 0) > 0),
+  }));
+
+  // Server-side `service.hasAnnyLink` auf den Tickets aufloesen. Das braucht
+  // das TicketCard fuer das "ANNY"-Sync-Badge (zeigt orange wenn ANNY-Link
+  // existiert aber `annyBookingId` fehlt -> Sync war nicht erfolgreich oder
+  // Ticket wurde vor dem Sync-Feature angelegt).
+  const annyLinkedServiceIds = new Set(
+    servicesWithAreas.filter((s) => s.hasAnnyLink).map((s) => s.id),
+  );
+
+  const enrichedTickets = tickets.map((t) => ({
+    ...t,
+    checkedIn: checkedInForTicket(t),
+    service: t.service
+      ? (() => {
+          // serviceAreas raus - braucht das Frontend nicht und blaeht den
+          // Payload pro Ticket auf.
+          const { serviceAreas: _omit, ...serviceLite } = t.service;
+          void _omit;
+          return {
+            ...serviceLite,
+            hasAnnyLink: annyLinkedServiceIds.has(t.service.id),
+          };
+        })()
+      : t.service,
+  }));
+
+  const subscriptions = allSubscriptions;
+  const enrichedSubscriptions = subscriptions.map((sub) => ({
+    ...sub,
+    tickets: sub.tickets.map((t) => ({
+      ...t,
+      checkedIn: checkedInForTicket(t),
+    })),
   }));
 
   const subsWithAreas = allSubscriptions.map((s) => ({

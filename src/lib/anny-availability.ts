@@ -388,6 +388,104 @@ export async function fetchAnnyServiceIdByName(
   return match.id;
 }
 
+export interface AnnyServiceCatalogEntry {
+  id: string;
+  name: string;
+  info: NonNullable<AnnyServiceMatch["serviceInfo"]>;
+}
+
+/**
+ * Listet ALLE Services des ANNY-Accounts. Im Gegensatz zu
+ * fetchAnnyServiceMatch wird hier nicht nach Namen gefiltert - sinnvoll fuer
+ * den Slot-Overview-Endpoint, der mehrere EMP-Services in einem Request
+ * gegen den ANNY-Catalog matchen muss (statt N Pagination-Loops zu fahren).
+ *
+ * Pagination identisch zu fetchAnnyServiceMatch (page[size]=50, max 10 Seiten).
+ */
+export async function fetchAllAnnyServices(
+  baseUrl: string,
+  token: string,
+  organizationId?: string | null,
+): Promise<AnnyServiceCatalogEntry[]> {
+  const out: AnnyServiceCatalogEntry[] = [];
+  const pageSize = 50;
+  for (let page = 1; page <= 10; page++) {
+    const params = new URLSearchParams({
+      "page[size]": String(pageSize),
+      "page[number]": String(page),
+    });
+    if (organizationId) params.set("o", organizationId);
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/services?${params}`, {
+        headers: annyHeaders(token),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) break;
+      const json = (await res.json()) as unknown;
+      const items: unknown[] = Array.isArray(json)
+        ? json
+        : Array.isArray((json as { data?: unknown[] }).data)
+          ? ((json as { data: unknown[] }).data)
+          : Array.isArray((json as { items?: unknown[] }).items)
+            ? ((json as { items: unknown[] }).items)
+            : [];
+      if (items.length === 0) break;
+      for (const raw of items) {
+        const svc = raw as { id?: string; attributes?: Record<string, unknown>; name?: string };
+        const a = (svc.attributes ?? svc) as Record<string, unknown>;
+        const id = svc.id || (a.id as string | undefined);
+        const name = (a.name as string | undefined) || (a.title as string | undefined);
+        if (!id || !name) continue;
+        out.push({
+          id: String(id),
+          name,
+          info: {
+            minDuration: typeof a.min_duration === "number" ? (a.min_duration as number) : null,
+            maxDuration: typeof a.max_duration === "number" ? (a.max_duration as number) : null,
+            bookingInterval:
+              typeof a.booking_interval === "number" ? (a.booking_interval as number) : null,
+            hasFlexibleDuration: a.has_flexible_duration === true,
+            autoDuration: a.auto_duration === true,
+            isFullDay: a.is_full_day === true,
+          },
+        });
+      }
+      if (items.length < pageSize) break;
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Lokales Name-Matching gegen einen vorgeladenen ANNY-Service-Katalog.
+ * Spiegelt die Match-Strategie aus fetchAnnyServiceMatch wider:
+ *   1. exakter case-insensitive Name-Match
+ *   2. Substring-Match (in beide Richtungen)
+ */
+export function matchAnnyServiceInCatalog(
+  catalog: AnnyServiceCatalogEntry[],
+  serviceNames: string[],
+): AnnyServiceCatalogEntry | null {
+  if (serviceNames.length === 0 || catalog.length === 0) return null;
+  const wanted = serviceNames.map((n) => n.toLowerCase());
+  const wantedSet = new Set(wanted);
+  let exact: AnnyServiceCatalogEntry | null = null;
+  let substring: AnnyServiceCatalogEntry | null = null;
+  for (const entry of catalog) {
+    const lower = entry.name.toLowerCase();
+    if (!exact && wantedSet.has(lower)) {
+      exact = entry;
+      break;
+    }
+    if (!substring && wanted.some((w) => w.includes(lower) || lower.includes(w))) {
+      substring = entry;
+    }
+  }
+  return exact || substring;
+}
+
 /**
  * Ein Slot wie ANNY's `/api/v1/availability/start` ihn ausspuckt - 1:1
  * Mapping der relevanten Felder, plus lokal berechnete End-Zeit.

@@ -71,10 +71,21 @@ interface CheckinTicket {
   serviceId: number | null;
   accessAreaId: number | null;
   vereinId: number | null;
+  /** UUID der zugehoerigen ANNY-Buchung. null wenn Service keinen ANNY-Link
+   * hatte oder der Sync vor diesem Feature passiert ist. */
+  annyBookingId: string | null;
   checkedIn: boolean;
   accessArea?: { id: number; name: string } | null;
   subscription?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean } | null;
-  service?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean; allowManualCheckin?: boolean } | null;
+  service?: {
+    id: number;
+    name: string;
+    requiresPhoto?: boolean;
+    requiresRfid?: boolean;
+    allowManualCheckin?: boolean;
+    /** Service hat mindestens eine ANNY-Resource-Verknuepfung. */
+    hasAnnyLink?: boolean;
+  } | null;
   verein?: { id: number; name: string } | null;
   _count?: { scans: number };
 }
@@ -132,6 +143,49 @@ interface OpenableDevice {
   name: string;
   category: "TUER" | "DREHKREUZ";
   lastUpdate: string | null;
+}
+
+/**
+ * Slot-Auslastungs-Daten fuer das Shop-Monitor-Dashboard. Kommt vom
+ * /slot-overview-Endpoint und enthaelt pro ANNY-verknuepftem Service eine
+ * Slot-Liste mit Kapazitaet/Rest aus ANNY + EMP-Buchungszahl.
+ */
+interface SlotOverviewSlot {
+  startTime: string;
+  endTime: string;
+  startIso: string;
+  endIso: string;
+  available: boolean;
+  capacity: number | null;
+  remaining: number | null;
+  empBookings: number;
+  unavailabilityType: string | null;
+}
+
+interface SlotOverviewService {
+  serviceId: number;
+  name: string;
+  hasAnnyLink: boolean;
+  serviceType: "slot" | "day";
+  annyServiceUuid: string | null;
+  annyMatchedName: string | null;
+  slots: SlotOverviewSlot[];
+  totalEmpBookings: number;
+  note: string | null;
+}
+
+interface SlotOverviewData {
+  date: string;
+  services: SlotOverviewService[];
+  summary: {
+    totalSlots: number;
+    freeSlots: number;
+    partialSlots: number;
+    fullSlots: number;
+    totalCapacity: number;
+    totalRemaining: number;
+    totalEmpBookings: number;
+  };
 }
 
 interface CheckinData {
@@ -303,6 +357,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [announcementError, setAnnouncementError] = useState<string | null>(null);
   const [announcementSentAt, setAnnouncementSentAt] = useState<number | null>(null);
 
+  // Slot-Auslastung des Tages (ANNY-verknuepfte Services). Wird parallel
+  // zum Haupt-Dashboard alle 30s gepollt - ANNY-Calls sind zu teuer fuer
+  // den normalen 3s-Tick.
+  const [slotOverview, setSlotOverview] = useState<SlotOverviewData | null>(null);
+
   const handleSendAnnouncement = useCallback(async () => {
     const message = announcementText.trim();
     if (!message || announcementSending) return;
@@ -440,6 +499,41 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       cancelled = true;
       if (interval) clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [token, date]);
+
+  // Slot-Overview-Polling (ANNY-Auslastung). Eigenes Intervall, weil ANNY-
+  // Calls ~1-2s teuer sind und nicht jeden 8s-Tick antriggern sollen.
+  // 60s + Visibility-Change reicht voellig fuer Auslastungsanzeige.
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOverview = async () => {
+      try {
+        const r = await fetch(
+          `/api/checkin/public/${token}/slot-overview?date=${encodeURIComponent(date)}`,
+          { cache: "no-store" },
+        );
+        if (!r.ok) return;
+        const json = (await r.json()) as SlotOverviewData;
+        if (!cancelled) setSlotOverview(json);
+      } catch { /* swallow */ }
+    };
+
+    fetchOverview();
+    let interval: ReturnType<typeof setInterval> | null = setInterval(fetchOverview, 60000);
+    const handleVis = () => {
+      if (document.hidden) {
+        if (interval) { clearInterval(interval); interval = null; }
+      } else if (!interval) {
+        fetchOverview();
+        interval = setInterval(fetchOverview, 60000);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVis);
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVis);
     };
   }, [token, date]);
 
@@ -1051,6 +1145,21 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe monitor-scrollbar">
 
+        {/* Slot-Auslastung (ANNY-verknuepfte Services). Wird nur gerendert,
+            wenn mindestens ein Service auch tatsaechlich Slots hat - sonst
+            ist die Section leer und stoerend. */}
+        {slotOverview && slotOverview.services.some((sv) => sv.slots.length > 0 || sv.totalEmpBookings > 0) && (
+          <SlotOverviewSection
+            data={slotOverview}
+            onSlotPick={(slot) => {
+              // Klick auf Slot soll die Suche auf den Slot-Zeitraum filtern,
+              // damit man die Tickets dieses Slots sieht. Pragmatisch: in
+              // die Suche "HH:MM" einfuegen.
+              setSearchQuery(slot.startTime);
+            }}
+          />
+        )}
+
         {/* Upcoming */}
         {filteredUpcoming.length > 0 && (
           <Section title="Nächste Gäste" icon={Clock} count={filteredUpcoming.length} color="amber">
@@ -1637,6 +1746,179 @@ function StatPill({ icon: Icon, label, value, color }: { icon: React.ComponentTy
   );
 }
 
+/**
+ * Slot-Auslastungs-Section: pro ANNY-verknuepftem Service ein kompakter
+ * Streifen aus Slot-Buttons. Pro Slot wird Auslastung (gefuellter Hintergrund)
+ * + "freie/Gesamt"-Label gezeigt. Day-Pass-Services (Tageskarten) bekommen
+ * statt Slot-Buttons eine schlichte Booking-Zahl.
+ *
+ * Header: aggregierte Stats ("12 frei · 4 belegt · 1 voll") aus
+ * SlotOverviewData.summary.
+ */
+function SlotOverviewSection({
+  data,
+  onSlotPick,
+}: {
+  data: SlotOverviewData;
+  onSlotPick: (slot: SlotOverviewSlot) => void;
+}) {
+  const { summary, services } = data;
+  // Vorgespeichert: Services mit Slots > 0 ODER mit Tageskarten-Bookings.
+  // Reine "kennt-ANNY-aber-keine-Slots-und-keine-Tickets"-Services
+  // klappen wir nicht ein - das waere reines Rauschen.
+  const visible = services.filter(
+    (sv) => sv.slots.length > 0 || sv.totalEmpBookings > 0 || sv.serviceType === "day",
+  );
+  if (visible.length === 0) return null;
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <Clock className="h-4 w-4 text-sky-400" />
+        <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400">
+          Slot-Auslastung
+        </h2>
+        <div className="ml-auto flex items-center gap-1.5 text-[11px] font-mono tabular-nums">
+          {summary.totalSlots > 0 && (
+            <>
+              <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-1.5 py-0.5">
+                {summary.freeSlots} frei
+              </span>
+              {summary.partialSlots > 0 && (
+                <span className="text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-1.5 py-0.5">
+                  {summary.partialSlots} teils
+                </span>
+              )}
+              {summary.fullSlots > 0 && (
+                <span className="text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-md px-1.5 py-0.5">
+                  {summary.fullSlots} voll
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      <div className="rounded-xl border border-slate-800/70 bg-slate-900/40 p-3 space-y-3">
+        {visible.map((sv) => (
+          <div key={sv.serviceId} className="space-y-1.5">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+              <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
+              <span className="font-semibold truncate">{sv.name}</span>
+              {sv.serviceType === "day" && (
+                <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
+                  Tageskarte
+                </span>
+              )}
+              {sv.totalEmpBookings > 0 && (
+                <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
+                  {sv.totalEmpBookings} verkauft
+                </span>
+              )}
+            </div>
+            {sv.note ? (
+              <p className="text-[11px] text-amber-400/80 px-1">{sv.note}</p>
+            ) : sv.serviceType === "day" ? (
+              <p className="text-[11px] text-slate-500 px-1">
+                Tagespass - keine Slot-Auswahl, ANNY zaehlt nur Tickets.
+              </p>
+            ) : sv.slots.length === 0 ? (
+              <p className="text-[11px] text-slate-500 px-1">Keine Slots heute.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {sv.slots.map((slot) => (
+                  <SlotOverviewPill
+                    key={`${sv.serviceId}-${slot.startTime}`}
+                    slot={slot}
+                    onClick={() => onSlotPick(slot)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Einzelner Slot-Pill in der Auslastungssicht. Hintergrundbalken zeigt
+ * Auslastungs-Anteil (capacity-remaining)/capacity. Pill-Farbe geht von
+ * gruen (viel frei) ueber amber (knapp) zu rose (voll).
+ */
+function SlotOverviewPill({
+  slot,
+  onClick,
+}: {
+  slot: SlotOverviewSlot;
+  onClick: () => void;
+}) {
+  const blocked = !slot.available || (slot.remaining != null && slot.remaining <= 0);
+  // Auslastung berechnet aus ANNY's capacity/remaining. Fallback: EMP-
+  // Buchungen ueber Kapazitaet 1 = 100%. Wenn capacity unbekannt zeigen
+  // wir die Booking-Zahl als Indikator.
+  const pct =
+    blocked
+      ? 100
+      : slot.capacity != null && slot.capacity > 0 && slot.remaining != null
+        ? Math.max(0, Math.min(100, ((slot.capacity - slot.remaining) / slot.capacity) * 100))
+        : null;
+  const isAlmostFull =
+    !blocked && slot.remaining != null && slot.capacity != null
+      && slot.remaining <= Math.max(1, Math.floor(slot.capacity * 0.2));
+  const baseColor = blocked
+    ? "border-rose-500/40 text-rose-200 bg-rose-500/10"
+    : isAlmostFull
+      ? "border-amber-500/40 text-amber-200 bg-amber-500/10"
+      : "border-emerald-500/30 text-emerald-100 bg-emerald-500/5";
+  const fillColor = blocked
+    ? "bg-rose-500/30"
+    : isAlmostFull
+      ? "bg-amber-500/30"
+      : "bg-emerald-500/20";
+  const label = blocked
+    ? annyReasonLabel(slot.unavailabilityType ?? undefined) || "voll"
+    : slot.remaining != null && slot.capacity != null && slot.remaining !== slot.capacity
+      ? `${slot.remaining}/${slot.capacity}`
+      : slot.remaining != null
+        ? `${slot.remaining} frei`
+        : slot.capacity != null
+          ? `${slot.capacity} frei`
+          : slot.empBookings > 0
+            ? `${slot.empBookings} verk.`
+            : "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={
+        blocked
+          ? `ANNY: ${slot.unavailabilityType || "blockiert"} (EMP-Tickets: ${slot.empBookings})`
+          : `${slot.remaining ?? "?"} von ${slot.capacity ?? "?"} frei · ${slot.empBookings} EMP-Ticket(s)`
+      }
+      className={cn(
+        "relative overflow-hidden rounded-lg border px-2 py-1 text-[11px] font-mono tabular-nums leading-tight",
+        "hover:brightness-125 active:scale-95 transition-all",
+        baseColor,
+      )}
+    >
+      {pct != null && (
+        <span
+          aria-hidden
+          className={cn("absolute inset-y-0 left-0", fillColor)}
+          style={{ width: `${pct}%` }}
+        />
+      )}
+      <span className="relative flex items-center gap-1.5">
+        <span className="font-bold">{slot.startTime}</span>
+        {label && <span className="opacity-90">{label}</span>}
+        {slot.empBookings > 0 && !blocked && (
+          <span className="text-[9px] opacity-60">·{slot.empBookings}E</span>
+        )}
+      </span>
+    </button>
+  );
+}
+
 function Section({ title, icon: Icon, count, color, children }: { title: string; icon: React.ComponentType<{ className?: string }>; count: number; color: string; children: React.ReactNode }) {
   const colors: Record<string, string> = {
     emerald: "text-emerald-400",
@@ -1676,6 +1958,16 @@ function TicketCard({
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const needsPhoto = (ticket.service?.requiresPhoto || ticket.subscription?.requiresPhoto) && !ticket.profileImage;
   const needsRfid = (ticket.service?.requiresRfid || ticket.subscription?.requiresRfid) && !ticket.rfidCode;
+  // ANNY-Sync-Status:
+  //   * Service hat keinen ANNY-Link        -> kein Badge
+  //   * ANNY-Link + annyBookingId vorhanden -> "ANNY ✓" (gruen)
+  //   * ANNY-Link, aber kein annyBookingId  -> "ANNY ?" (amber, nicht synchronisiert)
+  // Quelle: server liefert ticket.service.hasAnnyLink + ticket.annyBookingId.
+  const annyState: "synced" | "unsynced" | null = ticket.service?.hasAnnyLink
+    ? ticket.annyBookingId
+      ? "synced"
+      : "unsynced"
+    : null;
 
   return (
     <div
@@ -1739,10 +2031,26 @@ function TicketCard({
             ))}
           </div>
         )}
-        {(needsPhoto || needsRfid) && (
-          <div className="flex gap-1 mt-1">
+        {(needsPhoto || needsRfid || annyState) && (
+          <div className="flex gap-1 mt-1 flex-wrap">
             {needsPhoto && <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-md font-medium">Foto fehlt</span>}
             {needsRfid && <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-md font-medium">RFID fehlt</span>}
+            {annyState === "synced" && (
+              <span
+                className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-md font-medium"
+                title={`ANNY-Booking ${ticket.annyBookingId?.slice(0, 8) ?? ""}…`}
+              >
+                ANNY ✓
+              </span>
+            )}
+            {annyState === "unsynced" && (
+              <span
+                className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-md font-medium"
+                title="ANNY-Link existiert, dieses Ticket wurde aber nicht zu ANNY synchronisiert (vor Sync-Feature angelegt oder Sync fehlgeschlagen)."
+              >
+                ANNY ?
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -3090,6 +3398,40 @@ function AddTicketOverlay({
           return;
         }
 
+        // ANNY-Overbooking: Server hat den Verkauf abgelehnt, weil der Slot
+        // in ANNY ausgebucht/gesperrt ist. Klarer Hinweis + automatischer
+        // Slot-Reload, damit der Mitarbeiter den aktuellen Stand sieht und
+        // einen anderen Slot waehlen kann.
+        if (
+          res.status === 409
+          && typeof errVal === "object"
+          && errVal
+          && errVal.code === "ANNY_SLOT_UNAVAILABLE"
+        ) {
+          // Slots fuer das aktuell gewaehlte Datum neu laden, damit das
+          // Grid sich aktualisiert (anderer Mitarbeiter hat parallel
+          // verkauft / ANNY hat den Slot gesperrt).
+          if (slotDate && serviceId !== "none") {
+            try {
+              const r = await fetch(
+                `/api/checkin/public/${token}/slots?serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(slotDate)}`,
+                { cache: "no-store" },
+              );
+              const fresh = await r.json();
+              if (Array.isArray(fresh.slots)) setSlots(fresh.slots);
+            } catch { /* refresh ist best-effort */ }
+          }
+          // Slot-Auswahl resetten, damit der Mitarbeiter aktiv neu klicken
+          // muss - haendisch tippen oder versehentliches Re-Submit verhindern.
+          setStartDate("");
+          setEndDate("");
+          setError(
+            "Slot in ANNY ausgebucht – bitte einen anderen Slot wählen. Die Slot-Übersicht wurde gerade aktualisiert.",
+          );
+          setLoading(false);
+          return;
+        }
+
         const formErr = typeof errVal === "object" && errVal ? errVal.formErrors?.[0] : undefined;
         const fieldErr =
           typeof errVal === "object" && errVal?.fieldErrors
@@ -3319,6 +3661,22 @@ function AddTicketOverlay({
                       } else if (capacity != null) {
                         statusLabel = `${capacity} frei`;
                       }
+                      // Auslastungs-Prozent fuer den Mini-Bar (gefuellt = belegt).
+                      // Nur sichtbar wenn beide Felder bekannt sind und es eine
+                      // ehrliche Aussage erlaubt (capacity > 0). Bei isBlocked
+                      // forcieren wir 100% (visuell komplett rot).
+                      const fillPct =
+                        isBlocked
+                          ? 100
+                          : capacity != null && capacity > 0 && remaining != null
+                            ? Math.max(0, Math.min(100, ((capacity - remaining) / capacity) * 100))
+                            : null;
+                      const fillColor =
+                        isDisabled
+                          ? "bg-rose-500/70"
+                          : fillPct != null && fillPct >= 80
+                            ? "bg-amber-500/80"
+                            : "bg-emerald-500/70";
                       return (
                         <button
                           key={`${s.startTime}-${s.endTime}`}
@@ -3335,7 +3693,7 @@ function AddTicketOverlay({
                             setEndDate(`${slotDate}T${s.endTime}`);
                           }}
                           className={cn(
-                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors flex flex-col items-center justify-center gap-0.5",
+                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors flex flex-col items-center justify-center gap-1",
                             isDisabled
                               ? "bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed"
                               : isSelected
@@ -3344,6 +3702,20 @@ function AddTicketOverlay({
                           )}
                         >
                           <span>{s.startTime}–{s.endTime}</span>
+                          {fillPct != null && (
+                            <span
+                              className={cn(
+                                "block w-full h-1 rounded-full overflow-hidden",
+                                isSelected ? "bg-emerald-700/60" : "bg-slate-700/60",
+                              )}
+                              aria-hidden
+                            >
+                              <span
+                                className={cn("block h-full", fillColor)}
+                                style={{ width: `${fillPct}%` }}
+                              />
+                            </span>
+                          )}
                           {statusLabel && (
                             <span
                               className={cn(
