@@ -2606,6 +2606,40 @@ function CombinedDayPassRow({
 
   const totalBookings = members.reduce((s, sv) => s + sv.totalEmpBookings, 0);
 
+  // Berechnet den Zeitraum, in dem ALLE Varianten gleichzeitig
+  // verkaufbar sind (Intersection der einzelnen Öffnungszeiten).
+  //   Beispiel Öffentlicher Betrieb:
+  //     1 Stunde      = 10:00-20:00   (ANNY Service-Period)
+  //     2 Stunden     = 10:00-20:00
+  //     Tageskarte    = 12:00-20:00
+  //   -> Intersection = 12:00-20:00     (die "echte" Öffnungszeit der Gruppe)
+  // Wenn die Intersection leer ist (z.B. komplett disjoint), fallen wir
+  // auf den Stack-Layered-Pfad weiter unten zurueck, damit zumindest
+  // alle Periods sichtbar bleiben.
+  const intersection = useMemo<{ start: string; end: string } | null>(() => {
+    let latestStart: number | null = null;
+    let earliestEnd: number | null = null;
+    for (const m of members) {
+      if (m.openingHours.length === 0) return null;
+      let memberStart = Infinity;
+      let memberEnd = -Infinity;
+      for (const oh of m.openingHours) {
+        const s = timeStringToMinutes(oh.start);
+        const e = timeStringToMinutes(oh.end);
+        if (s != null && s < memberStart) memberStart = s;
+        if (e != null && e > memberEnd) memberEnd = e;
+      }
+      if (memberStart === Infinity || memberEnd === -Infinity) return null;
+      if (latestStart == null || memberStart > latestStart) latestStart = memberStart;
+      if (earliestEnd == null || memberEnd < earliestEnd) earliestEnd = memberEnd;
+    }
+    if (latestStart == null || earliestEnd == null || latestStart >= earliestEnd) return null;
+    return {
+      start: minutesToTimeString(latestStart),
+      end: minutesToTimeString(earliestEnd),
+    };
+  }, [members]);
+
   // Wenn alle Varianten dieselbe Range haben: 1 Pill (im Slot-Pill-Stil)
   // mit zusammengefasstem Label.
   if (allSameRange) {
@@ -2660,10 +2694,52 @@ function CombinedDayPassRow({
     );
   }
 
-  // Unterschiedliche Ranges: ueberlagernde Pills in derselben 28px-Zeile.
-  // Laengster Pill liegt im Hintergrund (z=0), kuerzere darueber (z=1, 2..).
-  // Visuell signalisiert das, dass die kuerzere Variante eine Sub-Zeit
-  // (z.B. Abendkarte 18-20 innerhalb Tageskarte 10-20) ist.
+  // Unterschiedliche Ranges, aber es gibt eine Intersection: zeige nur
+  // einen Pill, der genau diesen "alle gleichzeitig verkaufbar"-Bereich
+  // markiert. Der Tooltip listet die einzelnen ANNY-Periods auf, damit
+  // man falsch gepflegte Service-Schedules schnell erkennt.
+  if (intersection) {
+    const primary = sorted[0];
+    const detail = sorted
+      .map((sv) => {
+        const v = splitServiceLabel(sv.name, group).variant || sv.name;
+        if (sv.openingHours.length === 0) return `${v}: keine Period`;
+        const ranges = sv.openingHours
+          .map((oh) => `${oh.start}-${oh.end}`)
+          .join(", ");
+        return `${v}: ${ranges}`;
+      })
+      .join(" | ");
+    return (
+      <div className="flex items-stretch gap-2 text-[11px]">
+        <div className="shrink-0 w-[130px]" aria-hidden />
+        <div className="flex-1 min-w-0">
+          <SlotTimeline range={range}>
+            <TimelineSlot
+              range={range}
+              startMin={timeStringToMinutes(intersection.start) ?? range.startMin}
+              endMin={timeStringToMinutes(intersection.end) ?? range.endMin}
+            >
+              <CombinedPill
+                startLabel={intersection.start}
+                endLabel={intersection.end}
+                tooltip={`Schnittmenge aller Varianten: ${intersection.start}-${intersection.end} · ${totalBookings} verkauft\n\nANNY-Periods:\n${detail}`}
+                onClick={() =>
+                  primary.availableToday
+                  && onPick({ serviceId: primary.serviceId, slotDate: currentDate })
+                }
+                disabled={!primary.availableToday}
+                isFallback={false}
+              />
+            </TimelineSlot>
+          </SlotTimeline>
+        </div>
+      </div>
+    );
+  }
+
+  // Letzter Fallback: disjoint Ranges (sehr selten). Ueberlagernde Pills,
+  // laengster Pill im Hintergrund (z=0), kuerzere darueber.
   const variantStyles = [
     "border-sky-500/50 text-sky-100 bg-sky-500/15",
     "border-emerald-500/60 text-emerald-100 bg-emerald-500/25",
