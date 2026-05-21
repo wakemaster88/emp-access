@@ -1747,10 +1747,47 @@ function StatPill({ icon: Icon, label, value, color }: { icon: React.ComponentTy
 }
 
 /**
- * Slot-Auslastungs-Section: pro ANNY-verknuepftem Service ein kompakter
- * Streifen aus Slot-Buttons. Pro Slot wird Auslastung (gefuellter Hintergrund)
- * + "freie/Gesamt"-Label gezeigt. Day-Pass-Services (Tageskarten) bekommen
- * statt Slot-Buttons eine schlichte Booking-Zahl.
+ * Zerlegt einen Service-Namen in (Gruppe, Variante) anhand des
+ * " - "-Separators. "Oeffentlicher Betrieb - 1 Stunde" -> Gruppe
+ * "Oeffentlicher Betrieb", Variante "1 Stunde". Wenn kein Separator
+ * existiert, ist die ganze Bezeichnung die Gruppe.
+ */
+function splitServiceLabel(name: string): { group: string; variant: string | null } {
+  const m = name.split(/\s[-–]\s/);
+  if (m.length < 2) return { group: name, variant: null };
+  const group = m[0].trim();
+  const variant = m.slice(1).join(" - ").trim();
+  return { group, variant: variant || null };
+}
+
+/**
+ * Gruppiert Services nach dem gemeinsamen Praefix-Namen vor dem " - ".
+ * "Oeffentlicher Betrieb - 1 Stunde", "... - 2 Stunden", "... - Tageskarte"
+ * landen in derselben Gruppe "Oeffentlicher Betrieb". Reihenfolge der
+ * Gruppen entspricht dem ersten Auftauchen.
+ */
+function groupOverviewServices(services: SlotOverviewService[]): Array<{
+  group: string;
+  members: SlotOverviewService[];
+}> {
+  const order: string[] = [];
+  const buckets = new Map<string, SlotOverviewService[]>();
+  for (const sv of services) {
+    const { group } = splitServiceLabel(sv.name);
+    if (!buckets.has(group)) {
+      buckets.set(group, []);
+      order.push(group);
+    }
+    buckets.get(group)!.push(sv);
+  }
+  return order.map((g) => ({ group: g, members: buckets.get(g)! }));
+}
+
+/**
+ * Slot-Auslastungs-Section: gruppiert ANNY-Services nach gemeinsamem
+ * Praefix (z.B. "Oeffentlicher Betrieb" buendelt seine 1h/2h/Tageskarte-
+ * Varianten in einer Card). Innerhalb der Gruppe pro Variante eine Zeile
+ * mit Verkaufszahl + optionalem Slot-Streifen.
  *
  * Header: aggregierte Stats ("12 frei · 4 belegt · 1 voll") aus
  * SlotOverviewData.summary.
@@ -1763,13 +1800,11 @@ function SlotOverviewSection({
   onSlotPick: (slot: SlotOverviewSlot) => void;
 }) {
   const { summary, services } = data;
-  // Vorgespeichert: Services mit Slots > 0 ODER mit Tageskarten-Bookings.
-  // Reine "kennt-ANNY-aber-keine-Slots-und-keine-Tickets"-Services
-  // klappen wir nicht ein - das waere reines Rauschen.
   const visible = services.filter(
     (sv) => sv.slots.length > 0 || sv.totalEmpBookings > 0 || sv.serviceType === "day",
   );
   if (visible.length === 0) return null;
+  const grouped = groupOverviewServices(visible);
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -1798,44 +1833,179 @@ function SlotOverviewSection({
         </div>
       </div>
       <div className="rounded-xl border border-slate-800/70 bg-slate-900/40 p-3 space-y-3">
-        {visible.map((sv) => (
-          <div key={sv.serviceId} className="space-y-1.5">
-            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-              <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
-              <span className="font-semibold truncate">{sv.name}</span>
-              {sv.serviceType === "day" && (
-                <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
-                  Tageskarte
-                </span>
-              )}
-              {sv.totalEmpBookings > 0 && (
-                <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
-                  {sv.totalEmpBookings} verkauft
-                </span>
-              )}
-            </div>
-            {sv.note ? (
-              <p className="text-[11px] text-amber-400/80 px-1">{sv.note}</p>
-            ) : sv.serviceType === "day" ? (
-              <p className="text-[11px] text-slate-500 px-1">
-                Tagespass - keine Slot-Auswahl, ANNY zaehlt nur Tickets.
-              </p>
-            ) : sv.slots.length === 0 ? (
-              <p className="text-[11px] text-slate-500 px-1">Keine Slots heute.</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {sv.slots.map((slot) => (
-                  <SlotOverviewPill
-                    key={`${sv.serviceId}-${slot.startTime}`}
-                    slot={slot}
-                    onClick={() => onSlotPick(slot)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+        {grouped.map(({ group, members }) => (
+          <SlotOverviewGroup
+            key={group}
+            group={group}
+            members={members}
+            onSlotPick={onSlotPick}
+          />
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Eine Gruppe (= Services mit gemeinsamem Praefix). Wenn die Gruppe
+ * nur EIN Mitglied hat, rendern wir kompakt ohne Sub-Bullet. Sonst Header
+ * mit Gruppen-Namen + Aggregat-Verkaufszahl, darunter pro Variante eine
+ * Zeile mit Variant-Name + optional Slot-Pills.
+ */
+function SlotOverviewGroup({
+  group,
+  members,
+  onSlotPick,
+}: {
+  group: string;
+  members: SlotOverviewService[];
+  onSlotPick: (slot: SlotOverviewSlot) => void;
+}) {
+  const totalEmp = members.reduce((a, m) => a + m.totalEmpBookings, 0);
+  const allDay = members.every((m) => m.serviceType === "day");
+  const hasSingleMember = members.length === 1;
+
+  // Einzel-Service: kompakter Header ohne Sub-Bullet (Variant-Name landet im
+  // Header). Verhalten wie vor der Gruppierung, fuer "Strandbad - Tageskarte"
+  // ohne weitere Geschwister.
+  if (hasSingleMember) {
+    const sv = members[0];
+    const { variant } = splitServiceLabel(sv.name);
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+          <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
+          <span className="font-semibold truncate">{group}</span>
+          {variant && (
+            <span className="text-slate-500 font-normal normal-case tracking-normal">
+              · {variant}
+            </span>
+          )}
+          {sv.serviceType === "day" && (
+            <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
+              Tageskarte
+            </span>
+          )}
+          {totalEmp > 0 && (
+            <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
+              {totalEmp} verkauft
+            </span>
+          )}
+        </div>
+        <SlotOverviewServiceBody sv={sv} onSlotPick={onSlotPick} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+        <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
+        <span className="font-semibold truncate">{group}</span>
+        {allDay && (
+          <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
+            Tageskarte
+          </span>
+        )}
+        <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
+          · {members.length} Varianten
+        </span>
+        {totalEmp > 0 && (
+          <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
+            {totalEmp} verkauft
+          </span>
+        )}
+      </div>
+      {allDay ? (
+        // Mehrere Tageskarten-Varianten: kompakte Liste mit
+        // Variantenname + Verkaufszahl. Spart Vertical Space gegenueber
+        // der bisherigen "ein Block pro Service"-Anzeige.
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pl-5">
+          {members.map((sv) => {
+            const { variant } = splitServiceLabel(sv.name);
+            const label = variant || sv.name;
+            return (
+              <div
+                key={sv.serviceId}
+                className="flex items-center gap-2 text-xs px-2 py-1 rounded-md bg-slate-800/60 border border-slate-700/40"
+              >
+                <span className="text-slate-300 truncate flex-1">{label}</span>
+                <span
+                  className={cn(
+                    "text-[11px] font-mono tabular-nums",
+                    sv.totalEmpBookings > 0 ? "text-emerald-300" : "text-slate-500",
+                  )}
+                >
+                  {sv.totalEmpBookings}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Gemischt (Slot-Service + Day-Pass-Geschwister) oder mehrere
+        // Slot-Services: pro Variante eine Zeile mit Variant-Name + Body.
+        <div className="space-y-2 pl-5 border-l border-slate-800/60 ml-2">
+          {members.map((sv) => {
+            const { variant } = splitServiceLabel(sv.name);
+            return (
+              <div key={sv.serviceId} className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <span className="font-medium">{variant || sv.name}</span>
+                  {sv.serviceType === "day" && (
+                    <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
+                      Tageskarte
+                    </span>
+                  )}
+                  {sv.totalEmpBookings > 0 && (
+                    <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
+                      {sv.totalEmpBookings} verkauft
+                    </span>
+                  )}
+                </div>
+                <SlotOverviewServiceBody sv={sv} onSlotPick={onSlotPick} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Body eines einzelnen Service in der Auslastungs-Section: Note (falls
+ * ANNY-Match fehlt), Tageskarten-Hinweis oder Slot-Pill-Reihe.
+ */
+function SlotOverviewServiceBody({
+  sv,
+  onSlotPick,
+}: {
+  sv: SlotOverviewService;
+  onSlotPick: (slot: SlotOverviewSlot) => void;
+}) {
+  if (sv.note) {
+    return <p className="text-[11px] text-amber-400/80 px-1">{sv.note}</p>;
+  }
+  if (sv.serviceType === "day") {
+    return (
+      <p className="text-[11px] text-slate-500 px-1">
+        Tagespass - ANNY zaehlt nur Tickets, kein Slot.
+      </p>
+    );
+  }
+  if (sv.slots.length === 0) {
+    return <p className="text-[11px] text-slate-500 px-1">Keine Slots heute.</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {sv.slots.map((slot) => (
+        <SlotOverviewPill
+          key={`${sv.serviceId}-${slot.startTime}`}
+          slot={slot}
+          onClick={() => onSlotPick(slot)}
+        />
+      ))}
     </div>
   );
 }
