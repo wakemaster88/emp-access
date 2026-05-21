@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ticketCreateSchema } from "@/lib/validators";
-import { fetchAnnyServiceIdByName } from "@/lib/anny-availability";
+import { resolveAnnyOrganizationId, fetchAnnyServiceIdByName } from "@/lib/anny-availability";
 import { createAnnyBooking } from "@/lib/anny-bookings";
 
 const publicTicketCreateSchema = ticketCreateSchema.extend({
@@ -167,15 +167,21 @@ export async function POST(
 
         const annyConfig = await prisma.apiConfig.findFirst({
           where: { accountId: monitor.accountId, provider: "ANNY" },
-          select: { token: true, baseUrl: true },
+          select: { token: true, baseUrl: true, extraConfig: true },
         });
 
         if (annyConfig?.token && uniqueNames.length > 0) {
           const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
+          const organizationId = await resolveAnnyOrganizationId(
+            baseUrl,
+            annyConfig.token,
+            annyConfig.extraConfig,
+          );
           const annyServiceUuid = await fetchAnnyServiceIdByName(
             baseUrl,
             annyConfig.token,
             uniqueNames,
+            organizationId,
           );
 
           if (annyServiceUuid) {
@@ -191,6 +197,7 @@ export async function POST(
               description: `EMP-Access${ownerName ? ` - ${ownerName}` : ""}`,
               notifyCustomer: false,
               checkAvailability: true,
+              organizationId,
             });
 
             if (result.ok) {

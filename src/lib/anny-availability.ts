@@ -8,6 +8,102 @@ export interface AvailabilityPeriod {
   end: string;
 }
 
+/**
+ * ANNY's Admin-API kann je nach Account-Setup eine Organization-ID als
+ * Query-Parameter (`?o={uuid}`) erwarten - n8n-Connector setzt das, wenn
+ * die Credentials sie kennen. Wenn unsere `ApiConfig.extraConfig` ein
+ * Feld `organizationId` enthaelt, hauen wir das an alle Requests dran.
+ * Sonst lassen wir's weg (Token mit fixem Org-Scope braucht's nicht).
+ */
+export function extractAnnyOrganizationId(extraConfigJson: string | null | undefined): string | null {
+  if (!extraConfigJson) return null;
+  try {
+    const parsed = JSON.parse(extraConfigJson) as Record<string, unknown>;
+    const candidates = [
+      parsed.organizationId,
+      parsed.organization_id,
+      parsed.organisationId,
+      parsed.orgId,
+      parsed.o,
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.trim()) return c.trim();
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Standard-Header fuer ANNY's Admin-API. Accept akzeptiert JSON:API und
+ * application/json - der Server liefert dann passend zurueck.
+ */
+function annyHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.api+json, application/json",
+  };
+}
+
+/**
+ * Holt die aktive Organization-ID des Tokens via /api/v1/user?include=
+ * active_organization. ANNY's Admin-API erwartet typischerweise `?o={uuid}`
+ * an jedem Endpoint - die ID dazu liefert dieser Endpoint zurueck.
+ *
+ * Implementierung gespiegelt aus dem offiziellen anny-n8n-Connector
+ * (preAuthentication-Hook): GET /api/v1/user mit include=active_organization,
+ * Org-ID liegt in data.relationships.active_organization.data.id.
+ */
+const orgIdCache = new Map<string, { value: string; expiresAt: number }>();
+const ORG_CACHE_TTL_MS = 10 * 60 * 1000;
+
+export async function fetchAnnyOrganizationId(
+  baseUrl: string,
+  token: string,
+): Promise<string | null> {
+  const cacheKey = `${baseUrl}|${token}`;
+  const now = Date.now();
+  const cached = orgIdCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  try {
+    const res = await fetch(
+      `${baseUrl}/api/v1/user?include=active_organization`,
+      {
+        headers: annyHeaders(token),
+        signal: AbortSignal.timeout(8000),
+      },
+    );
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      data?: {
+        relationships?: {
+          active_organization?: { data?: { id?: string } };
+        };
+      };
+    };
+    const id = json?.data?.relationships?.active_organization?.data?.id;
+    if (typeof id === "string" && id.trim()) {
+      orgIdCache.set(cacheKey, { value: id, expiresAt: now + ORG_CACHE_TTL_MS });
+      return id;
+    }
+  } catch { /* swallow */ }
+  return null;
+}
+
+/**
+ * Convenience: erst extraConfig durchforsten, falls keine Org-ID gefunden,
+ * den /user-Endpoint nach Resolve fragen (mit kurzem Cache).
+ */
+export async function resolveAnnyOrganizationId(
+  baseUrl: string,
+  token: string,
+  extraConfigJson: string | null | undefined,
+): Promise<string | null> {
+  const fromConfig = extractAnnyOrganizationId(extraConfigJson);
+  if (fromConfig) return fromConfig;
+  return fetchAnnyOrganizationId(baseUrl, token);
+}
+
 export function berlinOffset(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00Z`);
   const berlin = d.toLocaleString("sv-SE", { timeZone: "Europe/Berlin" });
@@ -168,6 +264,7 @@ export async function fetchAnnyServiceMatch(
   baseUrl: string,
   token: string,
   serviceNames: string[],
+  organizationId?: string | null,
 ): Promise<AnnyServiceMatch> {
   const knownNames: string[] = [];
   const debug: AnnyServiceMatch["debug"] = [];
@@ -183,12 +280,13 @@ export async function fetchAnnyServiceMatch(
       "page[size]": "100",
       "page[number]": String(page),
     });
+    if (organizationId) params.set("o", organizationId);
     let status = 0;
     let items: unknown[] = [];
     let bodyText = "";
     try {
       const res = await fetch(`${baseUrl}/api/v1/services?${params}`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        headers: annyHeaders(token),
         signal: AbortSignal.timeout(8000),
       });
       status = res.status;
@@ -255,8 +353,9 @@ export async function fetchAnnyServiceIdByName(
   baseUrl: string,
   token: string,
   serviceNames: string[],
+  organizationId?: string | null,
 ): Promise<string | null> {
-  const match = await fetchAnnyServiceMatch(baseUrl, token, serviceNames);
+  const match = await fetchAnnyServiceMatch(baseUrl, token, serviceNames, organizationId);
   return match.id;
 }
 
@@ -285,7 +384,7 @@ export async function fetchAnnyServiceStartSlots(
   token: string,
   serviceId: string,
   dateStr: string,
-  opts: { durationMinutes?: number; resourceId?: string } = {},
+  opts: { durationMinutes?: number; resourceId?: string; organizationId?: string | null } = {},
 ): Promise<ServiceStartSlot[]> {
   const params = new URLSearchParams({
     service_id: serviceId,
@@ -296,10 +395,11 @@ export async function fetchAnnyServiceStartSlots(
     params.set("duration", String(opts.durationMinutes));
   }
   if (opts.resourceId) params.set("resource_id", opts.resourceId);
+  if (opts.organizationId) params.set("o", opts.organizationId);
 
   try {
     const res = await fetch(`${baseUrl}/api/v1/availability/start?${params}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      headers: annyHeaders(token),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return [];

@@ -29,6 +29,8 @@ export interface CreateAnnyBookingInput {
    * wir die Live-Slots ein paar Sekunden vor dem POST gelesen haben.
    */
   checkAvailability?: boolean;
+  /** Optionale Organization-ID (?o=...) - manche Token-Setups brauchen das. */
+  organizationId?: string | null;
 }
 
 export interface CreateAnnyBookingResult {
@@ -57,6 +59,7 @@ export async function createAnnyBooking(
     description,
     notifyCustomer = false,
     checkAvailability = true,
+    organizationId,
   } = input;
 
   const payload = {
@@ -75,13 +78,17 @@ export async function createAnnyBooking(
     timezone: "Europe/Berlin",
   };
 
+  const url = organizationId
+    ? `${baseUrl}/api/v1/orders/from-config?o=${encodeURIComponent(organizationId)}`
+    : `${baseUrl}/api/v1/orders/from-config`;
+
   try {
-    const res = await fetch(`${baseUrl}/api/v1/orders/from-config`, {
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
-        Accept: "application/json",
+        Accept: "application/vnd.api+json, application/json",
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),

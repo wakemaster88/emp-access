@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
+  resolveAnnyOrganizationId,
   fetchAnnyServiceMatch,
   fetchAnnyServiceStartSlots,
   type AvailabilitySlot,
@@ -98,7 +99,7 @@ export async function GET(
 
   const annyConfig = await prisma.apiConfig.findFirst({
     where: { accountId, provider: "ANNY" },
-    select: { token: true, baseUrl: true },
+    select: { token: true, baseUrl: true, extraConfig: true },
   });
   if (!annyConfig?.token) {
     return NextResponse.json({
@@ -110,6 +111,11 @@ export async function GET(
   }
 
   const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
+  const organizationId = await resolveAnnyOrganizationId(
+    baseUrl,
+    annyConfig.token,
+    annyConfig.extraConfig,
+  );
 
   const debug = request.nextUrl.searchParams.get("debug") === "1";
 
@@ -117,6 +123,7 @@ export async function GET(
     baseUrl,
     annyConfig.token,
     uniqueNames,
+    organizationId,
   );
   if (!match.id) {
     // hasAnnyLink bleibt true: der Service IST mit ANNY verknuepft, wir
@@ -128,17 +135,18 @@ export async function GET(
     const debugSummary = match.debug
       .map((d) => `p${d.page}:${d.status}/${d.items}${d.bodyPreview ? ` [${d.bodyPreview.replace(/\s+/g, " ").slice(0, 120)}]` : ""}`)
       .join(" | ");
+    const orgInfo = organizationId ? ` org=${organizationId.slice(0, 8)}…` : " (keine Org-ID)";
     return NextResponse.json({
       slots: [] as AvailabilitySlot[],
       hasAnnyLink: true,
       resourceCount: 0,
       note:
         match.knownNames.length === 0
-          ? `ANNY's /services lieferte 0 Eintraege. ${debugSummary}`
+          ? `ANNY's /services lieferte 0 Eintraege.${orgInfo} ${debugSummary}`
           : `ANNY-Service nicht gefunden. Gesucht: "${uniqueNames.join('", "')}". ANNY kennt: ${preview}${more}.`,
       triedNames: uniqueNames,
       annyServiceNames: match.knownNames,
-      ...(debug ? { debugMatch: match.debug, baseUrl } : {}),
+      ...(debug ? { debugMatch: match.debug, baseUrl, organizationId } : {}),
     });
   }
   const annyServiceUuid = match.id;
@@ -155,7 +163,7 @@ export async function GET(
       annyConfig.token,
       annyServiceUuid,
       dateStr,
-      { durationMinutes: duration },
+      { durationMinutes: duration, organizationId },
     );
   } catch {
     return NextResponse.json({
