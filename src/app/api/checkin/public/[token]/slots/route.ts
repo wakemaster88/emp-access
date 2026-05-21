@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  fetchAnnyServiceIdByName,
+  fetchAnnyServiceMatch,
   fetchAnnyServiceStartSlots,
   type AvailabilitySlot,
 } from "@/lib/anny-availability";
@@ -111,19 +111,28 @@ export async function GET(
 
   const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
 
-  const annyServiceUuid = await fetchAnnyServiceIdByName(
+  const match = await fetchAnnyServiceMatch(
     baseUrl,
     annyConfig.token,
     uniqueNames,
   );
-  if (!annyServiceUuid) {
+  if (!match.id) {
+    // hasAnnyLink bleibt true: der Service IST mit ANNY verknuepft, wir
+    // konnten nur die Service-UUID per Name nicht aufloesen. Das UI zeigt
+    // damit den Note-Hinweis statt stumm zum datetime-local-Fallback zu
+    // springen.
+    const preview = match.knownNames.slice(0, 6).join(", ");
+    const more = match.knownNames.length > 6 ? `, +${match.knownNames.length - 6} weitere` : "";
     return NextResponse.json({
       slots: [] as AvailabilitySlot[],
-      hasAnnyLink: false,
+      hasAnnyLink: true,
       resourceCount: 0,
-      note: "ANNY-Service nicht gefunden",
+      note: `ANNY-Service nicht gefunden. Gesucht: "${uniqueNames.join('", "')}". ANNY kennt: ${preview}${more}.`,
+      triedNames: uniqueNames,
+      annyServiceNames: match.knownNames,
     });
   }
+  const annyServiceUuid = match.id;
 
   // Dauer: bevorzugt vom Service in unserer DB (defaultValidityDurationMinutes).
   // ANNY laesst die Dauer optional - ohne Dauer bekommen wir typischerweise

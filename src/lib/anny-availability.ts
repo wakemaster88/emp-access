@@ -134,22 +134,42 @@ export async function fetchAnnyAvailabilityWithSlots(
   return fetchAnnyAvailability(baseUrl, token, resourceIds, dateStr);
 }
 
+export interface AnnyServiceMatch {
+  /** UUID wenn ein Match gefunden wurde, sonst null. */
+  id: string | null;
+  /** Alle bei ANNY gefundenen Service-Namen (Debug/Diagnose). */
+  knownNames: string[];
+}
+
 /**
  * Sucht in den ANNY-Services nach einem Service mit passendem Namen und gibt
  * dessen UUID zurueck. ANNY's Availability-Search ist serviceId-zentriert
  * (siehe https://developers.anny.co/guides/availability), unsere App
  * speichert aber nur Namen in `Service.annyNames` - daher dieser Lookup.
  *
- * Wir paginieren (page[size]=100) bis Match oder Ende. Stop nach 5 Seiten,
- * damit der Endpoint nicht wegen riesiger Orgs haengt.
+ * Match-Strategie (in absteigender Prioritaet):
+ *   1. exakter case-insensitive Name-Match
+ *   2. ANNY-Name ist Substring eines gesuchten Namens (z.B. ANNY hat "Anfaengerkurs",
+ *      wir suchen "Anfaengerkurs - Uebungslift")
+ *   3. gesuchter Name ist Substring eines ANNY-Namens (umgekehrt)
+ *
+ * Wir paginieren (page[size]=100) ueber max. 5 Seiten und gehen ALLE Seiten
+ * durch, auch wenn schon ein Match gefunden wurde - so koennen wir bei
+ * Nicht-Fund die vollstaendige Namensliste fuer's Debugging zurueckgeben.
  */
-export async function fetchAnnyServiceIdByName(
+export async function fetchAnnyServiceMatch(
   baseUrl: string,
   token: string,
   serviceNames: string[],
-): Promise<string | null> {
-  if (serviceNames.length === 0) return null;
-  const wanted = new Set(serviceNames.map((n) => n.toLowerCase()));
+): Promise<AnnyServiceMatch> {
+  const knownNames: string[] = [];
+  if (serviceNames.length === 0) return { id: null, knownNames };
+  const wantedLower = serviceNames.map((n) => n.toLowerCase());
+  const wantedSet = new Set(wantedLower);
+
+  let exactMatch: string | null = null;
+  let substringMatch: string | null = null;
+
   for (let page = 1; page <= 5; page++) {
     const params = new URLSearchParams({
       "page[size]": "100",
@@ -160,27 +180,49 @@ export async function fetchAnnyServiceIdByName(
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) return null;
+      if (!res.ok) break;
       const json = await res.json();
       const items: unknown[] = Array.isArray(json)
         ? json
         : Array.isArray((json as { data?: unknown[] }).data)
           ? ((json as { data: unknown[] }).data)
           : [];
-      if (items.length === 0) return null;
+      if (items.length === 0) break;
       for (const raw of items) {
         const svc = raw as { id?: string; attributes?: Record<string, unknown>; name?: string };
         const a = (svc.attributes ?? svc) as Record<string, unknown>;
         const id = svc.id || (a.id as string | undefined);
         const name = (a.name as string | undefined) || (a.title as string | undefined);
-        if (id && name && wanted.has(name.toLowerCase())) return String(id);
+        if (!id || !name) continue;
+        knownNames.push(name);
+        const lower = name.toLowerCase();
+        if (!exactMatch && wantedSet.has(lower)) {
+          exactMatch = String(id);
+        } else if (!substringMatch) {
+          if (wantedLower.some((w) => w.includes(lower) || lower.includes(w))) {
+            substringMatch = String(id);
+          }
+        }
       }
-      if (items.length < 100) return null;
+      if (items.length < 100) break;
     } catch {
-      return null;
+      break;
     }
   }
-  return null;
+
+  return { id: exactMatch || substringMatch, knownNames };
+}
+
+/**
+ * Backwards-compatible Wrapper, gibt nur die UUID zurueck (oder null).
+ */
+export async function fetchAnnyServiceIdByName(
+  baseUrl: string,
+  token: string,
+  serviceNames: string[],
+): Promise<string | null> {
+  const match = await fetchAnnyServiceMatch(baseUrl, token, serviceNames);
+  return match.id;
 }
 
 export interface ServiceStartSlot {

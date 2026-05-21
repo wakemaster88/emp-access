@@ -2773,6 +2773,7 @@ function AddTicketOverlay({
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsLoaded, setSlotsLoaded] = useState(false);
   const [hasAnnyLink, setHasAnnyLink] = useState(false);
+  const [slotsNote, setSlotsNote] = useState<string>("");
 
   // Effektiver Datums-Modus fuer die UI:
   //   * Service mit TIME_SLOT oder ANNY-Verknuepfung -> "datetime" (Kurs)
@@ -2803,6 +2804,7 @@ function AddTicketOverlay({
       setSlots([]);
       setSlotsLoaded(false);
       setHasAnnyLink(false);
+      setSlotsNote("");
       return;
     }
     let cancelled = false;
@@ -2813,16 +2815,18 @@ function AddTicketOverlay({
       { cache: "no-store" },
     )
       .then((r) => r.json())
-      .then((data: { slots?: typeof slots; hasAnnyLink?: boolean }) => {
+      .then((data: { slots?: typeof slots; hasAnnyLink?: boolean; note?: string }) => {
         if (cancelled) return;
         setSlots(Array.isArray(data.slots) ? data.slots : []);
         setHasAnnyLink(Boolean(data.hasAnnyLink));
+        setSlotsNote(typeof data.note === "string" ? data.note : "");
         setSlotsLoaded(true);
       })
       .catch(() => {
         if (cancelled) return;
         setSlots([]);
         setHasAnnyLink(false);
+        setSlotsNote("");
         setSlotsLoaded(true);
       })
       .finally(() => {
@@ -3265,7 +3269,7 @@ function AddTicketOverlay({
                 <>
                   {hasAnnyLink && slotsLoaded && (
                     <div className="text-xs text-amber-400 px-1">
-                      Keine ANNY-Slots an diesem Tag – manuelle Zeit eintragen.
+                      {slotsNote || "Keine ANNY-Slots an diesem Tag – manuelle Zeit eintragen."}
                     </div>
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
