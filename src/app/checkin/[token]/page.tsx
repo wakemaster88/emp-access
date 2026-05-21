@@ -1298,7 +1298,6 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         <AddTicketOverlay
           token={token}
           services={data?.services ?? []}
-          subscriptions={data?.allSubscriptions ?? []}
           onClose={() => { setAddTicketOpen(false); setAddTicketPrefill(undefined); }}
           onCreated={async (newTicketId) => {
             // Saubere Refresh-Choreographie nach Ticket-Create:
@@ -2715,14 +2714,12 @@ async function postTicketWithRetry(
 function AddTicketOverlay({
   token,
   services,
-  subscriptions,
   onClose,
   onCreated,
   prefill,
 }: {
   token: string;
   services: ServiceData[];
-  subscriptions: SubOption[];
   onClose: () => void;
   onCreated: (newTicketId?: number) => void;
   prefill?: {
@@ -2749,35 +2746,85 @@ function AddTicketOverlay({
   const [serviceId, setServiceId] = useState(
     voucher?.serviceId != null ? String(voucher.serviceId) : "none",
   );
-  const [subscriptionId, setSubscriptionId] = useState("none");
-  // accessAreaId bleibt im State - wird automatisch ueber Service/Abo gesetzt,
+  // accessAreaId bleibt im State - wird automatisch ueber den Service gesetzt,
   // hat aber keine UI-Eingabemoeglichkeit mehr (Shop-Workflow: nicht relevant).
   const [accessAreaId, setAccessAreaId] = useState(
     voucher?.accessAreaId != null ? String(voucher.accessAreaId) : "none",
   );
   // Optionale Datums-Felder. Format je nach `dateMode`:
-  //   * "range"    -> yyyy-mm-dd (Abo: Datum von/bis)
   //   * "datetime" -> yyyy-mm-ddTHH:mm (Kurs: Datum + Uhrzeit von/bis)
   //   * "single"   -> yyyy-mm-dd, nur startDate sichtbar (Tagesticket/DURATION)
-  // Leer = Service-/Abo-Defaults oder Fallback "heute".
+  // Leer = Service-Defaults oder Fallback "heute".
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Slot-Auswahl aus ANNY (nur bei TIME_SLOT-Services). `slotDate` haelt den
+  // gewaehlten Tag im Slot-Picker; daraus wird beim Slot-Klick startDate /
+  // endDate gesetzt. `slots` kommt aus /slots-Endpoint, `hasAnnyLink`
+  // entscheidet, ob das Slot-Grid oder das datetime-local-Fallback gezeigt
+  // wird.
+  const [slotDate, setSlotDate] = useState("");
+  const [slots, setSlots] = useState<
+    Array<{ startTime: string; endTime: string; startIso: string; endIso: string }>
+  >([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsLoaded, setSlotsLoaded] = useState(false);
+  const [hasAnnyLink, setHasAnnyLink] = useState(false);
+
   // Effektiver Datums-Modus fuer die UI:
-  //   * Abo gewaehlt              -> "range"    (Zeitraum von/bis als Datum)
   //   * Service mit TIME_SLOT     -> "datetime" (Kurs: Datum + Uhrzeit)
   //   * sonst (Ticket/DURATION)   -> "single"   (nur ein Datum)
-  const dateMode: "single" | "range" | "datetime" = useMemo(() => {
-    if (subscriptionId !== "none") return "range";
+  // Abos werden in diesem Dialog gar nicht angeboten - reine Abo-Vergabe
+  // laeuft ueber das Backoffice.
+  const dateMode: "single" | "datetime" = useMemo(() => {
     if (serviceId !== "none") {
       const svc = services.find((s) => String(s.id) === serviceId);
       if (svc?.defaultValidityType === "TIME_SLOT") return "datetime";
     }
     if (voucher?.validityType === "TIME_SLOT") return "datetime";
     return "single";
-  }, [serviceId, subscriptionId, services, voucher]);
+  }, [serviceId, services, voucher]);
   const [error, setError] = useState("");
+
+  // Slots fuer (Service, slotDate) aus ANNY ziehen. Re-fetch bei Wechsel von
+  // Service oder Datum. Bei dateMode != "datetime" deaktiviert (Tagestickets
+  // brauchen keine Slot-Liste).
+  useEffect(() => {
+    if (dateMode !== "datetime" || serviceId === "none" || !slotDate) {
+      setSlots([]);
+      setSlotsLoaded(false);
+      setHasAnnyLink(false);
+      return;
+    }
+    let cancelled = false;
+    setSlotsLoading(true);
+    setSlotsLoaded(false);
+    fetch(
+      `/api/checkin/public/${token}/slots?serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(slotDate)}`,
+      { cache: "no-store" },
+    )
+      .then((r) => r.json())
+      .then((data: { slots?: typeof slots; hasAnnyLink?: boolean }) => {
+        if (cancelled) return;
+        setSlots(Array.isArray(data.slots) ? data.slots : []);
+        setHasAnnyLink(Boolean(data.hasAnnyLink));
+        setSlotsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSlots([]);
+        setHasAnnyLink(false);
+        setSlotsLoaded(true);
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dateMode, serviceId, slotDate, token]);
+
   const [pendingConflict, setPendingConflict] = useState<{
     label: string;
     type: string | null;
@@ -2797,7 +2844,6 @@ function AddTicketOverlay({
     const fullName =
       `${firstName} ${lastName}`.trim()
       || services.find((s) => String(s.id) === serviceId)?.name
-      || subscriptions.find((s) => String(s.id) === subscriptionId)?.name
       || voucher?.ticketTypeName
       || "Ticket";
     const payload: Record<string, unknown> = {
@@ -2835,22 +2881,6 @@ function AddTicketOverlay({
 
     if (prefill?.profileImage) {
       payload.profileImage = prefill.profileImage;
-    }
-
-    if (subscriptionId !== "none") {
-      payload.subscriptionId = Number(subscriptionId);
-      const sub = subscriptions.find((s) => String(s.id) === subscriptionId);
-      if (sub) {
-        if (sub.defaultValidityType) {
-          payload.validityType = sub.defaultValidityType;
-          if (sub.defaultValidityType === "DURATION" && sub.defaultValidityDurationMinutes != null) {
-            payload.validityDurationMinutes = sub.defaultValidityDurationMinutes;
-          }
-        }
-        if (sub.areaIds?.length && accessAreaId === "none") {
-          payload.accessAreaId = sub.areaIds[0];
-        }
-      }
     }
 
     if (accessAreaId !== "none") {
@@ -2898,22 +2928,17 @@ function AddTicketOverlay({
           if (t) payload.slotEnd = t.length === 5 ? `${t}:00` : t;
         }
       }
-    } else if (dateMode === "range") {
-      // Zeitraum (Abo): zwei reine Datumsfelder, jeweils Tagesgrenze.
-      if (startDate) {
-        const sd = new Date(`${startDate}T00:00:00`);
-        if (!isNaN(sd.getTime())) payload.startDate = sd.toISOString();
-      }
-      if (endDate) {
-        const ed = new Date(`${endDate}T23:59:59.999`);
-        if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
-      }
     } else if (startDate) {
       // single: ein Datum -> Ticket gilt nur an diesem Tag (ausser DURATION,
       // dort kein endDate, weil sonst der Timer schon mit dem Tag laeuft).
       const sd = new Date(`${startDate}T00:00:00`);
       if (!isNaN(sd.getTime())) payload.startDate = sd.toISOString();
-      if (payload.validityType !== "DURATION") {
+      if (endDate && payload.validityType !== "DURATION") {
+        // endDate kann aus Service-Defaults bei Mehrtages-Tickets stammen
+        // (im UI nicht angezeigt, aber im State vorhanden).
+        const ed = new Date(`${endDate}T23:59:59.999`);
+        if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
+      } else if (payload.validityType !== "DURATION") {
         const ed = new Date(`${startDate}T23:59:59.999`);
         if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
       }
@@ -3007,8 +3032,9 @@ function AddTicketOverlay({
             ? created.id
             : undefined;
         setFirstName(""); setLastName(""); setCode("");
-        setServiceId("none"); setSubscriptionId("none"); setAccessAreaId("none");
+        setServiceId("none"); setAccessAreaId("none");
         setStartDate(""); setEndDate("");
+        setSlotDate(""); setSlots([]); setSlotsLoaded(false); setHasAnnyLink(false);
         setPendingConflict(null);
         onCreated(newId);
       }
@@ -3072,6 +3098,190 @@ function AddTicketOverlay({
               </p>
             </div>
           )}
+          {/* Ticket-Typ steht ganz oben, ueber volle Breite und groesser
+              gerendert: die Auswahl bestimmt, welche Datums-/Slot-Eingabe
+              darunter erscheint und ist der haeufigste Klick im Workflow. */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Ticket-Typ
+            </label>
+            {services.length > 0 ? (
+              <select
+                value={serviceId}
+                onChange={(e) => {
+                  const newId = e.target.value;
+                  setServiceId(newId);
+                  // Beim Wechsel des Service-Typs erst leeren, damit kein
+                  // Wert aus dem vorherigen Mode (z.B. datetime-local von
+                  // einem Kurs) als reines Datum stehen bleibt.
+                  setStartDate("");
+                  setEndDate("");
+                  setSlotDate("");
+                  if (newId === "none") return;
+                  const svc = services.find((s) => String(s.id) === newId);
+                  if (!svc) return;
+                  if (svc.areaIds?.length) setAccessAreaId(String(svc.areaIds[0]));
+                  // Service-Defaults ins UI-Format uebernehmen, damit der
+                  // User sieht, was beim Submit auto-gesetzt werden wuerde
+                  // - und es bei Bedarf umstellen kann.
+                  if (svc.defaultValidityType === "TIME_SLOT") {
+                    const day = svc.defaultStartDate
+                      ? toDateInput(svc.defaultStartDate)
+                      : toDateInput(new Date());
+                    const dayEnd = svc.defaultEndDate ? toDateInput(svc.defaultEndDate) : day;
+                    // slotDate triggert den ANNY-Slot-Fetch. Wenn der Service
+                    // gar keinen ANNY-Link hat, faellt die UI auf datetime-
+                    // local zurueck und benutzt startDate/endDate direkt.
+                    setSlotDate(day);
+                    if (day && svc.defaultSlotStart) {
+                      setStartDate(`${day}T${svc.defaultSlotStart.slice(0, 5)}`);
+                    } else if (day) {
+                      setStartDate(day);
+                    }
+                    if (dayEnd && svc.defaultSlotEnd) {
+                      setEndDate(`${dayEnd}T${svc.defaultSlotEnd.slice(0, 5)}`);
+                    } else if (dayEnd) {
+                      setEndDate(dayEnd);
+                    }
+                  } else {
+                    if (svc.defaultStartDate) setStartDate(toDateInput(svc.defaultStartDate));
+                    if (svc.defaultEndDate) setEndDate(toDateInput(svc.defaultEndDate));
+                  }
+                }}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-2xl px-4 py-4 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50"
+              >
+                <option value="none">Kein Service</option>
+                {services.map((s) => (
+                  <option key={s.id} value={String(s.id)}>{s.name}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                placeholder="z.B. Tageskarte"
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-2xl px-4 py-4 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+              />
+            )}
+          </div>
+
+          {/* Datums-Eingabe direkt unter Ticket-Typ:
+              - Kurs (TIME_SLOT) -> Datum + Slot-Auswahl aus ANNY (Fallback: datetime-local)
+              - sonst (DATE_RANGE / DURATION) -> nur ein Datum */}
+          {dateMode === "datetime" ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Datum
+                </label>
+                <input
+                  type="date"
+                  value={slotDate}
+                  onChange={(e) => {
+                    setSlotDate(e.target.value);
+                    // Slot-Auswahl verwirft die aktuell gewaehlten Zeiten -
+                    // sie passten zum alten Tag. User muss einen Slot neu
+                    // waehlen (oder das Fallback nutzt unten den neuen Tag).
+                    setStartDate("");
+                    setEndDate("");
+                  }}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                />
+              </div>
+
+              {/* Slot-Picker: drei Zustaende
+                  - Loading: Spinner
+                  - ANNY hat Slots: Button-Grid (Klick setzt startDate/endDate)
+                  - kein ANNY-Link / keine Slots: datetime-local-Fallback */}
+              {slotsLoading ? (
+                <div className="flex items-center gap-2 text-xs text-slate-400 py-3">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Slots werden geladen…
+                </div>
+              ) : hasAnnyLink && slots.length > 0 ? (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    Slot wählen
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {slots.map((s) => {
+                      const expectedStart = slotDate ? `${slotDate}T${s.startTime}` : "";
+                      const isSelected =
+                        !!expectedStart && startDate === expectedStart;
+                      return (
+                        <button
+                          key={`${s.startTime}-${s.endTime}`}
+                          type="button"
+                          onClick={() => {
+                            if (!slotDate) return;
+                            setStartDate(`${slotDate}T${s.startTime}`);
+                            setEndDate(`${slotDate}T${s.endTime}`);
+                          }}
+                          className={cn(
+                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors active:scale-95",
+                            isSelected
+                              ? "bg-emerald-600 border-emerald-500 text-white"
+                              : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:border-slate-600",
+                          )}
+                        >
+                          {s.startTime}–{s.endTime}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {hasAnnyLink && slotsLoaded && (
+                    <div className="text-xs text-amber-400 px-1">
+                      Keine ANNY-Slots an diesem Tag – manuelle Zeit eintragen.
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" />
+                        Start <span className="text-slate-600 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" />
+                        Ende <span className="text-slate-600 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Datum <span className="text-slate-600 font-normal">(optional)</span>
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+              />
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400">
@@ -3082,7 +3292,6 @@ function AddTicketOverlay({
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 placeholder="Max"
-                autoFocus
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
               />
             </div>
@@ -3100,182 +3309,20 @@ function AddTicketOverlay({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Ticket-Typ</label>
-              {services.length > 0 ? (
-                <select
-                  value={serviceId}
-                  onChange={(e) => {
-                    const newId = e.target.value;
-                    setServiceId(newId);
-                    // Beim Wechsel des Service-Typs erst leeren, damit kein
-                    // Wert aus dem vorherigen Mode (z.B. datetime-local von
-                    // einem Kurs) als reines Datum stehen bleibt.
-                    setStartDate("");
-                    setEndDate("");
-                    if (newId === "none") return;
-                    const svc = services.find((s) => String(s.id) === newId);
-                    if (!svc) return;
-                    if (svc.areaIds?.length) setAccessAreaId(String(svc.areaIds[0]));
-                    // Service-Defaults ins UI-Format uebernehmen, damit der
-                    // User sieht, was beim Submit auto-gesetzt werden wuerde
-                    // - und es bei Bedarf umstellen kann.
-                    if (svc.defaultValidityType === "TIME_SLOT") {
-                      const day = svc.defaultStartDate ? toDateInput(svc.defaultStartDate) : "";
-                      const dayEnd = svc.defaultEndDate ? toDateInput(svc.defaultEndDate) : day;
-                      if (day && svc.defaultSlotStart) {
-                        setStartDate(`${day}T${svc.defaultSlotStart.slice(0, 5)}`);
-                      } else if (day) {
-                        setStartDate(day);
-                      }
-                      if (dayEnd && svc.defaultSlotEnd) {
-                        setEndDate(`${dayEnd}T${svc.defaultSlotEnd.slice(0, 5)}`);
-                      } else if (dayEnd) {
-                        setEndDate(dayEnd);
-                      }
-                    } else {
-                      if (svc.defaultStartDate) setStartDate(toDateInput(svc.defaultStartDate));
-                      if (svc.defaultEndDate) setEndDate(toDateInput(svc.defaultEndDate));
-                    }
-                  }}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                >
-                  <option value="none">Kein Service</option>
-                  {services.map((s) => (
-                    <option key={s.id} value={String(s.id)}>{s.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  placeholder="z.B. Tageskarte"
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-                />
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                <ScanLine className="h-3.5 w-3.5" />
-                Code
-              </label>
-              <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="RFID / Barcode / QR"
-                autoComplete="off"
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+              <ScanLine className="h-3.5 w-3.5" />
+              Code <span className="text-slate-600 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="RFID / Barcode / QR"
+              autoComplete="off"
+              className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+            />
           </div>
-
-          {subscriptions.length > 0 && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">Abo</label>
-              <select
-                value={subscriptionId}
-                onChange={(e) => {
-                  const newId = e.target.value;
-                  setSubscriptionId(newId);
-                  // Mode wechselt potenziell auf "range" - alte Werte aus
-                  // Single-/Datetime-Mode duerfen nicht stehen bleiben.
-                  setStartDate("");
-                  setEndDate("");
-                  if (newId === "none") return;
-                  const sub = subscriptions.find((s) => String(s.id) === newId);
-                  if (!sub) return;
-                  if (sub.areaIds?.length) setAccessAreaId(String(sub.areaIds[0]));
-                  // Abo-Defaults (Saisonstart/-ende) ins UI uebernehmen.
-                  if (sub.defaultStartDate) setStartDate(toDateInput(sub.defaultStartDate));
-                  if (sub.defaultEndDate) setEndDate(toDateInput(sub.defaultEndDate));
-                }}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-              >
-                <option value="none">Kein Abo</option>
-                {subscriptions.map((s) => (
-                  <option key={s.id} value={String(s.id)}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Datums-Eingabe haengt vom gewaehlten Ticket-Typ ab:
-              - Abo (range):    Datum von/bis (Saisonzeitraum)
-              - Kurs (datetime): Datum + Uhrzeit von/bis
-              - Sonst (single): nur ein Datum (Tagesticket/DURATION) */}
-          {dateMode === "range" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  Gültig ab <span className="text-slate-600 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  Gültig bis <span className="text-slate-600 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-                />
-              </div>
-            </div>
-          )}
-
-          {dateMode === "datetime" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
-                  Start <span className="text-slate-600 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="datetime-local"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
-                  Ende <span className="text-slate-600 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="datetime-local"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-                />
-              </div>
-            </div>
-          )}
-
-          {dateMode === "single" && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                Datum <span className="text-slate-600 font-normal">(optional)</span>
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-              />
-            </div>
-          )}
 
           {pendingConflict && (
             <div className="bg-amber-950/80 border border-amber-600/60 rounded-xl p-4 text-sm text-amber-100 space-y-3">
