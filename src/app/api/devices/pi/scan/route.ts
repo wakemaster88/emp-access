@@ -362,6 +362,20 @@ export async function POST(request: NextRequest) {
 
   const isEmployee = ticket.source === "EMP_CONTROL";
 
+  // "Hauptressource" eines Tickets ist `ticket.accessAreaId`. Nur Scans an
+  // Geraeten, die zu diesem Bereich gehoeren (accessIn/accessOut), zaehlen
+  // als "verbrauchend": dort startet bei DURATION der Timer und dort wechselt
+  // der Status VALID -> REDEEMED. Scans an Nebenressourcen (z.B. Drehkreuz
+  // Strandbad fuer ein Wake&Ski-Ticket mit Hauptressource Seilbahn A) werden
+  // als "Transit" behandelt: Zutritt wird gewaehrt, aber Status/firstScanAt
+  // bleiben unveraendert und die Reentry-Checks ignorieren diese Scans.
+  // Wenn das Ticket keine Hauptressource hat (`accessAreaId == null`),
+  // verhalten wir uns wie frueher (jeder Scan zaehlt).
+  const mainAreaId = ticket.accessAreaId;
+  const deviceAreaIds = [device.accessIn, device.accessOut].filter(Boolean) as number[];
+  const isMainResourceScan =
+    mainAreaId == null || deviceAreaIds.includes(mainAreaId);
+
   // Direkt-Geraete-Match (additiv zu Bereichen): Wenn das Ticket fuer dieses
   // konkrete Geraet whitelisted ist, ueberspringen wir die Bereichs-Pruefung.
   const directDeviceIds = ticket.ticketDevices?.map((td) => td.deviceId) ?? [];
@@ -400,7 +414,12 @@ export async function POST(request: NextRequest) {
   // Reentry-Check: GLOBAL pro Ticket, nicht pro Device. Greift fuer
   // JEDEN Nicht-Exit-Scan (Eingang + bidirektionale/mehrdeutige
   // Geraete ohne explizite IN-Direction).
-  if (!isEmployee && !isExitScan && ticket.status === "REDEEMED") {
+  //
+  // Transit-Scans an Nebenressourcen sind hier ausgenommen: ein
+  // Wake&Ski-Tagesgast, der nach der Stunde durchs Strandbad zurueckgeht
+  // und spaeter nochmal durchs Strandbad reinkommt, soll dadurch nicht
+  // gesperrt werden. Geblockt wird nur an der Hauptressource.
+  if (!isEmployee && !isExitScan && ticket.status === "REDEEMED" && isMainResourceScan) {
     if (!serviceAllowsReentry && !device.allowReentry) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
@@ -412,14 +431,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Reentry erlaubt: Eintritt nur, wenn der letzte GRANTED-Scan ein
-    // klar erkennbarer Exit war. Wir nutzen die gleiche defensive
-    // Definition wie oben - bidirektionale Geraete zaehlen NICHT als
-    // Exit, weil sie eben auch ein Eintritt sein koennten. Damit kann
-    // ein REDEEMED-Ticket an einem bidirektionalen Geraet nicht mehr
-    // versehentlich auf VALID zurueckspringen und unbegrenzt rein.
+    // Reentry erlaubt: Eintritt nur, wenn der letzte GRANTED-Scan an der
+    // Hauptressource ein klar erkennbarer Exit war. Transit-Scans an
+    // Nebenressourcen werden ignoriert, weil sie den Einloese-Zustand
+    // an der Hauptressource nicht ueberschreiben sollen.
+    const mainResourceDeviceFilter = mainAreaId != null
+      ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
+      : {};
     const lastScan = await db.scan.findFirst({
-      where: { ticketId: ticket.id, result: "GRANTED" },
+      where: { ticketId: ticket.id, result: "GRANTED", ...mainResourceDeviceFilter },
       orderBy: { scanTime: "desc" },
       select: {
         device: { select: { accessIn: true, accessOut: true } },
@@ -452,14 +472,23 @@ export async function POST(request: NextRequest) {
   // Status bleibt bei ihnen dauerhaft VALID. Wuerden wir hier blockieren,
   // koenne ein Abonnent nach dem allerersten Scan nirgends ohne
   // Mehrfachzugang-Geraet mehr rein.
+  //
+  // Transit-Scans an Nebenressourcen werden auch hier ignoriert: der
+  // Tagesgast, der erst durchs Strandbad-Drehkreuz musste, soll an der
+  // Hauptressource (Seilbahn A) trotzdem als "noch nicht eingeloest"
+  // gelten.
   if (
     !device.allowReentry
     && !isEmployee
     && !isExitScan
     && ticket.subscriptionId == null
+    && isMainResourceScan
   ) {
+    const mainResourceDeviceFilter = mainAreaId != null
+      ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
+      : {};
     const existingScan = await db.scan.findFirst({
-      where: { ticketId: ticket.id, result: "GRANTED" },
+      where: { ticketId: ticket.id, result: "GRANTED", ...mainResourceDeviceFilter },
       select: { id: true },
     });
     if (existingScan && !serviceAllowsReentry) {
@@ -482,10 +511,21 @@ export async function POST(request: NextRequest) {
   //   set_config manuell als erste Query in der Transaktion.
   // - Optimistic Locking via version verhindert Doppel-Einlösung bei
   //   parallelen Scans (updateMany.count=0 = Konflikt).
+  // Status- und Timer-Aenderungen passieren ausschliesslich an der
+  // Hauptressource. Transit-Scans an Nebenressourcen werden zwar
+  // protokolliert (GRANTED), aber sie loesen kein Redeem und kein
+  // VALID-Reset aus - damit die DURATION beim Tagesgast nicht schon am
+  // Strandbad startet, sondern erst an der Seilbahn.
   const shouldRedeem =
-    ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null;
+    ticket.status === "VALID"
+    && !isEmployee
+    && ticket.subscriptionId == null
+    && isMainResourceScan;
   const shouldResetValid =
-    ticket.status === "REDEEMED" && isExitScan && !!ticket.service?.allowReentry;
+    ticket.status === "REDEEMED"
+    && isExitScan
+    && !!ticket.service?.allowReentry
+    && isMainResourceScan;
 
   const txResult = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;

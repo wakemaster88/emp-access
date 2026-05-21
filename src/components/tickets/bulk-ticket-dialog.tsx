@@ -168,8 +168,20 @@ export function BulkTicketDialog({
         }
       }
 
-      if (selected.data.areaIds?.length) {
-        payload.accessAreaId = selected.data.areaIds[0];
+      // Hauptressource: Bei Services mit genau EINER zugeordneten Ressource
+      // koennen wir die automatisch als Hauptressource vorbelegen. Bei
+      // mehreren (z.B. Wake&Ski mit Strandbad + Seilbahn A) MUSS der User
+      // explizit waehlen - sonst koennte die Zeitguelt. am falschen Gate
+      // starten. Subscriptions verhalten sich wie frueher: dort ist die
+      // Hauptressource konzeptionell weniger wichtig, weil Abos meist
+      // nicht "verbraucht" werden.
+      const areaIds = selected.data.areaIds ?? [];
+      if (selected.type === "service") {
+        if (areaIds.length === 1) {
+          payload.accessAreaId = areaIds[0];
+        }
+      } else if (areaIds.length > 0) {
+        payload.accessAreaId = areaIds[0];
       }
     }
 
@@ -226,6 +238,18 @@ export function BulkTicketDialog({
   }
 
   const selectedOpt = allOptions.find((o) => o.id === selectedId && o.type === selectedType);
+
+  // Bei Service-Tickets schraenken wir die Bereichs-Auswahl auf die zum
+  // Service gehoerenden Ressourcen ein (das sind die einzigen, die fuer
+  // dieses Ticket Sinn als Hauptressource ergeben). Bei Subscription /
+  // ohne Auswahl bleiben alle Bereiche sichtbar.
+  const isService = selectedOpt?.type === "service";
+  const serviceAreaIds = isService ? selectedOpt!.data.areaIds ?? [] : [];
+  const visibleAreas = isService && serviceAreaIds.length > 0
+    ? areas.filter((a) => serviceAreaIds.includes(a.id))
+    : areas;
+  const needsExplicitMainArea =
+    isService && serviceAreaIds.length > 1 && areaId === "none";
 
   return (
     <Dialog
@@ -338,9 +362,14 @@ export function BulkTicketDialog({
                       if (selectedId === opt.id && selectedType === opt.type) {
                         setSelectedId(null);
                         setSelectedType(null);
+                        setAreaId("none");
                       } else {
                         setSelectedId(opt.id);
                         setSelectedType(opt.type);
+                        // Beim Wechsel des Ticket-Typs die Hauptressourcen-
+                        // Auswahl resetten, damit kein veralteter (nicht zum
+                        // neuen Service gehoerender) Bereich haengen bleibt.
+                        setAreaId("none");
                       }
                     }}
                     className={cn(
@@ -362,24 +391,52 @@ export function BulkTicketDialog({
             </div>
           )}
 
-          {areas.length > 0 && (
+          {visibleAreas.length > 0 && (
             <div className="space-y-1.5">
               <Label htmlFor="bulk-area">
-                Bereich <span className="text-slate-400 font-normal">(optional)</span>
+                {isService ? "Hauptressource" : "Bereich"}{" "}
+                <span className="text-slate-400 font-normal">
+                  {isService && serviceAreaIds.length > 1 ? "(empfohlen)" : "(optional)"}
+                </span>
               </Label>
               <Select value={areaId} onValueChange={setAreaId} disabled={loading}>
-                <SelectTrigger id="bulk-area" className="h-9 text-sm">
-                  <SelectValue placeholder="Kein Bereich" />
+                <SelectTrigger
+                  id="bulk-area"
+                  className={cn(
+                    "h-9 text-sm",
+                    needsExplicitMainArea
+                      ? "border-amber-400 dark:border-amber-600"
+                      : "",
+                  )}
+                >
+                  <SelectValue placeholder={isService ? "Hauptressource waehlen" : "Kein Bereich"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Kein Bereich</SelectItem>
-                  {areas.map((a) => (
+                  <SelectItem value="none">
+                    {isService ? "Keine Hauptressource" : "Kein Bereich"}
+                  </SelectItem>
+                  {visibleAreas.map((a) => (
                     <SelectItem key={a.id} value={String(a.id)}>
                       {a.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {isService && (
+                <p
+                  className={cn(
+                    "text-[11px]",
+                    needsExplicitMainArea
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-slate-400",
+                  )}
+                >
+                  Hier startet die Zeitg&uuml;ltigkeit (DURATION) und wird das Ticket
+                  als eingel&ouml;st markiert. Scans an anderen Ressourcen lassen den
+                  Gast nur durch, ohne die Stunde anzuziehen.
+                  {needsExplicitMainArea && " Ohne Auswahl startet die Stunde an JEDEM Gate."}
+                </p>
+              )}
             </div>
           )}
 
