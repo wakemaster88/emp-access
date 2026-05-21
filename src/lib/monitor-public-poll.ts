@@ -89,13 +89,45 @@ async function loadTickets(
     ],
   };
   if (cachedAreaIds.length > 0) {
+    // Vereinsmitglieder erben die Areas IHRES Vereins-Zutritts-Tickets (z.B.
+    // "Tristar Oelde -> Strandbad Jahresticket"). Wenn das Zutritts-Ticket
+    // keinen Bereich aus diesem Monitor abdeckt, sollen die Mitglieder hier
+    // auch NICHT auftauchen - sonst stehen z.B. die Tristar-Strandbad-
+    // Mitglieder im Seilbahn-Monitor.
+    const vereinAreaFilter = {
+      verein: {
+        accessTickets: {
+          some: {
+            ticket: {
+              OR: [
+                { accessAreaId: { in: cachedAreaIds } },
+                { ticketAreas: { some: { accessAreaId: { in: cachedAreaIds } } } },
+                { subscription: { areas: { some: { id: { in: cachedAreaIds } } } } },
+                { service: { serviceAreas: { some: { accessAreaId: { in: cachedAreaIds } } } } },
+              ],
+            },
+          },
+        },
+      },
+    };
     (ticketWhere.AND as Record<string, unknown>[]).push({
       OR: [
         { accessAreaId: { in: cachedAreaIds } },
         { ticketAreas: { some: { accessAreaId: { in: cachedAreaIds } } } },
         { subscription: { areas: { some: { id: { in: cachedAreaIds } } } } },
         { service: { serviceAreas: { some: { accessAreaId: { in: cachedAreaIds } } } } },
-        { accessAreaId: null, subscriptionId: null, serviceId: null },
+        vereinAreaFilter,
+        // Universal-Tickets ohne JEDE Bereichszuordnung (typisch fuer
+        // Mitarbeiter ohne Area-Whitelist, EMP_CONTROL-Importe etc.).
+        // Vereinsmitglieder werden hier bewusst ausgeschlossen - die laufen
+        // ueber den `vereinAreaFilter` oben und erscheinen nur dort, wo der
+        // Verein auch wirklich Zugang hat.
+        {
+          accessAreaId: null,
+          subscriptionId: null,
+          serviceId: null,
+          vereinId: null,
+        },
       ],
     });
   }
