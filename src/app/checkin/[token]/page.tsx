@@ -1810,38 +1810,79 @@ function StatPill({ icon: Icon, label, value, color }: { icon: React.ComponentTy
 }
 
 /**
- * Zerlegt einen Service-Namen in (Gruppe, Variante) anhand des
- * " - "-Separators. "Oeffentlicher Betrieb - 1 Stunde" -> Gruppe
- * "Oeffentlicher Betrieb", Variante "1 Stunde". Wenn kein Separator
- * existiert, ist die ganze Bezeichnung die Gruppe.
+ * Zerlegt einen Service-Namen in (Gruppe, Variante).
+ *
+ * Strategie:
+ *   1. " - "-Separator: "Oeffentlicher Betrieb - 1 Stunde" -> Gruppe
+ *      "Oeffentlicher Betrieb", Variante "1 Stunde".
+ *   2. Optionaler `groupName`: wenn der Name mit `groupName ` beginnt
+ *      (Wort-Prefix), wird der Rest die Variante. So matched z.B.
+ *      "Aquapark Tageskarte" + Gruppe "Aquapark" -> Variante "Tageskarte".
+ *   3. Sonst: voller Name = Gruppe, keine Variante.
  */
-function splitServiceLabel(name: string): { group: string; variant: string | null } {
+function splitServiceLabel(
+  name: string,
+  groupName?: string,
+): { group: string; variant: string | null } {
   const m = name.split(/\s[-–]\s/);
-  if (m.length < 2) return { group: name, variant: null };
-  const group = m[0].trim();
-  const variant = m.slice(1).join(" - ").trim();
-  return { group, variant: variant || null };
+  if (m.length >= 2) {
+    const group = m[0].trim();
+    const variant = m.slice(1).join(" - ").trim();
+    return { group, variant: variant || null };
+  }
+  if (groupName) {
+    const lowerName = name.toLowerCase();
+    const lowerGroup = groupName.toLowerCase();
+    if (lowerName.startsWith(lowerGroup + " ")) {
+      return { group: groupName, variant: name.slice(groupName.length).trim() || null };
+    }
+  }
+  return { group: name, variant: null };
 }
 
 /**
- * Gruppiert Services nach dem gemeinsamen Praefix-Namen vor dem " - ".
- * "Oeffentlicher Betrieb - 1 Stunde", "... - 2 Stunden", "... - Tageskarte"
- * landen in derselben Gruppe "Oeffentlicher Betrieb". Reihenfolge der
- * Gruppen entspricht dem ersten Auftauchen.
+ * Gruppiert Services nach gemeinsamen Praefix-Namen. Zwei Strategien:
+ *   a) " - "-Separator: "Oeffentlicher Betrieb - 1 Stunde", "... - 2 Stunden",
+ *      "... - Tageskarte" landen in derselben Gruppe "Oeffentlicher Betrieb".
+ *   b) Gemeinsames erstes Wort: "Aquapark Tageskarte" + "Aquapark Stundenkarte"
+ *      werden unter "Aquapark" gebuendelt - aber nur, wenn mind. 2 Services
+ *      dasselbe erste Wort teilen (sonst stuende ein Service wie "SUP" alleine
+ *      unter sich selbst, was kosmetisch nicht hilft).
+ *
+ * Reihenfolge der Gruppen entspricht dem ersten Auftauchen.
  */
 function groupOverviewServices(services: SlotOverviewService[]): Array<{
   group: string;
   members: SlotOverviewService[];
 }> {
+  // Pre-Pass: zaehle erste Woerter unter Services OHNE " - "-Separator.
+  // Diese Zaehlung entscheidet, ob "Aquapark X" + "Aquapark Y" unter "Aquapark"
+  // gruppiert werden duerfen.
+  const firstWordCounts = new Map<string, number>();
+  for (const sv of services) {
+    if (/\s[-–]\s/.test(sv.name)) continue;
+    const firstWord = sv.name.split(/\s+/)[0]?.trim();
+    if (!firstWord) continue;
+    const key = firstWord.toLowerCase();
+    firstWordCounts.set(key, (firstWordCounts.get(key) ?? 0) + 1);
+  }
+
   const order: string[] = [];
   const buckets = new Map<string, SlotOverviewService[]>();
   for (const sv of services) {
-    const { group } = splitServiceLabel(sv.name);
-    if (!buckets.has(group)) {
-      buckets.set(group, []);
-      order.push(group);
+    let groupKey: string;
+    if (/\s[-–]\s/.test(sv.name)) {
+      groupKey = splitServiceLabel(sv.name).group;
+    } else {
+      const firstWord = sv.name.split(/\s+/)[0]?.trim() ?? sv.name;
+      const lower = firstWord.toLowerCase();
+      groupKey = (firstWordCounts.get(lower) ?? 0) >= 2 ? firstWord : sv.name;
     }
-    buckets.get(group)!.push(sv);
+    if (!buckets.has(groupKey)) {
+      buckets.set(groupKey, []);
+      order.push(groupKey);
+    }
+    buckets.get(groupKey)!.push(sv);
   }
   return order.map((g) => ({ group: g, members: buckets.get(g)! }));
 }
@@ -1958,7 +1999,7 @@ function SlotOverviewGroup({
   // User unten auf die Slot-Pills.
   if (hasSingleMember) {
     const sv = members[0];
-    const { variant } = splitServiceLabel(sv.name);
+    const { variant } = splitServiceLabel(sv.name, group);
     const headerClickable = sv.serviceType === "day" && sv.availableToday;
     const Header = (
       <div
@@ -2031,7 +2072,7 @@ function SlotOverviewGroup({
         // klickbar (oeffnet Add-Ticket-Overlay mit Service + Datum).
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pl-5">
           {members.map((sv) => {
-            const { variant } = splitServiceLabel(sv.name);
+            const { variant } = splitServiceLabel(sv.name, group);
             const label = variant || sv.name;
             const opening = formatOpeningHours(sv.openingHours);
             const clickable = sv.availableToday;
@@ -2083,7 +2124,7 @@ function SlotOverviewGroup({
         // bleibt nicht-klickbar (sonst doppelte Aktion).
         <div className="space-y-2 pl-5 border-l border-slate-800/60 ml-2">
           {members.map((sv) => {
-            const { variant } = splitServiceLabel(sv.name);
+            const { variant } = splitServiceLabel(sv.name, group);
             const subClickable = sv.serviceType === "day" && sv.availableToday;
             return (
               <div key={sv.serviceId} className="space-y-1">
