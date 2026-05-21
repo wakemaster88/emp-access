@@ -2809,7 +2809,11 @@ function SlotOverviewServiceBody({
   }
   if (sv.serviceType === "day") {
     // Day-Pass: 1 grosser Pill ueber die Oeffnungszeit. Wenn ANNY keine
-    // Periods liefert, nutzen wir den globalen Range als Fallback.
+    // Periods liefert, nutzen wir den globalen Range als Fallback und
+    // markieren den Pill als gestrichelt (Hinweis: unsichere Range).
+    // Visueller Stil identisch mit CombinedPill aus der Multi-Day-Gruppe,
+    // damit ein einzelner Day-Pass-Service (z.B. Ferienkurs) nicht
+    // anders aussieht als die Strandbad-/Aquapark-Combined-Pills.
     const periods =
       sv.openingHours.length > 0
         ? sv.openingHours
@@ -2819,6 +2823,7 @@ function SlotOverviewServiceBody({
               end: minutesToTimeString(range.endMin),
             },
           ];
+    const isFallback = sv.openingHours.length === 0;
     return (
       <SlotTimeline range={range}>
         {periods.map((oh, idx) => {
@@ -2831,13 +2836,13 @@ function SlotOverviewServiceBody({
               startMin={startMin}
               endMin={endMin}
             >
-              <DayPassPill
+              <CombinedPill
                 startLabel={oh.start}
                 endLabel={oh.end}
-                clickable={!!onDayClick && sv.availableToday}
-                bookings={sv.totalEmpBookings}
+                tooltip={`${sv.name} · ${oh.start}-${oh.end} · ${sv.totalEmpBookings} verkauft`}
                 onClick={onDayClick}
-                isFallbackRange={sv.openingHours.length === 0}
+                disabled={!onDayClick || !sv.availableToday}
+                isFallback={isFallback}
               />
             </TimelineSlot>
           );
@@ -2876,73 +2881,6 @@ function SlotOverviewServiceBody({
         );
       })}
     </SlotTimeline>
-  );
-}
-
-/**
- * Day-Pass-Pill in der Timeline. Optisch leicht abgesetzt von den
- * Slot-Pills (subtileres Hintergrund-Grun), zeigt die Oeffnungszeit als
- * Label. Klickbar, falls der Service heute verkauft werden kann.
- */
-function DayPassPill({
-  startLabel,
-  endLabel,
-  clickable,
-  bookings,
-  onClick,
-  isFallbackRange,
-}: {
-  startLabel: string;
-  endLabel: string;
-  clickable: boolean;
-  bookings: number;
-  onClick?: () => void;
-  /** Wenn true: Periods kamen nicht aus ANNY, Pill ist gestreift dargestellt. */
-  isFallbackRange: boolean;
-}) {
-  // Day-Pass ist ein passiver Oeffnungs-Bereich, keine bookbare Zeit-Scheibe.
-  // Visuell dezenter als Slot-Pills: schmaler Streifen, der die Oeffnungszeit
-  // wie einen "Zeit-Bereich" markiert, mit Label-Overlay zentriert.
-  const stripedStyle = isFallbackRange
-    ? {
-        backgroundImage:
-          "repeating-linear-gradient(45deg, rgba(56,189,248,0.18) 0 6px, transparent 6px 12px)",
-      }
-    : undefined;
-  const content = (
-    <>
-      <div
-        className={cn(
-          "h-3 w-full rounded-full border",
-          "border-sky-500/40 bg-sky-500/15",
-        )}
-        style={stripedStyle}
-      />
-      <span className="absolute inset-0 flex items-center justify-center gap-1.5 text-[10px] font-mono tabular-nums leading-tight truncate px-2 pointer-events-none">
-        <span className="text-sky-200 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
-          {startLabel}-{endLabel}
-        </span>
-        {bookings > 0 && (
-          <span className="text-emerald-300 text-[10px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
-            · {bookings}
-          </span>
-        )}
-      </span>
-    </>
-  );
-  const wrapperCls = "relative h-full w-full flex items-center";
-  if (!clickable) {
-    return <div className={cn(wrapperCls, "opacity-70")}>{content}</div>;
-  }
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`Tageskarte verkaufen (${startLabel}-${endLabel})`}
-      className={cn(wrapperCls, "group hover:brightness-125 active:scale-95 transition-all")}
-    >
-      {content}
-    </button>
   );
 }
 
