@@ -914,15 +914,19 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col">
       {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900 px-4 py-3 flex items-center justify-between safe-top">
-        <div className="flex items-center gap-3">
+      <header className="border-b border-slate-800 bg-slate-900 px-4 py-2.5 flex items-center justify-between gap-3 safe-top">
+        <div className="flex items-center gap-3 min-w-0 shrink-0">
           <img src="/logo-dark.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">{data?.monitorName ?? "Check-in"}</h1>
-            <p className="text-[11px] text-slate-400">EMP Access — Check-in Monitor</p>
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold tracking-tight leading-tight truncate">
+              {data?.monitorName ?? "Check-in"}
+            </h1>
+            <p className="text-[11px] text-slate-400 whitespace-nowrap leading-tight">
+              EMP Access · Check-in Monitor
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
           {scanBubble && (
             <div className="bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-xl text-xs font-mono animate-pulse flex items-center gap-1.5">
               <ScanLine className="h-3.5 w-3.5" />
@@ -950,7 +954,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   disabled={openingDeviceId !== null}
                   title={`${d.name} öffnen`}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60 whitespace-nowrap",
+                    "flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60 whitespace-nowrap",
                     wasOpened
                       ? "bg-emerald-600 text-white"
                       : "bg-sky-600 hover:bg-sky-500 text-white",
@@ -963,7 +967,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                   ) : (
                     <DoorOpen className="h-5 w-5 shrink-0" />
                   )}
-                  <span className="hidden md:inline">{d.name}</span>
+                  <span className="hidden 2xl:inline max-w-[12rem] truncate">{d.name}</span>
                 </button>
               );
             };
@@ -976,8 +980,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 <div ref={openMenuRef} className="relative">
                   <button
                     onClick={() => setOpenMenuOpen((v) => !v)}
+                    title={`${items.length} weitere Türen öffnen`}
                     className={cn(
-                      "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95 whitespace-nowrap",
+                      "flex items-center gap-1.5 px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95 whitespace-nowrap",
                       anyJustOpened
                         ? "bg-emerald-600 text-white"
                         : "bg-slate-700 hover:bg-slate-600 text-white",
@@ -990,7 +995,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                     ) : (
                       <DoorOpen className="h-5 w-5 shrink-0" />
                     )}
-                    <span className="hidden md:inline">{label}</span>
+                    <span>{label}</span>
                     <ChevronDown
                       className={cn("h-4 w-4 shrink-0 transition-transform", openMenuOpen && "rotate-180")}
                     />
@@ -1061,46 +1066,53 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
               </>
             );
           })()}
+          {/* Vertikaler Divider zwischen Tueren-Cluster und Aktions-Cluster,
+              damit der User die Funktion auf einen Blick trennt. */}
+          <span className="hidden md:block h-7 w-px bg-slate-700/60 mx-0.5" aria-hidden />
           <button
             onClick={() => { setAddTicketPrefill(undefined); setAddTicketOpen(true); }}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            title="Neues Ticket anlegen"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
           >
-            <Plus className="h-5 w-5" />
-            <span className="hidden sm:inline">Ticket</span>
+            <Plus className="h-5 w-5 shrink-0" />
+            <span className="hidden xl:inline">Ticket</span>
           </button>
           <button
             onClick={() => { setAnnouncementError(null); setAnnouncementOpen(true); }}
             title="Hinweis an die Live-Monitore schicken"
             className={cn(
-              "flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95",
+              "flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95",
               announcementSentAt
                 ? "bg-emerald-600 text-white"
                 : "bg-amber-600 hover:bg-amber-500 text-white",
             )}
           >
-            {announcementSentAt ? <Check className="h-5 w-5" /> : <Megaphone className="h-5 w-5" />}
-            <span className="hidden sm:inline">
+            {announcementSentAt ? <Check className="h-5 w-5 shrink-0" /> : <Megaphone className="h-5 w-5 shrink-0" />}
+            <span className="hidden xl:inline">
               {announcementSentAt ? "Gesendet" : "Hinweis"}
             </span>
           </button>
           <button
             onClick={() => setLockerOverlayOpen(true)}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            title="Schließfächer verwalten"
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
           >
-            <Lock className="h-5 w-5" />
-            <span className="hidden sm:inline">Schließfächer</span>
+            <Lock className="h-5 w-5 shrink-0" />
+            <span className="hidden xl:inline">Schließfächer</span>
           </button>
           <button
             onClick={() => setScanMode(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            title="Scan-Modus aktivieren"
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
           >
-            <ScanLine className="h-5 w-5" />
-            Scannen
+            <ScanLine className="h-5 w-5 shrink-0" />
+            <span className="hidden xl:inline">Scannen</span>
           </button>
+          <span className="hidden md:block h-7 w-px bg-slate-700/60 mx-0.5" aria-hidden />
           <LiveClock />
           <button
             onClick={() => { setRefreshing(true); refreshRef.current?.(); setTimeout(() => setRefreshing(false), 800); }}
-            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors active:scale-95"
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors active:scale-95"
             title="Aktualisieren"
           >
             <RefreshCw className={cn("h-4.5 w-4.5", refreshing && "animate-spin")} />
