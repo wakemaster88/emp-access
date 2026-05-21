@@ -2773,7 +2773,6 @@ function CombinedDayPassRow({
                   <CombinedPill
                     startLabel={oh.start}
                     endLabel={oh.end}
-                    bookings={totalBookings}
                     tooltip={`${variantNames.join(" + ")} · ${oh.start}-${oh.end} · ${totalBookings} verkauft`}
                     onClick={() =>
                       primary.availableToday
@@ -2861,9 +2860,6 @@ function CombinedDayPassRow({
                   >
                     <span className="relative flex items-center justify-center gap-1 h-full truncate">
                       <span className="font-bold">{oh.start}-{oh.end}</span>
-                      {sv.totalEmpBookings > 0 && (
-                        <span className="text-[9px] opacity-80">·{sv.totalEmpBookings}</span>
-                      )}
                     </span>
                   </button>
                 </TimelineSlot>
@@ -2894,7 +2890,6 @@ function CombinedDayPassRow({
 function CombinedPill({
   startLabel,
   endLabel,
-  bookings,
   tooltip,
   onClick,
   disabled,
@@ -2902,7 +2897,6 @@ function CombinedPill({
 }: {
   startLabel: string;
   endLabel: string;
-  bookings: number;
   tooltip: string;
   onClick?: () => void;
   disabled?: boolean;
@@ -2925,9 +2919,6 @@ function CombinedPill({
     >
       <span className="relative flex items-center justify-center gap-1 h-full truncate">
         <span className="font-bold">{startLabel}-{endLabel}</span>
-        {bookings > 0 && (
-          <span className="text-emerald-300 text-[9px]">·{bookings}</span>
-        )}
       </span>
     </button>
   );
