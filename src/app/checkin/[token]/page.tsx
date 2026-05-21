@@ -1888,11 +1888,6 @@ function SlotOverviewGroup({
               · {variant}
             </span>
           )}
-          {sv.serviceType === "day" && (
-            <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
-              Tageskarte
-            </span>
-          )}
           {totalEmp > 0 && (
             <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
               {totalEmp} verkauft
@@ -1909,11 +1904,6 @@ function SlotOverviewGroup({
       <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
         <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
         <span className="font-semibold truncate">{group}</span>
-        {allDay && (
-          <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
-            Tageskarte
-          </span>
-        )}
         <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
           · {members.length} Varianten
         </span>
@@ -1959,11 +1949,6 @@ function SlotOverviewGroup({
               <div key={sv.serviceId} className="space-y-1">
                 <div className="flex items-center gap-2 text-[11px] text-slate-400">
                   <span className="font-medium">{variant || sv.name}</span>
-                  {sv.serviceType === "day" && (
-                    <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
-                      Tageskarte
-                    </span>
-                  )}
                   {sv.totalEmpBookings > 0 && (
                     <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
                       {sv.totalEmpBookings} verkauft
