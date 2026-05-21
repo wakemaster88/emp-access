@@ -242,6 +242,14 @@ export interface AnnyServiceMatch {
     items: number;
     bodyPreview?: string;
   }>;
+  /** Service-Konfiguration des Matches (min_duration etc.). */
+  serviceInfo?: {
+    minDuration: number | null;
+    maxDuration: number | null;
+    bookingInterval: number | null;
+    hasFlexibleDuration: boolean;
+    autoDuration: boolean;
+  };
 }
 
 /**
@@ -274,6 +282,7 @@ export async function fetchAnnyServiceMatch(
 
   let exactMatch: string | null = null;
   let substringMatch: string | null = null;
+  let matchedServiceInfo: AnnyServiceMatch["serviceInfo"] | undefined;
 
   // ANNY erlaubt max. page[size]=50. Wir laufen bis zu 10 Seiten - reicht
   // fuer 500 Services, drueber hinaus stoppen wir der Latenz wegen.
@@ -330,11 +339,21 @@ export async function fetchAnnyServiceMatch(
         if (!id || !name) continue;
         knownNames.push(name);
         const lower = name.toLowerCase();
+        const info: NonNullable<AnnyServiceMatch["serviceInfo"]> = {
+          minDuration: typeof a.min_duration === "number" ? (a.min_duration as number) : null,
+          maxDuration: typeof a.max_duration === "number" ? (a.max_duration as number) : null,
+          bookingInterval:
+            typeof a.booking_interval === "number" ? (a.booking_interval as number) : null,
+          hasFlexibleDuration: a.has_flexible_duration === true,
+          autoDuration: a.auto_duration === true,
+        };
         if (!exactMatch && wantedSet.has(lower)) {
           exactMatch = String(id);
+          matchedServiceInfo = info;
         } else if (!substringMatch) {
           if (wantedLower.some((w) => w.includes(lower) || lower.includes(w))) {
             substringMatch = String(id);
+            if (!matchedServiceInfo) matchedServiceInfo = info;
           }
         }
       }
@@ -346,7 +365,12 @@ export async function fetchAnnyServiceMatch(
     }
   }
 
-  return { id: exactMatch || substringMatch, knownNames, debug };
+  return {
+    id: exactMatch || substringMatch,
+    knownNames,
+    debug,
+    serviceInfo: matchedServiceInfo,
+  };
 }
 
 /**
@@ -368,10 +392,15 @@ export interface ServiceStartSlot {
   startTime: string;
   endTime: string;
   available: boolean;
-  /** Aktuell freie Plaetze (ANNY: remaining_number_available). */
+  /**
+   * Aktuell freie Plaetze in diesem Slot. Bei ANNY's /availability/start
+   * entspricht das `number_available` - das ist die Anzahl der Resources,
+   * die diesen Slot bedienen koennten (und noch nicht durch Bookings
+   * blockiert sind). `remaining_number_available` ist NICHT die freie
+   * Anzahl, sondern eine ANNY-interne Restberechnung (vmtl. fuer Multi-
+   * Quantity-Bookings). Quelle: Beobachtung in Live-Setup.
+   */
   remaining?: number;
-  /** Gesamtkapazitaet des Slots (ANNY: number_available). */
-  capacity?: number;
 }
 
 /**
@@ -390,7 +419,22 @@ export async function fetchAnnyServiceStartSlots(
   token: string,
   serviceId: string,
   dateStr: string,
-  opts: { durationMinutes?: number; resourceId?: string; organizationId?: string | null } = {},
+  opts: {
+    /**
+     * Wird als `duration={n}` an die API gesendet und filtert ANNY's
+     * Verfuegbarkeitsberechnung. VORSICHT: das veraendert auch
+     * `remaining_number_available` - nur setzen, wenn man sicher ist.
+     */
+    durationMinutes?: number;
+    /**
+     * Wird NICHT an die API gesendet. Wird lokal benutzt, um die End-Zeit
+     * jedes zurueckgegebenen Slots zu berechnen (start + slotDurationMinutes).
+     * Fuer Anzeige im UI ("12:00-13:00" statt "12:00-").
+     */
+    slotDurationMinutes?: number | null;
+    resourceId?: string;
+    organizationId?: string | null;
+  } = {},
 ): Promise<ServiceStartSlot[]> {
   const params = new URLSearchParams({
     service_id: serviceId,
@@ -402,6 +446,13 @@ export async function fetchAnnyServiceStartSlots(
   }
   if (opts.resourceId) params.set("resource_id", opts.resourceId);
   if (opts.organizationId) params.set("o", opts.organizationId);
+
+  const slotDurationForDisplay =
+    opts.durationMinutes && opts.durationMinutes > 0
+      ? opts.durationMinutes
+      : opts.slotDurationMinutes && opts.slotDurationMinutes > 0
+        ? opts.slotDurationMinutes
+        : null;
 
   try {
     const res = await fetch(`${baseUrl}/api/v1/availability/start?${params}`, {
@@ -428,10 +479,10 @@ export async function fetchAnnyServiceStartSlots(
       if (!startIso) continue;
       const isAvailable = it.available !== false;
       let endIso = "";
-      if (opts.durationMinutes && opts.durationMinutes > 0) {
+      if (slotDurationForDisplay) {
         const s = new Date(startIso);
         if (!isNaN(s.getTime())) {
-          endIso = new Date(s.getTime() + opts.durationMinutes * 60000).toISOString();
+          endIso = new Date(s.getTime() + slotDurationForDisplay * 60000).toISOString();
         }
       }
       result.push({
@@ -440,33 +491,8 @@ export async function fetchAnnyServiceStartSlots(
         startTime: fmtTimeBerlin(startIso),
         endTime: endIso ? fmtTimeBerlin(endIso) : "",
         available: isAvailable,
-        remaining: it.remaining_number_available,
-        capacity: it.number_available,
+        remaining: it.number_available,
       });
-    }
-
-    // Wenn keine duration gesetzt war, leiten wir die Slot-Dauer aus dem
-    // Abstand zwischen aufeinanderfolgenden Start-Zeiten ab. ANNY gibt
-    // typischerweise gleichmaessige Intervalle zurueck (z.B. 12:00, 14:00,
-    // 16:00 -> Abstand 2h -> Slot-Dauer 2h).
-    if (!opts.durationMinutes || opts.durationMinutes <= 0) {
-      const sorted = result
-        .slice()
-        .sort((a, b) => a.startIso.localeCompare(b.startIso));
-      if (sorted.length >= 2) {
-        const t0 = new Date(sorted[0].startIso).getTime();
-        const t1 = new Date(sorted[1].startIso).getTime();
-        const intervalMs = t1 - t0;
-        if (intervalMs > 0 && intervalMs <= 12 * 60 * 60 * 1000) {
-          for (const slot of result) {
-            const s = new Date(slot.startIso);
-            if (!isNaN(s.getTime())) {
-              slot.endIso = new Date(s.getTime() + intervalMs).toISOString();
-              slot.endTime = fmtTimeBerlin(slot.endIso);
-            }
-          }
-        }
-      }
     }
 
     return result;
@@ -495,14 +521,8 @@ export type AvailabilitySlot = {
   endTime: string;
   startIso: string;
   endIso: string;
-  /**
-   * Aktuell freie Plaetze (ANNY: remaining_number_available). Nur gesetzt,
-   * wenn der Service kapazitaetsbegrenzt ist - bei unbegrenzten Slots (z.B.
-   * Drop-in-Kurs) ist das Feld absent.
-   */
+  /** Aktuell freie Plaetze (ANNY: number_available). */
   remaining?: number;
-  /** Gesamtkapazitaet des Slots (ANNY: number_available). */
-  capacity?: number;
 };
 
 /** Erzeugt deduplizierte, sortierte Slots aus Roh-Perioden. */

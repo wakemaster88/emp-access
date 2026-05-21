@@ -151,13 +151,17 @@ export async function GET(
   }
   const annyServiceUuid = match.id;
 
-  // Dauer absichtlich NICHT setzen. ANNY rechnet sonst die Verfuegbarkeit
-  // mit unserer (potenziell falsch gesetzten) defaultValidityDurationMinutes
-  // - das kann die `remaining_number_available` runter schreiben, weil
-  // dann nur Ressourcen zaehlen, die GENAU diese Laenge am Stueck frei
-  // sind. Wenn der User in ANNY eine andere Buchungsdauer konfiguriert
-  // hat, holen wir uns hier die natuerliche Slot-Dauer aus dem ANNY-Service
-  // selbst.
+  // Slot-Dauer aus dem ANNY-Service ableiten:
+  //   * min_duration ist die kanonische Buchungsdauer fuer fixed-duration
+  //     Services (z.B. "Anfaengerkurs 60 min").
+  //   * Bei flexible Services nehmen wir min_duration als Default. Wir
+  //     duerfen das nur als End-Zeit-Berechnung verwenden - wenn wir das
+  //     an /availability/start mitgeben, beeinflusst es die Verfuegbarkeit.
+  // duration wird BEWUSST NICHT an /availability/start gesendet (siehe
+  // commit-Message): das veraendert sonst die remaining_number_available.
+  const annyMinDurationMin = match.serviceInfo?.minDuration ?? null;
+  const annyBookingIntervalMin = match.serviceInfo?.bookingInterval ?? null;
+
   let rawSlots: Awaited<ReturnType<typeof fetchAnnyServiceStartSlots>> = [];
   try {
     rawSlots = await fetchAnnyServiceStartSlots(
@@ -165,7 +169,12 @@ export async function GET(
       annyConfig.token,
       annyServiceUuid,
       dateStr,
-      { organizationId },
+      {
+        organizationId,
+        // slotDurationMinutes wird NUR zur End-Zeit-Berechnung verwendet,
+        // NICHT als duration-Filter an die API gesendet.
+        slotDurationMinutes: annyMinDurationMin || annyBookingIntervalMin || null,
+      },
     );
   } catch {
     return NextResponse.json({
@@ -185,7 +194,6 @@ export async function GET(
       startIso: s.startIso,
       endIso: s.endIso,
       ...(typeof s.remaining === "number" ? { remaining: s.remaining } : {}),
-      ...(typeof s.capacity === "number" ? { capacity: s.capacity } : {}),
     }));
 
   return NextResponse.json({

@@ -2774,7 +2774,6 @@ function AddTicketOverlay({
       startIso: string;
       endIso: string;
       remaining?: number;
-      capacity?: number;
     }>
   >([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -3264,24 +3263,7 @@ function AddTicketOverlay({
                                       : "text-emerald-400",
                               )}
                             >
-                              {s.remaining > 0 ? (
-                                <>
-                                  {s.remaining} frei
-                                  {typeof s.capacity === "number" &&
-                                    s.capacity > s.remaining && (
-                                      <span
-                                        className={cn(
-                                          "ml-1 opacity-60",
-                                          isSelected ? "" : "text-slate-400",
-                                        )}
-                                      >
-                                        / {s.capacity}
-                                      </span>
-                                    )}
-                                </>
-                              ) : (
-                                "voll"
-                              )}
+                              {s.remaining > 0 ? `${s.remaining} frei` : "voll"}
                             </span>
                           )}
                         </button>
