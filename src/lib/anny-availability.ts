@@ -436,6 +436,17 @@ export interface AnnyServiceCatalogEntry {
   id: string;
   name: string;
   info: NonNullable<AnnyServiceMatch["serviceInfo"]>;
+  /**
+   * UUIDs der Resources, an die dieser Service in ANNY gebunden ist.
+   * Quelle: JSON:API `relationships.resources.data[*].id`. Leer, falls
+   * ANNY's Service-Response die Resources nicht ausliefert.
+   */
+  resourceIds: string[];
+}
+
+export interface AnnyResource {
+  id: string;
+  name: string;
 }
 
 /**
@@ -457,6 +468,9 @@ export async function fetchAllAnnyServices(
     const params = new URLSearchParams({
       "page[size]": String(pageSize),
       "page[number]": String(page),
+      // include=resources fuellt relationships.resources + included[], damit
+      // wir pro Service direkt die Resource-Zuordnung (Lift/Bahn etc.) sehen.
+      include: "resources",
     });
     if (organizationId) params.set("o", organizationId);
     try {
@@ -475,11 +489,31 @@ export async function fetchAllAnnyServices(
             : [];
       if (items.length === 0) break;
       for (const raw of items) {
-        const svc = raw as { id?: string; attributes?: Record<string, unknown>; name?: string };
+        const svc = raw as {
+          id?: string;
+          attributes?: Record<string, unknown>;
+          relationships?: Record<string, { data?: Array<{ id: string; type?: string }> | { id: string; type?: string } | null }>;
+          name?: string;
+        };
         const a = (svc.attributes ?? svc) as Record<string, unknown>;
         const id = svc.id || (a.id as string | undefined);
         const name = (a.name as string | undefined) || (a.title as string | undefined);
         if (!id || !name) continue;
+        // JSON:API: relationships.resources.data ist Array<{id,type}> oder null.
+        const resourceIds: string[] = [];
+        const rel = svc.relationships?.resources?.data;
+        if (Array.isArray(rel)) {
+          for (const r of rel) if (r?.id) resourceIds.push(String(r.id));
+        } else if (rel && typeof rel === "object" && "id" in rel && rel.id) {
+          resourceIds.push(String(rel.id));
+        }
+        // Fallback: manche ANNY-Tenants liefern `resource_ids` direkt im
+        // attributes-Block statt als relationship.
+        if (resourceIds.length === 0 && Array.isArray(a.resource_ids)) {
+          for (const rid of a.resource_ids as unknown[]) {
+            if (rid) resourceIds.push(String(rid));
+          }
+        }
         out.push({
           id: String(id),
           name,
@@ -492,7 +526,59 @@ export async function fetchAllAnnyServices(
             autoDuration: a.auto_duration === true,
             isFullDay: a.is_full_day === true,
           },
+          resourceIds,
         });
+      }
+      if (items.length < pageSize) break;
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Listet ALLE Resources des ANNY-Accounts (Lifte/Bahnen/etc.). Wird
+ * benoetigt, um aus `resourceIds` lesbare Resource-Namen zu machen.
+ *
+ * Pagination identisch zu fetchAllAnnyServices (page[size]=50, max 5 Seiten -
+ * Resources sind in der Regel deutlich weniger als Services).
+ */
+export async function fetchAllAnnyResources(
+  baseUrl: string,
+  token: string,
+  organizationId?: string | null,
+): Promise<AnnyResource[]> {
+  const out: AnnyResource[] = [];
+  const pageSize = 50;
+  for (let page = 1; page <= 5; page++) {
+    const params = new URLSearchParams({
+      "page[size]": String(pageSize),
+      "page[number]": String(page),
+    });
+    if (organizationId) params.set("o", organizationId);
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/resources?${params}`, {
+        headers: annyHeaders(token),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) break;
+      const json = (await res.json()) as unknown;
+      const items: unknown[] = Array.isArray(json)
+        ? json
+        : Array.isArray((json as { data?: unknown[] }).data)
+          ? ((json as { data: unknown[] }).data)
+          : Array.isArray((json as { items?: unknown[] }).items)
+            ? ((json as { items: unknown[] }).items)
+            : [];
+      if (items.length === 0) break;
+      for (const raw of items) {
+        const r = raw as { id?: string; attributes?: Record<string, unknown> };
+        const a = (r.attributes ?? r) as Record<string, unknown>;
+        const id = r.id || (a.id as string | undefined);
+        const name = (a.name as string | undefined) || (a.title as string | undefined);
+        if (!id || !name) continue;
+        out.push({ id: String(id), name });
       }
       if (items.length < pageSize) break;
     } catch {

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   resolveAnnyOrganizationId,
   fetchAllAnnyServices,
+  fetchAllAnnyResources,
   matchAnnyServiceInCatalog,
   suggestAnnyServiceNames,
   fetchAnnyServiceStartSlots,
@@ -12,6 +13,7 @@ import {
   fmtTimeBerlin,
   berlinOffset,
   type AnnyServiceCatalogEntry,
+  type AnnyResource,
 } from "@/lib/anny-availability";
 
 export const maxDuration = 30;
@@ -42,6 +44,14 @@ interface ServiceOverview {
   serviceType: "slot" | "day";
   annyServiceUuid: string | null;
   annyMatchedName: string | null;
+  /**
+   * Prim\u00e4re ANNY-Resource (z.B. "Seilbahn B"). Wird im UI zur Top-Level-
+   * Gruppierung verwendet. Nimmt die ERSTE Resource aus
+   * relationships.resources des ANNY-Service. null = entweder Service nicht
+   * in ANNY oder ANNY liefert keine Resource (z.B. Day-Pass-Services wie
+   * Strandbad).
+   */
+  primaryResource: { id: string; name: string } | null;
   slots: SlotEntry[];
   /** Aggregat: insgesamt EMP-Tickets dieses Service heute (ueber alle Slots). */
   totalEmpBookings: number;
@@ -162,15 +172,22 @@ export async function GET(
     ? await resolveAnnyOrganizationId(baseUrl, annyConfig.token, annyConfig.extraConfig)
     : null;
 
-  // 2. ANNY-Service-Katalog einmal holen.
+  // 2. ANNY-Service-Katalog + Resource-Katalog parallel holen.
   let catalog: AnnyServiceCatalogEntry[] = [];
+  let resources: AnnyResource[] = [];
   if (annyConfig?.token && annyServices.length > 0) {
     try {
-      catalog = await fetchAllAnnyServices(baseUrl, annyConfig.token, organizationId);
+      [catalog, resources] = await Promise.all([
+        fetchAllAnnyServices(baseUrl, annyConfig.token, organizationId),
+        fetchAllAnnyResources(baseUrl, annyConfig.token, organizationId).catch(() => []),
+      ]);
     } catch {
       catalog = [];
+      resources = [];
     }
   }
+  const resourceById = new Map<string, AnnyResource>();
+  for (const r of resources) resourceById.set(r.id, r);
 
   // 3. EMP-Tickets dieses Tages laden, fuer EMP-Booking-Zaehlung pro Slot.
   // Wir nehmen Tickets, deren `slotStart` gesetzt ist UND deren Tag dem
@@ -206,6 +223,24 @@ export async function GET(
     },
   });
 
+  // Helper: extrahiert primaere Resource aus einem Catalog-Match (entweder
+  // direkt aus match.resourceIds[0] oder aus den geladenen Slots als
+  // Fallback fuer Tenants, deren Service-Endpoint keine Resources mit
+  // ausliefert).
+  const resolvePrimaryResource = (
+    catalogResourceIds: string[] | undefined,
+    slotResourceIds: string[] | undefined,
+  ): { id: string; name: string } | null => {
+    const candidates = (catalogResourceIds && catalogResourceIds.length > 0
+      ? catalogResourceIds
+      : slotResourceIds) ?? [];
+    for (const id of candidates) {
+      const r = resourceById.get(id);
+      if (r) return { id: r.id, name: r.name };
+    }
+    return null;
+  };
+
   // 4. Pro Service parallel die ANNY-Slots holen.
   const perService: ServiceOverview[] = await Promise.all(
     annyServices.map(async (svc) => {
@@ -229,6 +264,7 @@ export async function GET(
           serviceType: "slot",
           annyServiceUuid: null,
           annyMatchedName: null,
+          primaryResource: null,
           slots: [],
           totalEmpBookings: empCount,
           // Wenn ANNY den Service nicht kennt, koennen wir Verfuegbarkeit
@@ -286,6 +322,10 @@ export async function GET(
           serviceType,
           annyServiceUuid: match.id,
           annyMatchedName: match.name,
+          // Day-Pass-Services haben in ANNY oft KEINE Resource (Strandbad,
+          // Aquapark etc.) - dann bleibt das null und sie landen im UI in
+          // der Sonstige-Gruppe.
+          primaryResource: resolvePrimaryResource(match.resourceIds, undefined),
           slots: [],
           totalEmpBookings: empCount,
           availableToday,
@@ -354,6 +394,18 @@ export async function GET(
         }
       }
 
+      // Fallback fuer Resource-Lookup: wenn der Service-Endpoint keine
+      // Resources auslieferte, ziehen wir sie aus den Slots (jeder Slot
+      // bringt resource_ids mit).
+      const slotResourceIds: string[] = [];
+      for (const s of rawSlots) {
+        if (Array.isArray(s.resourceIds)) {
+          for (const rid of s.resourceIds) {
+            if (!slotResourceIds.includes(rid)) slotResourceIds.push(rid);
+          }
+        }
+      }
+
       return {
         serviceId: svc.id,
         name: svc.name,
@@ -361,6 +413,7 @@ export async function GET(
         serviceType,
         annyServiceUuid: match.id,
         annyMatchedName: match.name,
+        primaryResource: resolvePrimaryResource(match.resourceIds, slotResourceIds),
         slots,
         totalEmpBookings: empCount,
         availableToday,
@@ -389,6 +442,7 @@ export async function GET(
       serviceType: "day",
       annyServiceUuid: null,
       annyMatchedName: null,
+      primaryResource: null,
       slots: [],
       totalEmpBookings: empCount,
       availableToday: true,

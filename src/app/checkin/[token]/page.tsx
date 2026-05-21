@@ -32,6 +32,7 @@ import {
   ChevronDown,
   Megaphone,
   Send,
+  Mountain,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -169,6 +170,8 @@ interface SlotOverviewService {
   serviceType: "slot" | "day";
   annyServiceUuid: string | null;
   annyMatchedName: string | null;
+  /** Primaere ANNY-Resource (Lift/Bahn). Steuert Top-Level-Gruppierung im UI. */
+  primaryResource: { id: string; name: string } | null;
   slots: SlotOverviewSlot[];
   totalEmpBookings: number;
   /** ANNY meldet fuer dieses Datum keine Verfuegbarkeit -> Service ausblenden. */
@@ -1841,6 +1844,43 @@ function splitServiceLabel(
 }
 
 /**
+ * Top-Level-Gruppierung nach ANNY-Resource (Lift/Bahn). Services ohne
+ * Resource (Day-Pass-Services wie Strandbad/Aquapark, oder ohne ANNY-Match)
+ * landen in einer "Sonstige"-Gruppe am Ende.
+ *
+ * Reihenfolge: erstes Auftauchen einer Resource (deterministisch durch
+ * Service-Reihenfolge des Backend).
+ */
+function groupByResource(services: SlotOverviewService[]): Array<{
+  resourceId: string | null;
+  resourceName: string;
+  services: SlotOverviewService[];
+}> {
+  const order: (string | null)[] = [];
+  const buckets = new Map<string | null, SlotOverviewService[]>();
+  for (const sv of services) {
+    const key = sv.primaryResource?.id ?? null;
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+      order.push(key);
+    }
+    buckets.get(key)!.push(sv);
+  }
+  // Sonstige (null) ans Ende sortieren.
+  order.sort((a, b) => {
+    if (a === b) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return 0;
+  });
+  return order.map((id) => {
+    const members = buckets.get(id)!;
+    const name = id ? (members[0].primaryResource?.name ?? "Sonstige") : "Sonstige";
+    return { resourceId: id, resourceName: name, services: members };
+  });
+}
+
+/**
  * Gruppiert Services nach gemeinsamen Praefix-Namen. Zwei Strategien:
  *   a) " - "-Separator: "Oeffentlicher Betrieb - 1 Stunde", "... - 2 Stunden",
  *      "... - Tageskarte" landen in derselben Gruppe "Oeffentlicher Betrieb".
@@ -1928,7 +1968,10 @@ function SlotOverviewSection({
     (sv) => sv.availableToday || sv.totalEmpBookings > 0,
   );
   if (visible.length === 0) return null;
-  const grouped = groupOverviewServices(visible);
+  // Top-Level: Resources (Lifte/Bahnen). Innerhalb jeder Resource dann
+  // die bestehende Service-Gruppierung (Strandbad/Aquapark/Varianten).
+  const resourceGroups = groupByResource(visible);
+  const hasMultipleResources = resourceGroups.length > 1;
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -1956,16 +1999,34 @@ function SlotOverviewSection({
           )}
         </div>
       </div>
-      <div className="rounded-xl border border-slate-800/70 bg-slate-900/40 p-3 space-y-3">
-        {grouped.map(({ group, members }) => (
-          <SlotOverviewGroup
-            key={group}
-            group={group}
-            members={members}
-            currentDate={currentDate}
-            onPick={onPick}
-          />
-        ))}
+      <div className="rounded-xl border border-slate-800/70 bg-slate-900/40 p-3 space-y-4">
+        {resourceGroups.map(({ resourceId, resourceName, services: resSvcs }) => {
+          const grouped = groupOverviewServices(resSvcs);
+          return (
+            <div key={resourceId ?? "__none__"} className="space-y-3">
+              {hasMultipleResources && (
+                <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider text-sky-300/90 border-b border-sky-500/20 pb-1">
+                  <Mountain className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                  <span>{resourceName}</span>
+                  <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                    · {resSvcs.length} {resSvcs.length === 1 ? "Service" : "Services"}
+                  </span>
+                </div>
+              )}
+              <div className="space-y-3">
+                {grouped.map(({ group, members }) => (
+                  <SlotOverviewGroup
+                    key={group}
+                    group={group}
+                    members={members}
+                    currentDate={currentDate}
+                    onPick={onPick}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
