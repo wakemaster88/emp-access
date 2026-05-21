@@ -2755,12 +2755,28 @@ function AddTicketOverlay({
   const [accessAreaId, setAccessAreaId] = useState(
     voucher?.accessAreaId != null ? String(voucher.accessAreaId) : "none",
   );
-  // Optionale Datums-Felder (yyyy-mm-dd). Leer = Service-Defaults oder
-  // Fallback "heute". Wichtig fuer im Voraus verkaufte Tickets (z.B.
-  // Anfaengerkurs in zwei Tagen).
+  // Optionale Datums-Felder. Format je nach `dateMode`:
+  //   * "range"    -> yyyy-mm-dd (Abo: Datum von/bis)
+  //   * "datetime" -> yyyy-mm-ddTHH:mm (Kurs: Datum + Uhrzeit von/bis)
+  //   * "single"   -> yyyy-mm-dd, nur startDate sichtbar (Tagesticket/DURATION)
+  // Leer = Service-/Abo-Defaults oder Fallback "heute".
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Effektiver Datums-Modus fuer die UI:
+  //   * Abo gewaehlt              -> "range"    (Zeitraum von/bis als Datum)
+  //   * Service mit TIME_SLOT     -> "datetime" (Kurs: Datum + Uhrzeit)
+  //   * sonst (Ticket/DURATION)   -> "single"   (nur ein Datum)
+  const dateMode: "single" | "range" | "datetime" = useMemo(() => {
+    if (subscriptionId !== "none") return "range";
+    if (serviceId !== "none") {
+      const svc = services.find((s) => String(s.id) === serviceId);
+      if (svc?.defaultValidityType === "TIME_SLOT") return "datetime";
+    }
+    if (voucher?.validityType === "TIME_SLOT") return "datetime";
+    return "single";
+  }, [serviceId, subscriptionId, services, voucher]);
   const [error, setError] = useState("");
   const [pendingConflict, setPendingConflict] = useState<{
     label: string;
@@ -2861,19 +2877,46 @@ function AddTicketOverlay({
       }
     }
 
-    // Explizit gewaehltes Datum (z.B. Anfaengerkurs in zwei Tagen)
-    // ueberschreibt die Service-/Voucher-Defaults. Wenn nur startDate
-    // angegeben ist, gilt das Ticket nur an diesem Tag.
-    if (startDate) {
+    // Explizite Datums-/Zeit-Eingabe ueberschreibt die Service-/Voucher-
+    // Defaults. Format der Werte haengt vom UI-Modus (`dateMode`) ab.
+    if (dateMode === "datetime") {
+      // Kurs-Modus: yyyy-mm-ddTHH:mm. Datum + Uhrzeit getrennt ans Backend
+      // (startDate/endDate als ISO-Datum, slotStart/slotEnd als HH:MM).
+      if (startDate) {
+        const sd = new Date(startDate);
+        if (!isNaN(sd.getTime())) {
+          payload.startDate = sd.toISOString();
+          const t = startDate.split("T")[1];
+          if (t) payload.slotStart = t.length === 5 ? `${t}:00` : t;
+        }
+      }
+      if (endDate) {
+        const ed = new Date(endDate);
+        if (!isNaN(ed.getTime())) {
+          payload.endDate = ed.toISOString();
+          const t = endDate.split("T")[1];
+          if (t) payload.slotEnd = t.length === 5 ? `${t}:00` : t;
+        }
+      }
+    } else if (dateMode === "range") {
+      // Zeitraum (Abo): zwei reine Datumsfelder, jeweils Tagesgrenze.
+      if (startDate) {
+        const sd = new Date(`${startDate}T00:00:00`);
+        if (!isNaN(sd.getTime())) payload.startDate = sd.toISOString();
+      }
+      if (endDate) {
+        const ed = new Date(`${endDate}T23:59:59.999`);
+        if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
+      }
+    } else if (startDate) {
+      // single: ein Datum -> Ticket gilt nur an diesem Tag (ausser DURATION,
+      // dort kein endDate, weil sonst der Timer schon mit dem Tag laeuft).
       const sd = new Date(`${startDate}T00:00:00`);
       if (!isNaN(sd.getTime())) payload.startDate = sd.toISOString();
-    }
-    if (endDate) {
-      const ed = new Date(`${endDate}T23:59:59.999`);
-      if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
-    } else if (startDate && payload.validityType !== "DURATION") {
-      const ed = new Date(`${startDate}T23:59:59.999`);
-      if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
+      if (payload.validityType !== "DURATION") {
+        const ed = new Date(`${startDate}T23:59:59.999`);
+        if (!isNaN(ed.getTime())) payload.endDate = ed.toISOString();
+      }
     }
 
     // Fallback: aktuellen Tag als Datum setzen, wenn kein Datum aus
@@ -3064,15 +3107,36 @@ function AddTicketOverlay({
                 <select
                   value={serviceId}
                   onChange={(e) => {
-                    setServiceId(e.target.value);
-                    if (e.target.value !== "none") {
-                      const svc = services.find((s) => String(s.id) === e.target.value);
-                      if (svc?.areaIds?.length) setAccessAreaId(String(svc.areaIds[0]));
-                      // Service-Default-Daten in die UI uebernehmen, damit
-                      // der User sieht, was sonst beim Submit auto-gesetzt
-                      // werden wuerde - und es bei Bedarf umstellen kann.
-                      if (svc?.defaultStartDate) setStartDate(toDateInput(svc.defaultStartDate));
-                      if (svc?.defaultEndDate) setEndDate(toDateInput(svc.defaultEndDate));
+                    const newId = e.target.value;
+                    setServiceId(newId);
+                    // Beim Wechsel des Service-Typs erst leeren, damit kein
+                    // Wert aus dem vorherigen Mode (z.B. datetime-local von
+                    // einem Kurs) als reines Datum stehen bleibt.
+                    setStartDate("");
+                    setEndDate("");
+                    if (newId === "none") return;
+                    const svc = services.find((s) => String(s.id) === newId);
+                    if (!svc) return;
+                    if (svc.areaIds?.length) setAccessAreaId(String(svc.areaIds[0]));
+                    // Service-Defaults ins UI-Format uebernehmen, damit der
+                    // User sieht, was beim Submit auto-gesetzt werden wuerde
+                    // - und es bei Bedarf umstellen kann.
+                    if (svc.defaultValidityType === "TIME_SLOT") {
+                      const day = svc.defaultStartDate ? toDateInput(svc.defaultStartDate) : "";
+                      const dayEnd = svc.defaultEndDate ? toDateInput(svc.defaultEndDate) : day;
+                      if (day && svc.defaultSlotStart) {
+                        setStartDate(`${day}T${svc.defaultSlotStart.slice(0, 5)}`);
+                      } else if (day) {
+                        setStartDate(day);
+                      }
+                      if (dayEnd && svc.defaultSlotEnd) {
+                        setEndDate(`${dayEnd}T${svc.defaultSlotEnd.slice(0, 5)}`);
+                      } else if (dayEnd) {
+                        setEndDate(dayEnd);
+                      }
+                    } else {
+                      if (svc.defaultStartDate) setStartDate(toDateInput(svc.defaultStartDate));
+                      if (svc.defaultEndDate) setEndDate(toDateInput(svc.defaultEndDate));
                     }
                   }}
                   className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
@@ -3112,11 +3176,19 @@ function AddTicketOverlay({
               <select
                 value={subscriptionId}
                 onChange={(e) => {
-                  setSubscriptionId(e.target.value);
-                  if (e.target.value !== "none") {
-                    const sub = subscriptions.find((s) => String(s.id) === e.target.value);
-                    if (sub?.areaIds?.length) setAccessAreaId(String(sub.areaIds[0]));
-                  }
+                  const newId = e.target.value;
+                  setSubscriptionId(newId);
+                  // Mode wechselt potenziell auf "range" - alte Werte aus
+                  // Single-/Datetime-Mode duerfen nicht stehen bleiben.
+                  setStartDate("");
+                  setEndDate("");
+                  if (newId === "none") return;
+                  const sub = subscriptions.find((s) => String(s.id) === newId);
+                  if (!sub) return;
+                  if (sub.areaIds?.length) setAccessAreaId(String(sub.areaIds[0]));
+                  // Abo-Defaults (Saisonstart/-ende) ins UI uebernehmen.
+                  if (sub.defaultStartDate) setStartDate(toDateInput(sub.defaultStartDate));
+                  if (sub.defaultEndDate) setEndDate(toDateInput(sub.defaultEndDate));
                 }}
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               >
@@ -3128,11 +3200,73 @@ function AddTicketOverlay({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Datums-Eingabe haengt vom gewaehlten Ticket-Typ ab:
+              - Abo (range):    Datum von/bis (Saisonzeitraum)
+              - Kurs (datetime): Datum + Uhrzeit von/bis
+              - Sonst (single): nur ein Datum (Tagesticket/DURATION) */}
+          {dateMode === "range" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Gültig ab <span className="text-slate-600 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Gültig bis <span className="text-slate-600 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                />
+              </div>
+            </div>
+          )}
+
+          {dateMode === "datetime" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" />
+                  Start <span className="text-slate-600 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" />
+                  Ende <span className="text-slate-600 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                />
+              </div>
+            </div>
+          )}
+
+          {dateMode === "single" && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
-                Gültig ab <span className="text-slate-600 font-normal">(optional)</span>
+                Datum <span className="text-slate-600 font-normal">(optional)</span>
               </label>
               <input
                 type="date"
@@ -3141,19 +3275,7 @@ function AddTicketOverlay({
                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                Gültig bis <span className="text-slate-600 font-normal">(optional)</span>
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
-              />
-            </div>
-          </div>
+          )}
 
           {pendingConflict && (
             <div className="bg-amber-950/80 border border-amber-600/60 rounded-xl p-4 text-sm text-amber-100 space-y-3">
