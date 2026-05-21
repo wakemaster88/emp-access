@@ -1878,7 +1878,6 @@ const MANUAL_GROUP_ORDER = [
   "Strandbad",
   "Aquapark",
   "SUP",
-  "Oeffentlicher Betrieb",
   "Seilbahn A",
   "Seilbahn B",
   "Uebungslift",
@@ -1892,16 +1891,13 @@ const MANUAL_GROUP_RULES: Array<{ group: ManualGroup; test: (n: string) => boole
   { group: "Aquapark", test: (n) => /^aquapark/i.test(n) },
   // SUP nur als ganzes Wort matchen (nicht "Support" o.ae.).
   { group: "SUP", test: (n) => /\bsup\b/i.test(n) },
-  // Oeffentlicher Betrieb: eigene Gruppe mit den 1h/2h/Tageskarte-Varianten.
-  // Steht vor "Seilbahn A" damit die OB-Services nicht versehentlich dort
-  // landen (auch wenn der OB physisch auf Seilbahn A laeuft - im Shop-Monitor
-  // ist OB eine eigenstaendige Ticket-Familie und soll als Gruppe sichtbar
-  // sein).
+  // Seilbahn A: Oeffentlicher Betrieb (laeuft auf der grossen Bahn) +
+  // Exklusive Bahnmiete A. Werden unterhalb des Seilbahn-A-Resource-
+  // Headers als zwei eigene Service-Sub-Gruppen (per Praefix) gerendert.
   {
-    group: "Oeffentlicher Betrieb",
+    group: "Seilbahn A",
     test: (n) => /öffentlicher\s+betrieb/i.test(n) || /oeffentlicher\s+betrieb/i.test(n),
   },
-  // Seilbahn A: nur Exklusive Bahnmiete A.
   {
     group: "Seilbahn A",
     test: (n) => /exklusive?\s+bahnmiete\s*a\b/i.test(n) || /bahnmiete\s+seilbahn\s+a\b/i.test(n),
