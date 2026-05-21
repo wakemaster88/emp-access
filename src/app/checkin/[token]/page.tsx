@@ -109,6 +109,8 @@ interface ServiceData extends DefaultValidity {
   id: number;
   name: string;
   areaIds?: number[];
+  /** Service hat mindestens eine ANNY-Resource-Verknuepfung -> Slot-Buchung. */
+  hasAnnyLink?: boolean;
 }
 
 interface SubOption extends DefaultValidity {
@@ -2773,14 +2775,20 @@ function AddTicketOverlay({
   const [hasAnnyLink, setHasAnnyLink] = useState(false);
 
   // Effektiver Datums-Modus fuer die UI:
-  //   * Service mit TIME_SLOT     -> "datetime" (Kurs: Datum + Uhrzeit)
-  //   * sonst (Ticket/DURATION)   -> "single"   (nur ein Datum)
+  //   * Service mit TIME_SLOT oder ANNY-Verknuepfung -> "datetime" (Kurs)
+  //   * sonst (Ticket/DURATION)                      -> "single" (nur Datum)
   // Abos werden in diesem Dialog gar nicht angeboten - reine Abo-Vergabe
   // laeuft ueber das Backoffice.
+  //
+  // Der `hasAnnyLink`-Pfad ist wichtig, weil manche Kurse im Backoffice als
+  // DATE_RANGE/NULL konfiguriert sind, obwohl sie de-facto Slot-Buchungen
+  // sind. Sobald eine ANNY-Resource haengt, behandeln wir den Service als
+  // Slot-Service und ziehen Slots aus ANNY.
   const dateMode: "single" | "datetime" = useMemo(() => {
     if (serviceId !== "none") {
       const svc = services.find((s) => String(s.id) === serviceId);
       if (svc?.defaultValidityType === "TIME_SLOT") return "datetime";
+      if (svc?.hasAnnyLink) return "datetime";
     }
     if (voucher?.validityType === "TIME_SLOT") return "datetime";
     return "single";
@@ -2912,6 +2920,10 @@ function AddTicketOverlay({
     if (dateMode === "datetime") {
       // Kurs-Modus: yyyy-mm-ddTHH:mm. Datum + Uhrzeit getrennt ans Backend
       // (startDate/endDate als ISO-Datum, slotStart/slotEnd als HH:MM).
+      // Sobald wir Slots haben, ist das Ticket eindeutig ein TIME_SLOT -
+      // egal was im Service als defaultValidityType konfiguriert war. So
+      // funktioniert es auch fuer "Anfaengerkurs" mit DATE_RANGE-Default.
+      payload.validityType = "TIME_SLOT";
       if (startDate) {
         const sd = new Date(startDate);
         if (!isNaN(sd.getTime())) {
@@ -3124,7 +3136,9 @@ function AddTicketOverlay({
                   // Service-Defaults ins UI-Format uebernehmen, damit der
                   // User sieht, was beim Submit auto-gesetzt werden wuerde
                   // - und es bei Bedarf umstellen kann.
-                  if (svc.defaultValidityType === "TIME_SLOT") {
+                  const isSlotService =
+                    svc.defaultValidityType === "TIME_SLOT" || !!svc.hasAnnyLink;
+                  if (isSlotService) {
                     const day = svc.defaultStartDate
                       ? toDateInput(svc.defaultStartDate)
                       : toDateInput(new Date());
