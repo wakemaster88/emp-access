@@ -156,6 +156,7 @@ export async function GET(
   // nur das Datum.
   const minDur = match.serviceInfo?.minDuration ?? null;
   const isDayService =
+    match.serviceInfo?.isFullDay === true ||
     (minDur != null && minDur >= 24 * 60) ||
     match.serviceInfo?.autoDuration === true;
   const serviceType: "slot" | "day" = isDayService ? "day" : "slot";
@@ -207,15 +208,22 @@ export async function GET(
     });
   }
 
-  // Nur tatsaechlich verfuegbare Start-Intervalle zeigen.
+  // Wir reichen ALLE Slots durch (auch nicht-verfuegbare), damit das UI
+  // dem Mitarbeiter ehrlich zeigt: "diese Zeit kennt ANNY, ist aber voll".
+  // Filtern wir hier weg, sieht das im UI so aus, als gaebe es den Slot gar
+  // nicht - das ist verwirrend, vor allem wenn nur 1 Slot tatsaechlich frei
+  // ist.
   const slots: AvailabilitySlot[] = rawSlots
-    .filter((s) => s.available && s.startTime)
+    .filter((s) => s.startTime)
     .map((s) => ({
       startTime: s.startTime,
       endTime: s.endTime,
       startIso: s.startIso,
       endIso: s.endIso,
+      available: s.available,
+      ...(typeof s.capacity === "number" ? { capacity: s.capacity } : {}),
       ...(typeof s.remaining === "number" ? { remaining: s.remaining } : {}),
+      ...(s.unavailabilityType ? { unavailabilityType: s.unavailabilityType } : {}),
     }));
 
   return NextResponse.json({
@@ -223,6 +231,7 @@ export async function GET(
     hasAnnyLink: true,
     resourceCount: 1,
     serviceType,
+    serviceInfo: match.serviceInfo,
     ...(debug
       ? {
           rawAnnySlots: rawSlots,

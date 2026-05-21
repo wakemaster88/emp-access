@@ -157,6 +157,29 @@ function personName(t: { firstName: string | null; lastName: string | null; name
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
 }
 
+/**
+ * Uebersetzt ANNY's unavailability_type (booked_out, lead_time_conflict,
+ * under_min_duration, staggered_conflict) in ein knappes Label fuer die
+ * Slot-Buttons. Quelle: https://developers.anny.co/guides/availability
+ */
+function annyReasonLabel(reason: string | undefined): string {
+  switch (reason) {
+    case "booked_out":
+      return "voll";
+    case "lead_time_conflict":
+      return "Vorlauf";
+    case "under_min_duration":
+      return "zu kurz";
+    case "staggered_conflict":
+      return "Konflikt";
+    case undefined:
+    case "":
+      return "";
+    default:
+      return reason;
+  }
+}
+
 function calcAge(birthDate: string | null | undefined): number | null {
   if (!birthDate) return null;
   const b = new Date(birthDate);
@@ -2773,7 +2796,10 @@ function AddTicketOverlay({
       endTime: string;
       startIso: string;
       endIso: string;
+      available?: boolean;
+      capacity?: number;
       remaining?: number;
+      unavailabilityType?: string;
     }>
   >([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -2847,6 +2873,7 @@ function AddTicketOverlay({
           hasAnnyLink?: boolean;
           note?: string;
           serviceType?: "slot" | "day";
+          serviceInfo?: unknown;
         }) => {
           if (cancelled) return;
           setSlots(Array.isArray(data.slots) ? data.slots : []);
@@ -3262,37 +3289,75 @@ function AddTicketOverlay({
                       const expectedStart = slotDate ? `${slotDate}T${s.startTime}` : "";
                       const isSelected =
                         !!expectedStart && startDate === expectedStart;
+                      // ANNY-Statuslogik:
+                      //   * available === false           -> Slot komplett gesperrt (UI: disabled)
+                      //   * remaining === 0 (oder <0)     -> ausgebucht (UI: disabled)
+                      //   * sonst                         -> buchbar
+                      const isBlocked = s.available === false;
+                      const isFull =
+                        !isBlocked &&
+                        typeof s.remaining === "number" &&
+                        s.remaining <= 0;
+                      const isDisabled = isBlocked || isFull;
+                      const remaining =
+                        typeof s.remaining === "number" ? s.remaining : null;
+                      const capacity =
+                        typeof s.capacity === "number" ? s.capacity : null;
+                      // Status-Label:
+                      //   * "voll" wenn 0 verbleibend / gesperrt
+                      //   * "X frei" wenn Kapazitaet unbekannt
+                      //   * "X/Y frei" wenn beide bekannt und unterschiedlich
+                      let statusLabel = "";
+                      if (isBlocked) {
+                        statusLabel = annyReasonLabel(s.unavailabilityType) || "voll";
+                      } else if (isFull) {
+                        statusLabel = "voll";
+                      } else if (remaining != null && capacity != null && capacity !== remaining) {
+                        statusLabel = `${remaining}/${capacity} frei`;
+                      } else if (remaining != null) {
+                        statusLabel = `${remaining} frei`;
+                      } else if (capacity != null) {
+                        statusLabel = `${capacity} frei`;
+                      }
                       return (
                         <button
                           key={`${s.startTime}-${s.endTime}`}
                           type="button"
+                          disabled={isDisabled}
+                          title={
+                            isBlocked
+                              ? `ANNY: ${s.unavailabilityType || "blockiert"}`
+                              : undefined
+                          }
                           onClick={() => {
-                            if (!slotDate) return;
+                            if (!slotDate || isDisabled) return;
                             setStartDate(`${slotDate}T${s.startTime}`);
                             setEndDate(`${slotDate}T${s.endTime}`);
                           }}
                           className={cn(
-                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors active:scale-95 flex flex-col items-center justify-center gap-0.5",
-                            isSelected
-                              ? "bg-emerald-600 border-emerald-500 text-white"
-                              : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:border-slate-600",
+                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors flex flex-col items-center justify-center gap-0.5",
+                            isDisabled
+                              ? "bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed"
+                              : isSelected
+                                ? "bg-emerald-600 border-emerald-500 text-white active:scale-95"
+                                : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:border-slate-600 active:scale-95",
                           )}
                         >
                           <span>{s.startTime}–{s.endTime}</span>
-                          {typeof s.remaining === "number" && (
+                          {statusLabel && (
                             <span
                               className={cn(
                                 "text-[10px] font-normal leading-tight",
-                                isSelected
-                                  ? "text-emerald-50"
-                                  : s.remaining <= 0
-                                    ? "text-rose-400"
-                                    : s.remaining <= 2
+                                isDisabled
+                                  ? "text-rose-400/80"
+                                  : isSelected
+                                    ? "text-emerald-50"
+                                    : remaining != null && capacity != null && remaining <= Math.max(1, Math.floor(capacity * 0.2))
                                       ? "text-amber-400"
                                       : "text-emerald-400",
                               )}
                             >
-                              {s.remaining > 0 ? `${s.remaining} frei` : "voll"}
+                              {statusLabel}
                             </span>
                           )}
                         </button>

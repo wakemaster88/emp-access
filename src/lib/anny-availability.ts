@@ -249,6 +249,7 @@ export interface AnnyServiceMatch {
     bookingInterval: number | null;
     hasFlexibleDuration: boolean;
     autoDuration: boolean;
+    isFullDay: boolean;
   };
 }
 
@@ -346,6 +347,7 @@ export async function fetchAnnyServiceMatch(
             typeof a.booking_interval === "number" ? (a.booking_interval as number) : null,
           hasFlexibleDuration: a.has_flexible_duration === true,
           autoDuration: a.auto_duration === true,
+          isFullDay: a.is_full_day === true,
         };
         if (!exactMatch && wantedSet.has(lower)) {
           exactMatch = String(id);
@@ -386,21 +388,39 @@ export async function fetchAnnyServiceIdByName(
   return match.id;
 }
 
+/**
+ * Ein Slot wie ANNY's `/api/v1/availability/start` ihn ausspuckt - 1:1
+ * Mapping der relevanten Felder, plus lokal berechnete End-Zeit.
+ *
+ * ANNY-Doku (https://developers.anny.co/guides/availability, Step 3):
+ *   {
+ *     "start_date": "...",
+ *     "available": true,
+ *     "number_available": 3,            // GESAMTKAPAZITAET dieses Slots
+ *     "remaining_number_available": 2,  // davon noch frei
+ *     "resource_ids": ["r1","r2","r3"]
+ *   }
+ *
+ * Wir mappen:
+ *   capacity            = number_available           (max. moegliche Bookings)
+ *   remaining           = remaining_number_available (noch freie Bookings)
+ *   resourceIds         = resource_ids               (Resources, die diesen Slot
+ *                                                     aktuell noch bedienen koennen)
+ *   unavailabilityType  = unavailability_type        (`booked_out`,
+ *                                                     `lead_time_conflict`,
+ *                                                     `under_min_duration`,
+ *                                                     `staggered_conflict`)
+ */
 export interface ServiceStartSlot {
   startIso: string;
   endIso: string;
   startTime: string;
   endTime: string;
   available: boolean;
-  /**
-   * Aktuell freie Plaetze in diesem Slot. Bei ANNY's /availability/start
-   * entspricht das `number_available` - das ist die Anzahl der Resources,
-   * die diesen Slot bedienen koennten (und noch nicht durch Bookings
-   * blockiert sind). `remaining_number_available` ist NICHT die freie
-   * Anzahl, sondern eine ANNY-interne Restberechnung (vmtl. fuer Multi-
-   * Quantity-Bookings). Quelle: Beobachtung in Live-Setup.
-   */
+  capacity?: number;
   remaining?: number;
+  resourceIds?: string[];
+  unavailabilityType?: string;
 }
 
 /**
@@ -470,29 +490,39 @@ export async function fetchAnnyServiceStartSlots(
     for (const raw of items) {
       const it = raw as {
         start_date?: string;
+        end_date?: string;
         available?: boolean;
         number_available?: number;
         remaining_number_available?: number;
         unavailability_type?: string;
+        resource_ids?: string[];
       };
       const startIso = it.start_date;
       if (!startIso) continue;
       const isAvailable = it.available !== false;
-      let endIso = "";
-      if (slotDurationForDisplay) {
+      // ANNY liefert seit kurzem teilweise auch `end_date` mit. Wenn nicht,
+      // berechnen wir es lokal aus start + slotDurationForDisplay.
+      let endIso = typeof it.end_date === "string" ? it.end_date : "";
+      if (!endIso && slotDurationForDisplay) {
         const s = new Date(startIso);
         if (!isNaN(s.getTime())) {
           endIso = new Date(s.getTime() + slotDurationForDisplay * 60000).toISOString();
         }
       }
-      result.push({
+      const slot: ServiceStartSlot = {
         startIso,
         endIso,
         startTime: fmtTimeBerlin(startIso),
         endTime: endIso ? fmtTimeBerlin(endIso) : "",
         available: isAvailable,
-        remaining: it.number_available,
-      });
+      };
+      if (typeof it.number_available === "number") slot.capacity = it.number_available;
+      if (typeof it.remaining_number_available === "number")
+        slot.remaining = it.remaining_number_available;
+      if (Array.isArray(it.resource_ids)) slot.resourceIds = it.resource_ids;
+      if (typeof it.unavailability_type === "string" && it.unavailability_type)
+        slot.unavailabilityType = it.unavailability_type;
+      result.push(slot);
     }
 
     return result;
@@ -521,8 +551,14 @@ export type AvailabilitySlot = {
   endTime: string;
   startIso: string;
   endIso: string;
-  /** Aktuell freie Plaetze (ANNY: number_available). */
+  /** Gesamtkapazitaet des Slots (ANNY: number_available). */
+  capacity?: number;
+  /** Aktuell freie Plaetze (ANNY: remaining_number_available). */
   remaining?: number;
+  /** false = ANNY meldet diesen Slot als gesperrt. */
+  available?: boolean;
+  /** ANNY-Grund fuer Nicht-Verfuegbarkeit (booked_out, lead_time_conflict, ...). */
+  unavailabilityType?: string;
 };
 
 /** Erzeugt deduplizierte, sortierte Slots aus Roh-Perioden. */
