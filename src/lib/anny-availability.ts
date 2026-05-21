@@ -139,6 +139,13 @@ export interface AnnyServiceMatch {
   id: string | null;
   /** Alle bei ANNY gefundenen Service-Namen (Debug/Diagnose). */
   knownNames: string[];
+  /** Debug-Info pro Seite (HTTP-Status, Item-Count, Body-Preview bei Leere). */
+  debug: Array<{
+    page: number;
+    status: number;
+    items: number;
+    bodyPreview?: string;
+  }>;
 }
 
 /**
@@ -163,7 +170,8 @@ export async function fetchAnnyServiceMatch(
   serviceNames: string[],
 ): Promise<AnnyServiceMatch> {
   const knownNames: string[] = [];
-  if (serviceNames.length === 0) return { id: null, knownNames };
+  const debug: AnnyServiceMatch["debug"] = [];
+  if (serviceNames.length === 0) return { id: null, knownNames, debug };
   const wantedLower = serviceNames.map((n) => n.toLowerCase());
   const wantedSet = new Set(wantedLower);
 
@@ -175,18 +183,43 @@ export async function fetchAnnyServiceMatch(
       "page[size]": "100",
       "page[number]": String(page),
     });
+    let status = 0;
+    let items: unknown[] = [];
+    let bodyText = "";
     try {
       const res = await fetch(`${baseUrl}/api/v1/services?${params}`, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) break;
-      const json = await res.json();
-      const items: unknown[] = Array.isArray(json)
+      status = res.status;
+      if (!res.ok) {
+        try { bodyText = (await res.text()).slice(0, 400); } catch { /* ignore */ }
+        debug.push({ page, status, items: 0, bodyPreview: bodyText });
+        break;
+      }
+      bodyText = await res.text();
+      let json: unknown = null;
+      try {
+        json = JSON.parse(bodyText);
+      } catch {
+        debug.push({ page, status, items: 0, bodyPreview: bodyText.slice(0, 400) });
+        break;
+      }
+      items = Array.isArray(json)
         ? json
         : Array.isArray((json as { data?: unknown[] }).data)
           ? ((json as { data: unknown[] }).data)
-          : [];
+          : Array.isArray((json as { items?: unknown[] }).items)
+            ? ((json as { items: unknown[] }).items)
+            : Array.isArray((json as { results?: unknown[] }).results)
+              ? ((json as { results: unknown[] }).results)
+              : [];
+      debug.push({
+        page,
+        status,
+        items: items.length,
+        ...(items.length === 0 ? { bodyPreview: bodyText.slice(0, 400) } : {}),
+      });
       if (items.length === 0) break;
       for (const raw of items) {
         const svc = raw as { id?: string; attributes?: Record<string, unknown>; name?: string };
@@ -205,12 +238,14 @@ export async function fetchAnnyServiceMatch(
         }
       }
       if (items.length < 100) break;
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      debug.push({ page, status, items: 0, bodyPreview: `ERR: ${msg}` });
       break;
     }
   }
 
-  return { id: exactMatch || substringMatch, knownNames };
+  return { id: exactMatch || substringMatch, knownNames, debug };
 }
 
 /**

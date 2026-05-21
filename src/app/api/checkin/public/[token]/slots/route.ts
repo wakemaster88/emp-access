@@ -111,6 +111,8 @@ export async function GET(
 
   const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
 
+  const debug = request.nextUrl.searchParams.get("debug") === "1";
+
   const match = await fetchAnnyServiceMatch(
     baseUrl,
     annyConfig.token,
@@ -123,13 +125,20 @@ export async function GET(
     // springen.
     const preview = match.knownNames.slice(0, 6).join(", ");
     const more = match.knownNames.length > 6 ? `, +${match.knownNames.length - 6} weitere` : "";
+    const debugSummary = match.debug
+      .map((d) => `p${d.page}:${d.status}/${d.items}${d.bodyPreview ? ` [${d.bodyPreview.replace(/\s+/g, " ").slice(0, 120)}]` : ""}`)
+      .join(" | ");
     return NextResponse.json({
       slots: [] as AvailabilitySlot[],
       hasAnnyLink: true,
       resourceCount: 0,
-      note: `ANNY-Service nicht gefunden. Gesucht: "${uniqueNames.join('", "')}". ANNY kennt: ${preview}${more}.`,
+      note:
+        match.knownNames.length === 0
+          ? `ANNY's /services lieferte 0 Eintraege. ${debugSummary}`
+          : `ANNY-Service nicht gefunden. Gesucht: "${uniqueNames.join('", "')}". ANNY kennt: ${preview}${more}.`,
       triedNames: uniqueNames,
       annyServiceNames: match.knownNames,
+      ...(debug ? { debugMatch: match.debug, baseUrl } : {}),
     });
   }
   const annyServiceUuid = match.id;
