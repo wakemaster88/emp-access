@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  fetchAnnyAvailabilityWithSlots,
-  periodsToSlots,
+  fetchAnnyServiceIdByName,
+  fetchAnnyServiceStartSlots,
   type AvailabilitySlot,
 } from "@/lib/anny-availability";
 
@@ -12,10 +12,15 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Holt fuer einen Service an einem konkreten Datum die buchbaren Slots aus
- * ANNY. Verknuepfung: Service -> ServiceAreas -> AccessArea -> AnnyResourceLink.
- * Bei mehreren verknuepften Resources werden die Slots gemerged und ueber
- * Start-/End-Uhrzeit dedupliziert (gleiche Slot-Uhrzeiten aus verschiedenen
- * Trainer-Resources erscheinen einmal).
+ * ANNY. Workflow:
+ *   1. Service in unserer DB laden -> annyNames (Liste von ANNY-Service-Namen).
+ *   2. ANNY-Service-UUID(s) via /api/v1/services?... aufloesen (Name -> UUID).
+ *   3. /api/v1/availability/start?service_id=<uuid>&date=<YYYY-MM-DD> abfragen.
+ *      Das ist laut Anny-Doku der einzige Endpoint, der echte buchbare
+ *      Start-Intervalle fuer einen Service liefert (z.B. "Anfaengerkurs
+ *      12:00 / 14:00 / 16:00"). /availability/periods waere die Oeffnungs-
+ *      zeit der Resource und damit hier ungeeignet (Liefert die 10-18-Uhr
+ *      Lift-Range, kein Kurs-Slot).
  *
  * Antwortet absichtlich auch dann mit 200, wenn ANNY nichts liefert oder
  * keine Verknuepfung existiert - der Client zeigt dann einen Fallback
@@ -43,39 +48,47 @@ export async function GET(
 
   const accountId = monitor.accountId;
 
-  // Service + verknuepfte Anny-Resources laden. Bei mehreren AccessAreas
-  // sammeln wir alle Links (ein Service kann z.B. an "Strandbad" UND "Kurs-
-  // Pool" haengen, jeder mit eigener Anny-Resource).
   const service = await prisma.service.findFirst({
     where: { id: serviceId, accountId },
     select: {
       id: true,
-      serviceAreas: {
-        select: {
-          area: {
-            select: {
-              annyLinks: {
-                select: { annyResourceId: true, annyName: true },
-              },
-            },
-          },
-        },
-      },
+      name: true,
+      annyNames: true,
+      defaultValidityDurationMinutes: true,
     },
   });
   if (!service) {
     return NextResponse.json({ error: "Service nicht gefunden" }, { status: 404 });
   }
 
-  const resourceIds: string[] = [
-    ...new Set<string>(
-      service.serviceAreas
-        .flatMap((sa) => sa.area?.annyLinks ?? [])
-        .map((l) => l.annyResourceId),
-    ),
-  ];
+  // ANNY-Service-Namen extrahieren. `annyNames` ist ein JSON-Array von
+  // Strings (z.B. ["Anfaengerkurs"]). Fallback: Service-Name selbst.
+  const annyNames: string[] = [];
+  if (service.annyNames) {
+    try {
+      const parsed = JSON.parse(service.annyNames);
+      if (Array.isArray(parsed)) {
+        for (const n of parsed) if (typeof n === "string" && n.trim()) annyNames.push(n.trim());
+      }
+    } catch { /* ignore, fallback below */ }
+  }
+  if (service.name) {
+    annyNames.push(service.name);
+    // Wenn der DB-Service-Name ein " - "-Suffix hat (z.B. "Anfaengerkurs -
+    // Uebungslift"), heisst der ANNY-Service oft nur "Anfaengerkurs" oder
+    // umgekehrt nur "Uebungslift". Beide Varianten zusaetzlich probieren.
+    const parts = service.name.split(/\s[-–]\s/);
+    if (parts.length > 1) {
+      for (const p of parts) {
+        const trimmed = p.trim();
+        if (trimmed) annyNames.push(trimmed);
+      }
+    }
+  }
+  // Deduplizieren ohne Reihenfolge zu zerstoeren (frueher = bevorzugt).
+  const uniqueNames = Array.from(new Set(annyNames));
 
-  if (resourceIds.length === 0) {
+  if (uniqueNames.length === 0) {
     return NextResponse.json({
       slots: [] as AvailabilitySlot[],
       hasAnnyLink: false,
@@ -91,40 +104,64 @@ export async function GET(
     return NextResponse.json({
       slots: [] as AvailabilitySlot[],
       hasAnnyLink: true,
-      resourceCount: resourceIds.length,
+      resourceCount: 0,
       note: "ANNY nicht konfiguriert",
     });
   }
 
   const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
 
-  let raw: Record<string, { start: string; end: string }[]> = {};
+  const annyServiceUuid = await fetchAnnyServiceIdByName(
+    baseUrl,
+    annyConfig.token,
+    uniqueNames,
+  );
+  if (!annyServiceUuid) {
+    return NextResponse.json({
+      slots: [] as AvailabilitySlot[],
+      hasAnnyLink: false,
+      resourceCount: 0,
+      note: "ANNY-Service nicht gefunden",
+    });
+  }
+
+  // Dauer: bevorzugt vom Service in unserer DB (defaultValidityDurationMinutes).
+  // ANNY laesst die Dauer optional - ohne Dauer bekommen wir typischerweise
+  // alle moeglichen Start-Intervalle in der min-duration des Services.
+  const duration = service.defaultValidityDurationMinutes ?? undefined;
+
+  let rawSlots: Awaited<ReturnType<typeof fetchAnnyServiceStartSlots>> = [];
   try {
-    raw = await fetchAnnyAvailabilityWithSlots(
+    rawSlots = await fetchAnnyServiceStartSlots(
       baseUrl,
       annyConfig.token,
-      resourceIds,
+      annyServiceUuid,
       dateStr,
+      { durationMinutes: duration },
     );
   } catch {
-    // Wenn ANNY zickt, geben wir eine leere Slot-Liste zurueck und der
-    // Client faellt auf das datetime-local-Fallback zurueck. So bleibt der
-    // Shop-Workflow auch bei ANNY-Ausfall benutzbar.
     return NextResponse.json({
       slots: [] as AvailabilitySlot[],
       hasAnnyLink: true,
-      resourceCount: resourceIds.length,
+      resourceCount: 0,
       error: "ANNY nicht erreichbar",
     });
   }
 
-  // Slots aus allen Resources mergen + ueber (Start-/End-Uhrzeit) dedupen.
-  const merged = Object.values(raw).flat();
-  const slots = periodsToSlots(merged);
+  // Nur tatsaechlich verfuegbare Start-Intervalle zeigen.
+  const slots: AvailabilitySlot[] = rawSlots
+    .filter((s) => s.available && s.startTime)
+    .map((s) => ({
+      startTime: s.startTime,
+      endTime: s.endTime,
+      startIso: s.startIso,
+      endIso: s.endIso,
+      ...(typeof s.remaining === "number" ? { remaining: s.remaining } : {}),
+    }));
 
   return NextResponse.json({
     slots,
     hasAnnyLink: true,
-    resourceCount: resourceIds.length,
+    resourceCount: 1,
   });
 }

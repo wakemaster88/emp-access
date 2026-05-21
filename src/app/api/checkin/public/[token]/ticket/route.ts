@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ticketCreateSchema } from "@/lib/validators";
+import { fetchAnnyServiceIdByName } from "@/lib/anny-availability";
+import { createAnnyBooking } from "@/lib/anny-bookings";
 
 const publicTicketCreateSchema = ticketCreateSchema.extend({
   voucherCode: z.string().min(1).optional(),
@@ -94,6 +96,136 @@ export async function POST(
     }
   }
 
+  // ANNY-Booking anlegen (Kapazitaet in ANNY blocken).
+  //
+  // Bedingungen:
+  //   * Es wurde ein Service mit ANNY-Verknuepfung gewaehlt
+  //   * Es ist ein konkreter Slot (start + end gesetzt, beide am selben Tag,
+  //     Differenz <= 8h - sonst sind das Tagespaesse / DATE_RANGE-Tickets,
+  //     die in ANNY keinen Sinn ergeben)
+  //
+  // Wenn ANNY die Buchung abweist (z.B. 422 "slot unavailable", weil parallel
+  // jemand direkt in ANNY gebucht hat), brechen wir mit 409 ab - sonst
+  // verkaufen wir Slots ueber Kapazitaet hinweg.
+  // Wenn ANNY hingegen technisch nicht erreichbar ist (Netzwerk-Timeout,
+  // 5xx etc.), legen wir das Ticket trotzdem an (best-effort - der Verkauf
+  // soll an einem ANNY-Ausfall nicht scheitern). Wir loggen den Fehler.
+  let annyBookingId: string | null = null;
+  if (data.serviceId && data.startDate && data.endDate) {
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+    const durationMs = end.getTime() - start.getTime();
+    const isPlausibleSlot =
+      !isNaN(durationMs) && durationMs > 0 && durationMs <= 8 * 60 * 60 * 1000;
+
+    if (isPlausibleSlot) {
+      const svc = await prisma.service.findFirst({
+        where: { id: data.serviceId, accountId: monitor.accountId },
+        select: {
+          name: true,
+          annyNames: true,
+          serviceAreas: {
+            select: {
+              area: {
+                select: {
+                  annyLinks: {
+                    select: { annyResourceId: true },
+                    take: 1,
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Erste verknuepfte ANNY-Resource nehmen. Wenn ein Service mehrere
+      // Resources hat (z.B. mehrere Trainer), faellt die Wahl deterministisch
+      // auf die erste - kann spaeter bei Bedarf zum UI-Picker erweitert
+      // werden.
+      const firstResourceUuid = svc?.serviceAreas
+        .flatMap((sa) => sa.area?.annyLinks ?? [])
+        .map((l) => l.annyResourceId)
+        .find((id) => !!id);
+
+      if (svc && firstResourceUuid) {
+        const annyNames: string[] = [];
+        if (svc.annyNames) {
+          try {
+            const parsed = JSON.parse(svc.annyNames);
+            if (Array.isArray(parsed)) {
+              for (const n of parsed) if (typeof n === "string" && n.trim()) annyNames.push(n.trim());
+            }
+          } catch { /* ignore */ }
+        }
+        if (svc.name) {
+          annyNames.push(svc.name);
+          const parts = svc.name.split(/\s[-–]\s/);
+          if (parts.length > 1) for (const p of parts) if (p.trim()) annyNames.push(p.trim());
+        }
+        const uniqueNames = Array.from(new Set(annyNames));
+
+        const annyConfig = await prisma.apiConfig.findFirst({
+          where: { accountId: monitor.accountId, provider: "ANNY" },
+          select: { token: true, baseUrl: true },
+        });
+
+        if (annyConfig?.token && uniqueNames.length > 0) {
+          const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
+          const annyServiceUuid = await fetchAnnyServiceIdByName(
+            baseUrl,
+            annyConfig.token,
+            uniqueNames,
+          );
+
+          if (annyServiceUuid) {
+            const ownerName =
+              [data.firstName, data.lastName].filter(Boolean).join(" ") || data.name;
+            const result = await createAnnyBooking({
+              baseUrl,
+              token: annyConfig.token,
+              serviceUuid: annyServiceUuid,
+              resourceUuid: firstResourceUuid,
+              startIso: start.toISOString(),
+              endIso: end.toISOString(),
+              description: `EMP-Access${ownerName ? ` - ${ownerName}` : ""}`,
+              notifyCustomer: false,
+              checkAvailability: true,
+            });
+
+            if (result.ok) {
+              annyBookingId = result.bookingId;
+            } else if (result.status === 422) {
+              // ANNY sagt "Slot voll / Konflikt". Verkauf abbrechen.
+              return NextResponse.json(
+                {
+                  error: {
+                    formErrors: [
+                      "Slot ist in ANNY bereits ausgebucht oder gesperrt. Bitte einen anderen Slot waehlen.",
+                    ],
+                    code: "ANNY_SLOT_UNAVAILABLE",
+                  },
+                },
+                { status: 409 },
+              );
+            } else {
+              // ANNY-Ausfall (5xx, Timeout, etc.) - Ticket trotzdem anlegen.
+              console.warn(
+                "[checkin/ticket] ANNY-Booking fehlgeschlagen (Best-Effort, Ticket wird trotzdem angelegt)",
+                { status: result.status, error: result.error },
+              );
+            }
+          } else {
+            console.warn(
+              "[checkin/ticket] ANNY-Service nicht gefunden - kein Booking-Sync",
+              { tried: uniqueNames },
+            );
+          }
+        }
+      }
+    }
+  }
+
   const ticketData = {
     name: data.name,
     qrCode: data.qrCode,
@@ -114,6 +246,7 @@ export async function POST(
     validityDurationMinutes: data.validityDurationMinutes,
     profileImage: data.profileImage,
     accountId: monitor.accountId,
+    annyBookingId,
     ...(serviceAreaIds.length > 0
       ? {
           ticketAreas: {

@@ -2768,7 +2768,7 @@ function AddTicketOverlay({
   // wird.
   const [slotDate, setSlotDate] = useState("");
   const [slots, setSlots] = useState<
-    Array<{ startTime: string; endTime: string; startIso: string; endIso: string }>
+    Array<{ startTime: string; endTime: string; startIso: string; endIso: string; remaining?: number }>
   >([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsLoaded, setSlotsLoaded] = useState(false);
@@ -3233,13 +3233,29 @@ function AddTicketOverlay({
                             setEndDate(`${slotDate}T${s.endTime}`);
                           }}
                           className={cn(
-                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors active:scale-95",
+                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors active:scale-95 flex flex-col items-center justify-center gap-0.5",
                             isSelected
                               ? "bg-emerald-600 border-emerald-500 text-white"
                               : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:border-slate-600",
                           )}
                         >
-                          {s.startTime}–{s.endTime}
+                          <span>{s.startTime}–{s.endTime}</span>
+                          {typeof s.remaining === "number" && (
+                            <span
+                              className={cn(
+                                "text-[10px] font-normal",
+                                isSelected
+                                  ? "text-emerald-50"
+                                  : s.remaining <= 0
+                                    ? "text-rose-400"
+                                    : s.remaining <= 2
+                                      ? "text-amber-400"
+                                      : "text-slate-400",
+                              )}
+                            >
+                              {s.remaining > 0 ? `${s.remaining} frei` : "voll"}
+                            </span>
+                          )}
                         </button>
                       );
                     })}

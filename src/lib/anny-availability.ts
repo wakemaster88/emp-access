@@ -67,14 +67,22 @@ export async function fetchAnnyAvailability(
 /**
  * Tries /api/v1/availability/slots first (returns bookable intervals like 2h slots).
  * Falls back to /api/v1/availability/periods (operating hours) if slots endpoint unavailable.
+ *
+ * Optionen:
+ *   slotsOnly = true -> KEIN Fallback auf periods. Wichtig fuer Use-Cases, bei
+ *   denen wir explizit nur die buchbaren Slots wollen (z.B. Anfaengerkurs-
+ *   Buchung im Shop). Bei leerem /slots-Endpoint kommt dann ein leeres Objekt
+ *   zurueck, statt der Oeffnungszeiten der Resource.
  */
 export async function fetchAnnyAvailabilityWithSlots(
   baseUrl: string,
   token: string,
   resourceIds: string[],
   dateStr: string,
+  opts: { slotsOnly?: boolean } = {},
 ): Promise<Record<string, AvailabilityPeriod[]>> {
   if (resourceIds.length === 0) return {};
+  const slotsOnly = opts.slotsOnly === true;
 
   const offset = berlinOffset(dateStr);
   const startDate = `${dateStr}T00:00:00${offset}`;
@@ -115,10 +123,146 @@ export async function fetchAnnyAvailabilityWithSlots(
       const parsed = parseResponse(json);
       const totalSlots = Object.values(parsed).reduce((s, a) => s + a.length, 0);
       if (totalSlots > 0) return parsed;
+      // /slots hat geantwortet, aber 0 Slots -> Resource hat heute schlicht
+      // keine buchbaren Slots. Im slotsOnly-Modus geben wir das genau so
+      // zurueck, statt auf Oeffnungszeiten zurueckzufallen.
+      if (slotsOnly) return parsed;
     }
   } catch { /* slots endpoint not available, fall back */ }
 
+  if (slotsOnly) return {};
   return fetchAnnyAvailability(baseUrl, token, resourceIds, dateStr);
+}
+
+/**
+ * Sucht in den ANNY-Services nach einem Service mit passendem Namen und gibt
+ * dessen UUID zurueck. ANNY's Availability-Search ist serviceId-zentriert
+ * (siehe https://developers.anny.co/guides/availability), unsere App
+ * speichert aber nur Namen in `Service.annyNames` - daher dieser Lookup.
+ *
+ * Wir paginieren (page[size]=100) bis Match oder Ende. Stop nach 5 Seiten,
+ * damit der Endpoint nicht wegen riesiger Orgs haengt.
+ */
+export async function fetchAnnyServiceIdByName(
+  baseUrl: string,
+  token: string,
+  serviceNames: string[],
+): Promise<string | null> {
+  if (serviceNames.length === 0) return null;
+  const wanted = new Set(serviceNames.map((n) => n.toLowerCase()));
+  for (let page = 1; page <= 5; page++) {
+    const params = new URLSearchParams({
+      "page[size]": "100",
+      "page[number]": String(page),
+    });
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/services?${params}`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const items: unknown[] = Array.isArray(json)
+        ? json
+        : Array.isArray((json as { data?: unknown[] }).data)
+          ? ((json as { data: unknown[] }).data)
+          : [];
+      if (items.length === 0) return null;
+      for (const raw of items) {
+        const svc = raw as { id?: string; attributes?: Record<string, unknown>; name?: string };
+        const a = (svc.attributes ?? svc) as Record<string, unknown>;
+        const id = svc.id || (a.id as string | undefined);
+        const name = (a.name as string | undefined) || (a.title as string | undefined);
+        if (id && name && wanted.has(name.toLowerCase())) return String(id);
+      }
+      if (items.length < 100) return null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export interface ServiceStartSlot {
+  startIso: string;
+  endIso: string;
+  startTime: string;
+  endTime: string;
+  available: boolean;
+  remaining?: number;
+}
+
+/**
+ * Holt die buchbaren Start-Intervalle eines Services fuer ein Datum.
+ * Mapped auf den korrekten ANNY-Endpoint:
+ *   GET /api/v1/availability/start?service_id=...&date=YYYY-MM-DD
+ * Das ist der einzige Endpoint, der echte service-spezifische Slots liefert
+ * (z.B. "Anfaengerkurs 12:00 / 14:00 / 16:00"). /availability/periods sind
+ * dagegen die rohen Oeffnungszeiten der Resource - voellig anderer Datentyp.
+ *
+ * `durationMinutes` ist optional: wenn gesetzt, berechnen wir die End-Zeit
+ * lokal als start + duration (ANNY's Antwort liefert nur Start-Zeiten zurueck).
+ */
+export async function fetchAnnyServiceStartSlots(
+  baseUrl: string,
+  token: string,
+  serviceId: string,
+  dateStr: string,
+  opts: { durationMinutes?: number; resourceId?: string } = {},
+): Promise<ServiceStartSlot[]> {
+  const params = new URLSearchParams({
+    service_id: serviceId,
+    date: dateStr,
+    timezone: "Europe/Berlin",
+  });
+  if (opts.durationMinutes && opts.durationMinutes > 0) {
+    params.set("duration", String(opts.durationMinutes));
+  }
+  if (opts.resourceId) params.set("resource_id", opts.resourceId);
+
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/availability/start?${params}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const items: unknown[] = Array.isArray(json)
+      ? json
+      : Array.isArray((json as { data?: unknown[] }).data)
+        ? ((json as { data: unknown[] }).data)
+        : [];
+    const result: ServiceStartSlot[] = [];
+    for (const raw of items) {
+      const it = raw as {
+        start_date?: string;
+        available?: boolean;
+        remaining_number_available?: number;
+        unavailability_type?: string;
+      };
+      const startIso = it.start_date;
+      if (!startIso) continue;
+      const isAvailable = it.available !== false;
+      let endIso = "";
+      if (opts.durationMinutes && opts.durationMinutes > 0) {
+        const s = new Date(startIso);
+        if (!isNaN(s.getTime())) {
+          endIso = new Date(s.getTime() + opts.durationMinutes * 60000).toISOString();
+        }
+      }
+      result.push({
+        startIso,
+        endIso,
+        startTime: fmtTimeBerlin(startIso),
+        endTime: endIso ? fmtTimeBerlin(endIso) : "",
+        available: isAvailable,
+        remaining: it.remaining_number_available,
+      });
+    }
+    return result;
+  } catch {
+    return [];
+  }
 }
 
 export function fmtTimeBerlin(iso: string): string {
@@ -141,6 +285,12 @@ export type AvailabilitySlot = {
   endTime: string;
   startIso: string;
   endIso: string;
+  /**
+   * Restkapazitaet laut ANNY (number_available - booked). Nur gesetzt, wenn
+   * der Service kapazitaetsbegrenzt ist - bei unbegrenzten Slots (z.B.
+   * Drop-in-Kurs) ist das Feld absent.
+   */
+  remaining?: number;
 };
 
 /** Erzeugt deduplizierte, sortierte Slots aus Roh-Perioden. */
