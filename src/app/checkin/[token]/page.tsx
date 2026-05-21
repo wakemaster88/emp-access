@@ -1800,11 +1800,12 @@ function SlotOverviewSection({
   onSlotPick: (slot: SlotOverviewSlot) => void;
 }) {
   const { summary, services } = data;
-  const visible = services.filter(
-    (sv) => sv.slots.length > 0 || sv.totalEmpBookings > 0 || sv.serviceType === "day",
-  );
-  if (visible.length === 0) return null;
-  const grouped = groupOverviewServices(visible);
+  // Wir zeigen ALLE ANNY-verknuepften Services - auch die mit 0 Slots und
+  // 0 EMP-Tickets heute. Sonst verschwinden z.B. "exklusive Bahnmieten",
+  // die heute nichts gebucht haben, komplett aus der Sicht. Den "leeren"
+  // Services geben wir im Body einen klaren Hinweis statt sie zu droppen.
+  if (services.length === 0) return null;
+  const grouped = groupOverviewServices(services);
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
