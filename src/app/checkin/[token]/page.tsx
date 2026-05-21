@@ -171,6 +171,8 @@ interface SlotOverviewService {
   annyMatchedName: string | null;
   slots: SlotOverviewSlot[];
   totalEmpBookings: number;
+  /** ANNY meldet fuer dieses Datum keine Verfuegbarkeit -> Service ausblenden. */
+  availableToday: boolean;
   note: string | null;
 }
 
@@ -1800,12 +1802,16 @@ function SlotOverviewSection({
   onSlotPick: (slot: SlotOverviewSlot) => void;
 }) {
   const { summary, services } = data;
-  // Wir zeigen ALLE ANNY-verknuepften Services - auch die mit 0 Slots und
-  // 0 EMP-Tickets heute. Sonst verschwinden z.B. "exklusive Bahnmieten",
-  // die heute nichts gebucht haben, komplett aus der Sicht. Den "leeren"
-  // Services geben wir im Body einen klaren Hinweis statt sie zu droppen.
-  if (services.length === 0) return null;
-  const grouped = groupOverviewServices(services);
+  // Saisonale / nicht-heute-buchbare Services werden ausgeblendet (z.B.
+  // Ferienkurs erst im Juli, Anfaengerkurs nur am Wochenende). Falls fuer
+  // den Service heute aber doch schon EMP-Tickets verkauft wurden, zeigen
+  // wir ihn trotzdem - so verschwinden die Buchungen nicht aus der
+  // Auslastungssicht.
+  const visible = services.filter(
+    (sv) => sv.availableToday || sv.totalEmpBookings > 0,
+  );
+  if (visible.length === 0) return null;
+  const grouped = groupOverviewServices(visible);
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">

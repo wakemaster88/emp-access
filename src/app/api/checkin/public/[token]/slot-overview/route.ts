@@ -5,6 +5,7 @@ import {
   fetchAllAnnyServices,
   matchAnnyServiceInCatalog,
   fetchAnnyServiceStartSlots,
+  fetchAnnyServiceStartDates,
   berlinOffset,
   type AnnyServiceCatalogEntry,
 } from "@/lib/anny-availability";
@@ -35,6 +36,13 @@ interface ServiceOverview {
   slots: SlotEntry[];
   /** Aggregat: insgesamt EMP-Tickets dieses Service heute (ueber alle Slots). */
   totalEmpBookings: number;
+  /**
+   * Ist der Service an dem angefragten Datum ueberhaupt buchbar?
+   * false = ANNY meldet keine Verfuegbarkeit (z.B. Ferienkurs erst im Juli,
+   * Anfaengerkurs nur am Wochenende). Wird im UI zum Ausblenden genutzt.
+   * true bei Slot-Services mit Slots > 0; sonst per /start-dates abgefragt.
+   */
+  availableToday: boolean;
   /** Wenn ANNY nicht gematcht: Hinweis fuer das UI. */
   note: string | null;
 }
@@ -173,6 +181,7 @@ export async function GET(
   // 4. Pro Service parallel die ANNY-Slots holen.
   const perService: ServiceOverview[] = await Promise.all(
     annyServices.map(async (svc) => {
+      const empCount = ticketsToday.filter((t) => t.serviceId === svc.id).length;
       const annyNames = collectServiceNames(svc.name, svc.annyNames);
       const match = matchAnnyServiceInCatalog(catalog, annyNames);
 
@@ -185,7 +194,10 @@ export async function GET(
           annyServiceUuid: null,
           annyMatchedName: null,
           slots: [],
-          totalEmpBookings: ticketsToday.filter((t) => t.serviceId === svc.id).length,
+          totalEmpBookings: empCount,
+          // Wenn ANNY den Service nicht kennt, koennen wir Verfuegbarkeit
+          // nicht beurteilen - lieber anzeigen mit Hinweis als verstecken.
+          availableToday: true,
           note: `ANNY-Service nicht gefunden (gesucht: ${annyNames.slice(0, 3).join(", ")})`,
         } satisfies ServiceOverview;
       }
@@ -198,8 +210,25 @@ export async function GET(
       const serviceType: "slot" | "day" = isDayService ? "day" : "slot";
 
       // Day-Pass: ANNY-Slots brauchen wir nicht abzurufen, das UI zeigt
-      // nur die EMP-Ticket-Zahl an.
+      // nur die EMP-Ticket-Zahl an. Aber wir muessen wissen ob der Service
+      // heute ueberhaupt verfuegbar ist (Ferienkurs erst im Juli etc.) -
+      // dafuer /start-dates mit Tages-Range als single boolean.
       if (serviceType === "day") {
+        let availableToday = true;
+        try {
+          const dates = await fetchAnnyServiceStartDates(
+            baseUrl,
+            annyConfig!.token,
+            match.id,
+            dateStr,
+            dateStr,
+            organizationId,
+          );
+          availableToday = dates.some((d) => d.startsWith(dateStr));
+        } catch {
+          // best-effort: bei Fehler nicht ausblenden
+          availableToday = true;
+        }
         return {
           serviceId: svc.id,
           name: svc.name,
@@ -208,7 +237,8 @@ export async function GET(
           annyServiceUuid: match.id,
           annyMatchedName: match.name,
           slots: [],
-          totalEmpBookings: ticketsToday.filter((t) => t.serviceId === svc.id).length,
+          totalEmpBookings: empCount,
+          availableToday,
           note: null,
         } satisfies ServiceOverview;
       }
@@ -253,6 +283,26 @@ export async function GET(
           unavailabilityType: s.unavailabilityType ?? null,
         }));
 
+      // Verfuegbarkeit: wenn /availability/start Slots geliefert hat, ist
+      // der Service heute aktiv. Sonst per /start-dates verifizieren -
+      // koennte ausgebucht oder schlicht nicht im Saison-Zeitraum sein.
+      let availableToday = slots.length > 0;
+      if (!availableToday) {
+        try {
+          const dates = await fetchAnnyServiceStartDates(
+            baseUrl,
+            annyConfig!.token,
+            match.id,
+            dateStr,
+            dateStr,
+            organizationId,
+          );
+          availableToday = dates.some((d) => d.startsWith(dateStr));
+        } catch {
+          availableToday = true;
+        }
+      }
+
       return {
         serviceId: svc.id,
         name: svc.name,
@@ -261,7 +311,8 @@ export async function GET(
         annyServiceUuid: match.id,
         annyMatchedName: match.name,
         slots,
-        totalEmpBookings: ticketsToday.filter((t) => t.serviceId === svc.id).length,
+        totalEmpBookings: empCount,
+        availableToday,
         note: null,
       } satisfies ServiceOverview;
     }),

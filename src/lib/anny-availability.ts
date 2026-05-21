@@ -629,6 +629,63 @@ export async function fetchAnnyServiceStartSlots(
   }
 }
 
+/**
+ * Holt fuer einen Service die Daten (YYYY-MM-DD) in einem Range, an denen
+ * mindestens ein Slot verfuegbar ist. ANNY-Endpoint:
+ *   GET /api/v1/availability/start-dates?service_id=...&start_date=...&end_date=...
+ *
+ * Praktisch zum Filtern "Service heute ueberhaupt buchbar?", insbesondere
+ * fuer Day-Pass-Services (wo /availability/start nicht aussagekraeftig ist)
+ * und fuer saisonale Services (Ferienkurs erst im Juli etc.).
+ */
+export async function fetchAnnyServiceStartDates(
+  baseUrl: string,
+  token: string,
+  serviceId: string,
+  startDate: string,
+  endDate: string,
+  organizationId?: string | null,
+): Promise<string[]> {
+  const params = new URLSearchParams({
+    service_id: serviceId,
+    start_date: startDate,
+    end_date: endDate,
+    timezone: "Europe/Berlin",
+  });
+  if (organizationId) params.set("o", organizationId);
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/availability/start-dates?${params}`, {
+      headers: annyHeaders(token),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const items: unknown[] = Array.isArray(json)
+      ? json
+      : Array.isArray((json as { data?: unknown[] }).data)
+        ? ((json as { data: unknown[] }).data)
+        : [];
+    const out: string[] = [];
+    for (const it of items) {
+      if (typeof it === "string") {
+        out.push(it);
+      } else if (it && typeof it === "object") {
+        // JSON:API-Variante: { type: "...", attributes: { date: "..." } }
+        // oder { date: "..." } / { start_date: "..." }
+        const obj = it as Record<string, unknown>;
+        const d =
+          (obj.date as string | undefined)
+          || (obj.start_date as string | undefined)
+          || ((obj.attributes as Record<string, unknown> | undefined)?.date as string | undefined);
+        if (typeof d === "string") out.push(d);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export function fmtTimeBerlin(iso: string): string {
   if (!iso) return "";
   try {
