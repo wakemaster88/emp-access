@@ -444,6 +444,31 @@ export async function fetchAnnyServiceStartSlots(
         capacity: it.number_available,
       });
     }
+
+    // Wenn keine duration gesetzt war, leiten wir die Slot-Dauer aus dem
+    // Abstand zwischen aufeinanderfolgenden Start-Zeiten ab. ANNY gibt
+    // typischerweise gleichmaessige Intervalle zurueck (z.B. 12:00, 14:00,
+    // 16:00 -> Abstand 2h -> Slot-Dauer 2h).
+    if (!opts.durationMinutes || opts.durationMinutes <= 0) {
+      const sorted = result
+        .slice()
+        .sort((a, b) => a.startIso.localeCompare(b.startIso));
+      if (sorted.length >= 2) {
+        const t0 = new Date(sorted[0].startIso).getTime();
+        const t1 = new Date(sorted[1].startIso).getTime();
+        const intervalMs = t1 - t0;
+        if (intervalMs > 0 && intervalMs <= 12 * 60 * 60 * 1000) {
+          for (const slot of result) {
+            const s = new Date(slot.startIso);
+            if (!isNaN(s.getTime())) {
+              slot.endIso = new Date(s.getTime() + intervalMs).toISOString();
+              slot.endTime = fmtTimeBerlin(slot.endIso);
+            }
+          }
+        }
+      }
+    }
+
     return result;
   } catch {
     return [];

@@ -151,11 +151,13 @@ export async function GET(
   }
   const annyServiceUuid = match.id;
 
-  // Dauer: bevorzugt vom Service in unserer DB (defaultValidityDurationMinutes).
-  // ANNY laesst die Dauer optional - ohne Dauer bekommen wir typischerweise
-  // alle moeglichen Start-Intervalle in der min-duration des Services.
-  const duration = service.defaultValidityDurationMinutes ?? undefined;
-
+  // Dauer absichtlich NICHT setzen. ANNY rechnet sonst die Verfuegbarkeit
+  // mit unserer (potenziell falsch gesetzten) defaultValidityDurationMinutes
+  // - das kann die `remaining_number_available` runter schreiben, weil
+  // dann nur Ressourcen zaehlen, die GENAU diese Laenge am Stueck frei
+  // sind. Wenn der User in ANNY eine andere Buchungsdauer konfiguriert
+  // hat, holen wir uns hier die natuerliche Slot-Dauer aus dem ANNY-Service
+  // selbst.
   let rawSlots: Awaited<ReturnType<typeof fetchAnnyServiceStartSlots>> = [];
   try {
     rawSlots = await fetchAnnyServiceStartSlots(
@@ -163,7 +165,7 @@ export async function GET(
       annyConfig.token,
       annyServiceUuid,
       dateStr,
-      { durationMinutes: duration, organizationId },
+      { organizationId },
     );
   } catch {
     return NextResponse.json({
@@ -190,5 +192,12 @@ export async function GET(
     slots,
     hasAnnyLink: true,
     resourceCount: 1,
+    ...(debug
+      ? {
+          rawAnnySlots: rawSlots,
+          annyServiceUuid,
+          organizationId,
+        }
+      : {}),
   });
 }
