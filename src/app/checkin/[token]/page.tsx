@@ -2377,7 +2377,6 @@ function SlotOverviewSection({
             <div className="flex-1 min-w-0">
               <TimelineAxis range={range} />
             </div>
-            <div className="shrink-0 w-[44px]" />
           </div>
         </div>
         {groupedPerResource.map(
@@ -2535,15 +2534,6 @@ function SlotOverviewServiceRow({
           }
         />
       </div>
-      <div
-        className={cn(
-          "shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums",
-          sv.totalEmpBookings > 0 ? "text-emerald-300" : "text-slate-600",
-        )}
-        title={`${sv.totalEmpBookings} EMP-Ticket(s) heute verkauft`}
-      >
-        {sv.totalEmpBookings}
-      </div>
     </div>
   );
 }
@@ -2658,15 +2648,6 @@ function CombinedDayPassRow({
             })}
           </SlotTimeline>
         </div>
-        <div
-          className={cn(
-            "shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums",
-            totalBookings > 0 ? "text-emerald-300" : "text-slate-600",
-          )}
-          title={`${totalBookings} EMP-Ticket(s) heute verkauft (alle Varianten zusammen)`}
-        >
-          {totalBookings}
-        </div>
       </div>
     );
   }
@@ -2739,15 +2720,6 @@ function CombinedDayPassRow({
             });
           })}
         </SlotTimeline>
-      </div>
-      <div
-        className={cn(
-          "shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums",
-          totalBookings > 0 ? "text-emerald-300" : "text-slate-600",
-        )}
-        title={`${totalBookings} EMP-Ticket(s) heute verkauft (alle Varianten zusammen)`}
-      >
-        {totalBookings}
       </div>
     </div>
   );
