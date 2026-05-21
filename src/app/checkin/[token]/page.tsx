@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -2077,20 +2077,113 @@ function computeGlobalRange(services: SlotOverviewService[]): TimeRange {
 }
 
 /**
- * Renderer-Container fuer eine Service-Zeile. Children werden mit
- * left/width-Prozenten innerhalb dieses relativen DIVs positioniert
- * (siehe TimelinePill).
+ * Cross-cutting State fuer die Slot-Auslastungs-Section: aktuelle Uhrzeit
+ * (fuer den Now-Indicator) und Hover-Position (fuer den vertikalen Highlight
+ * durch alle Services). Wird via Context an alle Timeline-Zeilen geliefert,
+ * damit Pills den Hover setzen und Timelines die Linien rendern koennen.
+ */
+interface SlotOverviewUIState {
+  /** Minutes-seit-Mitternacht der aktuellen Uhrzeit, oder null wenn nicht heute. */
+  nowMin: number | null;
+  /** Hover-Position der Maus in Minuten, oder null wenn kein Hover. */
+  hoverMin: number | null;
+  setHoverMin: (m: number | null) => void;
+}
+
+const SlotOverviewUIContext = createContext<SlotOverviewUIState>({
+  nowMin: null,
+  hoverMin: null,
+  setHoverMin: () => {},
+});
+
+/**
+ * Hook: liefert die aktuelle Berlin-Uhrzeit als Minutes-seit-Mitternacht,
+ * aktualisiert sich jede Minute. Liefert null, wenn das angefragte Datum
+ * nicht der heutige Tag ist (dann waere ein Now-Indicator irrefuehrend).
+ */
+function useCurrentMinuteIfToday(dateStr: string): number | null {
+  const [nowMin, setNowMin] = useState<number | null>(() => null);
+  useEffect(() => {
+    const compute = (): number | null => {
+      const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+      if (todayStr !== dateStr) return null;
+      const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Berlin",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(new Date());
+      let h = 0;
+      let m = 0;
+      for (const p of parts) {
+        if (p.type === "hour") h = parseInt(p.value, 10);
+        if (p.type === "minute") m = parseInt(p.value, 10);
+      }
+      return h * 60 + m;
+    };
+    setNowMin(compute());
+    const interval = setInterval(() => setNowMin(compute()), 60 * 1000);
+    return () => clearInterval(interval);
+  }, [dateStr]);
+  return nowMin;
+}
+
+/**
+ * Renderer-Container fuer eine Service-Zeile. Rendert:
+ *   1. Stunden-Gridlines im Hintergrund (vertikale subtile Borders)
+ *   2. Now-Marker (rote Linie auf aktueller Uhrzeit, nur heute)
+ *   3. Hover-Highlight (sky Linie auf hover-Position, von Pills gesetzt)
+ *   4. Children (die eigentlichen Pills via TimelineSlot)
  */
 function SlotTimeline({
+  range,
   children,
   empty,
 }: {
+  range: TimeRange;
   children?: React.ReactNode;
   /** Optionaler Empty-State-Text fuer Services ohne Slots. */
   empty?: string;
 }) {
+  const { nowMin, hoverMin } = useContext(SlotOverviewUIContext);
+  const total = Math.max(1, range.endMin - range.startMin);
+  // Tick alle 2 Stunden bei breitem Range, sonst stuendlich (wie TimelineAxis).
+  const tickStepMin = total / 60 > 6 ? 60 : 60;
+  const firstTick = Math.ceil(range.startMin / tickStepMin) * tickStepMin;
+  const ticks: number[] = [];
+  for (let t = firstTick; t < range.endMin; t += tickStepMin) ticks.push(t);
+  const nowVisible = nowMin != null && nowMin >= range.startMin && nowMin <= range.endMin;
+  const hoverVisible = hoverMin != null && hoverMin >= range.startMin && hoverMin <= range.endMin;
   return (
     <div className="relative h-7">
+      <div className="absolute inset-0 pointer-events-none">
+        {ticks.map((t) => {
+          const left = ((t - range.startMin) / total) * 100;
+          const isStrong = t % 120 === 0;
+          return (
+            <span
+              key={t}
+              className={cn(
+                "absolute top-0 bottom-0 border-l",
+                isStrong ? "border-slate-700/60" : "border-slate-800/40",
+              )}
+              style={{ left: `${left}%` }}
+            />
+          );
+        })}
+        {hoverVisible && (
+          <span
+            className="absolute top-0 bottom-0 border-l-2 border-sky-400/60"
+            style={{ left: `${((hoverMin! - range.startMin) / total) * 100}%` }}
+          />
+        )}
+        {nowVisible && (
+          <span
+            className="absolute top-0 bottom-0 border-l-2 border-rose-500/80"
+            style={{ left: `${((nowMin! - range.startMin) / total) * 100}%` }}
+          />
+        )}
+      </div>
       {empty ? (
         <p className="absolute inset-0 flex items-center text-[11px] text-slate-500 px-1">
           {empty}
@@ -2100,6 +2193,55 @@ function SlotTimeline({
       )}
     </div>
   );
+}
+
+/**
+ * Berechnet pro 60-Minuten-Bucket die "Belegung" - also wieviele Personen
+ * sind in dieser Stunde insgesamt anwesend?
+ *   - Slot-Tickets: zaehlen in ihrem Slot-Zeitfenster (slotStart..slotEnd)
+ *   - Day-Pass-Tickets: zaehlen in jeder Stunde der ANNY-Oeffnungszeit
+ *     (oder, wenn keine Oeffnungszeit bekannt, in jeder Stunde der globalen
+ *     Range).
+ *
+ * Wird fuer die Heatmap-Zeile "Heute insgesamt" verwendet.
+ */
+function computeHourlyAggregate(
+  services: SlotOverviewService[],
+  range: TimeRange,
+): Array<{ hour: number; bookings: number; capacity: number }> {
+  const buckets: Array<{ hour: number; bookings: number; capacity: number }> = [];
+  for (let h = range.startMin; h < range.endMin; h += 60) {
+    let bookings = 0;
+    let capacity = 0;
+    for (const sv of services) {
+      if (sv.serviceType === "slot" && sv.slots.length > 0) {
+        for (const slot of sv.slots) {
+          const s = timeStringToMinutes(slot.startTime);
+          const e = timeStringToMinutes(slot.endTime);
+          if (s == null || e == null) continue;
+          if (s < h + 60 && e > h) {
+            bookings += slot.empBookings;
+            if (typeof slot.capacity === "number") capacity += slot.capacity;
+          }
+        }
+      } else if (sv.serviceType === "day") {
+        // Day-Pass: ueber die ganze Oeffnungszeit / Range anwesend.
+        const periods =
+          sv.openingHours.length > 0
+            ? sv.openingHours.map((oh) => ({
+                s: timeStringToMinutes(oh.start),
+                e: timeStringToMinutes(oh.end),
+              }))
+            : [{ s: range.startMin, e: range.endMin }];
+        const inHour = periods.some(
+          ({ s, e }) => s != null && e != null && s < h + 60 && e > h,
+        );
+        if (inHour) bookings += sv.totalEmpBookings;
+      }
+    }
+    buckets.push({ hour: h, bookings, capacity });
+  }
+  return buckets;
 }
 
 /**
@@ -2138,28 +2280,120 @@ function TimelineSlot({
  * exakt zu den Pills passen.
  */
 function TimelineAxis({ range }: { range: TimeRange }) {
+  const { nowMin } = useContext(SlotOverviewUIContext);
   const total = Math.max(1, range.endMin - range.startMin);
-  // Tick alle 2 Stunden bei breitem Range, sonst stuendlich.
-  const tickStepMin = total / 60 > 6 ? 120 : 60;
+  // Stuendliche Ticks, alle 2h stark markiert.
+  const tickStepMin = 60;
   const ticks: number[] = [];
   const firstTick = Math.ceil(range.startMin / tickStepMin) * tickStepMin;
   for (let t = firstTick; t <= range.endMin; t += tickStepMin) {
     ticks.push(t);
   }
+  const nowVisible = nowMin != null && nowMin >= range.startMin && nowMin <= range.endMin;
   return (
-    <div className="relative h-4 mb-1">
+    <div className="relative h-5">
       {ticks.map((t) => {
         const left = ((t - range.startMin) / total) * 100;
+        const isStrong = t % 120 === 0;
         return (
           <span
             key={t}
-            className="absolute top-0 -translate-x-1/2 text-[10px] font-mono tabular-nums text-slate-500"
+            className={cn(
+              "absolute top-0 -translate-x-1/2 text-[10px] font-mono tabular-nums",
+              isStrong ? "text-slate-400 font-semibold" : "text-slate-600",
+            )}
             style={{ left: `${left}%` }}
           >
             {minutesToTimeString(t)}
           </span>
         );
       })}
+      {nowVisible && (
+        <span
+          className="absolute -top-0.5 -translate-x-1/2 text-[9px] font-mono tabular-nums bg-rose-500/90 text-white px-1 rounded-sm shadow"
+          style={{ left: `${((nowMin! - range.startMin) / total) * 100}%` }}
+        >
+          {minutesToTimeString(nowMin!)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Heatmap-Zeile "Heute insgesamt": pro Stunde ein farbcodierter Block, der
+ * die Belegung (Slot-Buchungen + Day-Pass-Anwesende) anzeigt. Spalten-Layout
+ * identisch zu den Service-Zeilen: [Label | Heatmap-Timeline | Total].
+ */
+function AggregateHeatmapRow({
+  range,
+  services,
+}: {
+  range: TimeRange;
+  services: SlotOverviewService[];
+}) {
+  const buckets = useMemo(
+    () => computeHourlyAggregate(services, range),
+    [services, range],
+  );
+  const maxBookings = Math.max(1, ...buckets.map((b) => b.bookings));
+  const total = buckets.reduce((a, b) => a + b.bookings, 0);
+  const peakBucket = buckets.reduce<{ hour: number; bookings: number } | null>(
+    (best, b) => (b.bookings > 0 && (!best || b.bookings > best.bookings) ? b : best),
+    null,
+  );
+  const rangeMin = Math.max(1, range.endMin - range.startMin);
+  return (
+    <div className="flex items-stretch gap-2 text-[11px] pt-1 pb-2 border-b border-slate-800/60">
+      <div className="shrink-0 w-[130px] flex flex-col justify-center text-slate-300">
+        <span className="font-semibold uppercase tracking-wider text-[10px]">
+          Heute insgesamt
+        </span>
+        {peakBucket && (
+          <span className="text-[10px] text-slate-500 font-mono tabular-nums">
+            Stoss: {minutesToTimeString(peakBucket.hour)} · {peakBucket.bookings}
+          </span>
+        )}
+      </div>
+      <div className="flex-1 min-w-0 relative h-7">
+        {buckets.map((b) => {
+          const left = ((b.hour - range.startMin) / rangeMin) * 100;
+          const width = (60 / rangeMin) * 100;
+          const intensity = b.bookings / maxBookings;
+          // Heatmap-Farbskala: nichts -> graublau, viel -> sky -> emerald
+          // (warmer Bereich = mehr Belegung, aber bewusst nicht rot, weil
+          // rot fuer "voll/blockiert" reserviert ist).
+          let color: string;
+          if (b.bookings === 0) color = "bg-slate-800/40";
+          else if (intensity < 0.34) color = "bg-sky-500/30";
+          else if (intensity < 0.67) color = "bg-sky-500/55";
+          else color = "bg-sky-400/80";
+          return (
+            <div
+              key={b.hour}
+              className="absolute top-0 bottom-0 flex items-center justify-center"
+              style={{ left: `${left}%`, width: `${width}%`, padding: "0 2px" }}
+              title={`${minutesToTimeString(b.hour)}-${minutesToTimeString(b.hour + 60)}: ${b.bookings} Personen`}
+            >
+              <div
+                className={cn(
+                  "h-full w-full rounded-sm flex items-center justify-center text-[10px] font-mono tabular-nums",
+                  color,
+                  b.bookings > 0 ? "text-slate-900" : "text-slate-600",
+                )}
+              >
+                {b.bookings > 0 ? b.bookings : ""}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div
+        className="shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums font-semibold text-sky-300"
+        title={`${total} Personen heute insgesamt (kumuliert ueber Stunden-Buckets)`}
+      >
+        {total}
+      </div>
     </div>
   );
 }
@@ -2195,6 +2429,12 @@ function SlotOverviewSection({
   //     Gruppe enthaelt nur 1 Service-Gruppe "Strandbad" -> Header waere
   //     reine Doppel-Info).
   const range = computeGlobalRange(visible);
+  const nowMin = useCurrentMinuteIfToday(currentDate);
+  const [hoverMin, setHoverMin] = useState<number | null>(null);
+  const uiState = useMemo<SlotOverviewUIState>(
+    () => ({ nowMin, hoverMin, setHoverMin }),
+    [nowMin, hoverMin],
+  );
   const resourceGroups = groupByResource(visible);
   const groupedPerResource = resourceGroups.map((rg) => {
     const serviceGroups = groupOverviewServices(rg.services);
@@ -2238,13 +2478,23 @@ function SlotOverviewSection({
           )}
         </div>
       </div>
+      <SlotOverviewUIContext.Provider value={uiState}>
       <div
         className={cn(
           "rounded-xl border border-slate-800/70 bg-slate-900/40 p-3",
           anyHeader ? "space-y-4" : "space-y-3",
         )}
       >
-        <TimelineAxis range={range} />
+        <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-sm -mx-3 -mt-3 px-3 pt-3 pb-1 border-b border-slate-800/40">
+          <div className="flex items-stretch gap-2 text-[11px]">
+            <div className="shrink-0 w-[130px]" />
+            <div className="flex-1 min-w-0">
+              <TimelineAxis range={range} />
+            </div>
+            <div className="shrink-0 w-[44px]" />
+          </div>
+        </div>
+        <AggregateHeatmapRow range={range} services={visible} />
         {groupedPerResource.map(
           ({ resourceId, resourceName, services: resSvcs, serviceGroups, showHeader }) => (
             <div key={resourceId ?? "__none__"} className="space-y-3">
@@ -2273,6 +2523,7 @@ function SlotOverviewSection({
           ),
         )}
       </div>
+      </SlotOverviewUIContext.Provider>
     </div>
   );
 }
@@ -2428,7 +2679,7 @@ function SlotOverviewServiceBody({
 }) {
   if (sv.note) {
     return (
-      <SlotTimeline>
+      <SlotTimeline range={range}>
         <p className="absolute inset-0 flex items-center text-[11px] text-amber-400/80 px-1 truncate">
           {sv.note}
         </p>
@@ -2448,7 +2699,7 @@ function SlotOverviewServiceBody({
             },
           ];
     return (
-      <SlotTimeline>
+      <SlotTimeline range={range}>
         {periods.map((oh, idx) => {
           const startMin = timeStringToMinutes(oh.start) ?? range.startMin;
           const endMin = timeStringToMinutes(oh.end) ?? range.endMin;
@@ -2474,10 +2725,10 @@ function SlotOverviewServiceBody({
     );
   }
   if (sv.slots.length === 0) {
-    return <SlotTimeline empty="Keine Slots heute." />;
+    return <SlotTimeline range={range} empty="Keine Slots heute." />;
   }
   return (
-    <SlotTimeline>
+    <SlotTimeline range={range}>
       {sv.slots.map((slot) => {
         const startMin = timeStringToMinutes(slot.startTime);
         const endMin = timeStringToMinutes(slot.endTime);
@@ -2528,28 +2779,46 @@ function DayPassPill({
   /** Wenn true: Periods kamen nicht aus ANNY, Pill ist gestreift dargestellt. */
   isFallbackRange: boolean;
 }) {
+  // Day-Pass ist ein passiver Oeffnungs-Bereich, keine bookbare Zeit-Scheibe.
+  // Visuell dezenter als Slot-Pills: schmaler Streifen, der die Oeffnungszeit
+  // wie einen "Zeit-Bereich" markiert, mit Label-Overlay zentriert.
+  const stripedStyle = isFallbackRange
+    ? {
+        backgroundImage:
+          "repeating-linear-gradient(45deg, rgba(56,189,248,0.18) 0 6px, transparent 6px 12px)",
+      }
+    : undefined;
   const content = (
-    <span className="flex items-center justify-center gap-1.5 h-full px-2 text-[11px] font-mono tabular-nums leading-tight truncate">
-      <span className="text-sky-100">{startLabel}-{endLabel}</span>
-      {bookings > 0 && (
-        <span className="text-emerald-200/90 text-[10px]">· {bookings}</span>
-      )}
-    </span>
+    <>
+      <div
+        className={cn(
+          "h-3 w-full rounded-full border",
+          "border-sky-500/40 bg-sky-500/15",
+        )}
+        style={stripedStyle}
+      />
+      <span className="absolute inset-0 flex items-center justify-center gap-1.5 text-[10px] font-mono tabular-nums leading-tight truncate px-2 pointer-events-none">
+        <span className="text-sky-200 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+          {startLabel}-{endLabel}
+        </span>
+        {bookings > 0 && (
+          <span className="text-emerald-300 text-[10px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+            · {bookings}
+          </span>
+        )}
+      </span>
+    </>
   );
-  const baseCls = cn(
-    "relative overflow-hidden rounded-lg border h-full w-full",
-    "border-sky-500/40 bg-sky-500/10 text-sky-100",
-    isFallbackRange && "border-dashed",
-  );
+  const wrapperCls = "relative h-full w-full flex items-center";
   if (!clickable) {
-    return <div className={cn(baseCls, "opacity-70")}>{content}</div>;
+    return <div className={cn(wrapperCls, "opacity-70")}>{content}</div>;
   }
   return (
     <button
       type="button"
       onClick={onClick}
       title={`Tageskarte verkaufen (${startLabel}-${endLabel})`}
-      className={cn(baseCls, "hover:brightness-125 active:scale-95 transition-all")}
+      className={cn(wrapperCls, "group hover:brightness-125 active:scale-95 transition-all")}
     >
       {content}
     </button>
@@ -2568,6 +2837,8 @@ function SlotOverviewPill({
   slot: SlotOverviewSlot;
   onClick: () => void;
 }) {
+  const { setHoverMin } = useContext(SlotOverviewUIContext);
+  const slotStartMin = timeStringToMinutes(slot.startTime);
   const blocked = !slot.available || (slot.remaining != null && slot.remaining <= 0);
   // Auslastung berechnet aus ANNY's capacity/remaining. Fallback: EMP-
   // Buchungen ueber Kapazitaet 1 = 100%. Wenn capacity unbekannt zeigen
@@ -2606,6 +2877,10 @@ function SlotOverviewPill({
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={() => slotStartMin != null && setHoverMin(slotStartMin)}
+      onMouseLeave={() => setHoverMin(null)}
+      onFocus={() => slotStartMin != null && setHoverMin(slotStartMin)}
+      onBlur={() => setHoverMin(null)}
       title={
         blocked
           ? `ANNY: ${slot.unavailabilityType || "blockiert"} (EMP-Tickets: ${slot.empBookings})`
