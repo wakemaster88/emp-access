@@ -1970,8 +1970,21 @@ function SlotOverviewSection({
   if (visible.length === 0) return null;
   // Top-Level: Resources (Lifte/Bahnen). Innerhalb jeder Resource dann
   // die bestehende Service-Gruppierung (Strandbad/Aquapark/Varianten).
+  //
+  // Resource-Header werden nur dann angezeigt, wenn sie auch Mehrwert
+  // bringen - d.h. mindestens eine Resource muss MEHRERE unterschiedliche
+  // Service-Gruppen umfassen (z.B. "Seilbahn B" mit "Bahnmiete" + "Anfaenger-
+  // kurs"). Wenn jede Resource genau 1:1 zu einer Service-Gruppe gehoert
+  // (typischer ANNY-Setup, wo Resources eher pro Service-Variante modelliert
+  // sind), ist der Resource-Header reine Doppel-Info und wird ausgeblendet.
   const resourceGroups = groupByResource(visible);
-  const hasMultipleResources = resourceGroups.length > 1;
+  const groupedPerResource = resourceGroups.map((rg) => ({
+    ...rg,
+    serviceGroups: groupOverviewServices(rg.services),
+  }));
+  const showResourceHeaders = groupedPerResource.some(
+    (rg) => rg.serviceGroups.length >= 2,
+  );
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -1999,12 +2012,16 @@ function SlotOverviewSection({
           )}
         </div>
       </div>
-      <div className="rounded-xl border border-slate-800/70 bg-slate-900/40 p-3 space-y-4">
-        {resourceGroups.map(({ resourceId, resourceName, services: resSvcs }) => {
-          const grouped = groupOverviewServices(resSvcs);
-          return (
+      <div
+        className={cn(
+          "rounded-xl border border-slate-800/70 bg-slate-900/40 p-3",
+          showResourceHeaders ? "space-y-4" : "space-y-3",
+        )}
+      >
+        {groupedPerResource.map(
+          ({ resourceId, resourceName, services: resSvcs, serviceGroups }) => (
             <div key={resourceId ?? "__none__"} className="space-y-3">
-              {hasMultipleResources && (
+              {showResourceHeaders && (
                 <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider text-sky-300/90 border-b border-sky-500/20 pb-1">
                   <Mountain className="h-3.5 w-3.5 shrink-0 text-sky-400" />
                   <span>{resourceName}</span>
@@ -2014,7 +2031,7 @@ function SlotOverviewSection({
                 </div>
               )}
               <div className="space-y-3">
-                {grouped.map(({ group, members }) => (
+                {serviceGroups.map(({ group, members }) => (
                   <SlotOverviewGroup
                     key={group}
                     group={group}
@@ -2025,8 +2042,8 @@ function SlotOverviewSection({
                 ))}
               </div>
             </div>
-          );
-        })}
+          ),
+        )}
       </div>
     </div>
   );
