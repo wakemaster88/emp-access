@@ -2780,6 +2780,9 @@ function AddTicketOverlay({
   const [slotsLoaded, setSlotsLoaded] = useState(false);
   const [hasAnnyLink, setHasAnnyLink] = useState(false);
   const [slotsNote, setSlotsNote] = useState<string>("");
+  // ANNY-Service-Typ: "slot" = Slot-Picker (Anfaengerkurs, etc.),
+  // "day" = Tagespass (Strandbad, etc. - kein Slot-Picker).
+  const [slotServiceType, setSlotServiceType] = useState<"slot" | "day" | null>(null);
 
   // Effektiver Datums-Modus fuer die UI:
   //   * Service mit TIME_SLOT oder ANNY-Verknuepfung -> "datetime" (Kurs)
@@ -2795,22 +2798,39 @@ function AddTicketOverlay({
     if (serviceId !== "none") {
       const svc = services.find((s) => String(s.id) === serviceId);
       if (svc?.defaultValidityType === "TIME_SLOT") return "datetime";
-      if (svc?.hasAnnyLink) return "datetime";
+      // hasAnnyLink ist nur ein Indikator - der echte Service-Typ kommt
+      // vom /slots-Endpoint zurueck (slotServiceType). Wenn das schon
+      // "day" gemeldet hat, bleiben wir bei "single" (Tagespass).
+      if (svc?.hasAnnyLink && slotServiceType !== "day") return "datetime";
     }
     if (voucher?.validityType === "TIME_SLOT") return "datetime";
     return "single";
-  }, [serviceId, services, voucher]);
+  }, [serviceId, services, voucher, slotServiceType]);
   const [error, setError] = useState("");
 
   // Slots fuer (Service, slotDate) aus ANNY ziehen. Re-fetch bei Wechsel von
   // Service oder Datum. Bei dateMode != "datetime" deaktiviert (Tagestickets
   // brauchen keine Slot-Liste).
   useEffect(() => {
-    if (dateMode !== "datetime" || serviceId === "none" || !slotDate) {
+    if (serviceId === "none" || !slotDate) {
       setSlots([]);
       setSlotsLoaded(false);
       setHasAnnyLink(false);
       setSlotsNote("");
+      setSlotServiceType(null);
+      return;
+    }
+    // Wenn der Service KEINEN ANNY-Link hat (und kein TIME_SLOT ist), gar
+    // nicht erst beim /slots-Endpoint nachfragen.
+    const svc = services.find((s) => String(s.id) === serviceId);
+    const wantsSlots =
+      svc?.defaultValidityType === "TIME_SLOT" || svc?.hasAnnyLink === true;
+    if (!wantsSlots) {
+      setSlots([]);
+      setSlotsLoaded(false);
+      setHasAnnyLink(false);
+      setSlotsNote("");
+      setSlotServiceType(null);
       return;
     }
     let cancelled = false;
@@ -2821,18 +2841,27 @@ function AddTicketOverlay({
       { cache: "no-store" },
     )
       .then((r) => r.json())
-      .then((data: { slots?: typeof slots; hasAnnyLink?: boolean; note?: string }) => {
-        if (cancelled) return;
-        setSlots(Array.isArray(data.slots) ? data.slots : []);
-        setHasAnnyLink(Boolean(data.hasAnnyLink));
-        setSlotsNote(typeof data.note === "string" ? data.note : "");
-        setSlotsLoaded(true);
-      })
+      .then(
+        (data: {
+          slots?: typeof slots;
+          hasAnnyLink?: boolean;
+          note?: string;
+          serviceType?: "slot" | "day";
+        }) => {
+          if (cancelled) return;
+          setSlots(Array.isArray(data.slots) ? data.slots : []);
+          setHasAnnyLink(Boolean(data.hasAnnyLink));
+          setSlotsNote(typeof data.note === "string" ? data.note : "");
+          setSlotServiceType(data.serviceType ?? null);
+          setSlotsLoaded(true);
+        },
+      )
       .catch(() => {
         if (cancelled) return;
         setSlots([]);
         setHasAnnyLink(false);
         setSlotsNote("");
+        setSlotServiceType(null);
         setSlotsLoaded(true);
       })
       .finally(() => {
@@ -2841,7 +2870,7 @@ function AddTicketOverlay({
     return () => {
       cancelled = true;
     };
-  }, [dateMode, serviceId, slotDate, token]);
+  }, [serviceId, slotDate, token, services]);
 
   const [pendingConflict, setPendingConflict] = useState<{
     label: string;

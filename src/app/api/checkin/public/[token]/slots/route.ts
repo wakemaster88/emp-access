@@ -151,6 +151,28 @@ export async function GET(
   }
   const annyServiceUuid = match.id;
 
+  // Service-Typ aus ANNY-Properties ableiten. Tageskarten / Full-Day-
+  // Services brauchen keinen Slot-Picker - dort waehlt der Mitarbeiter
+  // nur das Datum.
+  const minDur = match.serviceInfo?.minDuration ?? null;
+  const isDayService =
+    (minDur != null && minDur >= 24 * 60) ||
+    match.serviceInfo?.autoDuration === true;
+  const serviceType: "slot" | "day" = isDayService ? "day" : "slot";
+
+  if (serviceType === "day") {
+    // Tagespass: keine Slots im UI anzeigen, nur Datum. Wir geben das
+    // Service-Type-Signal mit, damit das Frontend die richtige UI-Variante
+    // rendert.
+    return NextResponse.json({
+      slots: [] as AvailabilitySlot[],
+      hasAnnyLink: true,
+      resourceCount: 1,
+      serviceType,
+      annyServiceUuid,
+    });
+  }
+
   // Slot-Dauer aus dem ANNY-Service ableiten:
   //   * min_duration ist die kanonische Buchungsdauer fuer fixed-duration
   //     Services (z.B. "Anfaengerkurs 60 min").
@@ -200,6 +222,7 @@ export async function GET(
     slots,
     hasAnnyLink: true,
     resourceCount: 1,
+    serviceType,
     ...(debug
       ? {
           rawAnnySlots: rawSlots,
