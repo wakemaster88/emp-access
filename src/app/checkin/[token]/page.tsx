@@ -2139,23 +2139,28 @@ function SlotTimeline({
   range,
   children,
   empty,
+  heightPx = 28,
 }: {
   range: TimeRange;
   children?: React.ReactNode;
   /** Optionaler Empty-State-Text fuer Services ohne Slots. */
   empty?: string;
+  /** Hoehe des Timeline-Containers in Pixel (Default 28). Bei Combined-Rows
+   *  mit gestackten Stripes wird die Hoehe hochgesetzt, damit die Stripes
+   *  nicht ueberlappen. */
+  heightPx?: number;
 }) {
   const { nowMin, hoverMin } = useContext(SlotOverviewUIContext);
   const total = Math.max(1, range.endMin - range.startMin);
-  // Tick alle 2 Stunden bei breitem Range, sonst stuendlich (wie TimelineAxis).
-  const tickStepMin = total / 60 > 6 ? 60 : 60;
+  // Stundliches Raster (wie TimelineAxis).
+  const tickStepMin = 60;
   const firstTick = Math.ceil(range.startMin / tickStepMin) * tickStepMin;
   const ticks: number[] = [];
   for (let t = firstTick; t < range.endMin; t += tickStepMin) ticks.push(t);
   const nowVisible = nowMin != null && nowMin >= range.startMin && nowMin <= range.endMin;
   const hoverVisible = hoverMin != null && hoverMin >= range.startMin && hoverMin <= range.endMin;
   return (
-    <div className="relative h-7">
+    <div className="relative" style={{ height: `${heightPx}px` }}>
       <div className="absolute inset-0 pointer-events-none">
         {ticks.map((t) => {
           const left = ((t - range.startMin) / total) * 100;
@@ -2581,17 +2586,31 @@ function SlotOverviewGroup({
         )}
       </div>
       <div className={cn("space-y-1.5", isMulti && "pl-5 border-l border-slate-800/60 ml-2")}>
-        {members.map((sv) => (
-          <SlotOverviewServiceRow
-            key={sv.serviceId}
-            sv={sv}
-            range={range}
+        {isMulti && allDay ? (
+          // Mehrere Day-Pass-Varianten: stacked Stripes in EINER Zeile, damit
+          // man Tageskarte + Abendkarte (Strandbad), Tageskarte + Stundenkarte
+          // (Aquapark) oder 1h/2h/Tageskarte (Oeffentlicher Betrieb) visuell
+          // als ineinanderliegende Zeitbereiche erkennt.
+          <CombinedDayPassRow
             group={group}
-            isMulti={isMulti}
+            members={members}
+            range={range}
             currentDate={currentDate}
             onPick={onPick}
           />
-        ))}
+        ) : (
+          members.map((sv) => (
+            <SlotOverviewServiceRow
+              key={sv.serviceId}
+              sv={sv}
+              range={range}
+              group={group}
+              isMulti={isMulti}
+              currentDate={currentDate}
+              onPick={onPick}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -2654,6 +2673,161 @@ function SlotOverviewServiceRow({
         title={`${sv.totalEmpBookings} EMP-Ticket(s) heute verkauft`}
       >
         {sv.totalEmpBookings}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Kombiniert mehrere Day-Pass / DayPass-aehnliche Varianten einer Service-
+ * Gruppe in EINER Zeile mit vertikal gestackten Stripes. Beispiele:
+ *
+ *   Strandbad - Tageskarte + Abendkarte:
+ *     [────── Tageskarte 10:00-20:00 ──────]
+ *                        [── Abend 18-20 ──]
+ *
+ *   Aquapark - Tageskarte + Stundenkarte:
+ *     [────── Tageskarte 10:00-20:00 ──────]
+ *     [────── Stundenkarte 10-20 ──────]    (gleiche Range)
+ *
+ * Jede Variante hat ihre eigene Farbe. Pills sind klickbar (oeffnen Add-
+ * Ticket-Overlay fuer die jeweilige Variante).
+ */
+function CombinedDayPassRow({
+  group,
+  members,
+  range,
+  currentDate,
+  onPick,
+}: {
+  group: string;
+  members: SlotOverviewService[];
+  range: TimeRange;
+  currentDate: string;
+  onPick: (payload: SlotOverviewPickPayload) => void;
+}) {
+  // Sortiere Members: laengste Range zuerst (visuell als "Hintergrund").
+  // Damit liegt die Tageskarte unten, die Abendkarte als kuerzerer Stripe drueber.
+  const sorted = useMemo(() => {
+    const periodLen = (sv: SlotOverviewService): number => {
+      if (sv.openingHours.length === 0) return range.endMin - range.startMin;
+      let total = 0;
+      for (const oh of sv.openingHours) {
+        const s = timeStringToMinutes(oh.start);
+        const e = timeStringToMinutes(oh.end);
+        if (s != null && e != null) total += Math.max(0, e - s);
+      }
+      return total;
+    };
+    return [...members].sort((a, b) => periodLen(b) - periodLen(a));
+  }, [members, range]);
+
+  const totalBookings = members.reduce((s, sv) => s + sv.totalEmpBookings, 0);
+  // Layout: pro Variante 8px Stripe + 3px Gap, plus 4px Padding oben/unten.
+  const stripeHeight = 8;
+  const stripeGap = 3;
+  const padding = 4;
+  const totalHeight = Math.max(
+    28,
+    sorted.length * stripeHeight + (sorted.length - 1) * stripeGap + padding * 2,
+  );
+
+  // Farb-Palette: erstes Element (laengster Range) = sky, dann emerald, violet, amber.
+  const variantStyles = [
+    { bar: "bg-sky-500/45 border-sky-400/60", label: "text-sky-200" },
+    { bar: "bg-emerald-500/55 border-emerald-400/70", label: "text-emerald-200" },
+    { bar: "bg-violet-500/55 border-violet-400/70", label: "text-violet-200" },
+    { bar: "bg-amber-500/55 border-amber-400/70", label: "text-amber-200" },
+  ];
+
+  return (
+    <div className="flex items-stretch gap-2 text-[11px]">
+      <div className="shrink-0 w-[130px] flex flex-col justify-center text-slate-400 gap-0.5">
+        {sorted.map((sv, idx) => {
+          const { variant } = splitServiceLabel(sv.name, group);
+          const style = variantStyles[idx % variantStyles.length];
+          return (
+            <div key={sv.serviceId} className="flex items-center gap-1.5 text-[10px]">
+              <span
+                className={cn("inline-block w-2 h-2 rounded-sm", style.bar.split(" ")[0])}
+                aria-hidden
+              />
+              <span className="truncate">{variant || sv.name}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex-1 min-w-0">
+        <SlotTimeline range={range} heightPx={totalHeight}>
+          {sorted.flatMap((sv, idx) => {
+            const { variant } = splitServiceLabel(sv.name, group);
+            const periods =
+              sv.openingHours.length > 0
+                ? sv.openingHours
+                : [
+                    {
+                      start: minutesToTimeString(range.startMin),
+                      end: minutesToTimeString(range.endMin),
+                    },
+                  ];
+            const style = variantStyles[idx % variantStyles.length];
+            const top = padding + idx * (stripeHeight + stripeGap);
+            return periods.map((oh, pidx) => {
+              const startMin = timeStringToMinutes(oh.start) ?? range.startMin;
+              const endMin = timeStringToMinutes(oh.end) ?? range.endMin;
+              const totalR = Math.max(1, range.endMin - range.startMin);
+              const left = Math.max(0, ((startMin - range.startMin) / totalR) * 100);
+              const widthRaw = ((endMin - startMin) / totalR) * 100;
+              const width = Math.max(2, Math.min(100 - left, widthRaw));
+              const isFallback = sv.openingHours.length === 0;
+              return (
+                <button
+                  key={`${sv.serviceId}-${pidx}`}
+                  type="button"
+                  onClick={() =>
+                    sv.availableToday
+                    && onPick({ serviceId: sv.serviceId, slotDate: currentDate })
+                  }
+                  disabled={!sv.availableToday}
+                  title={`${variant || sv.name}: ${oh.start}-${oh.end} · ${sv.totalEmpBookings} verkauft`}
+                  className={cn(
+                    "absolute rounded-full border overflow-hidden flex items-center justify-center",
+                    style.bar,
+                    sv.availableToday
+                      ? "hover:brightness-125 active:scale-95 transition-all cursor-pointer"
+                      : "opacity-50 cursor-not-allowed",
+                    isFallback && "border-dashed",
+                  )}
+                  style={{
+                    top: `${top}px`,
+                    height: `${stripeHeight}px`,
+                    left: `${left}%`,
+                    width: `${width}%`,
+                  }}
+                >
+                  <span
+                    className={cn(
+                      "text-[8px] font-mono tabular-nums leading-none truncate px-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]",
+                      style.label,
+                    )}
+                  >
+                    {oh.start}-{oh.end}
+                    {sv.totalEmpBookings > 0 && ` · ${sv.totalEmpBookings}`}
+                  </span>
+                </button>
+              );
+            });
+          })}
+        </SlotTimeline>
+      </div>
+      <div
+        className={cn(
+          "shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums",
+          totalBookings > 0 ? "text-emerald-300" : "text-slate-600",
+        )}
+        title={`${totalBookings} EMP-Ticket(s) heute verkauft (alle Varianten zusammen)`}
+      >
+        {totalBookings}
       </div>
     </div>
   );
