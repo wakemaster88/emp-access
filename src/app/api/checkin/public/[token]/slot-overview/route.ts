@@ -293,16 +293,18 @@ export async function GET(
       //  b) die Oeffnungszeiten anzeigen (10:00-18:00 etc.) - dafuer
       //     /availability/periods
       //
-      // Fuer die Oeffnungszeiten bevorzugen wir die Resource-basierte
-      // Variante (?r[]=<resourceId>), weil die Service-Periods bei einigen
-      // ANNY-Services falsch konfiguriert oder gar nicht hinterlegt sind.
-      // Die Resource-Periods sind das, was die ANNY-Admin-UI selbst
-      // anzeigt - also die "Wahrheit" der Oeffnungszeiten. Fallback auf
-      // Service-Periods nur, wenn der Service keine verknuepfte Resource
-      // hat (z.B. reine virtuelle Tageskarten ohne Resource-Mapping).
+      // Oeffnungszeiten: zuerst service-basiert (das ist die ANNY-
+      // autoritative Service-Verfuegbarkeit incl. Service-Schedule, z.B.
+      // "Strandbad-Tageskarte erst ab 12:00 buchbar" obwohl die Resource
+      // "Strandbad" schon ab 10:00 offen ist). Erst wenn der Service-
+      // Endpoint keine Periods liefert (passiert bei Services ohne
+      // explizite Service-Schedule), fallback auf die Resource-Periods
+      // ueber ?r[]=<resourceId>. So bekommen wir bei korrekt gepflegten
+      // ANNY-Services die echten Service-Zeiten und bei Tenants ohne
+      // Service-Schedule trotzdem sinnvolle Werte.
       if (serviceType === "day") {
         const hasResources = match.resourceIds.length > 0;
-        const [datesRes, periodsRes] = await Promise.all([
+        const [datesRes, servicePeriods] = await Promise.all([
           fetchAnnyServiceStartDates(
             baseUrl,
             annyConfig!.token,
@@ -311,21 +313,23 @@ export async function GET(
             dateStr,
             organizationId,
           ).catch(() => [] as string[]),
-          hasResources
-            ? fetchAnnyResourcePeriods(
-                baseUrl,
-                annyConfig!.token,
-                match.resourceIds,
-                dateStr,
-              ).catch(() => [])
-            : fetchAnnyServicePeriods(
-                baseUrl,
-                annyConfig!.token,
-                match.id,
-                dateStr,
-                organizationId,
-              ).catch(() => []),
+          fetchAnnyServicePeriods(
+            baseUrl,
+            annyConfig!.token,
+            match.id,
+            dateStr,
+            organizationId,
+          ).catch(() => []),
         ]);
+        let periodsRes = servicePeriods;
+        if (periodsRes.length === 0 && hasResources) {
+          periodsRes = await fetchAnnyResourcePeriods(
+            baseUrl,
+            annyConfig!.token,
+            match.resourceIds,
+            dateStr,
+          ).catch(() => []);
+        }
         const availableToday =
           datesRes.length === 0 ? true : datesRes.some((d) => d.startsWith(dateStr));
         const merged = mergeAvailabilityPeriods(periodsRes);

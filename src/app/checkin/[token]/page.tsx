@@ -1866,6 +1866,7 @@ const MANUAL_GROUP_ORDER = [
   "Strandbad",
   "Aquapark",
   "SUP",
+  "Oeffentlicher Betrieb",
   "Seilbahn A",
   "Seilbahn B",
   "Uebungslift",
@@ -1879,9 +1880,16 @@ const MANUAL_GROUP_RULES: Array<{ group: ManualGroup; test: (n: string) => boole
   { group: "Aquapark", test: (n) => /^aquapark/i.test(n) },
   // SUP nur als ganzes Wort matchen (nicht "Support" o.ae.).
   { group: "SUP", test: (n) => /\bsup\b/i.test(n) },
-  // Seilbahn A: Oeffentlicher Betrieb (laeuft auf der grossen Bahn) +
-  // Exklusive Bahnmiete A.
-  { group: "Seilbahn A", test: (n) => /öffentlicher\s+betrieb/i.test(n) },
+  // Oeffentlicher Betrieb: eigene Gruppe mit den 1h/2h/Tageskarte-Varianten.
+  // Steht vor "Seilbahn A" damit die OB-Services nicht versehentlich dort
+  // landen (auch wenn der OB physisch auf Seilbahn A laeuft - im Shop-Monitor
+  // ist OB eine eigenstaendige Ticket-Familie und soll als Gruppe sichtbar
+  // sein).
+  {
+    group: "Oeffentlicher Betrieb",
+    test: (n) => /öffentlicher\s+betrieb/i.test(n) || /oeffentlicher\s+betrieb/i.test(n),
+  },
+  // Seilbahn A: nur Exklusive Bahnmiete A.
   {
     group: "Seilbahn A",
     test: (n) => /exklusive?\s+bahnmiete\s*a\b/i.test(n) || /bahnmiete\s+seilbahn\s+a\b/i.test(n),
@@ -2554,7 +2562,6 @@ function SlotOverviewGroup({
 }) {
   const totalEmp = members.reduce((a, m) => a + m.totalEmpBookings, 0);
   const allDay = members.every((m) => m.serviceType === "day");
-  const hasSingleMember = members.length === 1;
 
   // Einzel-Service: kompakter Header ohne Sub-Bullet (Variant-Name landet im
   // Header). Verhalten wie vor der Gruppierung, fuer "Strandbad - Tageskarte"
@@ -2562,30 +2569,34 @@ function SlotOverviewGroup({
   // Services (oeffnet Add-Ticket-Overlay) - bei Slot-Services klickt der
   // User unten auf die Slot-Pills.
   const isMulti = members.length > 1;
-  const singleVariant = !isMulti ? splitServiceLabel(members[0].name, group).variant : null;
+  const variantLabels = members.map(
+    (m) => splitServiceLabel(m.name, group).variant || m.name,
+  );
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
         <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
-        <span className="font-semibold truncate">{group}</span>
-        {isMulti && (
-          <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
-            · {members.length} Varianten
-          </span>
-        )}
-        {singleVariant && (
-          <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
-            · {singleVariant}
+        <span className="font-semibold truncate shrink-0">{group}</span>
+        {/* Varianten-Namen explizit listen statt nur "· N Varianten" - so
+            sieht der User auf einen Blick welche Tickets in der Gruppe
+            stecken (z.B. "Tageskarte · Abendkarte"). In den einzelnen
+            Service-Zeilen unten ist die linke Spalte deshalb leer, damit
+            das Label nicht doppelt erscheint. */}
+        {variantLabels.some((v) => v) && (
+          <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal truncate">
+            · {variantLabels.join(" · ")}
           </span>
         )}
         {totalEmp > 0 && (
-          <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
+          <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto shrink-0">
             {totalEmp} verkauft
           </span>
         )}
       </div>
-      <div className={cn("space-y-1.5", isMulti && "pl-5 border-l border-slate-800/60 ml-2")}>
+      {/* Kein zusaetzlicher Indent bei Multi-Gruppen - die Timelines bleiben
+          so vertikal aligned mit der globalen Zeit-Axis und der Heatmap. */}
+      <div className="space-y-1.5">
         {isMulti && allDay ? (
           // Mehrere Day-Pass-Varianten: stacked Stripes in EINER Zeile, damit
           // man Tageskarte + Abendkarte (Strandbad), Tageskarte + Stundenkarte
@@ -2604,8 +2615,6 @@ function SlotOverviewGroup({
               key={sv.serviceId}
               sv={sv}
               range={range}
-              group={group}
-              isMulti={isMulti}
               currentDate={currentDate}
               onPick={onPick}
             />
@@ -2627,31 +2636,20 @@ function SlotOverviewGroup({
 function SlotOverviewServiceRow({
   sv,
   range,
-  group,
-  isMulti,
   currentDate,
   onPick,
 }: {
   sv: SlotOverviewService;
   range: TimeRange;
-  group: string;
-  isMulti: boolean;
   currentDate: string;
   onPick: (payload: SlotOverviewPickPayload) => void;
 }) {
-  const { variant } = splitServiceLabel(sv.name, group);
   const dayClickable = sv.serviceType === "day" && sv.availableToday && !sv.note;
-  const labelText = isMulti ? (variant || sv.name) : "";
   return (
     <div className="flex items-stretch gap-2 text-[11px]">
-      <div
-        className={cn(
-          "shrink-0 w-[130px] flex items-center text-slate-400 truncate",
-          isMulti ? "font-medium" : "",
-        )}
-      >
-        {labelText}
-      </div>
+      {/* Linke Spalte ist leer (Spacer fuer Axis-Alignment) - die Variant-
+          Namen stehen oben im Group-Header. */}
+      <div className="shrink-0 w-[130px]" aria-hidden />
       <div className="flex-1 min-w-0">
         <SlotOverviewServiceBody
           sv={sv}
@@ -2757,11 +2755,9 @@ function CombinedDayPassRow({
     );
     return (
       <div className="flex items-stretch gap-2 text-[11px]">
-        <div className="shrink-0 w-[130px] flex items-center text-slate-400">
-          <span className="text-[10px] text-slate-500 truncate">
-            {members.length} Varianten
-          </span>
-        </div>
+        {/* Linke Spalte: leer (Spacer). Variant-Namen stehen oben im
+            Group-Header, hier wuerde sie sonst doppelt erscheinen. */}
+        <div className="shrink-0 w-[130px]" aria-hidden />
         <div className="flex-1 min-w-0">
           <SlotTimeline range={range}>
             {periods.map((oh, pidx) => {
@@ -2817,23 +2813,10 @@ function CombinedDayPassRow({
 
   return (
     <div className="flex items-stretch gap-2 text-[11px]">
-      <div className="shrink-0 w-[130px] flex flex-col justify-center text-slate-400 gap-0.5">
-        {sorted.map((sv, idx) => {
-          const { variant } = splitServiceLabel(sv.name, group);
-          const dotColor = variantStyles[idx % variantStyles.length]
-            .split(" ")
-            .find((c) => c.startsWith("bg-"));
-          return (
-            <div key={sv.serviceId} className="flex items-center gap-1.5 text-[10px]">
-              <span
-                className={cn("inline-block w-2 h-2 rounded-sm", dotColor)}
-                aria-hidden
-              />
-              <span className="truncate">{variant || sv.name}</span>
-            </div>
-          );
-        })}
-      </div>
+      {/* Linke Spalte: leer (Spacer). Die Variant-Namen stehen oben im
+          Group-Header; die Pills tragen Variante + Zeit als Tooltip und
+          Farbcode visuell. */}
+      <div className="shrink-0 w-[130px]" aria-hidden />
       <div className="flex-1 min-w-0">
         <SlotTimeline range={range}>
           {sorted.flatMap((sv, idx) => {
