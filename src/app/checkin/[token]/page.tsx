@@ -2768,7 +2768,14 @@ function AddTicketOverlay({
   // wird.
   const [slotDate, setSlotDate] = useState("");
   const [slots, setSlots] = useState<
-    Array<{ startTime: string; endTime: string; startIso: string; endIso: string; remaining?: number }>
+    Array<{
+      startTime: string;
+      endTime: string;
+      startIso: string;
+      endIso: string;
+      remaining?: number;
+      capacity?: number;
+    }>
   >([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsLoaded, setSlotsLoaded] = useState(false);
@@ -3257,7 +3264,11 @@ function AddTicketOverlay({
                                       : "text-slate-400",
                               )}
                             >
-                              {s.remaining > 0 ? `${s.remaining} frei` : "voll"}
+                              {s.remaining > 0
+                                ? typeof s.capacity === "number" && s.capacity > 0
+                                  ? `${s.remaining} von ${s.capacity} frei`
+                                  : `${s.remaining} frei`
+                                : "voll"}
                             </span>
                           )}
                         </button>

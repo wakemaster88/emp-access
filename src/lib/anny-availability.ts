@@ -368,7 +368,10 @@ export interface ServiceStartSlot {
   startTime: string;
   endTime: string;
   available: boolean;
+  /** Aktuell freie Plaetze (ANNY: remaining_number_available). */
   remaining?: number;
+  /** Gesamtkapazitaet des Slots (ANNY: number_available). */
+  capacity?: number;
 }
 
 /**
@@ -417,6 +420,7 @@ export async function fetchAnnyServiceStartSlots(
       const it = raw as {
         start_date?: string;
         available?: boolean;
+        number_available?: number;
         remaining_number_available?: number;
         unavailability_type?: string;
       };
@@ -437,6 +441,7 @@ export async function fetchAnnyServiceStartSlots(
         endTime: endIso ? fmtTimeBerlin(endIso) : "",
         available: isAvailable,
         remaining: it.remaining_number_available,
+        capacity: it.number_available,
       });
     }
     return result;
@@ -466,11 +471,13 @@ export type AvailabilitySlot = {
   startIso: string;
   endIso: string;
   /**
-   * Restkapazitaet laut ANNY (number_available - booked). Nur gesetzt, wenn
-   * der Service kapazitaetsbegrenzt ist - bei unbegrenzten Slots (z.B.
+   * Aktuell freie Plaetze (ANNY: remaining_number_available). Nur gesetzt,
+   * wenn der Service kapazitaetsbegrenzt ist - bei unbegrenzten Slots (z.B.
    * Drop-in-Kurs) ist das Feld absent.
    */
   remaining?: number;
+  /** Gesamtkapazitaet des Slots (ANNY: number_available). */
+  capacity?: number;
 };
 
 /** Erzeugt deduplizierte, sortierte Slots aus Roh-Perioden. */

@@ -183,6 +183,7 @@ export async function GET(
       startIso: s.startIso,
       endIso: s.endIso,
       ...(typeof s.remaining === "number" ? { remaining: s.remaining } : {}),
+      ...(typeof s.capacity === "number" ? { capacity: s.capacity } : {}),
     }));
 
   return NextResponse.json({
