@@ -693,6 +693,44 @@ export interface ServiceStartSlot {
 }
 
 /**
+ * ANNY's Lead-Time-Konfiguration (z.B. "Buchung erst ab 24h vor Termin" oder
+ * "letzte Buchung 1h vor Termin") gilt nur fuer Online-Buchungen durch
+ * Endkunden. Beim Vor-Ort-Verkauf am Schalter ist das irrelevant - der
+ * Mitarbeiter muss jederzeit buchen koennen, solange noch Kapazitaet frei ist.
+ *
+ * Dieser Helper ueberschreibt deshalb `available: true` und entfernt den
+ * `unavailabilityType`-Marker fuer ALLE Lead-Time-bezogenen Reasons, sodass
+ * die Slot-Pills im Shop-Monitor nicht als "zu frueh" / "zu spaet" gerendert
+ * werden. Andere Reasons (booked_out, under_min_duration, staggered_conflict,
+ * blocked, ...) bleiben unveraendert.
+ *
+ * Wichtig: `remaining` / `capacity` bleiben aus ANNY uebernommen - das sind
+ * die echten Kapazitaets-Zahlen, die wir 1:1 anzeigen.
+ */
+const LEAD_TIME_UNAVAILABILITY_REASONS = new Set([
+  "before_lead_time",
+  "after_lead_time",
+  "lead_time_conflict",
+]);
+
+export function isLeadTimeUnavailability(
+  reason: string | null | undefined,
+): boolean {
+  return !!reason && LEAD_TIME_UNAVAILABILITY_REASONS.has(reason);
+}
+
+export function ignoreLeadTimeBlocking(
+  slots: ServiceStartSlot[],
+): ServiceStartSlot[] {
+  return slots.map((s) => {
+    if (!isLeadTimeUnavailability(s.unavailabilityType)) return s;
+    const next: ServiceStartSlot = { ...s, available: true };
+    delete next.unavailabilityType;
+    return next;
+  });
+}
+
+/**
  * Holt die buchbaren Start-Intervalle eines Services fuer ein Datum.
  * Mapped auf den korrekten ANNY-Endpoint:
  *   GET /api/v1/availability/start?service_id=...&date=YYYY-MM-DD

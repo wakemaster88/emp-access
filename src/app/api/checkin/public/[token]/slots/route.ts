@@ -4,6 +4,7 @@ import {
   resolveAnnyOrganizationId,
   fetchAnnyServiceMatch,
   fetchAnnyServiceStartSlots,
+  ignoreLeadTimeBlocking,
   type AvailabilitySlot,
 } from "@/lib/anny-availability";
 
@@ -207,6 +208,12 @@ export async function GET(
       error: "ANNY nicht erreichbar",
     });
   }
+
+  // ANNY's Lead-Time-Konfig gilt nur fuer Online-Buchungen - Vor-Ort am
+  // Schalter immer buchbar. Slots mit `before_lead_time` / `after_lead_time`
+  // / `lead_time_conflict` werden deshalb als verfuegbar markiert (echte
+  // Kapazitaet bleibt unveraendert).
+  rawSlots = ignoreLeadTimeBlocking(rawSlots);
 
   // Wir reichen ALLE Slots durch (auch nicht-verfuegbare), damit das UI
   // dem Mitarbeiter ehrlich zeigt: "diese Zeit kennt ANNY, ist aber voll".
