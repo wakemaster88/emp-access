@@ -3254,21 +3254,34 @@ function AddTicketOverlay({
                           {typeof s.remaining === "number" && (
                             <span
                               className={cn(
-                                "text-[10px] font-normal",
+                                "text-[10px] font-normal leading-tight",
                                 isSelected
                                   ? "text-emerald-50"
                                   : s.remaining <= 0
                                     ? "text-rose-400"
                                     : s.remaining <= 2
                                       ? "text-amber-400"
-                                      : "text-slate-400",
+                                      : "text-emerald-400",
                               )}
                             >
-                              {s.remaining > 0
-                                ? typeof s.capacity === "number" && s.capacity > 0
-                                  ? `${s.remaining} von ${s.capacity} frei`
-                                  : `${s.remaining} frei`
-                                : "voll"}
+                              {s.remaining > 0 ? (
+                                <>
+                                  {s.remaining} frei
+                                  {typeof s.capacity === "number" &&
+                                    s.capacity > s.remaining && (
+                                      <span
+                                        className={cn(
+                                          "ml-1 opacity-60",
+                                          isSelected ? "" : "text-slate-400",
+                                        )}
+                                      >
+                                        / {s.capacity}
+                                      </span>
+                                    )}
+                                </>
+                              ) : (
+                                "voll"
+                              )}
                             </span>
                           )}
                         </button>
