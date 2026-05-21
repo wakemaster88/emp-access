@@ -1844,40 +1844,113 @@ function splitServiceLabel(
 }
 
 /**
- * Top-Level-Gruppierung nach ANNY-Resource (Lift/Bahn). Services ohne
- * Resource (Day-Pass-Services wie Strandbad/Aquapark, oder ohne ANNY-Match)
- * landen in einer "Sonstige"-Gruppe am Ende.
+ * Top-Level-Gruppierung im Slot-Auslastungs-Dashboard. Verwendet eine
+ * kuratierte Lift-/Bereich-Reihenfolge, weil ANNY's Resources im aktuellen
+ * Tenant-Setup nicht physische Lifte abbilden (jede Resource ist 1:1 zu
+ * einer Service-Variante).
  *
- * Reihenfolge: erstes Auftauchen einer Resource (deterministisch durch
- * Service-Reihenfolge des Backend).
+ * TODO: spaeter in EMP-Backoffice konfigurierbar machen (Feld
+ * `displayGroup` + `displayOrder` am Service-Modell).
+ *
+ * Aktuell ist die Reihenfolge:
+ *   1. Strandbad
+ *   2. Aquapark
+ *   3. SUP
+ *   4. Seilbahn A (Oeffentlicher Betrieb + Exklusive Bahnmiete A)
+ *   5. Seilbahn B (Anfaengerkurs Seilbahn B + Exklusive Bahnmiete B)
+ *   6. Uebungslift (Anfaengerkurs Uebungslift + Exklusiver Uebungslift)
+ *   7. Kurse (Ferienkurs, sonstige Anfaengerkurse)
+ *   8. Sonstige (alles, was kein Pattern matched, ans Ende)
+ */
+const MANUAL_GROUP_ORDER = [
+  "Strandbad",
+  "Aquapark",
+  "SUP",
+  "Seilbahn A",
+  "Seilbahn B",
+  "Uebungslift",
+  "Kurse",
+] as const;
+
+type ManualGroup = (typeof MANUAL_GROUP_ORDER)[number];
+
+const MANUAL_GROUP_RULES: Array<{ group: ManualGroup; test: (n: string) => boolean }> = [
+  { group: "Strandbad", test: (n) => /^strandbad/i.test(n) },
+  { group: "Aquapark", test: (n) => /^aquapark/i.test(n) },
+  // SUP nur als ganzes Wort matchen (nicht "Support" o.ae.).
+  { group: "SUP", test: (n) => /\bsup\b/i.test(n) },
+  // Seilbahn A: Oeffentlicher Betrieb (laeuft auf der grossen Bahn) +
+  // Exklusive Bahnmiete A.
+  { group: "Seilbahn A", test: (n) => /öffentlicher\s+betrieb/i.test(n) },
+  {
+    group: "Seilbahn A",
+    test: (n) => /exklusive?\s+bahnmiete\s*a\b/i.test(n) || /bahnmiete\s+seilbahn\s+a\b/i.test(n),
+  },
+  // Seilbahn B
+  {
+    group: "Seilbahn B",
+    test: (n) => /exklusive?\s+bahnmiete\s*b\b/i.test(n) || /bahnmiete\s+seilbahn\s+b\b/i.test(n),
+  },
+  {
+    group: "Seilbahn B",
+    test: (n) => /anf(ä|ae)ngerkurs.*seilbahn\s*b\b/i.test(n),
+  },
+  // Uebungslift
+  {
+    group: "Uebungslift",
+    test: (n) => /anf(ä|ae)ngerkurs.*(übungslift|uebungslift)/i.test(n),
+  },
+  {
+    group: "Uebungslift",
+    test: (n) => /exklusive?r?\s+(übungslift|uebungslift)/i.test(n),
+  },
+  // Kurse: Ferienkurs + alle weiteren Anfaengerkurse ohne Lift-Spezifikation
+  { group: "Kurse", test: (n) => /ferienkurs/i.test(n) },
+  { group: "Kurse", test: (n) => /anf(ä|ae)ngerkurs/i.test(n) },
+];
+
+function assignManualGroup(name: string): ManualGroup | null {
+  for (const rule of MANUAL_GROUP_RULES) {
+    if (rule.test(name)) return rule.group;
+  }
+  return null;
+}
+
+/**
+ * Gruppiert Services nach manueller Display-Reihenfolge (siehe
+ * MANUAL_GROUP_ORDER). Services ohne Match landen in "Sonstige" am Ende.
+ *
+ * resourceId/resourceName werden weiterhin nach aussen gegeben (fuer die
+ * showResourceHeaders-Logik), basieren aber jetzt auf der manuellen
+ * Gruppierung statt auf ANNY-Resources.
  */
 function groupByResource(services: SlotOverviewService[]): Array<{
   resourceId: string | null;
   resourceName: string;
   services: SlotOverviewService[];
 }> {
-  const order: (string | null)[] = [];
-  const buckets = new Map<string | null, SlotOverviewService[]>();
+  const buckets = new Map<string, SlotOverviewService[]>();
   for (const sv of services) {
-    const key = sv.primaryResource?.id ?? null;
-    if (!buckets.has(key)) {
-      buckets.set(key, []);
-      order.push(key);
-    }
+    const key = assignManualGroup(sv.name) ?? "__sonstige__";
+    if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key)!.push(sv);
   }
-  // Sonstige (null) ans Ende sortieren.
-  order.sort((a, b) => {
-    if (a === b) return 0;
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return 0;
-  });
-  return order.map((id) => {
-    const members = buckets.get(id)!;
-    const name = id ? (members[0].primaryResource?.name ?? "Sonstige") : "Sonstige";
-    return { resourceId: id, resourceName: name, services: members };
-  });
+  const out: Array<{
+    resourceId: string | null;
+    resourceName: string;
+    services: SlotOverviewService[];
+  }> = [];
+  for (const group of MANUAL_GROUP_ORDER) {
+    const members = buckets.get(group);
+    if (members && members.length > 0) {
+      out.push({ resourceId: group, resourceName: group, services: members });
+    }
+  }
+  const rest = buckets.get("__sonstige__");
+  if (rest && rest.length > 0) {
+    out.push({ resourceId: null, resourceName: "Sonstige", services: rest });
+  }
+  return out;
 }
 
 /**
@@ -1968,23 +2041,32 @@ function SlotOverviewSection({
     (sv) => sv.availableToday || sv.totalEmpBookings > 0,
   );
   if (visible.length === 0) return null;
-  // Top-Level: Resources (Lifte/Bahnen). Innerhalb jeder Resource dann
-  // die bestehende Service-Gruppierung (Strandbad/Aquapark/Varianten).
+  // Top-Level: manuell kuratierte Lift-/Bereich-Reihenfolge (siehe
+  // MANUAL_GROUP_ORDER). Innerhalb jeder Gruppe die bestehende
+  // Service-Gruppierung.
   //
-  // Resource-Header werden nur dann angezeigt, wenn sie auch Mehrwert
-  // bringen - d.h. mindestens eine Resource muss MEHRERE unterschiedliche
-  // Service-Gruppen umfassen (z.B. "Seilbahn B" mit "Bahnmiete" + "Anfaenger-
-  // kurs"). Wenn jede Resource genau 1:1 zu einer Service-Gruppe gehoert
-  // (typischer ANNY-Setup, wo Resources eher pro Service-Variante modelliert
-  // sind), ist der Resource-Header reine Doppel-Info und wird ausgeblendet.
+  // Resource-Header werden pro Gruppe entschieden:
+  //   - >=2 Service-Gruppen: Header zeigen ("Seilbahn A" enthaelt
+  //     "Oeffentlicher Betrieb" + "Exklusive Bahnmiete A" -> Header sinnvoll).
+  //   - 1 Service-Gruppe + Name-Match: Header weglassen ("Strandbad"-
+  //     Gruppe enthaelt nur 1 Service-Gruppe "Strandbad" -> Header waere
+  //     reine Doppel-Info).
   const resourceGroups = groupByResource(visible);
-  const groupedPerResource = resourceGroups.map((rg) => ({
-    ...rg,
-    serviceGroups: groupOverviewServices(rg.services),
-  }));
-  const showResourceHeaders = groupedPerResource.some(
-    (rg) => rg.serviceGroups.length >= 2,
-  );
+  const groupedPerResource = resourceGroups.map((rg) => {
+    const serviceGroups = groupOverviewServices(rg.services);
+    let showHeader = serviceGroups.length >= 2;
+    if (!showHeader && serviceGroups.length === 1) {
+      const onlyName = serviceGroups[0].group.toLowerCase();
+      const resName = rg.resourceName.toLowerCase();
+      const namesAreSimilar =
+        onlyName === resName
+        || onlyName.startsWith(resName)
+        || resName.startsWith(onlyName);
+      showHeader = !namesAreSimilar;
+    }
+    return { ...rg, serviceGroups, showHeader };
+  });
+  const anyHeader = groupedPerResource.some((rg) => rg.showHeader);
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -2015,13 +2097,13 @@ function SlotOverviewSection({
       <div
         className={cn(
           "rounded-xl border border-slate-800/70 bg-slate-900/40 p-3",
-          showResourceHeaders ? "space-y-4" : "space-y-3",
+          anyHeader ? "space-y-4" : "space-y-3",
         )}
       >
         {groupedPerResource.map(
-          ({ resourceId, resourceName, services: resSvcs, serviceGroups }) => (
+          ({ resourceId, resourceName, services: resSvcs, serviceGroups, showHeader }) => (
             <div key={resourceId ?? "__none__"} className="space-y-3">
-              {showResourceHeaders && (
+              {showHeader && (
                 <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider text-sky-300/90 border-b border-sky-500/20 pb-1">
                   <Mountain className="h-3.5 w-3.5 shrink-0 text-sky-400" />
                   <span>{resourceName}</span>
