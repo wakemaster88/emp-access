@@ -2209,55 +2209,6 @@ function SlotTimeline({
 }
 
 /**
- * Berechnet pro 60-Minuten-Bucket die "Belegung" - also wieviele Personen
- * sind in dieser Stunde insgesamt anwesend?
- *   - Slot-Tickets: zaehlen in ihrem Slot-Zeitfenster (slotStart..slotEnd)
- *   - Day-Pass-Tickets: zaehlen in jeder Stunde der ANNY-Oeffnungszeit
- *     (oder, wenn keine Oeffnungszeit bekannt, in jeder Stunde der globalen
- *     Range).
- *
- * Wird fuer die Heatmap-Zeile "Heute insgesamt" verwendet.
- */
-function computeHourlyAggregate(
-  services: SlotOverviewService[],
-  range: TimeRange,
-): Array<{ hour: number; bookings: number; capacity: number }> {
-  const buckets: Array<{ hour: number; bookings: number; capacity: number }> = [];
-  for (let h = range.startMin; h < range.endMin; h += 60) {
-    let bookings = 0;
-    let capacity = 0;
-    for (const sv of services) {
-      if (sv.serviceType === "slot" && sv.slots.length > 0) {
-        for (const slot of sv.slots) {
-          const s = timeStringToMinutes(slot.startTime);
-          const e = timeStringToMinutes(slot.endTime);
-          if (s == null || e == null) continue;
-          if (s < h + 60 && e > h) {
-            bookings += slot.empBookings;
-            if (typeof slot.capacity === "number") capacity += slot.capacity;
-          }
-        }
-      } else if (sv.serviceType === "day") {
-        // Day-Pass: ueber die ganze Oeffnungszeit / Range anwesend.
-        const periods =
-          sv.openingHours.length > 0
-            ? sv.openingHours.map((oh) => ({
-                s: timeStringToMinutes(oh.start),
-                e: timeStringToMinutes(oh.end),
-              }))
-            : [{ s: range.startMin, e: range.endMin }];
-        const inHour = periods.some(
-          ({ s, e }) => s != null && e != null && s < h + 60 && e > h,
-        );
-        if (inHour) bookings += sv.totalEmpBookings;
-      }
-    }
-    buckets.push({ hour: h, bookings, capacity });
-  }
-  return buckets;
-}
-
-/**
  * Absolut positionierter Wrapper fuer einen Pill in der Timeline.
  * Berechnet left/width aus der Zeit relativ zur globalen Range.
  */
@@ -2329,84 +2280,6 @@ function TimelineAxis({ range }: { range: TimeRange }) {
           {minutesToTimeString(nowMin!)}
         </span>
       )}
-    </div>
-  );
-}
-
-/**
- * Heatmap-Zeile "Heute insgesamt": pro Stunde ein farbcodierter Block, der
- * die Belegung (Slot-Buchungen + Day-Pass-Anwesende) anzeigt. Spalten-Layout
- * identisch zu den Service-Zeilen: [Label | Heatmap-Timeline | Total].
- */
-function AggregateHeatmapRow({
-  range,
-  services,
-}: {
-  range: TimeRange;
-  services: SlotOverviewService[];
-}) {
-  const buckets = useMemo(
-    () => computeHourlyAggregate(services, range),
-    [services, range],
-  );
-  const maxBookings = Math.max(1, ...buckets.map((b) => b.bookings));
-  const total = buckets.reduce((a, b) => a + b.bookings, 0);
-  const peakBucket = buckets.reduce<{ hour: number; bookings: number } | null>(
-    (best, b) => (b.bookings > 0 && (!best || b.bookings > best.bookings) ? b : best),
-    null,
-  );
-  const rangeMin = Math.max(1, range.endMin - range.startMin);
-  return (
-    <div className="flex items-stretch gap-2 text-[11px] pt-1 pb-2 border-b border-slate-800/60">
-      <div className="shrink-0 w-[130px] flex flex-col justify-center text-slate-300">
-        <span className="font-semibold uppercase tracking-wider text-[10px]">
-          Heute insgesamt
-        </span>
-        {peakBucket && (
-          <span className="text-[10px] text-slate-500 font-mono tabular-nums">
-            Stoss: {minutesToTimeString(peakBucket.hour)} · {peakBucket.bookings}
-          </span>
-        )}
-      </div>
-      <div className="flex-1 min-w-0 relative h-7">
-        {buckets.map((b) => {
-          const left = ((b.hour - range.startMin) / rangeMin) * 100;
-          const width = (60 / rangeMin) * 100;
-          const intensity = b.bookings / maxBookings;
-          // Heatmap-Farbskala: nichts -> graublau, viel -> sky -> emerald
-          // (warmer Bereich = mehr Belegung, aber bewusst nicht rot, weil
-          // rot fuer "voll/blockiert" reserviert ist).
-          let color: string;
-          if (b.bookings === 0) color = "bg-slate-800/40";
-          else if (intensity < 0.34) color = "bg-sky-500/30";
-          else if (intensity < 0.67) color = "bg-sky-500/55";
-          else color = "bg-sky-400/80";
-          return (
-            <div
-              key={b.hour}
-              className="absolute top-0 bottom-0 flex items-center justify-center"
-              style={{ left: `${left}%`, width: `${width}%`, padding: "0 2px" }}
-              title={`${minutesToTimeString(b.hour)}-${minutesToTimeString(b.hour + 60)}: ${b.bookings} Personen`}
-            >
-              <div
-                className={cn(
-                  "h-full w-full rounded-sm flex items-center justify-center text-[10px] font-mono tabular-nums",
-                  color,
-                  b.bookings > 0 ? "text-slate-900" : "text-slate-600",
-                )}
-              >
-                {b.bookings > 0 ? b.bookings : ""}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div
-        className="shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums font-semibold text-sky-300"
-        title={`${total} Personen heute insgesamt (kumuliert ueber Stunden-Buckets)`}
-      >
-        {total}
-      </div>
     </div>
   );
 }
@@ -2507,7 +2380,6 @@ function SlotOverviewSection({
             <div className="shrink-0 w-[44px]" />
           </div>
         </div>
-        <AggregateHeatmapRow range={range} services={visible} />
         {groupedPerResource.map(
           ({ resourceId, resourceName, services: resSvcs, serviceGroups, showHeader }) => (
             <div key={resourceId ?? "__none__"} className="space-y-3">
