@@ -275,9 +275,12 @@ export async function fetchAnnyServiceMatch(
   let exactMatch: string | null = null;
   let substringMatch: string | null = null;
 
-  for (let page = 1; page <= 5; page++) {
+  // ANNY erlaubt max. page[size]=50. Wir laufen bis zu 10 Seiten - reicht
+  // fuer 500 Services, drueber hinaus stoppen wir der Latenz wegen.
+  const pageSize = 50;
+  for (let page = 1; page <= 10; page++) {
     const params = new URLSearchParams({
-      "page[size]": "100",
+      "page[size]": String(pageSize),
       "page[number]": String(page),
     });
     if (organizationId) params.set("o", organizationId);
@@ -335,7 +338,7 @@ export async function fetchAnnyServiceMatch(
           }
         }
       }
-      if (items.length < 100) break;
+      if (items.length < pageSize) break;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       debug.push({ page, status, items: 0, bodyPreview: `ERR: ${msg}` });
