@@ -630,6 +630,90 @@ export async function fetchAnnyServiceStartSlots(
 }
 
 /**
+ * Holt fuer einen Service die "Oeffnungszeiten" (raw availability periods)
+ * eines konkreten Datums. ANNY-Endpoint:
+ *   GET /api/v1/availability/periods?service_id=...&start_date=...&end_date=...
+ *
+ * Das sind die merged schedule/timeslot-Bloecke - praktisch fuer Day-Pass-
+ * Services (Tageskarten / Strandbad), wo wir keine Slots haben aber dennoch
+ * die Geoeffnet-Zeit anzeigen wollen.
+ */
+export async function fetchAnnyServicePeriods(
+  baseUrl: string,
+  token: string,
+  serviceId: string,
+  dateStr: string,
+  organizationId?: string | null,
+): Promise<AvailabilityPeriod[]> {
+  const offset = berlinOffset(dateStr);
+  const startDate = `${dateStr}T00:00:00${offset}`;
+  const endDate = `${dateStr}T23:59:59${offset}`;
+  const params = new URLSearchParams({
+    service_id: serviceId,
+    start_date: startDate,
+    end_date: endDate,
+    timezone: "Europe/Berlin",
+  });
+  if (organizationId) params.set("o", organizationId);
+  try {
+    const res = await fetch(`${baseUrl}/api/v1/availability/periods?${params}`, {
+      headers: annyHeaders(token),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as unknown;
+    const out: AvailabilityPeriod[] = [];
+    const pushIfPeriod = (p: unknown) => {
+      if (!p || typeof p !== "object") return;
+      const o = p as Record<string, string | undefined>;
+      const start = o.start || o.start_date || o.from || "";
+      const end = o.end || o.end_date || o.to || "";
+      if (start || end) out.push({ start, end });
+    };
+    if (Array.isArray(json)) {
+      for (const p of json) pushIfPeriod(p);
+    } else if (json && typeof json === "object") {
+      // Per-Resource gruppiert: { "<resourceId>": Period[] }
+      for (const v of Object.values(json as Record<string, unknown>)) {
+        if (Array.isArray(v)) {
+          for (const p of v) pushIfPeriod(p);
+        } else if (v && typeof v === "object") {
+          pushIfPeriod(v);
+        }
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Vereinigt ueberlappende oder anstossende Perioden zu kompakten Bloecken.
+ * Bei mehreren Resources liefert /availability/periods oft identische
+ * Bloecke mehrfach - deduplizieren + mergen erspart "10:00-18:00, 10:00-18:00"
+ * in der UI.
+ */
+export function mergeAvailabilityPeriods(periods: AvailabilityPeriod[]): AvailabilityPeriod[] {
+  const parsed = periods
+    .map((p) => ({ start: new Date(p.start), end: new Date(p.end), raw: p }))
+    .filter((p) => !isNaN(p.start.getTime()) && !isNaN(p.end.getTime()))
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  if (parsed.length === 0) return [];
+  const merged: typeof parsed = [parsed[0]];
+  for (let i = 1; i < parsed.length; i++) {
+    const last = merged[merged.length - 1];
+    const cur = parsed[i];
+    if (cur.start.getTime() <= last.end.getTime()) {
+      if (cur.end.getTime() > last.end.getTime()) last.end = cur.end;
+    } else {
+      merged.push(cur);
+    }
+  }
+  return merged.map((p) => ({ start: p.start.toISOString(), end: p.end.toISOString() }));
+}
+
+/**
  * Holt fuer einen Service die Daten (YYYY-MM-DD) in einem Range, an denen
  * mindestens ein Slot verfuegbar ist. ANNY-Endpoint:
  *   GET /api/v1/availability/start-dates?service_id=...&start_date=...&end_date=...

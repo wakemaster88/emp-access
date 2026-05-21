@@ -6,6 +6,9 @@ import {
   matchAnnyServiceInCatalog,
   fetchAnnyServiceStartSlots,
   fetchAnnyServiceStartDates,
+  fetchAnnyServicePeriods,
+  mergeAvailabilityPeriods,
+  fmtTimeBerlin,
   berlinOffset,
   type AnnyServiceCatalogEntry,
 } from "@/lib/anny-availability";
@@ -26,6 +29,11 @@ interface SlotEntry {
   unavailabilityType: string | null;
 }
 
+interface OpeningHourBlock {
+  start: string;
+  end: string;
+}
+
 interface ServiceOverview {
   serviceId: number;
   name: string;
@@ -39,10 +47,16 @@ interface ServiceOverview {
   /**
    * Ist der Service an dem angefragten Datum ueberhaupt buchbar?
    * false = ANNY meldet keine Verfuegbarkeit (z.B. Ferienkurs erst im Juli,
-   * Anfaengerkurs nur am Wochenende). Wird im UI zum Ausblenden genutzt.
+   * Anfaengerkurs nur an Wochenenden). Wird im UI zum Ausblenden genutzt.
    * true bei Slot-Services mit Slots > 0; sonst per /start-dates abgefragt.
    */
   availableToday: boolean;
+  /**
+   * Oeffnungszeit aus ANNY /availability/periods, kompakt formatiert
+   * ("HH:MM-HH:MM"). Mehrere Bloecke werden zu mehreren Eintraegen.
+   * Leer wenn ANNY nichts liefert oder Service nicht ANNY-verknuepft.
+   */
+  openingHours: OpeningHourBlock[];
   /** Wenn ANNY nicht gematcht: Hinweis fuer das UI. */
   note: string | null;
 }
@@ -118,12 +132,19 @@ export async function GET(
     }),
   ]);
 
-  // Wir interessieren uns NUR fuer Services mit ANNY-Link.
+  // Wir betrachten zwei Service-Gruppen:
+  //   1. ANNY-verknuepfte Services (haben AccessArea mit annyLink) -
+  //      vollstaendige Auslastungssicht mit Slots, Periods, Verfuegbarkeit.
+  //   2. EMP-Services OHNE ANNY-Link, aber heute mit verkauften Tickets -
+  //      reine Ticket-Zaehler-Sicht. Sonst verschwinden Services wie
+  //      Aquapark / SUP, wenn sie nicht in ANNY verknuepft sind.
   const annyServices = services.filter((s) =>
     s.serviceAreas.some((sa) => (sa.area?._count.annyLinks ?? 0) > 0),
   );
+  const annyServiceIds = new Set(annyServices.map((s) => s.id));
+  const nonAnnyServices = services.filter((s) => !annyServiceIds.has(s.id));
 
-  if (annyServices.length === 0 || !annyConfig?.token) {
+  if (annyServices.length === 0 && nonAnnyServices.length === 0) {
     return NextResponse.json({
       date: dateStr,
       services: [],
@@ -131,30 +152,36 @@ export async function GET(
     } satisfies OverviewResponse);
   }
 
-  const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
-  const organizationId = await resolveAnnyOrganizationId(
-    baseUrl,
-    annyConfig.token,
-    annyConfig.extraConfig,
-  );
+  // ANNY-Calls nur, wenn Token vorhanden und ANNY-verknuepfte Services
+  // existieren. Sonst springen wir direkt zur reinen EMP-Sicht.
+  const baseUrl = annyConfig?.token
+    ? (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "")
+    : "";
+  const organizationId = annyConfig?.token
+    ? await resolveAnnyOrganizationId(baseUrl, annyConfig.token, annyConfig.extraConfig)
+    : null;
 
   // 2. ANNY-Service-Katalog einmal holen.
   let catalog: AnnyServiceCatalogEntry[] = [];
-  try {
-    catalog = await fetchAllAnnyServices(baseUrl, annyConfig.token, organizationId);
-  } catch {
-    catalog = [];
+  if (annyConfig?.token && annyServices.length > 0) {
+    try {
+      catalog = await fetchAllAnnyServices(baseUrl, annyConfig.token, organizationId);
+    } catch {
+      catalog = [];
+    }
   }
 
   // 3. EMP-Tickets dieses Tages laden, fuer EMP-Booking-Zaehlung pro Slot.
   // Wir nehmen Tickets, deren `slotStart` gesetzt ist UND deren Tag dem
   // Anfragedatum entspricht. Fallback fuer Tickets ohne slotStart aber mit
-  // startDate im Tag: ueber HH:MM extrahieren.
+  // startDate im Tag: ueber HH:MM extrahieren. Filter ueber alle Services
+  // (ANNY-verknuepfte UND nicht-verknuepfte), damit Aquapark / SUP / etc.
+  // ueber EMP-Tickets ihren Weg in die Auslastungssicht finden.
   const ticketsToday = await prisma.ticket.findMany({
     where: {
       accountId,
       status: { in: ["VALID", "REDEEMED"] },
-      serviceId: { in: annyServices.map((s) => s.id) },
+      serviceId: { in: services.map((s) => s.id) },
       OR: [
         // Slot-basiertes Ticket: Tag muss innerhalb startDate/endDate liegen.
         {
@@ -198,6 +225,7 @@ export async function GET(
           // Wenn ANNY den Service nicht kennt, koennen wir Verfuegbarkeit
           // nicht beurteilen - lieber anzeigen mit Hinweis als verstecken.
           availableToday: true,
+          openingHours: [],
           note: `ANNY-Service nicht gefunden (gesucht: ${annyNames.slice(0, 3).join(", ")})`,
         } satisfies ServiceOverview;
       }
@@ -210,25 +238,36 @@ export async function GET(
       const serviceType: "slot" | "day" = isDayService ? "day" : "slot";
 
       // Day-Pass: ANNY-Slots brauchen wir nicht abzurufen, das UI zeigt
-      // nur die EMP-Ticket-Zahl an. Aber wir muessen wissen ob der Service
-      // heute ueberhaupt verfuegbar ist (Ferienkurs erst im Juli etc.) -
-      // dafuer /start-dates mit Tages-Range als single boolean.
+      // nur die EMP-Ticket-Zahl an. Aber wir wollen
+      //  a) wissen, ob der Service heute ueberhaupt verfuegbar ist
+      //     (Ferienkurs erst im Juli etc.) - dafuer /start-dates
+      //  b) die Oeffnungszeiten anzeigen (10:00-18:00 etc.) - dafuer
+      //     /availability/periods
       if (serviceType === "day") {
-        let availableToday = true;
-        try {
-          const dates = await fetchAnnyServiceStartDates(
+        const [datesRes, periodsRes] = await Promise.all([
+          fetchAnnyServiceStartDates(
             baseUrl,
             annyConfig!.token,
             match.id,
             dateStr,
             dateStr,
             organizationId,
-          );
-          availableToday = dates.some((d) => d.startsWith(dateStr));
-        } catch {
-          // best-effort: bei Fehler nicht ausblenden
-          availableToday = true;
-        }
+          ).catch(() => [] as string[]),
+          fetchAnnyServicePeriods(
+            baseUrl,
+            annyConfig!.token,
+            match.id,
+            dateStr,
+            organizationId,
+          ).catch(() => []),
+        ]);
+        const availableToday =
+          datesRes.length === 0 ? true : datesRes.some((d) => d.startsWith(dateStr));
+        const merged = mergeAvailabilityPeriods(periodsRes);
+        const openingHours: OpeningHourBlock[] = merged.map((p) => ({
+          start: fmtTimeBerlin(p.start),
+          end: fmtTimeBerlin(p.end),
+        }));
         return {
           serviceId: svc.id,
           name: svc.name,
@@ -239,6 +278,7 @@ export async function GET(
           slots: [],
           totalEmpBookings: empCount,
           availableToday,
+          openingHours,
           note: null,
         } satisfies ServiceOverview;
       }
@@ -313,10 +353,38 @@ export async function GET(
         slots,
         totalEmpBookings: empCount,
         availableToday,
+        // Slot-Services: Oeffnungszeiten ergeben sich aus den Slots selbst
+        // (z.B. 12:00-13:00, 14:00-15:00). Eine zusaetzliche periods-Anzeige
+        // wuerde nur Doppelinformation sein.
+        openingHours: [],
         note: null,
       } satisfies ServiceOverview;
     }),
   );
+
+  // Nicht-ANNY-Services mit heutigen EMP-Tickets ergaenzen (Aquapark / SUP
+  // etc., die in EMP existieren aber nicht ueber ANNY laufen). Ohne
+  // verkaufte Tickets klappen sie wegen `availableToday`-Filter ohnehin im
+  // Frontend aus - mit Tickets bleiben sie sichtbar als reine EMP-Sicht.
+  for (const svc of nonAnnyServices) {
+    const empCount = ticketsToday.filter((t) => t.serviceId === svc.id).length;
+    if (empCount === 0) continue;
+    perService.push({
+      serviceId: svc.id,
+      name: svc.name,
+      hasAnnyLink: false,
+      // Default als "day" - wir haben keinen ANNY-Service-Typ, und Aquapark
+      // / SUP etc. sind im Regelfall keine zeitscheibengenauen Slots.
+      serviceType: "day",
+      annyServiceUuid: null,
+      annyMatchedName: null,
+      slots: [],
+      totalEmpBookings: empCount,
+      availableToday: true,
+      openingHours: [],
+      note: "Kein ANNY-Sync",
+    });
+  }
 
   // 5. Aggregat-Summary ueber alle Slot-Services.
   let totalSlots = 0;

@@ -173,6 +173,8 @@ interface SlotOverviewService {
   totalEmpBookings: number;
   /** ANNY meldet fuer dieses Datum keine Verfuegbarkeit -> Service ausblenden. */
   availableToday: boolean;
+  /** Oeffnungszeit-Bloecke aus ANNY ("10:00"-"18:00"). Leer = keine ANNY-Info. */
+  openingHours: { start: string; end: string }[];
   note: string | null;
 }
 
@@ -211,6 +213,21 @@ function toDateStr(d: Date): string {
 
 function personName(t: { firstName: string | null; lastName: string | null; name: string }): string {
   return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+}
+
+/**
+ * Formatiert ANNY's Oeffnungszeit-Bloecke in einen kompakten Text fuer die
+ * Auslastungs-Section. Ein Block -> "10:00-18:00". Mehrere Bloecke ->
+ * "10:00-14:00, 16:00-22:00".
+ */
+function formatOpeningHours(
+  blocks: Array<{ start: string; end: string }> | undefined,
+): string {
+  if (!blocks || blocks.length === 0) return "";
+  return blocks
+    .filter((b) => b.start && b.end)
+    .map((b) => `${b.start}\u2013${b.end}`)
+    .join(", ");
 }
 
 /**
@@ -1914,19 +1931,24 @@ function SlotOverviewGroup({
         )}
       </div>
       {allDay ? (
-        // Mehrere Tageskarten-Varianten: kompakte Liste mit
-        // Variantenname + Verkaufszahl. Spart Vertical Space gegenueber
-        // der bisherigen "ein Block pro Service"-Anzeige.
+        // Mehrere Tageskarten-Varianten: kompakte Liste mit Variantenname
+        // + optionaler ANNY-Oeffnungszeit + Verkaufszahl.
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pl-5">
           {members.map((sv) => {
             const { variant } = splitServiceLabel(sv.name);
             const label = variant || sv.name;
+            const opening = formatOpeningHours(sv.openingHours);
             return (
               <div
                 key={sv.serviceId}
                 className="flex items-center gap-2 text-xs px-2 py-1 rounded-md bg-slate-800/60 border border-slate-700/40"
               >
                 <span className="text-slate-300 truncate flex-1">{label}</span>
+                {opening && (
+                  <span className="text-[10px] font-mono text-slate-400 tabular-nums">
+                    {opening}
+                  </span>
+                )}
                 <span
                   className={cn(
                     "text-[11px] font-mono tabular-nums",
@@ -1980,9 +2002,10 @@ function SlotOverviewServiceBody({
     return <p className="text-[11px] text-amber-400/80 px-1">{sv.note}</p>;
   }
   if (sv.serviceType === "day") {
+    const opening = formatOpeningHours(sv.openingHours);
     return (
       <p className="text-[11px] text-slate-500 px-1">
-        Tagespass - ANNY zaehlt nur Tickets, kein Slot.
+        {opening ? <>Geöffnet <span className="font-mono tabular-nums text-slate-400">{opening}</span></> : "Tagespass"}
       </p>
     );
   }
