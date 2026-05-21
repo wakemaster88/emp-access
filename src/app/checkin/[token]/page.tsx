@@ -2706,8 +2706,22 @@ function CombinedDayPassRow({
   currentDate: string;
   onPick: (payload: SlotOverviewPickPayload) => void;
 }) {
-  // Sortiere Members: laengste Range zuerst (visuell als "Hintergrund").
-  // Damit liegt die Tageskarte unten, die Abendkarte als kuerzerer Stripe drueber.
+  // Schluessel-Funktion zum Erkennen identischer Period-Footprints: wenn
+  // alle Varianten dieselbe Oeffnungszeit haben (typisch fuer Aquapark
+  // Tageskarte/Stundenkarte oder Oeffentlicher Betrieb 1h/2h/Tageskarte),
+  // brauchen wir nur EINEN Pill statt N gestackter Stripes.
+  const periodKey = (sv: SlotOverviewService): string => {
+    if (sv.openingHours.length === 0) return "__FALLBACK__";
+    return sv.openingHours.map((p) => `${p.start}|${p.end}`).join(",");
+  };
+  const allSameRange = useMemo(
+    () => members.every((sv) => periodKey(sv) === periodKey(members[0])),
+    [members],
+  );
+
+  // Sortiere Members: laengste Range zuerst. Wichtig fuer Stack-Mode -
+  // damit liegt die Tageskarte als "Background-Bar" hinter der kuerzeren
+  // Abendkarte.
   const sorted = useMemo(() => {
     const periodLen = (sv: SlotOverviewService): number => {
       if (sv.openingHours.length === 0) return range.endMin - range.startMin;
@@ -2723,21 +2737,82 @@ function CombinedDayPassRow({
   }, [members, range]);
 
   const totalBookings = members.reduce((s, sv) => s + sv.totalEmpBookings, 0);
-  // Layout: pro Variante 8px Stripe + 3px Gap, plus 4px Padding oben/unten.
-  const stripeHeight = 8;
-  const stripeGap = 3;
-  const padding = 4;
-  const totalHeight = Math.max(
-    28,
-    sorted.length * stripeHeight + (sorted.length - 1) * stripeGap + padding * 2,
-  );
 
-  // Farb-Palette: erstes Element (laengster Range) = sky, dann emerald, violet, amber.
+  // Wenn alle Varianten dieselbe Range haben: 1 Pill (im Slot-Pill-Stil)
+  // mit zusammengefasstem Label.
+  if (allSameRange) {
+    const primary = sorted[0];
+    const periods =
+      primary.openingHours.length > 0
+        ? primary.openingHours
+        : [
+            {
+              start: minutesToTimeString(range.startMin),
+              end: minutesToTimeString(range.endMin),
+            },
+          ];
+    const isFallback = primary.openingHours.length === 0;
+    const variantNames = sorted.map(
+      (sv) => splitServiceLabel(sv.name, group).variant || sv.name,
+    );
+    return (
+      <div className="flex items-stretch gap-2 text-[11px]">
+        <div className="shrink-0 w-[130px] flex items-center text-slate-400">
+          <span className="text-[10px] text-slate-500 truncate">
+            {members.length} Varianten
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <SlotTimeline range={range}>
+            {periods.map((oh, pidx) => {
+              const startMin = timeStringToMinutes(oh.start) ?? range.startMin;
+              const endMin = timeStringToMinutes(oh.end) ?? range.endMin;
+              return (
+                <TimelineSlot
+                  key={`combined-${pidx}`}
+                  range={range}
+                  startMin={startMin}
+                  endMin={endMin}
+                >
+                  <CombinedPill
+                    startLabel={oh.start}
+                    endLabel={oh.end}
+                    bookings={totalBookings}
+                    tooltip={`${variantNames.join(" + ")} · ${oh.start}-${oh.end} · ${totalBookings} verkauft`}
+                    onClick={() =>
+                      primary.availableToday
+                      && onPick({ serviceId: primary.serviceId, slotDate: currentDate })
+                    }
+                    disabled={!primary.availableToday}
+                    isFallback={isFallback}
+                  />
+                </TimelineSlot>
+              );
+            })}
+          </SlotTimeline>
+        </div>
+        <div
+          className={cn(
+            "shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums",
+            totalBookings > 0 ? "text-emerald-300" : "text-slate-600",
+          )}
+          title={`${totalBookings} EMP-Ticket(s) heute verkauft (alle Varianten zusammen)`}
+        >
+          {totalBookings}
+        </div>
+      </div>
+    );
+  }
+
+  // Unterschiedliche Ranges: ueberlagernde Pills in derselben 28px-Zeile.
+  // Laengster Pill liegt im Hintergrund (z=0), kuerzere darueber (z=1, 2..).
+  // Visuell signalisiert das, dass die kuerzere Variante eine Sub-Zeit
+  // (z.B. Abendkarte 18-20 innerhalb Tageskarte 10-20) ist.
   const variantStyles = [
-    { bar: "bg-sky-500/45 border-sky-400/60", label: "text-sky-200" },
-    { bar: "bg-emerald-500/55 border-emerald-400/70", label: "text-emerald-200" },
-    { bar: "bg-violet-500/55 border-violet-400/70", label: "text-violet-200" },
-    { bar: "bg-amber-500/55 border-amber-400/70", label: "text-amber-200" },
+    "border-sky-500/50 text-sky-100 bg-sky-500/15",
+    "border-emerald-500/60 text-emerald-100 bg-emerald-500/25",
+    "border-violet-500/60 text-violet-100 bg-violet-500/25",
+    "border-amber-500/60 text-amber-100 bg-amber-500/25",
   ];
 
   return (
@@ -2745,11 +2820,13 @@ function CombinedDayPassRow({
       <div className="shrink-0 w-[130px] flex flex-col justify-center text-slate-400 gap-0.5">
         {sorted.map((sv, idx) => {
           const { variant } = splitServiceLabel(sv.name, group);
-          const style = variantStyles[idx % variantStyles.length];
+          const dotColor = variantStyles[idx % variantStyles.length]
+            .split(" ")
+            .find((c) => c.startsWith("bg-"));
           return (
             <div key={sv.serviceId} className="flex items-center gap-1.5 text-[10px]">
               <span
-                className={cn("inline-block w-2 h-2 rounded-sm", style.bar.split(" ")[0])}
+                className={cn("inline-block w-2 h-2 rounded-sm", dotColor)}
                 aria-hidden
               />
               <span className="truncate">{variant || sv.name}</span>
@@ -2758,7 +2835,7 @@ function CombinedDayPassRow({
         })}
       </div>
       <div className="flex-1 min-w-0">
-        <SlotTimeline range={range} heightPx={totalHeight}>
+        <SlotTimeline range={range}>
           {sorted.flatMap((sv, idx) => {
             const { variant } = splitServiceLabel(sv.name, group);
             const periods =
@@ -2770,51 +2847,43 @@ function CombinedDayPassRow({
                       end: minutesToTimeString(range.endMin),
                     },
                   ];
-            const style = variantStyles[idx % variantStyles.length];
-            const top = padding + idx * (stripeHeight + stripeGap);
+            const styleCls = variantStyles[idx % variantStyles.length];
+            const isFallback = sv.openingHours.length === 0;
             return periods.map((oh, pidx) => {
               const startMin = timeStringToMinutes(oh.start) ?? range.startMin;
               const endMin = timeStringToMinutes(oh.end) ?? range.endMin;
-              const totalR = Math.max(1, range.endMin - range.startMin);
-              const left = Math.max(0, ((startMin - range.startMin) / totalR) * 100);
-              const widthRaw = ((endMin - startMin) / totalR) * 100;
-              const width = Math.max(2, Math.min(100 - left, widthRaw));
-              const isFallback = sv.openingHours.length === 0;
               return (
-                <button
+                <TimelineSlot
                   key={`${sv.serviceId}-${pidx}`}
-                  type="button"
-                  onClick={() =>
-                    sv.availableToday
-                    && onPick({ serviceId: sv.serviceId, slotDate: currentDate })
-                  }
-                  disabled={!sv.availableToday}
-                  title={`${variant || sv.name}: ${oh.start}-${oh.end} · ${sv.totalEmpBookings} verkauft`}
-                  className={cn(
-                    "absolute rounded-full border overflow-hidden flex items-center justify-center",
-                    style.bar,
-                    sv.availableToday
-                      ? "hover:brightness-125 active:scale-95 transition-all cursor-pointer"
-                      : "opacity-50 cursor-not-allowed",
-                    isFallback && "border-dashed",
-                  )}
-                  style={{
-                    top: `${top}px`,
-                    height: `${stripeHeight}px`,
-                    left: `${left}%`,
-                    width: `${width}%`,
-                  }}
+                  range={range}
+                  startMin={startMin}
+                  endMin={endMin}
                 >
-                  <span
+                  <button
+                    type="button"
+                    onClick={() =>
+                      sv.availableToday
+                      && onPick({ serviceId: sv.serviceId, slotDate: currentDate })
+                    }
+                    disabled={!sv.availableToday}
+                    title={`${variant || sv.name}: ${oh.start}-${oh.end} · ${sv.totalEmpBookings} verkauft`}
                     className={cn(
-                      "text-[8px] font-mono tabular-nums leading-none truncate px-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]",
-                      style.label,
+                      "relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
+                      "hover:brightness-125 active:scale-95 transition-all",
+                      styleCls,
+                      isFallback && "border-dashed",
+                      sv.availableToday ? "" : "opacity-50 cursor-not-allowed",
                     )}
+                    style={{ zIndex: idx + 1 }}
                   >
-                    {oh.start}-{oh.end}
-                    {sv.totalEmpBookings > 0 && ` · ${sv.totalEmpBookings}`}
-                  </span>
-                </button>
+                    <span className="relative flex items-center justify-center gap-1 h-full truncate">
+                      <span className="font-bold">{oh.start}-{oh.end}</span>
+                      {sv.totalEmpBookings > 0 && (
+                        <span className="text-[9px] opacity-80">·{sv.totalEmpBookings}</span>
+                      )}
+                    </span>
+                  </button>
+                </TimelineSlot>
               );
             });
           })}
@@ -2830,6 +2899,54 @@ function CombinedDayPassRow({
         {totalBookings}
       </div>
     </div>
+  );
+}
+
+/**
+ * Pill fuer "alle Varianten haben dieselbe Range"-Fall. Look-and-feel der
+ * normalen Slot-Pills (rounded-lg border, full height), aber in sky-color
+ * statt rose/amber/emerald, weil es kein Slot-Status sondern eine reine
+ * Oeffnungszeit-Anzeige ist.
+ */
+function CombinedPill({
+  startLabel,
+  endLabel,
+  bookings,
+  tooltip,
+  onClick,
+  disabled,
+  isFallback,
+}: {
+  startLabel: string;
+  endLabel: string;
+  bookings: number;
+  tooltip: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  isFallback: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={tooltip}
+      className={cn(
+        "relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
+        "border-sky-500/40 text-sky-100 bg-sky-500/10",
+        disabled
+          ? "opacity-50 cursor-not-allowed"
+          : "hover:brightness-125 active:scale-95 transition-all",
+        isFallback && "border-dashed",
+      )}
+    >
+      <span className="relative flex items-center justify-center gap-1 h-full truncate">
+        <span className="font-bold">{startLabel}-{endLabel}</span>
+        {bookings > 0 && (
+          <span className="text-emerald-300 text-[9px]">·{bookings}</span>
+        )}
+      </span>
+    </button>
   );
 }
 
