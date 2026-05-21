@@ -349,6 +349,16 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     lastName?: string;
     rfidCode?: string;
     profileImage?: string | null;
+    /** Service vorbelegen (z.B. Klick aus Slot-Auslastung). */
+    serviceId?: number;
+    /** Slot-Tag YYYY-MM-DD (fuer Service mit Slot-Picker / Tageskarte). */
+    slotDate?: string;
+    /** Slot-Zeit HH:MM (nur Slot-Services). */
+    slotStart?: string;
+    /** Slot-Endzeit HH:MM (nur Slot-Services). */
+    slotEnd?: string;
+    /** Beim Mount auf das RFID/Code-Feld fokussieren. */
+    focusRfid?: boolean;
     voucher?: {
       code: string;
       ticketTypeName: string | null;
@@ -1170,11 +1180,19 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         {slotOverview && slotOverview.services.some((sv) => sv.slots.length > 0 || sv.totalEmpBookings > 0) && (
           <SlotOverviewSection
             data={slotOverview}
-            onSlotPick={(slot) => {
-              // Klick auf Slot soll die Suche auf den Slot-Zeitraum filtern,
-              // damit man die Tickets dieses Slots sieht. Pragmatisch: in
-              // die Suche "HH:MM" einfuegen.
-              setSearchQuery(slot.startTime);
+            currentDate={date}
+            onPick={(p) => {
+              // Klick auf Service/Slot in der Auslastung -> Ticket-Erstellen-
+              // Overlay direkt mit Service vorbelegt aufmachen und ins
+              // RFID-Feld springen (Standard-Workflow: Bändchen scannen).
+              setAddTicketPrefill({
+                serviceId: p.serviceId,
+                slotDate: p.slotDate,
+                slotStart: p.slotStart,
+                slotEnd: p.slotEnd,
+                focusRfid: true,
+              });
+              setAddTicketOpen(true);
             }}
           />
         )}
@@ -1811,12 +1829,27 @@ function groupOverviewServices(services: SlotOverviewService[]): Array<{
  * Header: aggregierte Stats ("12 frei · 4 belegt · 1 voll") aus
  * SlotOverviewData.summary.
  */
+/**
+ * Was wird geklickt? Slot-Auslastungs-Pills und Variant-Tiles geben ein
+ * SlotOverviewPickPayload zurueck. Der Parent oeffnet daraus das Add-
+ * Ticket-Overlay.
+ */
+interface SlotOverviewPickPayload {
+  serviceId: number;
+  slotDate: string;
+  slotStart?: string;
+  slotEnd?: string;
+}
+
 function SlotOverviewSection({
   data,
-  onSlotPick,
+  currentDate,
+  onPick,
 }: {
   data: SlotOverviewData;
-  onSlotPick: (slot: SlotOverviewSlot) => void;
+  /** Datum des Monitors (YYYY-MM-DD), wird ans Overlay weitergereicht. */
+  currentDate: string;
+  onPick: (payload: SlotOverviewPickPayload) => void;
 }) {
   const { summary, services } = data;
   // Saisonale / nicht-heute-buchbare Services werden ausgeblendet (z.B.
@@ -1862,7 +1895,8 @@ function SlotOverviewSection({
             key={group}
             group={group}
             members={members}
-            onSlotPick={onSlotPick}
+            currentDate={currentDate}
+            onPick={onPick}
           />
         ))}
       </div>
@@ -1879,11 +1913,13 @@ function SlotOverviewSection({
 function SlotOverviewGroup({
   group,
   members,
-  onSlotPick,
+  currentDate,
+  onPick,
 }: {
   group: string;
   members: SlotOverviewService[];
-  onSlotPick: (slot: SlotOverviewSlot) => void;
+  currentDate: string;
+  onPick: (payload: SlotOverviewPickPayload) => void;
 }) {
   const totalEmp = members.reduce((a, m) => a + m.totalEmpBookings, 0);
   const allDay = members.every((m) => m.serviceType === "day");
@@ -1891,27 +1927,60 @@ function SlotOverviewGroup({
 
   // Einzel-Service: kompakter Header ohne Sub-Bullet (Variant-Name landet im
   // Header). Verhalten wie vor der Gruppierung, fuer "Strandbad - Tageskarte"
-  // ohne weitere Geschwister.
+  // ohne weitere Geschwister. Der Header ist klickbar fuer Day-Pass-
+  // Services (oeffnet Add-Ticket-Overlay) - bei Slot-Services klickt der
+  // User unten auf die Slot-Pills.
   if (hasSingleMember) {
     const sv = members[0];
     const { variant } = splitServiceLabel(sv.name);
+    const headerClickable = sv.serviceType === "day" && sv.availableToday;
+    const Header = (
+      <div
+        className={cn(
+          "flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400",
+          headerClickable
+            && "cursor-pointer hover:text-slate-200 hover:bg-slate-800/40 -mx-1 px-1 py-0.5 rounded transition-colors active:scale-[0.99]",
+        )}
+        onClick={
+          headerClickable
+            ? () => onPick({ serviceId: sv.serviceId, slotDate: currentDate })
+            : undefined
+        }
+        role={headerClickable ? "button" : undefined}
+        tabIndex={headerClickable ? 0 : undefined}
+        onKeyDown={
+          headerClickable
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onPick({ serviceId: sv.serviceId, slotDate: currentDate });
+                }
+              }
+            : undefined
+        }
+      >
+        <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
+        <span className="font-semibold truncate">{group}</span>
+        {variant && (
+          <span className="text-slate-500 font-normal normal-case tracking-normal">
+            · {variant}
+          </span>
+        )}
+        {totalEmp > 0 && (
+          <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
+            {totalEmp} verkauft
+          </span>
+        )}
+      </div>
+    );
     return (
       <div className="space-y-1.5">
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-          <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
-          <span className="font-semibold truncate">{group}</span>
-          {variant && (
-            <span className="text-slate-500 font-normal normal-case tracking-normal">
-              · {variant}
-            </span>
-          )}
-          {totalEmp > 0 && (
-            <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
-              {totalEmp} verkauft
-            </span>
-          )}
-        </div>
-        <SlotOverviewServiceBody sv={sv} onSlotPick={onSlotPick} />
+        {Header}
+        <SlotOverviewServiceBody
+          sv={sv}
+          currentDate={currentDate}
+          onPick={onPick}
+        />
       </div>
     );
   }
@@ -1932,16 +2001,35 @@ function SlotOverviewGroup({
       </div>
       {allDay ? (
         // Mehrere Tageskarten-Varianten: kompakte Liste mit Variantenname
-        // + optionaler ANNY-Oeffnungszeit + Verkaufszahl.
+        // + optionaler ANNY-Oeffnungszeit + Verkaufszahl. Jede Kachel ist
+        // klickbar (oeffnet Add-Ticket-Overlay mit Service + Datum).
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pl-5">
           {members.map((sv) => {
             const { variant } = splitServiceLabel(sv.name);
             const label = variant || sv.name;
             const opening = formatOpeningHours(sv.openingHours);
+            const clickable = sv.availableToday;
             return (
-              <div
+              <button
                 key={sv.serviceId}
-                className="flex items-center gap-2 text-xs px-2 py-1 rounded-md bg-slate-800/60 border border-slate-700/40"
+                type="button"
+                disabled={!clickable}
+                onClick={
+                  clickable
+                    ? () => onPick({ serviceId: sv.serviceId, slotDate: currentDate })
+                    : undefined
+                }
+                title={
+                  clickable
+                    ? `${label} verkaufen (Bändchen scannen)`
+                    : "Heute nicht buchbar"
+                }
+                className={cn(
+                  "flex items-center gap-2 text-xs px-2 py-1 rounded-md border text-left",
+                  clickable
+                    ? "bg-slate-800/60 border-slate-700/40 hover:bg-slate-700/70 hover:border-slate-600 active:scale-95 transition-colors"
+                    : "bg-slate-900/40 border-slate-800/40 opacity-60 cursor-not-allowed",
+                )}
               >
                 <span className="text-slate-300 truncate flex-1">{label}</span>
                 {opening && (
@@ -1957,19 +2045,46 @@ function SlotOverviewGroup({
                 >
                   {sv.totalEmpBookings}
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
       ) : (
         // Gemischt (Slot-Service + Day-Pass-Geschwister) oder mehrere
         // Slot-Services: pro Variante eine Zeile mit Variant-Name + Body.
+        // Day-Pass-Sub-Zeilen sind komplett klickbar (kein Slot zum Anklicken);
+        // Slot-Sub-Zeilen rendern weiter unten ihre Pills, der Header selbst
+        // bleibt nicht-klickbar (sonst doppelte Aktion).
         <div className="space-y-2 pl-5 border-l border-slate-800/60 ml-2">
           {members.map((sv) => {
             const { variant } = splitServiceLabel(sv.name);
+            const subClickable = sv.serviceType === "day" && sv.availableToday;
             return (
               <div key={sv.serviceId} className="space-y-1">
-                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <div
+                  className={cn(
+                    "flex items-center gap-2 text-[11px] text-slate-400",
+                    subClickable
+                      && "cursor-pointer hover:text-slate-200 hover:bg-slate-800/40 -mx-1 px-1 py-0.5 rounded transition-colors active:scale-[0.99]",
+                  )}
+                  onClick={
+                    subClickable
+                      ? () => onPick({ serviceId: sv.serviceId, slotDate: currentDate })
+                      : undefined
+                  }
+                  role={subClickable ? "button" : undefined}
+                  tabIndex={subClickable ? 0 : undefined}
+                  onKeyDown={
+                    subClickable
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onPick({ serviceId: sv.serviceId, slotDate: currentDate });
+                          }
+                        }
+                      : undefined
+                  }
+                >
                   <span className="font-medium">{variant || sv.name}</span>
                   {sv.totalEmpBookings > 0 && (
                     <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
@@ -1977,7 +2092,11 @@ function SlotOverviewGroup({
                     </span>
                   )}
                 </div>
-                <SlotOverviewServiceBody sv={sv} onSlotPick={onSlotPick} />
+                <SlotOverviewServiceBody
+                  sv={sv}
+                  currentDate={currentDate}
+                  onPick={onPick}
+                />
               </div>
             );
           })}
@@ -1993,10 +2112,12 @@ function SlotOverviewGroup({
  */
 function SlotOverviewServiceBody({
   sv,
-  onSlotPick,
+  currentDate,
+  onPick,
 }: {
   sv: SlotOverviewService;
-  onSlotPick: (slot: SlotOverviewSlot) => void;
+  currentDate: string;
+  onPick: (payload: SlotOverviewPickPayload) => void;
 }) {
   if (sv.note) {
     return <p className="text-[11px] text-amber-400/80 px-1">{sv.note}</p>;
@@ -2018,7 +2139,14 @@ function SlotOverviewServiceBody({
         <SlotOverviewPill
           key={`${sv.serviceId}-${slot.startTime}`}
           slot={slot}
-          onClick={() => onSlotPick(slot)}
+          onClick={() =>
+            onPick({
+              serviceId: sv.serviceId,
+              slotDate: currentDate,
+              slotStart: slot.startTime,
+              slotEnd: slot.endTime,
+            })
+          }
         />
       ))}
     </div>
@@ -3245,6 +3373,11 @@ function AddTicketOverlay({
     lastName?: string;
     rfidCode?: string;
     profileImage?: string | null;
+    serviceId?: number;
+    slotDate?: string;
+    slotStart?: string;
+    slotEnd?: string;
+    focusRfid?: boolean;
     voucher?: {
       code: string;
       ticketTypeName: string | null;
@@ -3261,8 +3394,14 @@ function AddTicketOverlay({
   const [firstName, setFirstName] = useState(prefill?.firstName ?? "");
   const [lastName, setLastName] = useState(prefill?.lastName ?? "");
   const [code, setCode] = useState(prefill?.rfidCode ?? "");
+  // Service-Vorauswahl: erst voucher (alter Gutschein-Flow), dann
+  // prefill.serviceId (neuer Slot-Auslastungs-Flow), sonst "none".
   const [serviceId, setServiceId] = useState(
-    voucher?.serviceId != null ? String(voucher.serviceId) : "none",
+    voucher?.serviceId != null
+      ? String(voucher.serviceId)
+      : prefill?.serviceId != null
+        ? String(prefill.serviceId)
+        : "none",
   );
   // accessAreaId bleibt im State - wird automatisch ueber den Service gesetzt,
   // hat aber keine UI-Eingabemoeglichkeit mehr (Shop-Workflow: nicht relevant).
@@ -3273,16 +3412,46 @@ function AddTicketOverlay({
   //   * "datetime" -> yyyy-mm-ddTHH:mm (Kurs: Datum + Uhrzeit von/bis)
   //   * "single"   -> yyyy-mm-dd, nur startDate sichtbar (Tagesticket/DURATION)
   // Leer = Service-Defaults oder Fallback "heute".
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Wenn aus der Slot-Auslastung ein konkreter Slot uebergeben wurde,
+  // setzen wir startDate/endDate direkt als "yyyy-mm-ddTHH:MM"-String -
+  // gleiche Form wie der datetime-local-Input. Bei Day-Pass nur das
+  // Datum als "yyyy-mm-dd" - das single-Mode-Input nimmt das auf.
+  const [startDate, setStartDate] = useState(() => {
+    if (prefill?.slotDate && prefill?.slotStart) {
+      return `${prefill.slotDate}T${prefill.slotStart}`;
+    }
+    return prefill?.slotDate ?? "";
+  });
+  const [endDate, setEndDate] = useState(() => {
+    if (prefill?.slotDate && prefill?.slotEnd) {
+      return `${prefill.slotDate}T${prefill.slotEnd}`;
+    }
+    return "";
+  });
   const [loading, setLoading] = useState(false);
+  // Ref aufs Code/RFID-Input. Wenn prefill.focusRfid=true gesetzt war
+  // (Klick aus der Slot-Auslastung), fokussieren wir beim Mount sofort
+  // dort - der Mitarbeiter muss nur noch das Baendchen scannen.
+  const codeInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (prefill?.focusRfid) {
+      // requestAnimationFrame: das Overlay slidet rein, focus erst nach
+      // erstem Paint setzen, sonst wird er bei manchen iOS-Versionen
+      // verschluckt.
+      requestAnimationFrame(() => {
+        codeInputRef.current?.focus();
+        codeInputRef.current?.select();
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Slot-Auswahl aus ANNY (nur bei TIME_SLOT-Services). `slotDate` haelt den
   // gewaehlten Tag im Slot-Picker; daraus wird beim Slot-Klick startDate /
   // endDate gesetzt. `slots` kommt aus /slots-Endpoint, `hasAnnyLink`
   // entscheidet, ob das Slot-Grid oder das datetime-local-Fallback gezeigt
   // wird.
-  const [slotDate, setSlotDate] = useState("");
+  const [slotDate, setSlotDate] = useState(prefill?.slotDate ?? "");
   const [slots, setSlots] = useState<
     Array<{
       startTime: string;
@@ -4006,6 +4175,7 @@ function AddTicketOverlay({
               Code <span className="text-slate-600 font-normal">(optional)</span>
             </label>
             <input
+              ref={codeInputRef}
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
