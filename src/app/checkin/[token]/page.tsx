@@ -2021,6 +2021,149 @@ interface SlotOverviewPickPayload {
   slotEnd?: string;
 }
 
+/**
+ * Gemeinsame Zeitachse fuer alle Slot-Pills im Auslastungs-Dashboard.
+ * Pills werden absolut innerhalb eines Timeline-Containers positioniert -
+ * dadurch landen alle 10:00-Slots auf derselben horizontalen Position,
+ * unabhaengig vom Service. Day-Pass-Services rendern einen einzelnen
+ * breiten Pill ueber ihre Oeffnungszeit (oder den ganzen Tag als Fallback).
+ */
+interface TimeRange {
+  startMin: number;
+  endMin: number;
+}
+
+function timeStringToMinutes(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const m = /^(\d{1,2}):(\d{2})/.exec(t);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function minutesToTimeString(min: number): string {
+  const h = Math.floor(min / 60) % 24;
+  const m = min % 60;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+}
+
+function computeGlobalRange(services: SlotOverviewService[]): TimeRange {
+  let minM = Infinity;
+  let maxM = -Infinity;
+  for (const sv of services) {
+    for (const slot of sv.slots) {
+      const s = timeStringToMinutes(slot.startTime);
+      const e = timeStringToMinutes(slot.endTime);
+      if (s != null && s < minM) minM = s;
+      if (e != null && e > maxM) maxM = e;
+    }
+    for (const oh of sv.openingHours) {
+      const s = timeStringToMinutes(oh.start);
+      const e = timeStringToMinutes(oh.end);
+      if (s != null && s < minM) minM = s;
+      if (e != null && e > maxM) maxM = e;
+    }
+  }
+  // Fallback wenn keine Daten: Standard-Tag 09:00-20:00.
+  if (minM === Infinity || maxM === -Infinity) {
+    return { startMin: 9 * 60, endMin: 20 * 60 };
+  }
+  minM = Math.floor(minM / 60) * 60;
+  maxM = Math.ceil(maxM / 60) * 60;
+  // Mindestens 6 Stunden Range, damit kurze Slots nicht zu schmal werden.
+  if (maxM - minM < 6 * 60) {
+    maxM = minM + 6 * 60;
+  }
+  return { startMin: minM, endMin: maxM };
+}
+
+/**
+ * Renderer-Container fuer eine Service-Zeile. Children werden mit
+ * left/width-Prozenten innerhalb dieses relativen DIVs positioniert
+ * (siehe TimelinePill).
+ */
+function SlotTimeline({
+  children,
+  empty,
+}: {
+  children?: React.ReactNode;
+  /** Optionaler Empty-State-Text fuer Services ohne Slots. */
+  empty?: string;
+}) {
+  return (
+    <div className="relative h-7">
+      {empty ? (
+        <p className="absolute inset-0 flex items-center text-[11px] text-slate-500 px-1">
+          {empty}
+        </p>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+/**
+ * Absolut positionierter Wrapper fuer einen Pill in der Timeline.
+ * Berechnet left/width aus der Zeit relativ zur globalen Range.
+ */
+function TimelineSlot({
+  range,
+  startMin,
+  endMin,
+  children,
+}: {
+  range: TimeRange;
+  startMin: number;
+  endMin: number;
+  children: React.ReactNode;
+}) {
+  const total = Math.max(1, range.endMin - range.startMin);
+  const left = Math.max(0, ((startMin - range.startMin) / total) * 100);
+  const widthRaw = ((endMin - startMin) / total) * 100;
+  const width = Math.max(2, Math.min(100 - left, widthRaw));
+  return (
+    <div
+      className="absolute top-0 bottom-0"
+      style={{ left: `${left}%`, width: `${width}%`, paddingRight: "3px" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Zeitachsen-Header: zeigt eine Skala mit Stunden-Tick-Marken oberhalb
+ * der Timeline-Zeilen. Beispiel: 10:00 | 12:00 | 14:00 | 16:00 | 18:00 | 20:00.
+ * Wird mit derselben Range gerendert wie die Pills, damit die Tick-Positionen
+ * exakt zu den Pills passen.
+ */
+function TimelineAxis({ range }: { range: TimeRange }) {
+  const total = Math.max(1, range.endMin - range.startMin);
+  // Tick alle 2 Stunden bei breitem Range, sonst stuendlich.
+  const tickStepMin = total / 60 > 6 ? 120 : 60;
+  const ticks: number[] = [];
+  const firstTick = Math.ceil(range.startMin / tickStepMin) * tickStepMin;
+  for (let t = firstTick; t <= range.endMin; t += tickStepMin) {
+    ticks.push(t);
+  }
+  return (
+    <div className="relative h-4 mb-1">
+      {ticks.map((t) => {
+        const left = ((t - range.startMin) / total) * 100;
+        return (
+          <span
+            key={t}
+            className="absolute top-0 -translate-x-1/2 text-[10px] font-mono tabular-nums text-slate-500"
+            style={{ left: `${left}%` }}
+          >
+            {minutesToTimeString(t)}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function SlotOverviewSection({
   data,
   currentDate,
@@ -2051,6 +2194,7 @@ function SlotOverviewSection({
   //   - 1 Service-Gruppe + Name-Match: Header weglassen ("Strandbad"-
   //     Gruppe enthaelt nur 1 Service-Gruppe "Strandbad" -> Header waere
   //     reine Doppel-Info).
+  const range = computeGlobalRange(visible);
   const resourceGroups = groupByResource(visible);
   const groupedPerResource = resourceGroups.map((rg) => {
     const serviceGroups = groupOverviewServices(rg.services);
@@ -2100,6 +2244,7 @@ function SlotOverviewSection({
           anyHeader ? "space-y-4" : "space-y-3",
         )}
       >
+        <TimelineAxis range={range} />
         {groupedPerResource.map(
           ({ resourceId, resourceName, services: resSvcs, serviceGroups, showHeader }) => (
             <div key={resourceId ?? "__none__"} className="space-y-3">
@@ -2118,6 +2263,7 @@ function SlotOverviewSection({
                     key={group}
                     group={group}
                     members={members}
+                    range={range}
                     currentDate={currentDate}
                     onPick={onPick}
                   />
@@ -2140,11 +2286,13 @@ function SlotOverviewSection({
 function SlotOverviewGroup({
   group,
   members,
+  range,
   currentDate,
   onPick,
 }: {
   group: string;
   members: SlotOverviewService[];
+  range: TimeRange;
   currentDate: string;
   onPick: (payload: SlotOverviewPickPayload) => void;
 }) {
@@ -2157,178 +2305,105 @@ function SlotOverviewGroup({
   // ohne weitere Geschwister. Der Header ist klickbar fuer Day-Pass-
   // Services (oeffnet Add-Ticket-Overlay) - bei Slot-Services klickt der
   // User unten auf die Slot-Pills.
-  if (hasSingleMember) {
-    const sv = members[0];
-    const { variant } = splitServiceLabel(sv.name, group);
-    const headerClickable = sv.serviceType === "day" && sv.availableToday;
-    const Header = (
-      <div
-        className={cn(
-          "flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400",
-          headerClickable
-            && "cursor-pointer hover:text-slate-200 hover:bg-slate-800/40 -mx-1 px-1 py-0.5 rounded transition-colors active:scale-[0.99]",
-        )}
-        onClick={
-          headerClickable
-            ? () => onPick({ serviceId: sv.serviceId, slotDate: currentDate })
-            : undefined
-        }
-        role={headerClickable ? "button" : undefined}
-        tabIndex={headerClickable ? 0 : undefined}
-        onKeyDown={
-          headerClickable
-            ? (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onPick({ serviceId: sv.serviceId, slotDate: currentDate });
-                }
-              }
-            : undefined
-        }
-      >
-        <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
-        <span className="font-semibold truncate">{group}</span>
-        {variant && (
-          <span className="text-slate-500 font-normal normal-case tracking-normal">
-            · {variant}
-          </span>
-        )}
-        {totalEmp > 0 && (
-          <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
-            {totalEmp} verkauft
-          </span>
-        )}
-      </div>
-    );
-    return (
-      <div className="space-y-1.5">
-        {Header}
-        <SlotOverviewServiceBody
-          sv={sv}
-          currentDate={currentDate}
-          onPick={onPick}
-        />
-      </div>
-    );
-  }
+  const isMulti = members.length > 1;
+  const singleVariant = !isMulti ? splitServiceLabel(members[0].name, group).variant : null;
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
         <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
         <span className="font-semibold truncate">{group}</span>
-        <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
-          · {members.length} Varianten
-        </span>
+        {isMulti && (
+          <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
+            · {members.length} Varianten
+          </span>
+        )}
+        {singleVariant && (
+          <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
+            · {singleVariant}
+          </span>
+        )}
         {totalEmp > 0 && (
           <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
             {totalEmp} verkauft
           </span>
         )}
       </div>
-      {allDay ? (
-        // Mehrere Tageskarten-Varianten: kompakte Liste mit Variantenname
-        // + optionaler ANNY-Oeffnungszeit + Verkaufszahl. Jede Kachel ist
-        // klickbar (oeffnet Add-Ticket-Overlay mit Service + Datum).
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pl-5">
-          {members.map((sv) => {
-            const { variant } = splitServiceLabel(sv.name, group);
-            const label = variant || sv.name;
-            const opening = formatOpeningHours(sv.openingHours);
-            const clickable = sv.availableToday;
-            return (
-              <button
-                key={sv.serviceId}
-                type="button"
-                disabled={!clickable}
-                onClick={
-                  clickable
-                    ? () => onPick({ serviceId: sv.serviceId, slotDate: currentDate })
-                    : undefined
-                }
-                title={
-                  clickable
-                    ? `${label} verkaufen (Bändchen scannen)`
-                    : "Heute nicht buchbar"
-                }
-                className={cn(
-                  "flex items-center gap-2 text-xs px-2 py-1 rounded-md border text-left",
-                  clickable
-                    ? "bg-slate-800/60 border-slate-700/40 hover:bg-slate-700/70 hover:border-slate-600 active:scale-95 transition-colors"
-                    : "bg-slate-900/40 border-slate-800/40 opacity-60 cursor-not-allowed",
-                )}
-              >
-                <span className="text-slate-300 truncate flex-1">{label}</span>
-                {opening && (
-                  <span className="text-[10px] font-mono text-slate-400 tabular-nums">
-                    {opening}
-                  </span>
-                )}
-                <span
-                  className={cn(
-                    "text-[11px] font-mono tabular-nums",
-                    sv.totalEmpBookings > 0 ? "text-emerald-300" : "text-slate-500",
-                  )}
-                >
-                  {sv.totalEmpBookings}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        // Gemischt (Slot-Service + Day-Pass-Geschwister) oder mehrere
-        // Slot-Services: pro Variante eine Zeile mit Variant-Name + Body.
-        // Day-Pass-Sub-Zeilen sind komplett klickbar (kein Slot zum Anklicken);
-        // Slot-Sub-Zeilen rendern weiter unten ihre Pills, der Header selbst
-        // bleibt nicht-klickbar (sonst doppelte Aktion).
-        <div className="space-y-2 pl-5 border-l border-slate-800/60 ml-2">
-          {members.map((sv) => {
-            const { variant } = splitServiceLabel(sv.name, group);
-            const subClickable = sv.serviceType === "day" && sv.availableToday;
-            return (
-              <div key={sv.serviceId} className="space-y-1">
-                <div
-                  className={cn(
-                    "flex items-center gap-2 text-[11px] text-slate-400",
-                    subClickable
-                      && "cursor-pointer hover:text-slate-200 hover:bg-slate-800/40 -mx-1 px-1 py-0.5 rounded transition-colors active:scale-[0.99]",
-                  )}
-                  onClick={
-                    subClickable
-                      ? () => onPick({ serviceId: sv.serviceId, slotDate: currentDate })
-                      : undefined
-                  }
-                  role={subClickable ? "button" : undefined}
-                  tabIndex={subClickable ? 0 : undefined}
-                  onKeyDown={
-                    subClickable
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            onPick({ serviceId: sv.serviceId, slotDate: currentDate });
-                          }
-                        }
-                      : undefined
-                  }
-                >
-                  <span className="font-medium">{variant || sv.name}</span>
-                  {sv.totalEmpBookings > 0 && (
-                    <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto">
-                      {sv.totalEmpBookings} verkauft
-                    </span>
-                  )}
-                </div>
-                <SlotOverviewServiceBody
-                  sv={sv}
-                  currentDate={currentDate}
-                  onPick={onPick}
-                />
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className={cn("space-y-1.5", isMulti && "pl-5 border-l border-slate-800/60 ml-2")}>
+        {members.map((sv) => (
+          <SlotOverviewServiceRow
+            key={sv.serviceId}
+            sv={sv}
+            range={range}
+            group={group}
+            isMulti={isMulti}
+            currentDate={currentDate}
+            onPick={onPick}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Eine Zeile pro Service-Variante: [Variant-Label | Timeline | Verkaufs-
+ * Counter]. Layout ist ueber alle Service-Gruppen einheitlich, damit Slots
+ * mit gleicher Uhrzeit ueberall auf derselben horizontalen Position liegen.
+ *
+ * Bei hasSingleMember (isMulti=false) bleibt das Label leer - der Service-
+ * Name steht schon im Group-Header darueber.
+ */
+function SlotOverviewServiceRow({
+  sv,
+  range,
+  group,
+  isMulti,
+  currentDate,
+  onPick,
+}: {
+  sv: SlotOverviewService;
+  range: TimeRange;
+  group: string;
+  isMulti: boolean;
+  currentDate: string;
+  onPick: (payload: SlotOverviewPickPayload) => void;
+}) {
+  const { variant } = splitServiceLabel(sv.name, group);
+  const dayClickable = sv.serviceType === "day" && sv.availableToday && !sv.note;
+  const labelText = isMulti ? (variant || sv.name) : "";
+  return (
+    <div className="flex items-stretch gap-2 text-[11px]">
+      <div
+        className={cn(
+          "shrink-0 w-[130px] flex items-center text-slate-400 truncate",
+          isMulti ? "font-medium" : "",
+        )}
+      >
+        {labelText}
+      </div>
+      <div className="flex-1 min-w-0">
+        <SlotOverviewServiceBody
+          sv={sv}
+          range={range}
+          currentDate={currentDate}
+          onPick={onPick}
+          onDayClick={
+            dayClickable
+              ? () => onPick({ serviceId: sv.serviceId, slotDate: currentDate })
+              : undefined
+          }
+        />
+      </div>
+      <div
+        className={cn(
+          "shrink-0 w-[44px] flex items-center justify-end font-mono tabular-nums",
+          sv.totalEmpBookings > 0 ? "text-emerald-300" : "text-slate-600",
+        )}
+        title={`${sv.totalEmpBookings} EMP-Ticket(s) heute verkauft`}
+      >
+        {sv.totalEmpBookings}
+      </div>
     </div>
   );
 }
@@ -2339,44 +2414,145 @@ function SlotOverviewGroup({
  */
 function SlotOverviewServiceBody({
   sv,
+  range,
   currentDate,
   onPick,
+  onDayClick,
 }: {
   sv: SlotOverviewService;
+  range: TimeRange;
   currentDate: string;
   onPick: (payload: SlotOverviewPickPayload) => void;
+  /** Click-Handler fuer Day-Pass-Services (gibt es keinen Slot zum Klicken). */
+  onDayClick?: () => void;
 }) {
   if (sv.note) {
-    return <p className="text-[11px] text-amber-400/80 px-1">{sv.note}</p>;
+    return (
+      <SlotTimeline>
+        <p className="absolute inset-0 flex items-center text-[11px] text-amber-400/80 px-1 truncate">
+          {sv.note}
+        </p>
+      </SlotTimeline>
+    );
   }
   if (sv.serviceType === "day") {
-    const opening = formatOpeningHours(sv.openingHours);
+    // Day-Pass: 1 grosser Pill ueber die Oeffnungszeit. Wenn ANNY keine
+    // Periods liefert, nutzen wir den globalen Range als Fallback.
+    const periods =
+      sv.openingHours.length > 0
+        ? sv.openingHours
+        : [
+            {
+              start: minutesToTimeString(range.startMin),
+              end: minutesToTimeString(range.endMin),
+            },
+          ];
     return (
-      <p className="text-[11px] text-slate-500 px-1">
-        {opening ? <>Geöffnet <span className="font-mono tabular-nums text-slate-400">{opening}</span></> : "Tagespass"}
-      </p>
+      <SlotTimeline>
+        {periods.map((oh, idx) => {
+          const startMin = timeStringToMinutes(oh.start) ?? range.startMin;
+          const endMin = timeStringToMinutes(oh.end) ?? range.endMin;
+          return (
+            <TimelineSlot
+              key={`${sv.serviceId}-day-${idx}`}
+              range={range}
+              startMin={startMin}
+              endMin={endMin}
+            >
+              <DayPassPill
+                startLabel={oh.start}
+                endLabel={oh.end}
+                clickable={!!onDayClick && sv.availableToday}
+                bookings={sv.totalEmpBookings}
+                onClick={onDayClick}
+                isFallbackRange={sv.openingHours.length === 0}
+              />
+            </TimelineSlot>
+          );
+        })}
+      </SlotTimeline>
     );
   }
   if (sv.slots.length === 0) {
-    return <p className="text-[11px] text-slate-500 px-1">Keine Slots heute.</p>;
+    return <SlotTimeline empty="Keine Slots heute." />;
   }
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {sv.slots.map((slot) => (
-        <SlotOverviewPill
-          key={`${sv.serviceId}-${slot.startTime}`}
-          slot={slot}
-          onClick={() =>
-            onPick({
-              serviceId: sv.serviceId,
-              slotDate: currentDate,
-              slotStart: slot.startTime,
-              slotEnd: slot.endTime,
-            })
-          }
-        />
-      ))}
-    </div>
+    <SlotTimeline>
+      {sv.slots.map((slot) => {
+        const startMin = timeStringToMinutes(slot.startTime);
+        const endMin = timeStringToMinutes(slot.endTime);
+        if (startMin == null || endMin == null) return null;
+        return (
+          <TimelineSlot
+            key={`${sv.serviceId}-${slot.startTime}`}
+            range={range}
+            startMin={startMin}
+            endMin={endMin}
+          >
+            <SlotOverviewPill
+              slot={slot}
+              onClick={() =>
+                onPick({
+                  serviceId: sv.serviceId,
+                  slotDate: currentDate,
+                  slotStart: slot.startTime,
+                  slotEnd: slot.endTime,
+                })
+              }
+            />
+          </TimelineSlot>
+        );
+      })}
+    </SlotTimeline>
+  );
+}
+
+/**
+ * Day-Pass-Pill in der Timeline. Optisch leicht abgesetzt von den
+ * Slot-Pills (subtileres Hintergrund-Grun), zeigt die Oeffnungszeit als
+ * Label. Klickbar, falls der Service heute verkauft werden kann.
+ */
+function DayPassPill({
+  startLabel,
+  endLabel,
+  clickable,
+  bookings,
+  onClick,
+  isFallbackRange,
+}: {
+  startLabel: string;
+  endLabel: string;
+  clickable: boolean;
+  bookings: number;
+  onClick?: () => void;
+  /** Wenn true: Periods kamen nicht aus ANNY, Pill ist gestreift dargestellt. */
+  isFallbackRange: boolean;
+}) {
+  const content = (
+    <span className="flex items-center justify-center gap-1.5 h-full px-2 text-[11px] font-mono tabular-nums leading-tight truncate">
+      <span className="text-sky-100">{startLabel}-{endLabel}</span>
+      {bookings > 0 && (
+        <span className="text-emerald-200/90 text-[10px]">· {bookings}</span>
+      )}
+    </span>
+  );
+  const baseCls = cn(
+    "relative overflow-hidden rounded-lg border h-full w-full",
+    "border-sky-500/40 bg-sky-500/10 text-sky-100",
+    isFallbackRange && "border-dashed",
+  );
+  if (!clickable) {
+    return <div className={cn(baseCls, "opacity-70")}>{content}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Tageskarte verkaufen (${startLabel}-${endLabel})`}
+      className={cn(baseCls, "hover:brightness-125 active:scale-95 transition-all")}
+    >
+      {content}
+    </button>
   );
 }
 
@@ -2436,7 +2612,7 @@ function SlotOverviewPill({
           : `${slot.remaining ?? "?"} von ${slot.capacity ?? "?"} frei · ${slot.empBookings} EMP-Ticket(s)`
       }
       className={cn(
-        "relative overflow-hidden rounded-lg border px-2 py-1 text-[11px] font-mono tabular-nums leading-tight",
+        "relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
         "hover:brightness-125 active:scale-95 transition-all",
         baseColor,
       )}
@@ -2448,9 +2624,9 @@ function SlotOverviewPill({
           style={{ width: `${pct}%` }}
         />
       )}
-      <span className="relative flex items-center gap-1.5">
+      <span className="relative flex items-center justify-center gap-1 h-full truncate">
         <span className="font-bold">{slot.startTime}</span>
-        {label && <span className="opacity-90">{label}</span>}
+        {label && <span className="opacity-90 truncate">{label}</span>}
         {slot.empBookings > 0 && !blocked && (
           <span className="text-[9px] opacity-60">·{slot.empBookings}E</span>
         )}
