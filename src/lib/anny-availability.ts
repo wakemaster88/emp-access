@@ -1032,9 +1032,16 @@ export async function fetchAnnyServiceStartDates(
       if (typeof it === "string") {
         out.push(it);
       } else if (it && typeof it === "object") {
-        // JSON:API-Variante: { type: "...", attributes: { date: "..." } }
-        // oder { date: "..." } / { start_date: "..." }
+        // ANNY liefert pro Tag im Fenster einen Eintrag der Form
+        //   { date, available, unavailability_type }
+        // zurueck - auch wenn an dem Tag nichts buchbar ist (z.B. Ferienkurs,
+        // der erst Ende Juli startet, kommt mit available:false /
+        // unavailability_type:"off_schedule" trotzdem fuer heute). Wir
+        // filtern strikt auf available !== false, damit der Caller die
+        // Liste als "Tage, an denen der Service tatsaechlich buchbar ist"
+        // interpretieren kann.
         const obj = it as Record<string, unknown>;
+        if (obj.available === false) continue;
         const d =
           (obj.date as string | undefined)
           || (obj.start_date as string | undefined)
