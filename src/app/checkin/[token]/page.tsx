@@ -2709,6 +2709,7 @@ function CombinedDayPassRow({
                     }
                     disabled={!primary.availableToday}
                     isFallback={isFallback}
+                    bookingCount={totalBookings}
                   />
                 </TimelineSlot>
               );
@@ -2755,6 +2756,7 @@ function CombinedDayPassRow({
                 }
                 disabled={!primary.availableToday}
                 isFallback={false}
+                bookingCount={totalBookings}
               />
             </TimelineSlot>
           </SlotTimeline>
@@ -2847,6 +2849,7 @@ function CombinedPill({
   onClick,
   disabled,
   isFallback,
+  bookingCount,
 }: {
   startLabel: string;
   endLabel: string;
@@ -2854,6 +2857,8 @@ function CombinedPill({
   onClick?: () => void;
   disabled?: boolean;
   isFallback: boolean;
+  /** Anzahl EMP-Tickets in diesem Period (optional). Wird als Badge sichtbar. */
+  bookingCount?: number;
 }) {
   return (
     <button
@@ -2870,8 +2875,16 @@ function CombinedPill({
         isFallback && "border-dashed",
       )}
     >
-      <span className="relative flex items-center justify-center gap-1 h-full truncate">
-        <span className="font-bold">{startLabel}-{endLabel}</span>
+      <span className="relative flex items-center justify-center gap-1 h-full">
+        <span className="font-bold shrink-0">{startLabel}-{endLabel}</span>
+        {bookingCount != null && bookingCount > 0 && (
+          <span
+            className="shrink-0 inline-flex items-center rounded-sm bg-sky-500/40 text-sky-50 px-1 text-[10px] font-bold leading-tight tabular-nums"
+            title={`${bookingCount} EMP-Ticket(s)`}
+          >
+            {bookingCount}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -2945,6 +2958,7 @@ function SlotOverviewServiceBody({
                 onClick={onDayClick}
                 disabled={!onDayClick || !sv.availableToday}
                 isFallback={isFallback}
+                bookingCount={sv.totalEmpBookings}
               />
             </TimelineSlot>
           );
@@ -3023,17 +3037,23 @@ function SlotOverviewPill({
     : isAlmostFull
       ? "bg-amber-500/30"
       : "bg-emerald-500/20";
+  // Konsistent immer "X frei" zeigen (statt mehrdeutigem "1/10" das wie
+  // "1 verkauft" gelesen wird). Bei 0 oder blockiert: "voll".
   const label = blocked
     ? annyReasonLabel(slot.unavailabilityType ?? undefined) || "voll"
-    : slot.remaining != null && slot.capacity != null && slot.remaining !== slot.capacity
-      ? `${slot.remaining}/${slot.capacity}`
-      : slot.remaining != null
-        ? `${slot.remaining} frei`
-        : slot.capacity != null
-          ? `${slot.capacity} frei`
-          : slot.empBookings > 0
-            ? `${slot.empBookings} verk.`
-            : "";
+    : slot.remaining != null
+      ? slot.remaining === 0
+        ? "voll"
+        : `${slot.remaining} frei`
+      : slot.capacity != null
+        ? `${slot.capacity} frei`
+        : "";
+  // Hinweis wenn lokale EMP-Tickets die ANNY-Restkapazitaet uebersteigen
+  // (z.B. manuell angelegte Gaeste). Macht Diskrepanz im Tooltip transparent.
+  const overbookHint =
+    slot.capacity != null && slot.remaining != null
+      ? slot.empBookings > slot.capacity - slot.remaining
+      : false;
   return (
     <button
       type="button"
@@ -3055,6 +3075,9 @@ function SlotOverviewPill({
           lines.push(`Kapazitaet (ANNY): ${slot.remaining ?? "unbekannt"}`);
         }
         lines.push(`EMP-Tickets: ${slot.empBookings}`);
+        if (overbookHint) {
+          lines.push(`! EMP-Tickets > ANNY-belegt (lokal mehr Tickets als ANNY weiss)`);
+        }
         return lines.join("\n");
       })()}
       className={cn(
@@ -3070,11 +3093,21 @@ function SlotOverviewPill({
           style={{ width: `${pct}%` }}
         />
       )}
-      <span className="relative flex items-center justify-center gap-1 h-full truncate">
-        <span className="font-bold">{slot.startTime}</span>
-        {label && <span className="opacity-90 truncate">{label}</span>}
-        {slot.empBookings > 0 && !blocked && (
-          <span className="text-[9px] opacity-60">·{slot.empBookings}E</span>
+      <span className="relative flex items-center justify-center gap-1 h-full">
+        <span className="font-bold shrink-0">{slot.startTime}</span>
+        {label && <span className="opacity-90 truncate min-w-0">{label}</span>}
+        {slot.empBookings > 0 && (
+          <span
+            className={cn(
+              "shrink-0 inline-flex items-center rounded-sm px-1 text-[10px] font-bold leading-tight tabular-nums",
+              overbookHint
+                ? "bg-rose-500/50 text-white"
+                : "bg-sky-500/40 text-sky-50",
+            )}
+            title={`${slot.empBookings} EMP-Ticket(s) in diesem Slot`}
+          >
+            {slot.empBookings}
+          </span>
         )}
       </span>
     </button>
