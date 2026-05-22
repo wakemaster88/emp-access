@@ -4,7 +4,7 @@ import {
   resolveAnnyOrganizationId,
   fetchAllAnnyServices,
   fetchAllAnnyResources,
-  matchAnnyServiceInCatalog,
+  matchAllAnnyServicesInCatalog,
   suggestAnnyServiceNames,
   fetchAnnyServiceStartSlots,
   fetchAnnyServiceStartDates,
@@ -262,9 +262,12 @@ export async function GET(
     annyServices.map(async (svc) => {
       const empCount = ticketsToday.filter((t) => t.serviceId === svc.id).length;
       const annyNames = collectServiceNames(svc.name, svc.annyNames);
-      const match = matchAnnyServiceInCatalog(catalog, annyNames);
+      // Ein EMP-Service kann ueber annyNames mehrere ANNY-Services abdecken
+      // (z.B. "Exklusive Bahnmiete - Wochentag" + "... - Wochenende"). Wir
+      // holen Slots/Verfuegbarkeit fuer ALLE Treffer und fuehren sie zusammen.
+      const matches = matchAllAnnyServicesInCatalog(catalog, annyNames);
 
-      if (!match) {
+      if (matches.length === 0) {
         // Diagnose: liste ANNY-Services mit aehnlichen Tokens auf, damit
         // der Mitarbeiter sieht, welche annyNames im Backoffice gepflegt
         // werden muessten.
@@ -293,6 +296,10 @@ export async function GET(
         } satisfies ServiceOverview;
       }
 
+      // "Primaer-Match" fuer Metadaten (Resource, Type, UUID): wir nehmen den
+      // ersten Treffer. Slots/Periods/StartDates werden dann ueber ALLE
+      // Matches aggregiert.
+      const match = matches[0];
       const minDur = match.info.minDuration;
       const isDayService =
         match.info.isFullDay === true
@@ -317,42 +324,37 @@ export async function GET(
       // ANNY-Services die echten Service-Zeiten und bei Tenants ohne
       // Service-Schedule trotzdem sinnvolle Werte.
       if (serviceType === "day") {
-        const hasResources = match.resourceIds.length > 0;
-        const [datesRes, servicePeriods] = await Promise.all([
-          fetchAnnyServiceStartDates(
-            baseUrl,
-            annyConfig!.token,
-            match.id,
-            dateStr,
-            dateStr,
-            organizationId,
-          ).catch(() => [] as string[]),
-          fetchAnnyServicePeriods(
-            baseUrl,
-            annyConfig!.token,
-            match.id,
-            dateStr,
-            organizationId,
-          ).catch(() => []),
-        ]);
-        let periodsRes = servicePeriods;
-        if (periodsRes.length === 0 && hasResources) {
-          periodsRes = await fetchAnnyResourcePeriods(
-            baseUrl,
-            annyConfig!.token,
-            match.resourceIds,
-            dateStr,
-          ).catch(() => []);
-        }
+        // Pro match parallel start-dates + periods abfragen, dann zusammen-
+        // fuehren. Day-Services wechseln seltener zwischen Schedules, aber
+        // konzeptuell identisch behandeln.
+        const perMatch = await Promise.all(
+          matches.map(async (m) => {
+            const [datesRes, servicePeriods] = await Promise.all([
+              fetchAnnyServiceStartDates(
+                baseUrl, annyConfig!.token, m.id, dateStr, dateStr, organizationId,
+              ).catch(() => [] as string[]),
+              fetchAnnyServicePeriods(
+                baseUrl, annyConfig!.token, m.id, dateStr, organizationId,
+              ).catch(() => []),
+            ]);
+            let periodsRes = servicePeriods;
+            if (periodsRes.length === 0 && m.resourceIds.length > 0) {
+              periodsRes = await fetchAnnyResourcePeriods(
+                baseUrl, annyConfig!.token, m.resourceIds, dateStr,
+              ).catch(() => []);
+            }
+            return { match: m, datesRes, periodsRes };
+          }),
+        );
         // /start-dates ist die autoritative Quelle fuer "ist dieser Day-Pass-
         // Service an diesem Datum buchbar?" (Ferienkurs erst im Juli etc.).
-        // Leeres Array = heute nicht buchbar. Frueher haben wir bei leerem
-        // Ergebnis faelschlich `true` angenommen - das hat saisonale Services
-        // mit Resource-Oeffnungszeiten (10-20) trotzdem angezeigt.
-        const availableToday = datesRes.some((d) => d.startsWith(dateStr));
-        const merged = availableToday
-          ? mergeAvailabilityPeriods(periodsRes)
-          : [];
+        // Sobald EINER der Matches heute verfuegbar ist, gilt der Service als
+        // verfuegbar. Periods werden ueber alle verfuegbaren Matches gemerged.
+        const availableToday = perMatch.some((p) => p.datesRes.some((d) => d.startsWith(dateStr)));
+        const periodsAll = perMatch
+          .filter((p) => p.datesRes.some((d) => d.startsWith(dateStr)))
+          .flatMap((p) => p.periodsRes);
+        const merged = availableToday ? mergeAvailabilityPeriods(periodsAll) : [];
         const openingHours: OpeningHourBlock[] = merged.map((p) => ({
           start: fmtTimeBerlin(p.start),
           end: fmtTimeBerlin(p.end),
@@ -376,27 +378,33 @@ export async function GET(
         } satisfies ServiceOverview;
       }
 
-      const slotDurationMin = match.info.minDuration ?? match.info.bookingInterval ?? null;
-      let rawSlots: Awaited<ReturnType<typeof fetchAnnyServiceStartSlots>> = [];
-      try {
-        rawSlots = await fetchAnnyServiceStartSlots(
-          baseUrl,
-          annyConfig!.token,
-          match.id,
-          dateStr,
-          {
-            organizationId,
-            slotDurationMinutes: slotDurationMin,
-          },
-        );
-      } catch {
-        rawSlots = [];
+      // Slot-Service: pro match parallel Slots holen und nach Startzeit
+      // mergen. Falls ein EMP-Service "Wochentag" + "Wochenende" Schedules
+      // abdeckt, liefert nur einer pro Tag echte Slots - der andere ist leer.
+      const rawSlotsPerMatch = await Promise.all(
+        matches.map(async (m) => {
+          const slotDurationMin = m.info.minDuration ?? m.info.bookingInterval ?? null;
+          try {
+            const s = await fetchAnnyServiceStartSlots(
+              baseUrl, annyConfig!.token, m.id, dateStr,
+              { organizationId, slotDurationMinutes: slotDurationMin },
+            );
+            return applyLocalSalesOverrides(s);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      // Dedupliziere pro startTime - falls beide Matches denselben Slot
+      // liefern (sollte nicht vorkommen, aber safety), erster gewinnt.
+      const slotsByStart = new Map<string, Awaited<ReturnType<typeof fetchAnnyServiceStartSlots>>[number]>();
+      for (const arr of rawSlotsPerMatch) {
+        for (const s of arr) {
+          if (!s.startTime) continue;
+          if (!slotsByStart.has(s.startTime)) slotsByStart.set(s.startTime, s);
+        }
       }
-
-      // Vor-Ort-Verkaufs-Overrides: Lead-Time ignorieren + ANNY-Quirks
-      // fuer Services ohne hinterlegte Resource-Kapazitaet ausblenden.
-      // Siehe applyLocalSalesOverrides in @/lib/anny-availability.
-      rawSlots = applyLocalSalesOverrides(rawSlots);
+      const rawSlots = Array.from(slotsByStart.values()).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
       // EMP-Buchungen pro Slot: anhand `slotStart` (HH:MM) gruppieren.
       const empByStart = new Map<string, number>();
@@ -422,20 +430,20 @@ export async function GET(
         }));
 
       // Verfuegbarkeit: wenn /availability/start Slots geliefert hat, ist
-      // der Service heute aktiv. Sonst per /start-dates verifizieren -
-      // koennte ausgebucht oder schlicht nicht im Saison-Zeitraum sein.
+      // der Service heute aktiv. Sonst per /start-dates fuer ALLE Matches
+      // verifizieren - koennte ausgebucht sein oder eine der Schedules
+      // (Wochentag/Wochenende) ist heute aktiv.
       let availableToday = slots.length > 0;
       if (!availableToday) {
         try {
-          const dates = await fetchAnnyServiceStartDates(
-            baseUrl,
-            annyConfig!.token,
-            match.id,
-            dateStr,
-            dateStr,
-            organizationId,
+          const datesArr = await Promise.all(
+            matches.map((m) =>
+              fetchAnnyServiceStartDates(
+                baseUrl, annyConfig!.token, m.id, dateStr, dateStr, organizationId,
+              ).catch(() => [] as string[]),
+            ),
           );
-          availableToday = dates.some((d) => d.startsWith(dateStr));
+          availableToday = datesArr.some((dates) => dates.some((d) => d.startsWith(dateStr)));
         } catch {
           availableToday = false;
         }

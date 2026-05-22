@@ -622,6 +622,31 @@ export function matchAnnyServiceInCatalog(
 }
 
 /**
+ * Wie matchAnnyServiceInCatalog, aber liefert ALLE exakten Treffer zurueck.
+ * Wird vom slot-overview Endpoint genutzt, wenn ein EMP-Service ueber
+ * annyNames mehrere ANNY-Services abdeckt (z.B. "Exklusive Bahnmiete -
+ * Wochentag" + "Exklusive Bahnmiete - Wochenende"), damit Slots aus allen
+ * passenden Schedules zusammengefuehrt werden koennen. Reihenfolge der
+ * Rueckgabe entspricht der Katalog-Reihenfolge. Wenn kein exakter Treffer
+ * existiert, faellt es auf substring/token-Match zurueck (max 1 Eintrag).
+ */
+export function matchAllAnnyServicesInCatalog(
+  catalog: AnnyServiceCatalogEntry[],
+  serviceNames: string[],
+): AnnyServiceCatalogEntry[] {
+  if (serviceNames.length === 0 || catalog.length === 0) return [];
+  const wanted = serviceNames.map((n) => n.toLowerCase());
+  const wantedSet = new Set(wanted);
+  const exact: AnnyServiceCatalogEntry[] = [];
+  for (const entry of catalog) {
+    if (wantedSet.has(entry.name.toLowerCase())) exact.push(entry);
+  }
+  if (exact.length > 0) return exact;
+  const fallback = matchAnnyServiceInCatalog(catalog, serviceNames);
+  return fallback ? [fallback] : [];
+}
+
+/**
  * Liefert ANNY-Service-Namen, die zu einem der gesuchten Namen "aehnlich"
  * sind (mind. 1 starker gemeinsamer Token, auch ohne Identifier-Match).
  * Hilfreich fuer Diagnose: zeigt dem Mitarbeiter, welche ANNY-Namen er
