@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, LogIn, Pause, Loader2, Camera, Search, Megaphone, X } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine } from "@/lib/monitor-ticket-subtitle";
@@ -122,6 +122,8 @@ export default function PublicMonitorPage({ params }: Props) {
   const [pauseToggling, setPauseToggling] = useState(false);
   const [ticketSearch, setTicketSearch] = useState("");
   const [mobileTab, setMobileTab] = useState<"tickets" | "scans">("tickets");
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  const devicesRef = useRef<HTMLDivElement | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastScanIdRef = useRef(0);
   const pollTickRef = useRef(0);
@@ -336,6 +338,15 @@ export default function PublicMonitorPage({ params }: Props) {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!devicesOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!devicesRef.current?.contains(e.target as Node)) setDevicesOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [devicesOpen]);
+
   /** Nach Check-in: hasPhoto-Flag aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen.
    *  Das eigentliche Bild wird vom Overlay selbst via /photo-Endpoint nachgeladen. */
   useEffect(() => {
@@ -523,15 +534,53 @@ export default function PublicMonitorPage({ params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {devices.map((device) => {
-            const online = device.lastUpdate ? new Date(device.lastUpdate) > fiveMinAgo : false;
+          {devices.length > 0 && (() => {
+            const onlineCount = devices.filter((d) => d.lastUpdate && new Date(d.lastUpdate) > fiveMinAgo).length;
+            const summaryDot = onlineCount === devices.length
+              ? styles.deviceDot
+              : onlineCount === 0
+                ? styles.deviceDotOff
+                : "bg-amber-500 shadow-[0_0_10px_3px_rgba(245,158,11,0.5)]";
             return (
-              <div key={device.id} className="flex items-center gap-1 sm:gap-1.5">
-                <div className={cn("h-2 w-2 rounded-full transition-all", online ? styles.deviceDot : styles.deviceDotOff)} />
-                <span className={cn("text-[10px] sm:text-xs font-medium hidden sm:inline", styles.deviceText)}>{device.name}</span>
+              <div className="relative" ref={devicesRef}>
+                <button
+                  type="button"
+                  onClick={() => setDevicesOpen((v) => !v)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg transition-colors",
+                    styles.modeBtnBg,
+                  )}
+                  aria-haspopup="menu"
+                  aria-expanded={devicesOpen}
+                >
+                  <span className={cn("h-2 w-2 rounded-full transition-all", summaryDot)} />
+                  <span className={cn("text-[10px] sm:text-xs font-medium tabular-nums", styles.deviceText)}>
+                    {onlineCount}/{devices.length}
+                  </span>
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", devicesOpen && "rotate-180")} />
+                </button>
+                {devicesOpen && (
+                  <div
+                    role="menu"
+                    className={cn(
+                      "absolute right-0 top-full mt-1.5 min-w-[200px] rounded-xl border shadow-xl z-30 py-1.5",
+                      dark ? "bg-slate-900 border-slate-700" : "bg-white border-slate-300",
+                    )}
+                  >
+                    {devices.map((device) => {
+                      const online = device.lastUpdate ? new Date(device.lastUpdate) > fiveMinAgo : false;
+                      return (
+                        <div key={device.id} className="flex items-center gap-2 px-3 py-1.5">
+                          <div className={cn("h-2 w-2 rounded-full transition-all shrink-0", online ? styles.deviceDot : styles.deviceDotOff)} />
+                          <span className={cn("text-xs font-medium truncate", styles.deviceText)}>{device.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
-          })}
+          })()}
           <div className={cn("flex lg:hidden rounded-lg overflow-hidden border", dark ? "border-slate-700" : "border-slate-300")}>
             <button
               onClick={() => setMobileTab("scans")}
