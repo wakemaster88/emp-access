@@ -342,6 +342,87 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     return out;
   }
 
+  /** Liest plan-subscriptions inkl. `included` (customer/plan) und resolved die
+   *  Relationships zu eingebetteten Sub-Objekten. fetchAllPages reicht nicht,
+   *  weil dort `included` verworfen wird. */
+  async function fetchAllPlanSubscriptions(): Promise<PlanSubscription[]> {
+    const pageSize = 200;
+    const pageLimit = 50;
+    const extra = { include: "customer,plan" };
+    const buildUrl = (n: number) => {
+      const p = new URLSearchParams({ ...extra, "page[size]": String(pageSize), "page[number]": String(n) });
+      return `${apiBase}/plan-subscriptions?${p}`;
+    };
+
+    const firstRes = await fetch(buildUrl(1), { headers, signal: AbortSignal.timeout(15000) });
+    if (!firstRes.ok) {
+      if (firstRes.status === 404) return [];
+      return [];
+    }
+    const firstJson = await firstRes.json();
+    const lastPage: number = firstJson?.meta?.page?.["last-page"] ?? 1;
+
+    const allData: Record<string, unknown>[] = Array.isArray(firstJson?.data) ? firstJson.data : [];
+    const allIncluded: Record<string, unknown>[] = Array.isArray(firstJson?.included) ? firstJson.included : [];
+
+    if (lastPage > 1) {
+      const remaining: number[] = [];
+      const cap = Math.min(lastPage, pageLimit);
+      for (let n = 2; n <= cap; n++) remaining.push(n);
+      const responses = await Promise.all(
+        remaining.map((n) =>
+          fetch(buildUrl(n), { headers, signal: AbortSignal.timeout(15000) }).then((r) => r.ok ? r.json() : null),
+        ),
+      );
+      for (const j of responses) {
+        if (!j) continue;
+        if (Array.isArray(j.data)) allData.push(...j.data);
+        if (Array.isArray(j.included)) allIncluded.push(...j.included);
+      }
+    }
+
+    // Lookup-Map "type:id" -> resource
+    const incMap = new Map<string, Record<string, unknown>>();
+    for (const inc of allIncluded) {
+      const t = String(inc.type ?? "");
+      const id = inc.id != null ? String(inc.id) : "";
+      if (t && id) incMap.set(`${t}:${id}`, inc);
+    }
+
+    const resolved: PlanSubscription[] = [];
+    for (const raw of allData) {
+      const attrs = (raw.attributes ?? {}) as Record<string, unknown>;
+      const rels = (raw.relationships ?? {}) as Record<string, { data?: { type?: string; id?: string } }>;
+
+      const ps: PlanSubscription = { ...(attrs as Record<string, unknown>), id: raw.id != null ? String(raw.id) : undefined };
+
+      const custRef = rels.customer?.data;
+      if (custRef?.type && custRef.id) {
+        const inc = incMap.get(`${custRef.type}:${custRef.id}`);
+        if (inc) {
+          const cAttr = (inc.attributes ?? {}) as Record<string, unknown>;
+          ps.customer = { ...(cAttr as Record<string, unknown>), id: custRef.id } as PlanSubscription["customer"];
+        } else {
+          ps.customer = { id: custRef.id };
+        }
+      }
+
+      const planRef = rels.plan?.data;
+      if (planRef?.type && planRef.id) {
+        const inc = incMap.get(`${planRef.type}:${planRef.id}`);
+        if (inc) {
+          const pAttr = (inc.attributes ?? {}) as Record<string, unknown>;
+          ps.plan = { ...(pAttr as Record<string, unknown>), id: planRef.id } as PlanSubscription["plan"];
+        } else {
+          ps.plan = { id: planRef.id };
+        }
+      }
+
+      resolved.push(ps);
+    }
+    return resolved;
+  }
+
   // --- Bookings: page[size]=500 + parallel pages ---
 
   const bookingsExtra = { include: "customer,resource,service" };
@@ -402,11 +483,13 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   const serviceMetaByName = new Map<string, { interval: number; price: string }>();
 
   // /subscriptions existiert in der admin-API nicht (404) - bewusst entfernt.
-  const [resourcesRaw, servicesRaw, plansRaw, planSubsRaw] = await Promise.all([
+  // plan-subscriptions braucht include-Resolution (customer/plan), daher
+  // eigener Helper.
+  const [resourcesRaw, servicesRaw, plansRaw, allPlanSubscriptions] = await Promise.all([
     fetchAllPages("resources").catch(() => []),
     fetchAllPages("services").catch(() => []),
     fetchAllPages("plans").catch(() => []),
-    fetchAllPages("plan-subscriptions", { include: "customer,plan" }, 200, 50).catch(() => []),
+    fetchAllPlanSubscriptions().catch(() => [] as PlanSubscription[]),
   ]);
 
   for (const raw of resourcesRaw) {
@@ -432,8 +515,6 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     const name = (p.name ?? p.title) as string | undefined;
     if (name) discoveredSubscriptionNames.add(name);
   }
-  const allPlanSubscriptions: PlanSubscription[] = planSubsRaw.map((raw) => flattenResource(raw) as PlanSubscription);
-
   // --- Deduplicate ---
 
   const seenBookingIds = new Set<string>();
@@ -943,7 +1024,10 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
           if (existing.endDate && pauseMs > 0) {
             ticketData.endDate = new Date(existing.endDate.getTime() + pauseMs);
           }
-          const { pausedAt: _, ...restExtras } = prevExtras;
+          const restExtras: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(prevExtras)) {
+            if (k !== "pausedAt") restExtras[k] = v;
+          }
           (ticketData as Record<string, unknown>).extras = restExtras;
         } else if (!statusChanged && !ticketChanged(existing, ticketData)) {
           skipped++;
