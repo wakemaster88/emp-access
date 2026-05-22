@@ -73,6 +73,67 @@ export async function PUT(
     updateData.endDate = body.endDate ? new Date(body.endDate) : null;
   }
 
+  // Slot-Wechsel: slotStart/slotEnd als "HH:MM" string. Wenn beides gesetzt
+  // ist UND ein startDate gesetzt ist (bzw. das Ticket schon eines hat),
+  // ziehen wir start/end automatisch nach, damit ANNY-Listings + Frontend-
+  // Filter konsistent bleiben (z.B. "Tickets dieses Slots heute"). Wer nur
+  // slotStart/slotEnd ohne Datum schickt, bekommt nur die HH:MM-Felder
+  // aktualisiert.
+  const slotStartIn = typeof body.slotStart === "string" ? body.slotStart.trim() : undefined;
+  const slotEndIn = typeof body.slotEnd === "string" ? body.slotEnd.trim() : undefined;
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (slotStartIn !== undefined) {
+    if (slotStartIn !== "" && !TIME_RE.test(slotStartIn)) {
+      return NextResponse.json({ error: "slotStart muss HH:MM (00:00-23:59) sein" }, { status: 400 });
+    }
+    updateData.slotStart = slotStartIn || null;
+  }
+  if (slotEndIn !== undefined) {
+    if (slotEndIn !== "" && !TIME_RE.test(slotEndIn)) {
+      return NextResponse.json({ error: "slotEnd muss HH:MM (00:00-23:59) sein" }, { status: 400 });
+    }
+    updateData.slotEnd = slotEndIn || null;
+  }
+  if (slotStartIn || slotEndIn) {
+    // Datums-Basis fuer start/end aktualisieren: bevorzugt body.startDate
+    // (z.B. wenn der User auf "morgen" verschiebt), sonst das Datum am
+    // bestehenden Ticket. Ohne Datums-Basis lassen wir start/end unangetastet.
+    const baseStartIso =
+      typeof body.startDate === "string" && body.startDate
+        ? body.startDate
+        : ticket.startDate?.toISOString() ?? null;
+    if (baseStartIso) {
+      const baseDate = new Date(baseStartIso);
+      if (!isNaN(baseDate.getTime())) {
+        const yyyy = baseDate.getUTCFullYear();
+        const mm = String(baseDate.getUTCMonth() + 1).padStart(2, "0");
+        const dd = String(baseDate.getUTCDate()).padStart(2, "0");
+        const dayKey = `${yyyy}-${mm}-${dd}`;
+        // Berlin-Offset abschaetzen: Europe/Berlin ist UTC+1 (CET) bzw.
+        // UTC+2 (CEST). Anny-Daten kommen sowieso mit konkretem Offset -
+        // wir nehmen den vom Eingabedatum, damit Hin- und Rueckkonvertierung
+        // stabil bleibt.
+        const offsetMs = baseDate.getTimezoneOffset() * 60 * 1000;
+        const buildAt = (hhmm: string): Date => {
+          const [h, m] = hhmm.split(":").map(Number);
+          // Wir wollen die Uhrzeit als "local Berlin"-Zeit interpretieren -
+          // im Browser ist `new Date("YYYY-MM-DDTHH:MM")` lokal, hier auf
+          // dem Server muessen wir explizit Berlin-Offset annehmen. Wir
+          // konstruieren UTC-Datum und subtrahieren den (vermuteten)
+          // Berlin-Offset des baseDate.
+          const utc = new Date(`${dayKey}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`);
+          return new Date(utc.getTime() + offsetMs);
+        };
+        if (slotStartIn && TIME_RE.test(slotStartIn)) {
+          updateData.startDate = buildAt(slotStartIn);
+        }
+        if (slotEndIn && TIME_RE.test(slotEndIn)) {
+          updateData.endDate = buildAt(slotEndIn);
+        }
+      }
+    }
+  }
+
   if (body.firstName !== undefined) {
     const v = typeof body.firstName === "string" ? body.firstName.trim() : "";
     updateData.firstName = v || null;
@@ -126,6 +187,8 @@ export async function PUT(
       rfidCode: updated.rfidCode,
       startDate: updated.startDate,
       endDate: updated.endDate,
+      slotStart: updated.slotStart,
+      slotEnd: updated.slotEnd,
     },
   });
 }

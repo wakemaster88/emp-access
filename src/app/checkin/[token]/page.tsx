@@ -353,7 +353,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [checkingIn, setCheckingIn] = useState<number | null>(null);
   const [updatingTicket, setUpdatingTicket] = useState<number | null>(null);
   const [rfidInput, setRfidInput] = useState("");
-  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | "person" | null>(null);
+  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | "person" | "slot" | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cancellingVoucher, setCancellingVoucher] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -715,6 +715,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       firstName?: string | null;
       lastName?: string | null;
       birthDate?: string | null;
+      slotStart?: string | null;
+      slotEnd?: string | null;
     },
     force?: boolean,
   ) => {
@@ -749,6 +751,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         if (update.firstName !== undefined) patch.firstName = json.ticket?.firstName ?? update.firstName;
         if (update.lastName !== undefined) patch.lastName = json.ticket?.lastName ?? update.lastName;
         if (update.birthDate !== undefined) patch.birthDate = json.ticket?.birthDate ?? update.birthDate;
+        if (update.slotStart !== undefined) patch.slotStart = json.ticket?.slotStart ?? update.slotStart;
+        if (update.slotEnd !== undefined) patch.slotEnd = json.ticket?.slotEnd ?? update.slotEnd;
+        if (json.ticket?.startDate !== undefined && update.slotStart !== undefined) patch.startDate = json.ticket.startDate;
+        if (json.ticket?.endDate !== undefined && update.slotEnd !== undefined) patch.endDate = json.ticket.endDate;
         if (json.ticket?.name) patch.name = json.ticket.name;
         setSelectedTicket((prev) => prev ? { ...prev, ...patch } : null);
       }
@@ -1476,6 +1482,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           onSaveRfid={(code?: string) => handleUpdateTicket(selectedTicket.id, { rfidCode: code ?? rfidInput })}
           onSaveDates={(startDate, endDate) => handleUpdateTicket(selectedTicket.id, { startDate, endDate })}
           onSavePerson={(person) => handleUpdateTicket(selectedTicket.id, person)}
+          onSaveSlot={(slotStart, slotEnd) => handleUpdateTicket(selectedTicket.id, { slotStart, slotEnd })}
+          availableSlots={
+            selectedTicket.serviceId != null
+              ? slotOverview?.services.find((sv) => sv.serviceId === selectedTicket.serviceId)?.slots ?? []
+              : []
+          }
           onOpenCamera={() => setCameraOpen(true)}
           updatingTicket={updatingTicket === selectedTicket.id}
           accountName={data?.accountName ?? ""}
@@ -3431,6 +3443,8 @@ function TicketOverlay({
   onSaveRfid,
   onSaveDates,
   onSavePerson,
+  onSaveSlot,
+  availableSlots,
   onOpenCamera,
   updatingTicket,
   accountName,
@@ -3446,10 +3460,12 @@ function TicketOverlay({
   onClose: () => void;
   onCheckin: () => void;
   checkingIn: boolean;
-  editMode: "photo" | "rfid" | "dates" | "person" | null;
-  setEditMode: (m: "photo" | "rfid" | "dates" | "person" | null) => void;
+  editMode: "photo" | "rfid" | "dates" | "person" | "slot" | null;
+  setEditMode: (m: "photo" | "rfid" | "dates" | "person" | "slot" | null) => void;
   onSaveDates: (startDate: string | null, endDate: string | null) => void;
   onSavePerson: (person: { firstName: string | null; lastName: string | null; birthDate: string | null }) => void;
+  onSaveSlot: (slotStart: string | null, slotEnd: string | null) => void;
+  availableSlots: SlotOverviewSlot[];
   rfidInput: string;
   setRfidInput: (v: string) => void;
   onSaveRfid: (code?: string) => void;
@@ -3712,6 +3728,85 @@ function TicketOverlay({
               </span>
               <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
             </button>
+          )}
+
+          {/* Slot-Wechsel: nur fuer Slot-Services (ANNY hat fuer den Service
+              Slots geliefert). Day-Pass-Services haben availableSlots=[] und
+              zeigen den Button nicht. */}
+          {availableSlots.length > 0 && (
+            editMode === "slot" ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  <span className="font-medium w-16 shrink-0">Slot</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 max-h-44 overflow-y-auto monitor-scrollbar pr-1">
+                  {availableSlots.map((slot) => {
+                    const isCurrent = ticket.slotStart === slot.startTime;
+                    const empAdd = isCurrent ? 0 : 1;
+                    const remainingAfter = slot.remaining != null ? slot.remaining - empAdd : null;
+                    const blocked = !isCurrent && (
+                      !slot.available
+                      || (slot.remaining != null && slot.remaining <= 0)
+                    );
+                    const baseColor = isCurrent
+                      ? "bg-indigo-600 border-indigo-400 text-white"
+                      : blocked
+                        ? "bg-rose-950/40 border-rose-800/60 text-rose-400 cursor-not-allowed opacity-60"
+                        : "bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200";
+                    return (
+                      <button
+                        key={`${slot.startTime}-${slot.endTime}`}
+                        type="button"
+                        disabled={blocked || updatingTicket}
+                        onClick={() => {
+                          if (blocked) return;
+                          if (isCurrent) { setEditMode(null); return; }
+                          onSaveSlot(slot.startTime, slot.endTime);
+                        }}
+                        className={cn(
+                          "rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed",
+                          baseColor,
+                        )}
+                      >
+                        <div className="tabular-nums">{slot.startTime}</div>
+                        {slot.capacity != null && (
+                          <div className="text-[10px] opacity-80 mt-0.5">
+                            {isCurrent
+                              ? `aktuell · ${slot.remaining ?? "?"}/${slot.capacity}`
+                              : blocked
+                                ? "voll"
+                                : `${remainingAfter ?? "?"}/${slot.capacity} frei`}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setEditMode(null)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setEditMode("slot")}
+                className="flex items-center gap-2 text-xs w-full text-left group"
+              >
+                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                <span className="text-slate-400 font-medium w-16 shrink-0">Slot</span>
+                <span className="text-slate-200 truncate">
+                  {ticket.slotStart && ticket.slotEnd
+                    ? `${ticket.slotStart}–${ticket.slotEnd}`
+                    : "Slot wählen"}
+                </span>
+                <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+              </button>
+            )
           )}
         </div>
 
