@@ -3012,11 +3012,21 @@ function SlotOverviewPill({
       onMouseLeave={() => setHoverMin(null)}
       onFocus={() => slotStartMin != null && setHoverMin(slotStartMin)}
       onBlur={() => setHoverMin(null)}
-      title={
-        blocked
-          ? `ANNY: ${slot.unavailabilityType || "blockiert"} (EMP-Tickets: ${slot.empBookings})`
-          : `${slot.remaining ?? "?"} von ${slot.capacity ?? "?"} frei · ${slot.empBookings} EMP-Ticket(s)`
-      }
+      title={(() => {
+        const lines: string[] = [];
+        lines.push(`${slot.startTime}–${slot.endTime}`);
+        lines.push(`Status: ${slot.available ? "verfuegbar" : "blockiert"}`);
+        if (slot.unavailabilityType) {
+          lines.push(`Grund: ${slot.unavailabilityType}`);
+        }
+        if (slot.capacity != null) {
+          lines.push(`Kapazitaet (ANNY): ${slot.remaining ?? "?"} von ${slot.capacity} frei`);
+        } else {
+          lines.push(`Kapazitaet (ANNY): ${slot.remaining ?? "unbekannt"}`);
+        }
+        lines.push(`EMP-Tickets: ${slot.empBookings}`);
+        return lines.join("\n");
+      })()}
       className={cn(
         "relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
         "hover:brightness-125 active:scale-95 transition-all",

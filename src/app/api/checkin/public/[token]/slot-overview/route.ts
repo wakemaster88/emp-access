@@ -72,6 +72,16 @@ interface ServiceOverview {
   openingHours: OpeningHourBlock[];
   /** Wenn ANNY nicht gematcht: Hinweis fuer das UI. */
   note: string | null;
+  /**
+   * Debug-Payload: rohe ANNY-Antwort fuer diesen Service. Nur gesetzt
+   * wenn der Endpoint mit ?debug=1 aufgerufen wird. Dient zur
+   * Diagnose, warum ANNY z.B. alle Slots als "voll" meldet
+   * (unavailability_type, capacity, remaining usw.).
+   */
+  debug?: {
+    rawAnnySlots: unknown[];
+    rawAnnyPeriods?: unknown[];
+  };
 }
 
 interface OverviewResponse {
@@ -117,6 +127,10 @@ export async function GET(
   if (!DATE_RE.test(dateStr)) {
     return NextResponse.json({ error: "Ungueltiges Datum (YYYY-MM-DD)" }, { status: 400 });
   }
+  // Mit ?debug=1 reichen wir die rohen ANNY-Slot-Antworten pro Service
+  // durch. Praktisch um zu pruefen, warum z.B. ein Service "voll"
+  // angezeigt wird (unavailabilityType / capacity / remaining).
+  const debug = request.nextUrl.searchParams.get("debug") === "1";
   const accountId = monitor.accountId;
 
   const tz = berlinOffset(dateStr);
@@ -451,6 +465,7 @@ export async function GET(
         // wuerde nur Doppelinformation sein.
         openingHours: [],
         note: null,
+        ...(debug ? { debug: { rawAnnySlots: rawSlots } } : {}),
       } satisfies ServiceOverview;
     }),
   );
