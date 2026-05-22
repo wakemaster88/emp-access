@@ -48,29 +48,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Keine ANNY-Integrationen konfiguriert" });
   }
 
-  const results: { accountId: number; ok: boolean; created?: number; updated?: number; error?: string }[] = [];
-
-  for (const config of configs) {
-    try {
-      console.log(`[cron anny-sync] Starting sync for account ${config.accountId}`);
-      const result = await syncAnnyForAccount(config.accountId);
-      results.push({
-        accountId: config.accountId,
-        ok: true,
-        created: result.created,
-        updated: result.updated,
-      });
-      console.log(`[cron anny-sync] Account ${config.accountId}: created=${result.created} updated=${result.updated} errors=${result.errors}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[cron anny-sync] Account ${config.accountId} failed:`, msg);
-      results.push({
-        accountId: config.accountId,
-        ok: false,
-        error: msg,
-      });
-    }
-  }
+  // Accounts parallel syncen - jeder Sync ist account-isoliert (eigener
+  // Anny-Token, eigene DB-Eintraege). maxDuration=60s, daher reicht die
+  // Parallelitaet locker fuer mehrere Accounts.
+  const results = await Promise.all(
+    configs.map(async (config) => {
+      try {
+        console.log(`[cron anny-sync] Starting sync for account ${config.accountId}`);
+        const result = await syncAnnyForAccount(config.accountId);
+        console.log(`[cron anny-sync] Account ${config.accountId}: created=${result.created} updated=${result.updated} errors=${result.errors}`);
+        return {
+          accountId: config.accountId,
+          ok: true as const,
+          created: result.created,
+          updated: result.updated,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[cron anny-sync] Account ${config.accountId} failed:`, msg);
+        return { accountId: config.accountId, ok: false as const, error: msg };
+      }
+    }),
+  );
 
   console.log(`[cron anny-sync] Done: ${results.filter((r) => r.ok).length}/${results.length} ok`);
   return NextResponse.json({ synced: results.length, results });

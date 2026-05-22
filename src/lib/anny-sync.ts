@@ -216,6 +216,27 @@ function ticketChanged(
   return false;
 }
 
+/** Versucht beim P2002 (barcode unique) den barcode dem alten INVALID/CANCELED
+ *  Konflikt-Ticket wegzunehmen. Verhindert, dass eine veraltete Orphan-Reservierung
+ *  einen Barcode dauerhaft blockiert (sonst landet das aktive Ticket immer wieder
+ *  mit barcode=null und wird beim naechsten Sync wieder als "changed" erkannt). */
+async function freeConflictingBarcode(
+  accountId: number,
+  excludeTicketId: number | null,
+  barcode: string,
+): Promise<boolean> {
+  const conflict = await prisma.ticket.findFirst({
+    where: { accountId, barcode, ...(excludeTicketId != null ? { NOT: { id: excludeTicketId } } : {}) },
+    select: { id: true, status: true },
+  });
+  if (!conflict) return false;
+  if (conflict.status === "INVALID" || conflict.status === "CANCELED") {
+    await prisma.ticket.update({ where: { id: conflict.id }, data: { barcode: null } });
+    return true;
+  }
+  return false;
+}
+
 async function createTicketSafe(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ticketData: any,
@@ -231,6 +252,16 @@ async function createTicketSafe(
       "code" in e &&
       (e as { code: string }).code === "P2002";
     if (isPrismaUnique) {
+      // Bevor wir den barcode opfern: pruefen ob das blockierende Ticket
+      // eh INVALID/CANCELED ist - dann steal'n wir den barcode dort weg.
+      if (ticketData.barcode) {
+        const freed = await freeConflictingBarcode(accountId, null, ticketData.barcode);
+        if (freed) {
+          try {
+            return await prisma.ticket.create({ data: { ...ticketData, uuid, accountId } });
+          } catch { /* fall through to barcode: null */ }
+        }
+      }
       console.warn(`[anny sync] barcode conflict uuid=${uuid}, retrying without barcode`);
       return await prisma.ticket.create({ data: { ...ticketData, barcode: null, uuid, accountId } });
     }
@@ -254,155 +285,154 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   syncCutoff.setDate(syncCutoff.getDate() - SYNC_WINDOW_DAYS);
   syncCutoff.setHours(0, 0, 0, 0);
 
-  // --- Fetch bookings (only within sync window) ---
+  // Mit Accept: application/vnd.api+json bekommen wir konsistent JSON:API mit
+  // `meta.page.total` / `last-page` zurueck. Wichtig, weil wir dadurch Pages
+  // parallel statt sequenziell holen koennen und nicht mehr "page-by-page
+  // probieren" muessen.
+  const headers = {
+    Authorization: `Bearer ${config.token}`,
+    Accept: "application/vnd.api+json",
+  };
 
-  const allBookings: AnnyBooking[] = [];
-  let page = 1;
-  const pageSize = 100;
-  let oldSkipped = 0;
-
-  while (true) {
-    const params = new URLSearchParams({
-      include: "customer,resource,service",
-      "page[size]": String(pageSize),
-      "page[number]": String(page),
-    });
-
-    const res = await fetch(`${apiBase}/bookings?${params}`, {
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`anny.co API Fehler: ${res.status} – ${body.slice(0, 300)}`);
+  /** Liest ein einfaches Listen-Endpoint (resources/services/plans/...) komplett aus,
+   *  parallel ab Page 2 wenn `meta.page.last-page` bekannt ist. Liefert die
+   *  flatten'd Attribute (id, name, attributes inline). */
+  async function fetchAllPages(
+    path: string,
+    extra: Record<string, string> = {},
+    pageSize = 200,
+    pageLimit = 25,
+  ): Promise<Record<string, unknown>[]> {
+    const buildUrl = (n: number) => {
+      const p = new URLSearchParams({ ...extra, "page[size]": String(pageSize), "page[number]": String(n) });
+      return `${apiBase}/${path}?${p}`;
+    };
+    const first = await fetch(buildUrl(1), { headers, signal: AbortSignal.timeout(15000) });
+    if (!first.ok) {
+      if (first.status === 404) return [];
+      const body = await first.text().catch(() => "");
+      throw new Error(`anny.co /${path} ${first.status}: ${body.slice(0, 200)}`);
     }
-
-    const json = await res.json();
-    const bookings = normalizeAnnyBookingsResponse(json);
-
-    let pageOldCount = 0;
-    for (const b of bookings) {
-      if (b.start_date && new Date(b.start_date) < syncCutoff) {
-        pageOldCount++;
-        oldSkipped++;
-      } else {
-        allBookings.push(b);
+    const firstJson = await first.json();
+    const items: Record<string, unknown>[] = Array.isArray(firstJson?.data) ? firstJson.data : Array.isArray(firstJson) ? firstJson : [];
+    const lastPage: number = firstJson?.meta?.page?.["last-page"] ?? 1;
+    if (lastPage > 1) {
+      const remaining = [];
+      const cap = Math.min(lastPage, pageLimit);
+      for (let n = 2; n <= cap; n++) remaining.push(n);
+      const responses = await Promise.all(
+        remaining.map((n) =>
+          fetch(buildUrl(n), { headers, signal: AbortSignal.timeout(15000) }).then((r) => r.ok ? r.json() : null),
+        ),
+      );
+      for (const j of responses) {
+        if (!j) continue;
+        const arr = Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [];
+        items.push(...arr);
       }
     }
-
-    if (bookings.length < pageSize) break;
-    if (pageOldCount === bookings.length) break;
-    if (page >= 100) break;
-    page++;
+    return items;
   }
 
-  // --- Discover resources, services, subscriptions ---
+  /** JSON:API-Resource zu flachem Object machen (attributes + id inline). */
+  function flattenResource(r: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    if (r.attributes && typeof r.attributes === "object") Object.assign(out, r.attributes as Record<string, unknown>);
+    if (r.id != null) out.id = r.id;
+    return out;
+  }
+
+  // --- Bookings: page[size]=500 + parallel pages ---
+
+  const bookingsExtra = { include: "customer,resource,service" };
+  const firstBookingsRes = await fetch(
+    `${apiBase}/bookings?` + new URLSearchParams({ ...bookingsExtra, "page[size]": "500", "page[number]": "1" }),
+    { headers, signal: AbortSignal.timeout(20000) },
+  );
+  if (!firstBookingsRes.ok) {
+    const body = await firstBookingsRes.text().catch(() => "");
+    throw new Error(`anny.co API Fehler: ${firstBookingsRes.status} – ${body.slice(0, 300)}`);
+  }
+  const firstBookingsJson = await firstBookingsRes.json();
+  const firstBookings = normalizeAnnyBookingsResponse(firstBookingsJson);
+  const lastBookingPage: number = firstBookingsJson?.meta?.page?.["last-page"] ?? 1;
+  const totalBookingsReported: number | undefined = firstBookingsJson?.meta?.page?.total;
+
+  const allBookings: AnnyBooking[] = [];
+  let oldSkipped = 0;
+  const accumulate = (bs: AnnyBooking[]) => {
+    for (const b of bs) {
+      if (b.start_date && new Date(b.start_date) < syncCutoff) oldSkipped++;
+      else allBookings.push(b);
+    }
+  };
+  accumulate(firstBookings);
+
+  if (lastBookingPage > 1) {
+    const remainingPages: number[] = [];
+    const cap = Math.min(lastBookingPage, 50);
+    for (let n = 2; n <= cap; n++) remainingPages.push(n);
+    // 4er-Chunks parallel, um die anny.co API nicht zu ueberlasten.
+    const CHUNK = 4;
+    for (let i = 0; i < remainingPages.length; i += CHUNK) {
+      const chunk = remainingPages.slice(i, i + CHUNK);
+      const responses = await Promise.all(
+        chunk.map((n) =>
+          fetch(
+            `${apiBase}/bookings?` + new URLSearchParams({ ...bookingsExtra, "page[size]": "500", "page[number]": String(n) }),
+            { headers, signal: AbortSignal.timeout(20000) },
+          ).then((r) => r.ok ? r.json() : null),
+        ),
+      );
+      for (const j of responses) {
+        if (!j) continue;
+        accumulate(normalizeAnnyBookingsResponse(j));
+      }
+    }
+  }
+  const pageCount = lastBookingPage;
+
+  // --- Discovery (resources/services/plans) + plan-subscriptions parallel ---
 
   const discoveredServiceNames = new Set<string>();
   const discoveredResourceNames = new Set<string>();
   const discoveredSubscriptionNames = new Set<string>();
   const discoveredResourceIds: Record<string, string> = {};
-  const headers = { Authorization: `Bearer ${config.token}`, Accept: "application/json" };
+  // Cache fuer den linksToUpdate-Block am Ende: spart einen 2. /services-Fetch.
+  const serviceMetaByName = new Map<string, { interval: number; price: string }>();
 
-  try {
-    let resPage = 1;
-    while (resPage <= 20) {
-      const rParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(resPage) });
-      const rRes = await fetch(`${apiBase}/resources?${rParams}`, { headers, signal: AbortSignal.timeout(10000) });
-      if (!rRes.ok) break;
-      const rJson = await rRes.json();
-      const resources = Array.isArray(rJson) ? rJson : rJson.data || [];
-      for (const r of resources) {
-        const name = r.name || r.title;
-        const id = r.id;
-        if (name && id) {
-          discoveredResourceNames.add(name);
-          discoveredResourceIds[name] = String(id);
-        }
-      }
-      if (resources.length < 50) break;
-      resPage++;
+  // /subscriptions existiert in der admin-API nicht (404) - bewusst entfernt.
+  const [resourcesRaw, servicesRaw, plansRaw, planSubsRaw] = await Promise.all([
+    fetchAllPages("resources").catch(() => []),
+    fetchAllPages("services").catch(() => []),
+    fetchAllPages("plans").catch(() => []),
+    fetchAllPages("plan-subscriptions", { include: "customer,plan" }, 200, 50).catch(() => []),
+  ]);
+
+  for (const raw of resourcesRaw) {
+    const r = flattenResource(raw);
+    const name = (r.name ?? r.title) as string | undefined;
+    const id = r.id;
+    if (name && id != null) {
+      discoveredResourceNames.add(name);
+      discoveredResourceIds[name] = String(id);
     }
-  } catch { /* non-critical */ }
-
-  try {
-    let svcPage = 1;
-    while (svcPage <= 20) {
-      const sParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(svcPage) });
-      const sRes = await fetch(`${apiBase}/services?${sParams}`, { headers, signal: AbortSignal.timeout(10000) });
-      if (!sRes.ok) break;
-      const sJson = await sRes.json();
-      const services = Array.isArray(sJson) ? sJson : sJson.data || [];
-      for (const s of services) {
-        const name = s.name || s.title;
-        if (name) discoveredServiceNames.add(name);
-      }
-      if (services.length < 50) break;
-      svcPage++;
-    }
-  } catch { /* non-critical */ }
-
-  try {
-    let subPage = 1;
-    while (subPage <= 20) {
-      const subParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(subPage) });
-      const subRes = await fetch(`${apiBase}/subscriptions?${subParams}`, { headers, signal: AbortSignal.timeout(10000) });
-      if (!subRes.ok) break;
-      const subJson = await subRes.json();
-      const subs = Array.isArray(subJson) ? subJson : subJson.data || [];
-      for (const s of subs) {
-        const name = s.name || s.title || s.plan?.name || s.plan?.title;
-        if (name) discoveredSubscriptionNames.add(name);
-      }
-      if (subs.length < 50) break;
-      subPage++;
-    }
-  } catch { /* non-critical */ }
-
-  try {
-    let planPage = 1;
-    while (planPage <= 20) {
-      const pParams = new URLSearchParams({ "page[size]": "50", "page[number]": String(planPage) });
-      const pRes = await fetch(`${apiBase}/plans?${pParams}`, { headers, signal: AbortSignal.timeout(10000) });
-      if (!pRes.ok) break;
-      const pJson = await pRes.json();
-      const plans = Array.isArray(pJson) ? pJson : pJson.data || [];
-      for (const p of plans) {
-        const name = p.name || p.title;
-        if (name) discoveredSubscriptionNames.add(name);
-      }
-      if (plans.length < 50) break;
-      planPage++;
-    }
-  } catch { /* non-critical */ }
-
-  // --- Fetch plan subscriptions ---
-
-  const allPlanSubscriptions: PlanSubscription[] = [];
-  try {
-    let psPage = 1;
-    while (psPage <= 50) {
-      const psParams = new URLSearchParams({
-        "page[size]": "50",
-        "page[number]": String(psPage),
-        include: "customer,plan",
-      });
-      const psRes = await fetch(`${apiBase}/plan-subscriptions?${psParams}`, {
-        headers,
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!psRes.ok) break;
-      const psJson = await psRes.json();
-      const psSubs = Array.isArray(psJson) ? psJson : psJson.data || [];
-      allPlanSubscriptions.push(...psSubs);
-      if (psSubs.length < 50) break;
-      psPage++;
-    }
-  } catch { /* non-critical */ }
+  }
+  for (const raw of servicesRaw) {
+    const s = flattenResource(raw);
+    const name = (s.name ?? s.title) as string | undefined;
+    if (!name) continue;
+    discoveredServiceNames.add(name);
+    const interval = (s.booking_interval as number) || (s.min_duration as number) || 0;
+    const price = (s.price_label as string) || (s.price != null ? `${s.price}€` : "");
+    if (interval > 0) serviceMetaByName.set(name, { interval, price });
+  }
+  for (const raw of plansRaw) {
+    const p = flattenResource(raw);
+    const name = (p.name ?? p.title) as string | undefined;
+    if (name) discoveredSubscriptionNames.add(name);
+  }
+  const allPlanSubscriptions: PlanSubscription[] = planSubsRaw.map((raw) => flattenResource(raw) as PlanSubscription);
 
   // --- Deduplicate ---
 
@@ -430,7 +460,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     areaMappings[link.annyName] = link.accessAreaId;
   }
 
-  console.log(`[anny sync] account=${accountId} ${uniqueBookings.length} bookings in window (${SYNC_WINDOW_DAYS}d), ${oldSkipped} older skipped, ${page} pages`);
+  console.log(`[anny sync] account=${accountId} ${uniqueBookings.length} bookings in window (${SYNC_WINDOW_DAYS}d), ${oldSkipped} older skipped, ${pageCount} pages, total reported=${totalBookingsReported ?? "?"}`);
 
   // --- Group bookings ---
 
@@ -586,7 +616,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
           id: true, uuid: true, name: true, firstName: true, lastName: true,
           startDate: true, endDate: true, status: true, ticketTypeName: true,
           barcode: true, accessAreaId: true, subscriptionId: true, serviceId: true,
-          qrCode: true,
+          qrCode: true, email: true,
         },
       })
     : [];
@@ -621,7 +651,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         id: true, uuid: true, name: true, firstName: true, lastName: true,
         startDate: true, endDate: true, status: true, ticketTypeName: true,
         barcode: true, accessAreaId: true, subscriptionId: true, serviceId: true,
-        qrCode: true,
+        qrCode: true, email: true,
       },
       orderBy: { id: "asc" },
     });
@@ -770,7 +800,13 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         } catch (ue: unknown) {
           const isBarcode = ue != null && typeof ue === "object" && "code" in ue && (ue as { code: string }).code === "P2002";
           if (isBarcode) {
-            await prisma.ticket.update({ where: { id: existing.id }, data: { ...ticketData, barcode: null, uuid } });
+            // Konfliktierendes Orphan-Ticket den barcode wegnehmen, dann nochmal versuchen.
+            const freed = ticketData.barcode ? await freeConflictingBarcode(accountId, existing.id, ticketData.barcode) : false;
+            if (freed) {
+              await prisma.ticket.update({ where: { id: existing.id }, data: { ...ticketData, uuid } });
+            } else {
+              await prisma.ticket.update({ where: { id: existing.id }, data: { ...ticketData, barcode: null, uuid } });
+            }
           } else {
             throw ue;
           }
@@ -834,7 +870,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         select: {
           id: true, uuid: true, status: true, extras: true, endDate: true,
           name: true, firstName: true, lastName: true, startDate: true,
-          ticketTypeName: true, subscriptionId: true,
+          ticketTypeName: true, subscriptionId: true, email: true,
         },
       })
     : [];
@@ -986,42 +1022,22 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   });
 
   // --- Update service cache on AnnyResourceLink ---
+  // serviceMetaByName wurde bereits beim Discovery-Block befuellt - kein zweiter
+  // /services-Fetch noetig.
 
   try {
     const linksToUpdate = await prisma.annyResourceLink.findMany({ where: { accountId } });
-    if (linksToUpdate.length > 0) {
-      const svcMap = new Map<string, { interval: number; price: string }>();
-      for (let pg = 1; pg <= 5; pg++) {
-        const res = await fetch(
-          `${baseUrl}/api/v1/services?page[size]=50&page[number]=${pg}`,
-          { headers, signal: AbortSignal.timeout(8000) },
-        );
-        if (!res.ok) break;
-        const json = await res.json();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const items = (json.data || json) as any[];
-        if (!Array.isArray(items) || items.length === 0) break;
-        for (const svc of items) {
-          const a = svc.attributes || svc;
-          const name = a.name as string;
-          if (!name) continue;
-          const interval = (a.booking_interval as number) || (a.min_duration as number) || 0;
-          const price = (a.price_label as string) || (a.price != null ? `${a.price}€` : "");
-          if (interval > 0) svcMap.set(name, { interval, price });
-        }
-        if (items.length < 50) break;
-      }
-      for (const link of linksToUpdate) {
-        const svc = svcMap.get(link.annyName);
-        if (!svc) continue;
-        if (link.bookingInterval !== svc.interval || (link.priceLabel ?? "") !== svc.price) {
-          await prisma.annyResourceLink.update({
-            where: { id: link.id },
-            data: { bookingInterval: svc.interval, priceLabel: svc.price },
-          });
-        }
-      }
-    }
+    await Promise.all(
+      linksToUpdate.map(async (link) => {
+        const svc = serviceMetaByName.get(link.annyName);
+        if (!svc) return;
+        if (link.bookingInterval === svc.interval && (link.priceLabel ?? "") === svc.price) return;
+        await prisma.annyResourceLink.update({
+          where: { id: link.id },
+          data: { bookingInterval: svc.interval, priceLabel: svc.price },
+        });
+      }),
+    );
   } catch { /* best-effort */ }
 
   return {
@@ -1034,7 +1050,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     total: uniqueBookings.length,
     oldSkipped,
     syncWindowDays: SYNC_WINDOW_DAYS,
-    pages: page,
+    pages: pageCount,
     groups: groups.size,
     resources: discoveredResourceNames.size,
     services: discoveredServiceNames.size,
