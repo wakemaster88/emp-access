@@ -344,9 +344,15 @@ export async function GET(
             dateStr,
           ).catch(() => []);
         }
-        const availableToday =
-          datesRes.length === 0 ? true : datesRes.some((d) => d.startsWith(dateStr));
-        const merged = mergeAvailabilityPeriods(periodsRes);
+        // /start-dates ist die autoritative Quelle fuer "ist dieser Day-Pass-
+        // Service an diesem Datum buchbar?" (Ferienkurs erst im Juli etc.).
+        // Leeres Array = heute nicht buchbar. Frueher haben wir bei leerem
+        // Ergebnis faelschlich `true` angenommen - das hat saisonale Services
+        // mit Resource-Oeffnungszeiten (10-20) trotzdem angezeigt.
+        const availableToday = datesRes.some((d) => d.startsWith(dateStr));
+        const merged = availableToday
+          ? mergeAvailabilityPeriods(periodsRes)
+          : [];
         const openingHours: OpeningHourBlock[] = merged.map((p) => ({
           start: fmtTimeBerlin(p.start),
           end: fmtTimeBerlin(p.end),
@@ -431,7 +437,7 @@ export async function GET(
           );
           availableToday = dates.some((d) => d.startsWith(dateStr));
         } catch {
-          availableToday = true;
+          availableToday = false;
         }
       }
 

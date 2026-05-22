@@ -2889,12 +2889,17 @@ function SlotOverviewServiceBody({
     const periods =
       sv.openingHours.length > 0
         ? sv.openingHours
-        : [
-            {
-              start: minutesToTimeString(range.startMin),
-              end: minutesToTimeString(range.endMin),
-            },
-          ];
+        : sv.availableToday
+          ? [
+              {
+                start: minutesToTimeString(range.startMin),
+                end: minutesToTimeString(range.endMin),
+              },
+            ]
+          : [];
+    if (periods.length === 0) {
+      return <SlotTimeline range={range} empty="Heute nicht verfügbar." />;
+    }
     const isFallback = sv.openingHours.length === 0;
     return (
       <SlotTimeline range={range}>
