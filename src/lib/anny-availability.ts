@@ -693,19 +693,29 @@ export interface ServiceStartSlot {
 }
 
 /**
- * ANNY's Lead-Time-Konfiguration (z.B. "Buchung erst ab 24h vor Termin" oder
- * "letzte Buchung 1h vor Termin") gilt nur fuer Online-Buchungen durch
- * Endkunden. Beim Vor-Ort-Verkauf am Schalter ist das irrelevant - der
- * Mitarbeiter muss jederzeit buchen koennen, solange noch Kapazitaet frei ist.
+ * Sammel-Helper fuer alle ANNY-Korrekturen, die nur im Vor-Ort-Verkauf
+ * am Schalter (Shop-Monitor) gelten. ANNY's Verfuegbarkeits-API ist
+ * primaer fuer Online-Buchungen designed - dort liefert sie zwei Arten
+ * von "nicht buchbar", die im Shop trotzdem buchbar sein muessen:
  *
- * Dieser Helper ueberschreibt deshalb `available: true` und entfernt den
- * `unavailabilityType`-Marker fuer ALLE Lead-Time-bezogenen Reasons, sodass
- * die Slot-Pills im Shop-Monitor nicht als "zu frueh" / "zu spaet" gerendert
- * werden. Andere Reasons (booked_out, under_min_duration, staggered_conflict,
- * blocked, ...) bleiben unveraendert.
+ *   1. Lead-Time-Blocking (`before_lead_time` / `after_lead_time` /
+ *      `lead_time_conflict`): ANNY's "frueheste Buchung X Stunden vor
+ *      Termin" / "spaeteste Buchung Y Minuten vor Termin"-Regeln. Im
+ *      Shop kann der Mitarbeiter jederzeit am Schalter verkaufen, das
+ *      ist eine reine Online-Schutzregel.
  *
- * Wichtig: `remaining` / `capacity` bleiben aus ANNY uebernommen - das sind
- * die echten Kapazitaets-Zahlen, die wir 1:1 anzeigen.
+ *   2. Capacity = 0 ohne Reason: ANNY meldet `available: true` aber
+ *      `capacity = 0` / `remaining = 0` ohne `unavailability_type`.
+ *      Das ist ein Konfig-Quirk - die Resource hinter dem Service hat
+ *      keine konkrete Kapazitaet hinterlegt (typisch fuer exklusive
+ *      Bahnmieten / Uebungslift). Im Shop entscheidet der Mitarbeiter
+ *      vor Ort ob die Resource frei ist. Wir interpretieren das als
+ *      "Kapazitaet unbekannt" (capacity/remaining ausblenden), nicht
+ *      als "voll".
+ *
+ * Andere Reasons (`booked_out`, `under_min_duration`,
+ * `staggered_conflict`, ...) bleiben unveraendert - die sind echte
+ * "kann nicht gebucht werden"-Signale.
  */
 const LEAD_TIME_UNAVAILABILITY_REASONS = new Set([
   "before_lead_time",
@@ -719,16 +729,42 @@ export function isLeadTimeUnavailability(
   return !!reason && LEAD_TIME_UNAVAILABILITY_REASONS.has(reason);
 }
 
-export function ignoreLeadTimeBlocking(
+export function applyLocalSalesOverrides(
   slots: ServiceStartSlot[],
 ): ServiceStartSlot[] {
   return slots.map((s) => {
-    if (!isLeadTimeUnavailability(s.unavailabilityType)) return s;
-    const next: ServiceStartSlot = { ...s, available: true };
-    delete next.unavailabilityType;
+    let next: ServiceStartSlot = s;
+
+    // (1) Lead-Time-Blocking ignorieren.
+    if (isLeadTimeUnavailability(next.unavailabilityType)) {
+      next = { ...next, available: true };
+      delete next.unavailabilityType;
+    }
+
+    // (2) Capacity-Quirk: ANNY sagt `available: true` aber `capacity: 0`
+    //     und kein Reason - das ist ANNY's Konfig-Quirk, nicht "voll".
+    //     `available` lassen wir auf true, blenden aber die irrefuehrenden
+    //     0-Werte aus, damit die Slot-Pills nicht "voll" rendern.
+    if (
+      next.available
+      && !next.unavailabilityType
+      && (next.capacity === 0 || next.remaining === 0)
+    ) {
+      next = { ...next };
+      delete next.capacity;
+      delete next.remaining;
+    }
+
     return next;
   });
 }
+
+/**
+ * Backwards-compatible alias. Heisst historisch noch
+ * `ignoreLeadTimeBlocking`, macht jetzt aber alle local-sales-Overrides.
+ * @deprecated direkt `applyLocalSalesOverrides` benutzen.
+ */
+export const ignoreLeadTimeBlocking = applyLocalSalesOverrides;
 
 /**
  * Holt die buchbaren Start-Intervalle eines Services fuer ein Datum.

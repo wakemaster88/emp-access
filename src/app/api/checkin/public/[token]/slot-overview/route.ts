@@ -10,7 +10,7 @@ import {
   fetchAnnyServiceStartDates,
   fetchAnnyServicePeriods,
   fetchAnnyResourcePeriods,
-  ignoreLeadTimeBlocking,
+  applyLocalSalesOverrides,
   mergeAvailabilityPeriods,
   fmtTimeBerlin,
   berlinOffset,
@@ -387,12 +387,10 @@ export async function GET(
         rawSlots = [];
       }
 
-      // ANNY's Lead-Time-Konfig (z.B. "Buchung erst ab 24h vor Termin") gilt
-      // nur fuer Online-Buchungen durch Endkunden, nicht fuer den Vor-Ort-
-      // Verkauf am Schalter. Slots mit before_lead_time / after_lead_time /
-      // lead_time_conflict werden deshalb als verfuegbar markiert (echte
-      // Kapazitaet aus ANNY bleibt unveraendert).
-      rawSlots = ignoreLeadTimeBlocking(rawSlots);
+      // Vor-Ort-Verkaufs-Overrides: Lead-Time ignorieren + ANNY-Quirks
+      // fuer Services ohne hinterlegte Resource-Kapazitaet ausblenden.
+      // Siehe applyLocalSalesOverrides in @/lib/anny-availability.
+      rawSlots = applyLocalSalesOverrides(rawSlots);
 
       // EMP-Buchungen pro Slot: anhand `slotStart` (HH:MM) gruppieren.
       const empByStart = new Map<string, number>();
