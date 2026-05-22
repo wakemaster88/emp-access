@@ -47,6 +47,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     prisma.ticket.findMany({
       where: { accountId, createdAt: { gte: dayStart, lte: dayEnd } },
       select: {
+        id: true,
         firstName: true,
         lastName: true,
         name: true,
@@ -54,6 +55,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
         subscriptionId: true,
         vereinId: true,
         source: true,
+        bulkBatchId: true,
         slotStart: true,
         slotEnd: true,
         startDate: true,
@@ -116,6 +118,78 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     }),
   ]);
 
+  // Bulk-Tagesbänder: Tickets mit `bulkBatchId` werden zur Saison einmal
+  // erzeugt und im Tagesbetrieb verkauft + eingeloest. Ihr `createdAt`
+  // liegt nicht heute - sie wuerden also durch den klassischen
+  // "Tickets heute"-Filter rausfallen, obwohl sie heute den eigentlichen
+  // Verkauf darstellen.
+  //
+  // Definition "heute neu eingeloest": Bulk-Ticket hat heute einen
+  // GRANTED-Scan UND keinen GRANTED-Scan in den 12 Stunden davor. Damit
+  // werden auch via `reset-tagesgast.ts` recycelte Baendchen als
+  // Tagesaktivierung erkannt.
+  const dayStartMinus12h = new Date(dayStart.getTime() - 12 * 3_600_000);
+  const todayBulkScans = await prisma.scan.findMany({
+    where: {
+      accountId,
+      result: "GRANTED",
+      scanTime: { gte: dayStart, lte: dayEnd },
+      ticket: { bulkBatchId: { not: null } },
+    },
+    select: { ticketId: true, scanTime: true },
+    orderBy: { scanTime: "asc" },
+  });
+  const todayBulkSeen = new Set<number>();
+  const todayBulkFirst: Array<{ ticketId: number; scanTime: Date }> = [];
+  for (const s of todayBulkScans) {
+    if (s.ticketId == null || todayBulkSeen.has(s.ticketId)) continue;
+    todayBulkSeen.add(s.ticketId);
+    todayBulkFirst.push({ ticketId: s.ticketId, scanTime: s.scanTime });
+  }
+  const todayBulkTicketIds = todayBulkFirst.map((s) => s.ticketId);
+  const stillActiveBeforeIds = new Set<number>();
+  if (todayBulkTicketIds.length > 0) {
+    const recentBefore = await prisma.scan.findMany({
+      where: {
+        accountId,
+        result: "GRANTED",
+        ticketId: { in: todayBulkTicketIds },
+        scanTime: { gte: dayStartMinus12h, lt: dayStart },
+      },
+      select: { ticketId: true },
+      distinct: ["ticketId"],
+    });
+    for (const s of recentBefore) if (s.ticketId != null) stillActiveBeforeIds.add(s.ticketId);
+  }
+  const activatedBulkIds = todayBulkFirst
+    .filter((s) => !stillActiveBeforeIds.has(s.ticketId))
+    .map((s) => s.ticketId);
+
+  const activatedBulkTickets = activatedBulkIds.length > 0
+    ? await prisma.ticket.findMany({
+        where: { id: { in: activatedBulkIds }, accountId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          name: true,
+          ticketTypeName: true,
+          subscriptionId: true,
+          vereinId: true,
+          source: true,
+          bulkBatchId: true,
+          slotStart: true,
+          slotEnd: true,
+          startDate: true,
+          endDate: true,
+          validityType: true,
+          validityDurationMinutes: true,
+          subscription: { select: { name: true } },
+          service: { select: { name: true } },
+        },
+      })
+    : [];
+
   let topNames: { name: string; count: number }[] = [];
   if (topScanned.length > 0) {
     const ids = topScanned.map((t) => t.ticketId).filter((id): id is number => id != null);
@@ -131,6 +205,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
   }
 
   type BookingTicket = {
+    id?: number;
     firstName: string | null;
     lastName: string | null;
     name: string;
@@ -138,6 +213,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     subscriptionId: number | null;
     vereinId: number | null;
     source: string | null;
+    bulkBatchId?: string | null;
     slotStart: string | null;
     slotEnd: string | null;
     startDate: Date | null;
@@ -239,7 +315,25 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
   // Tagestickets heute (ohne Abos / Vereine / Mitarbeiter), getrennt nach
   // "mit Uhrzeit" (Bahnmiete, Anfaengerkurs etc.) und "ohne Uhrzeit"
   // (klassische Tageskarte).
-  const todayDayTickets = (bookingsToday as BookingTicket[]).filter(isDayTicket);
+  //
+  // Wir mergen heute neu erstellte Tickets MIT heute aktivierten Bulk-
+  // Tagesbaendern (siehe `activatedBulkTickets`). Tickets, die heute
+  // erstellt UND heute zum ersten Mal eingeloest wurden, werden via
+  // `id` dedupliziert, damit sie nicht doppelt zaehlen.
+  const todayMergedRaw = [
+    ...(bookingsToday as BookingTicket[]),
+    ...(activatedBulkTickets as BookingTicket[]),
+  ];
+  const todayMerged: BookingTicket[] = [];
+  const seenTodayIds = new Set<number>();
+  for (const t of todayMergedRaw) {
+    if (t.id != null) {
+      if (seenTodayIds.has(t.id)) continue;
+      seenTodayIds.add(t.id);
+    }
+    todayMerged.push(t);
+  }
+  const todayDayTickets = todayMerged.filter(isDayTicket);
   const todaySlotted = todayDayTickets.filter((t) => bookingTime(t) != null);
   const todayUnslotted = todayDayTickets.filter((t) => bookingTime(t) == null);
 
