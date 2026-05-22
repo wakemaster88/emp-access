@@ -256,7 +256,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   // --- Fetch bookings (only within sync window) ---
 
-  let allBookings: AnnyBooking[] = [];
+  const allBookings: AnnyBooking[] = [];
   let page = 1;
   const pageSize = 100;
   let oldSkipped = 0;
@@ -593,6 +593,45 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   const existingByUuid = new Map(existingTickets.map((t) => [t.uuid, t]));
   const claimedLegacy = new Set<string>();
 
+  // ANNY liefert customer.id mal als UUID (Webhook-Payload), mal als numerische
+  // ID (JSON:API GET /bookings). Wechselt sich die Form zwischen zwei Syncs,
+  // entstand bisher ein Duplikat: gleiches booking.id, aber andere UUID -
+  // existingByUuid greift nicht, ein neues Ticket wird erstellt, das alte wird
+  // als Orphan invalidiert (mit dem original barcode!), der Scan trifft das
+  // INVALID-Ticket -> "Ticket ungueltig".
+  //
+  // Fix: Zusaetzlich nach UUID-Suffix ":<booking.id>" suchen. Wenn ein Ticket
+  // mit gleicher booking.id existiert, dessen UUID wir nicht direkt matchen,
+  // updaten wir es (uuid wird umgeschrieben) statt ein neues zu erstellen.
+  const allBookingIds = new Set<string>();
+  for (const group of groups.values()) {
+    for (const entry of group.entries) {
+      if (entry.id) allBookingIds.add(entry.id);
+    }
+  }
+  const existingByBookingId = new Map<string, typeof existingTickets[number]>();
+  if (allBookingIds.size > 0) {
+    const byBidTickets = await prisma.ticket.findMany({
+      where: {
+        accountId,
+        source: "ANNY",
+        OR: [...allBookingIds].map((bid) => ({ uuid: { endsWith: `:${bid}` } })),
+      },
+      select: {
+        id: true, uuid: true, name: true, firstName: true, lastName: true,
+        startDate: true, endDate: true, status: true, ticketTypeName: true,
+        barcode: true, accessAreaId: true, subscriptionId: true, serviceId: true,
+        qrCode: true,
+      },
+      orderBy: { id: "asc" },
+    });
+    for (const t of byBidTickets) {
+      const bid = t.uuid?.split(":").pop();
+      if (!bid) continue;
+      existingByBookingId.set(bid, t);
+    }
+  }
+
   const customerIds = [...new Set(
     [...groups.keys()].map((k) => k.split(":")[1]).filter(Boolean)
   )];
@@ -719,7 +758,8 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     };
 
     try {
-      const existing = existingByUuid.get(uuid);
+      const existing = existingByUuid.get(uuid)
+        ?? (group.entries[0]?.id ? existingByBookingId.get(group.entries[0].id) : undefined);
       if (existing) {
         if (!ticketChanged(existing, ticketData)) {
           skipped++;
@@ -896,6 +936,10 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   // --- Invalidate orphans (only within sync window) ---
 
+  // Sicherheitsnetz: barcode + qrCode auf null beim Invalidate. Sonst koennte
+  // ein altes (durch frueheren Sync-Bug entstandenes) Duplikat-Ticket weiter
+  // gescannt werden, obwohl ein neues gueltiges Ticket fuer dieselbe Buchung
+  // existiert.
   const orphaned = await prisma.ticket.updateMany({
     where: {
       accountId,
@@ -907,7 +951,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         { uuid: { startsWith: "anny-sub:" } },
       ],
     },
-    data: { status: "INVALID" },
+    data: { status: "INVALID", barcode: null, qrCode: null },
   });
 
   // --- Update config ---
