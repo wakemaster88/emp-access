@@ -85,6 +85,7 @@ export default async function ScansPage({ searchParams }: Props) {
                     deviceName: s.device?.name ?? "Web-Scanner",
                     result: s.result,
                     ticketTypeName: s.ticket?.ticketTypeName ?? null,
+                    note: s.note,
                   }));
                   return (
                     <ScanGroupCard

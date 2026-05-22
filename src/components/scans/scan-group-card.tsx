@@ -6,6 +6,40 @@ import { Hash, Ticket, Wifi } from "lucide-react";
 
 const VISIBLE_INITIAL = 3;
 
+/**
+ * Mapping vom Reason-Code (geschrieben in `scan.note` durch den Pi-Scan-
+ * Endpoint) auf einen menschenlesbaren Hinweis fuers Personal. Unbekannte
+ * Werte werden direkt durchgereicht (z. B. Wakesys-JSON-Notes).
+ */
+const DENY_REASON_LABELS: Record<string, string> = {
+  ticket_not_found: "Ticket nicht gefunden",
+  status_invalid: "Ticket ungültig",
+  status_paused: "Abo pausiert",
+  status_canceled: "Ticket storniert",
+  status_protected: "Ticket gesperrt",
+  not_yet_valid: "Noch nicht gültig",
+  expired: "Abgelaufen",
+  slot_window: "Außerhalb Zeitslot",
+  duration_expired: "Zeit abgelaufen",
+  week_schedule: "Außerhalb Wochenplan",
+  wrong_resource: "Falscher Bereich",
+  ticket_already_redeemed: "Bereits eingelöst",
+  no_exit_registered: "Kein Ausgang erfasst",
+  no_reentry: "Kein Wiedereintritt",
+  race_conflict: "Konflikt (parallel)",
+  voucher_already_redeemed: "Gutschein eingelöst",
+  binarytec_denied: "Binarytec verweigert",
+};
+
+function denyReasonLabel(note: string | null | undefined): string | null {
+  if (!note) return null;
+  if (DENY_REASON_LABELS[note]) return DENY_REASON_LABELS[note];
+  // Wakesys schreibt JSON-Notes ({name, age, picture}) — die zeigen wir hier
+  // bewusst nicht an, weil sie keinen Deny-Grund tragen.
+  if (note.startsWith("{")) return null;
+  return note;
+}
+
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
   return d.toLocaleString("de-DE", {
@@ -37,6 +71,7 @@ export interface ScanGroupScan {
   deviceName: string;
   result: string;
   ticketTypeName?: string | null;
+  note?: string | null;
 }
 
 export interface ScanGroupCardProps {
@@ -66,51 +101,64 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
         </Badge>
       </div>
       <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-        {scans.slice(0, visible).map((scan) => (
-          <li
-            key={scan.id}
-            className="px-4 py-2.5 sm:px-5 sm:py-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors"
-          >
-            <div className="flex items-center gap-2 sm:gap-3">
-              <span
-                className={`shrink-0 w-2 h-2 rounded-full ${
-                  scan.result === "GRANTED"
-                    ? "bg-emerald-500"
-                    : scan.result === "DENIED"
-                      ? "bg-rose-500"
-                      : "bg-amber-500"
-                }`}
-                aria-hidden
-              />
-              <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 tabular-nums shrink-0">
-                {fmtDateTime(scan.scanTime)}
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300 truncate min-w-0">
-                <Wifi className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-                {scan.deviceName}
-              </span>
-              {scan.ticketTypeName && (
-                <span className="hidden md:inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[12rem]">
-                  <Ticket className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-                  <span className="truncate">{scan.ticketTypeName}</span>
+        {scans.slice(0, visible).map((scan) => {
+          const reason = scan.result !== "GRANTED" ? denyReasonLabel(scan.note) : null;
+          return (
+            <li
+              key={scan.id}
+              className="px-4 py-2.5 sm:px-5 sm:py-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors"
+            >
+              <div className="flex items-center gap-2 sm:gap-3">
+                <span
+                  className={`shrink-0 w-2 h-2 rounded-full ${
+                    scan.result === "GRANTED"
+                      ? "bg-emerald-500"
+                      : scan.result === "DENIED"
+                        ? "bg-rose-500"
+                        : "bg-amber-500"
+                  }`}
+                  aria-hidden
+                />
+                <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 tabular-nums shrink-0">
+                  {fmtDateTime(scan.scanTime)}
                 </span>
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300 truncate min-w-0">
+                  <Wifi className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                  {scan.deviceName}
+                </span>
+                {scan.ticketTypeName && (
+                  <span className="hidden md:inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[12rem]">
+                    <Ticket className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                    <span className="truncate">{scan.ticketTypeName}</span>
+                  </span>
+                )}
+                {reason && (
+                  <span className="hidden lg:inline text-xs text-rose-600 dark:text-rose-400 italic truncate min-w-0 max-w-[14rem]">
+                    {reason}
+                  </span>
+                )}
+                <span className="ml-auto shrink-0">
+                  <ResultBadge result={scan.result} />
+                </span>
+              </div>
+              <div className="sm:hidden flex items-center gap-2 mt-1 ml-4 text-xs text-slate-400">
+                <Wifi className="h-3 w-3 shrink-0" aria-hidden />
+                {scan.deviceName}
+                {scan.ticketTypeName && (
+                  <>
+                    <span className="text-slate-300 dark:text-slate-600">·</span>
+                    {scan.ticketTypeName}
+                  </>
+                )}
+              </div>
+              {reason && (
+                <div className="lg:hidden mt-1 ml-4 text-xs italic text-rose-600 dark:text-rose-400">
+                  {reason}
+                </div>
               )}
-              <span className="ml-auto shrink-0">
-                <ResultBadge result={scan.result} />
-              </span>
-            </div>
-            <div className="sm:hidden flex items-center gap-2 mt-1 ml-4 text-xs text-slate-400">
-              <Wifi className="h-3 w-3 shrink-0" aria-hidden />
-              {scan.deviceName}
-              {scan.ticketTypeName && (
-                <>
-                  <span className="text-slate-300 dark:text-slate-600">·</span>
-                  {scan.ticketTypeName}
-                </>
-              )}
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
       {hasMore && (
         <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-2 sm:px-5">

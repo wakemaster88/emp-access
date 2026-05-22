@@ -8,6 +8,15 @@ import { isWithinSchedule } from "@/lib/schedule";
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
 
+/**
+ * Mindestlaenge fuer einen plausiblen Scan-Code. Faellt der Pi-Scanner
+ * RFID/QR nur teilweise lesen, kommen oft 1-2-stellige Stub-Codes wie
+ * "0", "4" an. Solche Lesefehler werden hier abgefangen, damit sie weder
+ * als DENIED-Scan in der DB landen (Rauschen im Audit) noch ans Personal
+ * als "Ticket nicht gefunden" gemeldet werden.
+ */
+const MIN_CODE_LENGTH = 4;
+
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
   if ("error" in auth) return auth.error;
@@ -34,6 +43,16 @@ export async function POST(request: NextRequest) {
 
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
   if (isNaN(deviceId)) return NextResponse.json({ error: "Missing deviceId" }, { status: 400 });
+
+  // Lesefehler abfangen: Nur "0", "4" etc. — kommen vor, wenn der QR/RFID
+  // nur teilweise erkannt wird. Reservierte Steuer-Codes wie
+  // DASHBOARD_OPEN_CODE bleiben davon unberuehrt (laenger als 4 Zeichen).
+  if (code !== DASHBOARD_OPEN_CODE && code.length < MIN_CODE_LENGTH) {
+    return NextResponse.json({
+      granted: false,
+      message: "Code zu kurz – bitte erneut scannen",
+    });
+  }
 
   const { db } = auth;
   const accountId = auth.account.id;
@@ -71,7 +90,7 @@ export async function POST(request: NextRequest) {
       });
     }
     await db.scan.create({
-      data: { code, deviceId, result: "DENIED", accountId },
+      data: { code, deviceId, result: "DENIED", note: "binarytec_denied", accountId },
     });
     return NextResponse.json({ granted: false, message: "Zutritt verweigert (Binarytec)" });
   }
@@ -181,7 +200,7 @@ export async function POST(request: NextRequest) {
 
         if (!redeemed) {
           await db.scan.create({
-            data: { code, deviceId, result: "DENIED", accountId },
+            data: { code, deviceId, result: "DENIED", note: "voucher_already_redeemed", accountId },
           });
           return NextResponse.json({ granted: false, message: "Gutschein bereits eingelöst" });
         }
@@ -202,7 +221,7 @@ export async function POST(request: NextRequest) {
 
       if (voucher?.redeemedAt) {
         await db.scan.create({
-          data: { code, deviceId, result: "DENIED", accountId },
+          data: { code, deviceId, result: "DENIED", note: "voucher_already_redeemed", accountId },
         });
         return NextResponse.json({ granted: false, message: "Gutschein bereits eingelöst" });
       }
@@ -231,7 +250,7 @@ export async function POST(request: NextRequest) {
       });
     }
     await db.scan.create({
-      data: { code: stripped || code, deviceId, result: "DENIED", accountId },
+      data: { code: stripped || code, deviceId, result: "DENIED", note: "ticket_not_found", accountId },
     });
     return NextResponse.json({ granted: false, message: "Ticket nicht gefunden" });
   }
@@ -247,28 +266,28 @@ export async function POST(request: NextRequest) {
 
   if (ticket.status === "INVALID") {
     await db.scan.create({
-      data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      data: { code, deviceId, result: "DENIED", note: "status_invalid", ticketId: ticket.id, accountId },
     });
     return NextResponse.json({ granted: false, message: "Ticket ungültig", ticket: ticketInfo });
   }
 
   if (ticket.status === "PAUSED") {
     await db.scan.create({
-      data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      data: { code, deviceId, result: "DENIED", note: "status_paused", ticketId: ticket.id, accountId },
     });
     return NextResponse.json({ granted: false, message: "Abo pausiert", ticket: ticketInfo });
   }
 
   if (ticket.status === "CANCELED") {
     await db.scan.create({
-      data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      data: { code, deviceId, result: "DENIED", note: "status_canceled", ticketId: ticket.id, accountId },
     });
     return NextResponse.json({ granted: false, message: "Ticket storniert", ticket: ticketInfo });
   }
 
   if (ticket.status === "PROTECTED") {
     await db.scan.create({
-      data: { code, deviceId, result: "PROTECTED", ticketId: ticket.id, accountId },
+      data: { code, deviceId, result: "PROTECTED", note: "status_protected", ticketId: ticket.id, accountId },
     });
     return NextResponse.json({ granted: false, message: "Ticket gesperrt", ticket: ticketInfo });
   }
@@ -293,7 +312,7 @@ export async function POST(request: NextRequest) {
     start.setUTCHours(0, 0, 0, 0);
     if (now < start) {
       await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        data: { code, deviceId, result: "DENIED", note: "not_yet_valid", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig", ticket: ticketInfo });
     }
@@ -303,7 +322,7 @@ export async function POST(request: NextRequest) {
     end.setUTCHours(23, 59, 59, 999);
     if (now > end) {
       await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        data: { code, deviceId, result: "DENIED", note: "expired", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({ granted: false, message: "Ticket abgelaufen", ticket: ticketInfo });
     }
@@ -320,7 +339,7 @@ export async function POST(request: NextRequest) {
     const slotEndMin = eh * 60 + em;
     if (currentMinutes < slotStartMin || currentMinutes > slotEndMin) {
       await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        data: { code, deviceId, result: "DENIED", note: "slot_window", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({
         granted: false,
@@ -337,7 +356,7 @@ export async function POST(request: NextRequest) {
       const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
       if (now > expiresAt) {
         await db.scan.create({
-          data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+          data: { code, deviceId, result: "DENIED", note: "duration_expired", ticketId: ticket.id, accountId },
         });
         return NextResponse.json({ granted: false, message: "Zeitgültigkeit abgelaufen", ticket: ticketInfo });
       }
@@ -350,7 +369,7 @@ export async function POST(request: NextRequest) {
     const weekCheck = isWithinSchedule(ticket.weekSchedule, now);
     if (weekCheck && !weekCheck.ok) {
       await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        data: { code, deviceId, result: "DENIED", note: "week_schedule", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({
         granted: false,
@@ -395,7 +414,7 @@ export async function POST(request: NextRequest) {
     const hasAccess = allTicketAreas.length === 0 || allTicketAreas.some((a) => deviceAreas.includes(a));
     if (!hasAccess) {
       await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        data: { code, deviceId, result: "DENIED", note: "wrong_resource", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({ granted: false, message: "Resource nicht erlaubt", ticket: ticketInfo });
     }
@@ -411,6 +430,17 @@ export async function POST(request: NextRequest) {
   //    behandeln den Scan dann defensiv als Eintritt.
   const serviceAllowsReentry = ticket.service?.allowReentry === true;
 
+  // DURATION-Tickets: Solange der Timer (firstScanAt + duration) noch
+  // laeuft, ist Reentry implizit Teil des Konzepts ("60 Minuten Seilbahn")
+  // und braucht weder `service.allowReentry` noch `device.allowReentry`.
+  // Erst nach Ablauf der Zeit greift die DURATION-Ablauf-Pruefung weiter
+  // oben und blockt zuverlaessig.
+  const durationStillRunning =
+    vType === "DURATION"
+    && !!ticket.validityDurationMinutes
+    && !!ticket.firstScanAt
+    && now.getTime() <= ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000;
+
   // Reentry-Check: GLOBAL pro Ticket, nicht pro Device. Greift fuer
   // JEDEN Nicht-Exit-Scan (Eingang + bidirektionale/mehrdeutige
   // Geraete ohne explizite IN-Direction).
@@ -420,9 +450,9 @@ export async function POST(request: NextRequest) {
   // und spaeter nochmal durchs Strandbad reinkommt, soll dadurch nicht
   // gesperrt werden. Geblockt wird nur an der Hauptressource.
   if (!isEmployee && !isExitScan && ticket.status === "REDEEMED" && isMainResourceScan) {
-    if (!serviceAllowsReentry && !device.allowReentry) {
+    if (!serviceAllowsReentry && !device.allowReentry && !durationStillRunning) {
       await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        data: { code, deviceId, result: "DENIED", note: "ticket_already_redeemed", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({
         granted: false,
@@ -435,30 +465,37 @@ export async function POST(request: NextRequest) {
     // Hauptressource ein klar erkennbarer Exit war. Transit-Scans an
     // Nebenressourcen werden ignoriert, weil sie den Einloese-Zustand
     // an der Hauptressource nicht ueberschreiben sollen.
-    const mainResourceDeviceFilter = mainAreaId != null
-      ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
-      : {};
-    const lastScan = await db.scan.findFirst({
-      where: { ticketId: ticket.id, result: "GRANTED", ...mainResourceDeviceFilter },
-      orderBy: { scanTime: "desc" },
-      select: {
-        device: { select: { accessIn: true, accessOut: true } },
-      },
-    });
-    const lastDev = lastScan?.device;
-    const lastWasExit =
-      !!lastDev
-      && lastDev.accessOut != null
-      && lastDev.accessIn == null;
-    if (!lastWasExit) {
-      await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+    //
+    // Bei DURATION-Tickets, deren Timer noch laeuft, ueberspringen wir
+    // diesen Block: Innerhalb der gebuchten Stunde darf der Gast beliebig
+    // ein-/ausgehen, auch wenn das Drehkreuz keinen sauberen Exit-Scan
+    // gesehen hat (z.B. Ausgang offen / nicht gescannt).
+    if (!durationStillRunning) {
+      const mainResourceDeviceFilter = mainAreaId != null
+        ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
+        : {};
+      const lastScan = await db.scan.findFirst({
+        where: { ticketId: ticket.id, result: "GRANTED", ...mainResourceDeviceFilter },
+        orderBy: { scanTime: "desc" },
+        select: {
+          device: { select: { accessIn: true, accessOut: true } },
+        },
       });
-      return NextResponse.json({
-        granted: false,
-        message: "Bereits drin (kein Ausgang registriert)",
-        ticket: ticketInfo,
-      });
+      const lastDev = lastScan?.device;
+      const lastWasExit =
+        !!lastDev
+        && lastDev.accessOut != null
+        && lastDev.accessIn == null;
+      if (!lastWasExit) {
+        await db.scan.create({
+          data: { code, deviceId, result: "DENIED", note: "no_exit_registered", ticketId: ticket.id, accountId },
+        });
+        return NextResponse.json({
+          granted: false,
+          message: "Bereits drin (kein Ausgang registriert)",
+          ticket: ticketInfo,
+        });
+      }
     }
   }
 
@@ -483,6 +520,7 @@ export async function POST(request: NextRequest) {
     && !isExitScan
     && ticket.subscriptionId == null
     && isMainResourceScan
+    && !durationStillRunning
   ) {
     const mainResourceDeviceFilter = mainAreaId != null
       ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
@@ -493,7 +531,7 @@ export async function POST(request: NextRequest) {
     });
     if (existingScan && !serviceAllowsReentry) {
       await db.scan.create({
-        data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+        data: { code, deviceId, result: "DENIED", note: "no_reentry", ticketId: ticket.id, accountId },
       });
       return NextResponse.json({
         granted: false,
@@ -572,7 +610,7 @@ export async function POST(request: NextRequest) {
     // Paralleler Scan hat den Status bereits geändert → als DENIED loggen (außerhalb
     // der Transaktion, damit der Konflikt-Scan trotzdem erfasst wird).
     await db.scan.create({
-      data: { code, deviceId, result: "DENIED", ticketId: ticket.id, accountId },
+      data: { code, deviceId, result: "DENIED", note: "race_conflict", ticketId: ticket.id, accountId },
     });
     return NextResponse.json({
       granted: false,
