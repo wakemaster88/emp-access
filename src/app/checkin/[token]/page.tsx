@@ -740,6 +740,19 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         return;
       }
 
+      // Spezialfall: Slot-Wechsel scheitert an ANNY (Slot voll, ANNY
+      // verbietet Edit etc.). Backend liefert 4xx/5xx mit
+      // { error, annyStatus, partial:false }. Wir blenden eine kurze
+      // Meldung ein und brechen ab - der lokale Stand wurde wegen
+      // partial:false NICHT veraendert.
+      if (!res.ok && (update.slotStart !== undefined || update.slotEnd !== undefined) && json?.error) {
+        if (typeof window !== "undefined") {
+          alert(json.error);
+        }
+        setUpdatingTicket(null);
+        return;
+      }
+
       setRfidConflict(null);
       refreshRef.current?.();
       if (selectedTicket?.id === ticketId) {

@@ -1129,3 +1129,58 @@ export function periodsToSlots(periods: AvailabilityPeriod[]): AvailabilitySlot[
     })
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 }
+
+/**
+ * Verschiebt eine ANNY-Buchung via PATCH /api/v1/bookings/{id} auf eine
+ * neue Start-/Endzeit. Wichtig: ANNY trennt zwischen `start_date`/`end_date`
+ * (anzeigbares Zeitfenster) und `blocker_start_date`/`blocker_end_date`
+ * (interne Kapazitaets-Reservierung). Ein PATCH nur auf start_date wird mit
+ * 422 abgelehnt ("start date muss ein Datum nach dem blocker start date oder
+ * gleich dem blocker start date sein."). Daher setzen wir alle vier Felder
+ * gleichzeitig.
+ *
+ * Erwartete ISO-Strings mit Offset, z.B. "2026-05-23T10:00:00+02:00".
+ *
+ * Liefert { ok: true } bei Erfolg oder { ok: false, status, message } bei
+ * jedem nicht-2xx-Response (typisch: 422 = Slot voll / nicht buchbar,
+ * 404 = Buchung existiert nicht, 403 = ANNY untersagt Bearbeitung).
+ */
+export async function rescheduleAnnyBooking(
+  baseUrl: string,
+  token: string,
+  bookingId: string,
+  newStartIso: string,
+  newEndIso: string,
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${cleanBase}/api/v1/bookings/${bookingId}`, {
+      method: "PATCH",
+      headers: { ...annyHeaders(token), "Content-Type": "application/vnd.api+json" },
+      signal: AbortSignal.timeout(10000),
+      body: JSON.stringify({
+        data: {
+          type: "bookings",
+          id: bookingId,
+          attributes: {
+            start_date: newStartIso,
+            end_date: newEndIso,
+            blocker_start_date: newStartIso,
+            blocker_end_date: newEndIso,
+          },
+        },
+      }),
+    });
+    if (res.ok) return { ok: true };
+    let detail = "";
+    try {
+      const j = await res.json();
+      const errs = Array.isArray(j?.errors) ? j.errors : [];
+      detail = errs.map((e: { detail?: string; title?: string }) => e.detail || e.title || "").filter(Boolean).join("; ");
+    } catch { /* ignore */ }
+    return { ok: false, status: res.status, message: detail || `ANNY ${res.status}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, status: 0, message: `ANNY-Aufruf fehlgeschlagen: ${msg}` };
+  }
+}

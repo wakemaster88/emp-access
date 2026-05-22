@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rescheduleAnnyBooking } from "@/lib/anny-availability";
 
 export async function PUT(
   request: NextRequest,
@@ -94,6 +95,29 @@ export async function PUT(
     }
     updateData.slotEnd = slotEndIn || null;
   }
+  // Berlin-Offset fuer ein gegebenes Datum (CET=+01:00, CEST=+02:00).
+  const berlinOffset = (d: Date): string => {
+    const jan = new Date(Date.UTC(d.getUTCFullYear(), 0, 1, 12, 0, 0));
+    const jul = new Date(Date.UTC(d.getUTCFullYear(), 6, 1, 12, 0, 0));
+    const stdTzMinutes = Math.max(
+      -jan.getTimezoneOffset(),
+      -jul.getTimezoneOffset(),
+    );
+    // Server-Zeitzone ist nicht zwingend Berlin - daher hardcoded ueber
+    // Date.toLocaleString-Trick die Berlin-lokale Stunde holen.
+    const local = new Date(d.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
+    const utc = new Date(d.toLocaleString("en-US", { timeZone: "UTC" }));
+    const offsetMin = (local.getTime() - utc.getTime()) / 60000;
+    const sign = offsetMin >= 0 ? "+" : "-";
+    const abs = Math.abs(offsetMin);
+    const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+    const mm = String(abs % 60).padStart(2, "0");
+    void stdTzMinutes;
+    return `${sign}${hh}:${mm}`;
+  };
+
+  let newStartIso: string | null = null;
+  let newEndIso: string | null = null;
   if (slotStartIn || slotEndIn) {
     // Datums-Basis fuer start/end aktualisieren: bevorzugt body.startDate
     // (z.B. wenn der User auf "morgen" verschiebt), sonst das Datum am
@@ -105,31 +129,61 @@ export async function PUT(
     if (baseStartIso) {
       const baseDate = new Date(baseStartIso);
       if (!isNaN(baseDate.getTime())) {
-        const yyyy = baseDate.getUTCFullYear();
-        const mm = String(baseDate.getUTCMonth() + 1).padStart(2, "0");
-        const dd = String(baseDate.getUTCDate()).padStart(2, "0");
-        const dayKey = `${yyyy}-${mm}-${dd}`;
-        // Berlin-Offset abschaetzen: Europe/Berlin ist UTC+1 (CET) bzw.
-        // UTC+2 (CEST). Anny-Daten kommen sowieso mit konkretem Offset -
-        // wir nehmen den vom Eingabedatum, damit Hin- und Rueckkonvertierung
-        // stabil bleibt.
-        const offsetMs = baseDate.getTimezoneOffset() * 60 * 1000;
-        const buildAt = (hhmm: string): Date => {
-          const [h, m] = hhmm.split(":").map(Number);
-          // Wir wollen die Uhrzeit als "local Berlin"-Zeit interpretieren -
-          // im Browser ist `new Date("YYYY-MM-DDTHH:MM")` lokal, hier auf
-          // dem Server muessen wir explizit Berlin-Offset annehmen. Wir
-          // konstruieren UTC-Datum und subtrahieren den (vermuteten)
-          // Berlin-Offset des baseDate.
-          const utc = new Date(`${dayKey}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`);
-          return new Date(utc.getTime() + offsetMs);
-        };
+        // Wir extrahieren das Datum in Berlin-Zeit (wichtig wenn baseDate
+        // UTC 22:00 = naechster Tag in Berlin). Ein ISO-String wie
+        // "2026-05-23T22:00:00.000Z" ist in Berlin der 24.05. - das sollte
+        // beim Slot-Wechsel respektiert werden.
+        const berlinDateStr = baseDate.toLocaleDateString("en-CA", { timeZone: "Europe/Berlin" });
+        const offset = berlinOffset(baseDate);
+        const buildIso = (hhmm: string): string =>
+          `${berlinDateStr}T${hhmm}:00${offset}`;
         if (slotStartIn && TIME_RE.test(slotStartIn)) {
-          updateData.startDate = buildAt(slotStartIn);
+          newStartIso = buildIso(slotStartIn);
+          updateData.startDate = new Date(newStartIso);
         }
         if (slotEndIn && TIME_RE.test(slotEndIn)) {
-          updateData.endDate = buildAt(slotEndIn);
+          newEndIso = buildIso(slotEndIn);
+          updateData.endDate = new Date(newEndIso);
         }
+      }
+    }
+  }
+
+  // Wenn der Slot gewechselt wird UND das Ticket aus ANNY stammt, versuchen
+  // wir die ANNY-Buchung mitzuverschieben. Schlaegt das fehl (Slot voll,
+  // Anny untersagt Edit etc.), brechen wir den lokalen Update auch ab -
+  // sonst laufen ANNY und EMP auseinander und der naechste Sync zieht den
+  // EMP-Stand zurueck.
+  let annySyncedSlot = false;
+  if ((slotStartIn || slotEndIn) && newStartIso && newEndIso && ticket.source === "ANNY" && ticket.uuid) {
+    // UUID-Format ist "anny:<customer>:<svc>:<bookingId>". Plan-Subs starten
+    // mit "anny-sub:" und haben keine Booking-ID - die ueberspringen wir.
+    const isBooking = ticket.uuid.startsWith("anny:");
+    const parts = ticket.uuid.split(":");
+    const bookingIdAny = isBooking ? parts[3] : undefined;
+    if (bookingIdAny) {
+      const annyCfg = await prisma.apiConfig.findFirst({
+        where: { accountId: monitor.accountId, provider: "ANNY" },
+        select: { token: true, baseUrl: true },
+      });
+      if (annyCfg?.token) {
+        const result = await rescheduleAnnyBooking(
+          annyCfg.baseUrl?.replace(/\/+$/, "") || "https://b.anny.co",
+          annyCfg.token,
+          bookingIdAny,
+          newStartIso,
+          newEndIso,
+        );
+        if (!result.ok) {
+          return NextResponse.json({
+            error: `ANNY-Buchung konnte nicht verschoben werden: ${result.message}`,
+            annyStatus: result.status,
+            // Wir geben dem UI einen Hinweis, dass der lokale Stand
+            // unveraendert ist - kein partieller Erfolg.
+            partial: false,
+          }, { status: result.status >= 400 && result.status < 600 ? result.status : 502 });
+        }
+        annySyncedSlot = true;
       }
     }
   }
@@ -177,6 +231,7 @@ export async function PUT(
 
   return NextResponse.json({
     success: true,
+    annySynced: annySyncedSlot,
     ticket: {
       id: updated.id,
       name: updated.name,
