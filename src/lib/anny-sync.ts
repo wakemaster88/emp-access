@@ -296,11 +296,15 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   /** Liest ein einfaches Listen-Endpoint (resources/services/plans/...) komplett aus,
    *  parallel ab Page 2 wenn `meta.page.last-page` bekannt ist. Liefert die
-   *  flatten'd Attribute (id, name, attributes inline). */
+   *  flatten'd Attribute (id, name, attributes inline).
+   *
+   *  WICHTIG: ANNYs /services, /resources, /plans erzwingen `page[size]` ≤ 50
+   *  (400-Error sonst). /bookings erlaubt 500. Default 50 deckt die schmaleren
+   *  Endpoints ab; bookings ueberschreibt explizit. */
   async function fetchAllPages(
     path: string,
     extra: Record<string, string> = {},
-    pageSize = 200,
+    pageSize = 50,
     pageLimit = 25,
   ): Promise<Record<string, unknown>[]> {
     const buildUrl = (n: number) => {
@@ -346,7 +350,8 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
    *  Relationships zu eingebetteten Sub-Objekten. fetchAllPages reicht nicht,
    *  weil dort `included` verworfen wird. */
   async function fetchAllPlanSubscriptions(): Promise<PlanSubscription[]> {
-    const pageSize = 200;
+    // ANNY-Limit: page[size] <= 50 fuer /plan-subscriptions (wie /services).
+    const pageSize = 50;
     const pageLimit = 50;
     const extra = { include: "customer,plan" };
     const buildUrl = (n: number) => {
@@ -485,11 +490,22 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   // /subscriptions existiert in der admin-API nicht (404) - bewusst entfernt.
   // plan-subscriptions braucht include-Resolution (customer/plan), daher
   // eigener Helper.
+  // .catch loggt + leeres Array, damit ein temporaerer Discovery-Fehler nicht
+  // das gesamte Sync abreisst, aber auch nicht stillschweigend bleibt.
+  const logDiscoveryError = (kind: string) => (err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[anny sync] discovery ${kind} failed: ${msg}`);
+    return [] as Record<string, unknown>[];
+  };
   const [resourcesRaw, servicesRaw, plansRaw, allPlanSubscriptions] = await Promise.all([
-    fetchAllPages("resources").catch(() => []),
-    fetchAllPages("services").catch(() => []),
-    fetchAllPages("plans").catch(() => []),
-    fetchAllPlanSubscriptions().catch(() => [] as PlanSubscription[]),
+    fetchAllPages("resources").catch(logDiscoveryError("resources")),
+    fetchAllPages("services").catch(logDiscoveryError("services")),
+    fetchAllPages("plans").catch(logDiscoveryError("plans")),
+    fetchAllPlanSubscriptions().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[anny sync] discovery plan-subscriptions failed: ${msg}`);
+      return [] as PlanSubscription[];
+    }),
   ]);
 
   for (const raw of resourcesRaw) {
