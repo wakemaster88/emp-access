@@ -51,6 +51,9 @@ interface Scan {
 
 interface TicketInfo {
   id: number;
+  /** ANNY-UUID `anny:CID:SVC:BID` – zum Extrahieren der Customer-ID fuer
+   *  Multi-Area-Buchungs-Gruppierung. NULL bei nicht-ANNY-Tickets. */
+  uuid: string | null;
   name: string;
   firstName: string | null;
   lastName: string | null;
@@ -65,12 +68,36 @@ interface TicketInfo {
   slotStart: string | null;
   slotEnd: string | null;
   subscriptionId: number | null;
+  serviceId: number | null;
+  /** Anzahl ServiceAreas am verknuepften Service. >=2 ⇒ ANNY liefert pro
+   *  Person mehrere bookings (Multi-Area), die im Monitor zu einer
+   *  Karte zusammengefasst werden. */
+  serviceAreaCount: number;
   source: string | null;
   service?: { name: string } | null;
   subscription?: { name: string } | null;
   accessArea?: { name: string } | null;
   /** Flag aus dem Poll – Bild wird bei Bedarf lazy via /photo-Endpoint geladen. */
   hasPhoto?: boolean;
+}
+
+/** Logische Gruppe von TicketInfos, die zur selben echten Person+Buchung
+ *  gehoeren. Bei Single-Tickets enthaelt members genau ein Element.
+ *  Bei Multi-Area-ANNY-Buchungen (z.B. Aquapark Tageskarte = Aquapark
+ *  + Strandbad) werden N Tickets desselben Customers im selben Service
+ *  und am selben Tag zu einer Karte zusammengefasst. */
+interface TicketGroup {
+  /** Das "fuehrende" Ticket. Wird fuer Anzeige (Name, Foto, Status …)
+   *  verwendet. Bevorzugt das erste VALID, sonst das erste der Gruppe. */
+  representative: TicketInfo;
+  members: TicketInfo[];
+  /** Anzahl echter Personen in der Gruppe (members.length / serviceAreaCount,
+   *  oder members.length bei Single-Tickets). */
+  personCount: number;
+  /** Wie viele dieser Personen sind heute schon eingecheckt (per REDEEMED
+   *  Status berechnet, NICHT per Scan-Count - das wuerde bei nur 1 von 2
+   *  gescannten Areas einer Person falsch zaehlen). */
+  redeemedPersonCount: number;
 }
 
 interface Announcement {
@@ -374,6 +401,96 @@ export default function PublicMonitorPage({ params }: Props) {
       return hay.includes(q);
     });
   }, [tickets, ticketSearch]);
+
+  /** Multi-Area-ANNY-Buchungen (1 Person -> N booking.ids) zu einer Karte
+   *  zusammenfassen. Bedingungen alle drei muessen passen:
+   *    - Ticket ist ANNY-Quelle (uuid startsWith "anny:")
+   *    - serviceAreaCount >= 2
+   *    - Gruppen-Mitglieder > 1 UND glatt durch serviceAreaCount teilbar
+   *  Sonst bleibt das Ticket eine Einzelgruppe (= altes Verhalten). */
+  const groupedTickets = useMemo<TicketGroup[]>(() => {
+    type DraftGroup = { members: TicketInfo[]; serviceAreaCount: number };
+    const draftByKey = new Map<string, DraftGroup>();
+    const passthrough: TicketInfo[] = [];
+
+    for (const t of filteredTickets) {
+      const customerId = t.uuid?.startsWith("anny:") ? t.uuid.split(":")[1] : null;
+      const groupable = customerId && t.serviceId != null && t.serviceAreaCount >= 2 && t.startDate;
+      if (!groupable) {
+        passthrough.push(t);
+        continue;
+      }
+      const day = t.startDate ? t.startDate.slice(0, 10) : "";
+      const key = `${customerId}|svc=${t.serviceId}|day=${day}`;
+      const existing = draftByKey.get(key);
+      if (existing) {
+        existing.members.push(t);
+      } else {
+        draftByKey.set(key, { members: [t], serviceAreaCount: t.serviceAreaCount });
+      }
+    }
+
+    const result: TicketGroup[] = passthrough.map((t) => ({
+      representative: t,
+      members: [t],
+      personCount: 1,
+      redeemedPersonCount: t.status === "REDEEMED" ? 1 : 0,
+    }));
+
+    for (const draft of draftByKey.values()) {
+      const isCleanMultiArea =
+        draft.members.length > 1 &&
+        draft.members.length % draft.serviceAreaCount === 0;
+      if (!isCleanMultiArea) {
+        // Datenanomalie (z.B. fehlender Strandbad-Sync) - lieber als Einzel-
+        // karten zeigen, sonst geht ein Ticket "verloren".
+        for (const m of draft.members) {
+          result.push({
+            representative: m,
+            members: [m],
+            personCount: 1,
+            redeemedPersonCount: m.status === "REDEEMED" ? 1 : 0,
+          });
+        }
+        continue;
+      }
+      const personCount = draft.members.length / draft.serviceAreaCount;
+      // Ein Ticket gilt als "schon mal gescannt", wenn entweder REDEEMED
+      // (DEFAULT-Tageskarten ohne Re-Entry) oder firstScanAt != null
+      // (Multi-Scan-Tageskarten wie Aquapark mit allowReentry=true, die
+      // VALID bleiben). Beides hier zusammenfassen.
+      const usedTickets = draft.members.filter(
+        (m) => m.status === "REDEEMED" || m.firstScanAt != null,
+      ).length;
+      // ceil statt floor: sobald 1 Resource-Ticket einer Person eingelost ist,
+      // gilt sie als eingecheckt (auch wenn die zweite Area noch offen ist).
+      const redeemedPersonCount = Math.min(personCount, Math.ceil(usedTickets / draft.serviceAreaCount));
+      // Repraesentant: bevorzugt VALID + noch nicht gescannt (firstScanAt=null),
+      // sonst egal welches. Bei Re-Entry-Tickets (Aquapark allowReentry=true)
+      // bleibt der Status VALID auch nach Scan, deshalb firstScanAt mitpruefen.
+      const rep = draft.members.find((m) => m.status === "VALID" && m.firstScanAt == null)
+        ?? draft.members.find((m) => m.status === "VALID")
+        ?? draft.members[0];
+      result.push({
+        representative: rep,
+        members: draft.members,
+        personCount,
+        redeemedPersonCount,
+      });
+    }
+
+    // Stabile Sortierung: Pausierte ganz unten, sonst nach Name.
+    return result.sort((a, b) => {
+      const order = (g: TicketGroup) =>
+        g.representative.status === "PAUSED" ? 3
+        : g.representative.source === "EMP_CONTROL" ? 2
+        : g.representative.subscriptionId != null ? 1
+        : 0;
+      const d = order(a) - order(b);
+      if (d !== 0) return d;
+      return a.representative.name.localeCompare(b.representative.name);
+    });
+  }, [filteredTickets]);
 
   const groupedScans = useMemo(() => {
     function parseNote(note?: string | null): { name?: string; picture?: string; age?: number } {
@@ -906,11 +1023,14 @@ export default function PublicMonitorPage({ params }: Props) {
                   Keine Treffer für „{ticketSearch.trim()}“
                 </p>
               )}
-              {filteredTickets.map((ticket) => {
+              {groupedTickets.map((group) => {
+                const ticket = group.representative;
+                const isGroup = group.personCount > 1;
+                const memberIds = group.members.map((m) => m.id);
                 const endStr = ticket.endDate
                   ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
                   : null;
-                const isScanning = scanningId === ticket.id;
+                const isScanning = scanningId != null && memberIds.includes(scanningId);
 
                 const now = Date.now();
                 const endMs = ticket.endDate ? endOfDayMs(ticket.endDate) : null;
@@ -925,10 +1045,16 @@ export default function PublicMonitorPage({ params }: Props) {
                   durationWarning = !durationExpired && (expiresAt - now) < 15 * 60_000;
                 }
 
-                const checkedIn = ticket.subscriptionId != null
-                  ? scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED" && isSameBerlinDay(s.scanTime))
-                  : scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED");
+                // Bei Gruppen zaehlt "eingecheckt" sobald mind. 1 Person der
+                // Gruppe einen GRANTED Scan oder ein REDEEMED Ticket hat.
+                const checkedIn = isGroup
+                  ? group.redeemedPersonCount > 0
+                    || scans.some((s) => s.ticket?.id != null && memberIds.includes(s.ticket.id) && s.result === "GRANTED")
+                  : (ticket.subscriptionId != null
+                    ? scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED" && isSameBerlinDay(s.scanTime))
+                    : scans.some((s) => s.ticket?.id === ticket.id && s.result === "GRANTED"));
                 const isPaused = ticket.status === "PAUSED";
+                const allRedeemed = isGroup && group.redeemedPersonCount >= group.personCount;
 
                 const cardBg = isScanning
                   ? dark ? "bg-emerald-950 border-emerald-500/50 ring-1 ring-emerald-500/30" : "bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400/30"
@@ -960,16 +1086,22 @@ export default function PublicMonitorPage({ params }: Props) {
                     ? "Abgelaufen"
                     : isWarning || durationWarning
                       ? "Läuft ab"
-                      : checkedIn
-                        ? "Eingecheckt"
-                        : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
+                      : isGroup
+                        ? (allRedeemed
+                            ? `${group.personCount}/${group.personCount} ein`
+                            : checkedIn
+                              ? `${group.redeemedPersonCount}/${group.personCount} ein`
+                              : `${group.personCount} Pers.`)
+                        : checkedIn
+                          ? "Eingecheckt"
+                          : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
 
                 const typeLine = monitorTicketTypeLine(ticket);
                 const subParts = [typeLine, endStr ? `bis ${endStr}` : null].filter(Boolean) as string[];
 
                 return (
                   <div
-                    key={ticket.id}
+                    key={isGroup ? `g:${memberIds.join(",")}` : `t:${ticket.id}`}
                     onClick={() => handleTicketClick(ticket)}
                     className={cn(
                       "flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-all duration-150 cursor-pointer select-none active:scale-[0.98]",

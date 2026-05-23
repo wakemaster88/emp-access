@@ -156,6 +156,7 @@ async function loadTickets(
       where: ticketWhere,
       select: {
         id: true,
+        uuid: true,
         name: true,
         firstName: true,
         lastName: true,
@@ -170,9 +171,18 @@ async function loadTickets(
         slotStart: true,
         slotEnd: true,
         subscriptionId: true,
+        serviceId: true,
         source: true,
         extras: true,
-        service: { select: { name: true } },
+        service: {
+          select: {
+            name: true,
+            // serviceAreas.length wird im Frontend zur Gruppierung von
+            // ANNY-Multi-Area-Buchungen verwendet (z.B. Aquapark Tageskarte
+            // = Aquapark + Strandbad, ergibt pro Person 2 ANNY-bookings).
+            serviceAreas: { select: { accessAreaId: true } },
+          },
+        },
         subscription: { select: { name: true } },
         accessArea: { select: { name: true } },
       },
@@ -196,7 +206,17 @@ async function loadTickets(
       }
       return true;
     })
-    .map((t) => ({ ...t, hasPhoto: photoIds.has(t.id) }));
+    .map((t) => {
+      // Service-Areas-Count flach mitspielen (Frontend braucht keine Liste).
+      const { service, ...rest } = t;
+      const serviceAreaCount = service?.serviceAreas?.length ?? 0;
+      return {
+        ...rest,
+        service: service ? { name: service.name } : null,
+        serviceAreaCount,
+        hasPhoto: photoIds.has(t.id),
+      };
+    });
 }
 
 /**
