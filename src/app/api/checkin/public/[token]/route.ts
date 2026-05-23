@@ -57,7 +57,15 @@ export async function GET(
     annyBookingId: true,
   } as const;
 
-  const [tickets, allSubscriptions, services, areas, recentScans, openableDevices] = await Promise.all([
+  const [
+    tickets,
+    allSubscriptions,
+    services,
+    areas,
+    recentScans,
+    grantedTicketIdsToday,
+    openableDevices,
+  ] = await Promise.all([
     prisma.ticket.findMany({
       where: {
         accountId,
@@ -183,6 +191,25 @@ export async function GET(
       take: 50,
     }),
 
+    // ALLE Ticket-IDs, die heute mind. einen GRANTED-Scan hatten - ohne
+    // 50er-Limit. Bisher wurde checkedIn aus den `recentScans` (limit 50)
+    // abgeleitet - bei vollen Tagen (z.B. 200+ Scans) sind dann aeltere
+    // Eincheck-Scans rausgefallen und das Ticket bekam wieder einen
+    // "Einchecken"-Button, obwohl es am Drehkreuz bereits durch war.
+    // distinct sorgt fuer eine Zeile pro Ticket, der Index
+    // (accountId, scanTime, result) macht das effizient auch bei vielen
+    // Scans pro Tag.
+    prisma.scan.findMany({
+      where: {
+        accountId,
+        scanTime: { gte: dayStart, lte: dayEnd },
+        result: "GRANTED",
+        ticketId: { not: null },
+      },
+      select: { ticketId: true },
+      distinct: ["ticketId"],
+    }),
+
     // Türen/Drehkreuze fuer den Quick-Open: ALLE des Accounts. Welche davon
     // als direkter Header-Button erscheinen, bestimmt MonitorConfig.deviceIds
     // (Tür-Schnellzugriff). Die uebrigen sind ueber das "Mehr Türen"-Menue
@@ -198,9 +225,9 @@ export async function GET(
   ]);
 
   const checkedInIds = new Set(
-    recentScans
-      .filter((s) => s.result === "GRANTED" && s.ticketId)
-      .map((s) => s.ticketId!)
+    grantedTicketIdsToday
+      .map((s) => s.ticketId)
+      .filter((id): id is number => id != null),
   );
 
   /** Abos: Einchecken nur für den gewählten Tag (GRANTED-Scan an diesem Tag), nicht dauerhaft über REDEEMED. */

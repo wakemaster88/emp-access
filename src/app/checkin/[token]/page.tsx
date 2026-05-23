@@ -877,7 +877,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   }, [subscriptions, matchesSearch]);
 
   // Reguläre Service-/Tickettyp-Gruppen (alle ohne Vereins-Zugehoerigkeit) –
-  // werden ganz oben in der Tickets-Sektion gerendert wie gewohnt.
+  // werden ganz oben in der Tickets-Sektion gerendert wie gewohnt. Innerhalb
+  // einer Gruppe nach (slotStart, Nachname/Name) sortieren, damit Kurse mit
+  // mehreren Slots (z.B. Anfaengerkurs 12-13 / 16-17) sauber gruppiert
+  // angezeigt werden statt in Erstellungs-Reihenfolge zu liegen.
   const serviceGroups = useMemo(() => {
     const groups = new Map<string, CheckinTicket[]>();
     for (const t of filteredPending) {
@@ -885,6 +888,17 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       const key = t.service?.name ?? t.subscription?.name ?? t.ticketTypeName ?? "Sonstige";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(t);
+    }
+    for (const tickets of groups.values()) {
+      tickets.sort((a, b) => {
+        // Tickets ohne Slot ans Ende (Tageskarten o.ae.), damit Slot-Tickets
+        // oben blockweise stehen.
+        const slotCmp = (a.slotStart ?? "~").localeCompare(b.slotStart ?? "~");
+        if (slotCmp !== 0) return slotCmp;
+        const aN = (a.lastName ?? a.name).toLowerCase();
+        const bN = (b.lastName ?? b.name).toLowerCase();
+        return aN.localeCompare(bN);
+      });
     }
     return groups;
   }, [filteredPending]);
