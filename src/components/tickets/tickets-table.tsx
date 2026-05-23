@@ -47,6 +47,10 @@ interface TicketsTableProps {
   readonly?: boolean;
   /** Bei Code-Suche: wenn genau ein Ticket gefunden, Bearbeiten-Dialog automatisch öffnen */
   searchCode?: string;
+  /** Im "Auch inaktive"-Modus alle Tickets einzeln zeigen statt Multi-Area-
+   *  Pairs zu Personen zusammenzufassen. Der Admin will dann jeden
+   *  Datensatz einzeln sehen koennen. */
+  showAll?: boolean;
 }
 
 function calcAge(birthDate: Date | string | null | undefined): number | null {
@@ -195,11 +199,85 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
 type TicketWithArea = TicketData & {
   accessArea?: { name: string } | null;
   subscription?: { name: string } | null;
-  service?: { name: string } | null;
+  service?: {
+    name: string;
+    serviceAreas?: { accessAreaId: number; accessArea?: { id: number; name: string } | null }[];
+  } | null;
   ticketAreas?: { accessArea: { id: number; name: string } }[];
 };
 
-export function TicketsTable({ tickets, areas, subscriptions = [], services = [], vereine = [], readonly, searchCode }: TicketsTableProps) {
+/** Eine Zeile in der Tabelle. Bei Single-Tickets ist `pairedMembers` leer.
+ *  Bei einer Multi-Area-ANNY-Buchung enthaelt `pairedMembers` die "anderen"
+ *  Tickets derselben echten Person (z.B. das Strandbad-Pendant zum
+ *  Aquapark-Ticket). Areas, Scan-Counts und Codes werden dann ueber die
+ *  ganze Pair-Gruppe aggregiert dargestellt. */
+type DisplayRow = {
+  primary: TicketWithArea;
+  pairedMembers: TicketWithArea[];
+};
+
+/** Multi-Area-ANNY-Pairs zu einer Zeile pro Person reduzieren. ANNY legt
+ *  pro gebuchter Resource ein Booking an - bei sa=2-Services (Aquapark
+ *  Tageskarte) entstehen 2 Tickets pro echter Person. Gruppieren ueber
+ *  (customerId, serviceId, startDay), aufteilen in Chunks der Groesse sa. */
+function groupMultiAreaPairs(tickets: TicketWithArea[], showAll: boolean): DisplayRow[] {
+  if (showAll) return tickets.map((t) => ({ primary: t, pairedMembers: [] }));
+
+  type Draft = { members: TicketWithArea[]; serviceAreaCount: number };
+  const drafts = new Map<string, Draft>();
+  const passthroughIndices = new Map<TicketWithArea, number>();
+
+  tickets.forEach((t, idx) => {
+    const sa = t.service?.serviceAreas?.length ?? 0;
+    const customerId = t.uuid?.startsWith("anny:") ? t.uuid.split(":")[1] : null;
+    const day = t.startDate ? new Date(t.startDate).toISOString().slice(0, 10) : "";
+    if (!customerId || t.serviceId == null || sa < 2 || !day) {
+      passthroughIndices.set(t, idx);
+      return;
+    }
+    const key = `${customerId}|svc=${t.serviceId}|day=${day}`;
+    const existing = drafts.get(key);
+    if (existing) existing.members.push(t);
+    else drafts.set(key, { members: [t], serviceAreaCount: sa });
+  });
+
+  // Sortierreihenfolge der Originaltickets beibehalten (idx) damit
+  // bestehende sort-Reihenfolge (date/name/...) nicht durcheinander geraet.
+  const rows: { row: DisplayRow; orderIdx: number }[] = [];
+
+  for (const [t, idx] of passthroughIndices) {
+    rows.push({ row: { primary: t, pairedMembers: [] }, orderIdx: idx });
+  }
+
+  for (const draft of drafts.values()) {
+    const clean = draft.members.length > 1 && draft.members.length % draft.serviceAreaCount === 0;
+    if (!clean) {
+      // Anomalie (z.B. fehlender Sync) - alle Member als Einzelzeilen
+      // damit nichts unsichtbar wird.
+      for (const m of draft.members) {
+        rows.push({ row: { primary: m, pairedMembers: [] }, orderIdx: tickets.indexOf(m) });
+      }
+      continue;
+    }
+    // Stabil nach Ticket-ID sortieren, dann in Chunks der Groesse sa
+    // splitten. Innerhalb jedes Chunks ist [0] der Primaer, Rest = paired.
+    const sorted = [...draft.members].sort((a, b) => a.id - b.id);
+    for (let i = 0; i < sorted.length; i += draft.serviceAreaCount) {
+      const chunk = sorted.slice(i, i + draft.serviceAreaCount);
+      const [primary, ...paired] = chunk;
+      rows.push({
+        row: { primary, pairedMembers: paired },
+        orderIdx: tickets.indexOf(primary),
+      });
+    }
+  }
+
+  return rows
+    .sort((a, b) => a.orderIdx - b.orderIdx)
+    .map((r) => r.row);
+}
+
+export function TicketsTable({ tickets, areas, subscriptions = [], services = [], vereine = [], readonly, searchCode, showAll }: TicketsTableProps) {
   const [selected, setSelected] = useState<TicketData | null>(null);
   const openedForCodeRef = useRef<string | null>(null);
 
@@ -208,8 +286,10 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
     const empTickets = allTickets.filter((t) => t.source === "EMP_CONTROL");
     const regTickets = allTickets.filter((t) => t.source !== "EMP_CONTROL");
 
-    const map = new Map<string, { type: "resource" | "subscription" | "service" | "none"; tickets: TicketWithArea[] }>();
-    for (const t of regTickets) {
+    const map = new Map<string, { type: "resource" | "subscription" | "service" | "none"; rows: DisplayRow[] }>();
+    const groupedRows = groupMultiAreaPairs(regTickets, !!showAll);
+    for (const row of groupedRows) {
+      const t = row.primary;
       let groupName: string;
       let groupType: "resource" | "subscription" | "service" | "none";
       if (t.accessArea?.name) {
@@ -226,8 +306,8 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
         groupType = "none";
       }
       const key = `${groupType}:${groupName}`;
-      if (!map.has(key)) map.set(key, { type: groupType, tickets: [] });
-      map.get(key)!.tickets.push(t);
+      if (!map.has(key)) map.set(key, { type: groupType, rows: [] });
+      map.get(key)!.rows.push(row);
     }
     const groups = Array.from(map.entries())
       .sort(([, a], [, b]) => {
@@ -235,14 +315,14 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
         if (a.type !== b.type) return order[a.type] - order[b.type];
         return 0;
       })
-      .map(([key, { type, tickets: list }]) => ({
+      .map(([key, { type, rows }]) => ({
         groupName: key.split(":").slice(1).join(":"),
         groupType: type,
-        tickets: list,
+        rows,
       }));
 
     return { regularGroups: groups, employeeTickets: empTickets };
-  }, [tickets]);
+  }, [tickets, showAll]);
 
   useEffect(() => {
     if (!searchCode) {
@@ -279,7 +359,11 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
               </TableRow>
             )}
 
-            {regularGroups.map(({ groupName, groupType, tickets: groupTickets }) => (
+            {regularGroups.map(({ groupName, groupType, rows: groupRows }) => {
+              const personCount = groupRows.length;
+              const ticketCount = groupRows.reduce((sum, r) => sum + 1 + r.pairedMembers.length, 0);
+              const hasPairs = ticketCount > personCount;
+              return (
               <React.Fragment key={`${groupType}:${groupName}`}>
                 <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
                   <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
@@ -290,14 +374,30 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                       {groupType === "subscription" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-indigo-200 text-indigo-500 dark:border-indigo-800 dark:text-indigo-400 font-normal ml-1">Abo</Badge>}
                       {groupType === "service" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-violet-200 text-violet-500 dark:border-violet-800 dark:text-violet-400 font-normal ml-1">Service</Badge>}
                       <span className="font-normal text-slate-400 dark:text-slate-500">
-                        ({groupTickets.length} {groupTickets.length === 1 ? "Ticket" : "Tickets"})
+                        ({personCount} {personCount === 1 ? "Person" : "Personen"}
+                        {hasPairs ? ` / ${ticketCount} Tickets` : ""})
                       </span>
                     </span>
                   </TableCell>
                 </TableRow>
-                {groupTickets.map((ticket) => (
+                {groupRows.map((row) => {
+                  const ticket = row.primary;
+                  const allMembers = [ticket, ...row.pairedMembers];
+                  const isPair = row.pairedMembers.length > 0;
+                  const totalScans = allMembers.reduce((sum, m) => sum + (m._count?.scans ?? 0), 0);
+                  // Areas aller Resource-Tickets der Person zusammenfassen.
+                  // Sortieren damit Reihenfolge konsistent ist (Aquapark vor
+                  // Strandbad, alphabetisch).
+                  const pairAreaNames = isPair
+                    ? [...new Set(
+                        allMembers
+                          .map((m) => m.accessArea?.name)
+                          .filter((n): n is string => !!n),
+                      )].sort()
+                    : [];
+                  return (
                   <TableRow
-                    key={ticket.id}
+                    key={isPair ? `pair:${allMembers.map((m) => m.id).join(",")}` : ticket.id}
                     className={
                       readonly
                         ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
@@ -324,6 +424,12 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                               )}
                             </p>
                           )}
+                          {isPair && pairAreaNames.length > 0 && (
+                            <p className="text-[10px] text-violet-500 dark:text-violet-400 mt-0.5 truncate">
+                              {pairAreaNames.join(" + ")}
+                              <span className="text-slate-400 dark:text-slate-500"> · {allMembers.length} Tickets</span>
+                            </p>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -341,22 +447,24 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                       <ValidityInfo ticket={ticket} />
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      {ticket._count.scans > 0 ? (
+                      {totalScans > 0 ? (
                         <Link
                           href={`/scans`}
                           onClick={(e) => e.stopPropagation()}
                           className="text-indigo-600 dark:text-indigo-400 hover:underline"
                         >
-                          {ticket._count.scans}
+                          {totalScans}
                         </Link>
                       ) : (
                         <span className="text-slate-400">0</span>
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </React.Fragment>
-            ))}
+              );
+            })}
 
             {employeeTickets.length > 0 && (
               <>

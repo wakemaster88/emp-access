@@ -80,7 +80,16 @@ export default async function TicketsPage({ searchParams }: Props) {
   const [tickets, areas, subscriptions, services, vereine, inactiveCount] = await Promise.all([
     db.ticket.findMany({
       where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, ...codeFilter, ...sourceFilter },
-      include: { accessArea: true, subscription: true, service: true, ticketAreas: { include: { accessArea: true } }, _count: { select: { scans: true } } },
+      include: {
+        accessArea: true,
+        subscription: true,
+        // serviceAreas mitladen, damit die Tabelle Multi-Area-ANNY-Pairs
+        // (z.B. Aquapark Tageskarte = Aquapark+Strandbad) zu einer Zeile
+        // pro Person zusammenfassen kann.
+        service: { include: { serviceAreas: { select: { accessAreaId: true, accessArea: { select: { id: true, name: true } } } } } },
+        ticketAreas: { include: { accessArea: true } },
+        _count: { select: { scans: true } },
+      },
       orderBy: buildOrderBy(sort, orderDir),
       take: 500,
     }),
@@ -222,6 +231,7 @@ export default async function TicketsPage({ searchParams }: Props) {
               vereine={vereineList}
               readonly={isSuperAdmin}
               searchCode={codeTrim || undefined}
+              showAll={showInactive}
             />
           </CardContent>
         </Card>
