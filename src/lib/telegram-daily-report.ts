@@ -4,6 +4,56 @@ function berlinNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
 }
 
+/**
+ * ANNY legt pro gebuchter Resource ein eigenes Booking an. Bei
+ * Multi-Area-Services (z.B. Aquapark Tageskarte = Aquapark+Strandbad,
+ * serviceAreas=2) entstehen pro echter Person N Tickets. Hier
+ * zaehlen wir Personen, nicht Tickets – also pro
+ * (customerId, serviceId, day) auf N/serviceAreas Repraesentanten
+ * reduzieren, wenn die Anzahl glatt teilbar ist. Sonst lieber alle
+ * behalten (Daten-Anomalie -> kein Ticket verlieren).
+ *
+ * Verhalten:
+ *   - 4 Aquapark-Tageskarten von Kristin (8 ANNY-Tickets) -> 4 Personen
+ *   - 4 Strandbad-Tageskarten Familie (sa=1) -> bleibt 4 Personen
+ *   - 3 Tickets von 1 Customer in sa=2-Service (Sync-Anomalie) -> bleibt 3
+ */
+function dedupAnnyMultiAreaPairs<T extends {
+  uuid?: string | null;
+  serviceId?: number | null;
+  startDate?: Date | null;
+}>(tickets: T[], serviceAreasById: Map<number, number>): T[] {
+  type Draft = { members: T[]; serviceAreaCount: number };
+  const drafts = new Map<string, Draft>();
+  const passthrough: T[] = [];
+
+  for (const t of tickets) {
+    const customerId = t.uuid?.startsWith("anny:") ? t.uuid.split(":")[1] : null;
+    const sa = t.serviceId != null ? (serviceAreasById.get(t.serviceId) ?? 0) : 0;
+    const day = t.startDate ? t.startDate.toISOString().slice(0, 10) : "";
+    if (!customerId || t.serviceId == null || sa < 2 || !day) {
+      passthrough.push(t);
+      continue;
+    }
+    const key = `${customerId}|svc=${t.serviceId}|day=${day}`;
+    const existing = drafts.get(key);
+    if (existing) existing.members.push(t);
+    else drafts.set(key, { members: [t], serviceAreaCount: sa });
+  }
+
+  const result: T[] = [...passthrough];
+  for (const draft of drafts.values()) {
+    const clean = draft.members.length > 1 && draft.members.length % draft.serviceAreaCount === 0;
+    if (!clean) {
+      result.push(...draft.members);
+      continue;
+    }
+    const personCount = draft.members.length / draft.serviceAreaCount;
+    for (let i = 0; i < personCount; i++) result.push(draft.members[i]);
+  }
+  return result;
+}
+
 /** Vollständiger Tagesbericht-Text (HTML für Telegram), wie vom Cron-Job. */
 export async function buildTelegramDailyReport(accountId: number): Promise<string> {
   const now = berlinNow();
@@ -41,19 +91,34 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     prisma.scan.count({ where: { accountId, scanTime: { gte: dayStart, lte: dayEnd }, result: "DENIED" } }),
     prisma.scan.findMany({
       where: { accountId, scanTime: { gte: dayStart, lte: dayEnd }, result: "GRANTED" },
-      select: { ticketId: true },
+      select: {
+        ticketId: true,
+        ticket: {
+          select: { uuid: true, serviceId: true, startDate: true },
+        },
+      },
       distinct: ["ticketId"],
     }),
     prisma.ticket.findMany({
-      where: { accountId, createdAt: { gte: dayStart, lte: dayEnd } },
+      where: {
+        accountId,
+        createdAt: { gte: dayStart, lte: dayEnd },
+        // INVALID/CANCELED rausfiltern: Webhook-Leichen entstehen, wenn
+        // ein zweiter ANNY-Webhook fuer dieselbe Buchung mit anderem
+        // Customer-ID-Format ankommt - das Duplikat wird sofort
+        // entwertet, wuerde aber sonst hier als "neue Buchung" zaehlen.
+        status: { in: ["VALID", "REDEEMED", "PAUSED", "PROTECTED"] },
+      },
       select: {
         id: true,
+        uuid: true,
         firstName: true,
         lastName: true,
         name: true,
         ticketTypeName: true,
         subscriptionId: true,
         vereinId: true,
+        serviceId: true,
         source: true,
         bulkBatchId: true,
         slotStart: true,
@@ -81,12 +146,14 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
         ],
       },
       select: {
+        uuid: true,
         firstName: true,
         lastName: true,
         name: true,
         ticketTypeName: true,
         subscriptionId: true,
         vereinId: true,
+        serviceId: true,
         source: true,
         slotStart: true,
         slotEnd: true,
@@ -117,6 +184,30 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
       take: 5,
     }),
   ]);
+
+  // Map serviceId -> Anzahl ServiceAreas. Brauchen wir, um ANNY-Multi-Area-
+  // Buchungen (z.B. Aquapark Tageskarte = Aquapark+Strandbad, 2 booking.ids
+  // pro Person) auf echte Personen-Anzahl zu reduzieren.
+  const servicesWithAreas = await prisma.service.findMany({
+    where: { accountId },
+    select: { id: true, serviceAreas: { select: { accessAreaId: true } } },
+  });
+  const serviceAreasById = new Map<number, number>(
+    servicesWithAreas.map((s) => [s.id, s.serviceAreas.length]),
+  );
+
+  // Tagesgaeste-Tickets, die heute eingecheckt wurden, auf Personen
+  // reduzieren. checkedInToday war vorher unique ticketIds (= 4 fuer
+  // Kristin), wird jetzt unique Personen (= 2 fuer Kristin, weil sie
+  // je 2 Resource-Tickets pro Person hat und 4 davon gescannt wurden).
+  const checkedInTicketsRaw = checkedInToday
+    .map((s) => s.ticket
+      ? { uuid: s.ticket.uuid, serviceId: s.ticket.serviceId, startDate: s.ticket.startDate }
+      : null,
+    )
+    .filter((t): t is NonNullable<typeof t> => t != null);
+  const checkedInPersonsCount = dedupAnnyMultiAreaPairs(checkedInTicketsRaw, serviceAreasById).length
+    + checkedInToday.filter((s) => !s.ticket).length; // Tickets ohne ticket-relation (z.B. unbekannte) trotzdem zaehlen
 
   // Bulk-Tagesbänder: Tickets mit `bulkBatchId` werden zur Saison einmal
   // erzeugt und im Tagesbetrieb verkauft + eingeloest. Ihr `createdAt`
@@ -206,12 +297,14 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
 
   type BookingTicket = {
     id?: number;
+    uuid?: string | null;
     firstName: string | null;
     lastName: string | null;
     name: string;
     ticketTypeName: string | null;
     subscriptionId: number | null;
     vereinId: number | null;
+    serviceId?: number | null;
     source: string | null;
     bulkBatchId?: string | null;
     slotStart: string | null;
@@ -309,7 +402,7 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
   msg += `📅 ${dateStr}, ${timeStr}\n\n`;
 
   msg += `<b>✅ Eingecheckt heute</b>\n`;
-  msg += `• <b>${checkedInToday.length}</b> Personen eingecheckt\n`;
+  msg += `• <b>${checkedInPersonsCount}</b> Personen eingecheckt\n`;
   msg += `• ${scansToday} Scans gesamt (✅ ${grantedToday} / ❌ ${deniedToday})\n\n`;
 
   // Tagestickets heute (ohne Abos / Vereine / Mitarbeiter), getrennt nach
@@ -333,7 +426,11 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
     }
     todayMerged.push(t);
   }
-  const todayDayTickets = todayMerged.filter(isDayTicket);
+  // Multi-Area-ANNY-Buchungen (z.B. Aquapark Tageskarte = Aquapark+Strandbad,
+  // 2 Tickets pro Person) auf Personen reduzieren. Bulk-Baender und
+  // Strandbad-Tagestickets sind nicht ANNY und werden ignoriert.
+  const todayDayTicketsRaw = todayMerged.filter(isDayTicket);
+  const todayDayTickets = dedupAnnyMultiAreaPairs(todayDayTicketsRaw, serviceAreasById);
   const todaySlotted = todayDayTickets.filter((t) => bookingTime(t) != null);
   const todayUnslotted = todayDayTickets.filter((t) => bookingTime(t) == null);
 
@@ -366,7 +463,8 @@ export async function buildTelegramDailyReport(accountId: number): Promise<strin
   // ausgefiltert. Wir teilen weiter in Abos, Slot-Tickets (mit Uhrzeit)
   // und Tagestickets (ohne Uhrzeit).
   const tomorrowAll = bookingsTomorrow as BookingTicket[];
-  const tomorrowDayTickets = tomorrowAll.filter(isDayTicket);
+  const tomorrowDayTicketsRaw = tomorrowAll.filter(isDayTicket);
+  const tomorrowDayTickets = dedupAnnyMultiAreaPairs(tomorrowDayTicketsRaw, serviceAreasById);
   const tomorrowSlotted = tomorrowDayTickets.filter((t) => bookingTime(t) != null);
   const tomorrowUnslotted = tomorrowDayTickets.filter((t) => bookingTime(t) == null);
 
