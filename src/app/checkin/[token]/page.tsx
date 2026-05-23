@@ -4622,7 +4622,11 @@ function AddTicketOverlay({
         if (!isNaN(sd.getTime())) {
           payload.startDate = sd.toISOString();
           const t = startDate.split("T")[1];
-          if (t) payload.slotStart = t.length === 5 ? `${t}:00` : t;
+          // DB-Schema/Validator erwarten exakt HH:MM (5 Zeichen).
+          // datetime-local-Inputs oder Slot-Strings koennen je nach
+          // Browser/Quelle auch "HH:MM:SS" liefern - die Sekunden
+          // schneiden wir hier wieder ab.
+          if (t) payload.slotStart = t.slice(0, 5);
         }
       }
       if (endDate) {
@@ -4630,7 +4634,7 @@ function AddTicketOverlay({
         if (!isNaN(ed.getTime())) {
           payload.endDate = ed.toISOString();
           const t = endDate.split("T")[1];
-          if (t) payload.slotEnd = t.length === 5 ? `${t}:00` : t;
+          if (t) payload.slotEnd = t.slice(0, 5);
         }
       }
     } else if (startDate) {
@@ -4752,10 +4756,19 @@ function AddTicketOverlay({
         }
 
         const formErr = typeof errVal === "object" && errVal ? errVal.formErrors?.[0] : undefined;
-        const fieldErr =
+        // Feld-Fehler MIT Feldnamen anzeigen - sonst sieht der Mitarbeiter
+        // eine reine Regex-/Validierungsmeldung ohne Bezug zum Eingabefeld
+        // (z.B. taucht ein "slotStart"-Regex-Fehler unter dem Code-Feld auf,
+        // was sehr verwirrend ist).
+        const fieldErrEntry =
           typeof errVal === "object" && errVal?.fieldErrors
-            ? Object.values(errVal.fieldErrors).flat()[0]
+            ? Object.entries(errVal.fieldErrors).find(
+                ([, msgs]) => Array.isArray(msgs) && msgs.length > 0,
+              )
             : undefined;
+        const fieldErr = fieldErrEntry
+          ? `${fieldErrEntry[0]}: ${(fieldErrEntry[1] as string[])[0]}`
+          : undefined;
         const serverMsg =
           typeof errVal === "object" && errVal ? errVal.serverMessage : undefined;
         const baseMsg =
