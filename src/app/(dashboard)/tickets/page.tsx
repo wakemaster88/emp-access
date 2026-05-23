@@ -86,7 +86,7 @@ export default async function TicketsPage({ searchParams }: Props) {
         // serviceAreas mitladen, damit die Tabelle Multi-Area-ANNY-Pairs
         // (z.B. Aquapark Tageskarte = Aquapark+Strandbad) zu einer Zeile
         // pro Person zusammenfassen kann.
-        service: { include: { serviceAreas: { select: { accessAreaId: true, accessArea: { select: { id: true, name: true } } } } } },
+        service: { include: { serviceAreas: { select: { accessAreaId: true } } } },
         ticketAreas: { include: { accessArea: true } },
         _count: { select: { scans: true } },
       },

@@ -201,7 +201,7 @@ type TicketWithArea = TicketData & {
   subscription?: { name: string } | null;
   service?: {
     name: string;
-    serviceAreas?: { accessAreaId: number; accessArea?: { id: number; name: string } | null }[];
+    serviceAreas?: { accessAreaId: number }[];
   } | null;
   ticketAreas?: { accessArea: { id: number; name: string } }[];
 };
