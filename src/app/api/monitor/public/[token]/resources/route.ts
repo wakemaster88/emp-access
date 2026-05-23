@@ -215,18 +215,6 @@ export async function GET(
     }
   }
 
-  const globalAboCheckins = await db.scan.count({
-    where: {
-      accountId,
-      scanTime: { gte: dayStart, lte: dayEnd },
-      result: "GRANTED",
-      ticket: {
-        subscriptionId: { not: null },
-        status: { in: ["VALID", "REDEEMED"] },
-      },
-    },
-  });
-
   const allCheckinScans = areaIds.length > 0
     ? await db.scan.findMany({
         where: {
@@ -489,13 +477,18 @@ export async function GET(
 
     const totalBooked = [...bookedSlotMap.values()].reduce((sum, s) => sum + s.count, 0);
     const ticketCheckins = ticketCheckinsByArea.get(area.id) ?? 0;
+    // Abo-Scans pro Area zaehlen (war vorher GLOBAL aufaddiert, was bei
+    // vielen Areas zu massiver Doppelzaehlung gefuehrt hat - 1 Abo-Scan
+    // im Aquapark wurde auch im Strandbad-Tagesplan mitgezaehlt). Die
+    // checkinsByArea-Map existiert schon fuer die Slot-Anzeige.
+    const aboCheckins = checkinsByArea.get(area.id)?.length ?? 0;
 
     return {
       id: area.id,
       name: area.name,
       capacity: area.personLimit,
       totalBooked,
-      dayCheckins: globalAboCheckins + ticketCheckins,
+      dayCheckins: aboCheckins + ticketCheckins,
       slots,
     };
   });
