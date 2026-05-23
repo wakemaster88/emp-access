@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { checkWakesys } from "@/lib/wakesys";
 import { checkBinarytec } from "@/lib/binarytec";
 import { isWithinSchedule } from "@/lib/schedule";
+import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -95,10 +96,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Zutritt verweigert (Binarytec)" });
   }
 
-  // EMP-Tickets und ggf. Wakesys-Fallback
-  const codesToTry = stripped && stripped !== code
-    ? [code, rawCode, stripped]
-    : [code, rawCode];
+  // EMP-Tickets und ggf. Wakesys-Fallback. buildScanCodeVariants liefert
+  // Direct-Code, getrimmte Variante, Praefix-gestrippte Variante,
+  // DE/US-Layout-Permutationen und Zero-Padding-Fallback (fuer Reader,
+  // die fuehrende Nullen unterdruecken). Reihenfolge bleibt insofern
+  // unkritisch, als Direct-Lookups ohnehin pro Code erfolgen und das
+  // staerkste Match-Scoring weiter unten greift.
+  const codesToTry = buildScanCodeVariants(rawCode);
   let ticket = null;
   for (const c of codesToTry) {
     const candidates = await db.ticket.findMany({

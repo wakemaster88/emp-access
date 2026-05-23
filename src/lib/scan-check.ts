@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { PrismaClient } from "@prisma/client";
 import { isWithinSchedule } from "@/lib/schedule";
+import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -104,7 +105,11 @@ export async function performScanCheck({
     return { granted: false, message: "Kein Code erkannt" };
   }
 
-  const codesToTry = [code, rawCode];
+  // Code-Varianten erzeugen: DE/US-Layout, Praefix-Strip,
+  // Zero-Padding-Fallback fuer Reader, die fuehrende Nullen unterdruecken.
+  // Direct-Lookup hat immer Vorrang, Fallback-Varianten greifen nur,
+  // wenn der Original-Code keinen Treffer liefert.
+  const codesToTry = buildScanCodeVariants(rawCode);
   type TicketWithRels = Awaited<ReturnType<typeof loadCandidates>>[number];
   let ticket: TicketWithRels | null = null;
 

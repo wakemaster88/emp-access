@@ -10,6 +10,14 @@
  *     ⇒ "GS-1234" wird zu "GSß1234" (oder "gsß1234")
  *   - Scanner-"_" (US, Shift-Bindestrich) → DE-Layout: "?"
  *   - Scanner sendet ggf. "#" / "%" als Praefix
+ *   - Manche RFID-Reader (z. B. das Modell am Drehkreuz "Seilbahn A")
+ *     unterdruecken bei numerischen Tag-IDs fuehrende Nullen. Eine
+ *     RFID `0506339173` (10-stellig) kommt dann als `506339173`
+ *     (9-stellig) am Server an und findet kein Ticket. Wir
+ *     ergaenzen deshalb fuer rein numerische Codes mit weniger als
+ *     10 Stellen die plausiblen Zero-Padding-Varianten bis Laenge
+ *     10. Fallback wird nur genutzt, wenn der Original-Code keinen
+ *     Treffer liefert (Direct-Match hat immer Vorrang).
  *
  * Damit der Server Tickets/Vouchers trotzdem findet, geben wir alle
  * sinnvollen Permutationen zurueck.
@@ -46,6 +54,16 @@ export function buildScanCodeVariants(input: string): string[] {
     if (usToDe !== base) {
       candidates.add(usToDe);
       candidates.add(usToDe.toUpperCase());
+    }
+
+    // Zero-Padding fuer Reader, die fuehrende Nullen unterdruecken.
+    // Nur fuer rein numerische Codes mit 1..9 Stellen sinnvoll;
+    // gepadded wird bis Laenge 10 (Standardlaenge der hier
+    // verwendeten RFID-Tags). Da das Padding nach Direct-Lookup
+    // greift, koennen "echte" kurze Codes nicht verdraengt werden.
+    if (/^[0-9]{1,9}$/.test(base)) {
+      const padded = base.padStart(10, "0");
+      if (padded !== base) candidates.add(padded);
     }
   }
   return Array.from(candidates).filter((c) => c.length > 0);
