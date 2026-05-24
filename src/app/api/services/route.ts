@@ -41,6 +41,15 @@ export async function POST(request: NextRequest) {
     ? body.defaultValidityType
     : null;
 
+  // mainAccessAreaId muss Teil der areasPayload-Liste sein, sonst wuerde
+  // der Pi-Scanner die Hauptressource an einem Gate erwarten, das gar nicht
+  // zum Service gehoert. NULL ist immer erlaubt (= kein Default).
+  const rawMainAreaId = body.mainAccessAreaId != null ? Number(body.mainAccessAreaId) : null;
+  const mainAccessAreaId = rawMainAreaId != null
+    && areasPayload.some((a) => Number(a.areaId) === rawMainAreaId)
+    ? rawMainAreaId
+    : null;
+
   const service = await db.service.create({
     data: {
       name: body.name.trim(),
@@ -56,6 +65,7 @@ export async function POST(request: NextRequest) {
       allowManualCheckin: body.allowManualCheckin !== false,
       requiresPhoto: !!body.requiresPhoto,
       requiresRfid: !!body.requiresRfid,
+      mainAccessAreaId,
       serviceAreas: areasPayload.length > 0 ? {
         create: areasPayload.map((a) => ({
           accessAreaId: a.areaId,

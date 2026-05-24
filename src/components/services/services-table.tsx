@@ -8,7 +8,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ServiceDialog, type ServiceData, type InitialServiceAreaInput } from "./service-dialog";
-import { Box, Link2, MapPin, Plus, Repeat, Ticket } from "lucide-react";
+import { Box, Link2, MapPin, Plus, Repeat, Star, Ticket } from "lucide-react";
 
 interface AreaRef {
   id: number;
@@ -58,6 +58,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
       allowManualCheckin: svc.allowManualCheckin !== false,
       requiresPhoto: svc.requiresPhoto ?? false,
       requiresRfid: svc.requiresRfid ?? false,
+      mainAccessAreaId: svc.mainAccessAreaId ?? null,
     });
     setInitialServiceAreas((svc.serviceAreas ?? []).map((sa) => ({
       areaId: sa.area.id,
@@ -96,21 +97,36 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
     );
   }
 
-  function ResourceBadges({ areas }: { areas: { area: AreaRef }[] }) {
+  function ResourceBadges({ areas, mainAreaId }: { areas: { area: AreaRef }[]; mainAreaId?: number | null }) {
     if (!areas?.length) return <span className="text-slate-400 text-sm">–</span>;
-    const show = areas.slice(0, maxBadges);
-    const rest = areas.length - maxBadges;
+    // Hauptressource zuerst rendern, damit die "Wertigkeits"-Reihenfolge
+    // visuell mit der Backend-Logik uebereinstimmt.
+    const sorted = mainAreaId != null
+      ? [...areas].sort((a, b) => (a.area.id === mainAreaId ? -1 : b.area.id === mainAreaId ? 1 : 0))
+      : areas;
+    const show = sorted.slice(0, maxBadges);
+    const rest = sorted.length - maxBadges;
     return (
       <div className="flex flex-wrap gap-1">
-        {show.map((sa) => (
-          <span
-            key={sa.area.id}
-            className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
-          >
-            <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-            {sa.area.name}
-          </span>
-        ))}
+        {show.map((sa) => {
+          const isMain = sa.area.id === mainAreaId;
+          return (
+            <span
+              key={sa.area.id}
+              className={
+                isMain
+                  ? "inline-flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-200 ring-1 ring-amber-200 dark:ring-amber-800/50"
+                  : "inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-700 dark:text-slate-300"
+              }
+              title={isMain ? "Hauptressource" : undefined}
+            >
+              {isMain
+                ? <Star className="h-3 w-3 text-amber-500 shrink-0" />
+                : <MapPin className="h-3 w-3 text-slate-400 shrink-0" />}
+              {sa.area.name}
+            </span>
+          );
+        })}
         {rest > 0 && (
           <span className="inline-flex items-center rounded-md bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">
             +{rest}
@@ -204,7 +220,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                         {svc.name}
                       </span>
                       <div className="md:hidden mt-0.5 ml-6">
-                        <ResourceBadges areas={svc.serviceAreas ?? []} />
+                        <ResourceBadges areas={svc.serviceAreas ?? []} mainAreaId={svc.mainAccessAreaId} />
                       </div>
                     </div>
                   </TableCell>
@@ -212,7 +228,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                     <AnnyBadges names={annyNames} />
                   </TableCell>
                   <TableCell className="hidden md:table-cell py-2">
-                    <ResourceBadges areas={svc.serviceAreas ?? []} />
+                    <ResourceBadges areas={svc.serviceAreas ?? []} mainAreaId={svc.mainAccessAreaId} />
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {svc.allowReentry ? (

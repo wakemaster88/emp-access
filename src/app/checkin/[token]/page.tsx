@@ -121,6 +121,9 @@ interface ServiceData extends DefaultValidity {
   id: number;
   name: string;
   areaIds?: number[];
+  /** Hauptressource des Service. Wird beim Verkauf als `Ticket.accessAreaId`
+   *  gesetzt; bei `null` faellt das Frontend auf `areaIds[0]` zurueck (legacy). */
+  mainAccessAreaId?: number | null;
   /** Service hat mindestens eine ANNY-Resource-Verknuepfung -> Slot-Buchung. */
   hasAnnyLink?: boolean;
 }
@@ -4886,7 +4889,14 @@ function AddTicketOverlay({
                   if (newId === "none") return;
                   const svc = services.find((s) => String(s.id) === newId);
                   if (!svc) return;
-                  if (svc.areaIds?.length) setAccessAreaId(String(svc.areaIds[0]));
+                  // Hauptressource bevorzugt aus `Service.mainAccessAreaId`
+                  // (explizit konfiguriert). Nur wenn das Feld leer ist, fallen
+                  // wir auf die erste ServiceArea zurueck - dann ist das Ergebnis
+                  // aber nicht-deterministisch und sollte vom Admin im
+                  // Service-Editor gesetzt werden.
+                  const mainId =
+                    svc.mainAccessAreaId ?? svc.areaIds?.[0] ?? null;
+                  if (mainId != null) setAccessAreaId(String(mainId));
                   // Service-Defaults ins UI-Format uebernehmen, damit der
                   // User sieht, was beim Submit auto-gesetzt werden wuerde
                   // - und es bei Bedarf umstellen kann.

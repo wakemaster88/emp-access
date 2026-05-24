@@ -76,6 +76,28 @@ export async function PUT(
     }
   }
 
+  // mainAccessAreaId nur akzeptieren, wenn die Area entweder Teil der neu
+  // gespeicherten serviceAreas (areasPayload) ist oder bereits Bestand hat.
+  // Verhindert "verwaiste" Hauptressourcen, die nicht mehr Teil des Service
+  // sind und zu nie greifender Pi-Scanner-Logik fuehren wuerden.
+  let mainAccessAreaIdField: { mainAccessAreaId: number | null } | undefined;
+  if (body.mainAccessAreaId !== undefined) {
+    const raw = body.mainAccessAreaId == null ? null : Number(body.mainAccessAreaId);
+    if (raw == null) {
+      mainAccessAreaIdField = { mainAccessAreaId: null };
+    } else {
+      const validAreaIds = areasPayload !== undefined
+        ? new Set(areasPayload.map((a) => Number(a.areaId)))
+        : new Set(
+          (await db.serviceArea.findMany({
+            where: { serviceId: svcId },
+            select: { accessAreaId: true },
+          })).map((sa) => sa.accessAreaId),
+        );
+      mainAccessAreaIdField = { mainAccessAreaId: validAreaIds.has(raw) ? raw : null };
+    }
+  }
+
   const service = await db.service.update({
     where: { id: svcId },
     data: {
@@ -93,6 +115,7 @@ export async function PUT(
       ...(body.allowManualCheckin !== undefined && { allowManualCheckin: !!body.allowManualCheckin }),
       ...(body.requiresPhoto !== undefined && { requiresPhoto: !!body.requiresPhoto }),
       ...(body.requiresRfid !== undefined && { requiresRfid: !!body.requiresRfid }),
+      ...(mainAccessAreaIdField ?? {}),
     },
     include: {
       serviceAreas: { include: { area: { select: { id: true, name: true } } } },

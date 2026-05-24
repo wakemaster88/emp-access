@@ -42,6 +42,8 @@ interface Svc extends DefaultValidity {
   id: number;
   name: string;
   areaIds?: number[];
+  /** Hauptressource des Service - bevorzugt vor `areaIds[0]`. */
+  mainAccessAreaId?: number | null;
 }
 
 function toDateInput(val: string | Date | null | undefined): string {
@@ -127,9 +129,12 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
       if (selected.type === "service") {
         payload.serviceId = Number(selected.id);
         payload.ticketTypeName = selected.name;
-        if (selected.data.areaIds?.length) {
-          payload.accessAreaId = selected.data.areaIds[0];
-        }
+        // Service-Hauptressource: explizit konfiguriertes Feld vor erster
+        // ServiceArea. Verhindert das Strandbad/Seilbahn-A-Vertauschen,
+        // das frueher zu fehlerhaften DURATION-Sperren gefuehrt hat.
+        const svc = selected.data as Svc;
+        const mainAreaId = svc.mainAccessAreaId ?? svc.areaIds?.[0] ?? null;
+        if (mainAreaId != null) payload.accessAreaId = mainAreaId;
       } else {
         payload.subscriptionId = Number(selected.id);
         if (selected.data.areaIds?.length) {

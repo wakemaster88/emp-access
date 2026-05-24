@@ -261,6 +261,7 @@ model AccessArea {
   ticketAreas     TicketArea[]
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
+  servicesAsMain  Service[]          @relation("ServiceMainArea")
   annyLinks       AnnyResourceLink[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
@@ -428,6 +429,17 @@ model Service {
   allowManualCheckin             Boolean       @default(true)
   requiresPhoto                  Boolean       @default(false)
   requiresRfid                   Boolean       @default(false)
+  /// Hauptressource des Service. Wenn gesetzt, wird sie beim Verkauf als
+  /// `Ticket.accessAreaId` (Hauptressource) verwendet - die anderen
+  /// `serviceAreas` werden als Transit/Nebenressourcen behandelt. Beispiel
+  /// "Wake&Ski 2 Stunden": Hauptressource = Seilbahn A, Nebenressourcen
+  /// = Strandbad. Nach Ablauf der DURATION wird nur die Hauptressource
+  /// blockiert; das Strandbad bleibt als Tagesticket-Aequivalent offen.
+  /// MUSS Teil der `serviceAreas` sein - wird im API/Frontend abgesichert.
+  /// NULL = Service hat keine eindeutige Hauptressource (Fallback: erste
+  /// `serviceArea` nach ID).
+  mainAccessAreaId               Int?
+  mainAccessArea                 AccessArea?   @relation("ServiceMainArea", fields: [mainAccessAreaId], references: [id], onDelete: SetNull)
   accountId                      Int
   account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   serviceAreas                   ServiceArea[]
@@ -436,6 +448,7 @@ model Service {
   updatedAt                      DateTime      @updatedAt
 
   @@index([accountId])
+  @@index([mainAccessAreaId])
 }
 
 model MonitorConfig {

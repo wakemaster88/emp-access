@@ -311,6 +311,26 @@ export async function POST(request: NextRequest) {
       && device.accessIn == null
     );
 
+  // "Hauptressource" eines Tickets ist `ticket.accessAreaId`. Nur Scans an
+  // Geraeten, die zu diesem Bereich gehoeren (accessIn/accessOut), zaehlen
+  // als "verbrauchend": dort startet bei DURATION der Timer und dort wechselt
+  // der Status VALID -> REDEEMED. Scans an Nebenressourcen (z.B. Drehkreuz
+  // Strandbad fuer ein Wake&Ski-Ticket mit Hauptressource Seilbahn A) werden
+  // als "Transit" behandelt: Zutritt wird gewaehrt, aber Status/firstScanAt
+  // bleiben unveraendert und die Reentry-Checks ignorieren diese Scans.
+  // Wenn das Ticket keine Hauptressource hat (`accessAreaId == null`),
+  // verhalten wir uns wie frueher (jeder Scan zaehlt).
+  //
+  // Diese Berechnung wird hier (vor DURATION-Ablauf-Check) gezogen, weil
+  // auch der DURATION-Ablauf strukturell nur fuer die Hauptressource gilt:
+  // ein Wake&Ski-Tagesgast soll nach Ablauf der 2 Stunden nicht plotzlich
+  // vom Strandbad-Drehkreuz abgewiesen werden - das Strandbad ist als
+  // Tagesticket-Aequivalent konzipiert.
+  const mainAreaId = ticket.accessAreaId;
+  const deviceAreaIds = [device.accessIn, device.accessOut].filter(Boolean) as number[];
+  const isMainResourceScan =
+    mainAreaId == null || deviceAreaIds.includes(mainAreaId);
+
   if (ticket.startDate) {
     const start = new Date(ticket.startDate);
     start.setUTCHours(0, 0, 0, 0);
@@ -353,9 +373,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // DURATION-Ablauf greift ebenfalls nur bei Eintritten. Wer drin ist,
-  // darf raus, auch wenn die gebuchte Stunde inzwischen abgelaufen ist.
-  if (!isExitScan && vType === "DURATION" && ticket.validityDurationMinutes) {
+  // DURATION-Ablauf greift nur bei Eintritten an der HAUPTRESSOURCE. Wer
+  // drin ist, darf raus, auch wenn die gebuchte Stunde inzwischen abgelaufen
+  // ist. Transit-Scans an Nebenressourcen (z.B. Strandbad-Drehkreuz fuer
+  // ein "Oeffentlicher Betrieb 2h"-Ticket mit Hauptressource Seilbahn A)
+  // werden hier ignoriert: Nach Ablauf der 2 Stunden Wasserski darf der
+  // Tagesgast trotzdem weiter im Strandbad bleiben - die Hauptressource
+  // (Seilbahn A) wird oben durch `isMainResourceScan` blockiert.
+  if (!isExitScan && isMainResourceScan && vType === "DURATION" && ticket.validityDurationMinutes) {
     if (ticket.firstScanAt) {
       const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
       if (now > expiresAt) {
@@ -384,20 +409,6 @@ export async function POST(request: NextRequest) {
   }
 
   const isEmployee = ticket.source === "EMP_CONTROL";
-
-  // "Hauptressource" eines Tickets ist `ticket.accessAreaId`. Nur Scans an
-  // Geraeten, die zu diesem Bereich gehoeren (accessIn/accessOut), zaehlen
-  // als "verbrauchend": dort startet bei DURATION der Timer und dort wechselt
-  // der Status VALID -> REDEEMED. Scans an Nebenressourcen (z.B. Drehkreuz
-  // Strandbad fuer ein Wake&Ski-Ticket mit Hauptressource Seilbahn A) werden
-  // als "Transit" behandelt: Zutritt wird gewaehrt, aber Status/firstScanAt
-  // bleiben unveraendert und die Reentry-Checks ignorieren diese Scans.
-  // Wenn das Ticket keine Hauptressource hat (`accessAreaId == null`),
-  // verhalten wir uns wie frueher (jeder Scan zaehlt).
-  const mainAreaId = ticket.accessAreaId;
-  const deviceAreaIds = [device.accessIn, device.accessOut].filter(Boolean) as number[];
-  const isMainResourceScan =
-    mainAreaId == null || deviceAreaIds.includes(mainAreaId);
 
   // Direkt-Geraete-Match (additiv zu Bereichen): Wenn das Ticket fuer dieses
   // konkrete Geraet whitelisted ist, ueberspringen wir die Bereichs-Pruefung.

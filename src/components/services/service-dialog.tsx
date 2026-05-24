@@ -37,6 +37,11 @@ export interface ServiceData {
   allowManualCheckin?: boolean;
   requiresPhoto?: boolean;
   requiresRfid?: boolean;
+  /** Hauptressource: Wird beim Verkauf als `Ticket.accessAreaId` verwendet
+   *  und steuert, an welchem Gate die Zeitgueltigkeit (DURATION) startet
+   *  bzw. die Hauptressourcen-Logik im Pi-Scanner greift. NULL = keine
+   *  eindeutige Hauptressource (Fallback: erste ServiceArea nach id). */
+  mainAccessAreaId?: number | null;
 }
 
 interface AreaRef {
@@ -159,6 +164,8 @@ export function ServiceDialog({
   const [allowManualCheckin, setAllowManualCheckin] = useState(true);
   const [requiresPhoto, setRequiresPhoto] = useState(false);
   const [requiresRfid, setRequiresRfid] = useState(false);
+  // "none" = keine Hauptressource gesetzt; sonst stringified areaId
+  const [mainAccessAreaId, setMainAccessAreaId] = useState<string>("none");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -193,6 +200,7 @@ export function ServiceDialog({
         setAllowManualCheckin(service.allowManualCheckin !== false);
         setRequiresPhoto(service.requiresPhoto ?? false);
         setRequiresRfid(service.requiresRfid ?? false);
+        setMainAccessAreaId(service.mainAccessAreaId != null ? String(service.mainAccessAreaId) : "none");
       } else {
         setName("");
         setSelectedAnny(new Set());
@@ -207,9 +215,21 @@ export function ServiceDialog({
         setAllowManualCheckin(true);
         setRequiresPhoto(false);
         setRequiresRfid(false);
+        setMainAccessAreaId("none");
       }
     }
   }, [open, service, initialServiceAreas]);
+
+  // Wenn die Hauptressource aus den ServiceAreas entfernt wird, setzen wir
+  // die Auswahl zurueck. Andernfalls wuerde der Backend-Validator den
+  // Save-Request mit "Hauptressource muss Teil der ServiceAreas sein"
+  // zurueckweisen.
+  useEffect(() => {
+    if (mainAccessAreaId === "none") return;
+    if (!serviceAreas.some((sa) => String(sa.areaId) === mainAccessAreaId)) {
+      setMainAccessAreaId("none");
+    }
+  }, [serviceAreas, mainAccessAreaId]);
 
   function toggleAnny(key: string) {
     setSelectedAnny((prev) => {
@@ -246,6 +266,7 @@ export function ServiceDialog({
         allowManualCheckin,
         requiresPhoto,
         requiresRfid,
+        mainAccessAreaId: mainAccessAreaId === "none" ? null : Number(mainAccessAreaId),
         areas: serviceAreas.map((sa) => {
           const out: Record<string, unknown> = { areaId: sa.areaId };
           if (sa.defaultValidityType && sa.defaultValidityType !== "none") {
@@ -528,6 +549,32 @@ export function ServiceDialog({
             <p className="text-[11px] text-slate-500">
               Resourcen hinzufügen und pro Resource die Gültigkeit für Service-Tickets einstellen. Tickets erscheinen im Dashboard in allen zugeordneten Resourcen.
             </p>
+            {serviceAreas.length > 1 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20 p-2.5 space-y-1.5">
+                <Label className="text-[11px] font-medium text-amber-900 dark:text-amber-200">
+                  Hauptressource
+                </Label>
+                <p className="text-[10px] text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                  Bei mehreren Resourcen muss eine als Hauptressource definiert werden. Sie steuert, an welchem Gate die Zeitgültigkeit (DURATION) startet und wie der Pi-Scanner Reentry behandelt - alle anderen sind dann Transit/Nebenressourcen.
+                </p>
+                <Select
+                  value={mainAccessAreaId}
+                  onValueChange={(v) => setMainAccessAreaId(v)}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Keine Hauptressource (legacy: erste in Liste)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Keine (Fallback: erste Resource)</SelectItem>
+                    {serviceAreas.map((sa) => (
+                      <SelectItem key={sa.areaId} value={String(sa.areaId)}>
+                        {sa.areaName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {availableAreasToAdd.length > 0 && (
               <div className="flex gap-2 items-center">
                 <Select

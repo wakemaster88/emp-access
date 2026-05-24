@@ -156,11 +156,13 @@ export async function GET(
         defaultSlotStart: true,
         defaultSlotEnd: true,
         defaultValidityDurationMinutes: true,
+        mainAccessAreaId: true,
         // _count auf AnnyLinks der zugehoerigen AccessArea: wir wollen im
         // Shop-Frontend wissen, ob fuer einen Service ueberhaupt buchbare
         // ANNY-Slots existieren koennen. Wenn ja, zeigt der Add-Ticket-Dialog
         // die Slot-Auswahl - unabhaengig vom konfigurierten validityType.
         serviceAreas: {
+          orderBy: { id: "asc" },
           select: {
             accessAreaId: true,
             area: { select: { _count: { select: { annyLinks: true } } } },
@@ -241,6 +243,7 @@ export async function GET(
   const servicesWithAreas = services.map((s) => ({
     id: s.id,
     name: s.name,
+    mainAccessAreaId: s.mainAccessAreaId,
     defaultValidityType: s.defaultValidityType,
     defaultStartDate: s.defaultStartDate,
     defaultEndDate: s.defaultEndDate,

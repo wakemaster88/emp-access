@@ -119,6 +119,7 @@ export default async function TicketsPage({ searchParams }: Props) {
       select: {
         id: true,
         name: true,
+        mainAccessAreaId: true,
         defaultValidityType: true,
         defaultStartDate: true,
         defaultEndDate: true,
@@ -126,7 +127,10 @@ export default async function TicketsPage({ searchParams }: Props) {
         defaultSlotEnd: true,
         defaultValidityDurationMinutes: true,
         requiresPhoto: true,
-        serviceAreas: { select: { accessAreaId: true } },
+        serviceAreas: {
+          orderBy: { id: "asc" },
+          select: { accessAreaId: true },
+        },
       },
     }),
     db.verein.findMany({

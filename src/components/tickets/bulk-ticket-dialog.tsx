@@ -64,6 +64,10 @@ interface Svc extends DefaultValidity {
   id: number;
   name: string;
   areaIds?: number[];
+  /** Hauptressource des Service. Wenn gesetzt, wird sie als
+   *  `Ticket.accessAreaId` vorbelegt - die anderen `serviceAreas` sind
+   *  Transit/Nebenressourcen. */
+  mainAccessAreaId?: number | null;
 }
 
 interface BulkTicketDialogProps {
@@ -168,16 +172,20 @@ export function BulkTicketDialog({
         }
       }
 
-      // Hauptressource: Bei Services mit genau EINER zugeordneten Ressource
-      // koennen wir die automatisch als Hauptressource vorbelegen. Bei
-      // mehreren (z.B. Wake&Ski mit Strandbad + Seilbahn A) MUSS der User
-      // explizit waehlen - sonst koennte die Zeitguelt. am falschen Gate
-      // starten. Subscriptions verhalten sich wie frueher: dort ist die
-      // Hauptressource konzeptionell weniger wichtig, weil Abos meist
-      // nicht "verbraucht" werden.
+      // Hauptressource:
+      //   * Service: bevorzugt `Service.mainAccessAreaId` (vom Admin
+      //     konfiguriert). Bei genau einer ServiceArea ist sie automatisch
+      //     die Hauptressource - hier zaehlt der konfigurierte Wert oder
+      //     diese eine Area. Wenn der Service mehrere Areas hat und keine
+      //     Hauptressource konfiguriert ist, MUSS der User unten explizit
+      //     waehlen (`needsExplicitMainArea`).
+      //   * Subscription: erste Area als Default (legacy).
       const areaIds = selected.data.areaIds ?? [];
       if (selected.type === "service") {
-        if (areaIds.length === 1) {
+        const svc = selected.data as Svc;
+        if (svc.mainAccessAreaId != null) {
+          payload.accessAreaId = svc.mainAccessAreaId;
+        } else if (areaIds.length === 1) {
           payload.accessAreaId = areaIds[0];
         }
       } else if (areaIds.length > 0) {
@@ -248,8 +256,13 @@ export function BulkTicketDialog({
   const visibleAreas = isService && serviceAreaIds.length > 0
     ? areas.filter((a) => serviceAreaIds.includes(a.id))
     : areas;
+  const serviceMainConfigured =
+    isService && (selectedOpt!.data as Svc).mainAccessAreaId != null;
   const needsExplicitMainArea =
-    isService && serviceAreaIds.length > 1 && areaId === "none";
+    isService
+    && serviceAreaIds.length > 1
+    && !serviceMainConfigured
+    && areaId === "none";
 
   return (
     <Dialog
