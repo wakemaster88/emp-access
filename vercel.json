@@ -46,6 +46,10 @@
     {
       "path": "/api/cron/email-automations",
       "schedule": "10 8 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-tickets",
+      "schedule": "30 1 * * *"
     }
   ]
 }

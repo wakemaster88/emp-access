@@ -10,13 +10,35 @@ import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
 
 /**
- * Mindestlaenge fuer einen plausiblen Scan-Code. Faellt der Pi-Scanner
- * RFID/QR nur teilweise lesen, kommen oft 1-2-stellige Stub-Codes wie
- * "0", "4" an. Solche Lesefehler werden hier abgefangen, damit sie weder
- * als DENIED-Scan in der DB landen (Rauschen im Audit) noch ans Personal
- * als "Ticket nicht gefunden" gemeldet werden.
+ * Mindestlaenge fuer einen plausiblen Scan-Code. Liest der Pi-Scanner
+ * QR/RFID nur teilweise, kommen oft 1-5-stellige Stub-Codes wie
+ * "0", "JIaj" oder "ClG4c" an (Audit-Rauschen). Mindestlaenge 6 deckt
+ * alle bekannten echten Code-Formate ab:
+ *   - ANNY/Tristar-Barcodes: `!TIX...` (20 Zeichen, vgl. unten)
+ *   - RFID-Tags: 8-10 Ziffern
+ *   - Gutschein-Codes: `GS-XXXXXX` (>= 9 Zeichen)
+ *   - Sportnavi-URLs: deutlich laenger
  */
-const MIN_CODE_LENGTH = 4;
+const MIN_CODE_LENGTH = 6;
+
+/**
+ * ANNY-Barcodes beginnen IMMER mit "!TIX" und haben genau 20 Zeichen
+ * (4 Prefix + 16 Token). Wir treffen heute regelmaessig auf Lesefehler,
+ * bei denen nur "!TIX" + ein paar Zeichen ankommen (z.B. Scanner-Crash
+ * waehrend der Lesung). Solche Stubs verursachen sonst `ticket_not_found`.
+ */
+const ANNY_BARCODE_PREFIX = "!TIX";
+const ANNY_BARCODE_LENGTH = 20;
+
+/**
+ * Debounce-Fenster fuer doppelte Scans am selben Geraet mit demselben
+ * Code. Hintergrund: Drehkreuz-Scanner senden den gleichen QR-/RFID-
+ * Code haeufig mehrfach binnen Sekundenbruchteilen (Hardware-Bouncing
+ * oder Mehrfachlesungen). Liegt der vorige Scan innerhalb des Fensters,
+ * antworten wir mit seinem Ergebnis und schreiben KEINEN neuen Scan-
+ * Datensatz. Spart DB-Schreibvorgaenge und entlastet Reentry-Checks.
+ */
+const DEBOUNCE_WINDOW_MS = 5_000;
 
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -45,13 +67,23 @@ export async function POST(request: NextRequest) {
   if (!code) return NextResponse.json({ error: "Missing code" }, { status: 400 });
   if (isNaN(deviceId)) return NextResponse.json({ error: "Missing deviceId" }, { status: 400 });
 
-  // Lesefehler abfangen: Nur "0", "4" etc. — kommen vor, wenn der QR/RFID
-  // nur teilweise erkannt wird. Reservierte Steuer-Codes wie
-  // DASHBOARD_OPEN_CODE bleiben davon unberuehrt (laenger als 4 Zeichen).
+  // Lesefehler abfangen. Reservierte Steuer-Codes wie DASHBOARD_OPEN_CODE
+  // bleiben davon unberuehrt (laenger als das Limit).
   if (code !== DASHBOARD_OPEN_CODE && code.length < MIN_CODE_LENGTH) {
     return NextResponse.json({
       granted: false,
       message: "Code zu kurz – bitte erneut scannen",
+    });
+  }
+
+  // ANNY-Barcodes haben eine feste Laenge (20 Zeichen). Eine kuerzere
+  // Lesung mit "!TIX"-Prefix ist eindeutig ein Lese-Stub und wird
+  // verworfen, damit sie nicht als `ticket_not_found` in der Statistik
+  // landet.
+  if (code.startsWith(ANNY_BARCODE_PREFIX) && code.length < ANNY_BARCODE_LENGTH) {
+    return NextResponse.json({
+      granted: false,
+      message: "Barcode nur teilweise erkannt – bitte erneut scannen",
     });
   }
 
@@ -68,6 +100,56 @@ export async function POST(request: NextRequest) {
 
   if (device.task === 3) {
     return NextResponse.json({ granted: false, message: "Gerät gesperrt" });
+  }
+
+  // Debounce: hat der gleiche Code am gleichen Geraet innerhalb des
+  // letzten DEBOUNCE_WINDOW_MS bereits einen Scan-Eintrag erzeugt, geben
+  // wir dessen Resultat zurueck und schreiben keinen neuen Scan. Das
+  // verhindert, dass Hardware-Bouncing (z.B. Doppellesungen binnen
+  // 0.5-2s) wiederholte DENIED-/GRANTED-Eintraege erzeugt.
+  // DASHBOARD_OPEN_CODE ist absichtlich ausgenommen: jeder Button-Klick
+  // soll auch dann als separater Scan registriert werden, wenn er kurz
+  // hintereinander erfolgt.
+  if (code !== DASHBOARD_OPEN_CODE) {
+    const recent = await db.scan.findFirst({
+      where: {
+        code,
+        deviceId,
+        scanTime: { gte: new Date(Date.now() - DEBOUNCE_WINDOW_MS) },
+      },
+      orderBy: { scanTime: "desc" },
+      select: {
+        result: true,
+        ticket: {
+          select: {
+            name: true,
+            firstName: true,
+            lastName: true,
+            ticketTypeName: true,
+            subscription: { select: { name: true } },
+            service: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (recent) {
+      const granted = recent.result === "GRANTED";
+      return NextResponse.json({
+        granted,
+        message: granted ? "Zutritt gewährt" : "Bereits gerade abgewiesen",
+        debounced: true,
+        ticket: recent.ticket
+          ? {
+              name: recent.ticket.name,
+              firstName: recent.ticket.firstName,
+              lastName: recent.ticket.lastName,
+              ticketTypeName: recent.ticket.ticketTypeName,
+              subscriptionName: recent.ticket.subscription?.name ?? null,
+              serviceName: recent.ticket.service?.name ?? null,
+            }
+          : undefined,
+      });
+    }
   }
 
   // Dashboard-Öffnung: Relais wurde per Button geöffnet → GRANTED-Scan ohne Ticket anlegen
@@ -485,7 +567,18 @@ export async function POST(request: NextRequest) {
     // diesen Block: Innerhalb der gebuchten Stunde darf der Gast beliebig
     // ein-/ausgehen, auch wenn das Drehkreuz keinen sauberen Exit-Scan
     // gesehen hat (z.B. Ausgang offen / nicht gescannt).
-    if (!durationStillRunning) {
+    //
+    // Wenn der SERVICE Reentry explizit erlaubt (z.B. Strandbad-
+    // Tageskarte), ueberspringen wir den lastWasExit-Check ebenfalls:
+    // Strandbad-Gaeste verlassen das Gelaende typischerweise ohne
+    // Ausgangs-Drehkreuz zu nutzen (an manchen Anlagen gibt es gar
+    // keinen reinen Exit-Scanner). Ohne diese Ausnahme wuerden alle
+    // Wiedereintritte als `no_exit_registered` geblockt - exakt das
+    // Verhalten, das den Reentry-Service-Flag nutzlos macht.
+    // Bei `device.allowReentry=true` ohne service-seitige Freigabe
+    // bleibt der Exit-Check aktiv (geraetelokales Eintritt/Austritt-
+    // Tracking).
+    if (!durationStillRunning && !serviceAllowsReentry) {
       const mainResourceDeviceFilter = mainAreaId != null
         ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
         : {};
