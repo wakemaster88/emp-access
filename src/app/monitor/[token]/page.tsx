@@ -147,6 +147,14 @@ export default function PublicMonitorPage({ params }: Props) {
   const [selectedTicket, setSelectedTicket] = useState<TicketInfo | null>(null);
   const [allPaused, setAllPaused] = useState(false);
   const [pauseToggling, setPauseToggling] = useState(false);
+  // Confirm-Dialog vor Massenpause: zeigt die exakte Trefferzahl,
+  // die ein Klick auf "Alle pausieren" tatsaechlich anfassen wuerde
+  // (verhindert versehentliche Mass-Pause wie am 2026-05-27).
+  const [pauseConfirm, setPauseConfirm] = useState<
+    | { count: number; isGlobal: boolean }
+    | null
+  >(null);
+  const [pausePreviewLoading, setPausePreviewLoading] = useState(false);
   const [ticketSearch, setTicketSearch] = useState("");
   const [mobileTab, setMobileTab] = useState<"tickets" | "scans">("tickets");
   const [devicesOpen, setDevicesOpen] = useState(false);
@@ -208,18 +216,51 @@ export default function PublicMonitorPage({ params }: Props) {
   }
 
   async function handlePauseAll() {
-    if (pauseToggling) return;
-    setPauseToggling(true);
+    if (pauseToggling || pausePreviewLoading || pauseConfirm) return;
+    if (allPaused) {
+      // Entpausen passiert immer ohne Rueckfrage - die Aktion macht keinen
+      // Schaden, im Gegenteil: sie macht eine versehentliche Pause rueckgaengig.
+      setPauseToggling(true);
+      try {
+        const res = await fetch(`/api/monitor/public/${token}/pause-all`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "resume" }),
+        });
+        if (res.ok) setAllPaused(false);
+      } catch { /* ignore */ }
+      setPauseToggling(false);
+      return;
+    }
+
+    setPausePreviewLoading(true);
     try {
-      const action = allPaused ? "resume" : "pause";
       const res = await fetch(`/api/monitor/public/${token}/pause-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action: "preview" }),
       });
-      if (res.ok) setAllPaused(!allPaused);
+      if (res.ok) {
+        const data = (await res.json()) as { count: number; scopeIsGlobal: boolean };
+        setPauseConfirm({ count: data.count, isGlobal: !!data.scopeIsGlobal });
+      }
+    } catch { /* ignore */ }
+    setPausePreviewLoading(false);
+  }
+
+  async function confirmPauseAll() {
+    if (!pauseConfirm || pauseToggling) return;
+    setPauseToggling(true);
+    try {
+      const res = await fetch(`/api/monitor/public/${token}/pause-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pause" }),
+      });
+      if (res.ok) setAllPaused(true);
     } catch { /* ignore */ }
     setPauseToggling(false);
+    setPauseConfirm(null);
   }
 
   function handleTicketClick(ticket: TicketInfo) {
@@ -976,7 +1017,7 @@ export default function PublicMonitorPage({ params }: Props) {
 
           {/* Right Side */}
           <div className={cn("flex-col gap-4", mobileTab === "tickets" ? "flex" : "hidden lg:flex")}>
-            <LiveClock dark={dark} styles={styles} allPaused={allPaused} pauseToggling={pauseToggling} onClick={handlePauseAll} />
+            <LiveClock dark={dark} styles={styles} allPaused={allPaused} pauseToggling={pauseToggling || pausePreviewLoading} onClick={handlePauseAll} />
 
             {/* Suche nur Mobil: direkt unter Uhr/Datum */}
             <div className="lg:hidden">
@@ -1159,6 +1200,88 @@ export default function PublicMonitorPage({ params }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Bestaetigungsdialog vor Massenpause - zeigt die exakte
+          Trefferzahl, die der Klick anfasst. Wird vom Public-Monitor
+          ausgeloest, wenn der Nutzer auf die Uhr ("Alle pausieren") klickt. */}
+      {pauseConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={() => { if (!pauseToggling) setPauseConfirm(null); }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "w-full max-w-md rounded-3xl border shadow-2xl p-6",
+              dark ? "bg-slate-900 border-slate-700 text-white" : "bg-white border-slate-200 text-slate-900",
+            )}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className={cn(
+                "h-12 w-12 rounded-2xl flex items-center justify-center shrink-0",
+                dark ? "bg-orange-500/20 text-orange-300" : "bg-orange-100 text-orange-700",
+              )}>
+                <Pause className="h-6 w-6" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold leading-tight">Alle Tickets pausieren?</h3>
+                <p className={cn("text-xs mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>
+                  Monitor „{monitorName}“
+                </p>
+              </div>
+            </div>
+
+            <div className={cn(
+              "rounded-2xl border px-4 py-4 mb-4",
+              dark ? "bg-slate-950/50 border-slate-700" : "bg-slate-50 border-slate-200",
+            )}>
+              <p className={cn("text-sm font-medium", dark ? "text-slate-300" : "text-slate-700")}>
+                Es werden{" "}
+                <span className={cn(
+                  "font-mono font-extrabold tabular-nums text-base",
+                  dark ? "text-orange-300" : "text-orange-700",
+                )}>
+                  {pauseConfirm.count}
+                </span>{" "}
+                Tickets pausiert.
+              </p>
+              {pauseConfirm.isGlobal && (
+                <p className={cn(
+                  "text-xs mt-2 font-semibold",
+                  dark ? "text-rose-300" : "text-rose-700",
+                )}>
+                  Achtung: Dieser Monitor hat keinen Bereichs-Scope. Die Aktion wirkt
+                  account-weit (alle Bereiche).
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPauseConfirm(null)}
+                disabled={pauseToggling}
+                className={cn(
+                  "flex-1 py-3 rounded-2xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-50",
+                  dark ? "bg-slate-800 hover:bg-slate-700 text-slate-200" : "bg-slate-100 hover:bg-slate-200 text-slate-700",
+                )}
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={confirmPauseAll}
+                disabled={pauseToggling || pauseConfirm.count === 0}
+                className={cn(
+                  "flex-[1.4] py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50",
+                  dark ? "bg-orange-600 hover:bg-orange-500 text-white" : "bg-orange-600 hover:bg-orange-500 text-white",
+                )}
+              >
+                {pauseToggling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                {pauseConfirm.count === 0 ? "Keine Tickets" : `${pauseConfirm.count} pausieren`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Ticket Detail Overlay */}
       {selectedTicket && (

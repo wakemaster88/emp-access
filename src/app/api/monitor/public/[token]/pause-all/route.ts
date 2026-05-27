@@ -87,6 +87,32 @@ export async function POST(
     const areaIds = await resolveMonitorAreaIds(monitor.accountId, monitor.deviceIds);
     const scopeFilter = ticketAreaScopeFilter(areaIds);
 
+    // Read-only Preflight: liefert nur die Anzahl der Tickets, die ein
+    // anschliessender "pause" (bzw. "resume") tatsaechlich anfassen wuerde.
+    // Der Public-Monitor nutzt das, um vor dem "Alle pausieren"-Klick einen
+    // Bestaetigungsdialog mit der konkreten Trefferzahl anzuzeigen
+    // (Mass-Pause-Schutz nach Vorfall 2026-05-27: 3.546 Tickets unbemerkt
+    // pausiert).
+    if (action === "preview") {
+      const targetStatus = (body.target as string) === "resume"
+        ? ["PAUSED"]
+        : ["VALID", "REDEEMED"];
+      const count = await prisma.ticket.count({
+        where: {
+          accountId: monitor.accountId,
+          status: { in: targetStatus as ("VALID" | "REDEEMED" | "PAUSED")[] },
+          ...scopeFilter,
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        action: "preview",
+        count,
+        scopeAreaIds: areaIds,
+        scopeIsGlobal: areaIds.length === 0,
+      });
+    }
+
     if (action === "pause") {
       const now = new Date();
       const durationTickets = await prisma.ticket.findMany({
