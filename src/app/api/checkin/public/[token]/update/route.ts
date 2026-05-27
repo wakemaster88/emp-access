@@ -200,6 +200,12 @@ export async function PUT(
     updateData.birthDate = body.birthDate ? new Date(body.birthDate) : null;
   }
 
+  // Freitext-Notiz - leerer String wird zu null (entfernt die Notiz).
+  if (body.notes !== undefined) {
+    const v = typeof body.notes === "string" ? body.notes.trim() : "";
+    updateData.notes = v || null;
+  }
+
   // Wenn Vor-/Nachname aktualisiert wurden, ziehen wir den `name`
   // automatisch nach. So bleibt das, was im Listing/Header angezeigt
   // wird, konsistent.
@@ -244,6 +250,7 @@ export async function PUT(
       endDate: updated.endDate,
       slotStart: updated.slotStart,
       slotEnd: updated.slotEnd,
+      notes: updated.notes,
     },
   });
 }

@@ -55,6 +55,8 @@ export async function GET(
     // ANNY-Sync-Indikator fuer das TicketCard-Badge: gesetzt wenn das
     // Ticket beim Verkauf in ANNY gegenbucht wurde.
     annyBookingId: true,
+    // Freitext-Notiz, wird im Ticket-Overlay angezeigt/editiert.
+    notes: true,
   } as const;
 
   const [

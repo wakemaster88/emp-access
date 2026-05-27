@@ -191,6 +191,11 @@ model Ticket {
   /// die Booking in ANNY cancelen zu koennen. NULL = nicht via ANNY
   /// gebucht (Tagesticket, manuelle Eingabe, oder Sync vor diesem Feature).
   annyBookingId           String?
+  /// Freitext-Notiz, die das Personal am Shop-Monitor zum Ticket hinterlegen
+  /// kann (z. B. "kommt morgen mit Kind", "Schluessel nicht zurueckgegeben").
+  /// Wird im Ticket-Overlay sichtbar/editierbar; hat keine Auswirkung auf
+  /// die Zugriffslogik.
+  notes                   String?              @db.Text
   accountId               Int
   account                 Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accessArea              AccessArea?          @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)

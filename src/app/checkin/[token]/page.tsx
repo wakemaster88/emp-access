@@ -33,6 +33,9 @@ import {
   Megaphone,
   Send,
   Mountain,
+  StickyNote,
+  Pause,
+  Play,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -75,6 +78,8 @@ interface CheckinTicket {
   /** UUID der zugehoerigen ANNY-Buchung. null wenn Service keinen ANNY-Link
    * hatte oder der Sync vor diesem Feature passiert ist. */
   annyBookingId: string | null;
+  /** Freitext-Notiz, die das Personal am Shop-Monitor zum Ticket hinterlegt. */
+  notes: string | null;
   checkedIn: boolean;
   accessArea?: { id: number; name: string } | null;
   subscription?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean } | null;
@@ -356,7 +361,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [checkingIn, setCheckingIn] = useState<number | null>(null);
   const [updatingTicket, setUpdatingTicket] = useState<number | null>(null);
   const [rfidInput, setRfidInput] = useState("");
-  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | "person" | "slot" | null>(null);
+  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cancellingVoucher, setCancellingVoucher] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -720,6 +725,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       birthDate?: string | null;
       slotStart?: string | null;
       slotEnd?: string | null;
+      notes?: string | null;
     },
     force?: boolean,
   ) => {
@@ -769,6 +775,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         if (update.birthDate !== undefined) patch.birthDate = json.ticket?.birthDate ?? update.birthDate;
         if (update.slotStart !== undefined) patch.slotStart = json.ticket?.slotStart ?? update.slotStart;
         if (update.slotEnd !== undefined) patch.slotEnd = json.ticket?.slotEnd ?? update.slotEnd;
+        if (update.notes !== undefined) patch.notes = json.ticket?.notes ?? update.notes;
         if (json.ticket?.startDate !== undefined && update.slotStart !== undefined) patch.startDate = json.ticket.startDate;
         if (json.ticket?.endDate !== undefined && update.slotEnd !== undefined) patch.endDate = json.ticket.endDate;
         if (json.ticket?.name) patch.name = json.ticket.name;
@@ -806,6 +813,50 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       setCancellingVoucher(false);
     }
   }, [selectedTicket, token, data?.accountName]);
+
+  /** Pause/Resume eines einzelnen Tickets. Bei `pause` werden die Dauer
+   *  ("1h"/"1d"/"1w"/"1m"/"unbegrenzt") und optionale Begruendung mitgeschickt.
+   *  Beim Erfolg wird das selectedTicket lokal sofort aktualisiert, damit der
+   *  Status-Badge ohne Refresh umschaltet; der Hintergrund-Refresh sorgt fuer
+   *  konsistente Werte. */
+  const handlePauseTicket = useCallback(
+    async (
+      ticketId: number,
+      action: "pause" | "resume",
+      opts?: { duration?: string; reason?: string },
+    ) => {
+      setUpdatingTicket(ticketId);
+      try {
+        const res = await fetch(`/api/checkin/public/${token}/pause`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId, action, ...opts }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          if (typeof window !== "undefined" && json?.error) alert(json.error);
+          return;
+        }
+        const newStatus = action === "pause" ? "PAUSED" : (json.ticket?.status ?? "VALID");
+        const newFirstScan = json.ticket?.firstScanAt ?? undefined;
+        refreshRef.current?.();
+        if (selectedTicket?.id === ticketId) {
+          setSelectedTicket((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: newStatus,
+                  ...(newFirstScan !== undefined ? { firstScanAt: newFirstScan } : {}),
+                }
+              : null,
+          );
+        }
+      } finally {
+        setUpdatingTicket(null);
+      }
+    },
+    [token, selectedTicket],
+  );
 
   const dayTickets = data?.tickets ?? [];
   const subscriptions = data?.subscriptions ?? [];
@@ -1537,6 +1588,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           }}
           onCancelVoucher={handleCancelVoucher}
           cancellingVoucher={cancellingVoucher}
+          onSaveNotes={(notes) => handleUpdateTicket(selectedTicket.id, { notes })}
+          onPause={(duration, reason) =>
+            handlePauseTicket(selectedTicket.id, "pause", { duration, reason })
+          }
+          onResume={() => handlePauseTicket(selectedTicket.id, "resume")}
         />
       )}
 
@@ -3518,13 +3574,16 @@ function TicketOverlay({
   onAddTicket,
   onCancelVoucher,
   cancellingVoucher,
+  onSaveNotes,
+  onPause,
+  onResume,
 }: {
   ticket: CheckinTicket;
   onClose: () => void;
   onCheckin: () => void;
   checkingIn: boolean;
-  editMode: "photo" | "rfid" | "dates" | "person" | "slot" | null;
-  setEditMode: (m: "photo" | "rfid" | "dates" | "person" | "slot" | null) => void;
+  editMode: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | null;
+  setEditMode: (m: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | null) => void;
   onSaveDates: (startDate: string | null, endDate: string | null) => void;
   onSavePerson: (person: { firstName: string | null; lastName: string | null; birthDate: string | null }) => void;
   onSaveSlot: (slotStart: string | null, slotEnd: string | null) => void;
@@ -3542,6 +3601,9 @@ function TicketOverlay({
   onAddTicket: () => void;
   onCancelVoucher: () => void;
   cancellingVoucher: boolean;
+  onSaveNotes: (notes: string | null) => void;
+  onPause: (duration: string, reason: string) => void;
+  onResume: () => void;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isSub = !!ticket.subscriptionId;
@@ -3558,6 +3620,28 @@ function TicketOverlay({
   const [editFirstName, setEditFirstName] = useState(ticket.firstName ?? "");
   const [editLastName, setEditLastName] = useState(ticket.lastName ?? "");
   const [editBirthDate, setEditBirthDate] = useState(toDateValue(ticket.birthDate));
+
+  // Notiz- und Pause-Eingabe: initial mit dem aktuellen Ticket-Stand
+  // befuellt. Beim Oeffnen des Editors (Button-Klick) wird der State
+  // explizit auf den aktuellen Wert zurueckgesetzt, sodass ein Speichern
+  // -> Wieder-Oeffnen den frischen Server-Stand anzeigt.
+  const [noteInput, setNoteInput] = useState(ticket.notes ?? "");
+  const [pauseDurationChoice, setPauseDurationChoice] = useState<string>("1d");
+  const [pauseReasonInput, setPauseReasonInput] = useState("");
+
+  const isPaused = ticket.status === "PAUSED";
+  const pauseInfo = (() => {
+    const ext = (ticket.extras as unknown) as Record<string, unknown> | null;
+    if (!ext || Array.isArray(ext)) return null;
+    const pausedUntilRaw = ext.pausedUntil;
+    const reasonRaw = ext.pauseReason;
+    const pausedAtRaw = ext.pausedAt;
+    return {
+      pausedAt: typeof pausedAtRaw === "string" ? pausedAtRaw : null,
+      pausedUntil: typeof pausedUntilRaw === "string" ? pausedUntilRaw : null,
+      reason: typeof reasonRaw === "string" && reasonRaw ? reasonRaw : null,
+    };
+  })();
   const birthDateRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (editMode !== "person") {
@@ -3613,9 +3697,13 @@ function TicketOverlay({
             <div className="flex gap-1.5 mt-2">
               <Badge className={cn(
                 "text-xs px-2 py-0.5 font-bold",
-                isChecked ? "bg-emerald-500/25 text-emerald-200" : "bg-sky-500/25 text-sky-200"
+                isPaused
+                  ? "bg-orange-500/25 text-orange-200"
+                  : isChecked
+                    ? "bg-emerald-500/25 text-emerald-200"
+                    : "bg-sky-500/25 text-sky-200"
               )}>
-                {isChecked ? "Eingecheckt" : "Ausstehend"}
+                {isPaused ? "Pausiert" : isChecked ? "Eingecheckt" : "Ausstehend"}
               </Badge>
               {isSub && <Badge className="bg-violet-500/25 text-violet-200 text-xs px-2 py-0.5 font-bold">Abo</Badge>}
               {ticket.source && <Badge className="bg-slate-700 text-slate-300 text-xs px-2 py-0.5">{ticket.source}</Badge>}
@@ -3873,6 +3961,105 @@ function TicketOverlay({
           )}
         </div>
 
+        {/* Pausierungs-Hinweis (read-only) - sichtbar, wenn das Ticket aktuell
+            pausiert ist. Zeigt Begruendung und (falls gesetzt) das Ende der
+            Pause an. Das Aufheben der Pause passiert ueber den "Fortsetzen"-
+            Button im Actions-Block weiter unten. */}
+        {isPaused && (
+          <div className="px-5 py-3 border-b border-slate-800 bg-orange-500/5">
+            <div className="flex items-start gap-3">
+              <div className="h-8 w-8 rounded-xl bg-orange-500/20 flex items-center justify-center shrink-0">
+                <Pause className="h-4 w-4 text-orange-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-orange-200">Pausiert</p>
+                <p className="text-xs text-orange-200/70 mt-0.5">
+                  {pauseInfo?.pausedUntil
+                    ? `bis ${new Date(pauseInfo.pausedUntil).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} Uhr`
+                    : "unbegrenzt"}
+                </p>
+                {pauseInfo?.reason && (
+                  <p className="text-xs text-orange-100/80 mt-1 italic">
+                    „{pauseInfo.reason}&ldquo;
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Notizen - Freitext, das Personal schreibt z. B.
+            "kommt morgen mit Kind", "Schluessel nicht zurueckgegeben".
+            Klick auf den Block oeffnet einen Inline-Editor (textarea). */}
+        <div className="px-5 py-3 border-b border-slate-800">
+          {editMode === "notes" ? (
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                <StickyNote className="h-3.5 w-3.5 inline mr-1.5" />Notiz
+              </p>
+              <textarea
+                value={noteInput}
+                onChange={(e) => setNoteInput(e.target.value)}
+                placeholder="Notiz hinzufügen…"
+                rows={3}
+                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSaveNotes(noteInput.trim() || null)}
+                  disabled={updatingTicket}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
+                >
+                  {updatingTicket && editMode === "notes" ? (
+                    <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                  ) : (
+                    "Speichern"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNoteInput(ticket.notes ?? "");
+                    setEditMode(null);
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          ) : ticket.notes ? (
+            <button
+              type="button"
+              onClick={() => { setNoteInput(ticket.notes ?? ""); setEditMode("notes"); }}
+              className="w-full flex items-start gap-3 text-left group"
+            >
+              <div className="h-8 w-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <StickyNote className="h-4 w-4 text-amber-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-amber-300 uppercase tracking-wider">Notiz</p>
+                <p className="text-sm text-amber-100 mt-0.5 whitespace-pre-wrap break-words">
+                  {ticket.notes}
+                </p>
+              </div>
+              <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0 mt-1" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setNoteInput(""); setEditMode("notes"); }}
+              className="w-full flex items-center gap-2 text-xs text-slate-400 hover:text-slate-300 transition-colors group"
+            >
+              <StickyNote className="h-3.5 w-3.5 shrink-0" />
+              <span className="font-medium">Notiz hinzufügen</span>
+              <Plus className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+            </button>
+          )}
+        </div>
+
         {/* Scan history */}
         {ticketScans.length > 0 && (
           <div className="px-5 py-3 border-b border-slate-800">
@@ -3904,8 +4091,9 @@ function TicketOverlay({
 
         {/* Actions */}
         <div className="p-5 space-y-3">
-          {/* Check-in button */}
-          {!isChecked && !isSub && ticket.service?.allowManualCheckin !== false && (
+          {/* Check-in button - bei PAUSED ausgeblendet (Scan wuerde 'status_paused'
+              ablehnen). Stattdessen erscheint der "Pause aufheben"-Button. */}
+          {!isPaused && !isChecked && !isSub && ticket.service?.allowManualCheckin !== false && (
             <button
               onClick={onCheckin}
               disabled={checkingIn}
@@ -3984,6 +4172,97 @@ function TicketOverlay({
                 </div>
               )}
             </div>
+          )}
+
+          {/* Pause / Resume - bei VALID/REDEEMED zeigt sich der Pause-
+              Picker (Dauer + Begruendung), bei PAUSED ein "Fortsetzen"-Button. */}
+          {!isPaused ? (
+            editMode === "pause" ? (
+              <div className="rounded-2xl border border-orange-500/30 bg-orange-950/20 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Pause className="h-4 w-4 text-orange-400" />
+                  <p className="text-sm font-bold text-orange-300">Ticket pausieren</p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: "1h", label: "1 Stunde" },
+                    { value: "1d", label: "1 Tag" },
+                    { value: "1w", label: "1 Woche" },
+                    { value: "1m", label: "1 Monat" },
+                    { value: "unbegrenzt", label: "Unbegrenzt" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPauseDurationChoice(opt.value)}
+                      className={cn(
+                        "py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95",
+                        pauseDurationChoice === opt.value
+                          ? "bg-orange-600 text-white"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700",
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="text"
+                  value={pauseReasonInput}
+                  onChange={(e) => setPauseReasonInput(e.target.value)}
+                  placeholder="Begründung (optional)"
+                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                />
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPause(pauseDurationChoice, pauseReasonInput.trim());
+                      setEditMode(null);
+                    }}
+                    disabled={updatingTicket}
+                    className="flex-1 bg-orange-600 hover:bg-orange-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 active:scale-95"
+                  >
+                    {updatingTicket ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                    Pausieren
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditMode(null)}
+                    className="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPauseDurationChoice("1d");
+                  setPauseReasonInput("");
+                  setEditMode("pause");
+                }}
+                disabled={updatingTicket}
+                className="w-full bg-orange-600/15 hover:bg-orange-600/25 text-orange-300 border border-orange-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-50"
+              >
+                <Pause className="h-4 w-4" />
+                Pausieren
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={onResume}
+              disabled={updatingTicket}
+              className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-50"
+            >
+              {updatingTicket ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Pause aufheben
+            </button>
           )}
 
           {/* Print button */}
