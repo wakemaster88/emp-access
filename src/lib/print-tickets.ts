@@ -155,7 +155,7 @@ function drawTicket(
   y += 3;
 
   if (qrDataUrl) {
-    const qrSize = 38;
+    const qrSize = 30.4;
     const qrX = (pw - qrSize) / 2;
     doc.addImage(qrDataUrl, "PNG", qrX, y, qrSize, qrSize);
     y += qrSize + 2;
