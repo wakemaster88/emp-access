@@ -119,7 +119,7 @@ function isExpired(ticket: { endDate?: string | Date | null }): boolean {
   return new Date(ticket.endDate) < new Date();
 }
 
-function statusBadge(status: string, ticket?: { endDate?: string | Date | null }) {
+function statusBadge(status: string, ticket?: { endDate?: string | Date | null; extras?: Record<string, unknown> | null }) {
   if (ticket && (status === "VALID" || status === "REDEEMED") && isExpired(ticket)) {
     return <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">Abgelaufen</Badge>;
   }
@@ -131,6 +131,10 @@ function statusBadge(status: string, ticket?: { endDate?: string | Date | null }
     case "INVALID":
       return <Badge variant="destructive">Ungültig</Badge>;
     case "PAUSED":
+      // Zahlungs-Pause (Auto-Pause bei offener Rechnung) deutlich kennzeichnen.
+      if (ticket?.extras && (ticket.extras as Record<string, unknown>).paymentPause) {
+        return <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Zahlung offen</Badge>;
+      }
       return <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">Pausiert</Badge>;
     case "CANCELED":
       return <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">Gekündigt</Badge>;

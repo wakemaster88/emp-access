@@ -43,6 +43,28 @@ interface AnnyMapping {
   resources?: string[];
   subscriptions?: string[];
   resourceIds?: Record<string, string>;
+  /// Auto-Pause bei offener/ueberfaelliger Abo-Zahlung. Wenn aktiv, werden Abos
+  /// mit einer noch nicht beglichenen (`sent`) Abo-Rechnung, deren Faelligkeit
+  /// (`due_date`) um >= `graceDays` ueberschritten ist, automatisch auf PAUSED
+  /// gesetzt (Zutritt gesperrt) und mit einem "Zahlung offen"-Vermerk markiert.
+  /// Sobald die Rechnung beglichen ist (Abo wieder ohne offene Rechnung), wird
+  /// das Abo automatisch reaktiviert. Default: aus.
+  paymentAutoPause?: {
+    enabled?: boolean;
+    /// Karenztage nach Faelligkeit, bevor gesperrt wird. 0 = ab Faelligkeit.
+    graceDays?: number;
+  };
+}
+
+/// Infos zu einer offenen (unbezahlten) Abo-Rechnung, gemappt je Abo-ID.
+interface OpenSubInvoice {
+  invoiceId: string;
+  number: string | null;
+  amount: number | null;
+  currency: string | null;
+  dueDate: string | null;
+  /// true, wenn `due_date` um >= graceDays ueberschritten ist.
+  overdue: boolean;
 }
 
 interface PlanSubscription {
@@ -214,6 +236,24 @@ function ticketChanged(
   const iEnd = incoming.endDate ? new Date(incoming.endDate).getTime() : null;
   if (eEnd !== iEnd) return true;
   return false;
+}
+
+/** Stabiler (key-order-unabhaengiger) Vergleich zweier extras-JSON-Objekte.
+ *  Wird genutzt, um unnoetige Updates bei gleichbleibenden Zahlungs-/Pause-
+ *  Flags zu vermeiden. */
+function extrasEqual(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === "object") {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = norm((v as Record<string, unknown>)[k]);
+      }
+      return sorted;
+    }
+    return v;
+  };
+  return JSON.stringify(norm(a ?? {})) === JSON.stringify(norm(b ?? {}));
 }
 
 /** Versucht beim P2002 (barcode unique) den barcode dem alten INVALID/CANCELED
@@ -426,6 +466,72 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       resolved.push(ps);
     }
     return resolved;
+  }
+
+  /** Liest /invoices und liefert je Abo-ID die offene (unbezahlte) Rechnung.
+   *  "Offen" = Invoice-Status `sent` (finalisiert + versendet, aber nicht
+   *  `paid`). Nur Rechnungen, deren `reference` auf eine `plan-subscriptions`
+   *  zeigt, sind relevant (Einmal-/Buchungsrechnungen ignorieren wir).
+   *  `due_date` wird gegen jetzt - graceDays geprueft, um `overdue` zu setzen.
+   *  Bei mehreren offenen Rechnungen pro Abo gewinnt die mit der fruehesten
+   *  Faelligkeit (die "aelteste Schuld"). */
+  async function fetchOpenSubscriptionInvoices(graceDays: number): Promise<Map<string, OpenSubInvoice>> {
+    const pageSize = 50;
+    const pageLimit = 50;
+    const buildUrl = (n: number) => {
+      const p = new URLSearchParams({ include: "reference", "page[size]": String(pageSize), "page[number]": String(n) });
+      return `${apiBase}/invoices?${p}`;
+    };
+    const firstRes = await fetch(buildUrl(1), { headers, signal: AbortSignal.timeout(15000) });
+    if (!firstRes.ok) return new Map();
+    const firstJson = await firstRes.json();
+    const lastPage: number = firstJson?.meta?.page?.["last-page"] ?? 1;
+    const all: Record<string, unknown>[] = Array.isArray(firstJson?.data) ? firstJson.data : [];
+    if (lastPage > 1) {
+      const remaining: number[] = [];
+      const cap = Math.min(lastPage, pageLimit);
+      for (let n = 2; n <= cap; n++) remaining.push(n);
+      const responses = await Promise.all(
+        remaining.map((n) =>
+          fetch(buildUrl(n), { headers, signal: AbortSignal.timeout(15000) }).then((r) => (r.ok ? r.json() : null)),
+        ),
+      );
+      for (const j of responses) {
+        if (j && Array.isArray(j.data)) all.push(...j.data);
+      }
+    }
+
+    const graceMs = Math.max(0, graceDays) * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - graceMs;
+    const out = new Map<string, OpenSubInvoice>();
+    for (const inv of all) {
+      const a = (inv.attributes ?? {}) as Record<string, unknown>;
+      const status = String(a.status ?? "").toLowerCase();
+      // Nur finalisierte, aber unbezahlte Rechnungen. `paid`/`refunded`/`void`
+      // sind erledigt, `draft` ist noch nicht gestellt.
+      if (status !== "sent") continue;
+      const rels = (inv.relationships ?? {}) as Record<string, { data?: { type?: string; id?: string } }>;
+      const ref = rels.reference?.data;
+      if (!ref || ref.type !== "plan-subscriptions" || !ref.id) continue;
+      const subId = String(ref.id);
+      const dueRaw = a.due_date ? String(a.due_date) : null;
+      const dueMs = dueRaw ? Date.parse(dueRaw) : NaN;
+      const overdue = Number.isFinite(dueMs) ? dueMs < cutoff : false;
+      const entry: OpenSubInvoice = {
+        invoiceId: inv.id != null ? String(inv.id) : "",
+        number: (a.formatted_number as string) ?? (a.number as string) ?? null,
+        amount: typeof a.total === "number" ? a.total : null,
+        currency: (a.currency as string) ?? null,
+        dueDate: dueRaw,
+        overdue,
+      };
+      const prev = out.get(subId);
+      // Frueheste Faelligkeit gewinnt (aelteste offene Schuld).
+      if (!prev || (entry.dueDate && prev.dueDate && entry.dueDate < prev.dueDate) || (entry.dueDate && !prev.dueDate)) {
+        out.set(subId, entry);
+      }
+    }
+    return out;
   }
 
   // --- Bookings: page[size]=500 + parallel pages ---
@@ -958,6 +1064,22 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   let subCreated = 0;
   let subUpdated = 0;
 
+  // Offene/ueberfaellige Abo-Rechnungen ziehen (nur wenn Auto-Pause aktiv),
+  // damit wir Abos mit "Zahlung offen" automatisch pausieren/reaktivieren.
+  const paymentCfg = annyConfig.paymentAutoPause;
+  const paymentAutoPauseEnabled = paymentCfg?.enabled === true;
+  const paymentGraceDays = Math.max(0, paymentCfg?.graceDays ?? 0);
+  let openSubInvoices = new Map<string, OpenSubInvoice>();
+  if (paymentAutoPauseEnabled) {
+    try {
+      openSubInvoices = await fetchOpenSubscriptionInvoices(paymentGraceDays);
+      const overdueCount = [...openSubInvoices.values()].filter((i) => i.overdue).length;
+      console.log(`[anny sync] account=${accountId} payment-auto-pause aktiv: ${openSubInvoices.size} Abos mit offener Rechnung, davon ${overdueCount} ueberfaellig (grace=${paymentGraceDays}d)`);
+    } catch (e) {
+      console.error(`[anny sync] account=${accountId} Abo-Rechnungen konnten nicht geladen werden:`, e instanceof Error ? e.message : String(e));
+    }
+  }
+
   const subUuids = allPlanSubscriptions
     .filter((ps) => ps.customer?.id)
     .map((ps) => `anny-sub:${ps.customer!.id}:${ps.id ?? ps.plan?.name ?? ps.plan?.title ?? ps.name?.replace(/#\d+$/, "").trim() ?? ""}`);
@@ -984,11 +1106,18 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     if (!subscriptionId) continue;
 
     const psStatus = (ps.status ?? "").toLowerCase();
-    const ticketStatus =
+    const baseStatus =
       psStatus === "active" || psStatus === "trialing" ? ("VALID" as const)
       : psStatus === "paused" || psStatus === "on_hold" || psStatus === "suspended" || psStatus === "frozen" ? ("PAUSED" as const)
       : psStatus === "canceled" || psStatus === "cancelled" ? ("CANCELED" as const)
       : ("INVALID" as const);
+
+    // Zahlung offen? Nur ueberschreiben, wenn ANNY das Abo selbst als aktiv
+    // fuehrt (sonst gilt der ANNY-Status, z. B. gekuendigt). Eine ueberfaellige,
+    // unbezahlte Abo-Rechnung pausiert den Zutritt bis zur Begleichung.
+    const openInvoice = paymentAutoPauseEnabled && ps.id ? openSubInvoices.get(String(ps.id)) : undefined;
+    const paymentBlock = baseStatus === "VALID" && !!openInvoice?.overdue;
+    const ticketStatus = paymentBlock ? ("PAUSED" as const) : baseStatus;
 
     const uuid = `anny-sub:${customerId}:${ps.id ?? planName}`;
     if (ticketStatus === "VALID" || ticketStatus === "PAUSED") activeUuids.push(uuid);
@@ -1022,30 +1151,60 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       const existing = existingSubByUuid.get(uuid);
       if (existing) {
         const prevExtras = (existing.extras as Record<string, unknown>) ?? {};
-        const statusChanged = ticketStatus !== existing.status;
+        const hadAnnyPause = !!prevExtras.pausedAt;
+        const wasPaymentPaused = !!prevExtras.paymentPause;
 
-        if (ticketStatus === "PAUSED" && existing.status !== "PAUSED") {
+        // extras ohne unsere verwalteten Flags (pausedAt = ANNY-/manuelle Pause,
+        // paymentPause = Zahlungs-Pause). Je nach Fall ergaenzen wir wieder.
+        const baseExtras: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(prevExtras)) {
+          if (k !== "pausedAt" && k !== "paymentPause") baseExtras[k] = v;
+        }
+
+        const nextExtras: Record<string, unknown> = { ...baseExtras };
+
+        if (ticketStatus === "PAUSED") {
+          // Beim Pausieren das Ablaufdatum einfrieren (nicht weiterlaufen lassen).
           ticketData.endDate = existing.endDate;
-          (ticketData as Record<string, unknown>).extras = {
-            ...prevExtras,
-            pausedAt: new Date().toISOString(),
-          };
-        } else if (ticketStatus === "PAUSED" && existing.status === "PAUSED") {
-          ticketData.endDate = existing.endDate;
-          (ticketData as Record<string, unknown>).extras = prevExtras;
-          if (!ticketChanged(existing, ticketData)) { skipped++; continue; }
-        } else if (ticketStatus === "VALID" && existing.status === "PAUSED" && prevExtras.pausedAt) {
-          const pausedAt = new Date(prevExtras.pausedAt as string);
-          const pauseMs = Date.now() - pausedAt.getTime();
-          if (existing.endDate && pauseMs > 0) {
-            ticketData.endDate = new Date(existing.endDate.getTime() + pauseMs);
+          if (paymentBlock) {
+            // Zahlungs-Pause: "Zahlung offen"-Vermerk setzen/aktualisieren. KEIN
+            // endDate-Bonus bei Reaktivierung (Kunde war nur im Zahlungsverzug).
+            const prevPay = (prevExtras.paymentPause as Record<string, unknown> | undefined) ?? undefined;
+            const since = (wasPaymentPaused && typeof prevPay?.since === "string")
+              ? (prevPay!.since as string)
+              : new Date().toISOString();
+            nextExtras.paymentPause = {
+              since,
+              note: "Zahlung offen",
+              dueDate: openInvoice?.dueDate ?? null,
+              invoiceNumber: openInvoice?.number ?? null,
+              amount: openInvoice?.amount ?? null,
+              currency: openInvoice?.currency ?? null,
+            };
+          } else {
+            // ANNY-/manuelle Pause: pausedAt-Marker (steuert endDate-Verlaengerung
+            // bei Reaktivierung) erhalten bzw. setzen.
+            nextExtras.pausedAt = hadAnnyPause ? prevExtras.pausedAt : new Date().toISOString();
           }
-          const restExtras: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(prevExtras)) {
-            if (k !== "pausedAt") restExtras[k] = v;
+        } else if (ticketStatus === "VALID" && existing.status === "PAUSED") {
+          if (hadAnnyPause && !wasPaymentPaused) {
+            // Ende einer ANNY-/manuellen Pause: endDate um Pausendauer verlaengern.
+            const pausedAt = new Date(prevExtras.pausedAt as string);
+            const pauseMs = Date.now() - pausedAt.getTime();
+            if (existing.endDate && pauseMs > 0) {
+              ticketData.endDate = new Date(existing.endDate.getTime() + pauseMs);
+            }
+          } else {
+            // Zahlung beglichen -> reaktivieren ohne Verlaengerung; endDate bleibt.
+            ticketData.endDate = existing.endDate;
           }
-          (ticketData as Record<string, unknown>).extras = restExtras;
-        } else if (!statusChanged && !ticketChanged(existing, ticketData)) {
+          // beide Flags entfernen (nextExtras == baseExtras)
+        }
+
+        const statusChanged = ticketStatus !== existing.status;
+        const extrasChanged = !extrasEqual(prevExtras, nextExtras);
+        (ticketData as Record<string, unknown>).extras = nextExtras;
+        if (!statusChanged && !extrasChanged && !ticketChanged(existing, ticketData)) {
           skipped++;
           continue;
         }
@@ -1057,6 +1216,18 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         const inherited: Record<string, unknown> = {};
         if (subCustData?.rfidCode) inherited.rfidCode = subCustData.rfidCode;
         if (subCustData?.profileImage) inherited.profileImage = subCustData.profileImage;
+        if (paymentBlock) {
+          (ticketData as Record<string, unknown>).extras = {
+            paymentPause: {
+              since: new Date().toISOString(),
+              note: "Zahlung offen",
+              dueDate: openInvoice?.dueDate ?? null,
+              invoiceNumber: openInvoice?.number ?? null,
+              amount: openInvoice?.amount ?? null,
+              currency: openInvoice?.currency ?? null,
+            },
+          };
+        }
         await prisma.ticket.create({ data: { ...ticketData, ...inherited, uuid, accountId } });
         subCreated++;
       }

@@ -106,6 +106,7 @@ export interface TicketData {
   birthDate: Date | string | null;
   uuid: string | null;
   source: string | null;
+  extras?: Record<string, unknown> | null;
   _count: { scans: number };
   ticketAreas?: { accessArea: { id: number; name: string } }[];
 }

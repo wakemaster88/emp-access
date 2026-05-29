@@ -298,7 +298,8 @@ export async function performScanCheck({
     await db.scan.create({
       data: { code, result: "DENIED", ticketId: ticket.id, accountId, ...scanDeviceData },
     });
-    return { granted: false, message: "Abo pausiert", ticket: ticketInfo };
+    const paymentPaused = !!(ticket.extras as Record<string, unknown> | null)?.paymentPause;
+    return { granted: false, message: paymentPaused ? "Zahlung offen" : "Abo pausiert", ticket: ticketInfo };
   }
 
   if (ticket.status === "CANCELED") {
