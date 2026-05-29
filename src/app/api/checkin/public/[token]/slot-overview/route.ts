@@ -32,6 +32,10 @@ interface SlotEntry {
   remaining: number | null;
   empBookings: number;
   unavailabilityType: string | null;
+  /** ID der aktiven manuellen Sperre (SlotBlock), oder null. */
+  blockId: number | null;
+  /** Optionaler Sperrgrund (nur wenn blockId gesetzt). */
+  blockReason: string | null;
 }
 
 interface OpeningHourBlock {
@@ -239,6 +243,17 @@ export async function GET(
     },
   });
 
+  // Aktive manuelle Slot-Sperren dieses Tages. Map-Key: "serviceId|HH:mm".
+  const slotBlocks = await prisma.slotBlock.findMany({
+    where: { accountId, date: dateStr },
+    select: { id: true, serviceId: true, slotStart: true, reason: true },
+  });
+  const blockByKey = new Map<string, { id: number; reason: string | null }>();
+  for (const b of slotBlocks) {
+    if (b.serviceId == null) continue;
+    blockByKey.set(`${b.serviceId}|${b.slotStart.slice(0, 5)}`, { id: b.id, reason: b.reason });
+  }
+
   // Helper: extrahiert primaere Resource aus einem Catalog-Match (entweder
   // direkt aus match.resourceIds[0] oder aus den geladenen Slots als
   // Fallback fuer Tenants, deren Service-Endpoint keine Resources mit
@@ -417,17 +432,22 @@ export async function GET(
 
       const slots: SlotEntry[] = rawSlots
         .filter((s) => s.startTime)
-        .map((s) => ({
-          startTime: s.startTime,
-          endTime: s.endTime,
-          startIso: s.startIso,
-          endIso: s.endIso,
-          available: s.available,
-          capacity: typeof s.capacity === "number" ? s.capacity : null,
-          remaining: typeof s.remaining === "number" ? s.remaining : null,
-          empBookings: empByStart.get(s.startTime) ?? 0,
-          unavailabilityType: s.unavailabilityType ?? null,
-        }));
+        .map((s) => {
+          const block = blockByKey.get(`${svc.id}|${s.startTime.slice(0, 5)}`) ?? null;
+          return {
+            startTime: s.startTime,
+            endTime: s.endTime,
+            startIso: s.startIso,
+            endIso: s.endIso,
+            available: s.available,
+            capacity: typeof s.capacity === "number" ? s.capacity : null,
+            remaining: typeof s.remaining === "number" ? s.remaining : null,
+            empBookings: empByStart.get(s.startTime) ?? 0,
+            unavailabilityType: s.unavailabilityType ?? null,
+            blockId: block?.id ?? null,
+            blockReason: block?.reason ?? null,
+          };
+        });
 
       // Verfuegbarkeit: wenn /availability/start Slots geliefert hat, ist
       // der Service heute aktiv. Sonst per /start-dates fuer ALLE Matches

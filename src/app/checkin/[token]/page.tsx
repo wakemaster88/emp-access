@@ -41,7 +41,7 @@ import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import { LockerOverlay } from "@/components/checkin/locker-overlay";
-import { Lock } from "lucide-react";
+import { Lock, LockOpen } from "lucide-react";
 import { printPdfBlob, type PrintResult } from "@/lib/print-tickets";
 
 interface TicketExtra {
@@ -169,6 +169,10 @@ interface SlotOverviewSlot {
   remaining: number | null;
   empBookings: number;
   unavailabilityType: string | null;
+  /** ID der aktiven manuellen Sperre, oder null. */
+  blockId: number | null;
+  /** Optionaler Sperrgrund (nur wenn blockId gesetzt). */
+  blockReason: string | null;
 }
 
 interface SlotOverviewService {
@@ -427,6 +431,82 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   // zum Haupt-Dashboard alle 30s gepollt - ANNY-Calls sind zu teuer fuer
   // den normalen 3s-Tick.
   const [slotOverview, setSlotOverview] = useState<SlotOverviewData | null>(null);
+  // Slot der gerade gesperrt/entsperrt wird ("serviceId|HH:mm"), fuer Spinner.
+  const [blockBusyKey, setBlockBusyKey] = useState<string | null>(null);
+
+  const refreshOverview = useCallback(async () => {
+    try {
+      const r = await fetch(
+        `/api/checkin/public/${token}/slot-overview?date=${encodeURIComponent(date)}`,
+        { cache: "no-store" },
+      );
+      if (!r.ok) return;
+      const json = (await r.json()) as SlotOverviewData;
+      setSlotOverview(json);
+    } catch { /* swallow */ }
+  }, [token, date]);
+
+  const handleBlockSlot = useCallback(
+    async (serviceId: number, slot: SlotOverviewSlot) => {
+      const key = `${serviceId}|${slot.startTime.slice(0, 5)}`;
+      if (blockBusyKey) return;
+      if (
+        !window.confirm(
+          `Slot ${slot.startTime}–${slot.endTime} sperren?\n\nDie freie Kapazität wird auch in ANNY belegt, sodass dort niemand mehr buchen kann.`,
+        )
+      ) {
+        return;
+      }
+      setBlockBusyKey(key);
+      try {
+        const res = await fetch(`/api/checkin/public/${token}/slot-block`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            serviceId,
+            date,
+            slotStart: slot.startTime,
+            slotEnd: slot.endTime,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          window.alert(typeof data?.error === "string" ? data.error : "Sperren fehlgeschlagen.");
+        }
+      } catch {
+        window.alert("Netzwerkfehler beim Sperren.");
+      } finally {
+        setBlockBusyKey(null);
+        await refreshOverview();
+      }
+    },
+    [token, date, blockBusyKey, refreshOverview],
+  );
+
+  const handleUnblockSlot = useCallback(
+    async (blockId: number, busyKey: string) => {
+      if (blockBusyKey) return;
+      if (!window.confirm("Sperre aufheben und ANNY-Buchung stornieren?")) return;
+      setBlockBusyKey(busyKey);
+      try {
+        const res = await fetch(`/api/checkin/public/${token}/slot-block`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blockId }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          window.alert(typeof data?.error === "string" ? data.error : "Aufheben fehlgeschlagen.");
+        }
+      } catch {
+        window.alert("Netzwerkfehler beim Aufheben.");
+      } finally {
+        setBlockBusyKey(null);
+        await refreshOverview();
+      }
+    },
+    [token, blockBusyKey, refreshOverview],
+  );
 
   const handleSendAnnouncement = useCallback(async () => {
     const message = announcementText.trim();
@@ -572,36 +652,22 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   // Calls ~1-2s teuer sind und nicht jeden 8s-Tick antriggern sollen.
   // 60s + Visibility-Change reicht voellig fuer Auslastungsanzeige.
   useEffect(() => {
-    let cancelled = false;
-    const fetchOverview = async () => {
-      try {
-        const r = await fetch(
-          `/api/checkin/public/${token}/slot-overview?date=${encodeURIComponent(date)}`,
-          { cache: "no-store" },
-        );
-        if (!r.ok) return;
-        const json = (await r.json()) as SlotOverviewData;
-        if (!cancelled) setSlotOverview(json);
-      } catch { /* swallow */ }
-    };
-
-    fetchOverview();
-    let interval: ReturnType<typeof setInterval> | null = setInterval(fetchOverview, 60000);
+    refreshOverview();
+    let interval: ReturnType<typeof setInterval> | null = setInterval(refreshOverview, 60000);
     const handleVis = () => {
       if (document.hidden) {
         if (interval) { clearInterval(interval); interval = null; }
       } else if (!interval) {
-        fetchOverview();
-        interval = setInterval(fetchOverview, 60000);
+        refreshOverview();
+        interval = setInterval(refreshOverview, 60000);
       }
     };
     document.addEventListener("visibilitychange", handleVis);
     return () => {
-      cancelled = true;
       if (interval) clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVis);
     };
-  }, [token, date]);
+  }, [refreshOverview]);
 
   const handleScanRef = useRef<((code: string) => void) | null>(null);
 
@@ -1309,6 +1375,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           <SlotOverviewSection
             data={slotOverview}
             currentDate={date}
+            onBlockSlot={handleBlockSlot}
+            onUnblockSlot={handleUnblockSlot}
+            blockBusyKey={blockBusyKey}
             onPick={(p) => {
               // Klick auf Service/Slot in der Auslastung -> Ticket-Erstellen-
               // Overlay direkt mit Service vorbelegt aufmachen und ins
@@ -2202,6 +2271,12 @@ interface SlotOverviewUIState {
   /** Hover-Position der Maus in Minuten, oder null wenn kein Hover. */
   hoverMin: number | null;
   setHoverMin: (m: number | null) => void;
+  /** Slot sperren (volle Restkapazitaet in ANNY belegen). */
+  onBlockSlot?: (serviceId: number, slot: SlotOverviewSlot) => void;
+  /** Manuelle Sperre wieder aufheben (ANNY-Buchung stornieren). */
+  onUnblockSlot?: (blockId: number, busyKey: string) => void;
+  /** Key des Slots, der gerade verarbeitet wird ("serviceId|HH:mm"), oder null. */
+  blockBusyKey?: string | null;
 }
 
 const SlotOverviewUIContext = createContext<SlotOverviewUIState>({
@@ -2394,11 +2469,17 @@ function SlotOverviewSection({
   data,
   currentDate,
   onPick,
+  onBlockSlot,
+  onUnblockSlot,
+  blockBusyKey,
 }: {
   data: SlotOverviewData;
   /** Datum des Monitors (YYYY-MM-DD), wird ans Overlay weitergereicht. */
   currentDate: string;
   onPick: (payload: SlotOverviewPickPayload) => void;
+  onBlockSlot?: (serviceId: number, slot: SlotOverviewSlot) => void;
+  onUnblockSlot?: (blockId: number, busyKey: string) => void;
+  blockBusyKey?: string | null;
 }) {
   const { summary, services } = data;
   // Saisonale / nicht-heute-buchbare Services werden ausgeblendet (z.B.
@@ -2424,8 +2505,8 @@ function SlotOverviewSection({
   const nowMin = useCurrentMinuteIfToday(currentDate);
   const [hoverMin, setHoverMin] = useState<number | null>(null);
   const uiState = useMemo<SlotOverviewUIState>(
-    () => ({ nowMin, hoverMin, setHoverMin }),
-    [nowMin, hoverMin],
+    () => ({ nowMin, hoverMin, setHoverMin, onBlockSlot, onUnblockSlot, blockBusyKey }),
+    [nowMin, hoverMin, onBlockSlot, onUnblockSlot, blockBusyKey],
   );
   const resourceGroups = groupByResource(visible);
   const groupedPerResource = resourceGroups.map((rg) => {
@@ -3057,6 +3138,7 @@ function SlotOverviewServiceBody({
           >
             <SlotOverviewPill
               slot={slot}
+              serviceId={sv.serviceId}
               onClick={() =>
                 onPick({
                   serviceId: sv.serviceId,
@@ -3080,14 +3162,19 @@ function SlotOverviewServiceBody({
  */
 function SlotOverviewPill({
   slot,
+  serviceId,
   onClick,
 }: {
   slot: SlotOverviewSlot;
+  serviceId: number;
   onClick: () => void;
 }) {
-  const { setHoverMin } = useContext(SlotOverviewUIContext);
+  const { setHoverMin, onBlockSlot, onUnblockSlot, blockBusyKey } =
+    useContext(SlotOverviewUIContext);
   const slotStartMin = timeStringToMinutes(slot.startTime);
-  const blocked = !slot.available || (slot.remaining != null && slot.remaining <= 0);
+  const isManuallyBlocked = slot.blockId != null;
+  const busy = blockBusyKey === `${serviceId}|${slot.startTime.slice(0, 5)}`;
+  const blocked = isManuallyBlocked || !slot.available || (slot.remaining != null && slot.remaining <= 0);
   // Auslastung berechnet aus ANNY's capacity/remaining. Fallback: EMP-
   // Buchungen ueber Kapazitaet 1 = 100%. Wenn capacity unbekannt zeigen
   // wir die Booking-Zahl als Indikator.
@@ -3112,7 +3199,9 @@ function SlotOverviewPill({
       : "bg-emerald-500/20";
   // Konsistent immer "X frei" zeigen (statt mehrdeutigem "1/10" das wie
   // "1 verkauft" gelesen wird). Bei 0 oder blockiert: "voll".
-  const label = blocked
+  const label = isManuallyBlocked
+    ? "Gesperrt"
+    : blocked
     ? annyReasonLabel(slot.unavailabilityType ?? undefined) || "voll"
     : slot.remaining != null
       ? slot.remaining === 0
@@ -3127,7 +3216,9 @@ function SlotOverviewPill({
     slot.capacity != null && slot.remaining != null
       ? slot.empBookings > slot.capacity - slot.remaining
       : false;
+  const canToggleBlock = Boolean(onBlockSlot && onUnblockSlot);
   return (
+    <div className="relative h-full w-full">
     <button
       type="button"
       onClick={onClick}
@@ -3151,11 +3242,15 @@ function SlotOverviewPill({
         if (overbookHint) {
           lines.push(`! EMP-Tickets > ANNY-belegt (lokal mehr Tickets als ANNY weiss)`);
         }
+        if (isManuallyBlocked) {
+          lines.push(`Manuell gesperrt${slot.blockReason ? ` (${slot.blockReason})` : ""}`);
+        }
         return lines.join("\n");
       })()}
       className={cn(
         "relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
         "hover:brightness-125 active:scale-95 transition-all",
+        canToggleBlock && "pr-5",
         baseColor,
       )}
     >
@@ -3184,6 +3279,38 @@ function SlotOverviewPill({
         )}
       </span>
     </button>
+      {canToggleBlock && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (busy) return;
+            if (isManuallyBlocked) {
+              onUnblockSlot!(slot.blockId!, `${serviceId}|${slot.startTime.slice(0, 5)}`);
+            } else {
+              onBlockSlot!(serviceId, slot);
+            }
+          }}
+          disabled={busy}
+          title={isManuallyBlocked ? "Sperre aufheben" : "Slot sperren"}
+          className={cn(
+            "absolute top-0.5 right-0.5 z-10 inline-flex items-center justify-center rounded-md p-0.5",
+            "transition-colors disabled:opacity-60",
+            isManuallyBlocked
+              ? "text-rose-300 hover:text-rose-100 hover:bg-rose-500/30"
+              : "text-slate-400 hover:text-rose-200 hover:bg-rose-500/20",
+          )}
+        >
+          {busy ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : isManuallyBlocked ? (
+            <Lock className="h-3 w-3" />
+          ) : (
+            <LockOpen className="h-3 w-3" />
+          )}
+        </button>
+      )}
+    </div>
   );
 }
 

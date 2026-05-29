@@ -88,6 +88,7 @@ model Account {
   emailRules      EmailRule[]
   emailSends      EmailSend[]
   announcements   MonitorAnnouncement[]
+  slotBlocks      SlotBlock[]
 }
 
 model Admin {
@@ -449,11 +450,49 @@ model Service {
   account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   serviceAreas                   ServiceArea[]
   tickets                        Ticket[]
+  slotBlocks                     SlotBlock[]
   createdAt                      DateTime      @default(now())
   updatedAt                      DateTime      @updatedAt
 
   @@index([accountId])
   @@index([mainAccessAreaId])
+}
+
+/// Manuelle Slot-Sperre vom Shop-/Check-in-Monitor. Beim Anlegen wird die
+/// volle Restkapazitaet des Slots in ANNY per Platzhalter-Buchung belegt
+/// (`annyBookingIds`), damit der Slot auch in ANNY nicht mehr buchbar ist.
+/// Beim Aufheben werden diese ANNY-Buchungen storniert.
+model SlotBlock {
+  id             Int      @id @default(autoincrement())
+  accountId      Int
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  serviceId      Int?
+  service        Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  /// Snapshot des Service-Namens fuer die Anzeige (falls Service spaeter
+  /// umbenannt/geloescht wird).
+  serviceName    String
+  /// Tag der Sperre in Berlin-Zeit (YYYY-MM-DD).
+  date           String
+  /// Slot-Start/-Ende als HH:mm (Berlin), zum Matchen gegen die Slot-Liste.
+  slotStart      String
+  slotEnd        String
+  /// Exakte Start-/Endzeit der gesperrten Buchung (ISO mit Offset).
+  startDate      DateTime
+  endDate        DateTime
+  /// Wieviele Plaetze in ANNY belegt wurden (= Restkapazitaet beim Sperren).
+  quantity       Int      @default(1)
+  /// Optionaler Sperrgrund (Anzeige + ANNY-Beschreibung).
+  reason         String?
+  /// JSON-Array der in ANNY angelegten Booking-UUIDs (fuer Storno beim
+  /// Aufheben). "[]" wenn ANNY beim Anlegen nicht erreichbar war.
+  annyBookingIds String?
+  /// UUID des ANNY-Orders (Diagnose).
+  annyOrderId    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([accountId, date])
+  @@index([serviceId, date, slotStart])
 }
 
 model MonitorConfig {
