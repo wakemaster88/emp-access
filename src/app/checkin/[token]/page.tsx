@@ -974,14 +974,19 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
   const matchesSearch = useCallback((t: CheckinTicket) => {
     if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
+    // Suche unempfindlich gegen Gross/Klein, Umlaute/Akzente und ß: ANNY liefert
+    // Namen z.B. als "Schmeiss" (ohne ß), Personal sucht aber nach "Schmeiß".
+    // ß -> ss, dann NFD + Kombinations-Zeichen entfernen (ü->u, é->e, ...).
+    const norm = (s: string) =>
+      s.toLowerCase().replace(/ß/g, "ss").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const q = norm(searchQuery);
     return (
-      (t.firstName?.toLowerCase().includes(q)) ||
-      (t.lastName?.toLowerCase().includes(q)) ||
-      t.name.toLowerCase().includes(q) ||
-      (t.ticketTypeName?.toLowerCase().includes(q)) ||
-      (t.rfidCode?.toLowerCase().includes(q)) ||
-      (t.barcode?.toLowerCase().includes(q))
+      (t.firstName ? norm(t.firstName).includes(q) : false) ||
+      (t.lastName ? norm(t.lastName).includes(q) : false) ||
+      norm(t.name).includes(q) ||
+      (t.ticketTypeName ? norm(t.ticketTypeName).includes(q) : false) ||
+      (t.rfidCode ? norm(t.rfidCode).includes(q) : false) ||
+      (t.barcode ? norm(t.barcode).includes(q) : false)
     );
   }, [searchQuery]);
 
