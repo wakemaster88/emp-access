@@ -98,7 +98,10 @@ export async function createAnnyBooking(
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+        // ANNY ist JSON:API: Schreib-Requests MUESSEN application/vnd.api+json
+        // sein, sonst antwortet die API mit 415 (Unsupported Media Type).
+        // Standard application/json wird fuer POST/PATCH nicht akzeptiert.
+        "Content-Type": "application/vnd.api+json",
         Accept: "application/vnd.api+json, application/json",
       },
       body: JSON.stringify(payload),
