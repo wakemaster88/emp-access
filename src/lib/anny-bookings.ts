@@ -134,6 +134,123 @@ export async function createAnnyBooking(
   }
 }
 
+export interface CreateAnnyBlockerInput {
+  baseUrl: string;
+  token: string;
+  /** ANNY-Resource-UUID, die gesperrt werden soll (z.B. Seilbahn B). */
+  resourceUuid: string;
+  startIso: string;
+  endIso: string;
+  /** Titel des Blockers (im ANNY-Kalender sichtbar). */
+  title?: string;
+  organizationId?: string | null;
+}
+
+export interface CreateAnnyBlockerResult {
+  /** UUID/ID des angelegten Blocker-Bookings (fuer spaeteres Loeschen). */
+  blockerId: string | null;
+  ok: boolean;
+  status: number;
+  error?: string;
+}
+
+/**
+ * Legt in ANNY einen nativen "Blocker" an, um einen Zeitraum auf einer
+ * Resource fuer Buchungen zu sperren (genau das, was im ANNY-Kalender ueber
+ * "Blocker erstellen" passiert).
+ *
+ * WICHTIG: ANNY's `POST /orders/from-config` (Platzhalter-Buchung) ist hier
+ * der FALSCHE Weg - das erzeugt eine bezahlpflichtige Order und ANNY
+ * antwortet fuer diesen Account durchgaengig mit 500. Blocker werden
+ * stattdessen als spezielle Buchung ueber `POST /api/v1/bookings` mit
+ * `is_blocker: true` angelegt - ohne Service/Kunde/Preis.
+ *
+ * Payload (JSON:API):
+ *   { data: { type: "bookings",
+ *             attributes: { start_date, end_date, is_blocker: true, title },
+ *             relationships: { resource: { data: { type: "resources", id } } } } }
+ */
+export async function createAnnyBlocker(
+  input: CreateAnnyBlockerInput,
+): Promise<CreateAnnyBlockerResult> {
+  const { baseUrl, token, resourceUuid, startIso, endIso, title, organizationId } = input;
+  const payload = {
+    data: {
+      type: "bookings",
+      attributes: {
+        start_date: startIso,
+        end_date: endIso,
+        is_blocker: true,
+        ...(title ? { title } : {}),
+      },
+      relationships: {
+        resource: { data: { type: "resources", id: String(resourceUuid) } },
+      },
+    },
+  };
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const url = organizationId
+    ? `${cleanBase}/api/v1/bookings?o=${encodeURIComponent(organizationId)}`
+    : `${cleanBase}/api/v1/bookings`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/vnd.api+json",
+        Accept: "application/vnd.api+json, application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
+    });
+    const status = res.status;
+    if (!res.ok) {
+      let errText = "";
+      try { errText = (await res.text()).slice(0, 500); } catch { /* ignore */ }
+      return { blockerId: null, ok: false, status, error: errText };
+    }
+    const json = (await res.json()) as { data?: { id?: string } };
+    return { blockerId: json?.data?.id ?? null, ok: true, status };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { blockerId: null, ok: false, status: 0, error: msg };
+  }
+}
+
+/**
+ * Loescht eine ANNY-Buchung (inkl. Blocker) hart ueber
+ * `DELETE /api/v1/bookings/{id}`. Liefert ok bei 2xx oder 404 (existiert
+ * nicht mehr -> Ziel erreicht). Wird beim Aufheben einer Slot-Sperre genutzt.
+ */
+export async function deleteAnnyBooking(
+  baseUrl: string,
+  token: string,
+  bookingId: string,
+  organizationId?: string | null,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const url = organizationId
+    ? `${cleanBase}/api/v1/bookings/${bookingId}?o=${encodeURIComponent(organizationId)}`
+    : `${cleanBase}/api/v1/bookings/${bookingId}`;
+  try {
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.api+json, application/json",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok || res.status === 404) return { ok: true };
+    let errText = "";
+    try { errText = (await res.text()).slice(0, 500); } catch { /* ignore */ }
+    return { ok: false, status: res.status, error: errText || `ANNY ${res.status}` };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, status: 0, error: msg };
+  }
+}
+
 /**
  * Storniert eine ANNY-Buchung. ANNY's Admin-API exponiert den Storno als
  * GET-Aufruf auf `/api/v1/bookings/{id}/cancel` (analog zu

@@ -6,7 +6,7 @@ import {
   fetchAnnyServiceStartSlots,
   resolveServiceResourceId,
 } from "@/lib/anny-availability";
-import { createAnnyBooking, cancelAnnyBooking } from "@/lib/anny-bookings";
+import { createAnnyBlocker, deleteAnnyBooking } from "@/lib/anny-bookings";
 
 export const maxDuration = 30;
 
@@ -159,19 +159,17 @@ export async function POST(
   const startIso = slot?.startIso ?? buildIso(date, slotStart);
   const endIso = slot?.endIso ?? buildIso(date, slotEnd);
 
-  const result = await createAnnyBooking({
+  // Slot in ANNY sperren ueber einen nativen Blocker (POST /bookings mit
+  // is_blocker:true). Das ist der korrekte Weg - eine Platzhalter-Buchung
+  // ueber /orders/from-config wuerde eine bezahlpflichtige Order erzeugen,
+  // was ANNY fuer diesen Account mit 500 quittiert.
+  const result = await createAnnyBlocker({
     baseUrl,
     token: annyConfig.token,
-    serviceUuid: annyServiceUuid,
     resourceUuid,
     startIso,
     endIso,
-    quantity,
-    description: `EMP-Access - GESPERRT${reason ? ` (${reason})` : ""}`,
-    notifyCustomer: false,
-    // Admin-Override: der Slot soll definitiv gesperrt werden, auch wenn
-    // ANNY ihn (z.B. wegen Lead-Time) sonst nicht freigeben wuerde.
-    checkAvailability: false,
+    title: `EMP-Access - GESPERRT${reason ? ` (${reason})` : ""}`,
     organizationId,
   });
 
@@ -197,8 +195,8 @@ export async function POST(
       endDate: new Date(endIso),
       quantity,
       reason,
-      annyBookingIds: JSON.stringify(result.bookingIds),
-      annyOrderId: result.orderId,
+      annyBookingIds: JSON.stringify(result.blockerId ? [result.blockerId] : []),
+      annyOrderId: null,
     },
   });
 
@@ -259,7 +257,7 @@ export async function DELETE(
     const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
     const organizationId = await resolveAnnyOrganizationId(baseUrl, annyConfig.token, annyConfig.extraConfig);
     for (const bid of bookingIds) {
-      const res = await cancelAnnyBooking(baseUrl, annyConfig.token, bid, organizationId);
+      const res = await deleteAnnyBooking(baseUrl, annyConfig.token, bid, organizationId);
       if (!res.ok) failed.push(bid);
     }
   }
