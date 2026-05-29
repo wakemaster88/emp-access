@@ -781,6 +781,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     select: { id: true, annyNames: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
   });
   const svcNameMap = new Map<string, number>();
+  // ANNY-Service-Namen, die sich mehrere EMP-Services teilen (z.B.
+  // "Exklusive Bahnmiete - Wochentag" fuer Seilbahn A UND B). Fuer solche
+  // Namen ist der Service-Name allein NICHT eindeutig - wir disambiguieren
+  // dann ueber den (spezifischeren) Resource-Namen der Buchung.
+  const ambiguousSvcNames = new Set<string>();
   const svcDefaults = new Map<number, ValidityDefaults>();
   for (const svc of servicesList) {
     svcDefaults.set(svc.id, {
@@ -792,7 +797,12 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     if (svc.annyNames) {
       try {
         const names: string[] = JSON.parse(svc.annyNames);
-        for (const n of names) svcNameMap.set(n, svc.id);
+        for (const n of names) {
+          if (svcNameMap.has(n) && svcNameMap.get(n) !== svc.id) {
+            ambiguousSvcNames.add(n);
+          }
+          svcNameMap.set(n, svc.id);
+        }
       } catch { /* ignore */ }
     }
   }
@@ -922,17 +932,47 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     }
 
     if (!subscriptionId) {
-      if (group.serviceName && svcNameMap.has(group.serviceName)) {
-        serviceId = svcNameMap.get(group.serviceName)!;
-      } else if (group.resourceName && svcNameMap.has(group.resourceName)) {
-        serviceId = svcNameMap.get(group.resourceName)!;
+      const svcByService = group.serviceName ? svcNameMap.get(group.serviceName) : undefined;
+      const svcByResource = group.resourceName ? svcNameMap.get(group.resourceName) : undefined;
+      // Geteilter Service-Name (Seilbahn A/B): die Buchung traegt den
+      // generischen Service-Namen, aber der Resource-Name ("...Bahnmieten B")
+      // ist eindeutig - den bevorzugen wir, damit B-Buchungen nicht auf A
+      // (oder umgekehrt) landen.
+      if (
+        group.serviceName
+        && ambiguousSvcNames.has(group.serviceName)
+        && svcByResource != null
+      ) {
+        serviceId = svcByResource;
+      } else if (svcByService != null) {
+        serviceId = svcByService;
+      } else if (svcByResource != null) {
+        serviceId = svcByResource;
       }
     }
 
-    if (group.serviceName && areaMappings[group.serviceName]) {
-      accessAreaId = areaMappings[group.serviceName];
-    } else if (group.resourceName && areaMappings[group.resourceName]) {
-      accessAreaId = areaMappings[group.resourceName];
+    // AccessArea: normalerweise ueber den Service-Namen. ABER bei geteilten
+    // Service-Namen (Seilbahn A/B) ist der service-basierte Area-Link nicht
+    // eindeutig (z.B. "Exklusive Bahnmiete - Wochentag" -> immer Area A). In
+    // dem Fall ist der physische Resource-Name die autoritative Quelle.
+    const areaByService =
+      group.serviceName && areaMappings[group.serviceName] != null
+        ? areaMappings[group.serviceName]
+        : null;
+    const areaByResource =
+      group.resourceName && areaMappings[group.resourceName] != null
+        ? areaMappings[group.resourceName]
+        : null;
+    if (
+      group.serviceName
+      && ambiguousSvcNames.has(group.serviceName)
+      && areaByResource != null
+    ) {
+      accessAreaId = areaByResource;
+    } else if (areaByService != null) {
+      accessAreaId = areaByService;
+    } else if (areaByResource != null) {
+      accessAreaId = areaByResource;
     }
 
     if (!subscriptionId && !serviceId && !accessAreaId) {

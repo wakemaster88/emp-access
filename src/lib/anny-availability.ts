@@ -251,6 +251,36 @@ export interface AnnyServiceMatch {
     autoDuration: boolean;
     isFullDay: boolean;
   };
+  /**
+   * UUIDs der Resources, an die der gematchte ANNY-Service gebunden ist.
+   * Quelle: relationships.resources. Wichtig, um bei Services, die mehrere
+   * Resources bedienen (z.B. "Exklusive Bahnmiete" auf Seilbahn A UND B),
+   * die korrekte physische Resource je EMP-Service zu bestimmen.
+   */
+  resourceIds?: string[];
+}
+
+/**
+ * Bestimmt die ANNY-Resource-UUID, die einen EMP-Service eindeutig einer
+ * physischen Resource zuordnet, wenn der zugehoerige ANNY-Service mehrere
+ * Resources bedient (z.B. "Exklusive Bahnmiete - Wochentag" haengt an
+ * Seilbahn A UND B). Wir bilden die Schnittmenge aus den ueber
+ * AccessArea/AnnyResourceLink verknuepften Resource-IDs des EMP-Service und
+ * den Resource-IDs des ANNY-Service. Genau ein Treffer -> diese Resource;
+ * sonst null (= kein Resource-Filter, altes Verhalten).
+ */
+export function resolveServiceResourceId(
+  serviceLinkedResourceIds: Iterable<string>,
+  annyServiceResourceIds: Iterable<string>,
+): string | null {
+  const annySet = new Set<string>();
+  for (const id of annyServiceResourceIds) if (id) annySet.add(String(id));
+  if (annySet.size === 0) return null;
+  const inter = new Set<string>();
+  for (const id of serviceLinkedResourceIds) {
+    if (id && annySet.has(String(id))) inter.add(String(id));
+  }
+  return inter.size === 1 ? [...inter][0] : null;
 }
 
 /**
@@ -325,6 +355,7 @@ export async function fetchAnnyServiceMatch(
   let exactMatch: string | null = null;
   let substringMatch: string | null = null;
   let matchedServiceInfo: AnnyServiceMatch["serviceInfo"] | undefined;
+  let matchedResourceIds: string[] | undefined;
 
   // ANNY erlaubt max. page[size]=50. Wir laufen bis zu 10 Seiten - reicht
   // fuer 500 Services, drueber hinaus stoppen wir der Latenz wegen.
@@ -333,6 +364,9 @@ export async function fetchAnnyServiceMatch(
     const params = new URLSearchParams({
       "page[size]": String(pageSize),
       "page[number]": String(page),
+      // resources mitladen, um pro Service die Resource-Zuordnung (Seilbahn
+      // A/B etc.) zu kennen - noetig fuer geteilte Services.
+      include: "resources",
     });
     if (organizationId) params.set("o", organizationId);
     let status = 0;
@@ -374,13 +408,21 @@ export async function fetchAnnyServiceMatch(
       });
       if (items.length === 0) break;
       for (const raw of items) {
-        const svc = raw as { id?: string; attributes?: Record<string, unknown>; name?: string };
+        const svc = raw as {
+          id?: string;
+          attributes?: Record<string, unknown>;
+          name?: string;
+          relationships?: { resources?: { data?: Array<{ id?: string }> } };
+        };
         const a = (svc.attributes ?? svc) as Record<string, unknown>;
         const id = svc.id || (a.id as string | undefined);
         const name = (a.name as string | undefined) || (a.title as string | undefined);
         if (!id || !name) continue;
         knownNames.push(name);
         const lower = name.toLowerCase();
+        const resIds = (svc.relationships?.resources?.data ?? [])
+          .map((d) => d?.id)
+          .filter((x): x is string => !!x);
         const info: NonNullable<AnnyServiceMatch["serviceInfo"]> = {
           minDuration: typeof a.min_duration === "number" ? (a.min_duration as number) : null,
           maxDuration: typeof a.max_duration === "number" ? (a.max_duration as number) : null,
@@ -393,6 +435,7 @@ export async function fetchAnnyServiceMatch(
         if (!exactMatch && wantedSet.has(lower)) {
           exactMatch = String(id);
           matchedServiceInfo = info;
+          matchedResourceIds = resIds;
         } else if (!substringMatch) {
           if (
             wantedLower.some((w) => w.includes(lower) || lower.includes(w))
@@ -400,6 +443,7 @@ export async function fetchAnnyServiceMatch(
           ) {
             substringMatch = String(id);
             if (!matchedServiceInfo) matchedServiceInfo = info;
+            if (!matchedResourceIds) matchedResourceIds = resIds;
           }
         }
       }
@@ -416,6 +460,7 @@ export async function fetchAnnyServiceMatch(
     knownNames,
     debug,
     serviceInfo: matchedServiceInfo,
+    resourceIds: matchedResourceIds,
   };
 }
 

@@ -12,6 +12,7 @@ import {
   fetchAnnyResourcePeriods,
   applyLocalSalesOverrides,
   mergeAvailabilityPeriods,
+  resolveServiceResourceId,
   fmtTimeBerlin,
   berlinOffset,
   type AnnyServiceCatalogEntry,
@@ -156,7 +157,12 @@ export async function GET(
         defaultValidityDurationMinutes: true,
         serviceAreas: {
           select: {
-            area: { select: { _count: { select: { annyLinks: true } } } },
+            area: {
+              select: {
+                _count: { select: { annyLinks: true } },
+                annyLinks: { select: { annyResourceId: true } },
+              },
+            },
           },
         },
       },
@@ -282,6 +288,22 @@ export async function GET(
       // holen Slots/Verfuegbarkeit fuer ALLE Treffer und fuehren sie zusammen.
       const matches = matchAllAnnyServicesInCatalog(catalog, annyNames);
 
+      // Ueber AccessArea/AnnyResourceLink verknuepfte ANNY-Resource-IDs dieses
+      // EMP-Service. Wird genutzt, um bei Services, die mehrere Resources
+      // bedienen (z.B. "Exklusive Bahnmiete" auf Seilbahn A UND B), die
+      // korrekte physische Resource je EMP-Service zu bestimmen.
+      const serviceLinkedResourceIds = svc.serviceAreas
+        .flatMap((sa) => sa.area?.annyLinks ?? [])
+        .map((l) => l.annyResourceId)
+        .filter((x): x is string => !!x);
+      // Schnittmenge EMP-Resources ∩ ANNY-Service-Resources. Genau ein
+      // Treffer -> wir filtern Slots/Resource exakt auf diese Resource
+      // (trennt Seilbahn A von B). Sonst null = altes Aggregat-Verhalten.
+      const targetResourceId = resolveServiceResourceId(
+        serviceLinkedResourceIds,
+        matches.flatMap((m) => m.resourceIds),
+      );
+
       if (matches.length === 0) {
         // Diagnose: liste ANNY-Services mit aehnlichen Tokens auf, damit
         // der Mitarbeiter sieht, welche annyNames im Backoffice gepflegt
@@ -384,7 +406,10 @@ export async function GET(
           // Day-Pass-Services haben in ANNY oft KEINE Resource (Strandbad,
           // Aquapark etc.) - dann bleibt das null und sie landen im UI in
           // der Sonstige-Gruppe.
-          primaryResource: resolvePrimaryResource(match.resourceIds, undefined),
+          primaryResource: resolvePrimaryResource(
+            targetResourceId ? [targetResourceId] : match.resourceIds,
+            undefined,
+          ),
           slots: [],
           totalEmpBookings: empCount,
           availableToday,
@@ -402,7 +427,11 @@ export async function GET(
           try {
             const s = await fetchAnnyServiceStartSlots(
               baseUrl, annyConfig!.token, m.id, dateStr,
-              { organizationId, slotDurationMinutes: slotDurationMin },
+              {
+                organizationId,
+                slotDurationMinutes: slotDurationMin,
+                ...(targetResourceId ? { resourceId: targetResourceId } : {}),
+              },
             );
             return applyLocalSalesOverrides(s);
           } catch {
@@ -488,7 +517,13 @@ export async function GET(
         serviceType,
         annyServiceUuid: match.id,
         annyMatchedName: match.name,
-        primaryResource: resolvePrimaryResource(match.resourceIds, slotResourceIds),
+        // Bei geteilten Services (Seilbahn A/B) zeigt targetResourceId die
+        // korrekte physische Resource; sonst Fallback auf den ersten Treffer.
+        primaryResource:
+          resolvePrimaryResource(
+            targetResourceId ? [targetResourceId] : match.resourceIds,
+            slotResourceIds,
+          ),
         slots,
         totalEmpBookings: empCount,
         availableToday,

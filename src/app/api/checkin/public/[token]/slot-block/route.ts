@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   resolveAnnyOrganizationId,
-  fetchAnnyServiceIdByName,
+  fetchAnnyServiceMatch,
   fetchAnnyServiceStartSlots,
+  resolveServiceResourceId,
 } from "@/lib/anny-availability";
 import { createAnnyBooking, cancelAnnyBooking } from "@/lib/anny-bookings";
 
@@ -82,7 +83,7 @@ export async function POST(
       name: true,
       annyNames: true,
       serviceAreas: {
-        select: { area: { select: { annyLinks: { select: { annyResourceId: true }, take: 1 } } } },
+        select: { area: { select: { annyLinks: { select: { annyResourceId: true } } } } },
       },
     },
   });
@@ -112,7 +113,8 @@ export async function POST(
   const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
   const organizationId = await resolveAnnyOrganizationId(baseUrl, annyConfig.token, annyConfig.extraConfig);
   const uniqueNames = collectServiceNames(svc.name, svc.annyNames);
-  const annyServiceUuid = await fetchAnnyServiceIdByName(baseUrl, annyConfig.token, uniqueNames, organizationId);
+  const match = await fetchAnnyServiceMatch(baseUrl, annyConfig.token, uniqueNames, organizationId);
+  const annyServiceUuid = match.id;
   if (!annyServiceUuid) {
     return NextResponse.json(
       { error: `ANNY-Service nicht gefunden (gesucht: ${uniqueNames.slice(0, 3).join(", ")}).` },
@@ -120,20 +122,30 @@ export async function POST(
     );
   }
 
-  // Aktuelle Slots holen, um Restkapazitaet + Resource + exakte ISO-Zeit
-  // dieses Slots zu bestimmen.
+  // Resource: bei Services, die mehrere Resources bedienen (Seilbahn A/B),
+  // exakt die zu DIESEM EMP-Service gehoerende Resource (Schnittmenge
+  // EMP-Resources ∩ ANNY-Service-Resources), damit wir B nicht auf A sperren.
+  const serviceLinkedResourceIds = svc.serviceAreas
+    .flatMap((sa) => sa.area?.annyLinks ?? [])
+    .map((l) => l.annyResourceId)
+    .filter((x): x is string => !!x);
+  const targetResourceId = resolveServiceResourceId(
+    serviceLinkedResourceIds,
+    match.resourceIds ?? [],
+  );
+
+  // Aktuelle Slots holen (auf die Ziel-Resource gefiltert, sofern eindeutig),
+  // um Restkapazitaet + exakte ISO-Zeit dieses Slots zu bestimmen.
   const slots = await fetchAnnyServiceStartSlots(baseUrl, annyConfig.token, annyServiceUuid, date, {
     organizationId,
+    ...(targetResourceId ? { resourceId: targetResourceId } : {}),
   }).catch(() => []);
   const slot = slots.find((s) => s.startTime === slotStart);
 
-  // Resource: bevorzugt aus dem konkreten Slot (resource_ids), sonst aus den
-  // verknuepften AccessAreas des Service.
-  const linkedResource = svc.serviceAreas
-    .flatMap((sa) => sa.area?.annyLinks ?? [])
-    .map((l) => l.annyResourceId)
-    .find((id) => !!id);
-  const resourceUuid = slot?.resourceIds?.[0] ?? linkedResource ?? null;
+  // Resource: Ziel-Resource bevorzugen, sonst aus dem konkreten Slot
+  // (resource_ids), sonst erster verknuepfter Resource-Link.
+  const linkedResource = serviceLinkedResourceIds.find((id) => !!id);
+  const resourceUuid = targetResourceId ?? slot?.resourceIds?.[0] ?? linkedResource ?? null;
   if (!resourceUuid) {
     return NextResponse.json({ error: "Keine ANNY-Resource fuer diesen Slot gefunden." }, { status: 422 });
   }

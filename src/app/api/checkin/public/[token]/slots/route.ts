@@ -5,6 +5,7 @@ import {
   fetchAnnyServiceMatch,
   fetchAnnyServiceStartSlots,
   applyLocalSalesOverrides,
+  resolveServiceResourceId,
   type AvailabilitySlot,
 } from "@/lib/anny-availability";
 
@@ -57,6 +58,9 @@ export async function GET(
       name: true,
       annyNames: true,
       defaultValidityDurationMinutes: true,
+      serviceAreas: {
+        select: { area: { select: { annyLinks: { select: { annyResourceId: true } } } } },
+      },
     },
   });
   if (!service) {
@@ -152,6 +156,19 @@ export async function GET(
   }
   const annyServiceUuid = match.id;
 
+  // Bei Services, die mehrere Resources bedienen (z.B. "Exklusive Bahnmiete"
+  // auf Seilbahn A UND B), die korrekte physische Resource fuer DIESEN
+  // EMP-Service bestimmen (Schnittmenge EMP-Resources ∩ ANNY-Service-
+  // Resources). So liefert der Picker fuer "Bahnmiete B" nur B-Slots.
+  const serviceLinkedResourceIds = service.serviceAreas
+    .flatMap((sa) => sa.area?.annyLinks ?? [])
+    .map((l) => l.annyResourceId)
+    .filter((x): x is string => !!x);
+  const targetResourceId = resolveServiceResourceId(
+    serviceLinkedResourceIds,
+    match.resourceIds ?? [],
+  );
+
   // Service-Typ aus ANNY-Properties ableiten. Tageskarten / Full-Day-
   // Services brauchen keinen Slot-Picker - dort waehlt der Mitarbeiter
   // nur das Datum.
@@ -198,6 +215,7 @@ export async function GET(
         // slotDurationMinutes wird NUR zur End-Zeit-Berechnung verwendet,
         // NICHT als duration-Filter an die API gesendet.
         slotDurationMinutes: annyMinDurationMin || annyBookingIntervalMin || null,
+        ...(targetResourceId ? { resourceId: targetResourceId } : {}),
       },
     );
   } catch {
