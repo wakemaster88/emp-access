@@ -134,6 +134,68 @@ export async function createAnnyBooking(
   }
 }
 
+/**
+ * Legt eine echte ANNY-Buchung an - der korrekte Weg fuer Schalter-Verkaeufe.
+ *
+ * WICHTIG: `POST /orders/from-config` (createAnnyBooking) crasht fuer diesen
+ * Account durchgaengig mit 500 (auch /orders/calculate). Die Admin-UI legt
+ * Buchungen stattdessen ueber `POST /api/v1/bookings` an - das funktioniert
+ * und reduziert die ANNY-Kapazitaet korrekt.
+ *
+ * Payload (JSON:API) - es MUESSEN sowohl `attributes.service_id` (Map
+ * service->Menge) als auch `relationships.service` UND `relationships.resource`
+ * gesetzt sein, sonst antwortet ANNY mit 500.
+ */
+export async function createAnnyBookingV2(
+  input: CreateAnnyBookingInput,
+): Promise<CreateAnnyBookingResult> {
+  const { baseUrl, token, serviceUuid, resourceUuid, startIso, endIso, description, organizationId, quantity = 1 } = input;
+  const qty = Math.max(1, Math.floor(quantity));
+  const payload = {
+    data: {
+      type: "bookings",
+      attributes: {
+        start_date: startIso,
+        end_date: endIso,
+        service_id: { [serviceUuid]: qty },
+        ...(description ? { description } : {}),
+      },
+      relationships: {
+        resource: { data: { type: "resources", id: String(resourceUuid) } },
+        service: { data: { type: "services", id: String(serviceUuid) } },
+      },
+    },
+  };
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const url = organizationId
+    ? `${cleanBase}/api/v1/bookings?o=${encodeURIComponent(organizationId)}`
+    : `${cleanBase}/api/v1/bookings`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/vnd.api+json",
+        Accept: "application/vnd.api+json, application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
+    });
+    const status = res.status;
+    if (!res.ok) {
+      let errText = "";
+      try { errText = (await res.text()).slice(0, 500); } catch { /* ignore */ }
+      return { bookingId: null, bookingIds: [], orderId: null, ok: false, status, error: errText };
+    }
+    const json = (await res.json()) as { data?: { id?: string } };
+    const bookingId = json?.data?.id ?? null;
+    return { bookingId, bookingIds: bookingId ? [bookingId] : [], orderId: null, ok: true, status };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { bookingId: null, bookingIds: [], orderId: null, ok: false, status: 0, error: msg };
+  }
+}
+
 export interface CreateAnnyBlockerInput {
   baseUrl: string;
   token: string;

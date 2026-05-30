@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ticketCreateSchema } from "@/lib/validators";
-import { resolveAnnyOrganizationId, fetchAnnyServiceIdByName } from "@/lib/anny-availability";
-import { createAnnyBooking } from "@/lib/anny-bookings";
+import { resolveAnnyOrganizationId, fetchAnnyServiceMatch, resolveServiceResourceId } from "@/lib/anny-availability";
+import { createAnnyBookingV2 } from "@/lib/anny-bookings";
 
 const publicTicketCreateSchema = ticketCreateSchema.extend({
   voucherCode: z.string().min(1).optional(),
@@ -130,7 +130,6 @@ export async function POST(
                 select: {
                   annyLinks: {
                     select: { annyResourceId: true },
-                    take: 1,
                   },
                 },
               },
@@ -139,14 +138,14 @@ export async function POST(
         },
       });
 
-      // Erste verknuepfte ANNY-Resource nehmen. Wenn ein Service mehrere
-      // Resources hat (z.B. mehrere Trainer), faellt die Wahl deterministisch
-      // auf die erste - kann spaeter bei Bedarf zum UI-Picker erweitert
-      // werden.
-      const firstResourceUuid = svc?.serviceAreas
+      // Alle ueber AccessArea/AnnyResourceLink verknuepften ANNY-Resources
+      // dieses Service. Die konkrete Resource (Seilbahn A vs B) wird unten
+      // ueber die Schnittmenge mit dem ANNY-Service bestimmt.
+      const serviceLinkedResourceIds = (svc?.serviceAreas ?? [])
         .flatMap((sa) => sa.area?.annyLinks ?? [])
         .map((l) => l.annyResourceId)
-        .find((id) => !!id);
+        .filter((x): x is string => !!x);
+      const firstResourceUuid = serviceLinkedResourceIds[0];
 
       if (svc && firstResourceUuid) {
         const annyNames: string[] = [];
@@ -177,26 +176,36 @@ export async function POST(
             annyConfig.token,
             annyConfig.extraConfig,
           );
-          const annyServiceUuid = await fetchAnnyServiceIdByName(
+          const match = await fetchAnnyServiceMatch(
             baseUrl,
             annyConfig.token,
             uniqueNames,
             organizationId,
           );
+          const annyServiceUuid = match.id;
+
+          // Bei Services, die mehrere Resources bedienen (Seilbahn A/B),
+          // die zu DIESEM EMP-Service passende Resource bestimmen
+          // (Schnittmenge EMP-Resources ∩ ANNY-Service-Resources), sonst
+          // erste verknuepfte Resource.
+          const resourceUuid =
+            resolveServiceResourceId(serviceLinkedResourceIds, match.resourceIds ?? [])
+            ?? firstResourceUuid;
 
           if (annyServiceUuid) {
             const ownerName =
               [data.firstName, data.lastName].filter(Boolean).join(" ") || data.name;
-            const result = await createAnnyBooking({
+            // Buchung ueber POST /api/v1/bookings (createAnnyBookingV2) - der
+            // alte /orders/from-config-Weg crasht fuer diesen Account mit 500.
+            const result = await createAnnyBookingV2({
               baseUrl,
               token: annyConfig.token,
               serviceUuid: annyServiceUuid,
-              resourceUuid: firstResourceUuid,
+              resourceUuid,
               startIso: start.toISOString(),
               endIso: end.toISOString(),
               description: `EMP-Access${ownerName ? ` - ${ownerName}` : ""}`,
               notifyCustomer: false,
-              checkAvailability: true,
               organizationId,
             });
 
