@@ -117,6 +117,14 @@ async function loadTickets(
       { OR: [{ endDate: null }, { endDate: { gte: todayStart } }] },
     ],
   };
+  if (strict) {
+    // Bei strikter Bereichseingrenzung (explizit gewaehlte areaIds) sollen
+    // Mitarbeiter-Tickets (EMP_CONTROL-Importe ohne echte Bereichszuordnung,
+    // ticketTypeName="Mitarbeiter") NICHT auf dem Monitor erscheinen.
+    (ticketWhere.AND as Record<string, unknown>[]).push({
+      NOT: { ticketTypeName: { equals: "Mitarbeiter", mode: "insensitive" } },
+    });
+  }
   if (cachedAreaIds.length > 0) {
     // Vereinsmitglieder erben die Areas IHRES Vereins-Zutritts-Tickets (z.B.
     // "Tristar Oelde -> Strandbad Jahresticket"). Wenn das Zutritts-Ticket
