@@ -2,6 +2,24 @@ import { prisma } from "@/lib/prisma";
 import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
+import { fmtTimeBerlin } from "@/lib/anny-availability";
+
+/**
+ * Slot-Uhrzeit (HH:mm) aus der tatsaechlichen Buchungszeit ableiten – fuer
+ * TIME_SLOT-Tickets ohne hinterlegten Service-/Abo-Default. Ganztaegige
+ * Buchungen (00:00–23:59 o.ae.) gelten NICHT als Slot und liefern null.
+ */
+function slotTimesFromBooking(
+  start: Date | null,
+  end: Date | null,
+): { slotStart: string; slotEnd: string } | null {
+  if (!start || !end) return null;
+  const s = fmtTimeBerlin(start.toISOString());
+  const e = fmtTimeBerlin(end.toISOString());
+  if (!s || !e || s === e) return null;
+  if (s === "00:00" && (e === "23:59" || e === "00:00")) return null;
+  return { slotStart: s, slotEnd: e };
+}
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
 const SYNC_WINDOW_DAYS = 60;
@@ -1026,8 +1044,17 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       serviceId,
       ...(defaults.validityType ? { validityType: defaults.validityType as "DATE_RANGE" | "DURATION" | "TIME_SLOT" } : {}),
       ...(defaults.validityDurationMinutes != null ? { validityDurationMinutes: defaults.validityDurationMinutes } : {}),
-      ...(defaults.slotStart ? { slotStart: defaults.slotStart } : {}),
-      ...(defaults.slotEnd ? { slotEnd: defaults.slotEnd } : {}),
+      // Slot-Zeit: bevorzugt Service-/Abo-Default, sonst – bei TIME_SLOT – die
+      // echte Buchungszeit (damit z.B. Anfaengerkurs-Slots 13:00/15:00/17:00
+      // am Ticket stehen und im Monitor nach Slot gruppiert werden koennen).
+      ...((defaults.slotStart && defaults.slotEnd)
+        ? { slotStart: defaults.slotStart, slotEnd: defaults.slotEnd }
+        : (defaults.validityType === "TIME_SLOT"
+            ? (() => {
+                const st = slotTimesFromBooking(group.startDate, group.endDate);
+                return st ? { slotStart: st.slotStart, slotEnd: st.slotEnd } : {};
+              })()
+            : {})),
     };
 
     try {

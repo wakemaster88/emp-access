@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
-import { monitorTicketTypeLine } from "@/lib/monitor-ticket-subtitle";
+import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes } from "@/lib/monitor-ticket-subtitle";
 
 function endOfDayMs(dateStr: string): number {
   const d = new Date(dateStr);
@@ -532,6 +532,52 @@ export default function PublicMonitorPage({ params }: Props) {
       return a.representative.name.localeCompare(b.representative.name);
     });
   }, [filteredTickets]);
+
+  /**
+   * Ticketliste fuer die Anzeige: wenn mind. eine Gruppe eine feste
+   * Slot-Uhrzeit hat, wird nach Slots gruppiert (Abschnittsueberschriften je
+   * Uhrzeit, "Ohne feste Uhrzeit" fuer den Rest). Sonst flache Liste wie bisher.
+   */
+  type TicketListItem =
+    | { kind: "header"; key: string; label: string }
+    | { kind: "group"; key: string; group: TicketGroup };
+  const ticketListItems = useMemo<TicketListItem[]>(() => {
+    const groupKey = (g: TicketGroup) =>
+      g.personCount > 1 ? `g:${g.members.map((m) => m.id).join(",")}` : `t:${g.representative.id}`;
+
+    const withSlot: { label: string; startMin: number; group: TicketGroup }[] = [];
+    const withoutSlot: TicketGroup[] = [];
+    for (const g of groupedTickets) {
+      const label = monitorSlotLabel(g.representative);
+      if (label) withSlot.push({ label, startMin: slotLabelStartMinutes(label), group: g });
+      else withoutSlot.push(g);
+    }
+
+    if (withSlot.length === 0) {
+      return groupedTickets.map((g) => ({ kind: "group" as const, key: groupKey(g), group: g }));
+    }
+
+    withSlot.sort((a, b) =>
+      a.startMin - b.startMin
+      || a.label.localeCompare(b.label)
+      || a.group.representative.name.localeCompare(b.group.representative.name),
+    );
+
+    const items: TicketListItem[] = [];
+    let currentLabel: string | null = null;
+    for (const w of withSlot) {
+      if (w.label !== currentLabel) {
+        items.push({ kind: "header", key: `h:${w.label}`, label: `${w.label} Uhr` });
+        currentLabel = w.label;
+      }
+      items.push({ kind: "group", key: groupKey(w.group), group: w.group });
+    }
+    if (withoutSlot.length > 0) {
+      items.push({ kind: "header", key: "h:none", label: "Ohne feste Uhrzeit" });
+      for (const g of withoutSlot) items.push({ kind: "group", key: groupKey(g), group: g });
+    }
+    return items;
+  }, [groupedTickets]);
 
   const groupedScans = useMemo(() => {
     function parseNote(note?: string | null): { name?: string; picture?: string; age?: number } {
@@ -1064,7 +1110,21 @@ export default function PublicMonitorPage({ params }: Props) {
                   Keine Treffer für „{ticketSearch.trim()}“
                 </p>
               )}
-              {groupedTickets.map((group) => {
+              {ticketListItems.map((item) => {
+                if (item.kind === "header") {
+                  return (
+                    <div
+                      key={item.key}
+                      className={cn(
+                        "px-1 pt-2 pb-1 text-xs font-bold uppercase tracking-wider",
+                        styles.sectionLabel,
+                      )}
+                    >
+                      {item.label}
+                    </div>
+                  );
+                }
+                const group = item.group;
                 const ticket = group.representative;
                 const isGroup = group.personCount > 1;
                 const memberIds = group.members.map((m) => m.id);
@@ -1138,11 +1198,15 @@ export default function PublicMonitorPage({ params }: Props) {
                           : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
 
                 const typeLine = monitorTicketTypeLine(ticket);
-                const slotStr = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd} Uhr` : null;
+                const slotLabel = monitorSlotLabel(ticket);
+                const slotStr = slotLabel ? `${slotLabel} Uhr` : null;
+                // Bei Slot-/Zeitfenster-Tickets ist das Enddatum (= der Slot-Tag)
+                // redundant - dort die Uhrzeit zeigen, das "bis"-Datum weglassen.
+                const isSlotTicket = ticket.validityType === "TIME_SLOT";
                 const subParts = [
                   typeLine,
                   slotStr && slotStr !== typeLine ? slotStr : null,
-                  endStr ? `bis ${endStr}` : null,
+                  (!isSlotTicket && endStr) ? `bis ${endStr}` : null,
                 ].filter(Boolean) as string[];
 
                 return (
@@ -1474,11 +1538,12 @@ function TicketDetailOverlay({
   const endStr = ticket.endDate
     ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
     : null;
-  const headerSlotStr = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd} Uhr` : null;
+  const headerSlotLabel = monitorSlotLabel(ticket);
+  const headerSlotStr = headerSlotLabel ? `${headerSlotLabel} Uhr` : null;
   const headerSubParts = [
     typeLine,
     headerSlotStr && headerSlotStr !== typeLine ? headerSlotStr : null,
-    endStr ? `bis ${endStr}` : null,
+    (ticket.validityType !== "TIME_SLOT" && endStr) ? `bis ${endStr}` : null,
   ].filter(Boolean) as string[];
   const startStr = ticket.startDate
     ? new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })

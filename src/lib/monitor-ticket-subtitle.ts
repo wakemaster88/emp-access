@@ -21,6 +21,24 @@ function norm(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/**
+ * Slot-Uhrzeit eines Tickets als "HH:mm–HH:mm" (bzw. "HH:mm"), oder null wenn
+ * keine feste Slot-Zeit hinterlegt ist. Quelle sind die kanonischen
+ * slotStart/slotEnd-Felder (zeitzonensicher, im Gegensatz zu startDate).
+ */
+export function monitorSlotLabel(t: { slotStart: string | null; slotEnd: string | null }): string | null {
+  if (t.slotStart && t.slotEnd) return `${t.slotStart}–${t.slotEnd}`;
+  if (t.slotStart) return t.slotStart;
+  return null;
+}
+
+/** Sortierschluessel (Minuten ab Mitternacht) aus einem Slot-Label "HH:mm…". */
+export function slotLabelStartMinutes(label: string): number {
+  const m = label.match(/^(\d{2}):(\d{2})/);
+  if (!m) return Number.MAX_SAFE_INTEGER;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
 function isRedundantLabel(
   label: string | null | undefined,
   displayPerson: string,
