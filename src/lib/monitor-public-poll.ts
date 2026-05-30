@@ -92,7 +92,12 @@ async function loadTickets(
   prisma: PrismaClient,
   accountId: number,
   devices: { accessIn: number | null; accessOut: number | null }[],
-  extraAreaIds: number[] = []
+  extraAreaIds: number[] = [],
+  // strict=true: Monitor ist EXPLIZIT auf Bereiche eingegrenzt (areaIds vom
+  // Nutzer gewaehlt) -> nur Tickets zeigen, die wirklich zu diesen Bereichen
+  // gehoeren. Die Universal-/Catch-all-Tickets ohne jede Bereichszuordnung
+  // werden dann NICHT mit eingeblendet.
+  strict = false
 ) {
   const cachedAreaIds = [...new Set([
     ...devices.flatMap((d) => [d.accessIn, d.accessOut].filter((id): id is number => id != null)),
@@ -146,12 +151,16 @@ async function loadTickets(
         // Vereinsmitglieder werden hier bewusst ausgeschlossen - die laufen
         // ueber den `vereinAreaFilter` oben und erscheinen nur dort, wo der
         // Verein auch wirklich Zugang hat.
-        {
-          accessAreaId: null,
-          subscriptionId: null,
-          serviceId: null,
-          vereinId: null,
-        },
+        // Bei strikter Bereichseingrenzung (explizit gewaehlte areaIds) werden
+        // diese Catch-all-Tickets NICHT eingeblendet.
+        ...(strict
+          ? []
+          : [{
+              accessAreaId: null,
+              subscriptionId: null,
+              serviceId: null,
+              vereinId: null,
+            }]),
       ],
     });
   }
@@ -291,7 +300,9 @@ export async function runPublicMonitorPoll(
     loadDevices(prisma, accountId, deviceFilter),
     loadAnnouncements(prisma, accountId),
   ]);
-  const tickets = includeTickets ? await loadTickets(prisma, accountId, devices, areaIds) : null;
+  const tickets = includeTickets
+    ? await loadTickets(prisma, accountId, devices, areaIds, areaScoped)
+    : null;
 
   return {
     name: monitorName,
