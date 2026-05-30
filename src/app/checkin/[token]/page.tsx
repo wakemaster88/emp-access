@@ -4975,6 +4975,22 @@ function AddTicketOverlay({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // Slot-Pflicht: Bei Kursen mit ANNY-Slots MUSS ein konkreter Slot
+    // gewaehlt sein, sonst landet die Buchung als Ganztags-Ticket ohne
+    // Uhrzeit (slotStart/slotEnd leer) - dann fehlt im Monitor die Uhrzeit.
+    // Erst wenn ein Slot geklickt wurde, traegt startDate eine Uhrzeit
+    // ("yyyy-mm-ddTHH:mm"), aus der unten slotStart/slotEnd abgeleitet wird.
+    if (
+      dateMode === "datetime"
+      && hasAnnyLink
+      && slots.length > 0
+      && !(startDate && startDate.includes("T"))
+    ) {
+      setError("Bitte einen Slot mit Uhrzeit wählen.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     setPendingConflict(null);
