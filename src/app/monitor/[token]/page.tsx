@@ -1138,7 +1138,12 @@ export default function PublicMonitorPage({ params }: Props) {
                           : ticket.status === "VALID" ? "Gültig" : "Eingelöst";
 
                 const typeLine = monitorTicketTypeLine(ticket);
-                const subParts = [typeLine, endStr ? `bis ${endStr}` : null].filter(Boolean) as string[];
+                const slotStr = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd} Uhr` : null;
+                const subParts = [
+                  typeLine,
+                  slotStr && slotStr !== typeLine ? slotStr : null,
+                  endStr ? `bis ${endStr}` : null,
+                ].filter(Boolean) as string[];
 
                 return (
                   <div
@@ -1469,7 +1474,12 @@ function TicketDetailOverlay({
   const endStr = ticket.endDate
     ? new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
     : null;
-  const headerSubParts = [typeLine, endStr ? `bis ${endStr}` : null].filter(Boolean) as string[];
+  const headerSlotStr = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd} Uhr` : null;
+  const headerSubParts = [
+    typeLine,
+    headerSlotStr && headerSlotStr !== typeLine ? headerSlotStr : null,
+    endStr ? `bis ${endStr}` : null,
+  ].filter(Boolean) as string[];
   const startStr = ticket.startDate
     ? new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
     : null;
