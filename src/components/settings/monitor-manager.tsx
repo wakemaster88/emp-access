@@ -32,6 +32,7 @@ interface MonitorConfigData {
   token: string;
   type: string;
   deviceIds: number[];
+  areaIds: number[];
   isActive: boolean;
   createdAt: string;
 }
@@ -66,12 +67,19 @@ function MonitorDialog({
   const [name, setName] = useState(monitor?.name ?? "");
   const [type, setType] = useState(monitor?.type ?? "MONITOR");
   const [selectedDevices, setSelectedDevices] = useState<number[]>(monitor?.deviceIds ?? []);
+  const [selectedAreas, setSelectedAreas] = useState<number[]>(monitor?.areaIds ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   function toggleDevice(id: number) {
     setSelectedDevices((prev) =>
       prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]
+    );
+  }
+
+  function toggleArea(id: number) {
+    setSelectedAreas((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
     );
   }
 
@@ -86,7 +94,12 @@ function MonitorDialog({
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), type, deviceIds: selectedDevices }),
+        body: JSON.stringify({
+          name: name.trim(),
+          type,
+          deviceIds: selectedDevices,
+          areaIds: type === "MONITOR" ? selectedAreas : [],
+        }),
       });
       if (!res.ok) {
         setError("Fehler beim Speichern");
@@ -294,6 +307,47 @@ function MonitorDialog({
           )}
         </div>}
 
+        {type === "MONITOR" && <div className="space-y-2">
+          <Label>Bereiche (optional)</Label>
+          <p className="text-xs text-slate-400">
+            Grenzt die Personen-/Ticketliste auf diese Bereiche ein – nützlich für Bereiche <span className="font-medium">ohne eigenes Scan-Gerät</span> (z.B. Seilbahn B, Übungslift). Ohne Auswahl gelten die Bereiche der ausgewählten Geräte.
+          </p>
+          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+            {accessAreas.length === 0 && (
+              <p className="text-sm text-slate-500">Keine Bereiche vorhanden</p>
+            )}
+            {accessAreas.map((area) => {
+              const selected = selectedAreas.includes(area.id);
+              return (
+                <button
+                  key={area.id}
+                  type="button"
+                  onClick={() => toggleArea(area.id)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
+                    selected
+                      ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
+                      : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                  )}
+                >
+                  <div className={cn(
+                    "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                    selected ? "bg-indigo-600 border-indigo-600" : "border-slate-300 dark:border-slate-600"
+                  )}>
+                    {selected && <Check className="h-3 w-3 text-white" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{area.name}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {selectedAreas.length > 0 && (
+            <p className="text-xs text-slate-500">{selectedAreas.length} Bereich(e) als Filter</p>
+          )}
+        </div>}
+
         {type === "RESOURCE_MONITOR" && <div className="space-y-2">
           <Label>Bereiche auswählen</Label>
           <p className="text-xs text-slate-400">Wähle die Bereiche, die im Ressourcen-Monitor angezeigt werden. Ohne Auswahl werden alle Dashboard-Bereiche verwendet.</p>
@@ -488,9 +542,16 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
           ? accessAreas
               .filter((a) => (monitor.deviceIds as number[]).includes(a.id))
               .map((a) => a.name)
-          : devices
-              .filter((d) => (monitor.deviceIds as number[]).includes(d.id))
-              .map((d) => d.name);
+          : [
+              ...devices
+                .filter((d) => (monitor.deviceIds as number[]).includes(d.id))
+                .map((d) => d.name),
+              // Scan-Monitore koennen zusaetzlich auf Bereiche eingegrenzt sein
+              // (z.B. Seilbahn B / Uebungslift ohne eigenes Geraet).
+              ...accessAreas
+                .filter((a) => (monitor.areaIds as number[] | undefined)?.includes(a.id))
+                .map((a) => a.name),
+            ];
         const TypeIcon = isCheckin
           ? ClipboardCheck
           : isResource

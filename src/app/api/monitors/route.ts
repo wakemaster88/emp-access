@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
       name: body.name.trim(),
       type,
       deviceIds: body.deviceIds ?? [],
+      areaIds: Array.isArray(body.areaIds) ? body.areaIds : [],
       isActive: body.isActive ?? true,
       accountId: accountId!,
     },

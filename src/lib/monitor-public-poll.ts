@@ -27,13 +27,20 @@ async function loadAnnouncements(prisma: PrismaClient, accountId: number) {
   });
 }
 
+/**
+ * deviceFilter-Semantik (geteilt von Scans/Geraeten):
+ *   null      -> kein Filter (alle Geraete des Accounts, Legacy-Verhalten)
+ *   []        -> explizit keine Geraete (z.B. bereichseingegrenzter Monitor
+ *                ohne eigenes Scan-Geraet) -> liefert nichts
+ *   [ids...]  -> genau diese Geraete
+ */
 async function loadDevices(
   prisma: PrismaClient,
   accountId: number,
-  deviceIds: number[]
+  deviceFilter: number[] | null
 ) {
   return prisma.device.findMany({
-    where: { accountId, ...(deviceIds.length ? { id: { in: deviceIds } } : {}) },
+    where: { accountId, ...(deviceFilter === null ? {} : { id: { in: deviceFilter } }) },
     select: { id: true, name: true, type: true, isActive: true, lastUpdate: true, task: true, accessIn: true, accessOut: true },
   });
 }
@@ -41,12 +48,12 @@ async function loadDevices(
 async function loadScans(
   prisma: PrismaClient,
   accountId: number,
-  deviceIds: number[],
+  deviceFilter: number[] | null,
   sinceScanId: number
 ) {
   const scanWhere: Record<string, unknown> = {
     accountId,
-    ...(deviceIds.length ? { deviceId: { in: deviceIds } } : {}),
+    ...(deviceFilter === null ? {} : { deviceId: { in: deviceFilter } }),
     ...(sinceScanId > 0
       ? { id: { gt: sinceScanId } }
       : { scanTime: { gte: berlinDayStart() } }),
@@ -84,11 +91,13 @@ async function loadScans(
 async function loadTickets(
   prisma: PrismaClient,
   accountId: number,
-  devices: { accessIn: number | null; accessOut: number | null }[]
+  devices: { accessIn: number | null; accessOut: number | null }[],
+  extraAreaIds: number[] = []
 ) {
-  const cachedAreaIds = [...new Set(
-    devices.flatMap((d) => [d.accessIn, d.accessOut].filter((id): id is number => id != null))
-  )];
+  const cachedAreaIds = [...new Set([
+    ...devices.flatMap((d) => [d.accessIn, d.accessOut].filter((id): id is number => id != null)),
+    ...extraAreaIds,
+  ])];
   const now = new Date();
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
@@ -228,6 +237,7 @@ export async function runPublicMonitorPoll(
   opts: {
     accountId: number;
     deviceIds: number[];
+    areaIds?: number[];
     monitorName: string;
     sinceScanId: number;
     includeTickets: boolean;
@@ -235,8 +245,31 @@ export async function runPublicMonitorPoll(
   }
 ): Promise<PublicMonitorPollResult> {
   const { accountId, deviceIds, monitorName, sinceScanId, includeTickets, scansOnly } = opts;
+  const areaIds = opts.areaIds ?? [];
+  const areaScoped = areaIds.length > 0;
 
-  const scans = await loadScans(prisma, accountId, deviceIds, sinceScanId);
+  // Geraete-Filter bestimmen:
+  // - Geraete gewaehlt -> genau diese.
+  // - sonst bereichseingegrenzt -> Geraete dieser Bereiche (kann leer sein ->
+  //   dann werden bewusst KEINE Scans gezeigt, statt alle).
+  // - sonst Legacy -> kein Filter (alle Geraete).
+  let deviceFilter: number[] | null;
+  if (deviceIds.length > 0) {
+    deviceFilter = deviceIds;
+  } else if (areaScoped) {
+    const areaDevices = await prisma.device.findMany({
+      where: {
+        accountId,
+        OR: [{ accessIn: { in: areaIds } }, { accessOut: { in: areaIds } }],
+      },
+      select: { id: true },
+    });
+    deviceFilter = areaDevices.map((d) => d.id);
+  } else {
+    deviceFilter = null;
+  }
+
+  const scans = await loadScans(prisma, accountId, deviceFilter, sinceScanId);
 
   let lastScanId = sinceScanId;
   if (scans.length > 0) {
@@ -255,10 +288,10 @@ export async function runPublicMonitorPoll(
   }
 
   const [devices, announcements] = await Promise.all([
-    loadDevices(prisma, accountId, deviceIds),
+    loadDevices(prisma, accountId, deviceFilter),
     loadAnnouncements(prisma, accountId),
   ]);
-  const tickets = includeTickets ? await loadTickets(prisma, accountId, devices) : null;
+  const tickets = includeTickets ? await loadTickets(prisma, accountId, devices, areaIds) : null;
 
   return {
     name: monitorName,

@@ -35,6 +35,7 @@ export async function PUT(
                 ? "MONITOR"
                 : existing.type,
       deviceIds: body.deviceIds ?? existing.deviceIds,
+      areaIds: Array.isArray(body.areaIds) ? body.areaIds : existing.areaIds,
       isActive: body.isActive ?? existing.isActive,
     },
   });

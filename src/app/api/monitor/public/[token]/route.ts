@@ -17,6 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const deviceIds = (monitor.deviceIds as number[]) ?? [];
+  const areaIds = (monitor.areaIds as number[] | null) ?? [];
   const accountId = monitor.accountId;
 
   const isPoll = request.nextUrl.searchParams.get("poll") === "1";
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const data = await runPublicMonitorPoll(prisma, {
       accountId,
       deviceIds,
+      areaIds,
       monitorName: monitor.name,
       sinceScanId,
       includeTickets,

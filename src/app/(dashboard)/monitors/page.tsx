@@ -50,6 +50,7 @@ export default async function MonitorsPage() {
           monitors={monitors.map((m) => ({
             ...m,
             deviceIds: m.deviceIds as number[],
+            areaIds: (m.areaIds as number[] | null) ?? [],
             createdAt: m.createdAt.toISOString(),
           }))}
           devices={devices}
