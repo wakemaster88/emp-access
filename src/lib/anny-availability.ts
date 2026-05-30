@@ -735,17 +735,25 @@ export function suggestAnnyServiceNames(
  *   {
  *     "start_date": "...",
  *     "available": true,
- *     "number_available": 3,            // GESAMTKAPAZITAET dieses Slots
- *     "remaining_number_available": 2,  // davon noch frei
+ *     "quota": 15,                       // GESAMTKAPAZITAET (Slot-Quota)
+ *     "number_available": 15,            // aktuell FREIE Plaetze (sinkt bei Buchung)
+ *     "remaining_number_available": 1,   // max. Menge pro EINZELbuchung
  *     "resource_ids": ["r1","r2","r3"]
  *   }
  *
- * Wir mappen:
- *   capacity            = number_available           (max. moegliche Bookings)
- *   remaining           = remaining_number_available (noch freie Bookings)
- *   resourceIds         = resource_ids               (Resources, die diesen Slot
+ * WICHTIG: `remaining_number_available` ist KEIN Frei-Zaehler! Es ist die
+ * maximal pro Einzelbuchung buchbare Menge und wird durch die Resource-
+ * Einstellung `max_booking_quantity` gedeckelt. Bei einem Kurs mit
+ * max_booking_quantity=1 meldet ANNY remaining_number_available=1, obwohl
+ * z.B. 15 von 15 Plaetzen frei sind. Die echte Restkapazitaet steht in
+ * `number_available`, die Gesamtkapazitaet in `quota`.
+ *
+ * Wir mappen daher:
+ *   capacity            = quota ?? number_available   (Gesamtkapazitaet)
+ *   remaining           = number_available            (aktuell freie Plaetze)
+ *   resourceIds         = resource_ids                (Resources, die diesen Slot
  *                                                     aktuell noch bedienen koennen)
- *   unavailabilityType  = unavailability_type        (`booked_out`,
+ *   unavailabilityType  = unavailability_type         (`booked_out`,
  *                                                     `lead_time_conflict`,
  *                                                     `under_min_duration`,
  *                                                     `staggered_conflict`)
@@ -905,6 +913,7 @@ export async function fetchAnnyServiceStartSlots(
         start_date?: string;
         end_date?: string;
         available?: boolean;
+        quota?: number;
         number_available?: number;
         remaining_number_available?: number;
         unavailability_type?: string;
@@ -929,9 +938,26 @@ export async function fetchAnnyServiceStartSlots(
         endTime: endIso ? fmtTimeBerlin(endIso) : "",
         available: isAvailable,
       };
-      if (typeof it.number_available === "number") slot.capacity = it.number_available;
-      if (typeof it.remaining_number_available === "number")
-        slot.remaining = it.remaining_number_available;
+      // Gesamtkapazitaet = quota (Fallback: number_available). Freie Plaetze =
+      // number_available. remaining_number_available wird NICHT als Frei-Zaehler
+      // verwendet (s. Doc-Kommentar oben: ist die per-Buchung-Maxmenge).
+      const quota = typeof it.quota === "number" ? it.quota : null;
+      const numberAvailable =
+        typeof it.number_available === "number" ? it.number_available : null;
+      const perBookingMax =
+        typeof it.remaining_number_available === "number"
+          ? it.remaining_number_available
+          : null;
+      if (quota != null || numberAvailable != null) {
+        slot.capacity = quota ?? numberAvailable!;
+      }
+      // Freie Plaetze: number_available. Fallback auf perBookingMax nur, wenn
+      // number_available fehlt (aeltere ANNY-Antworten ohne das Feld).
+      if (numberAvailable != null) {
+        slot.remaining = numberAvailable;
+      } else if (perBookingMax != null) {
+        slot.remaining = perBookingMax;
+      }
       if (Array.isArray(it.resource_ids)) slot.resourceIds = it.resource_ids;
       if (typeof it.unavailability_type === "string" && it.unavailability_type)
         slot.unavailabilityType = it.unavailability_type;
@@ -1145,9 +1171,9 @@ export type AvailabilitySlot = {
   endTime: string;
   startIso: string;
   endIso: string;
-  /** Gesamtkapazitaet des Slots (ANNY: number_available). */
+  /** Gesamtkapazitaet des Slots (ANNY: quota ?? number_available). */
   capacity?: number;
-  /** Aktuell freie Plaetze (ANNY: remaining_number_available). */
+  /** Aktuell freie Plaetze (ANNY: number_available). */
   remaining?: number;
   /** false = ANNY meldet diesen Slot als gesperrt. */
   available?: boolean;
