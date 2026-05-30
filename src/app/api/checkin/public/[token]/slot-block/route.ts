@@ -6,7 +6,12 @@ import {
   fetchAnnyServiceStartSlots,
   resolveServiceResourceId,
 } from "@/lib/anny-availability";
-import { createAnnyBlocker, deleteAnnyBooking } from "@/lib/anny-bookings";
+import {
+  createAnnyBlocker,
+  deleteAnnyBooking,
+  cancelAnnyBooking,
+  annyBookingExists,
+} from "@/lib/anny-bookings";
 
 export const maxDuration = 30;
 
@@ -257,7 +262,21 @@ export async function DELETE(
     const baseUrl = (annyConfig.baseUrl || "https://b.anny.co").replace(/\/+$/, "");
     const organizationId = await resolveAnnyOrganizationId(baseUrl, annyConfig.token, annyConfig.extraConfig);
     for (const bid of bookingIds) {
-      const res = await deleteAnnyBooking(baseUrl, annyConfig.token, bid, organizationId);
+      // 1) Nativer Blocker -> harter DELETE (behandelt 404 als Erfolg).
+      let res = await deleteAnnyBooking(baseUrl, annyConfig.token, bid, organizationId);
+      // 2) Fallback: aeltere Platzhalter-Buchungen lassen sich evtl. nur per
+      //    Cancel-Endpoint aufheben (DELETE liefert dann 4xx/5xx).
+      if (!res.ok) {
+        await cancelAnnyBooking(baseUrl, annyConfig.token, bid, organizationId).catch(() => null);
+      }
+      // 3) Autoritative Absicherung: ist die Buchung in ANNY weg, gilt das
+      //    Aufheben als erfolgreich - unabhaengig davon, welcher Endpoint
+      //    gegriffen hat. Nur wenn sie nachweislich noch existiert, scheitern
+      //    wir (damit der User nicht dauerhaft an einem ANNY-Fehler haengt).
+      if (!res.ok) {
+        const exists = await annyBookingExists(baseUrl, annyConfig.token, bid, organizationId);
+        if (exists === false) res = { ok: true };
+      }
       if (!res.ok) failed.push(bid);
     }
   }

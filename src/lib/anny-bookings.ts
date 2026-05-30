@@ -314,6 +314,39 @@ export async function deleteAnnyBooking(
 }
 
 /**
+ * Prueft, ob eine ANNY-Buchung noch existiert (`GET /api/v1/bookings/{id}`).
+ * Liefert false bei 404 (weg), true bei 2xx (existiert noch), null wenn
+ * unklar (Netzwerk/anderer Status). Dient als autoritative Absicherung beim
+ * Aufheben einer Sperre: ist die Buchung weg, gilt das Storno als erfolgreich.
+ */
+export async function annyBookingExists(
+  baseUrl: string,
+  token: string,
+  bookingId: string,
+  organizationId?: string | null,
+): Promise<boolean | null> {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const url = organizationId
+    ? `${cleanBase}/api/v1/bookings/${bookingId}?o=${encodeURIComponent(organizationId)}`
+    : `${cleanBase}/api/v1/bookings/${bookingId}`;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.api+json, application/json",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.status === 404) return false;
+    if (res.ok) return true;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Storniert eine ANNY-Buchung. ANNY's Admin-API exponiert den Storno als
  * GET-Aufruf auf `/api/v1/bookings/{id}/cancel` (analog zu
  * `/orders/{id}/send-notification`). Wird beim Aufheben einer Slot-Sperre
