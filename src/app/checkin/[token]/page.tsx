@@ -3162,8 +3162,8 @@ function SlotOverviewServiceBody({
 
 /**
  * Einzelner Slot-Pill in der Auslastungssicht. Hintergrundbalken zeigt
- * Auslastungs-Anteil (capacity-remaining)/capacity. Pill-Farbe geht von
- * gruen (viel frei) ueber amber (knapp) zu rose (voll).
+ * den belegten Anteil. Pill-Farbe nach Buchungsstand: gruen = frei (keine
+ * Buchung), amber = teilweise gebucht, rose = ausgebucht.
  */
 function SlotOverviewPill({
   slot,
@@ -3179,42 +3179,55 @@ function SlotOverviewPill({
   const slotStartMin = timeStringToMinutes(slot.startTime);
   const isManuallyBlocked = slot.blockId != null;
   const busy = blockBusyKey === `${serviceId}|${slot.startTime.slice(0, 5)}`;
-  const blocked = isManuallyBlocked || !slot.available || (slot.remaining != null && slot.remaining <= 0);
-  // Auslastung berechnet aus ANNY's capacity/remaining. Fallback: EMP-
-  // Buchungen ueber Kapazitaet 1 = 100%. Wenn capacity unbekannt zeigen
-  // wir die Booking-Zahl als Indikator.
+  // Belegte Plaetze: ANNY-Auslastung (capacity-remaining) ODER lokale EMP-
+  // Tickets, je nachdem was hoeher ist. EMP-Verkaeufe am Schalter sind ANNY
+  // evtl. noch unbekannt, sollen die Auslastung aber trotzdem widerspiegeln.
+  const annyUsed =
+    slot.capacity != null && slot.remaining != null
+      ? Math.max(0, slot.capacity - slot.remaining)
+      : 0;
+  const used = Math.max(annyUsed, slot.empBookings);
+  // Restkapazitaet: bei bekannter Kapazitaet aus belegten Plaetzen, sonst
+  // ANNY-remaining. null = Kapazitaet unbekannt (z.B. exklusive Bahnmiete,
+  // bei der ANNY capacity/remaining ausblendet).
+  const effectiveRemaining =
+    slot.capacity != null ? Math.max(0, slot.capacity - used) : slot.remaining;
+  // Ausgebucht (rot): manuell gesperrt, von ANNY blockiert, keine Restplaetze
+  // mehr, ODER ein exklusiver Slot (Kapazitaet unbekannt) mit mind. einer
+  // Buchung (exklusive Resourcen sind nach erster Buchung belegt).
+  const isFull =
+    isManuallyBlocked
+    || !slot.available
+    || (effectiveRemaining != null && effectiveRemaining <= 0)
+    || (slot.capacity == null && slot.remaining == null && slot.empBookings > 0);
+  // Teilweise belegt (gelb): nicht ausgebucht, aber mindestens eine Buchung.
+  const isPartial = !isFull && used > 0;
+  // Auslastungsbalken im Hintergrund.
   const pct =
-    blocked
+    isFull
       ? 100
-      : slot.capacity != null && slot.capacity > 0 && slot.remaining != null
-        ? Math.max(0, Math.min(100, ((slot.capacity - slot.remaining) / slot.capacity) * 100))
+      : slot.capacity != null && slot.capacity > 0
+        ? Math.max(0, Math.min(100, (used / slot.capacity) * 100))
         : null;
-  const isAlmostFull =
-    !blocked && slot.remaining != null && slot.capacity != null
-      && slot.remaining <= Math.max(1, Math.floor(slot.capacity * 0.2));
-  const baseColor = blocked
-    ? "border-rose-500/40 text-rose-200 bg-rose-500/10"
-    : isAlmostFull
-      ? "border-amber-500/40 text-amber-200 bg-amber-500/10"
-      : "border-emerald-500/30 text-emerald-100 bg-emerald-500/5";
-  const fillColor = blocked
+  const baseColor = isFull
+    ? "border-rose-500/50 text-rose-100 bg-rose-500/15"
+    : isPartial
+      ? "border-amber-500/50 text-amber-100 bg-amber-500/15"
+      : "border-emerald-500/50 text-emerald-100 bg-emerald-500/15";
+  const fillColor = isFull
     ? "bg-rose-500/30"
-    : isAlmostFull
+    : isPartial
       ? "bg-amber-500/30"
-      : "bg-emerald-500/20";
+      : "bg-emerald-500/25";
   // Konsistent immer "X frei" zeigen (statt mehrdeutigem "1/10" das wie
   // "1 verkauft" gelesen wird). Bei 0 oder blockiert: "voll".
   const label = isManuallyBlocked
     ? "Gesperrt"
-    : blocked
+    : isFull
     ? annyReasonLabel(slot.unavailabilityType ?? undefined) || "voll"
-    : slot.remaining != null
-      ? slot.remaining === 0
-        ? "voll"
-        : `${slot.remaining} frei`
-      : slot.capacity != null
-        ? `${slot.capacity} frei`
-        : "";
+    : effectiveRemaining != null
+      ? `${effectiveRemaining} frei`
+      : "";
   // Hinweis wenn lokale EMP-Tickets die ANNY-Restkapazitaet uebersteigen
   // (z.B. manuell angelegte Gaeste). Macht Diskrepanz im Tooltip transparent.
   const overbookHint =

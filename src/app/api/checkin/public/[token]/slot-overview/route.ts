@@ -577,14 +577,24 @@ export async function GET(
       totalSlots++;
       if (typeof slot.capacity === "number") totalCapacity += slot.capacity;
       if (typeof slot.remaining === "number") totalRemaining += slot.remaining;
-      const blocked = !slot.available || (slot.remaining != null && slot.remaining <= 0);
-      if (blocked) {
+      // Belegte Plaetze: ANNY-Auslastung ODER lokale EMP-Tickets (je hoeher).
+      const annyUsed =
+        slot.capacity != null && slot.remaining != null
+          ? Math.max(0, slot.capacity - slot.remaining)
+          : 0;
+      const used = Math.max(annyUsed, slot.empBookings);
+      const effectiveRemaining =
+        slot.capacity != null ? Math.max(0, slot.capacity - used) : slot.remaining;
+      // Ausgebucht: gesperrt, ANNY blockiert, keine Restplaetze, ODER exklusiver
+      // Slot (Kapazitaet unbekannt) mit mind. einer Buchung.
+      const isFull =
+        slot.blockId != null
+        || !slot.available
+        || (effectiveRemaining != null && effectiveRemaining <= 0)
+        || (slot.capacity == null && slot.remaining == null && slot.empBookings > 0);
+      if (isFull) {
         fullSlots++;
-      } else if (
-        slot.remaining != null
-        && slot.capacity != null
-        && slot.remaining < slot.capacity
-      ) {
+      } else if (used > 0) {
         partialSlots++;
       } else {
         freeSlots++;
