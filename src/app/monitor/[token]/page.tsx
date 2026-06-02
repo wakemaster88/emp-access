@@ -979,7 +979,7 @@ export default function PublicMonitorPage({ params }: Props) {
                               <span className={cn("text-base font-mono font-bold px-3.5 py-1.5 rounded-xl tabular-nums", styles.scanCountBg)}>&times;{scanCount}</span>
                             )}
                           </div>
-                          <span className={cn("text-lg tabular-nums font-mono font-bold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
+                          <ScanAgeTimer scanTime={group.latestScanTime} dark={dark} size="lg" />
                         </div>
                       </div>
                     );
@@ -1052,7 +1052,7 @@ export default function PublicMonitorPage({ params }: Props) {
                       {scanCount > 1 && (
                         <span className={cn("text-xs font-mono font-bold px-2.5 py-1 rounded-lg tabular-nums", styles.scanCountBg)}>×{scanCount}</span>
                       )}
-                      <span className={cn("text-sm tabular-nums font-mono font-semibold", styles.scanTime)}>{fmtTime(group.latestScanTime)}</span>
+                      <ScanAgeTimer scanTime={group.latestScanTime} dark={dark} />
                     </div>
                   </div>
                 );
@@ -1421,6 +1421,46 @@ function DurationCountdown({ firstScanAt, durationMinutes, dark, size }: { first
 }
 
 /**
+ * Zeigt an, wie lange ein Scan zurückliegt. Frische Scans (< 5 Min) laufen
+ * sekündlich live mit ("vor 12 Sek.") und werden farblich hervorgehoben,
+ * damit der letzte Scan sofort erkennbar ist. Ältere Scans fallen auf die
+ * absolute Uhrzeit zurück, damit der genaue Zeitpunkt nachvollziehbar bleibt.
+ */
+function ScanAgeTimer({ scanTime, dark, size }: { scanTime: string; dark: boolean; size?: "lg" }) {
+  const [, force] = useState(0);
+  const startMs = new Date(scanTime).getTime();
+  const ageMs = Date.now() - startMs;
+  const isFresh = ageMs < 5 * 60_000;
+
+  useEffect(() => {
+    if (!isFresh) return;
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [isFresh]);
+
+  const isLg = size === "lg";
+
+  if (!isFresh) {
+    return (
+      <span className={cn(isLg ? "text-lg" : "text-sm", "tabular-nums font-mono font-semibold", dark ? "text-slate-300" : "text-slate-600")}>
+        {fmtTime(scanTime)}
+      </span>
+    );
+  }
+
+  const secs = Math.max(0, Math.floor(ageMs / 1000));
+  const label = secs < 60
+    ? `vor ${secs} Sek.`
+    : `vor ${Math.floor(secs / 60)} Min. ${secs % 60} Sek.`;
+
+  return (
+    <span className={cn(isLg ? "text-lg" : "text-sm", "tabular-nums font-mono font-bold", dark ? "text-emerald-300" : "text-emerald-700")}>
+      {label}
+    </span>
+  );
+}
+
+/**
  * Lazy-Avatar: Lädt das Profilbild erst beim Scroll in den Viewport via
  * IntersectionObserver. Cached pro Ticket-ID, damit erneutes Ein/Aus-blenden
  * keinen weiteren Request auslöst.
@@ -1758,9 +1798,7 @@ function TicketDetailOverlay({
                         </p>
                       </div>
                     </div>
-                    <span className={cn("text-sm tabular-nums font-mono font-semibold", styles.scanTime)}>
-                      {fmtTime(scan.scanTime)}
-                    </span>
+                    <ScanAgeTimer scanTime={scan.scanTime} dark={dark} />
                   </div>
                 );
               })}
