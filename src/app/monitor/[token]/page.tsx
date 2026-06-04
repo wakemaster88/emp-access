@@ -1206,7 +1206,9 @@ export default function PublicMonitorPage({ params }: Props) {
                 const subParts = [
                   typeLine,
                   slotStr && slotStr !== typeLine ? slotStr : null,
-                  (!isSlotTicket && endStr) ? `bis ${endStr}` : null,
+                  // Bei (abgeleiteter) Slot-Uhrzeit ist das "bis"-Datum redundant
+                  // (der Slot liegt am selben Tag) - dann weglassen.
+                  (!isSlotTicket && !slotStr && endStr) ? `bis ${endStr}` : null,
                 ].filter(Boolean) as string[];
 
                 return (
@@ -1583,7 +1585,7 @@ function TicketDetailOverlay({
   const headerSubParts = [
     typeLine,
     headerSlotStr && headerSlotStr !== typeLine ? headerSlotStr : null,
-    (ticket.validityType !== "TIME_SLOT" && endStr) ? `bis ${endStr}` : null,
+    (ticket.validityType !== "TIME_SLOT" && !headerSlotStr && endStr) ? `bis ${endStr}` : null,
   ].filter(Boolean) as string[];
   const startStr = ticket.startDate
     ? new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })
