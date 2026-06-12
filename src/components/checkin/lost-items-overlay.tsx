@@ -15,16 +15,19 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Loader2, Search, X, PackageSearch, Camera, Check, AlertTriangle,
-  RefreshCw, Plus, ChevronLeft, Phone, CalendarDays, Trash2, Undo2,
+  RefreshCw, Plus, ChevronLeft, Phone, CalendarDays, Trash2, Undo2, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LostItemApi {
   id: number;
+  kind: "FOUND" | "LOST_REPORT";
   description: string;
   foundDate: string;
   image: string | null;
   contact: string | null;
+  reporterName: string | null;
+  callbackPhone: string | null;
   pickedUp: boolean;
   pickedUpAt: string | null;
 }
@@ -105,7 +108,12 @@ export function LostItemsOverlay({ token, onClose }: LostItemsOverlayProps) {
       if (filter === "open" && i.pickedUp) return false;
       if (filter === "pickedUp" && !i.pickedUp) return false;
       if (!q) return true;
-      return [i.description, i.contact ?? ""].join(" ").toLowerCase().includes(q);
+      return [
+        i.description,
+        i.contact ?? "",
+        i.reporterName ?? "",
+        i.callbackPhone ?? "",
+      ].join(" ").toLowerCase().includes(q);
     });
   }, [items, search, filter]);
 
@@ -168,7 +176,7 @@ export function LostItemsOverlay({ token, onClose }: LostItemsOverlayProps) {
             )}
             <h2 className="text-lg font-bold flex items-center gap-2 truncate text-white">
               <PackageSearch className="h-5 w-5 text-amber-400 shrink-0" />
-              {adding ? "Neue Fundsache" : (
+              {adding ? "Neuer Eintrag" : (
                 <>Fundsachen <span className="text-slate-500 text-sm font-normal">· {openCount} offen</span></>
               )}
             </h2>
@@ -260,7 +268,7 @@ function ListView({
 }) {
   const filters: { id: Filter; label: string }[] = [
     { id: "open", label: `Offen (${openCount})` },
-    { id: "pickedUp", label: `Abgeholt (${total - openCount})` },
+    { id: "pickedUp", label: `Erledigt (${total - openCount})` },
     { id: "all", label: `Alle (${total})` },
   ];
 
@@ -271,7 +279,7 @@ function ListView({
         className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-4 py-3 rounded-xl font-semibold transition-colors active:scale-[0.99]"
       >
         <Plus className="h-5 w-5" />
-        Fundsache erfassen
+        Eintrag erfassen
       </button>
 
       <div className="flex flex-col sm:flex-row gap-2">
@@ -306,12 +314,17 @@ function ListView({
       {items.length === 0 && (
         <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
           <PackageSearch className="h-12 w-12 text-slate-700" />
-          <p className="text-sm">Keine Fundsachen in dieser Ansicht</p>
+          <p className="text-sm">Keine Einträge in dieser Ansicht</p>
         </div>
       )}
 
       <div className="space-y-2">
-        {items.map((item) => (
+        {items.map((item) => {
+          const isLostReport = item.kind === "LOST_REPORT";
+          const contactLine = isLostReport
+            ? [item.reporterName, item.callbackPhone].filter(Boolean).join(" · ")
+            : item.contact;
+          return (
           <div
             key={item.id}
             className={cn(
@@ -328,26 +341,38 @@ function ListView({
               />
             ) : (
               <div className="h-20 w-20 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                <PackageSearch className="h-7 w-7 text-slate-600" />
+                {isLostReport ? (
+                  <User className="h-7 w-7 text-slate-600" />
+                ) : (
+                  <PackageSearch className="h-7 w-7 text-slate-600" />
+                )}
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-white leading-snug line-clamp-2">{item.description}</p>
+              <div className="flex items-start gap-2">
+                <span className={cn(
+                  "shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded",
+                  isLostReport ? "bg-violet-950/60 text-violet-300" : "bg-amber-950/60 text-amber-300"
+                )}>
+                  {isLostReport ? "Verlust" : "Fund"}
+                </span>
+                <p className="font-medium text-white leading-snug line-clamp-2">{item.description}</p>
+              </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
                 <span className="inline-flex items-center gap-1 tabular-nums">
                   <CalendarDays className="h-3 w-3" />
                   {formatDate(item.foundDate)}
                 </span>
-                {item.contact && (
+                {contactLine && (
                   <span className="inline-flex items-center gap-1 truncate max-w-[180px]">
                     <Phone className="h-3 w-3 shrink-0" />
-                    {item.contact}
+                    {contactLine}
                   </span>
                 )}
                 {item.pickedUp && item.pickedUpAt && (
                   <span className="inline-flex items-center gap-1 text-emerald-400">
                     <Check className="h-3 w-3" />
-                    Abgeholt am {formatDate(item.pickedUpAt)}
+                    Erledigt am {formatDate(item.pickedUpAt)}
                   </span>
                 )}
               </div>
@@ -369,7 +394,7 @@ function ListView({
                   ) : (
                     <Check className="h-3.5 w-3.5" />
                   )}
-                  {item.pickedUp ? "Zurücksetzen" : "Abgeholt"}
+                  {item.pickedUp ? "Zurücksetzen" : (isLostReport ? "Erledigt" : "Abgeholt")}
                 </button>
                 <button
                   onClick={() => onDelete(item)}
@@ -382,7 +407,8 @@ function ListView({
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -398,12 +424,17 @@ function AddForm({
   onError: (msg: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [kind, setKind] = useState<"FOUND" | "LOST_REPORT">("FOUND");
   const [description, setDescription] = useState("");
   const [foundDate, setFoundDate] = useState(todayDateInput());
   const [contact, setContact] = useState("");
+  const [reporterName, setReporterName] = useState("");
+  const [callbackPhone, setCallbackPhone] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
+
+  const isLostReport = kind === "LOST_REPORT";
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -422,6 +453,16 @@ function AddForm({
       setLocalError("Beschreibung erforderlich");
       return;
     }
+    if (isLostReport) {
+      if (!reporterName.trim()) {
+        setLocalError("Name erforderlich");
+        return;
+      }
+      if (!callbackPhone.trim()) {
+        setLocalError("Rückrufnummer erforderlich");
+        return;
+      }
+    }
     setSaving(true);
     setLocalError("");
     try {
@@ -429,10 +470,13 @@ function AddForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          kind,
           description: description.trim(),
-          foundDate,
-          contact: contact.trim() || null,
-          image,
+          foundDate: isLostReport ? foundDate : foundDate,
+          contact: isLostReport ? null : (contact.trim() || null),
+          reporterName: isLostReport ? reporterName.trim() : null,
+          callbackPhone: isLostReport ? callbackPhone.trim() : null,
+          image: isLostReport ? null : image,
         }),
       });
       if (!res.ok) {
@@ -450,74 +494,145 @@ function AddForm({
 
   return (
     <div className="p-4 space-y-4">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-      {image ? (
-        <div className="relative inline-block">
-          {/* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */}
-          <img
-            src={image}
-            alt="Fundsache"
-            className="h-40 w-40 rounded-2xl object-cover border border-slate-700"
-          />
-          <button
-            onClick={() => setImage(null)}
-            className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-slate-800 border border-slate-600 text-white flex items-center justify-center hover:bg-rose-600 active:scale-95"
-            title="Bild entfernen"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : (
+      <div className="flex gap-1.5 p-1 rounded-xl bg-slate-800">
         <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-2 h-40 w-40 rounded-2xl border-2 border-dashed border-slate-700 text-slate-500 hover:border-amber-500 hover:text-amber-400 transition-colors active:scale-[0.98]"
+          type="button"
+          onClick={() => setKind("FOUND")}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+            kind === "FOUND" ? "bg-amber-600 text-white" : "text-slate-400 hover:text-white"
+          )}
         >
-          <Camera className="h-8 w-8" />
-          <span className="text-sm font-medium">Foto aufnehmen</span>
+          Fundsache
         </button>
+        <button
+          type="button"
+          onClick={() => setKind("LOST_REPORT")}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+            kind === "LOST_REPORT" ? "bg-violet-600 text-white" : "text-slate-400 hover:text-white"
+          )}
+        >
+          Verlustmeldung
+        </button>
+      </div>
+
+      {!isLostReport && (
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          {image ? (
+            <div className="relative inline-block">
+              {/* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */}
+              <img
+                src={image}
+                alt="Fundsache"
+                className="h-40 w-40 rounded-2xl object-cover border border-slate-700"
+              />
+              <button
+                onClick={() => setImage(null)}
+                className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-slate-800 border border-slate-600 text-white flex items-center justify-center hover:bg-rose-600 active:scale-95"
+                title="Bild entfernen"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-2 h-40 w-40 rounded-2xl border-2 border-dashed border-slate-700 text-slate-500 hover:border-amber-500 hover:text-amber-400 transition-colors active:scale-[0.98]"
+            >
+              <Camera className="h-8 w-8" />
+              <span className="text-sm font-medium">Foto aufnehmen</span>
+            </button>
+          )}
+        </>
       )}
 
       <div className="space-y-1.5">
-        <label className="text-sm font-medium text-slate-300">Beschreibung *</label>
+        <label className="text-sm font-medium text-slate-300">
+          {isLostReport ? "Was wurde verloren? *" : "Beschreibung *"}
+        </label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
           maxLength={500}
-          placeholder="z. B. Schwarze Jacke, Größe M, am Eingang gefunden"
+          placeholder={
+            isLostReport
+              ? "z. B. Schwarze Lederjacke, Größe M, mit Schlüsselbund"
+              : "z. B. Schwarze Jacke, Größe M, am Eingang gefunden"
+          }
           className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-slate-300">Funddatum *</label>
-          <input
-            type="date"
-            value={foundDate}
-            onChange={(e) => setFoundDate(e.target.value)}
-            className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
-          />
+      {isLostReport ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-300">Name *</label>
+              <input
+                type="text"
+                value={reporterName}
+                onChange={(e) => setReporterName(e.target.value)}
+                maxLength={120}
+                placeholder="Max Mustermann"
+                className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-300">Rückrufnummer *</label>
+              <input
+                type="tel"
+                value={callbackPhone}
+                onChange={(e) => setCallbackPhone(e.target.value)}
+                maxLength={40}
+                placeholder="0170 1234567"
+                className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-300">Verlustdatum</label>
+            <input
+              type="date"
+              value={foundDate}
+              onChange={(e) => setFoundDate(e.target.value)}
+              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-violet-500 [color-scheme:dark]"
+            />
+          </div>
+        </>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-300">Funddatum *</label>
+            <input
+              type="date"
+              value={foundDate}
+              onChange={(e) => setFoundDate(e.target.value)}
+              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-300">Kontakt</label>
+            <input
+              type="text"
+              value={contact}
+              onChange={(e) => setContact(e.target.value)}
+              maxLength={300}
+              placeholder="Name / Telefon"
+              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-slate-300">Kontakt</label>
-          <input
-            type="text"
-            value={contact}
-            onChange={(e) => setContact(e.target.value)}
-            maxLength={300}
-            placeholder="Name / Telefon"
-            className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-          />
-        </div>
-      </div>
+      )}
 
       {localError && (
         <p className="text-sm text-rose-400 inline-flex items-center gap-1.5">
@@ -529,10 +644,13 @@ function AddForm({
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-white px-4 py-3 rounded-xl font-semibold transition-colors active:scale-[0.99]"
+        className={cn(
+          "w-full flex items-center justify-center gap-2 disabled:opacity-60 text-white px-4 py-3 rounded-xl font-semibold transition-colors active:scale-[0.99]",
+          isLostReport ? "bg-violet-600 hover:bg-violet-500" : "bg-amber-600 hover:bg-amber-500"
+        )}
       >
         {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
-        Fundsache speichern
+        {isLostReport ? "Verlustmeldung speichern" : "Fundsache speichern"}
       </button>
     </div>
   );

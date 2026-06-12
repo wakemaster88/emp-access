@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { buildLostItemUpdateData } from "@/lib/lost-item-data";
 import { lostItemUpdateSchema } from "@/lib/validators";
 
 async function resolveMonitor(token: string) {
@@ -11,7 +12,6 @@ async function resolveMonitor(token: string) {
   return monitor;
 }
 
-/// Fundsache am Shop-Monitor bearbeiten (v. a. „abgeholt" markieren).
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ token: string; id: string }> }
@@ -34,32 +34,24 @@ export async function PATCH(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  const data = parsed.data;
   const item = await prisma.lostItem.update({
     where: { id: itemId },
-    data: {
-      ...(data.description !== undefined && { description: data.description.trim() }),
-      ...(data.foundDate !== undefined && { foundDate: new Date(data.foundDate) }),
-      ...(data.image !== undefined && { image: data.image }),
-      ...(data.contact !== undefined && { contact: data.contact?.trim() || null }),
-      ...(data.pickedUp !== undefined && {
-        pickedUp: data.pickedUp,
-        pickedUpAt: data.pickedUp ? (existing.pickedUpAt ?? new Date()) : null,
-      }),
-    },
+    data: buildLostItemUpdateData(parsed.data, existing),
   });
   return NextResponse.json({
     id: item.id,
+    kind: item.kind,
     description: item.description,
     foundDate: item.foundDate.toISOString(),
     image: item.image,
     contact: item.contact,
+    reporterName: item.reporterName,
+    callbackPhone: item.callbackPhone,
     pickedUp: item.pickedUp,
     pickedUpAt: item.pickedUpAt ? item.pickedUpAt.toISOString() : null,
   });
 }
 
-/// Fundsache am Shop-Monitor löschen.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ token: string; id: string }> }

@@ -299,15 +299,42 @@ const lostItemImage = z
   .max(2_000_000, "Bild zu groß (max. ~1,5 MB)")
   .refine((s) => s.startsWith("data:image/"), "Ungültiges Bildformat");
 
-export const lostItemCreateSchema = z.object({
+export const lostItemKindSchema = z.enum(["FOUND", "LOST_REPORT"]);
+
+const lostItemBaseSchema = z.object({
+  kind: lostItemKindSchema.optional(),
   description: z.string().min(1).max(500),
-  foundDate: lostItemDate,
+  foundDate: lostItemDate.optional(),
   image: lostItemImage.nullable().optional(),
   contact: z.string().max(300).nullable().optional(),
+  reporterName: z.string().max(120).nullable().optional(),
+  callbackPhone: z.string().max(40).nullable().optional(),
   pickedUp: z.boolean().optional(),
 });
 
-export const lostItemUpdateSchema = lostItemCreateSchema.partial();
+export const lostItemCreateSchema = lostItemBaseSchema.superRefine((data, ctx) => {
+  const kind = data.kind === "LOST_REPORT" ? "LOST_REPORT" : "FOUND";
+  if (kind === "LOST_REPORT") {
+    if (!data.reporterName?.trim()) {
+      ctx.addIssue({ code: "custom", path: ["reporterName"], message: "Name erforderlich" });
+    }
+    if (!data.callbackPhone?.trim()) {
+      ctx.addIssue({ code: "custom", path: ["callbackPhone"], message: "Rückrufnummer erforderlich" });
+    }
+  } else if (!data.foundDate) {
+    ctx.addIssue({ code: "custom", path: ["foundDate"], message: "Funddatum erforderlich" });
+  }
+});
+
+export const lostItemUpdateSchema = lostItemBaseSchema.partial().superRefine((data, ctx) => {
+  if (data.kind !== "LOST_REPORT") return;
+  if (data.reporterName !== undefined && !data.reporterName?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["reporterName"], message: "Name erforderlich" });
+  }
+  if (data.callbackPhone !== undefined && !data.callbackPhone?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["callbackPhone"], message: "Rückrufnummer erforderlich" });
+  }
+});
 
 // ─── Shelly-Automation Schemas ───────────────────────────────────────────────
 

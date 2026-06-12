@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { LostItemDialog, type LostItemData } from "./lost-item-dialog";
 import {
-  Plus, PackageSearch, CheckCircle2, Clock, Phone, ImageOff, Undo2,
+  Plus, PackageSearch, CheckCircle2, Clock, Phone, ImageOff, Undo2, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +24,14 @@ function formatDate(s: string): string {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "–";
   return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function contactLabel(item: LostItemData): string | null {
+  if (item.kind === "LOST_REPORT") {
+    const parts = [item.reporterName, item.callbackPhone].filter(Boolean);
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  return item.contact;
 }
 
 export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
@@ -58,7 +66,7 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
   const filterButtons: { id: Filter; label: string }[] = [
     { id: "all", label: `Alle (${items.length})` },
     { id: "open", label: `Offen (${openCount})` },
-    { id: "pickedUp", label: `Abgeholt (${items.length - openCount})` },
+    { id: "pickedUp", label: `Erledigt (${items.length - openCount})` },
   ];
 
   return (
@@ -88,7 +96,7 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
             className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm sm:ml-auto"
           >
             <Plus className="h-4 w-4" />
-            Fundsache anlegen
+            Eintrag anlegen
           </Button>
         )}
       </div>
@@ -99,8 +107,8 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
             <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
               <TableHead className="w-16 text-slate-600 dark:text-slate-400 font-medium">Bild</TableHead>
               <TableHead className="text-slate-600 dark:text-slate-400 font-medium">Beschreibung</TableHead>
-              <TableHead className="hidden sm:table-cell w-[120px] text-slate-600 dark:text-slate-400 font-medium">Funddatum</TableHead>
-              <TableHead className="hidden md:table-cell w-[180px] text-slate-600 dark:text-slate-400 font-medium">Kontakt</TableHead>
+              <TableHead className="hidden sm:table-cell w-[120px] text-slate-600 dark:text-slate-400 font-medium">Datum</TableHead>
+              <TableHead className="hidden md:table-cell w-[200px] text-slate-600 dark:text-slate-400 font-medium">Kontakt</TableHead>
               <TableHead className="w-[120px] text-right text-slate-600 dark:text-slate-400 font-medium">Status</TableHead>
               {!readonly && <TableHead className="w-[130px] text-right text-slate-600 dark:text-slate-400 font-medium" />}
             </TableRow>
@@ -112,92 +120,113 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                   <div className="flex flex-col items-center gap-3 text-slate-500">
                     <PackageSearch className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                     <p className="font-medium text-slate-600 dark:text-slate-400">
-                      {filter === "all" ? "Noch keine Fundsachen erfasst" : "Keine Fundsachen in dieser Ansicht"}
+                      {filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
                     </p>
                   </div>
                 </TableCell>
               </TableRow>
             )}
-            {filtered.map((item) => (
-              <TableRow
-                key={item.id}
-                className={cn(
-                  "border-slate-200 dark:border-slate-700 transition-colors",
-                  !readonly && "cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20",
-                  item.pickedUp && "opacity-60"
-                )}
-                onClick={() => !readonly && setSelected(item)}
-              >
-                <TableCell>
-                  {item.image ? (
-                    /* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */
-                    <img
-                      src={item.image}
-                      alt={item.description}
-                      className="h-12 w-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
-                    />
-                  ) : (
-                    <div className="h-12 w-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                      <ImageOff className="h-5 w-5 text-slate-400" />
-                    </div>
+            {filtered.map((item) => {
+              const contact = contactLabel(item);
+              const isLostReport = item.kind === "LOST_REPORT";
+              return (
+                <TableRow
+                  key={item.id}
+                  className={cn(
+                    "border-slate-200 dark:border-slate-700 transition-colors",
+                    !readonly && "cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20",
+                    item.pickedUp && "opacity-60"
                   )}
-                </TableCell>
-                <TableCell>
-                  <p className="font-medium text-slate-900 dark:text-slate-100 line-clamp-2">{item.description}</p>
-                  <p className="sm:hidden text-[11px] text-slate-400 mt-0.5">{formatDate(item.foundDate)}</p>
-                </TableCell>
-                <TableCell className="hidden sm:table-cell text-slate-600 dark:text-slate-400 tabular-nums">
-                  {formatDate(item.foundDate)}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-slate-600 dark:text-slate-400">
-                  {item.contact ? (
-                    <span className="inline-flex items-center gap-1.5 text-sm">
-                      <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate max-w-[150px]">{item.contact}</span>
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">–</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  {item.pickedUp ? (
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Abgeholt
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 gap-1">
-                      <Clock className="h-3 w-3" />
-                      Offen
-                    </Badge>
-                  )}
-                </TableCell>
-                {!readonly && (
-                  <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={togglingId === item.id}
-                      onClick={(e) => { e.stopPropagation(); togglePickedUp(item); }}
-                      className="gap-1.5 text-xs"
-                    >
-                      {item.pickedUp ? (
-                        <>
-                          <Undo2 className="h-3.5 w-3.5" />
-                          Zurücksetzen
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Abgeholt
-                        </>
-                      )}
-                    </Button>
+                  onClick={() => !readonly && setSelected(item)}
+                >
+                  <TableCell>
+                    {item.image ? (
+                      /* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */
+                      <img
+                        src={item.image}
+                        alt={item.description}
+                        className="h-12 w-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                        {isLostReport ? (
+                          <User className="h-5 w-5 text-slate-400" />
+                        ) : (
+                          <ImageOff className="h-5 w-5 text-slate-400" />
+                        )}
+                      </div>
+                    )}
                   </TableCell>
-                )}
-              </TableRow>
-            ))}
+                  <TableCell>
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "shrink-0 text-[10px] px-1.5 py-0",
+                          isLostReport
+                            ? "border-violet-300 text-violet-700 dark:border-violet-800 dark:text-violet-300"
+                            : "border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-300"
+                        )}
+                      >
+                        {isLostReport ? "Verlust" : "Fund"}
+                      </Badge>
+                      <p className="font-medium text-slate-900 dark:text-slate-100 line-clamp-2">{item.description}</p>
+                    </div>
+                    <p className="sm:hidden text-[11px] text-slate-400 mt-0.5">{formatDate(item.foundDate)}</p>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell text-slate-600 dark:text-slate-400 tabular-nums">
+                    {formatDate(item.foundDate)}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell text-slate-600 dark:text-slate-400">
+                    {contact ? (
+                      <span className="inline-flex items-center gap-1.5 text-sm">
+                        <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate max-w-[170px]">{contact}</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">–</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {item.pickedUp ? (
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Erledigt
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 gap-1">
+                        <Clock className="h-3 w-3" />
+                        Offen
+                      </Badge>
+                    )}
+                  </TableCell>
+                  {!readonly && (
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={togglingId === item.id}
+                        onClick={(e) => { e.stopPropagation(); togglePickedUp(item); }}
+                        className="gap-1.5 text-xs"
+                      >
+                        {item.pickedUp ? (
+                          <>
+                            <Undo2 className="h-3.5 w-3.5" />
+                            Zurücksetzen
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {isLostReport ? "Erledigt" : "Abgeholt"}
+                          </>
+                        )}
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

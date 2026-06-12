@@ -851,22 +851,31 @@ model VereinAccessTicket {
   @@index([ticketId])
 }
 
+enum LostItemKind {
+  FOUND
+  LOST_REPORT
+}
+
 /// Fundsache: wird im Backend oder am Shop-/Check-in-Monitor angelegt und
 /// verwaltet. Bild als Base64-Data-URL (gleiches Muster wie Ticket.profileImage).
+/// LOST_REPORT = jemand meldet einen verlorenen Gegenstand (Name + Rückrufnummer).
 model LostItem {
-  id          Int       @id @default(autoincrement())
-  description String
-  foundDate   DateTime
-  image       String?   @db.Text
-  contact     String?
-  pickedUp    Boolean   @default(false)
-  pickedUpAt  DateTime?
-  accountId   Int
-  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            Int           @id @default(autoincrement())
+  kind          LostItemKind  @default(FOUND)
+  description   String
+  foundDate     DateTime
+  image         String?       @db.Text
+  contact       String?
+  reporterName  String?
+  callbackPhone String?
+  pickedUp      Boolean       @default(false)
+  pickedUpAt    DateTime?
+  accountId     Int
+  account       Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  @@index([accountId, pickedUp])
+  @@index([accountId, kind, pickedUp])
 }
 
 model ShellyAutomationRun {

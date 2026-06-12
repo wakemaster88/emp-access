@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { buildLostItemCreateData } from "@/lib/lost-item-data";
 import { lostItemCreateSchema } from "@/lib/validators";
 
 async function resolveMonitor(token: string) {
@@ -13,25 +14,31 @@ async function resolveMonitor(token: string) {
 
 function serialize(item: {
   id: number;
+  kind: "FOUND" | "LOST_REPORT";
   description: string;
   foundDate: Date;
   image: string | null;
   contact: string | null;
+  reporterName: string | null;
+  callbackPhone: string | null;
   pickedUp: boolean;
   pickedUpAt: Date | null;
 }) {
   return {
     id: item.id,
+    kind: item.kind,
     description: item.description,
     foundDate: item.foundDate.toISOString(),
     image: item.image,
     contact: item.contact,
+    reporterName: item.reporterName,
+    callbackPhone: item.callbackPhone,
     pickedUp: item.pickedUp,
     pickedUpAt: item.pickedUpAt ? item.pickedUpAt.toISOString() : null,
   };
 }
 
-/// Fundsachen-Liste für einen Checkin-Monitor (Shop-Monitor).
+/// Fundsachen- und Verlustmeldungen-Liste für einen Checkin-Monitor.
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
@@ -48,7 +55,7 @@ export async function GET(
   return NextResponse.json({ items: items.map(serialize) });
 }
 
-/// Fundsache am Shop-Monitor anlegen.
+/// Fundsache oder Verlustmeldung am Shop-Monitor anlegen.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
@@ -63,17 +70,8 @@ export async function POST(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const data = parsed.data;
   const item = await prisma.lostItem.create({
-    data: {
-      description: data.description.trim(),
-      foundDate: new Date(data.foundDate),
-      image: data.image ?? null,
-      contact: data.contact?.trim() || null,
-      pickedUp: data.pickedUp ?? false,
-      pickedUpAt: data.pickedUp ? new Date() : null,
-      accountId: monitor.accountId,
-    },
+    data: buildLostItemCreateData(parsed.data, monitor.accountId),
   });
   return NextResponse.json(serialize(item), { status: 201 });
 }
