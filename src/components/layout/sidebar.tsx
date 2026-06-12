@@ -27,6 +27,7 @@ import {
   Gift,
   Mail,
   IdCard,
+  PackageSearch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,7 @@ const navGroups: NavGroup[] = [
       { href: "/services", label: "Services", icon: Package },
       { href: "/areas", label: "Resourcen", icon: MapPin },
       { href: "/lockers", label: "Schließfächer", icon: Lock },
+      { href: "/fundsachen", label: "Fundsachen", icon: PackageSearch },
     ],
   },
   {

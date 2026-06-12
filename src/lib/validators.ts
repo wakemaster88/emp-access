@@ -284,6 +284,31 @@ export const lockerRentalUpdateSchema = z.object({
   returnedAt: isoDateTime.nullable().optional(),
 });
 
+// ─── Fundsachen (LostItem) Schemas ───────────────────────────────────────────
+
+/// ISO-Datum/-Datetime für das Funddatum (akzeptiert "2026-06-12" und volle ISO).
+const lostItemDate = z
+  .string()
+  .min(1)
+  .refine((s) => !isNaN(new Date(s).getTime()), "Ungültiges Datum");
+
+/// Bild als Base64-Data-URL (gleiches Muster wie Ticket.profileImage).
+/// ~2 MB Limit, damit keine riesigen Originalfotos in der DB landen.
+const lostItemImage = z
+  .string()
+  .max(2_000_000, "Bild zu groß (max. ~1,5 MB)")
+  .refine((s) => s.startsWith("data:image/"), "Ungültiges Bildformat");
+
+export const lostItemCreateSchema = z.object({
+  description: z.string().min(1).max(500),
+  foundDate: lostItemDate,
+  image: lostItemImage.nullable().optional(),
+  contact: z.string().max(300).nullable().optional(),
+  pickedUp: z.boolean().optional(),
+});
+
+export const lostItemUpdateSchema = lostItemCreateSchema.partial();
+
 // ─── Shelly-Automation Schemas ───────────────────────────────────────────────
 
 const hhmmRegex = /^([01]\d|2[0-3]):[0-5]\d$/;

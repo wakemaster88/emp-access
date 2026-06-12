@@ -41,7 +41,8 @@ import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import { LockerOverlay } from "@/components/checkin/locker-overlay";
-import { Lock, LockOpen } from "lucide-react";
+import { LostItemsOverlay } from "@/components/checkin/lost-items-overlay";
+import { Lock, LockOpen, PackageSearch } from "lucide-react";
 import { printPdfBlob, type PrintResult } from "@/lib/print-tickets";
 
 interface TicketExtra {
@@ -385,6 +386,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [refreshing, setRefreshing] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
+  const [lostItemsOverlayOpen, setLostItemsOverlayOpen] = useState(false);
   const [addTicketPrefill, setAddTicketPrefill] = useState<{
     firstName?: string;
     lastName?: string;
@@ -1259,6 +1261,14 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <span className="hidden xl:inline">Schließfächer</span>
           </button>
           <button
+            onClick={() => setLostItemsOverlayOpen(true)}
+            title="Fundsachen verwalten"
+            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+          >
+            <PackageSearch className="h-5 w-5 shrink-0" />
+            <span className="hidden xl:inline">Fundsachen</span>
+          </button>
+          <button
             onClick={() => setScanMode(true)}
             title="Scan-Modus aktivieren"
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
@@ -1729,6 +1739,14 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         <LockerOverlay
           token={token}
           onClose={() => setLockerOverlayOpen(false)}
+        />
+      )}
+
+      {/* Fundsachen overlay */}
+      {lostItemsOverlayOpen && (
+        <LostItemsOverlay
+          token={token}
+          onClose={() => setLostItemsOverlayOpen(false)}
         />
       )}
 
