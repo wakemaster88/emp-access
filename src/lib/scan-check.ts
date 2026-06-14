@@ -129,6 +129,11 @@ export async function performScanCheck({
           select: {
             allowReentry: true,
             name: true,
+            // Konfigurierte Hauptressource: bestimmt (zusammen mit der vom
+            // Scanner gewaehlten accessAreaId), ob der Scan den DURATION-Timer
+            // starten darf. Vermeidet, dass ein Handscanner am Strandbad die
+            // Zeit eines "Seilbahn A"-Tickets startet.
+            mainAccessAreaId: true,
             serviceAreas: { select: { accessAreaId: true } },
           },
         },
@@ -423,6 +428,17 @@ export async function performScanCheck({
     }
   }
 
+  // Hauptressource (am Service konfiguriert, sonst Ticket-Feld). Der Scanner
+  // uebergibt mit `accessAreaId` die gerade gescannte Ressource. Nur wenn der
+  // Scan an der Hauptressource passiert (oder gar keine Ressource bestimmbar
+  // ist), darf er den DURATION-Timer starten / das Ticket einloesen. Scans an
+  // Nebenressourcen (z.B. Strandbad-Scanner fuer ein "Seilbahn A"-Ticket)
+  // sind Transit: Zutritt wird gewaehrt, aber Status/firstScanAt bleiben
+  // unveraendert, damit die Zeit erst an der Seilbahn laeuft.
+  const mainAreaId = ticket.service?.mainAccessAreaId ?? ticket.accessAreaId;
+  const isMainResourceScan =
+    mainAreaId == null || accessAreaId == null || accessAreaId === mainAreaId;
+
   // Atomar: Scan + optionale Statusaenderung in einer Transaktion mit version-Check.
   // Vereinsmitglieder (vereinId) sind Jahres-Mitgliedschaften und werden – wie
   // Abos (subscriptionId) – NICHT dauerhaft eingeloest, sonst wuerde der zweite
@@ -431,7 +447,8 @@ export async function performScanCheck({
     ticket.status === "VALID" &&
     !isEmployee &&
     ticket.subscriptionId == null &&
-    ticket.vereinId == null;
+    ticket.vereinId == null &&
+    isMainResourceScan;
 
   const txResult = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;

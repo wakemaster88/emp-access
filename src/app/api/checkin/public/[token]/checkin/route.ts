@@ -19,6 +19,7 @@ export async function POST(
 
   const ticket = await prisma.ticket.findFirst({
     where: { id: ticketId, accountId: monitor.accountId },
+    include: { service: { select: { mainAccessAreaId: true } } },
   });
 
   if (!ticket) {
@@ -64,16 +65,35 @@ export async function POST(
     },
   });
 
+  // Hauptressource (am Service konfiguriert, sonst Ticket-Feld). Beim
+  // manuellen Einchecken gibt es kein Geraet/keinen Bereich als Kontext –
+  // der Shop-/Check-in-Monitor steht typischerweise am Eingang/Strandbad,
+  // nicht an der Hauptressource. Ein DURATION-Ticket mit Hauptressource
+  // (z.B. "1 Stunde Seilbahn A") darf deshalb hier NICHT eingeloest werden
+  // und der Timer NICHT starten: sonst laeuft die Zeit schon ab dem Shop-
+  // Check-in statt erst am Seilbahn-Drehkreuz. Der GRANTED-Scan oben markiert
+  // den Gast trotzdem als "heute eingecheckt" (checkedInForTicket prueft
+  // GRANTED-Scan ODER REDEEMED). Hat das Ticket gar keine Hauptressource
+  // (mainAreaId == null), bleibt das alte Verhalten.
+  const mainAreaId = ticket.service?.mainAccessAreaId ?? ticket.accessAreaId;
+  const isDuration = ticket.validityType === "DURATION";
+  const isTransitCheckin = isDuration && mainAreaId != null;
+
   const updateData: Record<string, unknown> = {};
   // Mehrtage-/Abo-/Vereins-Tickets bleiben VALID – „eingecheckt“ = Scan heute,
   // nicht REDEEMED dauerhaft. Vereinsmitglieder (vereinId) sind Jahres-Mitglied-
   // schaften und zaehlen wie Abos: sonst stuenden sie nach einem Check-in an
   // jedem Tag als „eingecheckt“ und wuerden am Drehkreuz spaeter mit
   // „bereits eingelöst“ abgewiesen.
-  if (ticket.status === "VALID" && ticket.subscriptionId == null && ticket.vereinId == null) {
+  if (
+    ticket.status === "VALID" &&
+    ticket.subscriptionId == null &&
+    ticket.vereinId == null &&
+    !isTransitCheckin
+  ) {
     updateData.status = "REDEEMED";
   }
-  if (ticket.validityType === "DURATION" && !ticket.firstScanAt) {
+  if (isDuration && !ticket.firstScanAt && !isTransitCheckin) {
     updateData.firstScanAt = now;
   }
 
