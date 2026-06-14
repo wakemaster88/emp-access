@@ -234,9 +234,12 @@ export async function GET(
       .filter((id): id is number => id != null),
   );
 
-  /** Abos: Einchecken nur für den gewählten Tag (GRANTED-Scan an diesem Tag), nicht dauerhaft über REDEEMED. */
-  function checkedInForTicket(t: { id: number; status: string; subscriptionId: number | null }) {
-    if (t.subscriptionId != null) {
+  /** Abos & Vereinsmitglieder: Einchecken nur für den gewählten Tag (GRANTED-Scan an
+   *  diesem Tag), nicht dauerhaft über REDEEMED. Vereinsmitglieder (vereinId) sind
+   *  Jahres-Mitgliedschaften und werden wie Abos behandelt – sonst stuenden sie nach
+   *  einem Check-in an jedem Tag als „eingecheckt“. */
+  function checkedInForTicket(t: { id: number; status: string; subscriptionId: number | null; vereinId: number | null }) {
+    if (t.subscriptionId != null || t.vereinId != null) {
       return checkedInIds.has(t.id);
     }
     return t.status === "REDEEMED" || checkedInIds.has(t.id);

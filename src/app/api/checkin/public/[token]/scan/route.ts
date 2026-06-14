@@ -125,7 +125,9 @@ export async function POST(
   }
 
   let checkedIn = ticket.status === "REDEEMED";
-  if (ticket.subscriptionId != null) {
+  // Abos UND Vereinsmitglieder (vereinId): „eingecheckt“ ist tagesbezogen
+  // (GRANTED-Scan heute), nicht dauerhaft über REDEEMED.
+  if (ticket.subscriptionId != null || ticket.vereinId != null) {
     const berlinDate = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
     const tz = berlinOffset(berlinDate);
     const dayStart = new Date(`${berlinDate}T00:00:00${tz}`);

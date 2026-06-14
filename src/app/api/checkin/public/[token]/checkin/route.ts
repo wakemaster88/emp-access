@@ -65,8 +65,12 @@ export async function POST(
   });
 
   const updateData: Record<string, unknown> = {};
-  // Mehrtage-/Abo-Tickets bleiben VALID – „eingecheckt“ = Scan heute, nicht REDEEMED dauerhaft
-  if (ticket.status === "VALID" && ticket.subscriptionId == null) {
+  // Mehrtage-/Abo-/Vereins-Tickets bleiben VALID – „eingecheckt“ = Scan heute,
+  // nicht REDEEMED dauerhaft. Vereinsmitglieder (vereinId) sind Jahres-Mitglied-
+  // schaften und zaehlen wie Abos: sonst stuenden sie nach einem Check-in an
+  // jedem Tag als „eingecheckt“ und wuerden am Drehkreuz spaeter mit
+  // „bereits eingelöst“ abgewiesen.
+  if (ticket.status === "VALID" && ticket.subscriptionId == null && ticket.vereinId == null) {
     updateData.status = "REDEEMED";
   }
   if (ticket.validityType === "DURATION" && !ticket.firstScanAt) {

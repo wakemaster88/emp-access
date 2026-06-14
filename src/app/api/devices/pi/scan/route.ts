@@ -612,11 +612,12 @@ export async function POST(request: NextRequest) {
   // diesem Ticket gibt, blockieren wir auch das (Schutzhuelle fuer
   // ungewohnliche Konfigurationen, in denen der Statuswechsel oben
   // ausnahmsweise nicht greift).
-  // Abo-Tickets (subscriptionId != null) sind absichtlich ausgenommen:
-  // Saisonabos sind dafuer da, beliebig oft genutzt zu werden, und der
-  // Status bleibt bei ihnen dauerhaft VALID. Wuerden wir hier blockieren,
-  // koenne ein Abonnent nach dem allerersten Scan nirgends ohne
-  // Mehrfachzugang-Geraet mehr rein.
+  // Abo-Tickets (subscriptionId != null) und Vereinsmitglieder (vereinId != null)
+  // sind absichtlich ausgenommen: Saisonabos und Vereins-Jahresmitgliedschaften
+  // sind dafuer da, beliebig oft genutzt zu werden, und der Status bleibt bei
+  // ihnen dauerhaft VALID. Wuerden wir hier blockieren, koenne ein Abonnent/
+  // Vereinsmitglied nach dem allerersten Scan nirgends ohne Mehrfachzugang-
+  // Geraet mehr rein.
   //
   // Transit-Scans an Nebenressourcen werden auch hier ignoriert: der
   // Tagesgast, der erst durchs Strandbad-Drehkreuz musste, soll an der
@@ -627,6 +628,7 @@ export async function POST(request: NextRequest) {
     && !isEmployee
     && !isExitScan
     && ticket.subscriptionId == null
+    && ticket.vereinId == null
     && isMainResourceScan
     && !durationStillRunning
   ) {
@@ -666,6 +668,7 @@ export async function POST(request: NextRequest) {
     ticket.status === "VALID"
     && !isEmployee
     && ticket.subscriptionId == null
+    && ticket.vereinId == null
     && isMainResourceScan;
   const shouldResetValid =
     ticket.status === "REDEEMED"

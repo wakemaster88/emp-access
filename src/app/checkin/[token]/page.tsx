@@ -719,7 +719,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             ? {
                 ...prev,
                 checkedIn: true,
-                ...(prev.subscriptionId ? {} : { status: "REDEEMED" as const }),
+                // Abos und Vereinsmitglieder bleiben VALID (tagesbezogener
+                // Check-in), nur echte Einzeltickets werden REDEEMED.
+                ...(prev.subscriptionId || prev.vereinId ? {} : { status: "REDEEMED" as const }),
               }
             : null);
         }
@@ -940,7 +942,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     const pending: CheckinTicket[] = [];
 
     for (const t of dayTickets.filter((t) => !t.subscriptionId)) {
-      if (t.checkedIn || t.status === "REDEEMED") {
+      // Vereinsmitglieder (vereinId) sind Jahres-Mitgliedschaften: „eingecheckt“
+      // ist tagesbezogen über das API-Flag checkedIn, NICHT über dauerhaftes
+      // REDEEMED – sonst stuenden sie an jedem Tag in der Eingecheckt-Liste.
+      if (t.checkedIn || (t.status === "REDEEMED" && !t.vereinId)) {
         checked.push(t);
         continue;
       }
@@ -3770,7 +3775,10 @@ function TicketOverlay({
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isSub = !!ticket.subscriptionId;
-  const isChecked = isSub ? ticket.checkedIn : (ticket.checkedIn || ticket.status === "REDEEMED");
+  // Vereinsmitglieder (vereinId) wie Abos behandeln: tagesbezogener Check-in
+  // über das checkedIn-Flag, nicht über dauerhaftes REDEEMED.
+  const isRecurring = isSub || !!ticket.vereinId;
+  const isChecked = isRecurring ? ticket.checkedIn : (ticket.checkedIn || ticket.status === "REDEEMED");
 
   const toDateValue = (d: string | null) => d ? new Date(d).toISOString().slice(0, 10) : "";
   const [dateStart, setDateStart] = useState(toDateValue(ticket.startDate));

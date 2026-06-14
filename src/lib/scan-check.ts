@@ -424,8 +424,14 @@ export async function performScanCheck({
   }
 
   // Atomar: Scan + optionale Statusaenderung in einer Transaktion mit version-Check.
+  // Vereinsmitglieder (vereinId) sind Jahres-Mitgliedschaften und werden – wie
+  // Abos (subscriptionId) – NICHT dauerhaft eingeloest, sonst wuerde der zweite
+  // Besuch als „bereits eingelöst“ abgewiesen.
   const shouldRedeem =
-    ticket.status === "VALID" && !isEmployee && ticket.subscriptionId == null;
+    ticket.status === "VALID" &&
+    !isEmployee &&
+    ticket.subscriptionId == null &&
+    ticket.vereinId == null;
 
   const txResult = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
