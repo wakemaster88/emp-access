@@ -202,6 +202,12 @@ export async function POST(request: NextRequest) {
           select: {
             allowReentry: true,
             name: true,
+            // Explizit konfigurierte Hauptressource des Service (z. B.
+            // Seilbahn A bei "Öffentlicher Betrieb"). Autoritative Quelle
+            // fuer die DURATION-Timer-/Redeem-Logik unten, weil
+            // `ticket.accessAreaId` (vor allem bei ANNY-Sync) haeufig NULL
+            // oder auf eine Nebenressource (Strandbad) gesetzt ist.
+            mainAccessAreaId: true,
             serviceAreas: { select: { accessAreaId: true } },
           },
         },
@@ -400,7 +406,7 @@ export async function POST(request: NextRequest) {
   // Strandbad fuer ein Wake&Ski-Ticket mit Hauptressource Seilbahn A) werden
   // als "Transit" behandelt: Zutritt wird gewaehrt, aber Status/firstScanAt
   // bleiben unveraendert und die Reentry-Checks ignorieren diese Scans.
-  // Wenn das Ticket keine Hauptressource hat (`accessAreaId == null`),
+  // Wenn das Ticket keine Hauptressource hat (`mainAreaId == null`),
   // verhalten wir uns wie frueher (jeder Scan zaehlt).
   //
   // Diese Berechnung wird hier (vor DURATION-Ablauf-Check) gezogen, weil
@@ -408,7 +414,15 @@ export async function POST(request: NextRequest) {
   // ein Wake&Ski-Tagesgast soll nach Ablauf der 2 Stunden nicht plotzlich
   // vom Strandbad-Drehkreuz abgewiesen werden - das Strandbad ist als
   // Tagesticket-Aequivalent konzipiert.
-  const mainAreaId = ticket.accessAreaId;
+  //
+  // Hauptressource = am Service explizit konfigurierte `mainAccessAreaId`,
+  // sonst `ticket.accessAreaId`. Die Service-Konfiguration hat Vorrang, weil
+  // `ticket.accessAreaId` in der Praxis unzuverlaessig ist: ANNY-Sync setzt
+  // sie aus dem Resource-Mapping (oft NULL) und manche Tickets tragen
+  // versehentlich eine Nebenressource (Strandbad) als accessAreaId. Ohne
+  // diesen Vorrang startet der Timer eines "1 Stunde Seilbahn A"-Tickets
+  // schon am Strandbad-Drehkreuz statt erst an der Seilbahn.
+  const mainAreaId = ticket.service?.mainAccessAreaId ?? ticket.accessAreaId;
   const deviceAreaIds = [device.accessIn, device.accessOut].filter(Boolean) as number[];
   const isMainResourceScan =
     mainAreaId == null || deviceAreaIds.includes(mainAreaId);

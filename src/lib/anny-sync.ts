@@ -796,9 +796,15 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   const servicesList = await prisma.service.findMany({
     where: { accountId },
-    select: { id: true, annyNames: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
+    select: { id: true, annyNames: true, mainAccessAreaId: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
   });
   const svcNameMap = new Map<string, number>();
+  // Explizit konfigurierte Hauptressource je Service. Hat beim Setzen von
+  // `accessAreaId` Vorrang vor dem AnnyResourceLink-Mapping (das oft NULL
+  // liefert oder eine Nebenressource trifft) - sonst startet der DURATION-
+  // Timer eines kombinierten Tickets ("1 Stunde Seilbahn A" inkl. Strandbad)
+  // schon am Strandbad-Drehkreuz statt erst an der Hauptressource.
+  const svcMainArea = new Map<number, number | null>();
   // ANNY-Service-Namen, die sich mehrere EMP-Services teilen (z.B.
   // "Exklusive Bahnmiete - Wochentag" fuer Seilbahn A UND B). Fuer solche
   // Namen ist der Service-Name allein NICHT eindeutig - wir disambiguieren
@@ -812,6 +818,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       slotStart: svc.defaultSlotStart,
       slotEnd: svc.defaultSlotEnd,
     });
+    svcMainArea.set(svc.id, svc.mainAccessAreaId ?? null);
     if (svc.annyNames) {
       try {
         const names: string[] = JSON.parse(svc.annyNames);
@@ -991,6 +998,15 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       accessAreaId = areaByService;
     } else if (areaByResource != null) {
       accessAreaId = areaByResource;
+    }
+
+    // Hauptressource des (aufgeloesten) Service hat Vorrang: sie ist die
+    // autoritative Quelle fuer die DURATION-Timer-/Reentry-Logik am
+    // Drehkreuz. Das Resource-Mapping oben bleibt Fallback fuer Services
+    // ohne konfigurierte Hauptressource.
+    if (serviceId != null) {
+      const svcMain = svcMainArea.get(serviceId);
+      if (svcMain != null) accessAreaId = svcMain;
     }
 
     if (!subscriptionId && !serviceId && !accessAreaId) {
