@@ -448,9 +448,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // TIME_SLOT-Fenster gilt nur fuer Eintritte. Beim Ausgang darf der
-  // Gast immer raus, solange das Ticket grundsaetzlich gueltig ist.
-  if (!isExitScan && vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
+  // TIME_SLOT-Fenster gilt nur fuer Eintritte AN DER HAUPTRESSOURCE. Beim
+  // Ausgang darf der Gast immer raus, solange das Ticket grundsaetzlich
+  // gueltig ist. Transit-Scans an Nebenressourcen werden ignoriert: Ein
+  // "Anfaengerkurs - Seilbahn B"-Ticket hat den Kurs-Slot (z.B. 13:00-14:00)
+  // fuer die Aktivitaet selbst (Hauptressource Seilbahn B), nicht fuer den
+  // Eintritt ins Strandbad. Ohne diese Ausnahme wird der Kursgast, der um
+  // 12:46 ankommt, am Strandbad-Drehkreuz mit `slot_window` abgewiesen.
+  // Analog zum DURATION-Ablauf-Check unten gilt: Hat ein Ticket keine
+  // Hauptressource (`mainAreaId == null`, z.B. Abendkarte, deren
+  // Hauptressource das Strandbad selbst ist), bleibt `isMainResourceScan`
+  // true und das Slot-Fenster wird am Strandbad weiterhin durchgesetzt.
+  if (!isExitScan && isMainResourceScan && vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
     const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
     const currentMinutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
     const [sh, sm] = ticket.slotStart.split(":").map(Number);
