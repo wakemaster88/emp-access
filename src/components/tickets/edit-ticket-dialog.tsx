@@ -184,6 +184,11 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [pendingConflict, setPendingConflict] = useState<{
+    label: string;
+    type: string | null;
+    payload: Record<string, unknown>;
+  } | null>(null);
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [scansLoading, setScansLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -277,6 +282,13 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       email: form.email.trim() || null,
     };
 
+    await submitWithPayload(payload);
+  }
+
+  async function submitWithPayload(payload: Record<string, unknown>) {
+    if (!ticket) return;
+    setSaving(true);
+    setError("");
     try {
       const res = await fetch(`/api/tickets/${ticket.id}`, {
         method: "PUT",
@@ -285,22 +297,54 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
       });
 
       if (!res.ok) {
-        try {
-          const data = await res.json();
-          setError(data.error?.formErrors?.[0] ?? data.error ?? `Fehler ${res.status}`);
-        } catch {
-          setError(`Server-Fehler (${res.status})`);
+        const data = await res.json().catch(() => ({}));
+        const errVal = data?.error as
+          | {
+              formErrors?: string[];
+              code?: string;
+              conflictTicketLabel?: string;
+              conflictTicketType?: string | null;
+            }
+          | string
+          | undefined;
+
+        if (
+          res.status === 409
+          && typeof errVal === "object"
+          && errVal?.code === "CODE_CONFLICT"
+          && !payload.transferCode
+        ) {
+          setPendingConflict({
+            label: errVal.conflictTicketLabel ?? "ein anderes Ticket",
+            type: errVal.conflictTicketType ?? null,
+            payload,
+          });
+          setError("");
+          setSaving(false);
+          return;
         }
+
+        const msg =
+          typeof errVal === "object"
+            ? errVal?.formErrors?.[0] ?? `Fehler ${res.status}`
+            : errVal ?? `Fehler ${res.status}`;
+        setError(msg);
       } else {
         onClose();
         router.refresh();
       }
     } catch (err) {
       setError(`Netzwerkfehler: ${err instanceof Error ? err.message : "Unbekannt"}`);
-
     } finally {
       setSaving(false);
     }
+  }
+
+  async function confirmTransfer() {
+    if (!pendingConflict) return;
+    const retryPayload = { ...pendingConflict.payload, transferCode: true };
+    setPendingConflict(null);
+    await submitWithPayload(retryPayload);
   }
 
   async function handleDelete() {
@@ -640,6 +684,44 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
               )}
             </div>
 
+            {pendingConflict && (
+              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-lg p-3 text-sm space-y-2">
+                <p className="font-semibold text-amber-800 dark:text-amber-200">
+                  Code bereits vergeben
+                </p>
+                <p className="text-amber-700 dark:text-amber-100/90">
+                  Der Code ist aktuell Ticket{" "}
+                  <span className="font-semibold">{pendingConflict.label}</span>
+                  {pendingConflict.type ? (
+                    <span className="opacity-80"> ({pendingConflict.type})</span>
+                  ) : null}{" "}
+                  zugeordnet. Auf dieses Ticket umhängen? Das andere Ticket
+                  verliert dann seinen Code.
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPendingConflict(null)}
+                    disabled={saving}
+                    className="flex-1 h-8"
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={confirmTransfer}
+                    disabled={saving}
+                    className="flex-1 h-8 bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Code umhängen"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {error && (
               <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
             )}
@@ -652,7 +734,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
               </Button>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-8">Abbrechen</Button>
-                <Button type="submit" size="sm" disabled={saving || deleting || (!form.firstName.trim() && !form.lastName.trim())} className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8">
+                <Button type="submit" size="sm" disabled={saving || deleting || pendingConflict !== null || (!form.firstName.trim() && !form.lastName.trim())} className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8">
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Save className="h-3.5 w-3.5 mr-1" />Speichern</>}
                 </Button>
               </div>

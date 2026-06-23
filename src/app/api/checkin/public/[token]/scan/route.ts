@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { berlinOffset } from "@/lib/anny-availability";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
+import { pickBestScanCandidate } from "@/lib/scan-candidate";
 
 export async function POST(
   request: NextRequest,
@@ -42,18 +43,11 @@ export async function POST(
       },
     });
     if (candidates.length > 0) {
-      const now = new Date();
-      function ticketScore(t: typeof candidates[0]): number {
-        if (t.status === "INVALID" || t.status === "PROTECTED") return 0;
-        const endOk = !t.endDate || new Date(new Date(t.endDate).setUTCHours(23, 59, 59, 999)) >= now;
-        const startOk = !t.startDate || new Date(t.startDate) <= now;
-        if (endOk && startOk && t.status === "VALID") return 4;
-        if (endOk && startOk && t.status === "REDEEMED") return 3;
-        if (endOk && startOk) return 2;
-        return 1;
-      }
-      candidates.sort((a, b) => ticketScore(b) - ticketScore(a));
-      ticket = candidates[0];
+      // Bei mehreren Treffern (rfidCode/qrCode sind NICHT eindeutig) das am
+      // besten geeignete Ticket waehlen: ein gueltiges Abo/Vereins-Ticket
+      // schlaegt ein abgelaufenes Einzel-Zeitticket (DURATION). Siehe
+      // scan-candidate.ts.
+      ticket = pickBestScanCandidate(candidates);
       break;
     }
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { gateCheckSchema } from "@/lib/validators";
+import { pickBestScanCandidate } from "@/lib/scan-candidate";
 
 export async function GET(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -23,11 +24,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ user: null, name: null, access: 0 });
   }
 
-  const ticket = await db.ticket.findFirst({
+  // Bei mehreren Treffern (rfidCode/qrCode sind NICHT eindeutig) das am besten
+  // geeignete Ticket waehlen statt eines beliebigen findFirst-Treffers: ein
+  // gueltiges Abo/Vereins-Ticket schlaegt ein abgelaufenes Einzel-Zeitticket.
+  const candidates = await db.ticket.findMany({
     where: {
       OR: [{ rfidCode: id }, { qrCode: id }, { barcode: id }],
     },
   });
+  const ticket = pickBestScanCandidate(candidates);
 
   if (!ticket) {
     await db.scan.create({

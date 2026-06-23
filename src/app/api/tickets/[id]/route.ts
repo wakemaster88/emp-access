@@ -48,6 +48,68 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
+  // Code-Eindeutigkeit erzwingen: rfidCode/qrCode sind im Schema NICHT unique
+  // (nur barcode/uuid). Ohne diese Pruefung kann derselbe Code an mehreren
+  // Tickets haengen, was beim Scan zum falschen Ticket fuehrt (z.B. ein altes
+  // abgelaufenes Zeitticket statt des gueltigen Abos). Wie beim Erstellen
+  // (POST /api/tickets) verhindern wir Konflikte: Standard = 409 CODE_CONFLICT,
+  // mit `transferCode=true` wird der Code von ALLEN anderen Tickets abgezogen.
+  const newCodes = [data.barcode, data.qrCode, data.rfidCode].filter(
+    (c): c is string => !!c,
+  );
+  if (newCodes.length > 0) {
+    const transferCode = body.transferCode === true;
+    const conflictWhere = {
+      accountId: accountId!,
+      id: { not: ticketId },
+      OR: [
+        { barcode: { in: newCodes } },
+        { qrCode: { in: newCodes } },
+        { rfidCode: { in: newCodes } },
+      ],
+    };
+    const conflict = await db.ticket.findFirst({
+      where: conflictWhere,
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        ticketTypeName: true,
+      },
+    });
+    if (conflict) {
+      if (!transferCode) {
+        const owner =
+          [conflict.firstName, conflict.lastName].filter(Boolean).join(" ")
+          || conflict.name;
+        return NextResponse.json(
+          {
+            error: {
+              formErrors: [
+                `Code ist bereits Ticket "${owner}" zugeordnet${
+                  conflict.ticketTypeName ? ` (${conflict.ticketTypeName})` : ""
+                }.`,
+              ],
+              code: "CODE_CONFLICT",
+              conflictTicketId: conflict.id,
+              conflictTicketLabel: owner,
+              conflictTicketType: conflict.ticketTypeName,
+            },
+          },
+          { status: 409 },
+        );
+      }
+      // Transfer: Code von allen anderen Tickets abziehen (raeumt auch bereits
+      // bestehende Duplikate auf), damit er danach eindeutig diesem Ticket
+      // gehoert.
+      await db.ticket.updateMany({
+        where: conflictWhere,
+        data: { barcode: null, qrCode: null, rfidCode: null, version: { increment: 1 } },
+      });
+    }
+  }
+
   const ticket = await db.ticket.update({
     where: { id: ticketId },
     data: {
