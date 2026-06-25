@@ -1295,7 +1295,9 @@ export default function PublicMonitorPage({ params }: Props) {
                 <Pause className="h-6 w-6" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-lg font-bold leading-tight">Alle Tickets pausieren?</h3>
+                <h3 className="text-lg font-bold leading-tight">
+                  {pauseConfirm.isGlobal ? "Massen-Pause nicht möglich" : "Alle Tickets pausieren?"}
+                </h3>
                 <p className={cn("text-xs mt-0.5", dark ? "text-slate-400" : "text-slate-500")}>
                   Monitor „{monitorName}“
                 </p>
@@ -1304,25 +1306,30 @@ export default function PublicMonitorPage({ params }: Props) {
 
             <div className={cn(
               "rounded-2xl border px-4 py-4 mb-4",
-              dark ? "bg-slate-950/50 border-slate-700" : "bg-slate-50 border-slate-200",
+              pauseConfirm.isGlobal
+                ? (dark ? "bg-rose-950/40 border-rose-800" : "bg-rose-50 border-rose-200")
+                : (dark ? "bg-slate-950/50 border-slate-700" : "bg-slate-50 border-slate-200"),
             )}>
-              <p className={cn("text-sm font-medium", dark ? "text-slate-300" : "text-slate-700")}>
-                Es werden{" "}
-                <span className={cn(
-                  "font-mono font-extrabold tabular-nums text-base",
-                  dark ? "text-orange-300" : "text-orange-700",
-                )}>
-                  {pauseConfirm.count}
-                </span>{" "}
-                Tickets pausiert.
-              </p>
-              {pauseConfirm.isGlobal && (
+              {pauseConfirm.isGlobal ? (
                 <p className={cn(
-                  "text-xs mt-2 font-semibold",
+                  "text-sm font-semibold",
                   dark ? "text-rose-300" : "text-rose-700",
                 )}>
-                  Achtung: Dieser Monitor hat keinen Bereichs-Scope. Die Aktion wirkt
-                  account-weit (alle Bereiche).
+                  Dieser Monitor ist keinem Bereich zugeordnet. Eine Massen-Pause
+                  würde account-weit ALLE Tickets pausieren und ist deshalb aus
+                  Sicherheitsgründen deaktiviert. Bitte einen bereichsspezifischen
+                  Monitor (z.&nbsp;B. Seilbahn A) zum Pausieren verwenden.
+                </p>
+              ) : (
+                <p className={cn("text-sm font-medium", dark ? "text-slate-300" : "text-slate-700")}>
+                  Es werden{" "}
+                  <span className={cn(
+                    "font-mono font-extrabold tabular-nums text-base",
+                    dark ? "text-orange-300" : "text-orange-700",
+                  )}>
+                    {pauseConfirm.count}
+                  </span>{" "}
+                  Tickets pausiert.
                 </p>
               )}
             </div>
@@ -1336,19 +1343,21 @@ export default function PublicMonitorPage({ params }: Props) {
                   dark ? "bg-slate-800 hover:bg-slate-700 text-slate-200" : "bg-slate-100 hover:bg-slate-200 text-slate-700",
                 )}
               >
-                Abbrechen
+                {pauseConfirm.isGlobal ? "Verstanden" : "Abbrechen"}
               </button>
-              <button
-                onClick={confirmPauseAll}
-                disabled={pauseToggling || pauseConfirm.count === 0}
-                className={cn(
-                  "flex-[1.4] py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50",
-                  dark ? "bg-orange-600 hover:bg-orange-500 text-white" : "bg-orange-600 hover:bg-orange-500 text-white",
-                )}
-              >
-                {pauseToggling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
-                {pauseConfirm.count === 0 ? "Keine Tickets" : `${pauseConfirm.count} pausieren`}
-              </button>
+              {!pauseConfirm.isGlobal && (
+                <button
+                  onClick={confirmPauseAll}
+                  disabled={pauseToggling || pauseConfirm.count === 0}
+                  className={cn(
+                    "flex-[1.4] py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50",
+                    dark ? "bg-orange-600 hover:bg-orange-500 text-white" : "bg-orange-600 hover:bg-orange-500 text-white",
+                  )}
+                >
+                  {pauseToggling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                  {pauseConfirm.count === 0 ? "Keine Tickets" : `${pauseConfirm.count} pausieren`}
+                </button>
+              )}
             </div>
           </div>
         </div>
