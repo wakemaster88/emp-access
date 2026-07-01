@@ -90,16 +90,6 @@ function recommendedMinutes(base: number, rec: IrrigationRecommendation): number
   return Math.min(90, Math.max(5, Math.round(base * rec.factor)));
 }
 
-function activityLabel(activity: string | null): string {
-  switch (activity) {
-    case "CLOSED": return "Geschlossen";
-    case "MANUAL_WATERING": return "Bewässert (manuell)";
-    case "SCHEDULED_WATERING": return "Bewässert (Zeitplan)";
-    case "PAUSED": return "Pausiert";
-    default: return activity ?? "—";
-  }
-}
-
 function fmtDays(mask: number): string {
   if (mask === 127) return "Täglich";
   if (mask === 0b0011111) return "Werktags";
@@ -645,6 +635,49 @@ function StatCard({ icon: Icon, label, value, hint, accent }: {
 
 // ── Zonen-Karte ──────────────────────────────────────────────────────────────
 
+// Klare An/Aus-Anzeige des Ventils.
+function ZoneStateBadge({ status }: { status?: ZoneStatus }) {
+  const base = "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium";
+
+  if (!status || status.source === "unavailable") {
+    return (
+      <span className={cn(base, "bg-slate-100 dark:bg-slate-800 text-slate-400")}>
+        <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+        Status unbekannt
+      </span>
+    );
+  }
+
+  if (status.watering) {
+    const label = status.activity === "SCHEDULED_WATERING" ? "An · Zeitplan" : "An · bewässert";
+    return (
+      <span className={cn(base, "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300")}>
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
+        </span>
+        {label}
+      </span>
+    );
+  }
+
+  if (status.activity === "PAUSED") {
+    return (
+      <span className={cn(base, "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300")}>
+        <span className="h-2 w-2 rounded-full bg-amber-500" />
+        Pausiert
+      </span>
+    );
+  }
+
+  return (
+    <span className={cn(base, "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400")}>
+      <span className="h-2 w-2 rounded-full bg-slate-400" />
+      Aus · geschlossen
+    </span>
+  );
+}
+
 function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDuration, onStart, onStop, onRename }: {
   zone: Zone; status?: ZoneStatus; duration: number; recommended: number; busy: boolean; disabled: boolean;
   onDuration: (m: number) => void; onStart: () => void; onStop: () => void; onRename: (name: string) => void;
@@ -707,7 +740,7 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDurat
                   </button>
                 </div>
               )}
-              <p className="text-xs text-slate-400">{activityLabel(status?.activity ?? null)}</p>
+              <div className="mt-1"><ZoneStateBadge status={status} /></div>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
