@@ -5,8 +5,9 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
+import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { TelegramCard } from "@/components/settings/telegram-card";
 
@@ -21,12 +22,16 @@ export default async function SettingsPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [apiConfigs, account, shellyDevices, telegramConfig] = await Promise.all([
+  const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
     db.account.findUnique({ where: { id: session.user.accountId } }),
     db.device.findMany({
       where: { accountId: session.user.accountId, type: "SHELLY", shellyId: { not: null } },
       select: { shellyId: true },
+    }),
+    db.device.findMany({
+      where: { accountId: session.user.accountId, type: "GARDENA_VALVE", gardenaServiceId: { not: null } },
+      select: { gardenaServiceId: true },
     }),
     db.telegramConfig.findFirst({
       where: { accountId: session.user.accountId },
@@ -37,6 +42,8 @@ export default async function SettingsPage() {
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
   const existingShellyIds = shellyDevices.map((d) => d.shellyId!).filter(Boolean);
+  const gardenaConfig = apiConfigs.find((c) => c.provider === "GARDENA");
+  const existingGardenaIds = gardenaDevices.map((d) => d.gardenaServiceId!).filter(Boolean);
 
   const configByProvider = Object.fromEntries(
     apiConfigs.map((c) => [c.provider, c])
@@ -112,6 +119,26 @@ export default async function SettingsPage() {
             savedServer={shellyConfig?.baseUrl ?? null}
             savedAuthKey={shellyConfig?.token ?? null}
             existingDeviceIds={existingShellyIds}
+          />
+        </section>
+
+        {/* GARDENA smart system */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Sprout className="h-5 w-5 text-slate-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+              GARDENA smart system
+            </h2>
+            {gardenaConfig && (
+              <Badge className="ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
+                Verbunden · {existingGardenaIds.length} Gerät{existingGardenaIds.length !== 1 ? "e" : ""} importiert
+              </Badge>
+            )}
+          </div>
+          <GardenaCard
+            savedKey={gardenaConfig?.token ?? null}
+            connected={!!gardenaConfig?.token && !!gardenaConfig?.extraConfig}
+            existingServiceIds={existingGardenaIds}
           />
         </section>
 

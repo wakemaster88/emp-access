@@ -16,6 +16,7 @@ enum DeviceType {
   RASPBERRY_PI
   SHELLY
   NUKI_SMARTLOCK
+  GARDENA_VALVE
 }
 
 enum DeviceCategory {
@@ -54,6 +55,7 @@ enum ApiProvider {
   EMP_CONTROL
   SHELLY
   NUKI
+  GARDENA
 }
 
 model Account {
@@ -90,6 +92,7 @@ model Account {
   announcements   MonitorAnnouncement[]
   slotBlocks      SlotBlock[]
   lostItems       LostItem[]
+  irrigationSchedules IrrigationSchedule[]
 }
 
 model Admin {
@@ -120,6 +123,11 @@ model Device {
   /// Wird beim Sync aus `GET /smartlock` befuellt; identifiziert das Geraet
   /// fuer `POST /smartlock/{id}/action` und Webhook-Events.
   nukiSmartlockId String?
+  /// GARDENA smart system Service-ID des VALVE-Service (z. B.
+  /// "ee5b3996-defe-4903-934a-a33822e85b0c:2"). Identifiziert Ventil bzw.
+  /// Pumpe fuer `PUT /v1/command/{serviceId}` und den Status-Abgleich ueber
+  /// die Location-Details. Wird beim Import aus der GARDENA Cloud befuellt.
+  gardenaServiceId String?
   isActive        Boolean             @default(true)
   task            Int                 @default(0)
   accessIn        Int?
@@ -133,6 +141,7 @@ model Device {
   account         Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   scans           Scan[]
   groupMembers    ShellyGroupMember[]
+  irrigationSchedules IrrigationSchedule[]
   /// Tickets, die diesem Geraet direkt zugewiesen sind (additiv zu Bereichen).
   /// Wird vor allem fuer Mitarbeiter verwendet, die ohne Bereich-Zugehoerigkeit
   /// nur ein einzelnes Geraet bedienen sollen.
@@ -876,6 +885,35 @@ model LostItem {
   updatedAt     DateTime      @updatedAt
 
   @@index([accountId, kind, pickedUp])
+}
+
+/// Automatischer Bewässerungs-Zeitplan fuer ein GARDENA-Ventil/eine Pumpe
+/// (Device mit type = GARDENA_VALVE). Wird vom Cron (`/api/cron/irrigation`,
+/// alle 5 Min) ausgewertet: passt der aktuelle Wochentag + die Startzeit und
+/// wird nicht wegen Regen ausgesetzt, startet der Cron die Bewässerung fuer
+/// `durationMinutes`. `lastRunAt` dient als Idempotenz-Guard.
+model IrrigationSchedule {
+  id              Int      @id @default(autoincrement())
+  accountId       Int
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceId        Int
+  device          Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
+  daysOfWeek      Int      @default(127)
+  /// "HH:mm" Startzeit in Berliner Zeit.
+  startTime       String
+  /// Bewässerungsdauer in Minuten.
+  durationMinutes Int      @default(15)
+  isActive        Boolean  @default(true)
+  /// Bei erwartetem Regen (Wetter-Check) aussetzen.
+  skipOnRain      Boolean  @default(true)
+  /// Letzter erfolgreicher Lauf – verhindert Doppel-Ausführung im 5-Min-Cron.
+  lastRunAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([accountId, isActive])
+  @@index([deviceId])
 }
 
 model ShellyAutomationRun {

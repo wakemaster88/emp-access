@@ -16,6 +16,7 @@ import {
   Clock,
   Cpu,
   DoorOpen,
+  Droplets,
   GitMerge,
   Globe,
   KeyRound,
@@ -26,9 +27,12 @@ import {
   Power,
   PowerOff,
   ScanLine,
+  Sprout,
+  Square,
   ToggleRight,
   Unlock,
   Wifi,
+  WifiOff,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -85,6 +89,27 @@ interface ShellyStatus {
   source: "local" | "cloud" | "unavailable";
 }
 
+interface GardenaStatus {
+  id: number;
+  online: boolean;
+  activity: string | null;
+  watering: boolean;
+  batteryLevel: number | null;
+  batteryState: string | null;
+  modelType: string | null;
+  source: "cloud" | "unavailable";
+}
+
+function gardenaActivityLabel(activity: string | null): string {
+  switch (activity) {
+    case "CLOSED": return "Geschlossen";
+    case "MANUAL_WATERING": return "Bewässert";
+    case "SCHEDULED_WATERING": return "Bewässert (Plan)";
+    case "PAUSED": return "Pausiert";
+    default: return activity ?? "Unbekannt";
+  }
+}
+
 interface DevicesTableProps {
   devices: Device[];
   areas: Area[];
@@ -110,6 +135,7 @@ const TASK_LABEL: Record<number, { label: string; color: string }> = {
 
 export function DevicesTable({ devices, areas }: DevicesTableProps) {
   const [shellyStatus, setShellyStatus] = useState<Map<number, ShellyStatus>>(new Map());
+  const [gardenaStatus, setGardenaStatus] = useState<Map<number, GardenaStatus>>(new Map());
   const [statusLoading, setStatusLoading] = useState(true);
 
   const areaMap = Object.fromEntries(areas.map((a) => [a.id, a.name]));
@@ -127,6 +153,19 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
       })
       .catch(() => {})
       .finally(() => setStatusLoading(false));
+  }, [devices]);
+
+  // Single batch fetch for all GARDENA valves
+  useEffect(() => {
+    const gardenaIds = devices.filter((d) => d.type === "GARDENA_VALVE").map((d) => d.id);
+    if (gardenaIds.length === 0) return;
+
+    fetch(`/api/devices/gardena-statuses?ids=${gardenaIds.join(",")}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((list: GardenaStatus[]) => {
+        setGardenaStatus(new Map(list.map((s) => [s.id, s])));
+      })
+      .catch(() => {});
   }, [devices]);
 
   return (
@@ -196,10 +235,12 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           const isShelly = device.type === "SHELLY";
           const isPi     = device.type === "RASPBERRY_PI";
           const isNuki   = device.type === "NUKI_SMARTLOCK";
+          const isGardena = device.type === "GARDENA_VALVE";
           const cat      = device.category ? CATEGORY_META[device.category] : null;
           const lastUpd  = device.lastUpdate ? new Date(device.lastUpdate) : null;
           const piOnline = !!(lastUpd && lastUpd > fiveMinAgo);
           const shelly   = shellyStatus.get(device.id);
+          const gardena  = gardenaStatus.get(device.id);
 
           // Compute status cell content
           const statusCell = (() => {
@@ -238,6 +279,49 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                   {shelly.power !== undefined && shelly.power > 0.5 && (
                     <span className="flex items-center gap-0.5 text-xs text-slate-400">
                       <Zap className="h-3 w-3 text-amber-400" />{shelly.power.toFixed(0)} W
+                    </span>
+                  )}
+                </div>
+              );
+            }
+
+            // GARDENA Ventil/Pumpe: Online + Bewässerungs-Aktivität + Batterie
+            if (isGardena) {
+              if (!gardena) {
+                return (
+                  <span className="flex items-center gap-1.5 text-xs text-slate-300 animate-pulse">
+                    <span className="h-2 w-2 rounded-full bg-slate-200" /> …
+                  </span>
+                );
+              }
+              const hasBat = gardena.batteryState != null && gardena.batteryState !== "NO_BATTERY";
+              return (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {gardena.online ? (
+                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Online
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                      <WifiOff className="h-3 w-3" /> Offline
+                    </Badge>
+                  )}
+                  {gardena.watering ? (
+                    <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 gap-1 text-xs h-5">
+                      <Droplets className="h-3 w-3" /> {gardenaActivityLabel(gardena.activity)}
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                      <Square className="h-3 w-3" /> {gardenaActivityLabel(gardena.activity)}
+                    </Badge>
+                  )}
+                  {hasBat && gardena.batteryLevel != null && (
+                    <span className={cn(
+                      "flex items-center gap-0.5 text-xs",
+                      gardena.batteryLevel < 20 ? "text-rose-500" : "text-slate-400",
+                    )}>
+                      {gardena.batteryLevel < 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />}
+                      {gardena.batteryLevel}%
                     </span>
                   )}
                 </div>
@@ -347,9 +431,11 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                       ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                       : isNuki
                         ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                        : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                        : isGardena
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                   )}>
-                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
+                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : isGardena ? <Sprout className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
                   </div>
                   <div className="min-w-0">
                     <p className="font-medium text-sm text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
@@ -369,7 +455,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     <cat.icon className="h-3 w-3" /> {cat.label}
                   </Badge>
                 ) : (
-                  <span className="text-xs text-slate-400">{isShelly ? "Shelly" : isNuki ? "Nuki" : "Pi"}</span>
+                  <span className="text-xs text-slate-400">{isShelly ? "Shelly" : isNuki ? "Nuki" : isGardena ? "GARDENA" : "Pi"}</span>
                 )}
               </TableCell>
 

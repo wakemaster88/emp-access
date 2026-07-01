@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle, DoorOpen, ToggleRight, RotateCcw, Loader2, Pencil,
   Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock,
+  Droplets, Square, Battery, BatteryLow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EditDeviceDialog, type DeviceData, type AreaOption } from "./edit-device-dialog";
@@ -18,6 +19,30 @@ interface ShellyStatus {
   output: boolean | null;
   power?: number;
   source: "local" | "cloud" | "unavailable";
+}
+
+interface GardenaStatus {
+  online: boolean;
+  activity: string | null;
+  watering: boolean;
+  batteryLevel: number | null;
+  batteryState: string | null;
+  rfLinkLevel: number | null;
+  modelType: string | null;
+  source: "cloud" | "unavailable";
+}
+
+// GARDENA-Bewässerungsdauern (Minuten) fuer den Dauer-Picker.
+const GARDENA_DURATIONS = [5, 15, 30, 60] as const;
+
+function gardenaActivityLabel(activity: string | null): string {
+  switch (activity) {
+    case "CLOSED": return "Geschlossen";
+    case "MANUAL_WATERING": return "Bewässert (manuell)";
+    case "SCHEDULED_WATERING": return "Bewässert (Zeitplan)";
+    case "PAUSED": return "Pausiert";
+    default: return activity ?? "Unbekannt";
+  }
 }
 
 interface Props {
@@ -52,13 +77,15 @@ export function DeviceDetailClient({ device, areas }: Props) {
   // Shelly live status
   const isShelly = device.type === "SHELLY";
   const isNuki = device.type === "NUKI_SMARTLOCK";
+  const isGardena = device.type === "GARDENA_VALVE";
   const isSwitch = device.category === "SCHALTER" || device.category === "BELEUCHTUNG";
   const isSensor = device.category === "SENSOR";
   const isDrehkreuz = device.category === "DREHKREUZ";
   const isTuer = device.category === "TUER";
 
   const [shellyStatus, setShellyStatus] = useState<ShellyStatus | null>(null);
-  const [statusLoading, setStatusLoading] = useState(isShelly);
+  const [gardenaStatus, setGardenaStatus] = useState<GardenaStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(isShelly || isGardena);
 
   const fetchShellyStatus = useCallback(async () => {
     if (!isShelly) return;
@@ -71,25 +98,43 @@ export function DeviceDetailClient({ device, areas }: Props) {
     }
   }, [device.id, isShelly]);
 
+  const fetchGardenaStatus = useCallback(async () => {
+    if (!isGardena) return;
+    setStatusLoading(true);
+    try {
+      const res = await fetch(`/api/devices/${device.id}/gardena-status`);
+      if (res.ok) setGardenaStatus(await res.json());
+    } finally {
+      setStatusLoading(false);
+    }
+  }, [device.id, isGardena]);
+
   useEffect(() => {
     fetchShellyStatus();
-  }, [fetchShellyStatus]);
+    fetchGardenaStatus();
+  }, [fetchShellyStatus, fetchGardenaStatus]);
 
   // ─── Action handler ─────────────────────────────────────────────────────────
 
-  async function handleAction(action: string) {
-    setLoading(action);
+  async function handleAction(action: string, minutes?: number) {
+    setLoading(minutes ? `open:${minutes}` : action);
 
     // Optimistic update for Shelly switch
     if (isShelly && isSwitch) {
       setShellyStatus((prev) => prev ? { ...prev, output: action === "open" } : prev);
+    }
+    // Optimistic update for GARDENA valve
+    if (isGardena) {
+      setGardenaStatus((prev) => prev
+        ? { ...prev, watering: action === "open", activity: action === "open" ? "MANUAL_WATERING" : "CLOSED" }
+        : prev);
     }
 
     try {
       const res = await fetch(`/api/devices/${device.id}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify(minutes ? { action, minutes } : { action }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -97,9 +142,11 @@ export function DeviceDetailClient({ device, areas }: Props) {
         router.refresh();
         // Re-fetch real status after short delay
         if (isShelly) setTimeout(fetchShellyStatus, 1500);
+        if (isGardena) setTimeout(fetchGardenaStatus, 2500);
       } else {
         // Revert optimistic update
         fetchShellyStatus();
+        fetchGardenaStatus();
       }
     } finally {
       setLoading(null);
@@ -163,6 +210,66 @@ export function DeviceDetailClient({ device, areas }: Props) {
     </div>
   ) : null;
 
+  // ─── GARDENA status badges ────────────────────────────────────────────────────
+
+  const gardenaBattery = gardenaStatus?.batteryLevel;
+  const hasBattery = gardenaStatus?.batteryState != null && gardenaStatus.batteryState !== "NO_BATTERY";
+
+  const GardenaStatusBadges = isGardena ? (
+    <div className="flex flex-wrap items-center gap-2 mb-3">
+      {statusLoading && !gardenaStatus ? (
+        <Badge variant="secondary" className="gap-1.5 animate-pulse text-xs">
+          <Loader2 className="h-3 w-3 animate-spin" /> Status lädt…
+        </Badge>
+      ) : gardenaStatus && gardenaStatus.source !== "unavailable" ? (
+        <>
+          {gardenaStatus.online ? (
+            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1.5 text-xs">
+              <Wifi className="h-3 w-3" /> Online
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="gap-1.5 text-slate-400 text-xs">
+              <WifiOff className="h-3 w-3" /> Offline
+            </Badge>
+          )}
+
+          {gardenaStatus.watering ? (
+            <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 gap-1.5 text-xs">
+              <Droplets className="h-3 w-3" /> {gardenaActivityLabel(gardenaStatus.activity)}
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="gap-1.5 text-slate-500 text-xs">
+              <Square className="h-3 w-3" /> {gardenaActivityLabel(gardenaStatus.activity)}
+            </Badge>
+          )}
+
+          {hasBattery && gardenaBattery != null && (
+            <Badge variant="outline" className={cn(
+              "gap-1 text-xs",
+              gardenaBattery < 20 ? "text-rose-600 dark:text-rose-400" : "text-slate-500",
+            )}>
+              {gardenaBattery < 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />}
+              {gardenaBattery}%
+            </Badge>
+          )}
+
+          <button
+            onClick={fetchGardenaStatus}
+            disabled={statusLoading}
+            className="text-slate-300 hover:text-slate-500 transition-colors"
+            title="Status aktualisieren"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", statusLoading && "animate-spin")} />
+          </button>
+        </>
+      ) : (
+        <Badge variant="secondary" className="gap-1.5 text-slate-400 text-xs">
+          <WifiOff className="h-3 w-3" /> Nicht erreichbar
+        </Badge>
+      )}
+    </div>
+  ) : null;
+
   // ─── Buttons ─────────────────────────────────────────────────────────────────
 
   const ActionButtons = (() => {
@@ -172,6 +279,44 @@ export function DeviceDetailClient({ device, areas }: Props) {
         <span className="flex items-center gap-1.5 text-xs text-slate-400 px-1 italic">
           <Activity className="h-3.5 w-3.5" /> Sensor – nur Anzeige
         </span>
+      );
+    }
+
+    // GARDENA valve / pump: Dauer-Picker + Stopp
+    if (isGardena) {
+      const watering = gardenaStatus?.watering === true;
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-500 mr-1">Bewässern:</span>
+          {GARDENA_DURATIONS.map((min) => (
+            <Button
+              key={min}
+              size="sm"
+              onClick={() => handleAction("open", min)}
+              disabled={loading !== null}
+              className="bg-sky-600 hover:bg-sky-700 text-white gap-1.5"
+            >
+              {loading === `open:${min}`
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Droplets className="h-4 w-4" />}
+              {min} Min
+            </Button>
+          ))}
+          <Button
+            size="sm"
+            onClick={() => handleAction("reset")}
+            disabled={loading !== null || (gardenaStatus != null && !watering)}
+            className={cn(
+              "gap-1.5",
+              watering
+                ? "bg-slate-700 hover:bg-slate-800 text-white"
+                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700",
+            )}
+          >
+            {loading === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+            Stopp
+          </Button>
+        </div>
       );
     }
 
@@ -251,6 +396,7 @@ export function DeviceDetailClient({ device, areas }: Props) {
   return (
     <>
       {ShellyStatusBadges}
+      {GardenaStatusBadges}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="gap-1.5">
           <Pencil className="h-4 w-4" />

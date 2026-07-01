@@ -141,7 +141,9 @@ export default async function DeviceDetailPage({ params }: Props) {
                         ? "Raspberry Pi – Drehkreuz/Tür"
                         : device.type === "NUKI_SMARTLOCK"
                           ? "Nuki Smart Lock"
-                          : "Shelly – Relais"}
+                          : device.type === "GARDENA_VALVE"
+                            ? "GARDENA smart – Ventil/Pumpe"
+                            : "Shelly – Relais"}
                     </p>
                     {device.ipAddress && (
                       <p className="text-xs text-slate-400 font-mono mt-1">{device.ipAddress}</p>
@@ -158,8 +160,9 @@ export default async function DeviceDetailPage({ params }: Props) {
                       );
                     })()}
 
-                    {/* Pi: static online badge based on lastUpdate */}
-                    {device.type !== "SHELLY" && (
+                    {/* Pi: static online badge based on lastUpdate.
+                        Shelly & GARDENA zeigen ihren Online-Status live im Client. */}
+                    {device.type !== "SHELLY" && device.type !== "GARDENA_VALVE" && (
                       isOnline ? (
                         <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1">
                           <Wifi className="h-3 w-3" /> Online
@@ -175,7 +178,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                       {device.isActive ? "Aktiv" : "Inaktiv"}
                     </Badge>
                     {/* Task-Badge nur für Pi-Zugangsgeräte */}
-                    {device.type !== "SHELLY" && device.task > 0 && (
+                    {device.type !== "SHELLY" && device.type !== "GARDENA_VALVE" && device.task > 0 && (
                       <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                         {taskLabel[device.task] ?? `Task ${device.task}`}
                       </Badge>
@@ -213,6 +216,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                     ipAddress: device.ipAddress,
                     shellyId: device.shellyId,
                     shellyAuthKey: device.shellyAuthKey,
+                    gardenaServiceId: device.gardenaServiceId,
                     isActive: device.isActive,
                     accessIn: device.accessIn,
                     accessOut: device.accessOut,

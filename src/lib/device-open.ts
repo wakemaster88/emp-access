@@ -1,4 +1,9 @@
 import { nukiAction, NUKI_ACTION } from "./nuki";
+import { gardenaControlValve } from "./gardena";
+
+// Standard-Bewässerungsdauer (Sekunden), falls beim Öffnen keine Dauer
+// mitgegeben wird (z. B. Auslösung über den Public-Checkin-Monitor).
+const GARDENA_DEFAULT_SECONDS = 1800;
 
 // Task codes für Raspberry Pi:
 // 0 = idle, 1 = open once, 2 = emergency open (NOT-AUF), 3 = deactivate
@@ -96,6 +101,13 @@ interface DeviceForAction {
   shellyId: string | null;
   ipAddress: string | null;
   nukiSmartlockId?: string | null;
+  gardenaServiceId?: string | null;
+}
+
+/** Optionale Parameter fuer einzelne Aktionen (z. B. GARDENA-Bewässerungsdauer). */
+interface TriggerOptions {
+  /// Laufzeit in Sekunden fuer GARDENA "open" (Bewässern). Default 30 min.
+  seconds?: number;
 }
 
 /**
@@ -107,8 +119,8 @@ interface DbLike {
   device: { update: (args: { where: { id: number }; data: { task: number } }) => Promise<unknown> };
   apiConfig: {
     findFirst: (args: {
-      where: { accountId: number; provider: "SHELLY" | "NUKI" };
-    }) => Promise<{ token: string | null; baseUrl: string | null } | null>;
+      where: { accountId: number; provider: "SHELLY" | "NUKI" | "GARDENA" };
+    }) => Promise<{ token: string | null; baseUrl: string | null; extraConfig: string | null } | null>;
   };
 }
 
@@ -122,12 +134,32 @@ export async function triggerDeviceAction(
   device: DeviceForAction,
   accountId: number,
   action: TaskAction,
+  options: TriggerOptions = {},
 ): Promise<{ task: number; sent: boolean }> {
   const task = TASK_MAP[action];
   await db.device.update({
     where: { id: device.id },
     data: { task },
   });
+
+  if (device.type === "GARDENA_VALVE") {
+    if (!device.gardenaServiceId) return { task, sent: false };
+    const config = await db.apiConfig.findFirst({
+      where: { accountId, provider: "GARDENA" },
+    });
+    if (!config?.token || !config?.extraConfig) return { task, sent: false };
+
+    // open/emergency => bewässern (START), deactivate/reset => stoppen (STOP).
+    const start = action === "open" || action === "emergency";
+    const res = await gardenaControlValve(
+      config.token,
+      config.extraConfig,
+      device.gardenaServiceId,
+      start ? "open" : "close",
+      options.seconds ?? GARDENA_DEFAULT_SECONDS,
+    );
+    return { task, sent: res.ok };
+  }
 
   if (device.type === "NUKI_SMARTLOCK") {
     if (!device.nukiSmartlockId) return { task, sent: false };

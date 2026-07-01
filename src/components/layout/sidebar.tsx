@@ -28,6 +28,7 @@ import {
   Mail,
   IdCard,
   PackageSearch,
+  Droplets,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/scanner", label: "Scanner", icon: QrCode },
       { href: "/scans", label: "Scans", icon: ScanLine },
+      { href: "/bewaesserung", label: "Bewässerung", icon: Droplets },
       { href: "/monitor", label: "Live Monitor", icon: Monitor },
       { href: "/monitors", label: "Monitore", icon: MonitorCog },
     ],

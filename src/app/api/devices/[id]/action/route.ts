@@ -29,6 +29,9 @@ export async function POST(
 
   const body = await request.json();
   const action = body.action as string;
+  // Optionale Bewässerungsdauer (Minuten) fuer GARDENA-Ventile.
+  const minutes = Number(body.minutes);
+  const seconds = Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined;
 
   if (!(action in DEVICE_TASK_MAP)) {
     return NextResponse.json({ error: "Ungültige Aktion" }, { status: 400 });
@@ -44,8 +47,12 @@ export async function POST(
     existing,
     accountId!,
     action as keyof typeof DEVICE_TASK_MAP,
+    { seconds },
   );
 
-  const hasRemoteAction = existing.type === "SHELLY" || existing.type === "NUKI_SMARTLOCK";
+  const hasRemoteAction =
+    existing.type === "SHELLY" ||
+    existing.type === "NUKI_SMARTLOCK" ||
+    existing.type === "GARDENA_VALVE";
   return NextResponse.json({ ok: true, task, sent: hasRemoteAction ? sent : undefined });
 }

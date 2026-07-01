@@ -32,6 +32,7 @@ export interface DeviceData {
   ipAddress: string | null;
   shellyId: string | null;
   shellyAuthKey: string | null;
+  gardenaServiceId?: string | null;
   isActive: boolean;
   accessIn: number | null;
   accessOut: number | null;
@@ -179,6 +180,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
   }
 
   const isShelly = device?.type === "SHELLY";
+  const isGardena = device?.type === "GARDENA_VALVE";
 
   return (
     <Dialog open={!!device} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -236,6 +238,14 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
                 <Input id="d-shelly-key" type="password" value={form.shellyAuthKey} onChange={(e) => set("shellyAuthKey", e.target.value)} className="font-mono" />
               </div>
             </>
+          )}
+
+          {/* GARDENA – Service-ID (Info) */}
+          {isGardena && device?.gardenaServiceId && (
+            <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/30 bg-emerald-50/60 dark:bg-emerald-950/20 p-3 space-y-1">
+              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">GARDENA Service-ID</p>
+              <p className="text-xs font-mono text-slate-500 break-all">{device.gardenaServiceId}</p>
+            </div>
           )}
 
           {/* Zugangsbereiche – nur Drehkreuz & Tür */}

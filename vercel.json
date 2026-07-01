@@ -44,6 +44,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/irrigation",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/email-automations",
       "schedule": "10 8 * * *"
     },
