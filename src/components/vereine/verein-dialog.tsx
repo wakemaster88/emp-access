@@ -174,6 +174,7 @@ export function VereinDialog({
   const [qaCode, setQaCode] = useState("");
   const [qaAdding, setQaAdding] = useState(false);
   const [qaError, setQaError] = useState("");
+  const [qaSuccess, setQaSuccess] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -189,7 +190,7 @@ export function VereinDialog({
         setSelectedAccessTickets(new Set());
         setSelectedMembers(new Set());
       }
-      setQaFirst(""); setQaLast(""); setQaCode(""); setQaError("");
+      setQaFirst(""); setQaLast(""); setQaCode(""); setQaError(""); setQaSuccess("");
     }
   }, [open, verein, initialAccessTicketIds, initialMemberIds]);
 
@@ -218,6 +219,7 @@ export function VereinDialog({
     }
     setQaAdding(true);
     setQaError("");
+    setQaSuccess("");
     try {
       const fullName = [first, last].filter(Boolean).join(" ") || "Mitglied";
       const code = qaCode.trim();
@@ -249,6 +251,7 @@ export function VereinDialog({
         setSelectedMembers((prev) => new Set(prev).add(String(created.id)));
       }
       setQaFirst(""); setQaLast(""); setQaCode("");
+      setQaSuccess(`${fullName} hinzugefügt`);
       router.refresh();
     } catch (err) {
       setQaError(`Netzwerkfehler: ${err instanceof Error ? err.message : "unbekannt"}`);
@@ -504,6 +507,12 @@ export function VereinDialog({
                 </div>
                 {qaError && (
                   <p className="text-[10px] text-rose-600">{qaError}</p>
+                )}
+                {qaSuccess && !qaError && (
+                  <p className="text-[10px] text-emerald-600 inline-flex items-center gap-1">
+                    <Check className="h-3 w-3" />
+                    {qaSuccess} – nicht erneut anlegen.
+                  </p>
                 )}
                 <p className="text-[10px] text-slate-400 leading-snug">
                   Ohne Tickettyp/Areas. Zutritt kommt ausschließlich über die Vereins-Zutritts-Tickets im Tab „Tickets“.
