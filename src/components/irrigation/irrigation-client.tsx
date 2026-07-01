@@ -18,6 +18,7 @@ import {
   Droplets, Droplet, CloudRain, Sun, Thermometer, Battery, BatteryLow,
   Wifi, WifiOff, Play, Square, Sparkles, Plus, Pencil, Trash2, Clock,
   CalendarDays, Gauge, Loader2, RefreshCw, CircleAlert, Sprout, CheckCircle2,
+  Check, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Weather } from "@/lib/weather";
@@ -168,6 +169,7 @@ export function IrrigationClient({
   const [durations, setDurations] = useState<Record<number, number>>({});
   const [busyZone, setBusyZone] = useState<Record<number, boolean>>({});
   const [schedules, setSchedules] = useState<Schedule[]>(initialSchedules);
+  const [zoneList, setZoneList] = useState<Zone[]>(zones);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
 
   // Smart-Run (sequenzielle Komplett-Bewässerung)
@@ -180,8 +182,8 @@ export function IrrigationClient({
   const [editing, setEditing] = useState<Schedule | null>(null);
 
   const controllableIds = useMemo(
-    () => zones.filter((z) => z.serviceId && z.isActive).map((z) => z.id),
-    [zones],
+    () => zoneList.filter((z) => z.serviceId && z.isActive).map((z) => z.id),
+    [zoneList],
   );
 
   const flash = useCallback((type: "ok" | "err", msg: string) => {
@@ -259,7 +261,7 @@ export function IrrigationClient({
 
   // ── Smart-Run: Zonen nacheinander ───────────────────────────────────────────
   const startSmartRun = useCallback(async () => {
-    const queue = zones.filter((z) => z.serviceId && z.isActive && (statuses[z.id]?.online ?? true));
+    const queue = zoneList.filter((z) => z.serviceId && z.isActive && (statuses[z.id]?.online ?? true));
     if (queue.length === 0) { flash("err", "Keine steuerbaren Zonen online."); return; }
     const perZone = Math.max(1, recommendedMinutes(baseMinutes, recommendation) || baseMinutes);
 
@@ -296,17 +298,36 @@ export function IrrigationClient({
     setRun(null);
     fetchStatuses();
     flash(cancelled ? "err" : "ok", cancelled ? "Smart-Bewässerung gestoppt." : "Smart-Bewässerung abgeschlossen.");
-  }, [zones, statuses, baseMinutes, recommendation, sendAction, flash, fetchStatuses]);
+  }, [zoneList, statuses, baseMinutes, recommendation, sendAction, flash, fetchStatuses]);
 
   const stopSmartRun = useCallback(async () => {
     if (runToken.current) runToken.current.cancel = true;
     // Aktuelle Zone sofort schließen.
     const cur = run;
     if (cur) {
-      const zone = zones.filter((z) => z.serviceId && z.isActive)[cur.index];
+      const zone = zoneList.filter((z) => z.serviceId && z.isActive)[cur.index];
       if (zone) { try { await sendAction(zone.id, "deactivate"); } catch { /* ignore */ } }
     }
-  }, [run, zones, sendAction]);
+  }, [run, zoneList, sendAction]);
+
+  // Zone umbenennen (Device-Name).
+  const renameZone = useCallback(async (id: number, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setZoneList((zs) => zs.map((z) => (z.id === id ? { ...z, name: trimmed } : z)));
+    setSchedules((ss) => ss.map((s) => (s.deviceId === id ? { ...s, deviceName: trimmed } : s)));
+    try {
+      const res = await fetch(`/api/devices/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) throw new Error();
+      flash("ok", "Zone umbenannt.");
+    } catch {
+      flash("err", "Umbenennen fehlgeschlagen.");
+    }
+  }, [flash]);
 
   // ── Zeitplan CRUD ────────────────────────────────────────────────────────────
   const saveSchedule = useCallback(async (form: ScheduleForm) => {
@@ -330,7 +351,7 @@ export function IrrigationClient({
       const saved = (await res.json()) as Schedule & { device?: { name: string } };
       const normalized: Schedule = {
         id: saved.id, deviceId: saved.deviceId,
-        deviceName: saved.device?.name ?? zones.find((z) => z.id === saved.deviceId)?.name ?? "Zone",
+        deviceName: saved.device?.name ?? zoneList.find((z) => z.id === saved.deviceId)?.name ?? "Zone",
         daysOfWeek: saved.daysOfWeek, startTime: saved.startTime, durationMinutes: saved.durationMinutes,
         isActive: saved.isActive, skipOnRain: saved.skipOnRain, lastRunAt: saved.lastRunAt ?? null,
       };
@@ -341,7 +362,7 @@ export function IrrigationClient({
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Fehler");
     }
-  }, [editing, zones, flash]);
+  }, [editing, zoneList, flash]);
 
   const deleteSchedule = useCallback(async (id: number) => {
     try {
@@ -378,7 +399,7 @@ export function IrrigationClient({
   const nextRun = useMemo(() => computeNextRun(schedules), [schedules]);
 
   // ── Nicht verbunden / keine Zonen ────────────────────────────────────────────
-  if (!connected || zones.length === 0) {
+  if (!connected || zoneList.length === 0) {
     return (
       <div className="p-4 sm:p-6">
         <Card className="border-slate-200 dark:border-slate-800 max-w-2xl">
@@ -517,7 +538,7 @@ export function IrrigationClient({
 
       {/* Statistik */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={Droplets} label="Zonen" value={`${zones.length}`} hint={`${onlineCount} online · ${wateringCount} aktiv`} accent="text-sky-600" />
+        <StatCard icon={Droplets} label="Zonen" value={`${zoneList.length}`} hint={`${onlineCount} online · ${wateringCount} aktiv`} accent="text-sky-600" />
         <StatCard icon={CalendarDays} label="Aktive Zeitpläne" value={`${activeSchedules}`} hint={`${schedules.length} gesamt`} accent="text-emerald-600" />
         <StatCard icon={Gauge} label="Verbrauch / Woche" value={`${(weeklyLiters / 1000).toFixed(weeklyLiters >= 1000 ? 1 : 0)}${weeklyLiters >= 1000 ? " m³" : " L"}`} hint="geschätzt" accent="text-teal-600" />
         <StatCard icon={Clock} label="Nächste Bewässerung" value={nextRun ? fmtNext(nextRun.when) : "—"} hint={nextRun?.label ?? "kein Zeitplan"} accent="text-indigo-600" />
@@ -534,7 +555,7 @@ export function IrrigationClient({
           </Button>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {zones.map((zone) => (
+          {zoneList.map((zone) => (
             <ZoneCard
               key={zone.id}
               zone={zone}
@@ -546,6 +567,7 @@ export function IrrigationClient({
               onDuration={(m) => setDurations((d) => ({ ...d, [zone.id]: m }))}
               onStart={() => startZone(zone)}
               onStop={() => stopZone(zone)}
+              onRename={(name) => renameZone(zone.id, name)}
             />
           ))}
         </div>
@@ -589,7 +611,7 @@ export function IrrigationClient({
       {dialogOpen && (
         <ScheduleDialog
           onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null); }}
-          zones={zones}
+          zones={zoneList}
           editing={editing}
           onSave={saveSchedule}
         />
@@ -623,13 +645,21 @@ function StatCard({ icon: Icon, label, value, hint, accent }: {
 
 // ── Zonen-Karte ──────────────────────────────────────────────────────────────
 
-function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDuration, onStart, onStop }: {
+function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDuration, onStart, onStop, onRename }: {
   zone: Zone; status?: ZoneStatus; duration: number; recommended: number; busy: boolean; disabled: boolean;
-  onDuration: (m: number) => void; onStart: () => void; onStop: () => void;
+  onDuration: (m: number) => void; onStart: () => void; onStop: () => void; onRename: (name: string) => void;
 }) {
   const watering = status?.watering ?? false;
   const online = status?.online ?? false;
   const battery = status?.batteryLevel ?? null;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(zone.name);
+
+  const commitRename = () => {
+    setEditing(false);
+    if (draft.trim() && draft.trim() !== zone.name) onRename(draft.trim());
+    else setDraft(zone.name);
+  };
 
   return (
     <Card className={cn(
@@ -638,15 +668,45 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDurat
     )}>
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <div className={cn(
               "h-9 w-9 rounded-lg flex items-center justify-center shrink-0",
               watering ? "bg-sky-100 dark:bg-sky-900/40" : "bg-slate-100 dark:bg-slate-800",
             )}>
               <Droplets className={cn("h-5 w-5", watering ? "text-sky-600 animate-pulse" : "text-slate-400")} />
             </div>
-            <div className="min-w-0">
-              <p className="font-medium text-slate-900 dark:text-slate-100 truncate">{zone.name}</p>
+            <div className="min-w-0 flex-1">
+              {editing ? (
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={draft}
+                    autoFocus
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename();
+                      if (e.key === "Escape") { setEditing(false); setDraft(zone.name); }
+                    }}
+                    className="h-7 py-1 text-sm"
+                  />
+                  <button onClick={commitRename} className="text-emerald-600 hover:text-emerald-700 shrink-0" title="Speichern">
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => { setEditing(false); setDraft(zone.name); }} className="text-slate-400 hover:text-slate-600 shrink-0" title="Abbrechen">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="group/name flex items-center gap-1">
+                  <p className="font-medium text-slate-900 dark:text-slate-100 truncate">{zone.name}</p>
+                  <button
+                    onClick={() => { setDraft(zone.name); setEditing(true); }}
+                    className="opacity-0 group-hover/name:opacity-100 transition-opacity text-slate-400 hover:text-slate-600 shrink-0"
+                    title="Umbenennen"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
               <p className="text-xs text-slate-400">{activityLabel(status?.activity ?? null)}</p>
             </div>
           </div>

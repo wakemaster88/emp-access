@@ -31,7 +31,7 @@ export default async function SettingsPage() {
     }),
     db.device.findMany({
       where: { accountId: session.user.accountId, type: "GARDENA_VALVE", gardenaServiceId: { not: null } },
-      select: { gardenaServiceId: true },
+      select: { gardenaServiceId: true, gardenaConfigId: true },
     }),
     db.telegramConfig.findFirst({
       where: { accountId: session.user.accountId },
@@ -42,8 +42,16 @@ export default async function SettingsPage() {
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
   const existingShellyIds = shellyDevices.map((d) => d.shellyId!).filter(Boolean);
-  const gardenaConfig = apiConfigs.find((c) => c.provider === "GARDENA");
   const existingGardenaIds = gardenaDevices.map((d) => d.gardenaServiceId!).filter(Boolean);
+  const maskGardenaKey = (k: string) => (k.length <= 6 ? k : `…${k.slice(-6)}`);
+  const gardenaConnections = apiConfigs
+    .filter((c) => c.provider === "GARDENA")
+    .map((c) => ({
+      id: c.id,
+      name: c.name ?? "GARDENA",
+      keyMasked: maskGardenaKey(c.token),
+      deviceCount: gardenaDevices.filter((d) => d.gardenaConfigId === c.id).length,
+    }));
 
   const configByProvider = Object.fromEntries(
     apiConfigs.map((c) => [c.provider, c])
@@ -129,15 +137,14 @@ export default async function SettingsPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
               GARDENA smart system
             </h2>
-            {gardenaConfig && (
+            {gardenaConnections.length > 0 && (
               <Badge className="ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
-                Verbunden · {existingGardenaIds.length} Gerät{existingGardenaIds.length !== 1 ? "e" : ""} importiert
+                {gardenaConnections.length} Verbindung{gardenaConnections.length !== 1 ? "en" : ""} · {existingGardenaIds.length} Gerät{existingGardenaIds.length !== 1 ? "e" : ""}
               </Badge>
             )}
           </div>
           <GardenaCard
-            savedKey={gardenaConfig?.token ?? null}
-            connected={!!gardenaConfig?.token && !!gardenaConfig?.extraConfig}
+            connections={gardenaConnections}
             existingServiceIds={existingGardenaIds}
           />
         </section>

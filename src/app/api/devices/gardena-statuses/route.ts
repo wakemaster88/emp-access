@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { gardenaStatusMap } from "@/lib/gardena";
+import { gardenaStatusMap, type GardenaServiceStatus } from "@/lib/gardena";
 
 export interface GardenaDeviceStatus {
   id: number;
@@ -26,12 +26,13 @@ export async function GET(request: NextRequest) {
 
   const devices = await db.device.findMany({
     where: { id: { in: ids }, accountId: accountId!, type: "GARDENA_VALVE" },
-    select: { id: true, gardenaServiceId: true },
+    select: { id: true, gardenaServiceId: true, gardenaConfigId: true },
   });
 
-  const config = await db.apiConfig.findFirst({
+  const configs = await db.apiConfig.findMany({
     where: { accountId: accountId!, provider: "GARDENA" },
   });
+  const configById = new Map(configs.map((c) => [c.id, c]));
 
   const unavailable = (id: number): GardenaDeviceStatus => ({
     id,
@@ -44,14 +45,35 @@ export async function GET(request: NextRequest) {
     source: "unavailable",
   });
 
-  if (!config?.token || !config?.extraConfig) {
+  if (configs.length === 0) {
     return NextResponse.json(devices.map((d) => unavailable(d.id)));
   }
 
-  const statusMap = await gardenaStatusMap(config.token, config.extraConfig);
+  // Welche Verbindungen muessen abgefragt werden? Alle, die von Geraeten
+  // referenziert werden, plus die erste als Fallback fuer Alt-Geraete.
+  const neededConfigIds = new Set<number>();
+  let needFallback = false;
+  for (const d of devices) {
+    if (d.gardenaConfigId && configById.has(d.gardenaConfigId)) neededConfigIds.add(d.gardenaConfigId);
+    else needFallback = true;
+  }
+  const fallbackId = configs[0]?.id ?? null;
+  if (needFallback && fallbackId) neededConfigIds.add(fallbackId);
+
+  // Status je Verbindung holen und nach serviceId zusammenfuehren (serviceIds
+  // sind pro Verbindung eindeutig, ein Merge ist daher kollisionsfrei).
+  const combined = new Map<string, GardenaServiceStatus>();
+  await Promise.all(
+    [...neededConfigIds].map(async (cid) => {
+      const c = configById.get(cid);
+      if (!c?.token || !c?.extraConfig) return;
+      const m = await gardenaStatusMap(c.token, c.extraConfig);
+      for (const [k, v] of m) combined.set(k, v);
+    }),
+  );
 
   const results = devices.map((device): GardenaDeviceStatus => {
-    const s = device.gardenaServiceId ? statusMap.get(device.gardenaServiceId) : undefined;
+    const s = device.gardenaServiceId ? combined.get(device.gardenaServiceId) : undefined;
     if (!s) return unavailable(device.id);
     return {
       id: device.id,

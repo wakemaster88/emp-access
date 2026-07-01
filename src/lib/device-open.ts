@@ -102,6 +102,9 @@ interface DeviceForAction {
   ipAddress: string | null;
   nukiSmartlockId?: string | null;
   gardenaServiceId?: string | null;
+  /// GARDENA-Verbindung (ApiConfig-ID) fuer dieses Geraet – waehlt bei mehreren
+  /// GARDENA-Konten die richtigen Zugangsdaten.
+  gardenaConfigId?: number | null;
 }
 
 /** Optionale Parameter fuer einzelne Aktionen (z. B. GARDENA-Bewässerungsdauer). */
@@ -119,7 +122,9 @@ interface DbLike {
   device: { update: (args: { where: { id: number }; data: { task: number } }) => Promise<unknown> };
   apiConfig: {
     findFirst: (args: {
-      where: { accountId: number; provider: "SHELLY" | "NUKI" | "GARDENA" };
+      where:
+        | { accountId: number; provider: "SHELLY" | "NUKI" | "GARDENA" }
+        | { id: number; accountId: number };
     }) => Promise<{ token: string | null; baseUrl: string | null; extraConfig: string | null } | null>;
   };
 }
@@ -144,9 +149,11 @@ export async function triggerDeviceAction(
 
   if (device.type === "GARDENA_VALVE") {
     if (!device.gardenaServiceId) return { task, sent: false };
-    const config = await db.apiConfig.findFirst({
-      where: { accountId, provider: "GARDENA" },
-    });
+    // Zugangsdaten der zugeordneten GARDENA-Verbindung; Fallback auf die erste
+    // GARDENA-Verbindung des Accounts (Alt-Geraete ohne gardenaConfigId).
+    const config = device.gardenaConfigId
+      ? await db.apiConfig.findFirst({ where: { id: device.gardenaConfigId, accountId } })
+      : await db.apiConfig.findFirst({ where: { accountId, provider: "GARDENA" } });
     if (!config?.token || !config?.extraConfig) return { task, sent: false };
 
     // open/emergency => bewässern (START), deactivate/reset => stoppen (STOP).

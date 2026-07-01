@@ -174,7 +174,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
   const schedules = await prisma.irrigationSchedule.findMany({
     where: { isActive: true },
     include: {
-      device: { select: { id: true, name: true, type: true, gardenaServiceId: true, isActive: true } },
+      device: { select: { id: true, name: true, type: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true } },
       account: { select: { id: true, latitude: true, longitude: true, timezone: true } },
     },
   });
@@ -182,20 +182,33 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
   const results: IrrigationTickResult["results"] = [];
   let watered = 0, skippedRain = 0, failed = 0;
 
-  // Wetter + GARDENA-Zugangsdaten pro Account cachen (mehrere Zeitpläne teilen sie).
+  // Wetter pro Account und GARDENA-Zugangsdaten pro Verbindung cachen.
   const weatherCache = new Map<number, Weather | null>();
-  const credCache = new Map<number, { key: string; secret: string } | null>();
+  const credByConfig = new Map<number, { key: string; secret: string } | null>();
+  const fallbackConfigByAccount = new Map<number, number | null>();
 
   async function accountWeather(accId: number, lat: number | null, lng: number | null) {
     if (!weatherCache.has(accId)) weatherCache.set(accId, await getWeather(lat, lng));
     return weatherCache.get(accId)!;
   }
-  async function accountCreds(accId: number) {
-    if (!credCache.has(accId)) {
-      const cfg = await prisma.apiConfig.findFirst({ where: { accountId: accId, provider: "GARDENA" } });
-      credCache.set(accId, cfg?.token && cfg?.extraConfig ? { key: cfg.token, secret: cfg.extraConfig } : null);
+  async function credsForConfig(configId: number) {
+    if (!credByConfig.has(configId)) {
+      const cfg = await prisma.apiConfig.findFirst({ where: { id: configId, provider: "GARDENA" } });
+      credByConfig.set(configId, cfg?.token && cfg?.extraConfig ? { key: cfg.token, secret: cfg.extraConfig } : null);
     }
-    return credCache.get(accId)!;
+    return credByConfig.get(configId)!;
+  }
+  // Zugangsdaten fuer ein Geraet: bevorzugt dessen Verbindung, sonst erste
+  // GARDENA-Verbindung des Accounts (Alt-Geraete ohne gardenaConfigId).
+  async function credsForDevice(accId: number, configId: number | null) {
+    if (configId) return credsForConfig(configId);
+    if (!fallbackConfigByAccount.has(accId)) {
+      const cfg = await prisma.apiConfig.findFirst({ where: { accountId: accId, provider: "GARDENA" } });
+      fallbackConfigByAccount.set(accId, cfg?.id ?? null);
+      if (cfg) credByConfig.set(cfg.id, cfg.token && cfg.extraConfig ? { key: cfg.token, secret: cfg.extraConfig } : null);
+    }
+    const fb = fallbackConfigByAccount.get(accId);
+    return fb ? credsForConfig(fb) : null;
   }
 
   for (const s of schedules) {
@@ -234,7 +247,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
       }
     }
 
-    const creds = await accountCreds(s.account.id);
+    const creds = await credsForDevice(s.account.id, s.device.gardenaConfigId);
     if (!creds) {
       failed++;
       results.push({ scheduleId: s.id, deviceName: s.device.name, action: "failed", reason: "Keine GARDENA-Zugangsdaten" });

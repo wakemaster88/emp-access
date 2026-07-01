@@ -128,6 +128,11 @@ model Device {
   /// Pumpe fuer `PUT /v1/command/{serviceId}` und den Status-Abgleich ueber
   /// die Location-Details. Wird beim Import aus der GARDENA Cloud befuellt.
   gardenaServiceId String?
+  /// Verweist auf die GARDENA-Verbindung (ApiConfig, provider = GARDENA), mit
+  /// der dieses Ventil/diese Pumpe gesteuert und abgefragt wird. Ermoeglicht
+  /// mehrere GARDENA-Konten (Application Key/Secret) pro Mandant.
+  gardenaConfigId Int?
+  gardenaConfig   ApiConfig?          @relation("GardenaConfigDevices", fields: [gardenaConfigId], references: [id], onDelete: SetNull)
   isActive        Boolean             @default(true)
   task            Int                 @default(0)
   accessIn        Int?
@@ -733,6 +738,9 @@ model Voucher {
 model ApiConfig {
   id             Int         @id @default(autoincrement())
   provider       ApiProvider
+  /// Optionales Label, um mehrere Verbindungen desselben Providers zu
+  /// unterscheiden (v. a. GARDENA: mehrere Konten pro Mandant).
+  name           String?
   token          String
   eventId        String?
   baseUrl        String?
@@ -741,6 +749,7 @@ model ApiConfig {
   lastPostUpdate DateTime?
   accountId      Int
   account        Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  gardenaDevices Device[]    @relation("GardenaConfigDevices")
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 

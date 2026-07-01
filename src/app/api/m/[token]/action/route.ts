@@ -73,6 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       ipAddress: true,
       nukiSmartlockId: true,
       gardenaServiceId: true,
+      gardenaConfigId: true,
     },
   });
   if (!fullDevice) {

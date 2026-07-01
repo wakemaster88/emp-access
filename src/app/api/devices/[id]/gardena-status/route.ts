@@ -41,9 +41,9 @@ export async function GET(
   });
   if (!device) return NextResponse.json({ error: "Gerät nicht gefunden" }, { status: 404 });
 
-  const config = await db.apiConfig.findFirst({
-    where: { accountId: accountId!, provider: "GARDENA" },
-  });
+  const config = device.gardenaConfigId
+    ? await db.apiConfig.findFirst({ where: { id: device.gardenaConfigId, accountId: accountId! } })
+    : await db.apiConfig.findFirst({ where: { accountId: accountId!, provider: "GARDENA" } });
   if (!config?.token || !config?.extraConfig || !device.gardenaServiceId) {
     return NextResponse.json(UNAVAILABLE);
   }
