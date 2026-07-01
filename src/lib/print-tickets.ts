@@ -251,10 +251,26 @@ async function buildTicketsPdfBlob(
  * Hauptursache fuer "zweiter Klick zeigt keinen Fehler aber druckt auch
  * nicht".
  */
-const activePrintIframes = new Set<HTMLIFrameElement>();
+const activePrintIframes = new Map<HTMLIFrameElement, number>();
+
+/**
+ * Mindestalter (ms), bevor ein Print-Iframe entfernt werden darf.
+ *
+ * Ein zu frueh entferntes Iframe reisst dem Windows-Druck-Spooler die
+ * PDF-Quelle weg, BEVOR der Job vollstaendig eingelesen wurde – das ist
+ * beim Bulk-Druck (perTicket) die Hauptursache fuer "bricht nach x Bons
+ * ab" bzw. die OS-Meldung "Fehler beim Drucken". Wir lassen jedes Iframe
+ * daher lange genug stehen, damit auch ein langsamer Bondrucker-Spooler
+ * den Job sicher uebernommen hat.
+ */
+const MIN_IFRAME_AGE_MS = 8_000;
 
 function cleanupOldPrintIframes() {
-  for (const old of activePrintIframes) {
+  const now = Date.now();
+  for (const [old, createdAt] of activePrintIframes) {
+    // Nur Iframes entfernen, deren Druckjob garantiert schon gespoolt ist.
+    // Juengere Iframes (= laufender/frischer Job) bleiben unangetastet.
+    if (now - createdAt < MIN_IFRAME_AGE_MS) continue;
     try {
       old.remove();
     } catch {
@@ -280,7 +296,7 @@ export function tryIframePrint(blobUrl: string): Promise<{ ok: boolean; error?: 
     iframe.style.height = "0";
     iframe.style.border = "0";
     iframe.style.visibility = "hidden";
-    activePrintIframes.add(iframe);
+    activePrintIframes.set(iframe, Date.now());
 
     let settled = false;
     const finish = (ok: boolean, error?: string) => {
