@@ -174,7 +174,13 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
   const schedules = await prisma.irrigationSchedule.findMany({
     where: { isActive: true },
     include: {
-      device: { select: { id: true, name: true, type: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true } },
+      device: {
+        select: {
+          id: true, name: true, type: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true,
+          pumpDeviceId: true,
+          pump: { select: { id: true, gardenaServiceId: true, gardenaConfigId: true } },
+        },
+      },
       account: { select: { id: true, latitude: true, longitude: true, timezone: true } },
     },
   });
@@ -254,10 +260,20 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
       continue;
     }
 
+    const seconds = s.durationMinutes * 60;
     const res = await gardenaControlValve(
-      creds.key, creds.secret, s.device.gardenaServiceId, "open", s.durationMinutes * 60,
+      creds.key, creds.secret, s.device.gardenaServiceId, "open", seconds,
     );
     if (res.ok) {
+      // Zugeordnete Pumpe fuer die gleiche Laufzeit mitstarten (best effort).
+      const pump = s.device.pump;
+      if (pump?.gardenaServiceId) {
+        const pumpCreds = await credsForDevice(s.account.id, pump.gardenaConfigId);
+        if (pumpCreds) {
+          await gardenaControlValve(pumpCreds.key, pumpCreds.secret, pump.gardenaServiceId, "open", seconds)
+            .catch(() => undefined);
+        }
+      }
       watered++;
       results.push({ scheduleId: s.id, deviceName: s.device.name, action: "watered" });
     } else {

@@ -31,6 +31,7 @@ interface Zone {
   name: string;
   serviceId: string | null;
   isActive: boolean;
+  pumpDeviceId: number | null;
 }
 
 interface Schedule {
@@ -328,6 +329,24 @@ export function IrrigationClient({
     }
   }, [flash]);
 
+  // Pumpe zuordnen/entfernen (Ventil → Pumpe).
+  const assignPump = useCallback(async (valveId: number, pumpId: number | null) => {
+    const prev = zoneList;
+    setZoneList((zs) => zs.map((z) => (z.id === valveId ? { ...z, pumpDeviceId: pumpId } : z)));
+    try {
+      const res = await fetch(`/api/devices/${valveId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pumpDeviceId: pumpId ?? 0 }),
+      });
+      if (!res.ok) throw new Error();
+      flash("ok", pumpId ? "Pumpe zugeordnet – sie schaltet beim Bewässern automatisch mit." : "Pumpen-Zuordnung entfernt.");
+    } catch {
+      setZoneList(prev);
+      flash("err", "Zuordnung fehlgeschlagen.");
+    }
+  }, [zoneList, flash]);
+
   // ── Zeitplan CRUD ────────────────────────────────────────────────────────────
   const saveSchedule = useCallback(async (form: ScheduleForm) => {
     const payload = {
@@ -398,11 +417,27 @@ export function IrrigationClient({
   const nextRun = useMemo(() => computeNextRun(schedules), [schedules]);
 
   // ── Pumpe / Durchlauf (Live) ─────────────────────────────────────────────────
-  // Pumpe(n) heuristisch erkennen; die restlichen bewaessernden Zonen zaehlen als
-  // Verbraucher fuer den geschaetzten Durchfluss der Pumpe.
-  const pumpZone = zoneList.find((z) => isPumpZone(z.name, statuses[z.id]?.modelType));
+  // Eine Zone gilt als Pumpe, wenn sie von einem Ventil als Pumpe zugeordnet ist
+  // ODER Name/Modell „pump" enthaelt. Zuordnung hat Vorrang.
+  const pumpIdSet = useMemo(() => {
+    const s = new Set<number>();
+    for (const z of zoneList) {
+      if (z.pumpDeviceId) s.add(z.pumpDeviceId);
+      if (isPumpZone(z.name, statuses[z.id]?.modelType)) s.add(z.id);
+    }
+    return s;
+  }, [zoneList, statuses]);
+
+  // Kandidaten fuer die Pumpen-Zuordnung: erkannte/zugeordnete Pumpen, sonst alle
+  // Zonen (damit die Zuordnung auch ohne passende Benennung funktioniert).
+  const pumpCandidates = useMemo(() => {
+    const detected = zoneList.filter((z) => pumpIdSet.has(z.id));
+    return detected.length > 0 ? detected : zoneList;
+  }, [zoneList, pumpIdSet]);
+
+  const pumpZone = zoneList.find((z) => pumpIdSet.has(z.id));
   const wateringZones = zoneList.filter((z) => statuses[z.id]?.watering);
-  const consumerZones = wateringZones.filter((z) => z.id !== pumpZone?.id);
+  const consumerZones = wateringZones.filter((z) => !pumpIdSet.has(z.id));
   const running = wateringZones.length > 0;
   // Verbraucher = offene Ventile; laeuft nur die Pumpe selbst, zaehlt sie als 1.
   const consumerCount = consumerZones.length > 0 ? consumerZones.length : wateringZones.length;
@@ -609,10 +644,13 @@ export function IrrigationClient({
               recommended={recommendedMinutes(baseMinutes, recommendation)}
               busy={!!busyZone[zone.id]}
               disabled={!!run}
+              isPump={pumpIdSet.has(zone.id)}
+              pumpOptions={pumpCandidates.filter((p) => p.id !== zone.id)}
               onDuration={(m) => setDurations((d) => ({ ...d, [zone.id]: m }))}
               onStart={() => startZone(zone)}
               onStop={() => stopZone(zone)}
               onRename={(name) => renameZone(zone.id, name)}
+              onAssignPump={(pumpId) => assignPump(zone.id, pumpId)}
             />
           ))}
         </div>
@@ -840,9 +878,11 @@ function ZoneStateBadge({ status }: { status?: ZoneStatus }) {
   );
 }
 
-function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDuration, onStart, onStop, onRename }: {
+function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump, pumpOptions, onDuration, onStart, onStop, onRename, onAssignPump }: {
   zone: Zone; status?: ZoneStatus; duration: number; recommended: number; busy: boolean; disabled: boolean;
+  isPump: boolean; pumpOptions: Zone[];
   onDuration: (m: number) => void; onStart: () => void; onStop: () => void; onRename: (name: string) => void;
+  onAssignPump: (pumpId: number | null) => void;
 }) {
   const watering = status?.watering ?? false;
   const online = status?.online ?? false;
@@ -893,6 +933,11 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDurat
               ) : (
                 <div className="group/name flex items-center gap-1">
                   <p className="font-medium text-slate-900 dark:text-slate-100 truncate">{zone.name}</p>
+                  {isPump && (
+                    <Badge variant="secondary" className="text-[10px] gap-1 shrink-0">
+                      <Activity className="h-3 w-3" /> Pumpe
+                    </Badge>
+                  )}
                   <button
                     onClick={() => { setDraft(zone.name); setEditing(true); }}
                     className="opacity-0 group-hover/name:opacity-100 transition-opacity text-slate-400 hover:text-slate-600 shrink-0"
@@ -951,6 +996,28 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, onDurat
             </button>
           )}
         </div>
+
+        {/* Pumpen-Zuordnung (nur fuer Ventile, nicht fuer die Pumpe selbst) */}
+        {!isPump && pumpOptions.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Gauge className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <Select
+              value={zone.pumpDeviceId ? String(zone.pumpDeviceId) : "none"}
+              onValueChange={(v) => onAssignPump(v === "none" ? null : Number(v))}
+              disabled={disabled}
+            >
+              <SelectTrigger size="sm" className="h-7 flex-1 text-xs">
+                <SelectValue placeholder="Pumpe zuordnen" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Keine Pumpe</SelectItem>
+                {pumpOptions.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Aktionen */}
         <div className="flex gap-2">

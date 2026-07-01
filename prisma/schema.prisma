@@ -133,6 +133,12 @@ model Device {
   /// mehrere GARDENA-Konten (Application Key/Secret) pro Mandant.
   gardenaConfigId Int?
   gardenaConfig   ApiConfig?          @relation("GardenaConfigDevices", fields: [gardenaConfigId], references: [id], onDelete: SetNull)
+  /// Optionale Zuordnung Ventil → Pumpe (beide sind GARDENA_VALVE-Geraete):
+  /// wird das Ventil aktiviert, schaltet die zugeordnete Pumpe automatisch mit
+  /// an. Self-Relation innerhalb der Device-Tabelle.
+  pumpDeviceId    Int?
+  pump            Device?             @relation("ValvePump", fields: [pumpDeviceId], references: [id], onDelete: SetNull)
+  valves          Device[]            @relation("ValvePump")
   isActive        Boolean             @default(true)
   task            Int                 @default(0)
   accessIn        Int?
@@ -157,6 +163,7 @@ model Device {
   @@index([accountId])
   @@index([accessIn])
   @@index([accessOut])
+  @@index([pumpDeviceId])
 }
 
 model Ticket {

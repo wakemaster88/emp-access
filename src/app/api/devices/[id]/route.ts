@@ -58,10 +58,29 @@ export async function PUT(
 
   const VALID_CATEGORIES = ["DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG"];
 
+  // Ventil → Pumpe Zuordnung. null/0 loest die Zuordnung; ein Wert muss ein
+  // anderes Geraet desselben Accounts sein (kein Selbstbezug).
+  let pumpDeviceId = existing.pumpDeviceId;
+  if (body.pumpDeviceId !== undefined) {
+    const raw = body.pumpDeviceId;
+    if (raw === null || raw === 0) {
+      pumpDeviceId = null;
+    } else {
+      const pumpId = Number(raw);
+      if (!Number.isInteger(pumpId) || pumpId === deviceId) {
+        return NextResponse.json({ error: "Ungültige Pumpe" }, { status: 400 });
+      }
+      const pump = await db.device.findFirst({ where: { id: pumpId, accountId: accountId! } });
+      if (!pump) return NextResponse.json({ error: "Pumpe nicht gefunden" }, { status: 400 });
+      pumpDeviceId = pumpId;
+    }
+  }
+
   const device = await db.device.update({
     where: { id: deviceId },
     data: {
       name: body.name ?? existing.name,
+      pumpDeviceId,
       category: body.category !== undefined
         ? (body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null)
         : existing.category,
