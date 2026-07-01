@@ -168,6 +168,7 @@ export function IrrigationClient({
   const [statusLoading, setStatusLoading] = useState(false);
   const [durations, setDurations] = useState<Record<number, number>>({});
   const [busyZone, setBusyZone] = useState<Record<number, boolean>>({});
+  const [busySchedule, setBusySchedule] = useState<Record<number, boolean>>({});
   const [schedules, setSchedules] = useState<Schedule[]>(initialSchedules);
   const [zoneList, setZoneList] = useState<Zone[]>(zones);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
@@ -418,6 +419,35 @@ export function IrrigationClient({
       flash("err", "Umschalten fehlgeschlagen.");
     }
   }, [flash]);
+
+  // Zeitplan sofort ausfuehren (Ventil + zugeordnete Pumpe fuer die geplante Dauer).
+  const runScheduleNow = useCallback(async (s: Schedule) => {
+    setBusySchedule((b) => ({ ...b, [s.id]: true }));
+    try {
+      await sendAction(s.deviceId, "open", s.durationMinutes);
+      setStatuses((st) => ({ ...st, [s.deviceId]: { ...(st[s.deviceId] ?? emptyStatus(s.deviceId)), watering: true, activity: "MANUAL_WATERING" } }));
+      flash("ok", `${s.deviceName}: ${s.durationMinutes} Min gestartet.`);
+      setTimeout(fetchStatuses, 3000);
+    } catch (e) {
+      flash("err", e instanceof Error ? e.message : "Start fehlgeschlagen.");
+    } finally {
+      setBusySchedule((b) => ({ ...b, [s.id]: false }));
+    }
+  }, [sendAction, flash, fetchStatuses]);
+
+  const stopScheduleDevice = useCallback(async (s: Schedule) => {
+    setBusySchedule((b) => ({ ...b, [s.id]: true }));
+    try {
+      await sendAction(s.deviceId, "deactivate");
+      setStatuses((st) => ({ ...st, [s.deviceId]: { ...(st[s.deviceId] ?? emptyStatus(s.deviceId)), watering: false, activity: "CLOSED" } }));
+      flash("ok", `${s.deviceName}: gestoppt.`);
+      setTimeout(fetchStatuses, 3000);
+    } catch (e) {
+      flash("err", e instanceof Error ? e.message : "Stopp fehlgeschlagen.");
+    } finally {
+      setBusySchedule((b) => ({ ...b, [s.id]: false }));
+    }
+  }, [sendAction, flash, fetchStatuses]);
 
   // ── Abgeleitete Werte ────────────────────────────────────────────────────────
   const wateringCount = controllableIds.filter((id) => statuses[id]?.watering).length;
@@ -751,7 +781,11 @@ export function IrrigationClient({
                 <ScheduleRow
                   key={s.id}
                   schedule={s}
+                  running={!!statuses[s.deviceId]?.watering}
+                  busy={!!busySchedule[s.id]}
                   onToggle={() => toggleSchedule(s)}
+                  onRunNow={() => runScheduleNow(s)}
+                  onStop={() => stopScheduleDevice(s)}
                   onEdit={() => { setEditing(s); setDialogOpen(true); }}
                   onDelete={() => deleteSchedule(s.id)}
                 />
@@ -1195,15 +1229,40 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
 
 // ── Zeitplan-Zeile ───────────────────────────────────────────────────────────
 
-function ScheduleRow({ schedule, onToggle, onEdit, onDelete }: {
-  schedule: Schedule; onToggle: () => void; onEdit: () => void; onDelete: () => void;
+function ScheduleRow({ schedule, running, busy, onToggle, onRunNow, onStop, onEdit, onDelete }: {
+  schedule: Schedule; running: boolean; busy: boolean;
+  onToggle: () => void; onRunNow: () => void; onStop: () => void; onEdit: () => void; onDelete: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 p-3 sm:p-4">
-      <Switch checked={schedule.isActive} onCheckedChange={onToggle} />
+    <div className={cn(
+      "flex items-center gap-3 p-3 sm:p-4 transition-colors",
+      running && "bg-sky-50/60 dark:bg-sky-950/20",
+    )}>
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <Switch checked={schedule.isActive} onCheckedChange={onToggle} title={schedule.isActive ? "Aktiv – klicken zum Pausieren" : "Pausiert – klicken zum Aktivieren"} />
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-slate-900 dark:text-slate-100 truncate">{schedule.deviceName}</span>
+          <span className={cn("font-medium truncate", schedule.isActive ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500")}>
+            {schedule.deviceName}
+          </span>
+          {running ? (
+            <Badge className="text-[10px] gap-1 bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 border-transparent">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sky-500" />
+              </span>
+              Läuft
+            </Badge>
+          ) : schedule.isActive ? (
+            <Badge variant="outline" className="text-[10px] gap-1 text-emerald-600 border-emerald-200 dark:border-emerald-900/50">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Aktiv
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] gap-1 text-slate-400 border-slate-200 dark:border-slate-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Pausiert
+            </Badge>
+          )}
           <Badge variant="secondary" className="text-[10px] gap-1 tabular-nums">
             <Clock className="h-3 w-3" /> {schedule.startTime}
           </Badge>
@@ -1214,9 +1273,21 @@ function ScheduleRow({ schedule, onToggle, onEdit, onDelete }: {
             </Badge>
           )}
         </div>
-        <p className="text-xs text-slate-400 mt-0.5">{fmtDays(schedule.daysOfWeek)}</p>
+        <p className="text-xs text-slate-400 mt-0.5">
+          {fmtDays(schedule.daysOfWeek)}
+          {schedule.lastRunAt && <> · Zuletzt: {fmtLastRun(schedule.lastRunAt)}</>}
+        </p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
+        {running ? (
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-rose-600 border-rose-200 hover:bg-rose-50 dark:border-rose-900/50" onClick={onStop} disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Square className="h-3.5 w-3.5" /> Stopp</>}
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-sky-600 border-sky-200 hover:bg-sky-50 dark:border-sky-900/50" onClick={onRunNow} disabled={busy} title="Zeitplan jetzt ausführen">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-3.5 w-3.5" /> Jetzt</>}
+          </Button>
+        )}
         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-600" onClick={onEdit}>
           <Pencil className="h-4 w-4" />
         </Button>
@@ -1226,6 +1297,18 @@ function ScheduleRow({ schedule, onToggle, onEdit, onDelete }: {
       </div>
     </div>
   );
+}
+
+/** „Heute 20:00" / „Gestern 21:00" / „Mo 06:00" bzw. Datum. */
+function fmtLastRun(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return `Heute ${time}`;
+  if (d.toDateString() === yest.toDateString()) return `Gestern ${time}`;
+  return `${d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })} ${time}`;
 }
 
 // ── Zeitplan-Dialog ──────────────────────────────────────────────────────────
