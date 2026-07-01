@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   try {
     const tick = await runIrrigationTick();
     console.log(
-      `[cron irrigation] checked=${tick.checked} watered=${tick.watered} skippedRain=${tick.skippedRain} failed=${tick.failed}`,
+      `[cron irrigation] checked=${tick.checked} watered=${tick.watered} skippedRain=${tick.skippedRain} skippedMoisture=${tick.skippedMoisture} failed=${tick.failed}`,
     );
     return NextResponse.json(tick);
   } catch (err) {

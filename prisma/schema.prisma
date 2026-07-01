@@ -923,6 +923,21 @@ model IrrigationSchedule {
   isActive        Boolean  @default(true)
   /// Bei erwartetem Regen (Wetter-Check) aussetzen.
   skipOnRain      Boolean  @default(true)
+  /// Smart-Regen: Dauer anhand der Wetterlage skalieren (heiss → laenger,
+  /// Regenrisiko → kuerzer). Unabhaengig vom harten skipOnRain-Aussetzer.
+  smartRain       Boolean  @default(false)
+  /// GARDENA SENSOR-Service-ID (Bodenfeuchte-Sensor). Wenn gesetzt, prueft der
+  /// Cron vor dem Lauf die Bodenfeuchte und passt die Bewässerung smart an.
+  sensorServiceId String?
+  /// Boden ist "feucht genug" ab dieser Bodenfeuchte in Prozent – der Lauf wird
+  /// dann uebersprungen. Bei trockenerem Boden wird die Dauer skaliert.
+  moistureThresholdPct Int?
+  /// Geordnete Ventil-Sequenz (Device-IDs). Wenn gesetzt, ist deviceId die
+  /// Pumpe und die Ventile laufen nacheinander je durationMinutes.
+  valveSequence   Json?
+  /// Laufender Sequenz-Plan (vom Cron abgearbeitet):
+  /// { startedAt, steps: [{ deviceId, minutes, offsetMin, startedAt? }] }
+  runState        Json?
   /// Letzter erfolgreicher Lauf – verhindert Doppel-Ausführung im 5-Min-Cron.
   lastRunAt       DateTime?
   createdAt       DateTime @default(now())

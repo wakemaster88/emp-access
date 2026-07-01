@@ -58,6 +58,10 @@ export default async function BewaesserungPage() {
           durationMinutes: s.durationMinutes,
           isActive: s.isActive,
           skipOnRain: s.skipOnRain,
+          smartRain: s.smartRain,
+          sensorServiceId: s.sensorServiceId,
+          moistureThresholdPct: s.moistureThresholdPct,
+          valveSequence: Array.isArray(s.valveSequence) ? (s.valveSequence as number[]) : null,
           lastRunAt: s.lastRunAt ? s.lastRunAt.toISOString() : null,
         }))}
         weather={weather}

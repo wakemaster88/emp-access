@@ -9,7 +9,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getWeather, type Weather } from "@/lib/weather";
-import { gardenaControlValve } from "@/lib/gardena";
+import { gardenaControlValve, gardenaListSensors } from "@/lib/gardena";
 
 // Angenommener Durchfluss pro Ventil/Zone (Liter pro Minute). GARDENA liefert
 // keine Durchflussdaten – dies ist eine grobe Schätzung fuer die Statistik.
@@ -90,6 +90,47 @@ export function recommendedMinutes(base: number, rec: IrrigationRecommendation):
   return Math.min(90, Math.max(5, Math.round(base * rec.factor)));
 }
 
+// ── Bodenfeuchte-Anpassung ──────────────────────────────────────────────────
+
+export interface MoistureAdjustment {
+  skip: boolean;
+  /// Multiplikator auf die geplante Dauer (nur relevant wenn skip=false).
+  factor: number;
+  reason: string;
+}
+
+/**
+ * Leitet aus der gemessenen Bodenfeuchte eine Anpassung des Zeitplan-Laufs ab.
+ *  - Feuchte >= Schwelle           → Lauf aussetzen (Boden feucht genug)
+ *  - Feuchte >= 75 % der Schwelle  → halbe Dauer (fast feucht genug)
+ *  - Feuchte <= 25 % der Schwelle  → 25 % laenger (sehr trocken)
+ *  - sonst                         → geplante Dauer
+ */
+export function moistureAdjustment(humidityPct: number, thresholdPct: number): MoistureAdjustment {
+  if (humidityPct >= thresholdPct) {
+    return {
+      skip: true,
+      factor: 0,
+      reason: `Boden feucht genug (${Math.round(humidityPct)} % ≥ ${thresholdPct} %) – Bewässerung ausgesetzt.`,
+    };
+  }
+  if (humidityPct >= thresholdPct * 0.75) {
+    return {
+      skip: false,
+      factor: 0.5,
+      reason: `Boden fast feucht genug (${Math.round(humidityPct)} %) – Dauer halbiert.`,
+    };
+  }
+  if (humidityPct <= thresholdPct * 0.25) {
+    return {
+      skip: false,
+      factor: 1.25,
+      reason: `Boden sehr trocken (${Math.round(humidityPct)} %) – Dauer verlaengert.`,
+    };
+  }
+  return { skip: false, factor: 1, reason: `Boden trocken (${Math.round(humidityPct)} %) – geplante Dauer.` };
+}
+
 // ── Verbrauchs-Schätzung ────────────────────────────────────────────────────
 
 export function bitCount(mask: number): number {
@@ -152,20 +193,335 @@ export function timeOfDayToUtc(now: Date, hhmm: string, tz: string | null | unde
   return guess;
 }
 
+// ── Tick-Kontext (Caches fuer Wetter, Zugangsdaten, Sensoren) ───────────────
+
+interface GardenaCreds { key: string; secret: string }
+
+interface TickCtx {
+  accountWeather(accId: number, lat: number | null, lng: number | null): Promise<Weather | null>;
+  credsForDevice(accId: number, configId: number | null): Promise<GardenaCreds | null>;
+  sensorHumidity(creds: GardenaCreds, serviceId: string): Promise<number | null>;
+}
+
+function createTickCtx(): TickCtx {
+  const weatherCache = new Map<number, Weather | null>();
+  const credByConfig = new Map<number, GardenaCreds | null>();
+  const fallbackConfigByAccount = new Map<number, number | null>();
+  const sensorCacheByKey = new Map<string, Map<string, number | null>>();
+
+  async function credsForConfig(configId: number) {
+    if (!credByConfig.has(configId)) {
+      const cfg = await prisma.apiConfig.findFirst({ where: { id: configId, provider: "GARDENA" } });
+      credByConfig.set(configId, cfg?.token && cfg?.extraConfig ? { key: cfg.token, secret: cfg.extraConfig } : null);
+    }
+    return credByConfig.get(configId)!;
+  }
+
+  return {
+    async accountWeather(accId, lat, lng) {
+      if (!weatherCache.has(accId)) weatherCache.set(accId, await getWeather(lat, lng));
+      return weatherCache.get(accId)!;
+    },
+    // Zugangsdaten fuer ein Geraet: bevorzugt dessen Verbindung, sonst erste
+    // GARDENA-Verbindung des Accounts (Alt-Geraete ohne gardenaConfigId).
+    async credsForDevice(accId, configId) {
+      if (configId) return credsForConfig(configId);
+      if (!fallbackConfigByAccount.has(accId)) {
+        const cfg = await prisma.apiConfig.findFirst({ where: { accountId: accId, provider: "GARDENA" } });
+        fallbackConfigByAccount.set(accId, cfg?.id ?? null);
+        if (cfg) credByConfig.set(cfg.id, cfg.token && cfg.extraConfig ? { key: cfg.token, secret: cfg.extraConfig } : null);
+      }
+      const fb = fallbackConfigByAccount.get(accId);
+      return fb ? credsForConfig(fb) : null;
+    },
+    // Bodenfeuchte (%) eines SENSOR-Service; ein Abruf je Verbindung pro Tick.
+    async sensorHumidity(creds, serviceId) {
+      if (!sensorCacheByKey.has(creds.key)) {
+        const res = await gardenaListSensors(creds.key, creds.secret);
+        const m = new Map<string, number | null>();
+        if (res.ok) for (const sensor of res.sensors) m.set(sensor.serviceId, sensor.soilHumidity);
+        sensorCacheByKey.set(creds.key, m);
+      }
+      return sensorCacheByKey.get(creds.key)!.get(serviceId) ?? null;
+    },
+  };
+}
+
+// ── Sequenz-Plan (runState) ─────────────────────────────────────────────────
+
+export interface RunStep {
+  deviceId: number;
+  minutes: number;
+  /// Start-Versatz in Minuten relativ zum Plan-Start.
+  offsetMin: number;
+  /// ISO-Zeitpunkt, wenn der Schritt gestartet wurde.
+  startedAt?: string;
+}
+
+export interface RunState {
+  startedAt: string;
+  steps: RunStep[];
+}
+
+export function parseRunState(v: unknown): RunState | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as { startedAt?: unknown; steps?: unknown };
+  if (typeof o.startedAt !== "string" || !Array.isArray(o.steps)) return null;
+  return o as unknown as RunState;
+}
+
+interface ScheduleForSmart {
+  smartRain: boolean;
+  skipOnRain: boolean;
+  sensorServiceId: string | null;
+  moistureThresholdPct: number | null;
+}
+
+interface SmartOutcome {
+  skip: "rain" | "moisture" | null;
+  factor: number;
+  reason?: string;
+}
+
+/**
+ * Kombiniert Regen- und Feuchte-Intelligenz zu einem Dauer-Faktor bzw. Skip:
+ *  - skipOnRain: deutlicher Regen → aussetzen
+ *  - smartRain:  Wetter-Faktor (heiss → laenger, Regenrisiko → kuerzer)
+ *  - Sensor:     Boden feucht genug → aussetzen, sonst Feuchte-Faktor
+ */
+async function computeSmartOutcome(
+  s: ScheduleForSmart,
+  account: { id: number; latitude: number | null; longitude: number | null },
+  deviceCreds: GardenaCreds | null,
+  ctx: TickCtx,
+): Promise<SmartOutcome> {
+  let factor = 1;
+  const notes: string[] = [];
+
+  if (s.skipOnRain || s.smartRain) {
+    const weather = await ctx.accountWeather(account.id, account.latitude, account.longitude);
+    const rec = getIrrigationRecommendation(weather);
+    if (!rec.shouldWater) {
+      if (s.skipOnRain || s.smartRain) return { skip: "rain", factor: 0, reason: rec.reason };
+    } else if (s.smartRain && rec.factor !== 1) {
+      factor *= rec.factor;
+      notes.push(rec.reason);
+    }
+  }
+
+  if (s.sensorServiceId && s.moistureThresholdPct != null && deviceCreds) {
+    const humidity = await ctx.sensorHumidity(deviceCreds, s.sensorServiceId);
+    if (humidity != null) {
+      const adj = moistureAdjustment(humidity, s.moistureThresholdPct);
+      if (adj.skip) return { skip: "moisture", factor: 0, reason: adj.reason };
+      if (adj.factor !== 1) {
+        factor *= adj.factor;
+        notes.push(adj.reason);
+      }
+    }
+    // Sensor nicht erreichbar/kein Wert → normal bewaessern (fail-open).
+  }
+
+  return { skip: null, factor, reason: notes.length ? notes.join(" ") : undefined };
+}
+
+function clampRunMinutes(minutes: number): number {
+  return Math.min(180, Math.max(1, Math.round(minutes)));
+}
+
+/** Baut den Sequenz-Plan: Ventile nacheinander, je `minutes` Minuten. */
+function buildRunState(now: Date, valveIds: number[], minutesPerValve: number): RunState {
+  let offset = 0;
+  const steps: RunStep[] = valveIds.map((deviceId) => {
+    const step = { deviceId, minutes: minutesPerValve, offsetMin: offset };
+    offset += minutesPerValve;
+    return step;
+  });
+  return { startedAt: now.toISOString(), steps };
+}
+
+interface PumpRef { serviceId: string | null; configId: number | null; accountId: number }
+
+/**
+ * Startet alle faelligen Schritte eines Plans (Ventil + Pumpe fuer die
+ * Schrittdauer) und persistiert den Fortschritt. Gibt zurueck, ob der Plan
+ * abgeschlossen ist.
+ */
+async function executeDueSteps(
+  scheduleId: number,
+  pump: PumpRef | null,
+  state: RunState,
+  ctx: TickCtx,
+  now: Date,
+): Promise<{ startedNames: string[]; finished: boolean }> {
+  const planStart = new Date(state.startedAt).getTime();
+  const due = state.steps.filter(
+    (st) => !st.startedAt && now.getTime() >= planStart + st.offsetMin * 60_000,
+  );
+  const startedNames: string[] = [];
+
+  if (due.length > 0) {
+    const devices = await prisma.device.findMany({
+      where: { id: { in: due.map((d) => d.deviceId) } },
+      select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true },
+    });
+    const byId = new Map(devices.map((d) => [d.id, d]));
+
+    for (const step of due) {
+      step.startedAt = now.toISOString();
+      const dev = byId.get(step.deviceId);
+      if (!dev?.gardenaServiceId || !dev.isActive) continue;
+      const creds = await ctx.credsForDevice(dev.accountId, dev.gardenaConfigId);
+      if (!creds) continue;
+      const seconds = step.minutes * 60;
+      const res = await gardenaControlValve(creds.key, creds.secret, dev.gardenaServiceId, "open", seconds);
+      if (res.ok) startedNames.push(dev.name);
+      // Pumpe fuer die Schrittdauer mitstarten (best effort).
+      if (pump?.serviceId) {
+        const pumpCreds = await ctx.credsForDevice(pump.accountId, pump.configId);
+        if (pumpCreds) {
+          await gardenaControlValve(pumpCreds.key, pumpCreds.secret, pump.serviceId, "open", seconds)
+            .catch(() => undefined);
+        }
+      }
+    }
+  }
+
+  const allStarted = state.steps.every((st) => st.startedAt);
+  const last = state.steps[state.steps.length - 1];
+  const finished =
+    allStarted && (!last || now.getTime() >= planStart + (last.offsetMin + last.minutes) * 60_000);
+
+  await prisma.irrigationSchedule.update({
+    where: { id: scheduleId },
+    data: { runState: finished ? { set: null } : (JSON.parse(JSON.stringify(state)) as object) },
+  });
+
+  return { startedNames, finished };
+}
+
+/** Ventil-Sequenz eines Zeitplans als Device-ID-Array (oder null). */
+export function parseValveSequence(v: unknown): number[] | null {
+  if (!Array.isArray(v)) return null;
+  const ids = v.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  return ids.length > 0 ? ids : null;
+}
+
+// ── Manueller Start/Stopp (UI "Jetzt"/"Stopp") ──────────────────────────────
+
+/**
+ * Startet einen Zeitplan sofort – inkl. Smart-Anpassung (Regen/Feuchte) und
+ * Sequenz-Plan. `lastRunAt` bleibt unberuehrt (der regulaere Lauf zur
+ * geplanten Zeit findet weiterhin statt).
+ */
+export async function startScheduleRun(
+  scheduleId: number,
+  accountId: number,
+): Promise<{ ok: boolean; skipped?: string; error?: string }> {
+  const s = await prisma.irrigationSchedule.findFirst({
+    where: { id: scheduleId, accountId },
+    include: {
+      device: { select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, pump: { select: { gardenaServiceId: true, gardenaConfigId: true } } } },
+      account: { select: { id: true, latitude: true, longitude: true, timezone: true } },
+    },
+  });
+  if (!s?.device) return { ok: false, error: "Zeitplan nicht gefunden" };
+
+  const ctx = createTickCtx();
+  const now = new Date();
+  const deviceCreds = await ctx.credsForDevice(s.account.id, s.device.gardenaConfigId);
+  const smart = await computeSmartOutcome(s, s.account, deviceCreds, ctx);
+  if (smart.skip) return { ok: true, skipped: smart.reason ?? "Smart-Check: ausgesetzt" };
+
+  const minutes = clampRunMinutes(s.durationMinutes * smart.factor);
+  const sequence = parseValveSequence(s.valveSequence);
+
+  if (sequence) {
+    // deviceId = Pumpe; Ventile laufen nacheinander.
+    const state = buildRunState(now, sequence, minutes);
+    const pump: PumpRef = {
+      serviceId: s.device.gardenaServiceId,
+      configId: s.device.gardenaConfigId,
+      accountId: s.account.id,
+    };
+    await executeDueSteps(s.id, pump, state, ctx, now);
+    return { ok: true };
+  }
+
+  // Einzel-Ventil (Legacy): direkt oeffnen, Pumpe mitschalten.
+  if (!s.device.gardenaServiceId || !deviceCreds) return { ok: false, error: "Keine GARDENA-Zugangsdaten" };
+  const res = await gardenaControlValve(deviceCreds.key, deviceCreds.secret, s.device.gardenaServiceId, "open", minutes * 60);
+  if (s.device.pump?.gardenaServiceId) {
+    const pumpCreds = await ctx.credsForDevice(s.account.id, s.device.pump.gardenaConfigId);
+    if (pumpCreds) {
+      await gardenaControlValve(pumpCreds.key, pumpCreds.secret, s.device.pump.gardenaServiceId, "open", minutes * 60)
+        .catch(() => undefined);
+    }
+  }
+  return res.ok ? { ok: true } : { ok: false, error: res.error };
+}
+
+/** Stoppt einen laufenden Zeitplan: alle Sequenz-Ventile + Pumpe schliessen. */
+export async function stopScheduleRun(
+  scheduleId: number,
+  accountId: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const s = await prisma.irrigationSchedule.findFirst({
+    where: { id: scheduleId, accountId },
+    include: {
+      device: { select: { id: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, pump: { select: { gardenaServiceId: true, gardenaConfigId: true } } } },
+      account: { select: { id: true } },
+    },
+  });
+  if (!s?.device) return { ok: false, error: "Zeitplan nicht gefunden" };
+
+  const ctx = createTickCtx();
+  const sequence = parseValveSequence(s.valveSequence);
+  const valveIds = sequence ?? [s.deviceId];
+
+  const devices = await prisma.device.findMany({
+    where: { id: { in: valveIds } },
+    select: { id: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true },
+  });
+  for (const dev of devices) {
+    if (!dev.gardenaServiceId) continue;
+    const creds = await ctx.credsForDevice(dev.accountId, dev.gardenaConfigId);
+    if (!creds) continue;
+    await gardenaControlValve(creds.key, creds.secret, dev.gardenaServiceId, "close").catch(() => undefined);
+  }
+
+  // Pumpe schliessen: bei Sequenz ist deviceId die Pumpe, sonst die Zuordnung.
+  const pumpService = sequence ? s.device.gardenaServiceId : s.device.pump?.gardenaServiceId;
+  const pumpConfig = sequence ? s.device.gardenaConfigId : s.device.pump?.gardenaConfigId ?? null;
+  if (pumpService) {
+    const creds = await ctx.credsForDevice(s.device.accountId, pumpConfig);
+    if (creds) await gardenaControlValve(creds.key, creds.secret, pumpService, "close").catch(() => undefined);
+  }
+
+  await prisma.irrigationSchedule.update({ where: { id: s.id }, data: { runState: { set: null } } });
+  return { ok: true };
+}
+
 // ── Cron-Tick ───────────────────────────────────────────────────────────────
 
 export interface IrrigationTickResult {
   checked: number;
   watered: number;
   skippedRain: number;
+  skippedMoisture: number;
   failed: number;
-  results: Array<{ scheduleId: number; deviceName: string; action: "watered" | "skipped" | "failed"; reason?: string }>;
+  /// Anzahl gestarteter Sequenz-Schritte laufender Plaene.
+  stepsStarted: number;
+  results: Array<{ scheduleId: number; deviceName: string; action: "watered" | "skipped" | "failed" | "step"; reason?: string }>;
 }
 
 /**
  * Prüft alle aktiven Zeitpläne und startet fällige Bewässerungen.
- * Fenster: fällig, wenn `now` 0–6 Min nach der geplanten Zeit liegt (5-Min-Cron
- * mit Catch-up). `lastRunAt` (Claim via updateMany) verhindert Doppel-Ausführung.
+ *  - Laufende Sequenz-Plaene (runState) werden fortgesetzt: der jeweils
+ *    naechste faellige Schritt (Ventil + Pumpe) wird gestartet.
+ *  - Faellige Zeitplaene (0–6 Min nach Startzeit) werden geclaimt (lastRunAt),
+ *    Smart-Checks (Regen/Feuchte) angewendet und gestartet: mit Ventil-Sequenz
+ *    als Plan, sonst als Einzel-Ventil.
  */
 export async function runIrrigationTick(now: Date = new Date()): Promise<IrrigationTickResult> {
   const FIRE_WINDOW_MS = 6 * 60_000;
@@ -176,7 +532,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
     include: {
       device: {
         select: {
-          id: true, name: true, type: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true,
+          id: true, name: true, type: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true,
           pumpDeviceId: true,
           pump: { select: { id: true, gardenaServiceId: true, gardenaConfigId: true } },
         },
@@ -186,42 +542,29 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
   });
 
   const results: IrrigationTickResult["results"] = [];
-  let watered = 0, skippedRain = 0, failed = 0;
-
-  // Wetter pro Account und GARDENA-Zugangsdaten pro Verbindung cachen.
-  const weatherCache = new Map<number, Weather | null>();
-  const credByConfig = new Map<number, { key: string; secret: string } | null>();
-  const fallbackConfigByAccount = new Map<number, number | null>();
-
-  async function accountWeather(accId: number, lat: number | null, lng: number | null) {
-    if (!weatherCache.has(accId)) weatherCache.set(accId, await getWeather(lat, lng));
-    return weatherCache.get(accId)!;
-  }
-  async function credsForConfig(configId: number) {
-    if (!credByConfig.has(configId)) {
-      const cfg = await prisma.apiConfig.findFirst({ where: { id: configId, provider: "GARDENA" } });
-      credByConfig.set(configId, cfg?.token && cfg?.extraConfig ? { key: cfg.token, secret: cfg.extraConfig } : null);
-    }
-    return credByConfig.get(configId)!;
-  }
-  // Zugangsdaten fuer ein Geraet: bevorzugt dessen Verbindung, sonst erste
-  // GARDENA-Verbindung des Accounts (Alt-Geraete ohne gardenaConfigId).
-  async function credsForDevice(accId: number, configId: number | null) {
-    if (configId) return credsForConfig(configId);
-    if (!fallbackConfigByAccount.has(accId)) {
-      const cfg = await prisma.apiConfig.findFirst({ where: { accountId: accId, provider: "GARDENA" } });
-      fallbackConfigByAccount.set(accId, cfg?.id ?? null);
-      if (cfg) credByConfig.set(cfg.id, cfg.token && cfg.extraConfig ? { key: cfg.token, secret: cfg.extraConfig } : null);
-    }
-    const fb = fallbackConfigByAccount.get(accId);
-    return fb ? credsForConfig(fb) : null;
-  }
+  let watered = 0, skippedRain = 0, skippedMoisture = 0, failed = 0, stepsStarted = 0;
+  const ctx = createTickCtx();
 
   for (const s of schedules) {
-    if (!s.device || s.device.type !== "GARDENA_VALVE" || !s.device.gardenaServiceId || !s.device.isActive) {
-      continue;
+    if (!s.device || s.device.type !== "GARDENA_VALVE" || !s.device.isActive) continue;
+
+    // ── Phase A: laufenden Sequenz-Plan fortsetzen ───────────────────────────
+    const activeState = parseRunState(s.runState);
+    if (activeState) {
+      const pump: PumpRef = {
+        serviceId: s.device.gardenaServiceId,
+        configId: s.device.gardenaConfigId,
+        accountId: s.account.id,
+      };
+      const { startedNames } = await executeDueSteps(s.id, pump, activeState, ctx, now);
+      stepsStarted += startedNames.length;
+      for (const name of startedNames) {
+        results.push({ scheduleId: s.id, deviceName: name, action: "step", reason: "Sequenz-Schritt gestartet" });
+      }
+      continue; // Waehrend ein Plan laeuft, keinen neuen Lauf starten.
     }
 
+    // ── Phase B: faellige Zeitplaene starten ────────────────────────────────
     const dow = weekdayBitIndex(now, s.account.timezone);
     if (((s.daysOfWeek >> dow) & 1) !== 1) continue;
 
@@ -242,45 +585,67 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
     });
     if (claimed.count === 0) continue;
 
-    // Wetter-Check (Regen).
-    if (s.skipOnRain) {
-      const weather = await accountWeather(s.account.id, s.account.latitude, s.account.longitude);
-      const rec = getIrrigationRecommendation(weather);
-      if (!rec.shouldWater) {
-        skippedRain++;
-        results.push({ scheduleId: s.id, deviceName: s.device.name, action: "skipped", reason: rec.reason });
-        continue;
-      }
+    const deviceCreds = await ctx.credsForDevice(s.account.id, s.device.gardenaConfigId);
+
+    // Smart-Checks: Regen aussetzen/skalieren, Bodenfeuchte aussetzen/skalieren.
+    const smart = await computeSmartOutcome(s, s.account, deviceCreds, ctx);
+    if (smart.skip) {
+      if (smart.skip === "rain") skippedRain++; else skippedMoisture++;
+      results.push({ scheduleId: s.id, deviceName: s.device.name, action: "skipped", reason: smart.reason });
+      continue;
     }
 
-    const creds = await credsForDevice(s.account.id, s.device.gardenaConfigId);
-    if (!creds) {
+    const minutes = clampRunMinutes(s.durationMinutes * smart.factor);
+    const sequence = parseValveSequence(s.valveSequence);
+
+    if (sequence) {
+      // Sequenz: deviceId ist die Pumpe, Ventile laufen nacheinander.
+      const state = buildRunState(now, sequence, minutes);
+      const pump: PumpRef = {
+        serviceId: s.device.gardenaServiceId,
+        configId: s.device.gardenaConfigId,
+        accountId: s.account.id,
+      };
+      const { startedNames } = await executeDueSteps(s.id, pump, state, ctx, now);
+      stepsStarted += startedNames.length;
+      watered++;
+      results.push({
+        scheduleId: s.id,
+        deviceName: s.device.name,
+        action: "watered",
+        reason: [`Sequenz mit ${sequence.length} Ventilen à ${minutes} Min gestartet.`, smart.reason].filter(Boolean).join(" "),
+      });
+      continue;
+    }
+
+    // Einzel-Ventil (Legacy).
+    if (!s.device.gardenaServiceId || !deviceCreds) {
       failed++;
       results.push({ scheduleId: s.id, deviceName: s.device.name, action: "failed", reason: "Keine GARDENA-Zugangsdaten" });
       continue;
     }
 
-    const seconds = s.durationMinutes * 60;
+    const seconds = minutes * 60;
     const res = await gardenaControlValve(
-      creds.key, creds.secret, s.device.gardenaServiceId, "open", seconds,
+      deviceCreds.key, deviceCreds.secret, s.device.gardenaServiceId, "open", seconds,
     );
     if (res.ok) {
       // Zugeordnete Pumpe fuer die gleiche Laufzeit mitstarten (best effort).
       const pump = s.device.pump;
       if (pump?.gardenaServiceId) {
-        const pumpCreds = await credsForDevice(s.account.id, pump.gardenaConfigId);
+        const pumpCreds = await ctx.credsForDevice(s.account.id, pump.gardenaConfigId);
         if (pumpCreds) {
           await gardenaControlValve(pumpCreds.key, pumpCreds.secret, pump.gardenaServiceId, "open", seconds)
             .catch(() => undefined);
         }
       }
       watered++;
-      results.push({ scheduleId: s.id, deviceName: s.device.name, action: "watered" });
+      results.push({ scheduleId: s.id, deviceName: s.device.name, action: "watered", reason: smart.reason });
     } else {
       failed++;
       results.push({ scheduleId: s.id, deviceName: s.device.name, action: "failed", reason: res.error });
     }
   }
 
-  return { checked: schedules.length, watered, skippedRain, failed, results };
+  return { checked: schedules.length, watered, skippedRain, skippedMoisture, failed, stepsStarted, results };
 }

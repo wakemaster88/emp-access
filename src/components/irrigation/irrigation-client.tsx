@@ -18,7 +18,7 @@ import {
   Droplets, Droplet, CloudRain, Sun, Thermometer, Battery, BatteryLow,
   Wifi, WifiOff, Play, Square, Sparkles, Plus, Pencil, Trash2, Clock,
   CalendarDays, Gauge, Loader2, RefreshCw, CircleAlert, Sprout, CheckCircle2,
-  Check, X, Activity, Timer, Waves,
+  Check, X, Activity, Timer, Waves, ChevronUp, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Weather } from "@/lib/weather";
@@ -43,7 +43,21 @@ interface Schedule {
   durationMinutes: number;
   isActive: boolean;
   skipOnRain: boolean;
+  smartRain: boolean;
+  sensorServiceId: string | null;
+  moistureThresholdPct: number | null;
+  /// Geordnete Ventil-IDs (deviceId = Pumpe) oder null (Einzel-Ventil).
+  valveSequence: number[] | null;
   lastRunAt: string | null;
+}
+
+interface SoilSensor {
+  serviceId: string;
+  name: string;
+  soilHumidity: number | null;
+  soilTemperature: number | null;
+  online: boolean;
+  connectionName: string | null;
 }
 
 interface ZoneStatus {
@@ -171,6 +185,7 @@ export function IrrigationClient({
   const [busySchedule, setBusySchedule] = useState<Record<number, boolean>>({});
   const [schedules, setSchedules] = useState<Schedule[]>(initialSchedules);
   const [zoneList, setZoneList] = useState<Zone[]>(zones);
+  const [sensors, setSensors] = useState<SoilSensor[]>([]);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
 
   // Smart-Run (sequenzielle Komplett-Bewässerung)
@@ -226,6 +241,20 @@ export function IrrigationClient({
     const t = setInterval(fetchStatuses, 30_000);
     return () => clearInterval(t);
   }, [fetchStatuses]);
+
+  // Bodenfeuchte-Sensoren laden (alle 5 Min – Werte aendern sich langsam).
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/irrigation/sensors");
+        if (res.ok && !cancelled) setSensors((await res.json()) as SoilSensor[]);
+      } catch { /* Sensoren optional */ }
+    };
+    load();
+    const t = setInterval(load, 300_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
 
   // Smart-Run bei Unmount abbrechen.
   useEffect(() => () => { if (runToken.current) runToken.current.cancel = true; }, []);
@@ -370,6 +399,10 @@ export function IrrigationClient({
       daysOfWeek: form.daysOfWeek,
       isActive: form.isActive,
       skipOnRain: form.skipOnRain,
+      smartRain: form.smartRain,
+      sensorServiceId: form.sensorServiceId ?? null,
+      moistureThresholdPct: form.sensorServiceId ? form.moistureThresholdPct : null,
+      valveSequence: form.mode === "pump" ? form.valveOrder : null,
     };
     try {
       const res = editing
@@ -385,7 +418,12 @@ export function IrrigationClient({
         id: saved.id, deviceId: saved.deviceId,
         deviceName: saved.device?.name ?? zoneList.find((z) => z.id === saved.deviceId)?.name ?? "Zone",
         daysOfWeek: saved.daysOfWeek, startTime: saved.startTime, durationMinutes: saved.durationMinutes,
-        isActive: saved.isActive, skipOnRain: saved.skipOnRain, lastRunAt: saved.lastRunAt ?? null,
+        isActive: saved.isActive, skipOnRain: saved.skipOnRain,
+        smartRain: saved.smartRain ?? false,
+        sensorServiceId: saved.sensorServiceId ?? null,
+        moistureThresholdPct: saved.moistureThresholdPct ?? null,
+        valveSequence: Array.isArray(saved.valveSequence) ? saved.valveSequence : null,
+        lastRunAt: saved.lastRunAt ?? null,
       };
       setSchedules((prev) => editing ? prev.map((s) => s.id === normalized.id ? normalized : s) : [...prev, normalized]);
       setDialogOpen(false);
@@ -420,26 +458,41 @@ export function IrrigationClient({
     }
   }, [flash]);
 
-  // Zeitplan sofort ausfuehren (Ventil + zugeordnete Pumpe fuer die geplante Dauer).
+  // Zeitplan sofort ausfuehren – serverseitig inkl. Smart-Checks + Sequenz.
   const runScheduleNow = useCallback(async (s: Schedule) => {
     setBusySchedule((b) => ({ ...b, [s.id]: true }));
     try {
-      await sendAction(s.deviceId, "open", s.durationMinutes);
-      setStatuses((st) => ({ ...st, [s.deviceId]: { ...(st[s.deviceId] ?? emptyStatus(s.deviceId)), watering: true, activity: "MANUAL_WATERING" } }));
-      flash("ok", `${s.deviceName}: ${s.durationMinutes} Min gestartet.`);
+      const res = await fetch(`/api/irrigation/schedules/${s.id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Start fehlgeschlagen");
+      if (data.skipped) {
+        flash("ok", `${s.deviceName}: nicht gestartet – ${data.skipped}`);
+      } else {
+        flash("ok", s.valveSequence?.length
+          ? `${s.deviceName}: Sequenz mit ${s.valveSequence.length} Ventilen gestartet.`
+          : `${s.deviceName}: ${s.durationMinutes} Min gestartet.`);
+      }
       setTimeout(fetchStatuses, 3000);
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Start fehlgeschlagen.");
     } finally {
       setBusySchedule((b) => ({ ...b, [s.id]: false }));
     }
-  }, [sendAction, flash, fetchStatuses]);
+  }, [flash, fetchStatuses]);
 
   const stopScheduleDevice = useCallback(async (s: Schedule) => {
     setBusySchedule((b) => ({ ...b, [s.id]: true }));
     try {
-      await sendAction(s.deviceId, "deactivate");
-      setStatuses((st) => ({ ...st, [s.deviceId]: { ...(st[s.deviceId] ?? emptyStatus(s.deviceId)), watering: false, activity: "CLOSED" } }));
+      const res = await fetch(`/api/irrigation/schedules/${s.id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Stopp fehlgeschlagen"); }
       flash("ok", `${s.deviceName}: gestoppt.`);
       setTimeout(fetchStatuses, 3000);
     } catch (e) {
@@ -447,7 +500,7 @@ export function IrrigationClient({
     } finally {
       setBusySchedule((b) => ({ ...b, [s.id]: false }));
     }
-  }, [sendAction, flash, fetchStatuses]);
+  }, [flash, fetchStatuses]);
 
   // ── Abgeleitete Werte ────────────────────────────────────────────────────────
   const wateringCount = controllableIds.filter((id) => statuses[id]?.watering).length;
@@ -781,7 +834,12 @@ export function IrrigationClient({
                 <ScheduleRow
                   key={s.id}
                   schedule={s}
-                  running={!!statuses[s.deviceId]?.watering}
+                  sequenceNames={(s.valveSequence ?? []).map((id) => zoneList.find((z) => z.id === id)?.name ?? `#${id}`)}
+                  sensor={s.sensorServiceId ? sensors.find((x) => x.serviceId === s.sensorServiceId) : undefined}
+                  running={
+                    !!statuses[s.deviceId]?.watering ||
+                    (s.valveSequence ?? []).some((id) => statuses[id]?.watering)
+                  }
                   busy={!!busySchedule[s.id]}
                   onToggle={() => toggleSchedule(s)}
                   onRunNow={() => runScheduleNow(s)}
@@ -803,6 +861,8 @@ export function IrrigationClient({
         <ScheduleDialog
           onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null); }}
           zones={zoneList}
+          pumps={pumps}
+          sensors={sensors}
           editing={editing}
           onSave={saveSchedule}
         />
@@ -1229,10 +1289,13 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
 
 // ── Zeitplan-Zeile ───────────────────────────────────────────────────────────
 
-function ScheduleRow({ schedule, running, busy, onToggle, onRunNow, onStop, onEdit, onDelete }: {
-  schedule: Schedule; running: boolean; busy: boolean;
+function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle, onRunNow, onStop, onEdit, onDelete }: {
+  schedule: Schedule; sequenceNames: string[]; sensor?: SoilSensor; running: boolean; busy: boolean;
   onToggle: () => void; onRunNow: () => void; onStop: () => void; onEdit: () => void; onDelete: () => void;
 }) {
+  const humidity = sensor?.soilHumidity ?? null;
+  const threshold = schedule.moistureThresholdPct;
+  const moistEnough = humidity != null && threshold != null && humidity >= threshold;
   return (
     <div className={cn(
       "flex items-center gap-3 p-3 sm:p-4 transition-colors",
@@ -1263,18 +1326,49 @@ function ScheduleRow({ schedule, running, busy, onToggle, onRunNow, onStop, onEd
               <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Pausiert
             </Badge>
           )}
+          {sequenceNames.length > 0 && (
+            <Badge variant="secondary" className="text-[10px] gap-1">
+              <Activity className="h-3 w-3" /> {sequenceNames.length} Ventile
+            </Badge>
+          )}
           <Badge variant="secondary" className="text-[10px] gap-1 tabular-nums">
             <Clock className="h-3 w-3" /> {schedule.startTime}
           </Badge>
-          <Badge variant="outline" className="text-[10px]">{schedule.durationMinutes} Min</Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {schedule.durationMinutes} Min{sequenceNames.length > 0 ? "/Ventil" : ""}
+          </Badge>
           {schedule.skipOnRain && (
             <Badge variant="outline" className="text-[10px] gap-1 text-sky-600 border-sky-200 dark:border-sky-900/50">
               <CloudRain className="h-3 w-3" /> Regen-Stopp
             </Badge>
           )}
+          {schedule.smartRain && (
+            <Badge variant="outline" className="text-[10px] gap-1 text-indigo-600 border-indigo-200 dark:border-indigo-900/50">
+              <Sparkles className="h-3 w-3" /> Smart-Regen
+            </Badge>
+          )}
+          {schedule.sensorServiceId && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[10px] gap-1",
+                moistEnough
+                  ? "text-emerald-600 border-emerald-200 dark:border-emerald-900/50"
+                  : "text-amber-600 border-amber-200 dark:border-amber-900/50",
+              )}
+              title={sensor
+                ? `${sensor.name}: Bodenfeuchte ${humidity != null ? `${Math.round(humidity)} %` : "unbekannt"} · Schwelle ${threshold} % (aussetzen ab Schwelle)`
+                : "Sensor derzeit nicht erreichbar"}
+            >
+              <Sprout className="h-3 w-3" />
+              {humidity != null ? `${Math.round(humidity)} %` : "—"} / {threshold} %
+              {moistEnough && " · setzt aus"}
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-slate-400 mt-0.5">
           {fmtDays(schedule.daysOfWeek)}
+          {sequenceNames.length > 0 && <> · {sequenceNames.join(" → ")}</>}
           {schedule.lastRunAt && <> · Zuletzt: {fmtLastRun(schedule.lastRunAt)}</>}
         </p>
       </div>
@@ -1314,26 +1408,98 @@ function fmtLastRun(iso: string): string {
 // ── Zeitplan-Dialog ──────────────────────────────────────────────────────────
 
 interface ScheduleForm {
+  /// "pump" = Pumpen-Zeitplan mit Ventil-Sequenz, "single" = einzelnes Ventil.
+  mode: "pump" | "single";
+  /// Ziel: bei "pump" die Pumpe, bei "single" das Ventil.
   deviceId: number;
+  /// Geordnete Ventil-IDs (nur mode = "pump").
+  valveOrder: number[];
   startTime: string;
   durationMinutes: number;
   daysOfWeek: number;
   isActive: boolean;
   skipOnRain: boolean;
+  smartRain: boolean;
+  sensorServiceId: string | null;
+  moistureThresholdPct: number;
 }
 
-function ScheduleDialog({ onOpenChange, zones, editing, onSave }: {
-  onOpenChange: (o: boolean) => void; zones: Zone[]; editing: Schedule | null;
+function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }: {
+  onOpenChange: (o: boolean) => void; zones: Zone[]; pumps: Zone[]; sensors: SoilSensor[]; editing: Schedule | null;
   onSave: (form: ScheduleForm) => void;
 }) {
-  const [form, setForm] = useState<ScheduleForm>(() =>
-    editing
-      ? { deviceId: editing.deviceId, startTime: editing.startTime, durationMinutes: editing.durationMinutes, daysOfWeek: editing.daysOfWeek, isActive: editing.isActive, skipOnRain: editing.skipOnRain }
-      : { deviceId: zones[0]?.id ?? 0, startTime: "06:00", durationMinutes: 15, daysOfWeek: 127, isActive: true, skipOnRain: true },
+  const valvesOfPump = useCallback(
+    (pumpId: number) => zones.filter((z) => z.pumpDeviceId === pumpId).map((z) => z.id),
+    [zones],
   );
+
+  const [form, setForm] = useState<ScheduleForm>(() => {
+    if (editing) {
+      const isPump = !!editing.valveSequence?.length;
+      return {
+        mode: isPump ? "pump" : "single",
+        deviceId: editing.deviceId,
+        valveOrder: editing.valveSequence ?? [],
+        startTime: editing.startTime, durationMinutes: editing.durationMinutes,
+        daysOfWeek: editing.daysOfWeek, isActive: editing.isActive,
+        skipOnRain: editing.skipOnRain, smartRain: editing.smartRain,
+        sensorServiceId: editing.sensorServiceId, moistureThresholdPct: editing.moistureThresholdPct ?? 60,
+      };
+    }
+    // Default: erste Pumpe mit all ihren Ventilen, sonst einzelnes Ventil.
+    const firstPump = pumps[0];
+    return firstPump
+      ? {
+          mode: "pump" as const, deviceId: firstPump.id,
+          valveOrder: zones.filter((z) => z.pumpDeviceId === firstPump.id).map((z) => z.id),
+          startTime: "06:00", durationMinutes: 15, daysOfWeek: 127,
+          isActive: true, skipOnRain: true, smartRain: false, sensorServiceId: null, moistureThresholdPct: 60,
+        }
+      : {
+          mode: "single" as const, deviceId: zones[0]?.id ?? 0, valveOrder: [],
+          startTime: "06:00", durationMinutes: 15, daysOfWeek: 127,
+          isActive: true, skipOnRain: true, smartRain: false, sensorServiceId: null, moistureThresholdPct: 60,
+        };
+  });
   const [saving, setSaving] = useState(false);
 
   const toggleDay = (i: number) => setForm((f) => ({ ...f, daysOfWeek: f.daysOfWeek ^ (1 << i) }));
+
+  const selectTarget = (value: string) => {
+    if (value === "single") {
+      const firstValve = zones.find((z) => !pumps.some((p) => p.id === z.id));
+      setForm((f) => ({ ...f, mode: "single", deviceId: firstValve?.id ?? zones[0]?.id ?? 0, valveOrder: [] }));
+    } else {
+      const pumpId = Number(value.slice(2));
+      setForm((f) => ({ ...f, mode: "pump", deviceId: pumpId, valveOrder: valvesOfPump(pumpId) }));
+    }
+  };
+
+  const toggleValve = (id: number) =>
+    setForm((f) => ({
+      ...f,
+      valveOrder: f.valveOrder.includes(id) ? f.valveOrder.filter((x) => x !== id) : [...f.valveOrder, id],
+    }));
+
+  const moveValve = (id: number, dir: -1 | 1) =>
+    setForm((f) => {
+      const idx = f.valveOrder.indexOf(id);
+      const to = idx + dir;
+      if (idx < 0 || to < 0 || to >= f.valveOrder.length) return f;
+      const next = [...f.valveOrder];
+      [next[idx], next[to]] = [next[to], next[idx]];
+      return { ...f, valveOrder: next };
+    });
+
+  const pumpValves = form.mode === "pump" ? zones.filter((z) => z.pumpDeviceId === form.deviceId) : [];
+  // Anzeige: ausgewaehlte Ventile in Reihenfolge, danach die abgewaehlten.
+  const orderedValves = [
+    ...form.valveOrder.map((id) => pumpValves.find((z) => z.id === id)).filter((z): z is Zone => !!z),
+    ...pumpValves.filter((z) => !form.valveOrder.includes(z.id)),
+  ];
+  const singleZones = zones.filter((z) => !pumps.some((p) => p.id === z.id));
+  const totalMinutes = form.mode === "pump" ? form.valveOrder.length * form.durationMinutes : form.durationMinutes;
+  const canSave = form.mode === "pump" ? form.valveOrder.length > 0 : !!form.deviceId;
 
   const submit = async () => {
     setSaving(true);
@@ -1343,33 +1509,123 @@ function ScheduleDialog({ onOpenChange, zones, editing, onSave }: {
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? "Zeitplan bearbeiten" : "Neuer Zeitplan"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          {/* 1. Pumpe / Ziel */}
           <div className="space-y-1.5">
-            <Label>Zone</Label>
-            <Select value={String(form.deviceId)} onValueChange={(v) => setForm((f) => ({ ...f, deviceId: Number(v) }))}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Zone wählen" /></SelectTrigger>
+            <Label>Pumpe</Label>
+            <Select
+              value={form.mode === "pump" ? `p:${form.deviceId}` : "single"}
+              onValueChange={selectTarget}
+            >
+              <SelectTrigger className="w-full"><SelectValue placeholder="Pumpe wählen" /></SelectTrigger>
               <SelectContent>
-                {zones.map((z) => <SelectItem key={z.id} value={String(z.id)}>{z.name}</SelectItem>)}
+                {pumps.map((p) => (
+                  <SelectItem key={p.id} value={`p:${p.id}`}>{p.name}</SelectItem>
+                ))}
+                <SelectItem value="single">Einzelnes Ventil (ohne Sequenz)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
+          {form.mode === "single" && (
+            <div className="space-y-1.5">
+              <Label>Ventil</Label>
+              <Select value={String(form.deviceId)} onValueChange={(v) => setForm((f) => ({ ...f, deviceId: Number(v) }))}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Ventil wählen" /></SelectTrigger>
+                <SelectContent>
+                  {(singleZones.length > 0 ? singleZones : zones).map((z) => (
+                    <SelectItem key={z.id} value={String(z.id)}>{z.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* 2. Zeit + Dauer */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Startzeit</Label>
               <Input type="time" value={form.startTime} onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Dauer (Min)</Label>
+              <Label>{form.mode === "pump" ? "Dauer je Ventil (Min)" : "Dauer (Min)"}</Label>
               <Input type="number" min={1} max={180} value={form.durationMinutes}
                 onChange={(e) => setForm((f) => ({ ...f, durationMinutes: Math.max(1, Math.min(180, Number(e.target.value) || 1)) }))} />
             </div>
           </div>
 
+          {/* 3. Ventil-Reihenfolge */}
+          {form.mode === "pump" && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label>Reihenfolge der Ventile</Label>
+                <span className="text-[11px] text-slate-400">
+                  {form.valveOrder.length} Ventile · gesamt ca. {totalMinutes} Min
+                </span>
+              </div>
+              {pumpValves.length === 0 ? (
+                <p className="text-xs text-slate-400 rounded-lg border border-dashed border-slate-200 dark:border-slate-700 p-3">
+                  Dieser Pumpe sind noch keine Ventile zugeordnet. Ordne Ventile in der Zonen-Ansicht der Pumpe zu.
+                </p>
+              ) : (
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+                  {orderedValves.map((z) => {
+                    const pos = form.valveOrder.indexOf(z.id);
+                    const selected = pos >= 0;
+                    return (
+                      <div key={z.id} className={cn("flex items-center gap-2 px-3 py-2", !selected && "opacity-50")}>
+                        <button
+                          type="button"
+                          onClick={() => toggleValve(z.id)}
+                          className={cn(
+                            "h-5 w-5 rounded-md border flex items-center justify-center shrink-0 text-[10px] font-bold transition-colors",
+                            selected
+                              ? "bg-sky-600 border-sky-600 text-white"
+                              : "border-slate-300 dark:border-slate-600 text-transparent hover:border-sky-400",
+                          )}
+                          title={selected ? "Aus Sequenz entfernen" : "Zur Sequenz hinzufügen"}
+                        >
+                          {selected ? pos + 1 : "+"}
+                        </button>
+                        <span className="text-sm text-slate-900 dark:text-slate-100 truncate flex-1">{z.name}</span>
+                        {selected && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => moveValve(z.id, -1)}
+                              disabled={pos === 0}
+                              className="h-6 w-6 rounded flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
+                              title="Früher"
+                            >
+                              <ChevronUp className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveValve(z.id, 1)}
+                              disabled={pos === form.valveOrder.length - 1}
+                              className="h-6 w-6 rounded flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
+                              title="Später"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-slate-400">
+                Die Ventile laufen nacheinander (je {form.durationMinutes} Min) – die Pumpe schaltet automatisch mit.
+              </p>
+            </div>
+          )}
+
+          {/* 4. Wochentage */}
           <div className="space-y-1.5">
             <Label>Wochentage</Label>
             <div className="flex gap-1">
@@ -1392,15 +1648,79 @@ function ScheduleDialog({ onOpenChange, zones, editing, onSave }: {
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+          {/* 5. Smart-Regen */}
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CloudRain className="h-4 w-4 text-sky-600" />
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Bei Regen aussetzen</p>
+                  <p className="text-xs text-slate-400">Überspringt den Lauf bei deutlicher Regenprognose</p>
+                </div>
+              </div>
+              <Switch checked={form.skipOnRain} onCheckedChange={(v) => setForm((f) => ({ ...f, skipOnRain: v }))} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-indigo-600" />
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Smart-Regen (Dauer anpassen)</p>
+                  <p className="text-xs text-slate-400">Heiß → länger, Regenrisiko/kühl → kürzer</p>
+                </div>
+              </div>
+              <Switch checked={form.smartRain} onCheckedChange={(v) => setForm((f) => ({ ...f, smartRain: v }))} />
+            </div>
+          </div>
+
+          {/* 6. Bodenfeuchte-Sensor */}
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
             <div className="flex items-center gap-2">
-              <CloudRain className="h-4 w-4 text-sky-600" />
+              <Sprout className="h-4 w-4 text-emerald-600" />
               <div>
-                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Bei Regen aussetzen</p>
-                <p className="text-xs text-slate-400">Überspringt Lauf bei Regenprognose</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Smart-Feuchtigkeit (Sensor)</p>
+                <p className="text-xs text-slate-400">Setzt bei feuchtem Boden aus, passt die Dauer smart an</p>
               </div>
             </div>
-            <Switch checked={form.skipOnRain} onCheckedChange={(v) => setForm((f) => ({ ...f, skipOnRain: v }))} />
+            <Select
+              value={form.sensorServiceId ?? "none"}
+              onValueChange={(v) => setForm((f) => ({ ...f, sensorServiceId: v === "none" ? null : v }))}
+            >
+              <SelectTrigger className="w-full"><SelectValue placeholder="Sensor wählen" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Kein Sensor</SelectItem>
+                {form.sensorServiceId && !sensors.some((s) => s.serviceId === form.sensorServiceId) && (
+                  <SelectItem value={form.sensorServiceId}>Zugeordneter Sensor (offline)</SelectItem>
+                )}
+                {sensors.map((s) => (
+                  <SelectItem key={s.serviceId} value={s.serviceId}>
+                    {s.name}{s.soilHumidity != null ? ` · ${Math.round(s.soilHumidity)} %` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.sensorServiceId && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Aussetzen ab Bodenfeuchte</Label>
+                  <span className="text-xs font-semibold tabular-nums text-slate-700 dark:text-slate-200">{form.moistureThresholdPct} %</span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={95}
+                  step={5}
+                  value={form.moistureThresholdPct}
+                  onChange={(e) => setForm((f) => ({ ...f, moistureThresholdPct: Number(e.target.value) }))}
+                  className="w-full accent-emerald-600"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Feuchter als {form.moistureThresholdPct} % → Lauf wird übersprungen. Fast so feucht → halbe Dauer, sehr trocken → 25 % länger.
+                </p>
+              </div>
+            )}
+            {sensors.length === 0 && !form.sensorServiceId && (
+              <p className="text-[11px] text-slate-400">Kein GARDENA-Sensor gefunden. Sensoren erscheinen hier automatisch, sobald sie im GARDENA-Konto eingebunden sind.</p>
+            )}
           </div>
 
           <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
@@ -1413,7 +1733,7 @@ function ScheduleDialog({ onOpenChange, zones, editing, onSave }: {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button>
-          <Button onClick={submit} disabled={saving || !form.deviceId} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Button onClick={submit} disabled={saving || !canSave} className="bg-emerald-600 hover:bg-emerald-700 text-white">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
           </Button>
         </DialogFooter>

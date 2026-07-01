@@ -36,6 +36,39 @@ export async function PUT(
     ? Math.max(0, Math.min(127, Math.round(Number(body.daysOfWeek))))
     : undefined;
 
+  // Sensor-Zuordnung: undefined = unveraendert, ""/null = entfernen, sonst setzen.
+  let sensorServiceId = existing.sensorServiceId;
+  if (body.sensorServiceId !== undefined) {
+    sensorServiceId =
+      typeof body.sensorServiceId === "string" && body.sensorServiceId.trim()
+        ? body.sensorServiceId.trim()
+        : null;
+  }
+  let moistureThresholdPct = existing.moistureThresholdPct;
+  if (body.moistureThresholdPct !== undefined) {
+    const n = Number(body.moistureThresholdPct);
+    moistureThresholdPct = Number.isFinite(n) ? Math.min(95, Math.max(5, Math.round(n))) : null;
+  }
+  if (!sensorServiceId) moistureThresholdPct = null;
+  else if (moistureThresholdPct == null) moistureThresholdPct = 60;
+
+  // Ventil-Sequenz: undefined = unveraendert, []/null = entfernen, sonst setzen.
+  let valveSequence: number[] | null | undefined = undefined;
+  if (body.valveSequence !== undefined) {
+    if (Array.isArray(body.valveSequence) && body.valveSequence.length > 0) {
+      const ids = body.valveSequence.map(Number).filter((n: number) => Number.isInteger(n) && n > 0);
+      const found = await db.device.findMany({
+        where: { id: { in: ids }, accountId: accountId!, type: "GARDENA_VALVE" },
+        select: { id: true },
+      });
+      const valid = new Set(found.map((d) => d.id));
+      const filtered = ids.filter((n: number) => valid.has(n) && n !== existing.deviceId);
+      valveSequence = filtered.length > 0 ? filtered : null;
+    } else {
+      valveSequence = null;
+    }
+  }
+
   const schedule = await db.irrigationSchedule.update({
     where: { id: scheduleId },
     data: {
@@ -44,6 +77,12 @@ export async function PUT(
       daysOfWeek: daysOfWeek ?? existing.daysOfWeek,
       isActive: body.isActive ?? existing.isActive,
       skipOnRain: body.skipOnRain ?? existing.skipOnRain,
+      smartRain: body.smartRain ?? existing.smartRain,
+      sensorServiceId,
+      moistureThresholdPct,
+      ...(valveSequence !== undefined
+        ? { valveSequence: valveSequence === null ? { set: null } : valveSequence }
+        : {}),
     },
     include: { device: { select: { id: true, name: true } } },
   });

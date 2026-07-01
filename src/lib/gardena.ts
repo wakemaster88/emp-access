@@ -327,6 +327,59 @@ export async function gardenaStatusMap(
   return result;
 }
 
+// ── Sensoren (Bodenfeuchte) ───────────────────────────────────────────────────
+
+export interface GardenaSensor {
+  /// Service-ID des SENSOR-Service – landet auf IrrigationSchedule.sensorServiceId.
+  serviceId: string;
+  /// Geraete-Name laut COMMON-Service.
+  name: string;
+  /// Bodenfeuchte in Prozent (0–100), null wenn nicht gemeldet.
+  soilHumidity: number | null;
+  /// Bodentemperatur in °C.
+  soilTemperature: number | null;
+  online: boolean;
+  batteryLevel: number | null;
+  locationName: string;
+}
+
+/**
+ * Listet alle Bodenfeuchte-Sensoren (SENSOR-Services) ueber alle Locations.
+ * Wird fuer die Sensor-Auswahl im Zeitplan-Dialog und den Cron genutzt.
+ */
+export async function gardenaListSensors(
+  applicationKey: string,
+  applicationSecret: string,
+): Promise<{ ok: boolean; status: number; sensors: GardenaSensor[]; error?: string }> {
+  const locs = await gardenaListLocations(applicationKey, applicationSecret);
+  if (!locs.ok) return { ok: false, status: locs.status, sensors: [], error: locs.error };
+
+  const sensors: GardenaSensor[] = [];
+  for (const loc of locs.locations) {
+    const detail = await gardenaGetLocation(applicationKey, applicationSecret, loc.id);
+    const included = detail?.included ?? [];
+    const commonByDevice = indexCommonByDevice(included);
+    const locationName = attrValue<string>(detail?.data, "name") ?? loc.name;
+
+    for (const svc of included) {
+      if (svc.type !== "SENSOR") continue;
+      const deviceId = svc.relationships?.device?.data?.id ?? svc.id;
+      const common = commonByDevice.get(deviceId);
+      sensors.push({
+        serviceId: svc.id,
+        name: attrValue<string>(common, "name") ?? deviceId,
+        soilHumidity: attrValue<number>(svc, "soilHumidity"),
+        soilTemperature: attrValue<number>(svc, "soilTemperature"),
+        online: isOnline(common),
+        batteryLevel: attrValue<number>(common, "batteryLevel"),
+        locationName,
+      });
+    }
+  }
+
+  return { ok: true, status: 200, sensors };
+}
+
 // ── Steuerung ─────────────────────────────────────────────────────────────────
 
 export type GardenaValveCommand = "open" | "close";
