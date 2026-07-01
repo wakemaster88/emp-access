@@ -192,6 +192,20 @@
   animation: scan-flash 0.5s ease-out;
 }
 
+/* Pumpen-Durchfluss: laufende Streifen als Fluss-Visualisierung */
+@keyframes pump-flow {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 32px 0;
+  }
+}
+
+.animate-pump-flow {
+  animation: pump-flow 0.8s linear infinite;
+}
+
 .monitor-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: oklch(0.45 0.12 264 / 35%) transparent;

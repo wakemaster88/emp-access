@@ -18,7 +18,7 @@ import {
   Droplets, Droplet, CloudRain, Sun, Thermometer, Battery, BatteryLow,
   Wifi, WifiOff, Play, Square, Sparkles, Plus, Pencil, Trash2, Clock,
   CalendarDays, Gauge, Loader2, RefreshCw, CircleAlert, Sprout, CheckCircle2,
-  Check, X,
+  Check, X, Activity, Timer, Waves,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Weather } from "@/lib/weather";
@@ -103,6 +103,15 @@ function fmtCountdown(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtLiters(l: number): string {
+  return l >= 1000 ? `${(l / 1000).toFixed(2)} m³` : `${Math.round(l)} L`;
+}
+
+/** Heuristik: Ist die Zone/das Geraet eine Pumpe (Name oder Modell enthaelt „pump")? */
+function isPumpZone(name: string, model: string | null | undefined): boolean {
+  return `${name} ${model ?? ""}`.toLowerCase().includes("pump");
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -388,6 +397,40 @@ export function IrrigationClient({
   );
   const nextRun = useMemo(() => computeNextRun(schedules), [schedules]);
 
+  // ── Pumpe / Durchlauf (Live) ─────────────────────────────────────────────────
+  // Pumpe(n) heuristisch erkennen; die restlichen bewaessernden Zonen zaehlen als
+  // Verbraucher fuer den geschaetzten Durchfluss der Pumpe.
+  const pumpZone = zoneList.find((z) => isPumpZone(z.name, statuses[z.id]?.modelType));
+  const wateringZones = zoneList.filter((z) => statuses[z.id]?.watering);
+  const consumerZones = wateringZones.filter((z) => z.id !== pumpZone?.id);
+  const running = wateringZones.length > 0;
+  // Verbraucher = offene Ventile; laeuft nur die Pumpe selbst, zaehlt sie als 1.
+  const consumerCount = consumerZones.length > 0 ? consumerZones.length : wateringZones.length;
+  const flowLpm = running ? consumerCount * ASSUMED_FLOW_L_PER_MIN : 0;
+
+  const [pumpRun, setPumpRun] = useState<{ elapsed: number; liters: number }>({ elapsed: 0, liters: 0 });
+  const runningRef = useRef(false);
+  const flowRef = useRef(0);
+  const runStartRef = useRef<number | null>(null);
+  const litersRef = useRef(0);
+  runningRef.current = running;
+  flowRef.current = flowLpm;
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (runningRef.current) {
+        if (runStartRef.current == null) { runStartRef.current = Date.now(); litersRef.current = 0; }
+        litersRef.current += flowRef.current / 60; // pro Sekunde
+        setPumpRun({ elapsed: Math.round((Date.now() - runStartRef.current) / 1000), liters: litersRef.current });
+      } else if (runStartRef.current != null) {
+        runStartRef.current = null;
+        litersRef.current = 0;
+        setPumpRun({ elapsed: 0, liters: 0 });
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
   // ── Nicht verbunden / keine Zonen ────────────────────────────────────────────
   if (!connected || zoneList.length === 0) {
     return (
@@ -534,6 +577,18 @@ export function IrrigationClient({
         <StatCard icon={Clock} label="Nächste Bewässerung" value={nextRun ? fmtNext(nextRun.when) : "—"} hint={nextRun?.label ?? "kein Zeitplan"} accent="text-indigo-600" />
       </div>
 
+      {/* Pumpe / Durchlauf */}
+      <PumpPanel
+        running={running}
+        flowLpm={flowLpm}
+        elapsed={pumpRun.elapsed}
+        liters={pumpRun.liters}
+        activeCount={consumerCount}
+        totalZones={controllableIds.length}
+        pumpName={pumpZone?.name ?? null}
+        pumpStatus={pumpZone ? statuses[pumpZone.id] : undefined}
+      />
+
       {/* Zonen */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -630,6 +685,113 @@ function StatCard({ icon: Icon, label, value, hint, accent }: {
         <p className="text-xs text-slate-400 mt-0.5 truncate">{hint}</p>
       </CardContent>
     </Card>
+  );
+}
+
+// ── Pumpe / Durchlauf ────────────────────────────────────────────────────────
+
+function PumpPanel({ running, flowLpm, elapsed, liters, activeCount, totalZones, pumpName, pumpStatus }: {
+  running: boolean; flowLpm: number; elapsed: number; liters: number;
+  activeCount: number; totalZones: number; pumpName: string | null; pumpStatus?: ZoneStatus;
+}) {
+  const online = pumpStatus?.online;
+  const battery = pumpStatus?.batteryLevel ?? null;
+
+  return (
+    <Card className={cn(
+      "border-slate-200 dark:border-slate-800 overflow-hidden transition-shadow",
+      running && "ring-2 ring-sky-400/60 dark:ring-sky-500/50",
+    )}>
+      <CardContent className="p-4 space-y-4">
+        {/* Kopf */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={cn(
+              "h-9 w-9 rounded-lg flex items-center justify-center shrink-0",
+              running ? "bg-sky-100 dark:bg-sky-900/40" : "bg-slate-100 dark:bg-slate-800",
+            )}>
+              <Activity className={cn("h-5 w-5", running ? "text-sky-600 animate-pulse" : "text-slate-400")} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                {pumpName ?? "Pumpe · Durchlauf"}
+              </p>
+              <p className="text-xs text-slate-400">
+                {running ? `${activeCount} Zone${activeCount === 1 ? "" : "n"} aktiv` : "Bereit"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {online != null && (
+              online ? (
+                <Badge variant="outline" className="text-[10px] gap-1 border-emerald-200 text-emerald-600 dark:border-emerald-900/50">
+                  <Wifi className="h-3 w-3" /> Online
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] gap-1 border-slate-200 text-slate-400">
+                  <WifiOff className="h-3 w-3" /> Offline
+                </Badge>
+              )
+            )}
+            {battery != null && (
+              <span className={cn("text-[10px] flex items-center gap-0.5", battery <= 20 ? "text-rose-500" : "text-slate-400")}>
+                {battery <= 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />} {battery}%
+              </span>
+            )}
+            <span className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+              running
+                ? "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+            )}>
+              {running ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
+                </span>
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-slate-400" />
+              )}
+              {running ? "Läuft" : "Aus"}
+            </span>
+          </div>
+        </div>
+
+        {/* Live-Kennzahlen */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <PumpMetric icon={Waves} accent="text-sky-600" label="Durchfluss" value={running ? `${flowLpm}` : "0"} unit="L/min" />
+          <PumpMetric icon={Timer} accent="text-indigo-600" label="Laufzeit" value={fmtCountdown(elapsed)} unit="min" />
+          <PumpMetric icon={Droplet} accent="text-teal-600" label="Durchlauf" value={fmtLiters(liters)} unit="" />
+          <PumpMetric icon={Droplets} accent="text-emerald-600" label="Aktive Zonen" value={`${activeCount}`} unit={`/ ${totalZones}`} />
+        </div>
+
+        {/* Fluss-Animation */}
+        <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+          {running && (
+            <div
+              className="h-full w-full animate-pump-flow"
+              style={{ backgroundImage: "repeating-linear-gradient(90deg, rgba(56,189,248,0.9) 0, rgba(56,189,248,0.9) 8px, rgba(16,185,129,0.7) 8px, rgba(16,185,129,0.7) 16px)" }}
+            />
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PumpMetric({ icon: Icon, accent, label, value, unit }: {
+  icon: React.ComponentType<{ className?: string }>; accent: string; label: string; value: string; unit: string;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
+      <div className="flex items-center gap-1.5 text-slate-500">
+        <Icon className={cn("h-3.5 w-3.5", accent)} />
+        <span className="text-[11px] font-medium">{label}</span>
+      </div>
+      <p className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums truncate">
+        {value}{unit && <span className="text-xs font-medium text-slate-400 ml-1">{unit}</span>}
+      </p>
+    </div>
   );
 }
 
