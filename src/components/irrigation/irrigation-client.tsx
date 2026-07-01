@@ -186,6 +186,18 @@ export function IrrigationClient({
     [zoneList],
   );
 
+  // Eine Zone gilt als Pumpe, wenn sie von einem Ventil als Pumpe zugeordnet ist
+  // ODER Name/Modell „pump" enthaelt. (Frueh definiert, da mehrere Callbacks
+  // Pumpen aus der Zonen-Sequenz ausschliessen.)
+  const pumpIdSet = useMemo(() => {
+    const s = new Set<number>();
+    for (const z of zoneList) {
+      if (z.pumpDeviceId) s.add(z.pumpDeviceId);
+      if (isPumpZone(z.name, statuses[z.id]?.modelType)) s.add(z.id);
+    }
+    return s;
+  }, [zoneList, statuses]);
+
   const flash = useCallback((type: "ok" | "err", msg: string) => {
     setBanner({ type, msg });
     setTimeout(() => setBanner(null), 4000);
@@ -261,7 +273,8 @@ export function IrrigationClient({
 
   // ── Smart-Run: Zonen nacheinander ───────────────────────────────────────────
   const startSmartRun = useCallback(async () => {
-    const queue = zoneList.filter((z) => z.serviceId && z.isActive && (statuses[z.id]?.online ?? true));
+    // Pumpen ueberspringen – sie schalten automatisch mit ihren Ventilen.
+    const queue = zoneList.filter((z) => z.serviceId && z.isActive && !pumpIdSet.has(z.id) && (statuses[z.id]?.online ?? true));
     if (queue.length === 0) { flash("err", "Keine steuerbaren Zonen online."); return; }
     const perZone = Math.max(1, recommendedMinutes(baseMinutes, recommendation) || baseMinutes);
 
@@ -298,17 +311,17 @@ export function IrrigationClient({
     setRun(null);
     fetchStatuses();
     flash(cancelled ? "err" : "ok", cancelled ? "Smart-Bewässerung gestoppt." : "Smart-Bewässerung abgeschlossen.");
-  }, [zoneList, statuses, baseMinutes, recommendation, sendAction, flash, fetchStatuses]);
+  }, [zoneList, statuses, baseMinutes, recommendation, sendAction, flash, fetchStatuses, pumpIdSet]);
 
   const stopSmartRun = useCallback(async () => {
     if (runToken.current) runToken.current.cancel = true;
     // Aktuelle Zone sofort schließen.
     const cur = run;
     if (cur) {
-      const zone = zoneList.filter((z) => z.serviceId && z.isActive)[cur.index];
+      const zone = zoneList.filter((z) => z.serviceId && z.isActive && !pumpIdSet.has(z.id))[cur.index];
       if (zone) { try { await sendAction(zone.id, "deactivate"); } catch { /* ignore */ } }
     }
-  }, [run, zoneList, sendAction]);
+  }, [run, zoneList, sendAction, pumpIdSet]);
 
   // Zone umbenennen (Device-Name).
   const renameZone = useCallback(async (id: number, name: string) => {
@@ -407,7 +420,6 @@ export function IrrigationClient({
   }, [flash]);
 
   // ── Abgeleitete Werte ────────────────────────────────────────────────────────
-  const onlineCount = controllableIds.filter((id) => statuses[id]?.online).length;
   const wateringCount = controllableIds.filter((id) => statuses[id]?.watering).length;
   const activeSchedules = schedules.filter((s) => s.isActive).length;
   const weeklyLiters = useMemo(
@@ -417,17 +429,6 @@ export function IrrigationClient({
   const nextRun = useMemo(() => computeNextRun(schedules), [schedules]);
 
   // ── Pumpe / Durchlauf (Live) ─────────────────────────────────────────────────
-  // Eine Zone gilt als Pumpe, wenn sie von einem Ventil als Pumpe zugeordnet ist
-  // ODER Name/Modell „pump" enthaelt. Zuordnung hat Vorrang.
-  const pumpIdSet = useMemo(() => {
-    const s = new Set<number>();
-    for (const z of zoneList) {
-      if (z.pumpDeviceId) s.add(z.pumpDeviceId);
-      if (isPumpZone(z.name, statuses[z.id]?.modelType)) s.add(z.id);
-    }
-    return s;
-  }, [zoneList, statuses]);
-
   // Kandidaten fuer die Pumpen-Zuordnung: erkannte/zugeordnete Pumpen, sonst alle
   // Zonen (damit die Zuordnung auch ohne passende Benennung funktioniert).
   const pumpCandidates = useMemo(() => {
@@ -435,33 +436,51 @@ export function IrrigationClient({
     return detected.length > 0 ? detected : zoneList;
   }, [zoneList, pumpIdSet]);
 
-  const pumpZone = zoneList.find((z) => pumpIdSet.has(z.id));
-  const wateringZones = zoneList.filter((z) => statuses[z.id]?.watering);
-  const consumerZones = wateringZones.filter((z) => !pumpIdSet.has(z.id));
-  const running = wateringZones.length > 0;
-  // Verbraucher = offene Ventile; laeuft nur die Pumpe selbst, zaehlt sie als 1.
-  const consumerCount = consumerZones.length > 0 ? consumerZones.length : wateringZones.length;
-  const flowLpm = running ? consumerCount * ASSUMED_FLOW_L_PER_MIN : 0;
+  // Pumpen (eigene Gruppen) und deren Ventile.
+  const pumps = useMemo(() => zoneList.filter((z) => pumpIdSet.has(z.id)), [zoneList, pumpIdSet]);
+  const unassignedValves = useMemo(
+    () => zoneList.filter((z) => !pumpIdSet.has(z.id) && !z.pumpDeviceId),
+    [zoneList, pumpIdSet],
+  );
 
-  const [pumpRun, setPumpRun] = useState<{ elapsed: number; liters: number }>({ elapsed: 0, liters: 0 });
-  const runningRef = useRef(false);
-  const flowRef = useRef(0);
-  const runStartRef = useRef<number | null>(null);
-  const litersRef = useRef(0);
-  runningRef.current = running;
-  flowRef.current = flowLpm;
+  // Per-Pumpe Live-Kennzahlen (Durchfluss aus aktiven zugeordneten Ventilen).
+  const pumpStats = useMemo(() => pumps.map((p) => {
+    const valves = zoneList.filter((z) => z.pumpDeviceId === p.id && !pumpIdSet.has(z.id));
+    const wateringValves = valves.filter((z) => statuses[z.id]?.watering);
+    const selfWatering = statuses[p.id]?.watering ?? false;
+    const running = wateringValves.length > 0 || selfWatering;
+    const consumerCount = wateringValves.length > 0 ? wateringValves.length : (running ? 1 : 0);
+    const flowLpm = running ? consumerCount * ASSUMED_FLOW_L_PER_MIN : 0;
+    return { pumpId: p.id, valves, running, consumerCount, flowLpm };
+  }), [pumps, zoneList, statuses, pumpIdSet]);
+
+  const pumpStatsRef = useRef(pumpStats);
+  pumpStatsRef.current = pumpStats;
+
+  const [pumpRuns, setPumpRuns] = useState<Record<number, { elapsed: number; liters: number }>>({});
+  const runStateRef = useRef<Record<number, { start: number | null; liters: number }>>({});
+  const hadRunningRef = useRef(false);
 
   useEffect(() => {
     const t = setInterval(() => {
-      if (runningRef.current) {
-        if (runStartRef.current == null) { runStartRef.current = Date.now(); litersRef.current = 0; }
-        litersRef.current += flowRef.current / 60; // pro Sekunde
-        setPumpRun({ elapsed: Math.round((Date.now() - runStartRef.current) / 1000), liters: litersRef.current });
-      } else if (runStartRef.current != null) {
-        runStartRef.current = null;
-        litersRef.current = 0;
-        setPumpRun({ elapsed: 0, liters: 0 });
+      const next: Record<number, { elapsed: number; liters: number }> = {};
+      let anyRunning = false;
+      for (const st of pumpStatsRef.current) {
+        const s = runStateRef.current[st.pumpId] ?? { start: null, liters: 0 };
+        if (st.running) {
+          anyRunning = true;
+          if (s.start == null) { s.start = Date.now(); s.liters = 0; }
+          s.liters += st.flowLpm / 60; // pro Sekunde
+          next[st.pumpId] = { elapsed: Math.round((Date.now() - s.start) / 1000), liters: s.liters };
+        } else {
+          if (s.start != null) { s.start = null; s.liters = 0; }
+          next[st.pumpId] = { elapsed: 0, liters: 0 };
+        }
+        runStateRef.current[st.pumpId] = s;
       }
+      // Nur rendern, wenn etwas laeuft oder gerade gestoppt wurde.
+      if (anyRunning || hadRunningRef.current) setPumpRuns(next);
+      hadRunningRef.current = anyRunning;
     }, 1000);
     return () => clearInterval(t);
   }, []);
@@ -606,53 +625,108 @@ export function IrrigationClient({
 
       {/* Statistik */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={Droplets} label="Zonen" value={`${zoneList.length}`} hint={`${onlineCount} online · ${wateringCount} aktiv`} accent="text-sky-600" />
+        <StatCard icon={Droplets} label="Ventile" value={`${zoneList.length - pumps.length}`} hint={`${pumps.length} Pumpe${pumps.length === 1 ? "" : "n"} · ${wateringCount} aktiv`} accent="text-sky-600" />
         <StatCard icon={CalendarDays} label="Aktive Zeitpläne" value={`${activeSchedules}`} hint={`${schedules.length} gesamt`} accent="text-emerald-600" />
         <StatCard icon={Gauge} label="Verbrauch / Woche" value={`${(weeklyLiters / 1000).toFixed(weeklyLiters >= 1000 ? 1 : 0)}${weeklyLiters >= 1000 ? " m³" : " L"}`} hint="geschätzt" accent="text-teal-600" />
         <StatCard icon={Clock} label="Nächste Bewässerung" value={nextRun ? fmtNext(nextRun.when) : "—"} hint={nextRun?.label ?? "kein Zeitplan"} accent="text-indigo-600" />
       </div>
 
-      {/* Pumpe / Durchlauf */}
-      <PumpPanel
-        running={running}
-        flowLpm={flowLpm}
-        elapsed={pumpRun.elapsed}
-        liters={pumpRun.liters}
-        activeCount={consumerCount}
-        totalZones={controllableIds.length}
-        pumpName={pumpZone?.name ?? null}
-        pumpStatus={pumpZone ? statuses[pumpZone.id] : undefined}
-      />
-
-      {/* Zonen */}
+      {/* Zonen nach Pumpe gruppiert */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-            <Droplets className="h-4 w-4" /> Zonen
+            <Droplets className="h-4 w-4" /> Bewässerung
           </h2>
           <Button variant="ghost" size="sm" onClick={fetchStatuses} disabled={statusLoading} className="text-slate-500">
             <RefreshCw className={cn("h-4 w-4 mr-1.5", statusLoading && "animate-spin")} /> Aktualisieren
           </Button>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {zoneList.map((zone) => (
-            <ZoneCard
-              key={zone.id}
-              zone={zone}
-              status={statuses[zone.id]}
-              duration={durations[zone.id] ?? 15}
-              recommended={recommendedMinutes(baseMinutes, recommendation)}
-              busy={!!busyZone[zone.id]}
-              disabled={!!run}
-              isPump={pumpIdSet.has(zone.id)}
-              pumpOptions={pumpCandidates.filter((p) => p.id !== zone.id)}
-              onDuration={(m) => setDurations((d) => ({ ...d, [zone.id]: m }))}
-              onStart={() => startZone(zone)}
-              onStop={() => stopZone(zone)}
-              onRename={(name) => renameZone(zone.id, name)}
-              onAssignPump={(pumpId) => assignPump(zone.id, pumpId)}
-            />
-          ))}
+
+        <div className="space-y-5">
+          {pumps.map((pump) => {
+            const st = pumpStats.find((s) => s.pumpId === pump.id);
+            const valves = st?.valves ?? [];
+            const pr = pumpRuns[pump.id] ?? { elapsed: 0, liters: 0 };
+            return (
+              <PumpGroup
+                key={pump.id}
+                pump={pump}
+                pumpStatus={statuses[pump.id]}
+                running={st?.running ?? false}
+                flowLpm={st?.flowLpm ?? 0}
+                elapsed={pr.elapsed}
+                liters={pr.liters}
+                consumerCount={st?.consumerCount ?? 0}
+                valveCount={valves.length}
+                duration={durations[pump.id] ?? 15}
+                busy={!!busyZone[pump.id]}
+                disabled={!!run}
+                onDuration={(m) => setDurations((d) => ({ ...d, [pump.id]: m }))}
+                onStart={() => startZone(pump)}
+                onStop={() => stopZone(pump)}
+                onRename={(name) => renameZone(pump.id, name)}
+              >
+                {valves.length === 0 ? (
+                  <p className="text-sm text-slate-400 col-span-full py-2">
+                    Noch keine Ventile zugeordnet – wähle in einer Ventil-Karte unten diese Pumpe aus.
+                  </p>
+                ) : (
+                  valves.map((zone) => (
+                    <ZoneCard
+                      key={zone.id}
+                      zone={zone}
+                      status={statuses[zone.id]}
+                      duration={durations[zone.id] ?? 15}
+                      recommended={recommendedMinutes(baseMinutes, recommendation)}
+                      busy={!!busyZone[zone.id]}
+                      disabled={!!run}
+                      isPump={false}
+                      pumpOptions={pumpCandidates.filter((p) => p.id !== zone.id)}
+                      onDuration={(m) => setDurations((d) => ({ ...d, [zone.id]: m }))}
+                      onStart={() => startZone(zone)}
+                      onStop={() => stopZone(zone)}
+                      onRename={(name) => renameZone(zone.id, name)}
+                      onAssignPump={(pumpId) => assignPump(zone.id, pumpId)}
+                    />
+                  ))
+                )}
+              </PumpGroup>
+            );
+          })}
+
+          {unassignedValves.length > 0 && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Droplet className="h-4 w-4 text-slate-400" />
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Ohne Pumpe</h3>
+                <span className="text-xs text-slate-400">{unassignedValves.length} Ventil{unassignedValves.length === 1 ? "" : "e"}</span>
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {unassignedValves.map((zone) => (
+                  <ZoneCard
+                    key={zone.id}
+                    zone={zone}
+                    status={statuses[zone.id]}
+                    duration={durations[zone.id] ?? 15}
+                    recommended={recommendedMinutes(baseMinutes, recommendation)}
+                    busy={!!busyZone[zone.id]}
+                    disabled={!!run}
+                    isPump={false}
+                    pumpOptions={pumpCandidates.filter((p) => p.id !== zone.id)}
+                    onDuration={(m) => setDurations((d) => ({ ...d, [zone.id]: m }))}
+                    onStart={() => startZone(zone)}
+                    onStop={() => stopZone(zone)}
+                    onRename={(name) => renameZone(zone.id, name)}
+                    onAssignPump={(pumpId) => assignPump(zone.id, pumpId)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pumps.length === 0 && unassignedValves.length === 0 && (
+            <p className="text-sm text-slate-400">Keine Zonen vorhanden.</p>
+          )}
         </div>
       </div>
 
@@ -726,23 +800,37 @@ function StatCard({ icon: Icon, label, value, hint, accent }: {
   );
 }
 
-// ── Pumpe / Durchlauf ────────────────────────────────────────────────────────
+// ── Pumpen-Gruppe (Pumpe + zugeordnete Ventile) ──────────────────────────────
 
-function PumpPanel({ running, flowLpm, elapsed, liters, activeCount, totalZones, pumpName, pumpStatus }: {
-  running: boolean; flowLpm: number; elapsed: number; liters: number;
-  activeCount: number; totalZones: number; pumpName: string | null; pumpStatus?: ZoneStatus;
+function PumpGroup({
+  pump, pumpStatus, running, flowLpm, elapsed, liters, consumerCount, valveCount,
+  duration, busy, disabled, onDuration, onStart, onStop, onRename, children,
+}: {
+  pump: Zone; pumpStatus?: ZoneStatus; running: boolean; flowLpm: number; elapsed: number;
+  liters: number; consumerCount: number; valveCount: number; duration: number; busy: boolean;
+  disabled: boolean; onDuration: (m: number) => void; onStart: () => void; onStop: () => void;
+  onRename: (name: string) => void; children: React.ReactNode;
 }) {
   const online = pumpStatus?.online;
   const battery = pumpStatus?.batteryLevel ?? null;
+  const watering = pumpStatus?.watering ?? false;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(pump.name);
+
+  const commitRename = () => {
+    setEditing(false);
+    if (draft.trim() && draft.trim() !== pump.name) onRename(draft.trim());
+    else setDraft(pump.name);
+  };
 
   return (
-    <Card className={cn(
-      "border-slate-200 dark:border-slate-800 overflow-hidden transition-shadow",
-      running && "ring-2 ring-sky-400/60 dark:ring-sky-500/50",
+    <section className={cn(
+      "rounded-xl border overflow-hidden transition-shadow",
+      running ? "border-sky-300 dark:border-sky-800 ring-1 ring-sky-400/40" : "border-slate-200 dark:border-slate-800",
     )}>
-      <CardContent className="p-4 space-y-4">
-        {/* Kopf */}
-        <div className="flex items-center justify-between gap-2">
+      {/* Pumpen-Kopf */}
+      <div className="bg-slate-50/70 dark:bg-slate-900/40 p-4 space-y-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className={cn(
               "h-9 w-9 rounded-lg flex items-center justify-center shrink-0",
@@ -751,11 +839,42 @@ function PumpPanel({ running, flowLpm, elapsed, liters, activeCount, totalZones,
               <Activity className={cn("h-5 w-5", running ? "text-sky-600 animate-pulse" : "text-slate-400")} />
             </div>
             <div className="min-w-0">
-              <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                {pumpName ?? "Pumpe · Durchlauf"}
-              </p>
-              <p className="text-xs text-slate-400">
-                {running ? `${activeCount} Zone${activeCount === 1 ? "" : "n"} aktiv` : "Bereit"}
+              {editing ? (
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={draft}
+                    autoFocus
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename();
+                      if (e.key === "Escape") { setEditing(false); setDraft(pump.name); }
+                    }}
+                    className="h-7 py-1 text-sm"
+                  />
+                  <button onClick={commitRename} className="text-emerald-600 hover:text-emerald-700 shrink-0" title="Speichern">
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => { setEditing(false); setDraft(pump.name); }} className="text-slate-400 hover:text-slate-600 shrink-0" title="Abbrechen">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="group/pname flex items-center gap-1.5">
+                  <p className="font-semibold text-slate-900 dark:text-slate-100 truncate">{pump.name}</p>
+                  <Badge variant="secondary" className="text-[10px] gap-1 shrink-0">
+                    <Activity className="h-3 w-3" /> Pumpe
+                  </Badge>
+                  <button
+                    onClick={() => { setDraft(pump.name); setEditing(true); }}
+                    className="opacity-0 group-hover/pname:opacity-100 transition-opacity text-slate-400 hover:text-slate-600 shrink-0"
+                    title="Umbenennen"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              <p className="text-xs text-slate-400 mt-0.5">
+                {running ? `${consumerCount} von ${valveCount} Ventil${valveCount === 1 ? "" : "en"} aktiv` : `${valveCount} Ventil${valveCount === 1 ? "" : "e"}`}
               </p>
             </div>
           </div>
@@ -800,7 +919,7 @@ function PumpPanel({ running, flowLpm, elapsed, liters, activeCount, totalZones,
           <PumpMetric icon={Waves} accent="text-sky-600" label="Durchfluss" value={running ? `${flowLpm}` : "0"} unit="L/min" />
           <PumpMetric icon={Timer} accent="text-indigo-600" label="Laufzeit" value={fmtCountdown(elapsed)} unit="min" />
           <PumpMetric icon={Droplet} accent="text-teal-600" label="Durchlauf" value={fmtLiters(liters)} unit="" />
-          <PumpMetric icon={Droplets} accent="text-emerald-600" label="Aktive Zonen" value={`${activeCount}`} unit={`/ ${totalZones}`} />
+          <PumpMetric icon={Droplets} accent="text-emerald-600" label="Aktive Ventile" value={`${consumerCount}`} unit={`/ ${valveCount}`} />
         </div>
 
         {/* Fluss-Animation */}
@@ -812,8 +931,46 @@ function PumpPanel({ running, flowLpm, elapsed, liters, activeCount, totalZones,
             />
           )}
         </div>
-      </CardContent>
-    </Card>
+
+        {/* Manuelle Pumpen-Steuerung */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-1">
+            {DURATION_PRESETS.map((d) => (
+              <button
+                key={d}
+                onClick={() => onDuration(d)}
+                disabled={disabled || watering}
+                className={cn(
+                  "px-2 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-50",
+                  duration === d
+                    ? "bg-sky-600 text-white"
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700",
+                )}
+              >
+                {d}′
+              </button>
+            ))}
+          </div>
+          {watering ? (
+            <Button onClick={onStop} disabled={busy || disabled} variant="destructive" size="sm" className="ml-auto">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Square className="h-4 w-4 mr-1.5" /> Pumpe stoppen</>}
+            </Button>
+          ) : (
+            <Button onClick={onStart} disabled={busy || disabled || !pump.serviceId} size="sm" className="ml-auto bg-sky-600 hover:bg-sky-700 text-white">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Play className="h-4 w-4 mr-1.5" /> {duration} Min laufen</>}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Zugeordnete Ventile */}
+      <div className="p-4">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Zugeordnete Ventile</p>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {children}
+        </div>
+      </div>
+    </section>
   );
 }
 
