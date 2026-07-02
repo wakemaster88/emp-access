@@ -18,7 +18,7 @@ import {
   Droplets, Droplet, CloudRain, Sun, Thermometer, Battery, BatteryLow,
   Wifi, WifiOff, Play, Square, Sparkles, Plus, Pencil, Trash2, Clock,
   CalendarDays, Gauge, Loader2, RefreshCw, CircleAlert, Sprout, CheckCircle2,
-  Check, X, Activity, Timer, Waves, ChevronUp, ChevronDown,
+  Check, X, Activity, Timer, Waves, ChevronUp, ChevronDown, BarChart3, History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Weather } from "@/lib/weather";
@@ -91,6 +91,40 @@ interface SmartRun {
   remainingSec: number;
 }
 
+interface IrrigationRunEntry {
+  id: number;
+  deviceId: number;
+  deviceName: string;
+  startedAt: string;
+  durationMinutes: number;
+  source: string;
+  sourceLabel: string;
+  litersEstimate: number | null;
+  scheduleId: number | null;
+}
+
+interface IrrigationDayStats {
+  date: string;
+  label: string;
+  totalMinutes: number;
+  totalLiters: number;
+  runCount: number;
+  valves: Array<{
+    deviceId: number;
+    deviceName: string;
+    totalMinutes: number;
+    totalLiters: number;
+    runCount: number;
+    runs: IrrigationRunEntry[];
+  }>;
+}
+
+interface IrrigationStatsResponse {
+  days: IrrigationDayStats[];
+  summary: { totalMinutes: number; totalLiters: number; runCount: number };
+  daysRequested: number;
+}
+
 // ── Konstanten / Helfer ────────────────────────────────────────────────────────
 
 const ASSUMED_FLOW_L_PER_MIN = 12;
@@ -126,6 +160,12 @@ function fmtCountdown(sec: number): string {
 
 function fmtLiters(l: number): string {
   return l >= 1000 ? `${(l / 1000).toFixed(2)} m³` : `${Math.round(l)} L`;
+}
+
+function fmtRunTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /** Heuristik: Ist die Zone/das Geraet eine Pumpe (Name oder Modell enthaelt „pump")? */
@@ -191,6 +231,11 @@ export function IrrigationClient({
   const [zoneList, setZoneList] = useState<Zone[]>(zones);
   const [sensors, setSensors] = useState<SoilSensor[]>([]);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
+
+  // Laufhistorie / Statistik
+  const [statsDays, setStatsDays] = useState(14);
+  const [stats, setStats] = useState<IrrigationStatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   // Smart-Run (sequenzielle Komplett-Bewässerung)
   const [baseMinutes, setBaseMinutes] = useState(15);
@@ -260,6 +305,20 @@ export function IrrigationClient({
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
+  const fetchStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const res = await fetch(`/api/irrigation/runs?days=${statsDays}`);
+      if (res.ok) setStats((await res.json()) as IrrigationStatsResponse);
+    } catch { /* optional */ } finally {
+      setStatsLoading(false);
+    }
+  }, [statsDays]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
   // Smart-Run bei Unmount abbrechen.
   useEffect(() => () => { if (runToken.current) runToken.current.cancel = true; }, []);
 
@@ -284,12 +343,13 @@ export function IrrigationClient({
       setStatuses((s) => ({ ...s, [zone.id]: { ...(s[zone.id] ?? emptyStatus(zone.id)), watering: true, activity: "MANUAL_WATERING" } }));
       flash("ok", `${zone.name}: Bewässerung für ${minutes} Min gestartet.`);
       setTimeout(fetchStatuses, 3000);
+      setTimeout(fetchStats, 3000);
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Fehler");
     } finally {
       setBusyZone((b) => ({ ...b, [zone.id]: false }));
     }
-  }, [durations, sendAction, flash, fetchStatuses]);
+  }, [durations, sendAction, flash, fetchStatuses, fetchStats]);
 
   const stopZone = useCallback(async (zone: Zone) => {
     setBusyZone((b) => ({ ...b, [zone.id]: true }));
@@ -344,8 +404,9 @@ export function IrrigationClient({
     runToken.current = null;
     setRun(null);
     fetchStatuses();
+    fetchStats();
     flash(cancelled ? "err" : "ok", cancelled ? "Smart-Bewässerung gestoppt." : "Smart-Bewässerung abgeschlossen.");
-  }, [zoneList, statuses, baseMinutes, recommendation, sendAction, flash, fetchStatuses, pumpIdSet]);
+  }, [zoneList, statuses, baseMinutes, recommendation, sendAction, flash, fetchStatuses, fetchStats, pumpIdSet]);
 
   const stopSmartRun = useCallback(async () => {
     if (runToken.current) runToken.current.cancel = true;
@@ -499,12 +560,13 @@ export function IrrigationClient({
           : `${s.deviceName}: ${s.durationMinutes} Min gestartet.`);
       }
       setTimeout(fetchStatuses, 3000);
+      setTimeout(fetchStats, 3000);
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Start fehlgeschlagen.");
     } finally {
       setBusySchedule((b) => ({ ...b, [s.id]: false }));
     }
-  }, [flash, fetchStatuses]);
+  }, [flash, fetchStatuses, fetchStats]);
 
   const stopScheduleDevice = useCallback(async (s: Schedule) => {
     setBusySchedule((b) => ({ ...b, [s.id]: true }));
@@ -894,6 +956,15 @@ export function IrrigationClient({
           Zeitpläne werden serverseitig automatisch ausgeführt (alle 5 Min geprüft). „Bei Regen aussetzen“ nutzt die Wetterprognose.
         </p>
       </div>
+
+      {/* Statistik / Laufhistorie */}
+      <IrrigationStatsPanel
+        stats={stats}
+        loading={statsLoading}
+        days={statsDays}
+        onDaysChange={setStatsDays}
+        onRefresh={fetchStats}
+      />
 
       {dialogOpen && (
         <ScheduleDialog
@@ -1493,6 +1564,132 @@ function fmtLastRun(iso: string): string {
   if (d.toDateString() === now.toDateString()) return `Heute ${time}`;
   if (d.toDateString() === yest.toDateString()) return `Gestern ${time}`;
   return `${d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })} ${time}`;
+}
+
+// ── Statistik (Laufhistorie) ─────────────────────────────────────────────────
+
+function IrrigationStatsPanel({
+  stats, loading, days, onDaysChange, onRefresh,
+}: {
+  stats: IrrigationStatsResponse | null;
+  loading: boolean;
+  days: number;
+  onDaysChange: (d: number) => void;
+  onRefresh: () => void;
+}) {
+  const dayOptions = [7, 14, 30] as const;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+          <BarChart3 className="h-4 w-4" /> Statistik
+        </h2>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+            {dayOptions.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => onDaysChange(d)}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-medium transition-colors",
+                  days === d
+                    ? "bg-sky-600 text-white"
+                    : "bg-white dark:bg-slate-900 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800",
+                )}
+              >
+                {d} Tage
+              </button>
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} className="text-slate-500">
+            <RefreshCw className={cn("h-4 w-4 mr-1.5", loading && "animate-spin")} /> Aktualisieren
+          </Button>
+        </div>
+      </div>
+
+      <Card className="border-slate-200 dark:border-slate-800">
+        <CardContent className="p-0">
+          {loading && !stats ? (
+            <div className="p-8 flex items-center justify-center text-sm text-slate-400 gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Statistik wird geladen…
+            </div>
+          ) : !stats || stats.summary.runCount === 0 ? (
+            <div className="p-8 text-center">
+              <History className="h-10 w-10 mx-auto text-slate-300 mb-3" />
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Noch keine Läufe im gewählten Zeitraum</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                Ab jetzt werden alle Bewässerungen (Zeitplan, „Jetzt“ und manuelle Starts) automatisch protokolliert.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/30 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                <span className="text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold tabular-nums">{stats.summary.totalMinutes}</span> Min gesamt
+                </span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold tabular-nums">{fmtLiters(stats.summary.totalLiters)}</span> geschätzt
+                </span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold tabular-nums">{stats.summary.runCount}</span> Läufe
+                </span>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {stats.days.map((day) => (
+                  <div key={day.date} className="p-4">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{day.label}</p>
+                      <span className="text-xs text-slate-400 tabular-nums">
+                        {day.totalMinutes} Min · {fmtLiters(day.totalLiters)} · {day.runCount} Läufe
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {day.valves.map((valve) => (
+                        <div key={valve.deviceId} className="rounded-lg border border-slate-100 dark:border-slate-800 overflow-hidden">
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50/50 dark:bg-slate-900/20">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Droplets className="h-4 w-4 text-sky-500 shrink-0" />
+                              <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{valve.deviceName}</span>
+                            </div>
+                            <span className="text-xs font-semibold text-sky-700 dark:text-sky-300 tabular-nums shrink-0">
+                              {valve.totalMinutes} Min
+                              {valve.runCount > 1 && ` (${valve.runCount}×)`}
+                            </span>
+                          </div>
+                          <ul className="divide-y divide-slate-50 dark:divide-slate-800/80">
+                            {valve.runs.map((run) => (
+                              <li key={run.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs text-slate-500">
+                                <span className="tabular-nums">{fmtRunTime(run.startedAt)}</span>
+                                <span className="flex items-center gap-2">
+                                  <span className="tabular-nums font-medium text-slate-700 dark:text-slate-300">{run.durationMinutes} Min</span>
+                                  {run.litersEstimate != null && (
+                                    <span className="text-slate-400">· {fmtLiters(run.litersEstimate)}</span>
+                                  )}
+                                  <Badge variant="outline" className="text-[10px] h-5 px-1.5">{run.sourceLabel}</Badge>
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+      <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5">
+        <History className="h-3.5 w-3.5" />
+        Verbrauch geschätzt aus Durchflussrate (L/min) der Zone, sonst 12 L/min Standard.
+      </p>
+    </div>
+  );
 }
 
 // ── Zeitplan-Dialog ──────────────────────────────────────────────────────────

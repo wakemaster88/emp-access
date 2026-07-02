@@ -93,6 +93,7 @@ model Account {
   slotBlocks      SlotBlock[]
   lostItems       LostItem[]
   irrigationSchedules IrrigationSchedule[]
+  irrigationRuns  IrrigationRun[]
 }
 
 model Admin {
@@ -159,6 +160,7 @@ model Device {
   scans           Scan[]
   groupMembers    ShellyGroupMember[]
   irrigationSchedules IrrigationSchedule[]
+  irrigationRuns      IrrigationRun[]
   /// Tickets, die diesem Geraet direkt zugewiesen sind (additiv zu Bereichen).
   /// Wird vor allem fuer Mitarbeiter verwendet, die ohne Bereich-Zugehoerigkeit
   /// nur ein einzelnes Geraet bedienen sollen.
@@ -948,9 +950,33 @@ model IrrigationSchedule {
   lastRunAt       DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  runs            IrrigationRun[]
 
   @@index([accountId, isActive])
   @@index([deviceId])
+}
+
+/// Protokolliert jeden erfolgreichen Bewässerungs-Lauf eines Ventils (Dauer,
+/// Quelle, geschaetzter Verbrauch). Basis fuer die Statistik-Ansicht.
+model IrrigationRun {
+  id              Int                 @id @default(autoincrement())
+  accountId       Int
+  account         Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceId        Int
+  device          Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  scheduleId      Int?
+  schedule        IrrigationSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  startedAt       DateTime            @default(now())
+  /// Geplante Laufzeit in Minuten (wie an GARDENA gesendet).
+  durationMinutes Int
+  /// "schedule" = Cron-Zeitplan, "schedule_now" = Zeitplan „Jetzt", "manual" = UI-Knopf/Smart-Run
+  source          String
+  /// Geschaetzter Verbrauch in Liter (flowLpm × Minuten), null wenn unbekannt.
+  litersEstimate  Float?
+
+  @@index([accountId, startedAt])
+  @@index([deviceId, startedAt])
+  @@index([scheduleId])
 }
 
 model ShellyAutomationRun {

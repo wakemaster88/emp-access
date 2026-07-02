@@ -10,6 +10,7 @@
 import { prisma } from "@/lib/prisma";
 import { getWeather, WEATHER_PAST_DAYS, type Weather } from "@/lib/weather";
 import { gardenaControlValve, gardenaListSensors } from "@/lib/gardena";
+import { logIrrigationRun, type IrrigationRunSource } from "@/lib/irrigation-run-log";
 
 // Angenommener Durchfluss pro Ventil/Zone (Liter pro Minute), falls die Zone
 // keine eigene Durchflussrate (`Device.flowLpm`) gepflegt hat.
@@ -281,6 +282,8 @@ export interface RunStep {
 
 export interface RunState {
   startedAt: string;
+  /// Quelle des Plans (bleibt ueber alle Sequenz-Schritte gleich).
+  source?: IrrigationRunSource;
   steps: RunStep[];
 }
 
@@ -426,14 +429,18 @@ async function loadZoneMeta(valveIds: number[]): Promise<Map<number, ZoneMeta>> 
 }
 
 /** Baut den Sequenz-Plan: Ventile nacheinander, jedes mit eigener Dauer. */
-function buildRunState(now: Date, valves: Array<{ deviceId: number; minutes: number }>): RunState {
+function buildRunState(
+  now: Date,
+  valves: Array<{ deviceId: number; minutes: number }>,
+  source: IrrigationRunSource,
+): RunState {
   let offset = 0;
   const steps: RunStep[] = valves.map(({ deviceId, minutes }) => {
     const step = { deviceId, minutes, offsetMin: offset };
     offset += minutes;
     return step;
   });
-  return { startedAt: now.toISOString(), steps };
+  return { startedAt: now.toISOString(), source, steps };
 }
 
 interface PumpRef { serviceId: string | null; configId: number | null; accountId: number }
@@ -459,9 +466,10 @@ async function executeDueSteps(
   if (due.length > 0) {
     const devices = await prisma.device.findMany({
       where: { id: { in: due.map((d) => d.deviceId) } },
-      select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true },
+      select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, flowLpm: true },
     });
     const byId = new Map(devices.map((d) => [d.id, d]));
+    const runSource = state.source ?? "schedule";
 
     for (const step of due) {
       step.startedAt = now.toISOString();
@@ -471,7 +479,18 @@ async function executeDueSteps(
       if (!creds) continue;
       const seconds = step.minutes * 60;
       const res = await gardenaControlValve(creds.key, creds.secret, dev.gardenaServiceId, "open", seconds);
-      if (res.ok) startedNames.push(dev.name);
+      if (res.ok) {
+        startedNames.push(dev.name);
+        await logIrrigationRun({
+          accountId: dev.accountId,
+          deviceId: dev.id,
+          durationMinutes: step.minutes,
+          source: runSource,
+          scheduleId,
+          flowLpm: dev.flowLpm,
+          startedAt: now,
+        });
+      }
       // Pumpe fuer die Schrittdauer mitstarten (best effort).
       if (pump?.serviceId) {
         const pumpCreds = await ctx.credsForDevice(pump.accountId, pump.configId);
@@ -540,6 +559,7 @@ export async function startScheduleRun(
         deviceId,
         minutes: minutesForValve(smart, s.durationMinutes, zoneMeta.get(deviceId)),
       })),
+      "schedule_now",
     );
     const pump: PumpRef = {
       serviceId: s.device.gardenaServiceId,
@@ -554,6 +574,17 @@ export async function startScheduleRun(
   if (!s.device.gardenaServiceId || !deviceCreds) return { ok: false, error: "Keine GARDENA-Zugangsdaten" };
   const minutes = minutesForValve(smart, s.durationMinutes, s.device);
   const res = await gardenaControlValve(deviceCreds.key, deviceCreds.secret, s.device.gardenaServiceId, "open", minutes * 60);
+  if (res.ok) {
+    await logIrrigationRun({
+      accountId: s.account.id,
+      deviceId: s.device.id,
+      durationMinutes: minutes,
+      source: "schedule_now",
+      scheduleId: s.id,
+      flowLpm: s.device.flowLpm,
+      startedAt: now,
+    });
+  }
   if (s.device.pump?.gardenaServiceId) {
     const pumpCreds = await ctx.credsForDevice(s.account.id, s.device.pump.gardenaConfigId);
     if (pumpCreds) {
@@ -708,7 +739,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
         deviceId,
         minutes: minutesForValve(smart, s.durationMinutes, zoneMeta.get(deviceId)),
       }));
-      const state = buildRunState(now, stepMinutes);
+      const state = buildRunState(now, stepMinutes, "schedule");
       const pump: PumpRef = {
         serviceId: s.device.gardenaServiceId,
         configId: s.device.gardenaConfigId,
@@ -737,11 +768,21 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
       continue;
     }
 
-    const seconds = minutesForValve(smart, s.durationMinutes, s.device) * 60;
+    const runMinutes = minutesForValve(smart, s.durationMinutes, s.device);
+    const seconds = runMinutes * 60;
     const res = await gardenaControlValve(
       deviceCreds.key, deviceCreds.secret, s.device.gardenaServiceId, "open", seconds,
     );
     if (res.ok) {
+      await logIrrigationRun({
+        accountId: s.account.id,
+        deviceId: s.device.id,
+        durationMinutes: runMinutes,
+        source: "schedule",
+        scheduleId: s.id,
+        flowLpm: s.device.flowLpm,
+        startedAt: now,
+      });
       // Zugeordnete Pumpe fuer die gleiche Laufzeit mitstarten (best effort).
       const pump = s.device.pump;
       if (pump?.gardenaServiceId) {

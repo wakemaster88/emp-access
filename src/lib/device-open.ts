@@ -1,5 +1,6 @@
 import { nukiAction, NUKI_ACTION } from "./nuki";
 import { gardenaControlValve, gardenaStatusMap } from "./gardena";
+import { logIrrigationRun } from "./irrigation-run-log";
 
 // Standard-Bewässerungsdauer (Sekunden), falls beim Öffnen keine Dauer
 // mitgegeben wird (z. B. Auslösung über den Public-Checkin-Monitor).
@@ -108,6 +109,7 @@ interface DeviceForAction {
   /// Optionale Pumpe (Device-ID), die beim Aktivieren dieses Ventils mitgeschaltet
   /// wird.
   pumpDeviceId?: number | null;
+  flowLpm?: number | null;
 }
 
 /** Optionale Parameter fuer einzelne Aktionen (z. B. GARDENA-Bewässerungsdauer). */
@@ -244,6 +246,15 @@ export async function triggerDeviceAction(
       try {
         await syncPumpForValve(db, accountId, device.id, device.pumpDeviceId, start, seconds);
       } catch { /* Pumpe optional – Ventil-Aktion nicht blockieren */ }
+    }
+    if (start && res.ok) {
+      await logIrrigationRun({
+        accountId,
+        deviceId: device.id,
+        durationMinutes: Math.round(seconds / 60),
+        source: "manual",
+        flowLpm: device.flowLpm ?? null,
+      });
     }
     return { task, sent: res.ok };
   }
