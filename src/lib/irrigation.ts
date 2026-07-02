@@ -8,12 +8,15 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { getWeather, type Weather } from "@/lib/weather";
+import { getWeather, WEATHER_PAST_DAYS, type Weather } from "@/lib/weather";
 import { gardenaControlValve, gardenaListSensors } from "@/lib/gardena";
 
-// Angenommener Durchfluss pro Ventil/Zone (Liter pro Minute). GARDENA liefert
-// keine Durchflussdaten – dies ist eine grobe Schätzung fuer die Statistik.
+// Angenommener Durchfluss pro Ventil/Zone (Liter pro Minute), falls die Zone
+// keine eigene Durchflussrate (`Device.flowLpm`) gepflegt hat.
 export const ASSUMED_FLOW_L_PER_MIN = 12;
+
+// Referenz-Verdunstung fuer den Fallback-Faktor (typischer Sommertag, mm/Tag).
+const ET0_REF_MM_PER_DAY = 4;
 
 // ── Empfehlung ──────────────────────────────────────────────────────────────
 
@@ -88,6 +91,24 @@ export function getIrrigationRecommendation(weather: Weather | null): Irrigation
 export function recommendedMinutes(base: number, rec: IrrigationRecommendation): number {
   if (!rec.shouldWater) return 0;
   return Math.min(90, Math.max(5, Math.round(base * rec.factor)));
+}
+
+// ── Wasserbilanz (ET₀ − Regen) ──────────────────────────────────────────────
+
+/**
+ * Wasserdefizit in mm ueber die letzten `windowDays` Tage (inkl. heute):
+ * Summe der Referenz-Verdunstung (FAO ET₀) minus gefallener/erwarteter Regen.
+ * 1 mm Defizit = 1 Liter pro m². Gibt null zurueck, wenn keine ET₀-Daten
+ * vorliegen. Ergebnis auf 0–30 mm begrenzt (Schutz vor Extremwerten).
+ */
+export function waterDeficitMm(weather: Weather | null, windowDays: number): number | null {
+  if (!weather || weather.et0Today == null) return null;
+  let deficit = weather.et0Today - (weather.precipSumToday ?? 0);
+  const pastDays = Math.min(Math.max(0, windowDays - 1), weather.et0Past.length);
+  for (let i = 0; i < pastDays; i++) {
+    deficit += (weather.et0Past[i] ?? 0) - (weather.precipPast[i] ?? 0);
+  }
+  return Math.min(30, Math.max(0, Math.round(deficit * 10) / 10));
 }
 
 // ── Bodenfeuchte-Anpassung ──────────────────────────────────────────────────
@@ -275,18 +296,43 @@ interface ScheduleForSmart {
   skipOnRain: boolean;
   sensorServiceId: string | null;
   moistureThresholdPct: number | null;
+  lastRunAt: Date | null;
+  daysOfWeek: number;
 }
 
 interface SmartOutcome {
   skip: "rain" | "moisture" | null;
+  /// Gesamt-Faktor auf die Basisdauer (Fallback ohne Zonen-Stammdaten).
   factor: number;
+  /// Wasserdefizit in mm seit dem letzten Lauf (nur bei smartRain + ET₀-Daten).
+  deficitMm: number | null;
+  /// Feuchte-Faktor separat – wird auch auf die exakte Bilanz-Dauer angewendet.
+  moistureFactor: number;
   reason?: string;
 }
 
 /**
- * Kombiniert Regen- und Feuchte-Intelligenz zu einem Dauer-Faktor bzw. Skip:
+ * Bilanz-Fenster in Tagen: Zeit seit dem letzten Lauf, sonst aus der
+ * Wochentags-Frequenz geschaetzt. Begrenzt auf die verfuegbaren Wetterdaten
+ * (heute + WEATHER_PAST_DAYS Vortage).
+ */
+function smartWindowDays(s: { lastRunAt: Date | null; daysOfWeek: number }, now: Date): number {
+  const maxWindow = WEATHER_PAST_DAYS + 1;
+  if (s.lastRunAt) {
+    const days = Math.round((now.getTime() - s.lastRunAt.getTime()) / 86_400_000);
+    return Math.min(maxWindow, Math.max(1, days));
+  }
+  const runsPerWeek = bitCount(s.daysOfWeek) || 1;
+  return Math.min(maxWindow, Math.max(1, Math.round(7 / runsPerWeek)));
+}
+
+/**
+ * Kombiniert Regen-, Bilanz- und Feuchte-Intelligenz zu einem Skip bzw.
+ * Dauer-Parametern:
  *  - skipOnRain: deutlicher Regen → aussetzen
- *  - smartRain:  Wetter-Faktor (heiss → laenger, Regenrisiko → kuerzer)
+ *  - smartRain:  Wasserbilanz (ET₀ − Regen seit letztem Lauf). Defizit ≈ 0 →
+ *    aussetzen; sonst Defizit in mm fuer die exakte Dauer-Berechnung bzw.
+ *    Fallback-Faktor relativ zu einem typischen Sommertag.
  *  - Sensor:     Boden feucht genug → aussetzen, sonst Feuchte-Faktor
  */
 async function computeSmartOutcome(
@@ -294,18 +340,36 @@ async function computeSmartOutcome(
   account: { id: number; latitude: number | null; longitude: number | null },
   deviceCreds: GardenaCreds | null,
   ctx: TickCtx,
+  now: Date,
 ): Promise<SmartOutcome> {
-  let factor = 1;
+  let rainFactor = 1;
+  let moistureFactor = 1;
+  let deficitMm: number | null = null;
   const notes: string[] = [];
 
   if (s.skipOnRain || s.smartRain) {
     const weather = await ctx.accountWeather(account.id, account.latitude, account.longitude);
     const rec = getIrrigationRecommendation(weather);
     if (!rec.shouldWater) {
-      if (s.skipOnRain || s.smartRain) return { skip: "rain", factor: 0, reason: rec.reason };
-    } else if (s.smartRain && rec.factor !== 1) {
-      factor *= rec.factor;
-      notes.push(rec.reason);
+      return { skip: "rain", factor: 0, deficitMm: null, moistureFactor: 0, reason: rec.reason };
+    }
+    if (s.smartRain) {
+      const windowDays = smartWindowDays(s, now);
+      deficitMm = waterDeficitMm(weather, windowDays);
+      if (deficitMm != null) {
+        if (deficitMm < 1) {
+          return {
+            skip: "rain", factor: 0, deficitMm, moistureFactor: 0,
+            reason: `Wasserbilanz ausgeglichen (Defizit ${deficitMm} mm über ${windowDays} Tag(e)) – Bewässerung nicht nötig.`,
+          };
+        }
+        rainFactor = Math.min(1.5, Math.max(0.3, deficitMm / (ET0_REF_MM_PER_DAY * windowDays)));
+        notes.push(`Wasserdefizit ${deficitMm} mm über ${windowDays} Tag(e) (ET₀ − Regen).`);
+      } else if (rec.factor !== 1) {
+        // Keine ET₀-Daten → grobe Wetter-Heuristik als Fallback.
+        rainFactor = rec.factor;
+        notes.push(rec.reason);
+      }
     }
   }
 
@@ -313,28 +377,60 @@ async function computeSmartOutcome(
     const humidity = await ctx.sensorHumidity(deviceCreds, s.sensorServiceId);
     if (humidity != null) {
       const adj = moistureAdjustment(humidity, s.moistureThresholdPct);
-      if (adj.skip) return { skip: "moisture", factor: 0, reason: adj.reason };
+      if (adj.skip) return { skip: "moisture", factor: 0, deficitMm, moistureFactor: 0, reason: adj.reason };
       if (adj.factor !== 1) {
-        factor *= adj.factor;
+        moistureFactor = adj.factor;
         notes.push(adj.reason);
       }
     }
     // Sensor nicht erreichbar/kein Wert → normal bewaessern (fail-open).
   }
 
-  return { skip: null, factor, reason: notes.length ? notes.join(" ") : undefined };
+  return {
+    skip: null,
+    factor: rainFactor * moistureFactor,
+    deficitMm,
+    moistureFactor,
+    reason: notes.length ? notes.join(" ") : undefined,
+  };
 }
 
 function clampRunMinutes(minutes: number): number {
   return Math.min(180, Math.max(1, Math.round(minutes)));
 }
 
-/** Baut den Sequenz-Plan: Ventile nacheinander, je `minutes` Minuten. */
-function buildRunState(now: Date, valveIds: number[], minutesPerValve: number): RunState {
+interface ZoneMeta { areaSqm: number | null; flowLpm: number | null }
+
+/**
+ * Dauer fuer ein Ventil in Minuten:
+ *  - Mit Wasserdefizit + Zonen-Stammdaten (Flaeche, Durchsatz) exakt:
+ *    Liter = Defizit (mm) × Flaeche (m²); Minuten = Liter ÷ Durchsatz (L/min),
+ *    Feuchte-Faktor obendrauf, begrenzt auf 5–120 Min.
+ *  - Sonst Basisdauer × Smart-Faktor (1–180 Min).
+ */
+function minutesForValve(smart: SmartOutcome, baseMinutes: number, zone: ZoneMeta | undefined): number {
+  if (smart.deficitMm != null && zone?.areaSqm && zone?.flowLpm) {
+    const liters = smart.deficitMm * zone.areaSqm;
+    return Math.min(120, Math.max(5, Math.round((liters / zone.flowLpm) * smart.moistureFactor)));
+  }
+  return clampRunMinutes(baseMinutes * smart.factor);
+}
+
+/** Zonen-Stammdaten (Flaeche/Durchsatz) fuer eine Menge von Ventilen. */
+async function loadZoneMeta(valveIds: number[]): Promise<Map<number, ZoneMeta>> {
+  const devices = await prisma.device.findMany({
+    where: { id: { in: valveIds } },
+    select: { id: true, areaSqm: true, flowLpm: true },
+  });
+  return new Map(devices.map((d) => [d.id, { areaSqm: d.areaSqm, flowLpm: d.flowLpm }]));
+}
+
+/** Baut den Sequenz-Plan: Ventile nacheinander, jedes mit eigener Dauer. */
+function buildRunState(now: Date, valves: Array<{ deviceId: number; minutes: number }>): RunState {
   let offset = 0;
-  const steps: RunStep[] = valveIds.map((deviceId) => {
-    const step = { deviceId, minutes: minutesPerValve, offsetMin: offset };
-    offset += minutesPerValve;
+  const steps: RunStep[] = valves.map(({ deviceId, minutes }) => {
+    const step = { deviceId, minutes, offsetMin: offset };
+    offset += minutes;
     return step;
   });
   return { startedAt: now.toISOString(), steps };
@@ -421,7 +517,7 @@ export async function startScheduleRun(
   const s = await prisma.irrigationSchedule.findFirst({
     where: { id: scheduleId, accountId },
     include: {
-      device: { select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, pump: { select: { gardenaServiceId: true, gardenaConfigId: true } } } },
+      device: { select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, areaSqm: true, flowLpm: true, pump: { select: { gardenaServiceId: true, gardenaConfigId: true } } } },
       account: { select: { id: true, latitude: true, longitude: true, timezone: true } },
     },
   });
@@ -430,15 +526,21 @@ export async function startScheduleRun(
   const ctx = createTickCtx();
   const now = new Date();
   const deviceCreds = await ctx.credsForDevice(s.account.id, s.device.gardenaConfigId);
-  const smart = await computeSmartOutcome(s, s.account, deviceCreds, ctx);
+  const smart = await computeSmartOutcome(s, s.account, deviceCreds, ctx, now);
   if (smart.skip) return { ok: true, skipped: smart.reason ?? "Smart-Check: ausgesetzt" };
 
-  const minutes = clampRunMinutes(s.durationMinutes * smart.factor);
   const sequence = parseValveSequence(s.valveSequence);
 
   if (sequence) {
-    // deviceId = Pumpe; Ventile laufen nacheinander.
-    const state = buildRunState(now, sequence, minutes);
+    // deviceId = Pumpe; Ventile laufen nacheinander, jedes mit eigener Dauer.
+    const zoneMeta = await loadZoneMeta(sequence);
+    const state = buildRunState(
+      now,
+      sequence.map((deviceId) => ({
+        deviceId,
+        minutes: minutesForValve(smart, s.durationMinutes, zoneMeta.get(deviceId)),
+      })),
+    );
     const pump: PumpRef = {
       serviceId: s.device.gardenaServiceId,
       configId: s.device.gardenaConfigId,
@@ -450,6 +552,7 @@ export async function startScheduleRun(
 
   // Einzel-Ventil (Legacy): direkt oeffnen, Pumpe mitschalten.
   if (!s.device.gardenaServiceId || !deviceCreds) return { ok: false, error: "Keine GARDENA-Zugangsdaten" };
+  const minutes = minutesForValve(smart, s.durationMinutes, s.device);
   const res = await gardenaControlValve(deviceCreds.key, deviceCreds.secret, s.device.gardenaServiceId, "open", minutes * 60);
   if (s.device.pump?.gardenaServiceId) {
     const pumpCreds = await ctx.credsForDevice(s.account.id, s.device.pump.gardenaConfigId);
@@ -533,7 +636,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
       device: {
         select: {
           id: true, name: true, type: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true,
-          pumpDeviceId: true,
+          areaSqm: true, flowLpm: true, pumpDeviceId: true,
           pump: { select: { id: true, gardenaServiceId: true, gardenaConfigId: true } },
         },
       },
@@ -587,20 +690,25 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
 
     const deviceCreds = await ctx.credsForDevice(s.account.id, s.device.gardenaConfigId);
 
-    // Smart-Checks: Regen aussetzen/skalieren, Bodenfeuchte aussetzen/skalieren.
-    const smart = await computeSmartOutcome(s, s.account, deviceCreds, ctx);
+    // Smart-Checks: Wasserbilanz/Regen und Bodenfeuchte (aussetzen/skalieren).
+    const smart = await computeSmartOutcome(s, s.account, deviceCreds, ctx, now);
     if (smart.skip) {
       if (smart.skip === "rain") skippedRain++; else skippedMoisture++;
       results.push({ scheduleId: s.id, deviceName: s.device.name, action: "skipped", reason: smart.reason });
       continue;
     }
 
-    const minutes = clampRunMinutes(s.durationMinutes * smart.factor);
     const sequence = parseValveSequence(s.valveSequence);
 
     if (sequence) {
-      // Sequenz: deviceId ist die Pumpe, Ventile laufen nacheinander.
-      const state = buildRunState(now, sequence, minutes);
+      // Sequenz: deviceId ist die Pumpe, Ventile laufen nacheinander – jedes
+      // mit eigener Dauer (Wasserbilanz × Zonen-Stammdaten, sonst Basisdauer).
+      const zoneMeta = await loadZoneMeta(sequence);
+      const stepMinutes = sequence.map((deviceId) => ({
+        deviceId,
+        minutes: minutesForValve(smart, s.durationMinutes, zoneMeta.get(deviceId)),
+      }));
+      const state = buildRunState(now, stepMinutes);
       const pump: PumpRef = {
         serviceId: s.device.gardenaServiceId,
         configId: s.device.gardenaConfigId,
@@ -609,11 +717,15 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
       const { startedNames } = await executeDueSteps(s.id, pump, state, ctx, now);
       stepsStarted += startedNames.length;
       watered++;
+      const minText = [...new Set(stepMinutes.map((st) => st.minutes))].sort((a, b) => a - b);
       results.push({
         scheduleId: s.id,
         deviceName: s.device.name,
         action: "watered",
-        reason: [`Sequenz mit ${sequence.length} Ventilen à ${minutes} Min gestartet.`, smart.reason].filter(Boolean).join(" "),
+        reason: [
+          `Sequenz mit ${sequence.length} Ventilen à ${minText.length === 1 ? minText[0] : `${minText[0]}–${minText[minText.length - 1]}`} Min gestartet.`,
+          smart.reason,
+        ].filter(Boolean).join(" "),
       });
       continue;
     }
@@ -625,7 +737,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
       continue;
     }
 
-    const seconds = minutes * 60;
+    const seconds = minutesForValve(smart, s.durationMinutes, s.device) * 60;
     const res = await gardenaControlValve(
       deviceCreds.key, deviceCreds.secret, s.device.gardenaServiceId, "open", seconds,
     );

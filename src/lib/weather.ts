@@ -20,8 +20,17 @@ export interface Weather {
   precipProbToday: number | null;      // %
   precipSumTomorrow: number | null;    // mm
   precipProbTomorrow: number | null;   // %
+  /// Referenz-Verdunstung (FAO ET₀) heute in mm.
+  et0Today: number | null;
+  /// ET₀ der Vortage in mm: Index 0 = gestern, 1 = vorgestern, 2 = vor 3 Tagen.
+  et0Past: (number | null)[];
+  /// Gefallener Regen der Vortage in mm (gleiche Reihenfolge wie et0Past).
+  precipPast: (number | null)[];
   fetchedAt: string;
 }
+
+/// Anzahl abgefragter Vergangenheits-Tage (fuer die Wasserbilanz).
+export const WEATHER_PAST_DAYS = 3;
 
 type CacheEntry = { weather: Weather; expiresAt: number };
 const cache = new Map<string, CacheEntry>();
@@ -52,7 +61,8 @@ export async function getWeather(
     latitude: String(latitude),
     longitude: String(longitude),
     current: "temperature_2m",
-    daily: "temperature_2m_max,precipitation_sum,precipitation_probability_max",
+    daily: "temperature_2m_max,precipitation_sum,precipitation_probability_max,et0_fao_evapotranspiration",
+    past_days: String(WEATHER_PAST_DAYS),
     forecast_days: "2",
     timezone: "auto",
   });
@@ -68,17 +78,28 @@ export async function getWeather(
         temperature_2m_max?: (number | null)[];
         precipitation_sum?: (number | null)[];
         precipitation_probability_max?: (number | null)[];
+        et0_fao_evapotranspiration?: (number | null)[];
       };
     };
 
+    // Daily-Arrays enthalten [vor 3 Tagen, vorgestern, gestern, heute, morgen].
     const daily = data.daily ?? {};
+    const T = WEATHER_PAST_DAYS; // Index von "heute"
+    const at = (arr: (number | null)[] | undefined, i: number) => arr?.[i] ?? null;
+    // Vortage rueckwaerts: Index 0 = gestern, 1 = vorgestern, 2 = vor 3 Tagen.
+    const pastDesc = (arr: (number | null)[] | undefined) =>
+      Array.from({ length: T }, (_, i) => at(arr, T - 1 - i));
+
     const weather: Weather = {
       currentTemp: data.current?.temperature_2m ?? null,
-      tempMaxToday: daily.temperature_2m_max?.[0] ?? null,
-      precipSumToday: daily.precipitation_sum?.[0] ?? null,
-      precipProbToday: daily.precipitation_probability_max?.[0] ?? null,
-      precipSumTomorrow: daily.precipitation_sum?.[1] ?? null,
-      precipProbTomorrow: daily.precipitation_probability_max?.[1] ?? null,
+      tempMaxToday: at(daily.temperature_2m_max, T),
+      precipSumToday: at(daily.precipitation_sum, T),
+      precipProbToday: at(daily.precipitation_probability_max, T),
+      precipSumTomorrow: at(daily.precipitation_sum, T + 1),
+      precipProbTomorrow: at(daily.precipitation_probability_max, T + 1),
+      et0Today: at(daily.et0_fao_evapotranspiration, T),
+      et0Past: pastDesc(daily.et0_fao_evapotranspiration),
+      precipPast: pastDesc(daily.precipitation_sum),
       fetchedAt: new Date().toISOString(),
     };
 

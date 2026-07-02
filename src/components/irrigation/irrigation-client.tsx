@@ -32,6 +32,10 @@ interface Zone {
   serviceId: string | null;
   isActive: boolean;
   pumpDeviceId: number | null;
+  /// Durchflussrate der Zone (L/min) – Basis fuer Statistik + Wasserbilanz.
+  flowLpm: number | null;
+  /// Bewaesserte Flaeche (m²) – Basis fuer die exakte Wasserbilanz-Dauer.
+  areaSqm: number | null;
 }
 
 interface Schedule {
@@ -372,6 +376,24 @@ export function IrrigationClient({
     }
   }, [flash]);
 
+  // Zonen-Stammdaten (Durchsatz L/min, Flaeche m²) fuer die Wasserbilanz.
+  const updateZoneMeta = useCallback(async (id: number, flowLpm: number | null, areaSqm: number | null) => {
+    const prev = zoneList;
+    setZoneList((zs) => zs.map((z) => (z.id === id ? { ...z, flowLpm, areaSqm } : z)));
+    try {
+      const res = await fetch(`/api/devices/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flowLpm: flowLpm ?? 0, areaSqm: areaSqm ?? 0 }),
+      });
+      if (!res.ok) throw new Error();
+      flash("ok", "Zonen-Daten gespeichert.");
+    } catch {
+      setZoneList(prev);
+      flash("err", "Speichern der Zonen-Daten fehlgeschlagen.");
+    }
+  }, [zoneList, flash]);
+
   // Pumpe zuordnen/entfernen (Ventil → Pumpe).
   const assignPump = useCallback(async (valveId: number, pumpId: number | null) => {
     const prev = zoneList;
@@ -505,10 +527,15 @@ export function IrrigationClient({
   // ── Abgeleitete Werte ────────────────────────────────────────────────────────
   const wateringCount = controllableIds.filter((id) => statuses[id]?.watering).length;
   const activeSchedules = schedules.filter((s) => s.isActive).length;
-  const weeklyLiters = useMemo(
-    () => schedules.filter((s) => s.isActive).reduce((sum, s) => sum + bitCount(s.daysOfWeek) * s.durationMinutes * ASSUMED_FLOW_L_PER_MIN, 0),
-    [schedules],
-  );
+  const weeklyLiters = useMemo(() => {
+    const flowOf = (id: number) => zoneList.find((z) => z.id === id)?.flowLpm ?? ASSUMED_FLOW_L_PER_MIN;
+    return schedules.filter((s) => s.isActive).reduce((sum, s) => {
+      const perRun = s.valveSequence?.length
+        ? s.valveSequence.reduce((acc, id) => acc + s.durationMinutes * flowOf(id), 0)
+        : s.durationMinutes * flowOf(s.deviceId);
+      return sum + bitCount(s.daysOfWeek) * perRun;
+    }, 0);
+  }, [schedules, zoneList]);
   const nextRun = useMemo(() => computeNextRun(schedules), [schedules]);
 
   // ── Pumpe / Durchlauf (Live) ─────────────────────────────────────────────────
@@ -526,14 +553,17 @@ export function IrrigationClient({
     [zoneList, pumpIdSet],
   );
 
-  // Per-Pumpe Live-Kennzahlen (Durchfluss aus aktiven zugeordneten Ventilen).
+  // Per-Pumpe Live-Kennzahlen: Durchfluss aus den aktiven zugeordneten
+  // Ventilen – mit deren gepflegter Durchflussrate, sonst Standardannahme.
   const pumpStats = useMemo(() => pumps.map((p) => {
     const valves = zoneList.filter((z) => z.pumpDeviceId === p.id && !pumpIdSet.has(z.id));
     const wateringValves = valves.filter((z) => statuses[z.id]?.watering);
     const selfWatering = statuses[p.id]?.watering ?? false;
     const running = wateringValves.length > 0 || selfWatering;
     const consumerCount = wateringValves.length > 0 ? wateringValves.length : (running ? 1 : 0);
-    const flowLpm = running ? consumerCount * ASSUMED_FLOW_L_PER_MIN : 0;
+    const flowLpm = wateringValves.length > 0
+      ? Math.round(wateringValves.reduce((sum, z) => sum + (z.flowLpm ?? ASSUMED_FLOW_L_PER_MIN), 0))
+      : (running ? (p.flowLpm ?? ASSUMED_FLOW_L_PER_MIN) : 0);
     return { pumpId: p.id, valves, running, consumerCount, flowLpm };
   }), [pumps, zoneList, statuses, pumpIdSet]);
 
@@ -648,6 +678,12 @@ export function IrrigationClient({
                     {weather.precipSumToday != null && weather.precipSumToday > 0 ? ` · ${weather.precipSumToday.toFixed(1)}mm` : ""}
                   </span>
                 </div>
+                {weather.et0Today != null && (
+                  <div className="flex items-center gap-1.5" title="Verdunstung heute (ET₀) – Basis der Wasserbilanz">
+                    <Waves className="h-4 w-4 text-white/80" />
+                    <span className="font-semibold">{weather.et0Today.toFixed(1)}mm</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -770,6 +806,7 @@ export function IrrigationClient({
                       onStop={() => stopZone(zone)}
                       onRename={(name) => renameZone(zone.id, name)}
                       onAssignPump={(pumpId) => assignPump(zone.id, pumpId)}
+                      onUpdateMeta={(flow, area) => updateZoneMeta(zone.id, flow, area)}
                     />
                   ))
                 )}
@@ -801,6 +838,7 @@ export function IrrigationClient({
                     onStop={() => stopZone(zone)}
                     onRename={(name) => renameZone(zone.id, name)}
                     onAssignPump={(pumpId) => assignPump(zone.id, pumpId)}
+                    onUpdateMeta={(flow, area) => updateZoneMeta(zone.id, flow, area)}
                   />
                 ))}
               </div>
@@ -1129,22 +1167,37 @@ function ZoneStateBadge({ status }: { status?: ZoneStatus }) {
   );
 }
 
-function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump, pumpOptions, onDuration, onStart, onStop, onRename, onAssignPump }: {
+function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump, pumpOptions, onDuration, onStart, onStop, onRename, onAssignPump, onUpdateMeta }: {
   zone: Zone; status?: ZoneStatus; duration: number; recommended: number; busy: boolean; disabled: boolean;
   isPump: boolean; pumpOptions: Zone[];
   onDuration: (m: number) => void; onStart: () => void; onStop: () => void; onRename: (name: string) => void;
   onAssignPump: (pumpId: number | null) => void;
+  onUpdateMeta: (flowLpm: number | null, areaSqm: number | null) => void;
 }) {
   const watering = status?.watering ?? false;
   const online = status?.online ?? false;
   const battery = status?.batteryLevel ?? null;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(zone.name);
+  const [flowDraft, setFlowDraft] = useState(zone.flowLpm != null ? String(zone.flowLpm) : "");
+  const [areaDraft, setAreaDraft] = useState(zone.areaSqm != null ? String(zone.areaSqm) : "");
 
   const commitRename = () => {
     setEditing(false);
     if (draft.trim() && draft.trim() !== zone.name) onRename(draft.trim());
     else setDraft(zone.name);
+  };
+
+  // Stammdaten speichern (bei Blur/Enter), wenn sich etwas geaendert hat.
+  const commitMeta = () => {
+    const parse = (s: string) => {
+      const n = Number(s.trim().replace(",", "."));
+      return s.trim() !== "" && Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const flow = parse(flowDraft);
+    const area = parse(areaDraft);
+    if (flow === (zone.flowLpm ?? null) && area === (zone.areaSqm ?? null)) return;
+    onUpdateMeta(flow, area);
   };
 
   return (
@@ -1248,6 +1301,39 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
           )}
         </div>
 
+        {/* Zonen-Stammdaten: Durchsatz + Flaeche fuer die Wasserbilanz */}
+        <div className="flex items-center gap-2" title="Zonen-Daten für die Wasserbilanz: Durchflussrate und bewässerte Fläche">
+          <Waves className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={1}
+              placeholder="12"
+              value={flowDraft}
+              onChange={(e) => setFlowDraft(e.target.value)}
+              onBlur={commitMeta}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              className="h-7 text-xs px-2"
+            />
+            <span className="text-[10px] text-slate-400 shrink-0">L/min</span>
+          </div>
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={1}
+              placeholder="–"
+              value={areaDraft}
+              onChange={(e) => setAreaDraft(e.target.value)}
+              onBlur={commitMeta}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              className="h-7 text-xs px-2"
+            />
+            <span className="text-[10px] text-slate-400 shrink-0">m²</span>
+          </div>
+        </div>
+
         {/* Pumpen-Zuordnung (nur fuer Ventile, nicht fuer die Pumpe selbst) */}
         {!isPump && pumpOptions.length > 0 && (
           <div className="flex items-center gap-2">
@@ -1343,8 +1429,12 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
             </Badge>
           )}
           {schedule.smartRain && (
-            <Badge variant="outline" className="text-[10px] gap-1 text-indigo-600 border-indigo-200 dark:border-indigo-900/50">
-              <Sparkles className="h-3 w-3" /> Smart-Regen
+            <Badge
+              variant="outline"
+              className="text-[10px] gap-1 text-indigo-600 border-indigo-200 dark:border-indigo-900/50"
+              title="Dauer wird aus der Wasserbilanz berechnet (Verdunstung ET₀ − Regen seit letztem Lauf)"
+            >
+              <Sparkles className="h-3 w-3" /> Wasserbilanz
             </Badge>
           )}
           {schedule.sensorServiceId && (
@@ -1621,6 +1711,7 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
               )}
               <p className="text-[11px] text-slate-400">
                 Die Ventile laufen nacheinander (je {form.durationMinutes} Min) – die Pumpe schaltet automatisch mit.
+                {form.smartRain && " Mit Wasserbilanz + Zonen-Daten (L/min, m²) wird die Dauer je Ventil automatisch berechnet."}
               </p>
             </div>
           )}
@@ -1664,8 +1755,11 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-indigo-600" />
                 <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Smart-Regen (Dauer anpassen)</p>
-                  <p className="text-xs text-slate-400">Heiß → länger, Regenrisiko/kühl → kürzer</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Wasserbilanz (Dauer berechnen)</p>
+                  <p className="text-xs text-slate-400">
+                    Dauer aus Verdunstung (ET₀) minus gefallenem Regen seit dem letzten Lauf.
+                    Mit L/min + m² an der Zone wird sie je Ventil exakt berechnet.
+                  </p>
                 </div>
               </div>
               <Switch checked={form.smartRain} onCheckedChange={(v) => setForm((f) => ({ ...f, smartRain: v }))} />
