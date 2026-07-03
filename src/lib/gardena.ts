@@ -164,6 +164,11 @@ function attrValue<T>(res: GardenaResource | undefined, name: string): T | null 
   return a?.value ?? null;
 }
 
+function attrTimestamp(res: GardenaResource | undefined, name: string): string | null {
+  const a = res?.attributes?.[name] as GardenaAttr<unknown> | undefined;
+  return a?.timestamp ?? null;
+}
+
 // ── Locations ─────────────────────────────────────────────────────────────────
 
 export interface GardenaLocation {
@@ -336,10 +341,13 @@ export interface GardenaSensor {
   name: string;
   /// Bodenfeuchte in Prozent (0–100), null wenn nicht gemeldet.
   soilHumidity: number | null;
+  /// ISO-Zeitpunkt der letzten Bodenfeuchte-Messung.
+  soilHumidityAt: string | null;
   /// Bodentemperatur in °C.
   soilTemperature: number | null;
-  online: boolean;
+  /// Akku in Prozent (COMMON-Service) – nicht mit Bodenfeuchte verwechseln.
   batteryLevel: number | null;
+  online: boolean;
   locationName: string;
 }
 
@@ -369,6 +377,7 @@ export async function gardenaListSensors(
         serviceId: svc.id,
         name: attrValue<string>(common, "name") ?? deviceId,
         soilHumidity: attrValue<number>(svc, "soilHumidity"),
+        soilHumidityAt: attrTimestamp(svc, "soilHumidity"),
         soilTemperature: attrValue<number>(svc, "soilTemperature"),
         online: isOnline(common),
         batteryLevel: attrValue<number>(common, "batteryLevel"),

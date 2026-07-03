@@ -59,7 +59,9 @@ interface SoilSensor {
   serviceId: string;
   name: string;
   soilHumidity: number | null;
+  soilHumidityAt: string | null;
   soilTemperature: number | null;
+  batteryLevel: number | null;
   online: boolean;
   connectionName: string | null;
 }
@@ -166,6 +168,27 @@ function fmtRunTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Kurzer Hinweis, wann der Sensor zuletzt gemessen hat. */
+function fmtSensorAge(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const diffMin = Math.round((Date.now() - d.getTime()) / 60_000);
+  if (diffMin < 1) return "gerade eben";
+  if (diffMin < 60) return `vor ${diffMin} Min`;
+  const h = Math.round(diffMin / 60);
+  if (h < 24) return `vor ${h} Std`;
+  return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function sensorOptionLabel(s: SoilSensor): string {
+  const parts = [s.name];
+  if (s.soilHumidity != null) parts.push(`Boden ${Math.round(s.soilHumidity)}%`);
+  if (s.batteryLevel != null) parts.push(`Akku ${Math.round(s.batteryLevel)}%`);
+  if (s.soilTemperature != null) parts.push(`${Math.round(s.soilTemperature)}°C`);
+  return parts.join(" · ");
 }
 
 /** Heuristik: Ist die Zone/das Geraet eine Pumpe (Name oder Modell enthaelt „pump")? */
@@ -1509,22 +1532,36 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
             </Badge>
           )}
           {schedule.sensorServiceId && (
-            <Badge
-              variant="outline"
-              className={cn(
-                "text-[10px] gap-1",
-                moistEnough
-                  ? "text-emerald-600 border-emerald-200 dark:border-emerald-900/50"
-                  : "text-amber-600 border-amber-200 dark:border-amber-900/50",
+            <>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] gap-1",
+                  moistEnough
+                    ? "text-emerald-600 border-emerald-200 dark:border-emerald-900/50"
+                    : "text-amber-600 border-amber-200 dark:border-amber-900/50",
+                )}
+                title={sensor
+                  ? [
+                      `${sensor.name}`,
+                      humidity != null ? `Bodenfeuchte: ${Math.round(humidity)} %` : "Bodenfeuchte: unbekannt",
+                      sensor.soilTemperature != null ? `Bodentemperatur: ${Math.round(sensor.soilTemperature)} °C` : null,
+                      sensor.batteryLevel != null ? `Akku: ${Math.round(sensor.batteryLevel)} %` : null,
+                      fmtSensorAge(sensor.soilHumidityAt) ? `Messung ${fmtSensorAge(sensor.soilHumidityAt)}` : null,
+                      `Schwelle: ${threshold} % (aussetzen ab Schwelle)`,
+                    ].filter(Boolean).join(" · ")
+                  : "Sensor derzeit nicht erreichbar"}
+              >
+                <Sprout className="h-3 w-3" />
+                Boden {humidity != null ? `${Math.round(humidity)}%` : "—"} / {threshold}%
+                {moistEnough && " · setzt aus"}
+              </Badge>
+              {sensor?.batteryLevel != null && (
+                <Badge variant="outline" className="text-[10px] gap-1 text-slate-500 border-slate-200 dark:border-slate-700">
+                  <Battery className="h-3 w-3" /> Akku {Math.round(sensor.batteryLevel)}%
+                </Badge>
               )}
-              title={sensor
-                ? `${sensor.name}: Bodenfeuchte ${humidity != null ? `${Math.round(humidity)} %` : "unbekannt"} · Schwelle ${threshold} % (aussetzen ab Schwelle)`
-                : "Sensor derzeit nicht erreichbar"}
-            >
-              <Sprout className="h-3 w-3" />
-              {humidity != null ? `${Math.round(humidity)} %` : "—"} / {threshold} %
-              {moistEnough && " · setzt aus"}
-            </Badge>
+            </>
           )}
         </div>
         <p className="text-xs text-slate-400 mt-0.5">
@@ -1984,11 +2021,37 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                 )}
                 {sensors.map((s) => (
                   <SelectItem key={s.serviceId} value={s.serviceId}>
-                    {s.name}{s.soilHumidity != null ? ` · ${Math.round(s.soilHumidity)} %` : ""}
+                    {sensorOptionLabel(s)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {form.sensorServiceId && (() => {
+              const sel = sensors.find((s) => s.serviceId === form.sensorServiceId);
+              if (!sel) return null;
+              const age = fmtSensorAge(sel.soilHumidityAt);
+              return (
+                <div className="rounded-md bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 grid grid-cols-2 gap-x-3 gap-y-1">
+                  <span className="flex items-center gap-1.5">
+                    <Sprout className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                    Bodenfeuchte: <strong className="tabular-nums">{sel.soilHumidity != null ? `${Math.round(sel.soilHumidity)} %` : "—"}</strong>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Battery className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    Akku: <strong className="tabular-nums">{sel.batteryLevel != null ? `${Math.round(sel.batteryLevel)} %` : "—"}</strong>
+                  </span>
+                  {sel.soilTemperature != null && (
+                    <span className="flex items-center gap-1.5">
+                      <Thermometer className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      Boden: <strong className="tabular-nums">{Math.round(sel.soilTemperature)} °C</strong>
+                    </span>
+                  )}
+                  {age && (
+                    <span className="text-slate-400 col-span-2">Letzte Messung {age}</span>
+                  )}
+                </div>
+              );
+            })()}
             {form.sensorServiceId && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
