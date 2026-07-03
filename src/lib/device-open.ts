@@ -109,7 +109,7 @@ interface DeviceForAction {
   /// Optionale Pumpe (Device-ID), die beim Aktivieren dieses Ventils mitgeschaltet
   /// wird.
   pumpDeviceId?: number | null;
-  flowLpm?: number | null;
+  flowLph?: number | null;
 }
 
 /** Optionale Parameter fuer einzelne Aktionen (z. B. GARDENA-Bewässerungsdauer). */
@@ -253,7 +253,7 @@ export async function triggerDeviceAction(
         deviceId: device.id,
         durationMinutes: Math.round(seconds / 60),
         source: "manual",
-        flowLpm: device.flowLpm ?? null,
+        flowLph: device.flowLph ?? null,
       });
     }
     return { task, sent: res.ok };

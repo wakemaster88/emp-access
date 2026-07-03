@@ -76,15 +76,15 @@ export async function PUT(
     }
   }
 
-  // Zonen-Stammdaten fuer die Wasserbilanz: Durchsatz (L/min) und Flaeche (m²).
-  // null/0 loescht den Wert.
+  // Zonen-Stammdaten fuer die Wasserbilanz: Durchsatz (L/h, wie an der Pumpe
+  // angezeigt) und Flaeche (m²). null/0 loescht den Wert.
   const parseMetric = (raw: unknown, current: number | null, max: number): number | null => {
     if (raw === undefined) return current;
     if (raw === null || raw === 0 || raw === "") return null;
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? Math.min(max, n) : current;
   };
-  const flowLpm = parseMetric(body.flowLpm, existing.flowLpm, 500);
+  const flowLph = parseMetric(body.flowLph, existing.flowLph, 30000);
   const areaSqm = parseMetric(body.areaSqm, existing.areaSqm, 10000);
 
   const device = await db.device.update({
@@ -92,7 +92,7 @@ export async function PUT(
     data: {
       name: body.name ?? existing.name,
       pumpDeviceId,
-      flowLpm,
+      flowLph,
       areaSqm,
       category: body.category !== undefined
         ? (body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null)

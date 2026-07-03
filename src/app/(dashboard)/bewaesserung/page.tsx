@@ -19,7 +19,7 @@ export default async function BewaesserungPage() {
   const [zones, schedules, gardenaConfig, account] = await Promise.all([
     db.device.findMany({
       where: { accountId, type: "GARDENA_VALVE" },
-      select: { id: true, name: true, gardenaServiceId: true, isActive: true, pumpDeviceId: true, flowLpm: true, areaSqm: true },
+      select: { id: true, name: true, gardenaServiceId: true, isActive: true, pumpDeviceId: true, flowLph: true, areaSqm: true },
       orderBy: { name: "asc" },
     }),
     db.irrigationSchedule.findMany({
@@ -48,7 +48,7 @@ export default async function BewaesserungPage() {
           serviceId: z.gardenaServiceId,
           isActive: z.isActive,
           pumpDeviceId: z.pumpDeviceId,
-          flowLpm: z.flowLpm,
+          flowLph: z.flowLph,
           areaSqm: z.areaSqm,
         }))}
         schedules={schedules.map((s) => ({

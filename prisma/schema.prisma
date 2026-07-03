@@ -134,11 +134,12 @@ model Device {
   /// mehrere GARDENA-Konten (Application Key/Secret) pro Mandant.
   gardenaConfigId Int?
   gardenaConfig   ApiConfig?          @relation("GardenaConfigDevices", fields: [gardenaConfigId], references: [id], onDelete: SetNull)
-  /// Durchflussrate der Zone in Liter/Minute (Bewaesserung). Grundlage fuer
-  /// Verbrauchsstatistik und die exakte Wasserbilanz-Dauer.
-  flowLpm         Float?
-  /// Bewaesserte Flaeche der Zone in m². Zusammen mit flowLpm kann die Dauer
-  /// aus dem Wasserdefizit (mm) exakt berechnet werden: min = mm × m² ÷ L/min.
+  /// Durchflussrate der Zone in Liter/Stunde (Bewaesserung) – so wie die
+  /// GARDENA-Pumpe den Wert anzeigt. Grundlage fuer Verbrauchsstatistik und
+  /// die exakte Wasserbilanz-Dauer.
+  flowLph         Float?
+  /// Bewaesserte Flaeche der Zone in m². Zusammen mit flowLph kann die Dauer
+  /// aus dem Wasserdefizit (mm) exakt berechnet werden.
   areaSqm         Float?
   /// Optionale Zuordnung Ventil → Pumpe (beide sind GARDENA_VALVE-Geraete):
   /// wird das Ventil aktiviert, schaltet die zugeordnete Pumpe automatisch mit
@@ -971,7 +972,7 @@ model IrrigationRun {
   durationMinutes Int
   /// "schedule" = Cron-Zeitplan, "schedule_now" = Zeitplan „Jetzt", "manual" = UI-Knopf/Smart-Run
   source          String
-  /// Geschaetzter Verbrauch in Liter (flowLpm × Minuten), null wenn unbekannt.
+  /// Geschaetzter Verbrauch in Liter (Durchfluss × Laufzeit), null wenn unbekannt.
   litersEstimate  Float?
 
   @@index([accountId, startedAt])

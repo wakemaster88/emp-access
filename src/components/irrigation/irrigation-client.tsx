@@ -32,8 +32,9 @@ interface Zone {
   serviceId: string | null;
   isActive: boolean;
   pumpDeviceId: number | null;
-  /// Durchflussrate der Zone (L/min) – Basis fuer Statistik + Wasserbilanz.
-  flowLpm: number | null;
+  /// Durchflussrate der Zone (L/h, wie an der Pumpe angezeigt) – Basis fuer
+  /// Statistik + Wasserbilanz.
+  flowLph: number | null;
   /// Bewaesserte Flaeche (m²) – Basis fuer die exakte Wasserbilanz-Dauer.
   areaSqm: number | null;
 }
@@ -129,7 +130,7 @@ interface IrrigationStatsResponse {
 
 // ── Konstanten / Helfer ────────────────────────────────────────────────────────
 
-const ASSUMED_FLOW_L_PER_MIN = 12;
+const ASSUMED_FLOW_L_PER_HOUR = 720;
 const DURATION_PRESETS = [5, 10, 15, 20, 30, 45, 60] as const;
 const DAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const DAY_LABELS_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
@@ -460,15 +461,15 @@ export function IrrigationClient({
     }
   }, [flash]);
 
-  // Zonen-Stammdaten (Durchsatz L/min, Flaeche m²) fuer die Wasserbilanz.
-  const updateZoneMeta = useCallback(async (id: number, flowLpm: number | null, areaSqm: number | null) => {
+  // Zonen-Stammdaten (Durchsatz L/h, Flaeche m²) fuer die Wasserbilanz.
+  const updateZoneMeta = useCallback(async (id: number, flowLph: number | null, areaSqm: number | null) => {
     const prev = zoneList;
-    setZoneList((zs) => zs.map((z) => (z.id === id ? { ...z, flowLpm, areaSqm } : z)));
+    setZoneList((zs) => zs.map((z) => (z.id === id ? { ...z, flowLph, areaSqm } : z)));
     try {
       const res = await fetch(`/api/devices/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flowLpm: flowLpm ?? 0, areaSqm: areaSqm ?? 0 }),
+        body: JSON.stringify({ flowLph: flowLph ?? 0, areaSqm: areaSqm ?? 0 }),
       });
       if (!res.ok) throw new Error();
       flash("ok", "Zonen-Daten gespeichert.");
@@ -627,11 +628,13 @@ export function IrrigationClient({
   const wateringCount = controllableIds.filter((id) => statuses[id]?.watering).length;
   const activeSchedules = schedules.filter((s) => s.isActive).length;
   const weeklyLiters = useMemo(() => {
-    const flowOf = (id: number) => zoneList.find((z) => z.id === id)?.flowLpm ?? ASSUMED_FLOW_L_PER_MIN;
+    // Durchfluss ist in L/h gepflegt, die Laufzeit in Minuten → ÷ 60.
+    const flowPerMin = (id: number) =>
+      (zoneList.find((z) => z.id === id)?.flowLph ?? ASSUMED_FLOW_L_PER_HOUR) / 60;
     return schedules.filter((s) => s.isActive).reduce((sum, s) => {
       const perRun = s.valveSequence?.length
-        ? s.valveSequence.reduce((acc, id) => acc + s.durationMinutes * flowOf(id), 0)
-        : s.durationMinutes * flowOf(s.deviceId);
+        ? s.valveSequence.reduce((acc, id) => acc + s.durationMinutes * flowPerMin(id), 0)
+        : s.durationMinutes * flowPerMin(s.deviceId);
       return sum + bitCount(s.daysOfWeek) * perRun;
     }, 0);
   }, [schedules, zoneList]);
@@ -660,10 +663,10 @@ export function IrrigationClient({
     const selfWatering = statuses[p.id]?.watering ?? false;
     const running = wateringValves.length > 0 || selfWatering;
     const consumerCount = wateringValves.length > 0 ? wateringValves.length : (running ? 1 : 0);
-    const flowLpm = wateringValves.length > 0
-      ? Math.round(wateringValves.reduce((sum, z) => sum + (z.flowLpm ?? ASSUMED_FLOW_L_PER_MIN), 0))
-      : (running ? (p.flowLpm ?? ASSUMED_FLOW_L_PER_MIN) : 0);
-    return { pumpId: p.id, valves, running, consumerCount, flowLpm };
+    const flowLph = wateringValves.length > 0
+      ? Math.round(wateringValves.reduce((sum, z) => sum + (z.flowLph ?? ASSUMED_FLOW_L_PER_HOUR), 0))
+      : (running ? (p.flowLph ?? ASSUMED_FLOW_L_PER_HOUR) : 0);
+    return { pumpId: p.id, valves, running, consumerCount, flowLph };
   }), [pumps, zoneList, statuses, pumpIdSet]);
 
   const pumpStatsRef = useRef(pumpStats);
@@ -682,7 +685,7 @@ export function IrrigationClient({
         if (st.running) {
           anyRunning = true;
           if (s.start == null) { s.start = Date.now(); s.liters = 0; }
-          s.liters += st.flowLpm / 60; // pro Sekunde
+          s.liters += st.flowLph / 3600; // L/h → Liter pro Sekunde
           next[st.pumpId] = { elapsed: Math.round((Date.now() - s.start) / 1000), liters: s.liters };
         } else {
           if (s.start != null) { s.start = null; s.liters = 0; }
@@ -871,7 +874,7 @@ export function IrrigationClient({
                 pump={pump}
                 pumpStatus={statuses[pump.id]}
                 running={st?.running ?? false}
-                flowLpm={st?.flowLpm ?? 0}
+                flowLph={st?.flowLph ?? 0}
                 elapsed={pr.elapsed}
                 liters={pr.liters}
                 consumerCount={st?.consumerCount ?? 0}
@@ -1043,10 +1046,10 @@ function StatCard({ icon: Icon, label, value, hint, accent }: {
 // ── Pumpen-Gruppe (Pumpe + zugeordnete Ventile) ──────────────────────────────
 
 function PumpGroup({
-  pump, pumpStatus, running, flowLpm, elapsed, liters, consumerCount, valveCount,
+  pump, pumpStatus, running, flowLph, elapsed, liters, consumerCount, valveCount,
   duration, busy, disabled, onDuration, onStart, onStop, onRename, children,
 }: {
-  pump: Zone; pumpStatus?: ZoneStatus; running: boolean; flowLpm: number; elapsed: number;
+  pump: Zone; pumpStatus?: ZoneStatus; running: boolean; flowLph: number; elapsed: number;
   liters: number; consumerCount: number; valveCount: number; duration: number; busy: boolean;
   disabled: boolean; onDuration: (m: number) => void; onStart: () => void; onStop: () => void;
   onRename: (name: string) => void; children: React.ReactNode;
@@ -1156,7 +1159,7 @@ function PumpGroup({
 
         {/* Live-Kennzahlen */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <PumpMetric icon={Waves} accent="text-sky-600" label="Durchfluss" value={running ? `${flowLpm}` : "0"} unit="L/min" />
+          <PumpMetric icon={Waves} accent="text-sky-600" label="Durchfluss" value={running ? `${flowLph}` : "0"} unit="L/h" />
           <PumpMetric icon={Timer} accent="text-indigo-600" label="Laufzeit" value={fmtCountdown(elapsed)} unit="min" />
           <PumpMetric icon={Droplet} accent="text-teal-600" label="Durchlauf" value={fmtLiters(liters)} unit="" />
           <PumpMetric icon={Droplets} accent="text-emerald-600" label="Aktive Ventile" value={`${consumerCount}`} unit={`/ ${valveCount}`} />
@@ -1280,14 +1283,14 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
   isPump: boolean; pumpOptions: Zone[];
   onDuration: (m: number) => void; onStart: () => void; onStop: () => void; onRename: (name: string) => void;
   onAssignPump: (pumpId: number | null) => void;
-  onUpdateMeta: (flowLpm: number | null, areaSqm: number | null) => void;
+  onUpdateMeta: (flowLph: number | null, areaSqm: number | null) => void;
 }) {
   const watering = status?.watering ?? false;
   const online = status?.online ?? false;
   const battery = status?.batteryLevel ?? null;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(zone.name);
-  const [flowDraft, setFlowDraft] = useState(zone.flowLpm != null ? String(zone.flowLpm) : "");
+  const [flowDraft, setFlowDraft] = useState(zone.flowLph != null ? String(zone.flowLph) : "");
   const [areaDraft, setAreaDraft] = useState(zone.areaSqm != null ? String(zone.areaSqm) : "");
 
   const commitRename = () => {
@@ -1304,7 +1307,7 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
     };
     const flow = parse(flowDraft);
     const area = parse(areaDraft);
-    if (flow === (zone.flowLpm ?? null) && area === (zone.areaSqm ?? null)) return;
+    if (flow === (zone.flowLph ?? null) && area === (zone.areaSqm ?? null)) return;
     onUpdateMeta(flow, area);
   };
 
@@ -1417,14 +1420,14 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
               type="number"
               inputMode="decimal"
               min={1}
-              placeholder="12"
+              placeholder="720"
               value={flowDraft}
               onChange={(e) => setFlowDraft(e.target.value)}
               onBlur={commitMeta}
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
               className="h-7 text-xs px-2"
             />
-            <span className="text-[10px] text-slate-400 shrink-0">L/min</span>
+            <span className="text-[10px] text-slate-400 shrink-0">L/h</span>
           </div>
           <div className="flex items-center gap-1 flex-1 min-w-0">
             <Input
@@ -1737,7 +1740,7 @@ function IrrigationStatsPanel({
       </Card>
       <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5">
         <History className="h-3.5 w-3.5" />
-        Verbrauch geschätzt aus Durchflussrate (L/min) der Zone, sonst 12 L/min Standard.
+        Verbrauch geschätzt aus Durchflussrate (L/h) der Zone, sonst 720 L/h Standard.
       </p>
     </div>
   );
@@ -1959,7 +1962,7 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
               )}
               <p className="text-[11px] text-slate-400">
                 Die Ventile laufen nacheinander (je {form.durationMinutes} Min) – die Pumpe schaltet automatisch mit.
-                {form.smartRain && " Mit Wasserbilanz + Zonen-Daten (L/min, m²) wird die Dauer je Ventil automatisch berechnet."}
+                {form.smartRain && " Mit Wasserbilanz + Zonen-Daten (L/h, m²) wird die Dauer je Ventil automatisch berechnet."}
               </p>
             </div>
           )}
@@ -2006,7 +2009,7 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Wasserbilanz (Dauer berechnen)</p>
                   <p className="text-xs text-slate-400">
                     Dauer aus Verdunstung (ET₀) minus gefallenem Regen seit dem letzten Lauf.
-                    Mit L/min + m² an der Zone wird sie je Ventil exakt berechnet.
+                    Mit L/h + m² an der Zone wird sie je Ventil exakt berechnet.
                   </p>
                 </div>
               </div>

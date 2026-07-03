@@ -12,9 +12,9 @@ import { getWeather, WEATHER_PAST_DAYS, type Weather } from "@/lib/weather";
 import { gardenaControlValve, gardenaListSensors } from "@/lib/gardena";
 import { logIrrigationRun, type IrrigationRunSource } from "@/lib/irrigation-run-log";
 
-// Angenommener Durchfluss pro Ventil/Zone (Liter pro Minute), falls die Zone
-// keine eigene Durchflussrate (`Device.flowLpm`) gepflegt hat.
-export const ASSUMED_FLOW_L_PER_MIN = 12;
+// Angenommener Durchfluss pro Ventil/Zone (Liter pro Stunde), falls die Zone
+// keine eigene Durchflussrate (`Device.flowLph`) gepflegt hat.
+export const ASSUMED_FLOW_L_PER_HOUR = 720;
 
 // Referenz-Verdunstung fuer den Fallback-Faktor (typischer Sommertag, mm/Tag).
 const ET0_REF_MM_PER_DAY = 4;
@@ -167,7 +167,7 @@ export function estimateWeeklyLiters(
 ): number {
   return schedules
     .filter((s) => s.isActive)
-    .reduce((sum, s) => sum + bitCount(s.daysOfWeek) * s.durationMinutes * ASSUMED_FLOW_L_PER_MIN, 0);
+    .reduce((sum, s) => sum + bitCount(s.daysOfWeek) * s.durationMinutes * (ASSUMED_FLOW_L_PER_HOUR / 60), 0);
 }
 
 // ── Zeit-Helfer (IANA-TZ, ohne Dependencies) ────────────────────────────────
@@ -402,19 +402,19 @@ function clampRunMinutes(minutes: number): number {
   return Math.min(180, Math.max(1, Math.round(minutes)));
 }
 
-interface ZoneMeta { areaSqm: number | null; flowLpm: number | null }
+interface ZoneMeta { areaSqm: number | null; flowLph: number | null }
 
 /**
  * Dauer fuer ein Ventil in Minuten:
  *  - Mit Wasserdefizit + Zonen-Stammdaten (Flaeche, Durchsatz) exakt:
- *    Liter = Defizit (mm) × Flaeche (m²); Minuten = Liter ÷ Durchsatz (L/min),
+ *    Liter = Defizit (mm) × Flaeche (m²); Minuten = Liter ÷ Durchsatz (L/h ÷ 60),
  *    Feuchte-Faktor obendrauf, begrenzt auf 5–120 Min.
  *  - Sonst Basisdauer × Smart-Faktor (1–180 Min).
  */
 function minutesForValve(smart: SmartOutcome, baseMinutes: number, zone: ZoneMeta | undefined): number {
-  if (smart.deficitMm != null && zone?.areaSqm && zone?.flowLpm) {
+  if (smart.deficitMm != null && zone?.areaSqm && zone?.flowLph) {
     const liters = smart.deficitMm * zone.areaSqm;
-    return Math.min(120, Math.max(5, Math.round((liters / zone.flowLpm) * smart.moistureFactor)));
+    return Math.min(120, Math.max(5, Math.round((liters / (zone.flowLph / 60)) * smart.moistureFactor)));
   }
   return clampRunMinutes(baseMinutes * smart.factor);
 }
@@ -423,9 +423,9 @@ function minutesForValve(smart: SmartOutcome, baseMinutes: number, zone: ZoneMet
 async function loadZoneMeta(valveIds: number[]): Promise<Map<number, ZoneMeta>> {
   const devices = await prisma.device.findMany({
     where: { id: { in: valveIds } },
-    select: { id: true, areaSqm: true, flowLpm: true },
+    select: { id: true, areaSqm: true, flowLph: true },
   });
-  return new Map(devices.map((d) => [d.id, { areaSqm: d.areaSqm, flowLpm: d.flowLpm }]));
+  return new Map(devices.map((d) => [d.id, { areaSqm: d.areaSqm, flowLph: d.flowLph }]));
 }
 
 /** Baut den Sequenz-Plan: Ventile nacheinander, jedes mit eigener Dauer. */
@@ -466,7 +466,7 @@ async function executeDueSteps(
   if (due.length > 0) {
     const devices = await prisma.device.findMany({
       where: { id: { in: due.map((d) => d.deviceId) } },
-      select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, flowLpm: true },
+      select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, flowLph: true },
     });
     const byId = new Map(devices.map((d) => [d.id, d]));
     const runSource = state.source ?? "schedule";
@@ -487,7 +487,7 @@ async function executeDueSteps(
           durationMinutes: step.minutes,
           source: runSource,
           scheduleId,
-          flowLpm: dev.flowLpm,
+          flowLph: dev.flowLph,
           startedAt: now,
         });
       }
@@ -540,7 +540,7 @@ export async function startScheduleRun(
   const s = await prisma.irrigationSchedule.findFirst({
     where: { id: scheduleId, accountId },
     include: {
-      device: { select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, areaSqm: true, flowLpm: true, pump: { select: { gardenaServiceId: true, gardenaConfigId: true } } } },
+      device: { select: { id: true, name: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true, areaSqm: true, flowLph: true, pump: { select: { gardenaServiceId: true, gardenaConfigId: true } } } },
       account: { select: { id: true, latitude: true, longitude: true, timezone: true } },
     },
   });
@@ -587,7 +587,7 @@ export async function startScheduleRun(
       durationMinutes: minutes,
       source: "schedule_now",
       scheduleId: s.id,
-      flowLpm: s.device.flowLpm,
+      flowLph: s.device.flowLph,
       startedAt: now,
     });
   }
@@ -673,7 +673,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
       device: {
         select: {
           id: true, name: true, type: true, accountId: true, gardenaServiceId: true, gardenaConfigId: true, isActive: true,
-          areaSqm: true, flowLpm: true, pumpDeviceId: true,
+          areaSqm: true, flowLph: true, pumpDeviceId: true,
           pump: { select: { id: true, gardenaServiceId: true, gardenaConfigId: true } },
         },
       },
@@ -786,7 +786,7 @@ export async function runIrrigationTick(now: Date = new Date()): Promise<Irrigat
         durationMinutes: runMinutes,
         source: "schedule",
         scheduleId: s.id,
-        flowLpm: s.device.flowLpm,
+        flowLph: s.device.flowLph,
         startedAt: now,
       });
       // Zugeordnete Pumpe fuer die gleiche Laufzeit mitstarten (best effort).

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 /** Quelle eines Bewässerungs-Laufs (Anzeige + Filter in der Statistik). */
 export type IrrigationRunSource = "schedule" | "schedule_now" | "manual";
 
-const ASSUMED_FLOW_LPM = 12;
+const ASSUMED_FLOW_L_PER_HOUR = 720;
 
 /**
  * Protokolliert einen erfolgreichen Ventil-Lauf. Best effort – Fehler blockieren
@@ -15,11 +15,12 @@ export async function logIrrigationRun(params: {
   durationMinutes: number;
   source: IrrigationRunSource;
   scheduleId?: number | null;
-  flowLpm?: number | null;
+  /** Durchfluss der Zone in Liter/Stunde (wie an der Pumpe angezeigt). */
+  flowLph?: number | null;
   startedAt?: Date;
 }): Promise<void> {
   const minutes = Math.max(1, Math.round(params.durationMinutes));
-  const flow = params.flowLpm && params.flowLpm > 0 ? params.flowLpm : ASSUMED_FLOW_LPM;
+  const flowLph = params.flowLph && params.flowLph > 0 ? params.flowLph : ASSUMED_FLOW_L_PER_HOUR;
   try {
     await prisma.irrigationRun.create({
       data: {
@@ -29,7 +30,7 @@ export async function logIrrigationRun(params: {
         startedAt: params.startedAt ?? new Date(),
         durationMinutes: minutes,
         source: params.source,
-        litersEstimate: Math.round(flow * minutes),
+        litersEstimate: Math.round((flowLph / 60) * minutes),
       },
     });
   } catch {
