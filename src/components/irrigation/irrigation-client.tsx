@@ -565,23 +565,33 @@ export function IrrigationClient({
   }, [flash]);
 
   // Zeitplan sofort ausfuehren – serverseitig inkl. Smart-Checks + Sequenz.
-  const runScheduleNow = useCallback(async (s: Schedule) => {
+  // Wird der Start wegen Regen/Feuchte uebersprungen, kann der Nutzer per
+  // Rueckfrage mit force=true trotzdem starten (Basisdauern, ohne Smart-Checks).
+  const runScheduleNow = useCallback(async (s: Schedule, force = false) => {
     setBusySchedule((b) => ({ ...b, [s.id]: true }));
     try {
       const res = await fetch(`/api/irrigation/schedules/${s.id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start" }),
+        body: JSON.stringify({ action: "start", ...(force ? { force: true } : {}) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Start fehlgeschlagen");
       if (data.skipped) {
-        flash("ok", `${s.deviceName}: nicht gestartet – ${data.skipped}`);
-      } else {
-        flash("ok", s.valveSequence?.length
-          ? `${s.deviceName}: Sequenz mit ${s.valveSequence.length} Ventilen gestartet.`
-          : `${s.deviceName}: ${s.durationMinutes} Min gestartet.`);
+        setBusySchedule((b) => ({ ...b, [s.id]: false }));
+        const proceed = window.confirm(
+          `${s.deviceName} wurde nicht gestartet:\n${data.skipped}\n\nTrotzdem mit den geplanten Dauern starten?`,
+        );
+        if (proceed) {
+          await runScheduleNowRef.current?.(s, true);
+        } else {
+          flash("ok", `${s.deviceName}: nicht gestartet – ${data.skipped}`);
+        }
+        return;
       }
+      flash("ok", s.valveSequence?.length
+        ? `${s.deviceName}: Sequenz mit ${s.valveSequence.length} Ventilen gestartet.`
+        : `${s.deviceName}: ${s.durationMinutes} Min gestartet.`);
       setTimeout(fetchStatuses, 3000);
       setTimeout(fetchStats, 3000);
     } catch (e) {
@@ -590,6 +600,10 @@ export function IrrigationClient({
       setBusySchedule((b) => ({ ...b, [s.id]: false }));
     }
   }, [flash, fetchStatuses, fetchStats]);
+
+  // Selbstreferenz fuer den rekursiven Force-Aufruf aus der Rueckfrage.
+  const runScheduleNowRef = useRef<typeof runScheduleNow | null>(null);
+  runScheduleNowRef.current = runScheduleNow;
 
   const stopScheduleDevice = useCallback(async (s: Schedule) => {
     setBusySchedule((b) => ({ ...b, [s.id]: true }));

@@ -528,10 +528,14 @@ export function parseValveSequence(v: unknown): number[] | null {
  * Startet einen Zeitplan sofort – inkl. Smart-Anpassung (Regen/Feuchte) und
  * Sequenz-Plan. `lastRunAt` bleibt unberuehrt (der regulaere Lauf zur
  * geplanten Zeit findet weiterhin statt).
+ *
+ * `force` uebergeht die Smart-Checks (Regen/Feuchte) komplett und startet mit
+ * den geplanten Basisdauern – fuer den manuellen "Trotzdem starten"-Fall.
  */
 export async function startScheduleRun(
   scheduleId: number,
   accountId: number,
+  options: { force?: boolean } = {},
 ): Promise<{ ok: boolean; skipped?: string; error?: string }> {
   const s = await prisma.irrigationSchedule.findFirst({
     where: { id: scheduleId, accountId },
@@ -545,7 +549,9 @@ export async function startScheduleRun(
   const ctx = createTickCtx();
   const now = new Date();
   const deviceCreds = await ctx.credsForDevice(s.account.id, s.device.gardenaConfigId);
-  const smart = await computeSmartOutcome(s, s.account, deviceCreds, ctx, now);
+  const smart: SmartOutcome = options.force
+    ? { skip: null, factor: 1, deficitMm: null, moistureFactor: 1 }
+    : await computeSmartOutcome(s, s.account, deviceCreds, ctx, now);
   if (smart.skip) return { ok: true, skipped: smart.reason ?? "Smart-Check: ausgesetzt" };
 
   const sequence = parseValveSequence(s.valveSequence);
