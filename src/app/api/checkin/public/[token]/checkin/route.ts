@@ -44,9 +44,9 @@ export async function POST(
   if (ticket.endDate && new Date(ticket.endDate) < now) {
     return NextResponse.json({ success: false, message: "Ticket abgelaufen" });
   }
-  if (ticket.startDate && new Date(ticket.startDate) > now) {
-    return NextResponse.json({ success: false, message: "Ticket noch nicht gültig" });
-  }
+  // Kein startDate-Check: Am Check-in-Monitor darf auch VOR Ticketbeginn
+  // eingecheckt werden (z.B. Sommerkino-Gaeste, die frueher ankommen).
+  // Die Drehkreuz-/Scan-Logik prueft startDate weiterhin selbst.
   if (ticket.validityType === "DURATION" && ticket.firstScanAt && ticket.validityDurationMinutes) {
     const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
     if (now > expiresAt) {
