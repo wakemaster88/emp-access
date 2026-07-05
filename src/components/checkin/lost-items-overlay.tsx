@@ -5,8 +5,9 @@
  *
  * Zwei Ansichten in einem Overlay:
  *  1) Liste – Filter (Offen / Abgeholt / Alle) + Suche, große Tap-Targets.
- *  2) Formular – neue Fundsache mit Foto (Kamera/Datei), Beschreibung,
- *     Funddatum und Kontakt anlegen oder bestehende als abgeholt markieren.
+ *  2) Formular – neue Fundsache mit Foto (Live-Kamera via getUserMedia),
+ *     Beschreibung, Funddatum und Kontakt anlegen oder bestehende als
+ *     abgeholt markieren.
  *
  * Datenlieferant ist /api/checkin/public/[token]/lost-items – dieselbe
  * Tenant-Auflösung über den Monitor-Token wie bei den anderen Overlays.
@@ -16,6 +17,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Loader2, Search, X, PackageSearch, Camera, Check, AlertTriangle,
   RefreshCw, Plus, ChevronLeft, Phone, CalendarDays, Trash2, Undo2, User,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,27 +51,18 @@ function todayDateInput(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/// Bild clientseitig auf max. 1024px verkleinern → kompakte JPEG-Data-URL.
-async function resizeImageToDataUrl(file: File, maxSize = 1024): Promise<string> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden"));
-    reader.readAsDataURL(file);
-  });
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const el = new window.Image();
-    el.onload = () => resolve(el);
-    el.onerror = () => reject(new Error("Bild konnte nicht geladen werden"));
-    el.src = dataUrl;
-  });
-  const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+/// Aktuelles Video-Frame auf max. 1024px verkleinern → kompakte JPEG-Data-URL.
+function captureVideoFrame(video: HTMLVideoElement, maxSize = 1024): string | null {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return null;
+  const scale = Math.min(1, maxSize / Math.max(vw, vh));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
+  canvas.width = Math.round(vw * scale);
+  canvas.height = Math.round(vh * scale);
   const ctx = canvas.getContext("2d");
-  if (!ctx) return dataUrl;
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  if (!ctx) return null;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/jpeg", 0.8);
 }
 
@@ -423,7 +416,6 @@ function AddForm({
   onCreated: (item: LostItemApi) => void;
   onError: (msg: string) => void;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<"FOUND" | "LOST_REPORT">("FOUND");
   const [description, setDescription] = useState("");
   const [foundDate, setFoundDate] = useState(todayDateInput());
@@ -431,22 +423,11 @@ function AddForm({
   const [reporterName, setReporterName] = useState("");
   const [callbackPhone, setCallbackPhone] = useState("");
   const [image, setImage] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState("");
 
   const isLostReport = kind === "LOST_REPORT";
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setLocalError("");
-    try {
-      setImage(await resizeImageToDataUrl(file));
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Bild konnte nicht verarbeitet werden");
-    }
-  }
 
   async function handleSave() {
     if (!description.trim()) {
@@ -518,41 +499,39 @@ function AddForm({
       </div>
 
       {!isLostReport && (
-        <>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-          {image ? (
-            <div className="relative inline-block">
-              {/* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */}
-              <img
-                src={image}
-                alt="Fundsache"
-                className="h-40 w-40 rounded-2xl object-cover border border-slate-700"
-              />
-              <button
-                onClick={() => setImage(null)}
-                className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-slate-800 border border-slate-600 text-white flex items-center justify-center hover:bg-rose-600 active:scale-95"
-                title="Bild entfernen"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
+        image ? (
+          <div className="relative inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element -- Base64-Data-URL */}
+            <img
+              src={image}
+              alt="Fundsache"
+              className="h-40 w-40 rounded-2xl object-cover border border-slate-700"
+            />
             <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center justify-center gap-2 h-40 w-40 rounded-2xl border-2 border-dashed border-slate-700 text-slate-500 hover:border-amber-500 hover:text-amber-400 transition-colors active:scale-[0.98]"
+              onClick={() => setImage(null)}
+              className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-slate-800 border border-slate-600 text-white flex items-center justify-center hover:bg-rose-600 active:scale-95"
+              title="Bild entfernen"
             >
-              <Camera className="h-8 w-8" />
-              <span className="text-sm font-medium">Foto aufnehmen</span>
+              <X className="h-4 w-4" />
             </button>
-          )}
-        </>
+          </div>
+        ) : cameraOpen ? (
+          <PhotoCamera
+            onCapture={(dataUrl) => {
+              setImage(dataUrl);
+              setCameraOpen(false);
+            }}
+            onClose={() => setCameraOpen(false)}
+          />
+        ) : (
+          <button
+            onClick={() => setCameraOpen(true)}
+            className="flex flex-col items-center justify-center gap-2 h-40 w-40 rounded-2xl border-2 border-dashed border-slate-700 text-slate-500 hover:border-amber-500 hover:text-amber-400 transition-colors active:scale-[0.98]"
+          >
+            <Camera className="h-8 w-8" />
+            <span className="text-sm font-medium">Foto aufnehmen</span>
+          </button>
+        )
       )}
 
       <div className="space-y-1.5">
@@ -652,6 +631,113 @@ function AddForm({
         {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
         {isLostReport ? "Verlustmeldung speichern" : "Fundsache speichern"}
       </button>
+    </div>
+  );
+}
+
+/* ───────── Live-Kamera für das Fundsachen-Foto ───────── */
+
+function PhotoCamera({
+  onCapture, onClose,
+}: {
+  onCapture: (dataUrl: string) => void;
+  onClose: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode, width: { ideal: 1280 }, height: { ideal: 960 } },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          if (!cancelled) setReady(true);
+        }
+      } catch {
+        if (!cancelled) setError("Kamera-Zugriff nicht möglich");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+  }, [facingMode]);
+
+  function capture() {
+    const video = videoRef.current;
+    if (!video) return;
+    const dataUrl = captureVideoFrame(video);
+    if (!dataUrl) {
+      setError("Foto konnte nicht aufgenommen werden");
+      return;
+    }
+    onCapture(dataUrl);
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-700 overflow-hidden bg-black max-w-md">
+      <div className="relative aspect-[4/3] bg-black flex items-center justify-center">
+        {error ? (
+          <p className="text-sm text-slate-400 px-4 text-center">{error}</p>
+        ) : (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-2 right-2 p-2 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/70 active:scale-95"
+          title="Abbrechen"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex items-center justify-between p-2.5 bg-slate-900">
+        <div className="w-16" />
+        <button
+          type="button"
+          onClick={capture}
+          disabled={!ready || !!error}
+          className="h-14 w-14 rounded-full border-4 border-white bg-white/20 hover:bg-white/40 transition-colors disabled:opacity-30 flex items-center justify-center active:scale-95"
+          title="Foto aufnehmen"
+        >
+          <Camera className="h-5 w-5 text-white" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setReady(false);
+            setError("");
+            setFacingMode((m) => (m === "environment" ? "user" : "environment"));
+          }}
+          disabled={!!error}
+          className="w-16 inline-flex items-center justify-center gap-1 text-xs text-slate-400 hover:text-white disabled:opacity-30 py-2"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Drehen
+        </button>
+      </div>
     </div>
   );
 }
