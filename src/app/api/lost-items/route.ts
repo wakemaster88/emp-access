@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveLostItemAuth } from "@/lib/lost-item-auth";
 import { buildLostItemCreateData } from "@/lib/lost-item-data";
+import { readRequestBody } from "@/lib/api-body";
 import { lostItemCreateSchema } from "@/lib/validators";
 
 /**
@@ -56,7 +57,13 @@ export async function POST(request: NextRequest) {
   if ("error" in auth) return auth.error;
   const { db, accountId } = auth;
 
-  const body = await request.json();
+  const body = await readRequestBody(request);
+  if (!body) {
+    return NextResponse.json(
+      { error: "Body fehlt oder ist kein gültiges JSON/Formular" },
+      { status: 400 }
+    );
+  }
   const parsed = lostItemCreateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });

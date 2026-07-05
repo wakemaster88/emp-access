@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveLostItemAuth } from "@/lib/lost-item-auth";
 import { buildLostItemUpdateData } from "@/lib/lost-item-data";
+import { readRequestBody } from "@/lib/api-body";
 import { lostItemUpdateSchema } from "@/lib/validators";
 
 /** GET /api/lost-items/[id] – einzelner Eintrag inkl. Bild. */
@@ -34,7 +35,13 @@ export async function PATCH(
   const itemId = Number(id);
   if (isNaN(itemId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
-  const body = await request.json();
+  const body = await readRequestBody(request);
+  if (!body) {
+    return NextResponse.json(
+      { error: "Body fehlt oder ist kein gültiges JSON/Formular" },
+      { status: 400 }
+    );
+  }
   const parsed = lostItemUpdateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
