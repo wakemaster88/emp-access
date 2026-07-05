@@ -24,6 +24,17 @@ const ENDPOINTS = [
   { method: "GET", path: "/api/devices", desc: "Geräte auflisten" },
   { method: "GET", path: "/api/devices/[id]", desc: "Einzelnes Gerät abrufen" },
   { method: "POST", path: "/api/devices/[id]/action", desc: "Gerät steuern (action: open, emergency, reset, deactivate)" },
+  {
+    method: "GET",
+    path: "/api/lost-items?filter=open&kind=found&q=...",
+    desc: "Fundsachen & Verlustmeldungen suchen (Bilder via &withImages=1)",
+  },
+  {
+    method: "POST",
+    path: "/api/lost-items",
+    desc: 'Eintrag anlegen – Fundsache: {"description","foundDate"}; Verlustmeldung: {"kind":"LOST_REPORT","description","reporterName","callbackPhone"}',
+  },
+  { method: "PATCH", path: "/api/lost-items/[id]", desc: 'Eintrag ändern, z. B. {"pickedUp": true}' },
 ];
 
 export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
