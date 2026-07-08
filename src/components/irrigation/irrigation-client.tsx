@@ -293,11 +293,16 @@ export function IrrigationClient({
   }, []);
 
   // ── Status laden ─────────────────────────────────────────────────────────────
-  const fetchStatuses = useCallback(async () => {
+  // fresh=true umgeht den serverseitigen Cache (manueller Refresh, nach
+  // Aktionen). Das Hintergrund-Polling nutzt den Cache und laeuft nur alle
+  // 5 Min – die GARDENA-API hat ein hartes Wochen-Kontingent.
+  const fetchStatuses = useCallback(async (fresh = false) => {
     if (controllableIds.length === 0) return;
     setStatusLoading(true);
     try {
-      const res = await fetch(`/api/devices/gardena-statuses?ids=${controllableIds.join(",")}`);
+      const res = await fetch(
+        `/api/devices/gardena-statuses?ids=${controllableIds.join(",")}${fresh ? "&fresh=1" : ""}`,
+      );
       if (res.ok) {
         const data = (await res.json()) as ZoneStatus[];
         setStatuses(Object.fromEntries(data.map((d) => [d.id, d])));
@@ -311,7 +316,7 @@ export function IrrigationClient({
 
   useEffect(() => {
     fetchStatuses();
-    const t = setInterval(fetchStatuses, 30_000);
+    const t = setInterval(() => fetchStatuses(), 300_000);
     return () => clearInterval(t);
   }, [fetchStatuses]);
 
@@ -366,7 +371,7 @@ export function IrrigationClient({
       await sendAction(zone.id, "open", minutes);
       setStatuses((s) => ({ ...s, [zone.id]: { ...(s[zone.id] ?? emptyStatus(zone.id)), watering: true, activity: "MANUAL_WATERING" } }));
       flash("ok", `${zone.name}: Bewässerung für ${minutes} Min gestartet.`);
-      setTimeout(fetchStatuses, 3000);
+      setTimeout(() => fetchStatuses(true), 3000);
       setTimeout(fetchStats, 3000);
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Fehler");
@@ -381,7 +386,7 @@ export function IrrigationClient({
       await sendAction(zone.id, "deactivate");
       setStatuses((s) => ({ ...s, [zone.id]: { ...(s[zone.id] ?? emptyStatus(zone.id)), watering: false, activity: "CLOSED" } }));
       flash("ok", `${zone.name}: gestoppt.`);
-      setTimeout(fetchStatuses, 3000);
+      setTimeout(() => fetchStatuses(true), 3000);
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Fehler");
     } finally {
@@ -427,7 +432,7 @@ export function IrrigationClient({
     const cancelled = token.cancel;
     runToken.current = null;
     setRun(null);
-    fetchStatuses();
+    fetchStatuses(true);
     fetchStats();
     flash(cancelled ? "err" : "ok", cancelled ? "Smart-Bewässerung gestoppt." : "Smart-Bewässerung abgeschlossen.");
   }, [zoneList, statuses, baseMinutes, recommendation, sendAction, flash, fetchStatuses, fetchStats, pumpIdSet]);
@@ -593,7 +598,7 @@ export function IrrigationClient({
       flash("ok", s.valveSequence?.length
         ? `${s.deviceName}: Sequenz mit ${s.valveSequence.length} Ventilen gestartet.`
         : `${s.deviceName}: ${s.durationMinutes} Min gestartet.`);
-      setTimeout(fetchStatuses, 3000);
+      setTimeout(() => fetchStatuses(true), 3000);
       setTimeout(fetchStats, 3000);
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Start fehlgeschlagen.");
@@ -616,7 +621,7 @@ export function IrrigationClient({
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Stopp fehlgeschlagen"); }
       flash("ok", `${s.deviceName}: gestoppt.`);
-      setTimeout(fetchStatuses, 3000);
+      setTimeout(() => fetchStatuses(true), 3000);
     } catch (e) {
       flash("err", e instanceof Error ? e.message : "Stopp fehlgeschlagen.");
     } finally {
@@ -858,7 +863,7 @@ export function IrrigationClient({
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
             <Droplets className="h-4 w-4" /> Bewässerung
           </h2>
-          <Button variant="ghost" size="sm" onClick={fetchStatuses} disabled={statusLoading} className="text-slate-500">
+          <Button variant="ghost" size="sm" onClick={() => fetchStatuses(true)} disabled={statusLoading} className="text-slate-500">
             <RefreshCw className={cn("h-4 w-4 mr-1.5", statusLoading && "animate-spin")} /> Aktualisieren
           </Button>
         </div>

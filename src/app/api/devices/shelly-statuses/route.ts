@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import {
+  shellyBaseId,
+  shellyCloudAllStatuses,
+  shellySwitchIndex,
+  shellySwitchState,
+} from "@/lib/shelly-cloud";
 
 export interface ShellyDeviceStatus {
   id: number;
@@ -7,24 +13,6 @@ export interface ShellyDeviceStatus {
   output: boolean | null;
   power?: number;
   source: "local" | "cloud" | "unavailable";
-}
-
-// Shelly Cloud uses 1-based suffixes (_1 = switch:0). Map to 0-based switch index.
-function toSwitchIndex(channelSuffix: number): number {
-  return channelSuffix > 0 ? channelSuffix - 1 : 0;
-}
-
-type SwitchEntry = { output?: boolean; apower?: number };
-type DeviceStatusMap = Record<string, unknown>;
-
-function findSwitch(status: DeviceStatusMap, idx: number): SwitchEntry | undefined {
-  const direct = status[`switch:${idx}`] as SwitchEntry | undefined;
-  if (direct !== undefined) return direct;
-  for (let i = 0; i <= 4; i++) {
-    const entry = status[`switch:${i}`] as SwitchEntry | undefined;
-    if (entry !== undefined) return entry;
-  }
-  return undefined;
 }
 
 async function fetchLocal(ip: string, switchIdx: number): Promise<{ online: true; output: boolean | null; power?: number } | null> {
@@ -72,16 +60,14 @@ export async function GET(request: NextRequest) {
     where: { accountId: accountId!, provider: "SHELLY" },
   });
 
-  const cloudBaseUrl = config?.token && config?.baseUrl
-    ? `https://${config.baseUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}`
+  // Ein einziger Cloud-Abruf fuer alle Geraete (Shelly Cloud erlaubt nur
+  // ~1 Request/s – Einzelabfragen je Geraet laufen sofort in HTTP 429).
+  const cloudStatuses = config?.token && config?.baseUrl
+    ? await shellyCloudAllStatuses(config.baseUrl, config.token)
     : null;
 
-  // Fetch all statuses in parallel
   const results = await Promise.all(devices.map(async (device): Promise<ShellyDeviceStatus> => {
-    const channelSuffix = device.shellyId?.includes("_")
-      ? (Number(device.shellyId.split("_").pop()) || 0)
-      : 0;
-    const switchIdx = toSwitchIndex(channelSuffix);
+    const switchIdx = shellySwitchIndex(device.shellyId);
 
     // 1. Local
     if (device.ipAddress) {
@@ -89,38 +75,14 @@ export async function GET(request: NextRequest) {
       if (local) return { id: device.id, ...local, source: "local" };
     }
 
-    // 2. Cloud
-    const baseId = device.shellyId?.split("_")[0] ?? device.shellyId;
-    if (cloudBaseUrl && config?.token && baseId) {
-      try {
-        const res = await fetch(`${cloudBaseUrl}/device/status`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ auth_key: config.token.trim(), id: baseId }),
-          signal: AbortSignal.timeout(4000),
-        });
-        if (res.ok) {
-          const data = await res.json() as {
-            isok?: boolean;
-            data?: {
-              online?: boolean;
-              device_status?: DeviceStatusMap & { relays?: { ison?: boolean }[] };
-            };
-          };
-          if (data.isok && data.data) {
-            // online is at data.data.online, not inside device_status
-            const online = data.data.online ?? false;
-            const s = data.data.device_status ?? {};
-            const sw = findSwitch(s, switchIdx);
-            if (sw !== undefined) {
-              return { id: device.id, online, output: sw.output ?? null, power: sw.apower, source: "cloud" };
-            }
-            const relay = (s.relays as { ison?: boolean }[] | undefined)?.[switchIdx]
-              ?? (s.relays as { ison?: boolean }[] | undefined)?.[0];
-            return { id: device.id, online, output: relay?.ison ?? null, source: "cloud" };
-          }
-        }
-      } catch { /* unavailable */ }
+    // 2. Cloud (aus dem gemeinsamen all_status-Abruf)
+    const baseId = shellyBaseId(device.shellyId);
+    if (cloudStatuses && baseId) {
+      const entry = cloudStatuses.get(baseId) ?? cloudStatuses.get(baseId.toLowerCase());
+      if (entry) {
+        const sw = shellySwitchState(entry.status, switchIdx);
+        return { id: device.id, online: entry.online, output: sw.output, power: sw.power, source: "cloud" };
+      }
     }
 
     return { id: device.id, online: false, output: null, source: "unavailable" };

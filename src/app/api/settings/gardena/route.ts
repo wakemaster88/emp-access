@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
     if (!config?.token || !config?.extraConfig) {
       return NextResponse.json({ error: "Verbindung nicht gefunden" }, { status: 404 });
     }
-    const res = await gardenaListValves(config.token, config.extraConfig);
+    // Import-Dialog: frisch laden, damit neu hinzugefuegte Geraete auftauchen.
+    const res = await gardenaListValves(config.token, config.extraConfig, { fresh: true });
     if (!res.ok) {
       return NextResponse.json(
         { error: res.error ?? "GARDENA Anfrage fehlgeschlagen" },
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const res = await gardenaListValves(applicationKey.trim(), applicationSecret.trim());
+  const res = await gardenaListValves(applicationKey.trim(), applicationSecret.trim(), { fresh: true });
   if (!res.ok) {
     const msg =
       res.status === 401 || res.status === 403

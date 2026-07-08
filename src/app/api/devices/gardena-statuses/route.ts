@@ -22,6 +22,8 @@ export async function GET(request: NextRequest) {
   const { db, accountId } = session;
   const idsParam = request.nextUrl.searchParams.get("ids") ?? "";
   const ids = idsParam.split(",").map(Number).filter((n) => !isNaN(n) && n > 0);
+  // fresh=1 umgeht den serverseitigen Cache (manueller Refresh, nach Aktionen).
+  const fresh = request.nextUrl.searchParams.get("fresh") === "1";
   if (ids.length === 0) return NextResponse.json([]);
 
   const devices = await db.device.findMany({
@@ -67,7 +69,7 @@ export async function GET(request: NextRequest) {
     [...neededConfigIds].map(async (cid) => {
       const c = configById.get(cid);
       if (!c?.token || !c?.extraConfig) return;
-      const m = await gardenaStatusMap(c.token, c.extraConfig);
+      const m = await gardenaStatusMap(c.token, c.extraConfig, { fresh });
       for (const [k, v] of m) combined.set(k, v);
     }),
   );

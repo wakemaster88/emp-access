@@ -33,6 +33,44 @@ export function _clearGardenaTokenCache() {
   tokenCache.clear();
 }
 
+// ── Response-Cache (Locations) ────────────────────────────────────────────────
+//
+// Die GARDENA-API hat ein hartes Kontingent (~700 Requests/Woche laut
+// Husqvarna-Support). Status-Polling ohne Cache brennt das in Stunden ab und
+// die API antwortet dann nur noch mit 429 ("explicit deny"). Deshalb werden
+// GET-Antworten (Locations-Liste + Location-Details) pro warmer Function-
+// Instanz gecached; alle Status-/Sensor-Abfragen teilen sich diese Daten.
+
+const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
+
+interface ResponseCacheEntry {
+  expiresAt: number;
+  data: unknown;
+}
+
+const responseCache = new Map<string, ResponseCacheEntry>();
+
+export interface GardenaCacheOptions {
+  /** Cache umgehen und frische Daten holen (z. B. manueller Refresh). */
+  fresh?: boolean;
+}
+
+/**
+ * Cache einer Verbindung invalidieren – nach Steuerbefehlen, damit der
+ * naechste Status-Abruf den neuen Ventil-Zustand zeigt.
+ */
+export function gardenaInvalidateCache(applicationKey: string) {
+  const prefix = `${applicationKey.trim()}:`;
+  for (const key of responseCache.keys()) {
+    if (key.startsWith(prefix)) responseCache.delete(key);
+  }
+}
+
+/** Test-Helper, damit Tests den Response-Cache leeren koennen. */
+export function _clearGardenaResponseCache() {
+  responseCache.clear();
+}
+
 export async function gardenaGetAccessToken(
   applicationKey: string,
   applicationSecret: string,
@@ -137,6 +175,28 @@ async function gardenaFetch(
   }
 }
 
+/** GET mit Response-Cache: erst Cache pruefen, sonst fetchen und cachen. */
+async function gardenaFetchCached(
+  applicationKey: string,
+  applicationSecret: string,
+  path: string,
+  opts: GardenaCacheOptions = {},
+): Promise<GardenaFetchResult> {
+  const cacheKey = `${applicationKey.trim()}:${path}`;
+  if (!opts.fresh) {
+    const cached = responseCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { ok: true, status: 200, data: cached.data };
+    }
+  }
+
+  const res = await gardenaFetch(applicationKey, applicationSecret, path);
+  if (res.ok) {
+    responseCache.set(cacheKey, { expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS, data: res.data });
+  }
+  return res;
+}
+
 // ── JSON:API-Typen (nur die genutzten Felder) ────────────────────────────────
 
 interface GardenaAttr<T> {
@@ -179,8 +239,9 @@ export interface GardenaLocation {
 export async function gardenaListLocations(
   applicationKey: string,
   applicationSecret: string,
+  opts: GardenaCacheOptions = {},
 ): Promise<{ ok: boolean; status: number; locations: GardenaLocation[]; error?: string }> {
-  const res = await gardenaFetch(applicationKey, applicationSecret, "/locations");
+  const res = await gardenaFetchCached(applicationKey, applicationSecret, "/locations", opts);
   if (!res.ok) {
     return { ok: false, status: res.status, locations: [], error: res.error };
   }
@@ -196,8 +257,9 @@ async function gardenaGetLocation(
   applicationKey: string,
   applicationSecret: string,
   locationId: string,
+  opts: GardenaCacheOptions = {},
 ): Promise<GardenaLocationResponse | null> {
-  const res = await gardenaFetch(applicationKey, applicationSecret, `/locations/${locationId}`);
+  const res = await gardenaFetchCached(applicationKey, applicationSecret, `/locations/${locationId}`, opts);
   if (!res.ok) return null;
   return res.data as GardenaLocationResponse;
 }
@@ -260,13 +322,14 @@ function buildValveName(commonName: string | null, valveName: string | null, dev
 export async function gardenaListValves(
   applicationKey: string,
   applicationSecret: string,
+  opts: GardenaCacheOptions = {},
 ): Promise<{ ok: boolean; status: number; valves: GardenaValve[]; error?: string }> {
-  const locs = await gardenaListLocations(applicationKey, applicationSecret);
+  const locs = await gardenaListLocations(applicationKey, applicationSecret, opts);
   if (!locs.ok) return { ok: false, status: locs.status, valves: [], error: locs.error };
 
   const valves: GardenaValve[] = [];
   for (const loc of locs.locations) {
-    const detail = await gardenaGetLocation(applicationKey, applicationSecret, loc.id);
+    const detail = await gardenaGetLocation(applicationKey, applicationSecret, loc.id, opts);
     const included = detail?.included ?? [];
     const commonByDevice = indexCommonByDevice(included);
     const locationName = attrValue<string>(detail?.data, "name") ?? loc.name;
@@ -302,13 +365,14 @@ export async function gardenaListValves(
 export async function gardenaStatusMap(
   applicationKey: string,
   applicationSecret: string,
+  opts: GardenaCacheOptions = {},
 ): Promise<Map<string, GardenaServiceStatus>> {
   const result = new Map<string, GardenaServiceStatus>();
-  const locs = await gardenaListLocations(applicationKey, applicationSecret);
+  const locs = await gardenaListLocations(applicationKey, applicationSecret, opts);
   if (!locs.ok) return result;
 
   for (const loc of locs.locations) {
-    const detail = await gardenaGetLocation(applicationKey, applicationSecret, loc.id);
+    const detail = await gardenaGetLocation(applicationKey, applicationSecret, loc.id, opts);
     const included = detail?.included ?? [];
     const commonByDevice = indexCommonByDevice(included);
 
@@ -358,13 +422,14 @@ export interface GardenaSensor {
 export async function gardenaListSensors(
   applicationKey: string,
   applicationSecret: string,
+  opts: GardenaCacheOptions = {},
 ): Promise<{ ok: boolean; status: number; sensors: GardenaSensor[]; error?: string }> {
-  const locs = await gardenaListLocations(applicationKey, applicationSecret);
+  const locs = await gardenaListLocations(applicationKey, applicationSecret, opts);
   if (!locs.ok) return { ok: false, status: locs.status, sensors: [], error: locs.error };
 
   const sensors: GardenaSensor[] = [];
   for (const loc of locs.locations) {
-    const detail = await gardenaGetLocation(applicationKey, applicationSecret, loc.id);
+    const detail = await gardenaGetLocation(applicationKey, applicationSecret, loc.id, opts);
     const included = detail?.included ?? [];
     const commonByDevice = indexCommonByDevice(included);
     const locationName = attrValue<string>(detail?.data, "name") ?? loc.name;
@@ -416,6 +481,9 @@ export async function gardenaControlValve(
     body: { data: { id: "emp-access", type: "VALVE_CONTROL", attributes } },
     timeoutMs: 15_000,
   });
+
+  // Gecachte Statusdaten sind nach einem Befehl veraltet.
+  if (res.ok) gardenaInvalidateCache(applicationKey);
 
   // 202 Accepted ist der Erfolgsfall; gardenaFetch behandelt 2xx als ok.
   return { ok: res.ok, status: res.status, error: res.error };
