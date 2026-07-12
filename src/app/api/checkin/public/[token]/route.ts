@@ -57,6 +57,8 @@ export async function GET(
     annyBookingId: true,
     // Freitext-Notiz, wird im Ticket-Overlay angezeigt/editiert.
     notes: true,
+    // Antworten aus Info-Anfragen (Label -> Wert), Badges im TicketCard.
+    guestInfo: true,
   } as const;
 
   const [
@@ -228,6 +230,23 @@ export async function GET(
     }),
   ]);
 
+  // Offene Info-Anfragen: Tickets, die per Mail um Zusatzinfos gebeten
+  // wurden, aber noch keine Antwort haben -> "Infos fehlen"-Badge im UI.
+  // `ticketIds` ist eine JSON-Spalte, daher in JS aufloesen (Anzahl der
+  // offenen Requests ist klein, das bleibt billig).
+  const pendingInfoTicketIds = new Set<number>();
+  try {
+    const pendingRequests = await prisma.infoRequest.findMany({
+      where: { accountId, status: "SENT" },
+      select: { ticketIds: true },
+    });
+    for (const r of pendingRequests) {
+      if (Array.isArray(r.ticketIds)) {
+        for (const id of r.ticketIds as number[]) pendingInfoTicketIds.add(id);
+      }
+    }
+  } catch { /* non-critical */ }
+
   const checkedInIds = new Set(
     grantedTicketIdsToday
       .map((s) => s.ticketId)
@@ -272,6 +291,9 @@ export async function GET(
   const enrichedTickets = tickets.map((t) => ({
     ...t,
     checkedIn: checkedInForTicket(t),
+    infoPending:
+      pendingInfoTicketIds.has(t.id) &&
+      (t.guestInfo == null || Object.keys(t.guestInfo as object).length === 0),
     service: t.service
       ? (() => {
           // serviceAreas raus - braucht das Frontend nicht und blaeht den
@@ -292,6 +314,9 @@ export async function GET(
     tickets: sub.tickets.map((t) => ({
       ...t,
       checkedIn: checkedInForTicket(t),
+      infoPending:
+        pendingInfoTicketIds.has(t.id) &&
+        (t.guestInfo == null || Object.keys(t.guestInfo as object).length === 0),
     })),
   }));
 

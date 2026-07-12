@@ -206,6 +206,25 @@ export async function PUT(
     updateData.notes = v || null;
   }
 
+  // Gaeste-Infos (Antworten aus Info-Anfragen bzw. manuelle Erfassung am
+  // Monitor): Objekt mit Label->Wert-Strings. Leere Werte werden entfernt,
+  // leeres Objekt loescht die Infos (null).
+  if (body.guestInfo !== undefined) {
+    if (body.guestInfo === null) {
+      updateData.guestInfo = null;
+    } else if (typeof body.guestInfo === "object" && !Array.isArray(body.guestInfo)) {
+      const clean: Record<string, string> = {};
+      for (const [k, v] of Object.entries(body.guestInfo as Record<string, unknown>)) {
+        const key = String(k).trim().slice(0, 80);
+        const val = typeof v === "string" ? v.trim().slice(0, 160) : "";
+        if (key && val) clean[key] = val;
+      }
+      updateData.guestInfo = Object.keys(clean).length > 0 ? clean : null;
+    } else {
+      return NextResponse.json({ error: "guestInfo muss ein Objekt sein" }, { status: 400 });
+    }
+  }
+
   // Wenn Vor-/Nachname aktualisiert wurden, ziehen wir den `name`
   // automatisch nach. So bleibt das, was im Listing/Header angezeigt
   // wird, konsistent.
@@ -251,6 +270,7 @@ export async function PUT(
       slotStart: updated.slotStart,
       slotEnd: updated.slotEnd,
       notes: updated.notes,
+      guestInfo: updated.guestInfo,
     },
   });
 }

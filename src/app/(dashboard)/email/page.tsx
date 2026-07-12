@@ -3,6 +3,7 @@ import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { EmailSettings } from "@/components/settings/email-settings";
+import { InfoRequestsCard } from "@/components/settings/info-requests-card";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,7 @@ export default async function EmailPage() {
           subscriptions={subscriptionRefs}
           services={serviceRefs}
         />
+        <InfoRequestsCard services={serviceRefs} />
       </div>
     </>
   );

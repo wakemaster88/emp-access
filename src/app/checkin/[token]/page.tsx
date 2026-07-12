@@ -36,6 +36,7 @@ import {
   StickyNote,
   Pause,
   Play,
+  ClipboardList,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
@@ -81,6 +82,10 @@ interface CheckinTicket {
   annyBookingId: string | null;
   /** Freitext-Notiz, die das Personal am Shop-Monitor zum Ticket hinterlegt. */
   notes: string | null;
+  /** Antworten aus Info-Anfragen (Label -> Wert), z. B. Schuhgroesse/Level. */
+  guestInfo: Record<string, string> | null;
+  /** true = Info-Anfrage verschickt, aber noch keine Antwort ("Infos fehlen"). */
+  infoPending?: boolean;
   checkedIn: boolean;
   accessArea?: { id: number; name: string } | null;
   subscription?: { id: number; name: string; requiresPhoto?: boolean; requiresRfid?: boolean } | null;
@@ -366,7 +371,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [checkingIn, setCheckingIn] = useState<number | null>(null);
   const [updatingTicket, setUpdatingTicket] = useState<number | null>(null);
   const [rfidInput, setRfidInput] = useState("");
-  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | null>(null);
+  const [editMode, setEditMode] = useState<"photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | "guestInfo" | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cancellingVoucher, setCancellingVoucher] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -796,6 +801,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       slotStart?: string | null;
       slotEnd?: string | null;
       notes?: string | null;
+      guestInfo?: Record<string, string> | null;
     },
     force?: boolean,
   ) => {
@@ -846,6 +852,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         if (update.slotStart !== undefined) patch.slotStart = json.ticket?.slotStart ?? update.slotStart;
         if (update.slotEnd !== undefined) patch.slotEnd = json.ticket?.slotEnd ?? update.slotEnd;
         if (update.notes !== undefined) patch.notes = json.ticket?.notes ?? update.notes;
+        if (update.guestInfo !== undefined) patch.guestInfo = json.ticket?.guestInfo ?? update.guestInfo;
         if (json.ticket?.startDate !== undefined && update.slotStart !== undefined) patch.startDate = json.ticket.startDate;
         if (json.ticket?.endDate !== undefined && update.slotEnd !== undefined) patch.endDate = json.ticket.endDate;
         if (json.ticket?.name) patch.name = json.ticket.name;
@@ -1678,6 +1685,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           onCancelVoucher={handleCancelVoucher}
           cancellingVoucher={cancellingVoucher}
           onSaveNotes={(notes) => handleUpdateTicket(selectedTicket.id, { notes })}
+          onSaveGuestInfo={(guestInfo) => handleUpdateTicket(selectedTicket.id, { guestInfo })}
           onPause={(duration, reason) =>
             handlePauseTicket(selectedTicket.id, "pause", { duration, reason })
           }
@@ -3467,10 +3475,29 @@ function TicketCard({
             ))}
           </div>
         )}
-        {(needsPhoto || needsRfid || annyState) && (
+        {/* Gaeste-Infos aus Info-Anfragen (Teilnehmername, Schuhgroesse,
+            Level, Neopren etc.) - beschleunigt den Kurs-Check-in. */}
+        {ticket.guestInfo && Object.keys(ticket.guestInfo).length > 0 && (
+          <div className="flex gap-1 mt-1 flex-wrap">
+            {Object.entries(ticket.guestInfo).map(([label, value]) => (
+              <span key={label} className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-md font-medium">
+                {label === "Teilnehmer" ? value : `${label}: ${value}`}
+              </span>
+            ))}
+          </div>
+        )}
+        {(needsPhoto || needsRfid || annyState || ticket.infoPending) && (
           <div className="flex gap-1 mt-1 flex-wrap">
             {needsPhoto && <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-md font-medium">Foto fehlt</span>}
             {needsRfid && <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-md font-medium">RFID fehlt</span>}
+            {ticket.infoPending && (
+              <span
+                className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-md font-medium"
+                title="Info-Anfrage verschickt, aber noch nicht beantwortet."
+              >
+                Infos fehlen
+              </span>
+            )}
             {annyState === "synced" && (
               <span
                 className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-md font-medium"
@@ -3743,6 +3770,7 @@ function TicketOverlay({
   onCancelVoucher,
   cancellingVoucher,
   onSaveNotes,
+  onSaveGuestInfo,
   onPause,
   onResume,
 }: {
@@ -3750,8 +3778,8 @@ function TicketOverlay({
   onClose: () => void;
   onCheckin: () => void;
   checkingIn: boolean;
-  editMode: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | null;
-  setEditMode: (m: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | null) => void;
+  editMode: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | "guestInfo" | null;
+  setEditMode: (m: "photo" | "rfid" | "dates" | "person" | "slot" | "notes" | "pause" | "guestInfo" | null) => void;
   onSaveDates: (startDate: string | null, endDate: string | null) => void;
   onSavePerson: (person: { firstName: string | null; lastName: string | null; birthDate: string | null }) => void;
   onSaveSlot: (slotStart: string | null, slotEnd: string | null) => void;
@@ -3770,6 +3798,7 @@ function TicketOverlay({
   onCancelVoucher: () => void;
   cancellingVoucher: boolean;
   onSaveNotes: (notes: string | null) => void;
+  onSaveGuestInfo: (info: Record<string, string> | null) => void;
   onPause: (duration: string, reason: string) => void;
   onResume: () => void;
 }) {
@@ -3799,6 +3828,25 @@ function TicketOverlay({
   const [noteInput, setNoteInput] = useState(ticket.notes ?? "");
   const [pauseDurationChoice, setPauseDurationChoice] = useState<string>("1d");
   const [pauseReasonInput, setPauseReasonInput] = useState("");
+
+  // Gaeste-Infos-Editor: Label/Wert-Zeilen aus ticket.guestInfo plus eine
+  // Leerzeile zum Ergaenzen neuer Felder. Wird beim Oeffnen des Editors
+  // frisch aus dem Ticket-Stand befuellt.
+  const [guestInfoDraft, setGuestInfoDraft] = useState<{ label: string; value: string }[]>([]);
+  const openGuestInfoEditor = () => {
+    const entries = Object.entries(ticket.guestInfo ?? {}).map(([label, value]) => ({ label, value }));
+    setGuestInfoDraft([...entries, { label: "", value: "" }]);
+    setEditMode("guestInfo");
+  };
+  const saveGuestInfo = () => {
+    const info: Record<string, string> = {};
+    for (const row of guestInfoDraft) {
+      const label = row.label.trim();
+      const value = row.value.trim();
+      if (label && value) info[label] = value;
+    }
+    onSaveGuestInfo(Object.keys(info).length > 0 ? info : null);
+  };
 
   const isPaused = ticket.status === "PAUSED";
   const pauseInfo = (() => {
@@ -3980,6 +4028,106 @@ function TicketOverlay({
                 </span>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Gaeste-Infos (Antworten aus Info-Anfragen, z. B. Ferienkurs:
+            Sport, Schuhgroesse, Level, Neopren). Klick oeffnet den
+            Label/Wert-Editor - das Personal kann vor Ort korrigieren oder
+            fehlende Infos direkt erfassen. */}
+        {editMode === "guestInfo" ? (
+          <div className="px-5 py-3 border-b border-slate-800 space-y-2">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <ClipboardList className="h-3.5 w-3.5 inline mr-1.5" />Gäste-Infos
+            </p>
+            <div className="space-y-1.5">
+              {guestInfoDraft.map((row, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={row.label}
+                    onChange={(e) => {
+                      const next = [...guestInfoDraft];
+                      next[i] = { ...next[i], label: e.target.value };
+                      // Letzte Zeile befuellt -> neue Leerzeile anhaengen.
+                      if (i === next.length - 1 && e.target.value) next.push({ label: "", value: "" });
+                      setGuestInfoDraft(next);
+                    }}
+                    placeholder="Feld (z. B. Schuhgröße)"
+                    className="w-2/5 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  />
+                  <input
+                    type="text"
+                    value={row.value}
+                    onChange={(e) => {
+                      const next = [...guestInfoDraft];
+                      next[i] = { ...next[i], value: e.target.value };
+                      setGuestInfoDraft(next);
+                    }}
+                    placeholder="Wert"
+                    className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={saveGuestInfo}
+                disabled={updatingTicket}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
+              >
+                {updatingTicket && editMode === "guestInfo" ? (
+                  <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                ) : (
+                  "Speichern"
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditMode(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        ) : ticket.guestInfo && Object.keys(ticket.guestInfo).length > 0 ? (
+          <div className="px-5 py-3 border-b border-slate-800">
+            <button
+              type="button"
+              onClick={openGuestInfoEditor}
+              className="w-full text-left group"
+            >
+              <p className="text-xs font-bold text-cyan-300 uppercase tracking-wider mb-2 flex items-center">
+                <ClipboardList className="h-3.5 w-3.5 inline mr-1.5" />Gäste-Infos
+                <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto" />
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(ticket.guestInfo).map(([label, value]) => (
+                  <span key={label} className="text-sm bg-cyan-500/15 text-cyan-200 border border-cyan-500/30 px-3 py-1.5 rounded-xl font-medium">
+                    <span className="text-cyan-400/80 text-xs mr-1">{label}</span>
+                    {value}
+                  </span>
+                ))}
+              </div>
+            </button>
+          </div>
+        ) : (
+          <div className="px-5 py-3 border-b border-slate-800">
+            <button
+              type="button"
+              onClick={openGuestInfoEditor}
+              className="w-full flex items-center gap-2 text-xs text-slate-400 hover:text-slate-300 transition-colors group"
+            >
+              <ClipboardList className="h-3.5 w-3.5 shrink-0" />
+              <span className="font-medium">
+                {ticket.infoPending
+                  ? "Infos angefragt, noch keine Antwort – manuell erfassen"
+                  : "Gäste-Infos erfassen"}
+              </span>
+              <Plus className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+            </button>
           </div>
         )}
 

@@ -95,6 +95,8 @@ model Account {
   irrigationSchedules IrrigationSchedule[]
   irrigationRuns  IrrigationRun[]
   pushSubscriptions PushSubscription[]
+  infoFormTemplates InfoFormTemplate[]
+  infoRequests    InfoRequest[]
 }
 
 model Admin {
@@ -162,6 +164,9 @@ model Device {
   /// als online bzw. Episode beendet. Wird ausschliesslich vom Cron
   /// `/api/cron/device-offline-check` gesetzt und geloescht.
   offlineNotifiedAt DateTime?
+  /// Opt-in pro Geraet: nur wenn true, prueft der Offline-Cron dieses Geraet
+  /// und sendet Push-Benachrichtigungen bei offline/wieder-online.
+  offlineAlertsEnabled Boolean @default(false)
   accountId       Int
   account         Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   scans           Scan[]
@@ -234,6 +239,12 @@ model Ticket {
   /// Wird im Ticket-Overlay sichtbar/editierbar; hat keine Auswirkung auf
   /// die Zugriffslogik.
   notes                   String?              @db.Text
+  /// Antworten aus einer Info-Anfrage (Gaeste-Formular), als Key-Value-JSON:
+  /// {"participantName": "Lena Vogt", "sport": "Wakeboard", "schuhgroesse": "36", ...}
+  /// Die Feld-Definitionen (Label, Typ, Optionen) stehen im zugehoerigen
+  /// `InfoFormTemplate`. Wird im Check-in-Monitor als Badges angezeigt und
+  /// kann dort auch manuell editiert werden. NULL = keine Infos erfasst.
+  guestInfo               Json?
   accountId               Int
   account                 Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accessArea              AccessArea?          @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
@@ -687,6 +698,58 @@ model EmailSend {
   @@index([ticketId])
   @@index([ruleId])
   @@index([accountId, ruleId, ticketId])
+}
+
+/// Wiederverwendbare Formular-Definition fuer Info-Anfragen an Gaeste
+/// (z. B. Ferienkurs: Wasserski/Wakeboard, Schuhgroesse, Level, Neopren).
+/// `fields` ist ein JSON-Array von Feld-Definitionen:
+///   [{ key, label, type: "choice"|"text"|"number"|"boolean",
+///      options?: string[], required?: boolean, showIfKey?: string }]
+/// `showIfKey` blendet das Feld nur ein, wenn das referenzierte
+/// boolean-Feld mit "Ja" beantwortet wurde (z. B. Neopren-Groesse).
+model InfoFormTemplate {
+  id           Int           @id @default(autoincrement())
+  accountId    Int
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name         String
+  /// Einleitungstext, der im oeffentlichen Formular ueber den Feldern steht.
+  introText    String?       @db.Text
+  fields       Json
+  /// Wenn true, wird pro Platz zusaetzlich der Teilnehmername abgefragt
+  /// (Ticket-Name ist oft der buchende Elternteil, nicht das Kind).
+  askParticipantName Boolean @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  infoRequests InfoRequest[]
+
+  @@index([accountId])
+}
+
+/// Eine versendete Info-Anfrage an EINE Email-Adresse. Buendelt alle
+/// Wochen-Tickets (Kursplaetze) dieser Adresse: der Empfaenger beantwortet
+/// das Formular pro Ticket, die Antworten landen in `Ticket.guestInfo`.
+/// `token` ist das Zugriffsgeheimnis der oeffentlichen /info/<token>-Seite.
+model InfoRequest {
+  id           Int              @id @default(autoincrement())
+  accountId    Int
+  account      Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  templateId   Int
+  template     InfoFormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  token        String           @unique
+  /// Empfaenger-Adresse (Snapshot).
+  email        String
+  /// JSON-Array der Ticket-IDs, die diese Anfrage abdeckt.
+  ticketIds    Json
+  /// "SENT" | "COMPLETED" | "FAILED"
+  status       String           @default("SENT")
+  sentAt       DateTime         @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, status])
+  @@index([token])
 }
 
 /// Web-Push-Abonnement eines Browsers/PWA-Geraets (Dashboard). Ein Admin kann
