@@ -20,6 +20,11 @@ import {
  * werden in EINER Mail gebuendelt (ein Formular-Link deckt alle Plaetze ab).
  */
 
+/** Sequenzieller Mail-Versand an bis zu ~150 Empfaenger braucht Zeit;
+ *  das globale 10s-Limit aus vercel.json wuerde den Versand mittendrin
+ *  abbrechen (passiert am 12.07. nach 24 von 110 Empfaengern). */
+export const maxDuration = 300;
+
 interface RecipientTicket {
   id: number;
   uuid: string | null;
