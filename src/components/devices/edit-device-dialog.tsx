@@ -37,6 +37,7 @@ export interface DeviceData {
   accessIn: number | null;
   accessOut: number | null;
   allowReentry: boolean;
+  offlineAlertsEnabled: boolean;
   firmware: string | null;
   schedule: unknown | null;
 }
@@ -86,6 +87,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
     accessIn: "none",
     accessOut: "none",
     allowReentry: false,
+    offlineAlertsEnabled: false,
     firmware: "",
   });
   const [saving, setSaving] = useState(false);
@@ -105,6 +107,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
         accessIn: device.accessIn != null ? String(device.accessIn) : "none",
         accessOut: device.accessOut != null ? String(device.accessOut) : "none",
         allowReentry: device.allowReentry,
+        offlineAlertsEnabled: device.offlineAlertsEnabled,
         firmware: device.firmware ?? "",
       });
       setError("");
@@ -149,6 +152,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
           accessIn,
           accessOut,
           allowReentry: form.allowReentry,
+          offlineAlertsEnabled: form.offlineAlertsEnabled,
           firmware: form.firmware || null,
         }),
       });
@@ -351,6 +355,17 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
             </div>
             <Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} />
           </div>
+
+          {/* Offline-Push – nur für überwachbare Typen (Pi, Shelly, GARDENA) */}
+          {device?.type !== "NUKI_SMARTLOCK" && (
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <div>
+                <p className="text-sm font-medium">Offline-Benachrichtigung</p>
+                <p className="text-xs text-slate-500">Push senden, wenn das Gerät offline geht</p>
+              </div>
+              <Switch checked={form.offlineAlertsEnabled} onCheckedChange={(v) => set("offlineAlertsEnabled", v)} />
+            </div>
+          )}
 
           {CAT_HAS_REENTRY.has(form.category) && (
             <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">

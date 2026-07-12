@@ -105,6 +105,9 @@ export async function PUT(
       accessIn: body.accessIn ?? existing.accessIn,
       accessOut: body.accessOut ?? existing.accessOut,
       allowReentry: body.allowReentry ?? existing.allowReentry,
+      offlineAlertsEnabled: typeof body.offlineAlertsEnabled === "boolean"
+        ? body.offlineAlertsEnabled
+        : existing.offlineAlertsEnabled,
       firmware: body.firmware ?? existing.firmware,
       schedule: body.schedule !== undefined ? (body.schedule ?? null) : existing.schedule,
     },

@@ -102,6 +102,8 @@ export async function runOfflineCheckTick(): Promise<OfflineTickResult> {
       where: {
         accountId,
         isActive: true,
+        // Opt-in pro Geraet: nur Geraete mit aktivierter Offline-Benachrichtigung.
+        offlineAlertsEnabled: true,
         type: { in: ["RASPBERRY_PI", "SHELLY", "GARDENA_VALVE"] },
       },
       select: {

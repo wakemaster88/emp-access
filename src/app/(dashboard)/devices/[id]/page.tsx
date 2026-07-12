@@ -221,6 +221,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                     accessIn: device.accessIn,
                     accessOut: device.accessOut,
                     allowReentry: device.allowReentry,
+                    offlineAlertsEnabled: device.offlineAlertsEnabled,
                     firmware: device.firmware,
                     schedule: device.schedule ?? null,
                     task: device.task,

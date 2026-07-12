@@ -63,6 +63,9 @@ Benachrichtigung (Zustandsübergang, kein Spam).
    gewünschten Gerät „Auf diesem Gerät aktivieren" drücken.
    - **iPhone/iPad:** Die Seite muss zuerst über Safari **zum Home-Bildschirm
      hinzugefügt** und von dort geöffnet werden, sonst erlaubt iOS kein Web-Push.
+5. Pro Gerät die Überwachung einschalten: Gerätedetail → **Bearbeiten** →
+   **Offline-Benachrichtigung** (Opt-in, Standard: aus). Nur Geräte mit
+   aktiviertem Schalter lösen Push-Meldungen aus.
 5. Test manuell:  
    `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/device-offline-check"`
 

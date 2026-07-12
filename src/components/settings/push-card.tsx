@@ -167,7 +167,9 @@ export function PushCard() {
             </div>
             <p className="text-xs text-slate-400">
               Du erhältst eine Push-Benachrichtigung, sobald ein Gerät offline geht
-              und wenn es wieder online ist. Geprüft wird alle 5 Minuten.
+              und wenn es wieder online ist. Geprüft wird alle 5 Minuten. Welche
+              Geräte überwacht werden, stellst du pro Gerät unter „Bearbeiten“ →
+              „Offline-Benachrichtigung“ ein (Standard: aus).
             </p>
 
             <div className="flex gap-2 pt-1">
