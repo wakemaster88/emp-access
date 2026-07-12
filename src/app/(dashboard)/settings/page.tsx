@@ -5,11 +5,12 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { TelegramCard } from "@/components/settings/telegram-card";
+import { PushCard } from "@/components/settings/push-card";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI"] as const;
 
@@ -147,6 +148,17 @@ export default async function SettingsPage() {
             connections={gardenaConnections}
             existingServiceIds={existingGardenaIds}
           />
+        </section>
+
+        {/* Push-Benachrichtigungen */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Bell className="h-5 w-5 text-slate-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+              Push-Benachrichtigungen
+            </h2>
+          </div>
+          <PushCard />
         </section>
 
         {/* Telegram Bot */}

@@ -94,6 +94,7 @@ model Account {
   lostItems       LostItem[]
   irrigationSchedules IrrigationSchedule[]
   irrigationRuns  IrrigationRun[]
+  pushSubscriptions PushSubscription[]
 }
 
 model Admin {
@@ -156,6 +157,11 @@ model Device {
   schedule        Json?
   systemInfo      Json?
   lastUpdate      DateTime?
+  /// Offline-Push-Tracking: Zeitpunkt, zu dem fuer die AKTUELLE Offline-
+  /// Episode eine Push-Benachrichtigung gesendet wurde. NULL = Geraet gilt
+  /// als online bzw. Episode beendet. Wird ausschliesslich vom Cron
+  /// `/api/cron/device-offline-check` gesetzt und geloescht.
+  offlineNotifiedAt DateTime?
   accountId       Int
   account         Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
   scans           Scan[]
@@ -681,6 +687,30 @@ model EmailSend {
   @@index([ticketId])
   @@index([ruleId])
   @@index([accountId, ruleId, ticketId])
+}
+
+/// Web-Push-Abonnement eines Browsers/PWA-Geraets (Dashboard). Ein Admin kann
+/// auf mehreren Geraeten abonnieren – jede Kombination Browser+Geraet erzeugt
+/// einen eigenen Endpoint. Abgelaufene Endpoints (HTTP 404/410 beim Senden)
+/// werden vom Versand-Helper automatisch geloescht.
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  /// Push-Service-URL (FCM/Mozilla/APNs-Proxy) – eindeutig pro Abo.
+  endpoint  String   @unique
+  /// Client-Public-Key (ECDH) fuer die Payload-Verschluesselung.
+  p256dh    String
+  /// Auth-Secret des Clients fuer die Payload-Verschluesselung.
+  auth      String
+  /// User-Agent beim Abonnieren – rein informativ ("welches Geraet ist das?").
+  userAgent String?
+  /// Admin, der das Abo erstellt hat (informativ, kein FK-Zwang noetig).
+  adminId   Int?
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
 }
 
 model TelegramConfig {

@@ -43,3 +43,30 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 4. Der Bericht wird nur gesendet, wenn die **Berliner Uhrzeit** (HH:mm) mit der in den Einstellungen gewählten Zeit übereinstimmt (Cron alle 15 Minuten).
 5. Test manuell:  
    `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/telegram-report"`
+
+## Push-Benachrichtigung „Gerät offline" (PWA / Web-Push)
+
+Alle 5 Minuten prüft `/api/cron/device-offline-check`, ob Geräte offline gegangen
+(oder wieder online gekommen) sind, und sendet Web-Push an alle im Dashboard
+registrierten Browser/PWA-Geräte. Pro Offline-Episode gibt es genau eine
+Benachrichtigung (Zustandsübergang, kein Spam).
+
+**Einrichtung:**
+
+1. VAPID-Schlüsselpaar erzeugen: `npx web-push generate-vapid-keys`
+2. In Vercel als Umgebungsvariablen anlegen (Production, danach Redeploy):
+   - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` – Public Key
+   - `VAPID_PRIVATE_KEY` – Private Key
+   - `VAPID_SUBJECT` – Kontakt, z. B. `mailto:admin@deine-domain.de`
+3. `CRON_SECRET` muss gesetzt sein (siehe Telegram-Abschnitt) – der Cron nutzt dieselbe Auth.
+4. Im Dashboard unter **Einstellungen → Push-Benachrichtigungen** auf jedem
+   gewünschten Gerät „Auf diesem Gerät aktivieren" drücken.
+   - **iPhone/iPad:** Die Seite muss zuerst über Safari **zum Home-Bildschirm
+     hinzugefügt** und von dort geöffnet werden, sonst erlaubt iOS kein Web-Push.
+5. Test manuell:  
+   `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/device-offline-check"`
+
+**Erkennung je Gerätetyp:** Raspberry Pi über Heartbeat (`lastUpdate` älter als
+5 Min = offline), Shelly über die Shelly Cloud, GARDENA über die GARDENA Cloud.
+Nuki wird nicht geprüft. Shelly-Geräte ohne Cloud-Anbindung (nur lokale IP)
+können von Vercel aus nicht erreicht und daher nicht überwacht werden.
