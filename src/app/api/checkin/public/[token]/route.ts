@@ -288,7 +288,56 @@ export async function GET(
     servicesWithAreas.filter((s) => s.hasAnnyLink).map((s) => s.id),
   );
 
-  const enrichedTickets = tickets.map((t) => ({
+  // Kursbuchungs-Dedupe: ANNY legt pro Kursplatz ein Wochenticket (Mo-Fr)
+  // UND ein Tagesticket je Kurstag an (fortlaufende Booking-IDs, Woche
+  // zuerst). Im Tagesueberblick erschiene jeder Teilnehmer doppelt. Wir
+  // blenden das Mehrtages-Ticket aus, wenn im selben Buchungsstrang
+  // (gleicher "anny:<customer>:<svc>:"-Prefix) ein Eintages-Ticket fuer den
+  // gewaehlten Tag existiert - das Tagesticket ist die Check-in-Referenz
+  // (REDEEMED gilt nur fuer diesen Tag statt fuer die ganze Woche).
+  // Mehrtages-Tickets OHNE zugehoerige Tagestickets (Alt-Buchungen) bleiben
+  // sichtbar.
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const isMultiDay = (t: { startDate: Date | null; endDate: Date | null }) =>
+    !!(t.startDate && t.endDate && t.endDate.getTime() - t.startDate.getTime() > MS_PER_DAY);
+  const hiddenWeekTicketIds = new Set<number>();
+  {
+    const byBookingStrand = new Map<string, typeof tickets>();
+    for (const t of tickets) {
+      if (!t.uuid?.startsWith("anny:")) continue;
+      const parts = t.uuid.split(":");
+      if (parts.length !== 4 || !/^\d+$/.test(parts[3])) continue;
+      const key = `${parts[1]}:${parts[2]}:${t.serviceId ?? ""}`;
+      const arr = byBookingStrand.get(key) ?? [];
+      arr.push(t);
+      byBookingStrand.set(key, arr);
+    }
+    for (const strand of byBookingStrand.values()) {
+      strand.sort(
+        (a, b) => Number(a.uuid!.split(":")[3]) - Number(b.uuid!.split(":")[3]),
+      );
+      let currentWeek: (typeof strand)[number] | null = null;
+      for (const t of strand) {
+        if (isMultiDay(t)) {
+          currentWeek = t;
+          continue;
+        }
+        // Eintages-Ticket, das (nach Booking-ID) auf ein Wochenticket folgt
+        // und in dessen Zeitraum faellt -> Wochenticket am Tag ausblenden.
+        if (
+          currentWeek?.startDate &&
+          currentWeek.endDate &&
+          t.startDate &&
+          t.startDate.getTime() >= currentWeek.startDate.getTime() - MS_PER_DAY &&
+          t.startDate.getTime() <= currentWeek.endDate.getTime()
+        ) {
+          hiddenWeekTicketIds.add(currentWeek.id);
+        }
+      }
+    }
+  }
+
+  const enrichedTickets = tickets.filter((t) => !hiddenWeekTicketIds.has(t.id)).map((t) => ({
     ...t,
     checkedIn: checkedInForTicket(t),
     infoPending:
