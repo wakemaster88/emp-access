@@ -102,6 +102,15 @@ interface CheckinTicket {
   _count?: { scans: number };
 }
 
+/** Aggregierte Gaeste-Infos einer Service-Gruppe (Label -> Wert -> Anzahl). */
+interface GuestInfoSummary {
+  /** Tickets mit mindestens einer beantworteten Info. */
+  answered: number;
+  /** Alle Tickets der Gruppe an diesem Tag. */
+  total: number;
+  labels: Map<string, Map<string, number>>;
+}
+
 interface SubData {
   id: number;
   name: string;
@@ -1067,6 +1076,38 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     return sorted;
   }, [filteredPending]);
 
+  // Equipment-Übersicht pro Service-Gruppe: aggregiert die Gaeste-Infos aus
+  // den Info-Anfragen (z. B. Neopren-Größe S ×2, M ×3) über ALLE Tickets des
+  // Tages (auch bereits eingecheckte), damit die Material-Vorbereitung
+  // stabil bleibt, während nach und nach eingecheckt wird.
+  const guestInfoSummaries = useMemo(() => {
+    const byGroup = new Map<string, GuestInfoSummary>();
+    for (const t of dayTickets) {
+      if (t.subscriptionId || t.vereinId != null) continue;
+      const key = t.service?.name ?? t.subscription?.name ?? t.ticketTypeName ?? "Sonstige";
+      let summary = byGroup.get(key);
+      if (!summary) {
+        summary = { answered: 0, total: 0, labels: new Map() };
+        byGroup.set(key, summary);
+      }
+      summary.total++;
+      const info = t.guestInfo;
+      if (!info || Object.keys(info).length === 0) continue;
+      summary.answered++;
+      for (const [label, value] of Object.entries(info)) {
+        // Teilnehmername ist individuell und nicht aggregierbar.
+        if (label === "Teilnehmer" || !value) continue;
+        let values = summary.labels.get(label);
+        if (!values) {
+          values = new Map();
+          summary.labels.set(label, values);
+        }
+        values.set(value, (values.get(value) ?? 0) + 1);
+      }
+    }
+    return byGroup;
+  }, [dayTickets]);
+
   if (error) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
@@ -1483,6 +1524,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                     </button>
                     {isExpanded && (
                       <div className="border-t border-slate-800/70 p-2">
+                        {(() => {
+                          const summary = guestInfoSummaries.get(groupName);
+                          return summary ? <GuestInfoSummaryPanel summary={summary} /> : null;
+                        })()}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                           {tickets.map((t) => (
                             <TicketCard
@@ -3378,6 +3423,58 @@ function Section({ title, icon: Icon, count, color, children }: { title: string;
         <span className="text-xs font-mono font-bold text-slate-500 border border-slate-700 rounded-lg px-2 py-0.5 ml-auto">{count}</span>
       </div>
       {children}
+    </div>
+  );
+}
+
+/** Sortier-Reihenfolge fuer Konfektionsgroessen (Neopren etc.). */
+const SIZE_ORDER = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "3XL", "XXXL"];
+
+/// Antwort-Werte sinnvoll sortieren: Zahlen (Schuh-/Kindergroessen wie 128)
+/// numerisch aufsteigend und VOR den Buchstaben-Groessen, diese in
+/// Konfektions-Reihenfolge (XS < S < M < ...), Rest alphabetisch.
+function sortSummaryValues(values: Map<string, number>): [string, number][] {
+  return [...values.entries()].sort(([a], [b]) => {
+    const na = Number(a.replace(",", "."));
+    const nb = Number(b.replace(",", "."));
+    const aNum = Number.isFinite(na) && a.trim() !== "";
+    const bNum = Number.isFinite(nb) && b.trim() !== "";
+    if (aNum && bNum) return na - nb;
+    if (aNum !== bNum) return aNum ? -1 : 1;
+    const ia = SIZE_ORDER.indexOf(a.toUpperCase());
+    const ib = SIZE_ORDER.indexOf(b.toUpperCase());
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1 || ib !== -1) return ia !== -1 ? -1 : 1;
+    return a.localeCompare(b, "de");
+  });
+}
+
+/** Aggregierte Equipment-Übersicht einer Kurs-Gruppe (z. B. "Neopren-Größe:
+ *  S ×2, M ×3"), damit das Personal das Material fuer den Tag vorbereiten
+ *  kann, ohne jede Karte einzeln durchzugehen. */
+function GuestInfoSummaryPanel({ summary }: { summary: GuestInfoSummary }) {
+  if (summary.labels.size === 0) return null;
+  return (
+    <div className="mb-2 rounded-xl border border-cyan-500/20 bg-cyan-950/20 px-3 py-2">
+      <div className="flex items-center gap-2 mb-1.5">
+        <ClipboardList className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+        <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-300">Tagesübersicht</span>
+        <span className="text-[10px] text-slate-500">
+          {summary.answered}/{summary.total} beantwortet
+        </span>
+      </div>
+      <div className="space-y-1">
+        {[...summary.labels.entries()].map(([label, values]) => (
+          <div key={label} className="flex flex-wrap items-baseline gap-1">
+            <span className="text-[11px] text-slate-400 mr-1">{label}:</span>
+            {sortSummaryValues(values).map(([value, count]) => (
+              <span key={value} className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-md font-medium whitespace-nowrap">
+                {value} <span className="text-cyan-400/80">×{count}</span>
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
