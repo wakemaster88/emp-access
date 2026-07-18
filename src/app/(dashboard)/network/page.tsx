@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { NetworkTabs } from "@/components/network/network-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Network, Server, EthernetPort, Cable, Cpu } from "lucide-react";
+import { macVendor, isVirtualMac } from "@/lib/oui";
 
 export default async function NetworkPage() {
   const session = await safeAuth();
@@ -110,6 +111,47 @@ export default async function NetworkPage() {
 
   const fiveMinAgo = new Date();
   fiveMinAgo.setMinutes(fiveMinAgo.getMinutes() - 5);
+
+  // Auto-Matching der entdeckten Geraete gegen den verwalteten Bestand:
+  // MAC gegen Switches/APs und Netzwerk-Clients, IP gegen IoT-Geraete.
+  const norm = (mac: string | null) => mac?.toUpperCase() ?? "";
+  const infraByMac = new Map(
+    networkDevices.filter((d) => d.macAddress).map((d) => [norm(d.macAddress), d])
+  );
+  const clientByMac = new Map(
+    clients.filter((c) => c.macAddress).map((c) => [norm(c.macAddress), c])
+  );
+  const iotByIp = new Map(
+    iotDevices.filter((d) => d.ipAddress).map((d) => [d.ipAddress!, d])
+  );
+
+  const discoveredRows = discoveredDevices
+    .filter((d) => !isVirtualMac(d.macAddress))
+    .map((d) => {
+      const infra = infraByMac.get(norm(d.macAddress));
+      const client = clientByMac.get(norm(d.macAddress));
+      const iot = d.ipAddress ? iotByIp.get(d.ipAddress) : undefined;
+      return {
+        id: d.id,
+        macAddress: d.macAddress,
+        ipAddress: d.ipAddress,
+        iface: d.iface,
+        hubName: d.hubName,
+        firstSeenAt: d.firstSeenAt.toISOString(),
+        lastSeenAt: d.lastSeenAt.toISOString(),
+        vendor: macVendor(d.macAddress),
+        match: infra
+          ? { kind: "infra" as const, name: infra.name }
+          : client
+            ? { kind: "client" as const, name: client.name }
+            : null,
+        // IP-Treffer bei IoT-Geraeten ist nur ein Vorschlag (IPs koennen
+        // wechseln) - wird im Uebernehmen-Dialog vorausgewaehlt.
+        iotSuggestion: !infra && !client && iot
+          ? { id: iot.id, name: iot.name }
+          : null,
+      };
+    });
 
   return (
     <>
@@ -230,15 +272,7 @@ export default async function NetworkPage() {
             isActive: d.isActive,
           }))}
           allPorts={allPorts}
-          discoveredDevices={discoveredDevices.map((d) => ({
-            id: d.id,
-            macAddress: d.macAddress,
-            ipAddress: d.ipAddress,
-            iface: d.iface,
-            hubName: d.hubName,
-            firstSeenAt: d.firstSeenAt.toISOString(),
-            lastSeenAt: d.lastSeenAt.toISOString(),
-          }))}
+          discoveredDevices={discoveredRows}
         />
       </div>
     </>

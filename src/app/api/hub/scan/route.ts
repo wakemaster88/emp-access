@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { isVirtualMac } from "@/lib/oui";
 
 const MAX_DEVICES_PER_SCAN = 500;
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
+
+/** Multicast-IPs (224.0.0.0/4) und Broadcast sind keine echten Geraete. */
+function isVirtualIp(ip: string | null): boolean {
+  if (!ip) return false;
+  const firstOctet = Number(ip.split(".")[0]);
+  return (firstOctet >= 224 && firstOctet <= 239) || ip.endsWith(".255");
+}
 
 /**
  * POST (Hub, Token-Auth): nimmt das Ergebnis eines automatischen
@@ -25,7 +33,8 @@ export async function POST(request: NextRequest) {
   const byMac = new Map<string, { ip: string | null; iface: string | null }>();
   for (const d of rawDevices.slice(0, MAX_DEVICES_PER_SCAN)) {
     const mac = String(d?.mac ?? "").toUpperCase();
-    if (!MAC_RE.test(mac)) continue;
+    if (!MAC_RE.test(mac) || isVirtualMac(mac)) continue;
+    if (isVirtualIp(typeof d.ip === "string" ? d.ip : null)) continue;
     byMac.set(mac, {
       ip: typeof d.ip === "string" ? d.ip.slice(0, 45) : null,
       iface: typeof d.iface === "string" ? d.iface.slice(0, 30) : null,
@@ -56,5 +65,36 @@ export async function POST(request: NextRequest) {
     processed++;
   }
 
-  return NextResponse.json({ ok: true, processed });
+  // Auto-Sync: Bei bekannten MACs die IP-Adresse der verwalteten Eintraege
+  // aktuell halten (DHCP-Wechsel werden so automatisch nachgezogen).
+  let synced = 0;
+  const macs = [...byMac.keys()];
+  if (macs.length > 0) {
+    const [managedClients, managedDevices] = await Promise.all([
+      db.networkClient.findMany({
+        where: { accountId: account.id, macAddress: { in: macs, mode: "insensitive" } },
+        select: { id: true, macAddress: true, ipAddress: true },
+      }),
+      db.networkDevice.findMany({
+        where: { accountId: account.id, macAddress: { in: macs, mode: "insensitive" } },
+        select: { id: true, macAddress: true, ipAddress: true },
+      }),
+    ]);
+    for (const c of managedClients) {
+      const info = c.macAddress ? byMac.get(c.macAddress.toUpperCase()) : undefined;
+      if (info?.ip && info.ip !== c.ipAddress) {
+        await db.networkClient.update({ where: { id: c.id }, data: { ipAddress: info.ip } });
+        synced++;
+      }
+    }
+    for (const d of managedDevices) {
+      const info = d.macAddress ? byMac.get(d.macAddress.toUpperCase()) : undefined;
+      if (info?.ip && info.ip !== d.ipAddress) {
+        await db.networkDevice.update({ where: { id: d.id }, data: { ipAddress: info.ip } });
+        synced++;
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: true, processed, synced });
 }
