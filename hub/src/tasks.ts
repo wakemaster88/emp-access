@@ -37,7 +37,7 @@ async function runPing(payload: Record<string, unknown> | null): Promise<TaskRes
  * lokalen Segments. (Bewusst passiv - ein aktiver nmap-Sweep kann spaeter als
  * eigenes Modul dazukommen.)
  */
-async function runNetworkScan(): Promise<TaskResult> {
+export async function runNetworkScan(): Promise<TaskResult> {
   try {
     const { stdout } = await exec("arp", ["-a"], { timeout: 15000 });
     const devices: { ip: string; mac: string; iface: string | null }[] = [];

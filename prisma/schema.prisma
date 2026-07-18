@@ -134,6 +134,7 @@ model Account {
   networkClients  NetworkClient[]
   hubAgents       HubAgent[]
   hubTasks        HubTask[]
+  discoveredDevices DiscoveredDevice[]
 }
 
 model Admin {
@@ -1319,4 +1320,26 @@ model HubTask {
 
   @@index([accountId, status])
   @@index([accountId, createdAt])
+}
+
+/// Vom Hub automatisch entdecktes Geraet im lokalen Netz (ARP-Scan).
+/// Wird per (accountId, macAddress) upserted; `lastSeenAt` zeigt, wann das
+/// Geraet zuletzt in einem Scan auftauchte.
+model DiscoveredDevice {
+  id          Int       @id @default(autoincrement())
+  macAddress  String
+  ipAddress   String?
+  /// Netzwerk-Interface des Hubs, auf dem das Geraet gesehen wurde (z. B. "en0").
+  iface       String?
+  /// Name des Hubs, der das Geraet zuletzt gemeldet hat.
+  hubName     String?
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([accountId, macAddress])
+  @@index([accountId, lastSeenAt])
 }

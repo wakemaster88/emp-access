@@ -1,7 +1,8 @@
 "use client";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Server, Network, Cable, MonitorSmartphone } from "lucide-react";
+import { Server, Network, Cable, MonitorSmartphone, Radar } from "lucide-react";
+import { DiscoveredTab, type DiscoveredRow } from "@/components/network/discovered-tab";
 import { NetworkDevicesTab } from "@/components/network/network-devices-tab";
 import { VlansTab } from "@/components/network/vlans-tab";
 import { OutletsTab } from "@/components/network/outlets-tab";
@@ -22,6 +23,7 @@ interface NetworkTabsProps {
   clients: ClientRow[];
   iotDevices: IotDeviceOption[];
   allPorts: PortOption[];
+  discoveredDevices: DiscoveredRow[];
 }
 
 export function NetworkTabs({
@@ -31,6 +33,7 @@ export function NetworkTabs({
   clients,
   iotDevices,
   allPorts,
+  discoveredDevices,
 }: NetworkTabsProps) {
   return (
     <Tabs defaultValue="devices">
@@ -52,6 +55,11 @@ export function NetworkTabs({
           <MonitorSmartphone className="h-4 w-4" />
           Geräte
         </TabsTrigger>
+        <TabsTrigger value="discovered" className="gap-1.5">
+          <Radar className="h-4 w-4" />
+          <span className="hidden sm:inline">Entdeckt</span>
+          <span className="sm:hidden">Scan</span>
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="devices">
@@ -70,6 +78,9 @@ export function NetworkTabs({
           vlans={vlans}
           ports={allPorts}
         />
+      </TabsContent>
+      <TabsContent value="discovered">
+        <DiscoveredTab devices={discoveredDevices} />
       </TabsContent>
     </Tabs>
   );

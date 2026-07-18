@@ -1,6 +1,9 @@
 import { CONFIG, api, log } from "./config.js";
 import { executeTask, type HubTask } from "./tasks.js";
 import { checkForUpdate } from "./updater.js";
+import { startDashboard } from "./dashboard.js";
+import { autoScan } from "./scanner.js";
+import { STATE, recordHeartbeat, recordTask } from "./state.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -19,9 +22,14 @@ async function heartbeat() {
     });
     if (!res.ok) {
       log(`Heartbeat fehlgeschlagen: HTTP ${res.status}`);
+      recordHeartbeat(false, `HTTP ${res.status}`);
+    } else {
+      recordHeartbeat(true);
     }
   } catch (e) {
-    log(`Heartbeat-Fehler: ${e instanceof Error ? e.message : e}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    log(`Heartbeat-Fehler: ${msg}`);
+    recordHeartbeat(false, msg);
   }
 }
 
@@ -29,6 +37,7 @@ async function pollTasks() {
   if (taskLoopBusy) return;
   taskLoopBusy = true;
   try {
+    STATE.taskPolls++;
     const res = await api("/api/hub/tasks");
     if (!res.ok) return;
     const tasks = (await res.json()) as HubTask[];
@@ -36,6 +45,7 @@ async function pollTasks() {
     for (const task of tasks) {
       const result = await executeTask(task);
       log(`Task #${task.id} ${result.success ? "OK" : "FEHLER"}${result.error ? `: ${result.error}` : ""}`);
+      recordTask({ id: task.id, type: task.type, success: result.success, error: result.error, result: result.result });
       await api(`/api/hub/tasks/${task.id}/result`, {
         method: "POST",
         body: JSON.stringify(result),
@@ -48,12 +58,15 @@ async function pollTasks() {
   }
 }
 
-// Sofort melden, dann in Intervallen weiterarbeiten.
+// Lokales Dashboard starten, sofort melden, dann in Intervallen weiterarbeiten.
+startDashboard();
 heartbeat();
 pollTasks();
+autoScan();
 setInterval(heartbeat, CONFIG.heartbeatIntervalMs);
 setInterval(pollTasks, CONFIG.taskIntervalMs);
 setInterval(checkForUpdate, CONFIG.updateIntervalMs);
+setInterval(autoScan, CONFIG.scanIntervalMs);
 
 process.on("SIGTERM", () => { log("SIGTERM – Hub beendet sich."); process.exit(0); });
 process.on("SIGINT", () => { log("SIGINT – Hub beendet sich."); process.exit(0); });

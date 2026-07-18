@@ -1,4 +1,5 @@
 import { config as loadEnv } from "dotenv";
+import { pushLog } from "./state.js";
 import { execSync } from "node:child_process";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -41,7 +42,9 @@ export const CONFIG = {
   heartbeatIntervalMs: intEnv("HUB_HEARTBEAT_INTERVAL", 30) * 1000,
   taskIntervalMs: intEnv("HUB_TASK_INTERVAL", 5) * 1000,
   updateIntervalMs: intEnv("HUB_UPDATE_INTERVAL", 300) * 1000,
-  modules: ["tasks", "ping", "network-scan", "wake-on-lan"],
+  dashboardPort: intEnv("HUB_DASHBOARD_PORT", 8787),
+  scanIntervalMs: intEnv("HUB_SCAN_INTERVAL", 300) * 1000,
+  modules: ["tasks", "ping", "network-scan", "wake-on-lan", "auto-scan"],
 };
 
 export async function api(pathname: string, init?: RequestInit): Promise<Response> {
@@ -57,4 +60,5 @@ export async function api(pathname: string, init?: RequestInit): Promise<Respons
 
 export function log(msg: string) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
+  pushLog(msg);
 }
