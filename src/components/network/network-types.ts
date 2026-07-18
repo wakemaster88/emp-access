@@ -13,6 +13,8 @@ export interface NetworkDeviceRow {
   notes: string | null;
   portCount: number;
   usedPorts: number;
+  /// Zuletzt vom Hub-Scan gesehen (ISO-String) - Basis fuer Online-Status.
+  lastSeenAt: string | null;
 }
 
 export interface VlanRow {
@@ -44,6 +46,8 @@ export interface ClientRow {
   macAddress: string | null;
   isStatic: boolean;
   notes: string | null;
+  /// Zuletzt vom Hub-Scan gesehen (ISO-String).
+  lastSeenAt: string | null;
   device: {
     id: number;
     name: string;
@@ -116,4 +120,16 @@ export const VLAN_COLORS = [
 
 export function vlanColor(vlanDbId: number): string {
   return VLAN_COLORS[vlanDbId % VLAN_COLORS.length];
+}
+
+/// Der Hub scannt alle 5 Minuten - 15 Minuten Toleranz fuer ARP-Aussetzer.
+export const ONLINE_THRESHOLD_MS = 15 * 60 * 1000;
+
+/**
+ * Online-Status aus dem letzten Scan-Zeitpunkt: true/false, oder null wenn
+ * das Geraet noch nie gesehen wurde (Status unbekannt).
+ */
+export function scanOnline(lastSeenAt: string | null): boolean | null {
+  if (!lastSeenAt) return null;
+  return Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
 }

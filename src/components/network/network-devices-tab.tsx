@@ -24,8 +24,14 @@ import {
 import { cn } from "@/lib/utils";
 import {
   NETWORK_DEVICE_TYPES,
+  scanOnline,
   type NetworkDeviceRow,
 } from "@/components/network/network-types";
+
+function lastSeenLabel(iso: string | null): string {
+  if (!iso) return "Noch nie im Netzwerk-Scan gesehen";
+  return `Zuletzt gesehen: ${new Date(iso).toLocaleString("de-DE")}`;
+}
 
 const TYPE_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
   SWITCH:       { label: "Switch",       icon: Server,    color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
@@ -157,6 +163,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                 <TableHead className="min-w-[180px]">Gerät</TableHead>
                 <TableHead className="hidden md:table-cell">Modell</TableHead>
                 <TableHead className="hidden lg:table-cell">IP-Adresse</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
                 <TableHead>Ports</TableHead>
                 <TableHead className="w-24" />
@@ -165,7 +172,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
             <TableBody>
               {devices.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="text-center py-16">
+                  <TableCell colSpan={7} className="text-center py-16">
                     <div className="flex flex-col items-center gap-3 text-slate-500">
                       <Server className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                       <p className="font-medium text-slate-600 dark:text-slate-400">
@@ -204,6 +211,39 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     </TableCell>
                     <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
                       {d.ipAddress || <span className="text-slate-300">–</span>}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const online = scanOnline(d.lastSeenAt);
+                        if (online === true) {
+                          return (
+                            <Badge
+                              className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1.5 text-xs h-5"
+                              title={lastSeenLabel(d.lastSeenAt)}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              Online
+                            </Badge>
+                          );
+                        }
+                        if (online === false) {
+                          return (
+                            <Badge
+                              variant="secondary"
+                              className="text-slate-500 gap-1.5 text-xs h-5"
+                              title={lastSeenLabel(d.lastSeenAt)}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                              Offline
+                            </Badge>
+                          );
+                        }
+                        return (
+                          <span className="text-xs text-slate-300" title={lastSeenLabel(d.lastSeenAt)}>
+                            –
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {d.location ? (

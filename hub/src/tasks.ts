@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import dgram from "node:dgram";
+import os from "node:os";
 import { log } from "./config.js";
 
 const exec = promisify(execFile);
@@ -33,12 +34,44 @@ async function runPing(payload: Record<string, unknown> | null): Promise<TaskRes
 }
 
 /**
- * Netzwerk-Scan ueber die ARP-Tabelle des Rechners. Liefert IP/MAC-Paare des
- * lokalen Segments. (Bewusst passiv - ein aktiver nmap-Sweep kann spaeter als
- * eigenes Modul dazukommen.)
+ * Aktiver Ping-Sweep ueber alle lokalen /24-Subnetze. Der Zweck ist nicht die
+ * ICMP-Antwort, sondern das Fuellen der ARP-Tabelle: Schon die ARP-Anfrage
+ * erzeugt einen Eintrag, auch wenn das Geraet Ping blockiert. Ohne Sweep
+ * enthaelt die ARP-Tabelle nur Geraete, mit denen der Rechner selbst
+ * kommuniziert hat - Switches/APs fehlen dann fast immer.
+ */
+async function pingSweep(): Promise<void> {
+  const targets: string[] = [];
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const iface of ifaces ?? []) {
+      if (iface.family !== "IPv4" || iface.internal) continue;
+      // Nur klassische private /24-Netze sweepen (254 Hosts sind vertretbar).
+      if (!iface.netmask.endsWith("255.255.255.0")) continue;
+      const base = iface.address.split(".").slice(0, 3).join(".");
+      for (let i = 1; i <= 254; i++) targets.push(`${base}.${i}`);
+    }
+  }
+  if (targets.length === 0) return;
+
+  const CONCURRENCY = 50;
+  let index = 0;
+  async function worker() {
+    while (index < targets.length) {
+      const ip = targets[index++];
+      // 1 Paket, 1s Timeout - Fehler sind egal, der ARP-Eintrag zaehlt.
+      await exec("ping", ["-c", "1", "-W", "1000", "-n", "-q", ip], { timeout: 3000 }).catch(() => {});
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+}
+
+/**
+ * Netzwerk-Scan: aktiver Ping-Sweep zum Fuellen der ARP-Tabelle, danach
+ * Auslesen der IP/MAC-Paare des lokalen Segments.
  */
 export async function runNetworkScan(): Promise<TaskResult> {
   try {
+    await pingSweep();
     const { stdout } = await exec("arp", ["-a"], { timeout: 15000 });
     const devices: { ip: string; mac: string; iface: string | null }[] = [];
     for (const line of stdout.split("\n")) {

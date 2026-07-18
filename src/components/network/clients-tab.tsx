@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { findVlanForIp } from "@/lib/ip";
 import {
   CLIENT_TYPES,
+  scanOnline,
   vlanColor,
   type ClientRow,
   type IotDeviceOption,
@@ -217,9 +218,16 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
               {clients.map((c) => {
                 const Icon = TYPE_ICON[c.type] ?? MonitorSmartphone;
                 const ip = c.ipAddress || c.device?.ipAddress || null;
-                const online = c.device?.lastUpdate
+                // Online, wenn der Hub-Scan das Geraet kuerzlich gesehen hat
+                // oder das verknuepfte IoT-Geraet sich gemeldet hat.
+                const scanned = scanOnline(c.lastSeenAt);
+                const deviceOnline = c.device?.lastUpdate
                   ? new Date(c.device.lastUpdate).getTime() > fiveMinAgo
                   : null;
+                const online =
+                  scanned === null && deviceOnline === null
+                    ? null
+                    : scanned === true || deviceOnline === true;
                 return (
                   <TableRow key={`c-${c.id}`} className="border-slate-200 dark:border-slate-700">
                     <TableCell>

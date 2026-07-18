@@ -219,6 +219,7 @@ export default async function NetworkPage() {
             notes: d.notes,
             portCount: d.ports.length,
             usedPorts: d.ports.filter((p) => p.client || p.outletId).length,
+            lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
           }))}
           vlans={vlans.map((v) => ({
             id: v.id,
@@ -249,6 +250,7 @@ export default async function NetworkPage() {
             macAddress: c.macAddress,
             isStatic: c.isStatic,
             notes: c.notes,
+            lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
             device: c.device
               ? {
                   id: c.device.id,

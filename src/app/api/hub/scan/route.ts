@@ -88,24 +88,27 @@ export async function POST(request: NextRequest) {
     ]);
     for (const c of managedClients) {
       const info = c.macAddress ? byMac.get(c.macAddress.toUpperCase()) : undefined;
-      if (!info?.ip) continue;
-      const data: { ipAddress?: string; vlanId?: number } = {};
-      if (info.ip !== c.ipAddress) data.ipAddress = info.ip;
-      if (c.vlanId === null) {
+      if (!info) continue;
+      const data: { ipAddress?: string; vlanId?: number; lastSeenAt: Date } = { lastSeenAt: now };
+      if (info.ip && info.ip !== c.ipAddress) data.ipAddress = info.ip;
+      if (c.vlanId === null && info.ip) {
         const vlan = findVlanForIp(info.ip, vlans);
         if (vlan) data.vlanId = vlan.id;
       }
-      if (Object.keys(data).length > 0) {
-        await db.networkClient.update({ where: { id: c.id }, data });
-        synced++;
-      }
+      await db.networkClient.update({ where: { id: c.id }, data });
+      synced++;
     }
     for (const d of managedDevices) {
       const info = d.macAddress ? byMac.get(d.macAddress.toUpperCase()) : undefined;
-      if (info?.ip && info.ip !== d.ipAddress) {
-        await db.networkDevice.update({ where: { id: d.id }, data: { ipAddress: info.ip } });
-        synced++;
-      }
+      if (!info) continue;
+      await db.networkDevice.update({
+        where: { id: d.id },
+        data: {
+          lastSeenAt: now,
+          ...(info.ip && info.ip !== d.ipAddress ? { ipAddress: info.ip } : {}),
+        },
+      });
+      synced++;
     }
   }
 

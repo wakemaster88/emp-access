@@ -1175,6 +1175,9 @@ model NetworkDevice {
   /// Freitext-Standort, z. B. "Serverraum", "Technikraum Nord".
   location   String?
   notes      String?
+  /// Zuletzt vom Hub-Netzwerk-Scan gesehen (MAC-Abgleich). Basis fuer den
+  /// Online-/Offline-Status in der UI.
+  lastSeenAt DateTime?
   accountId  Int
   account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   ports      NetworkPort[]
@@ -1266,6 +1269,8 @@ model NetworkClient {
   /// Logisch zugeordnetes VLAN (auch ohne Port-Zuordnung moeglich, z. B. WLAN).
   vlanId     Int?
   vlan       NetworkVlan?      @relation(fields: [vlanId], references: [id], onDelete: SetNull)
+  /// Zuletzt vom Hub-Netzwerk-Scan gesehen (MAC-Abgleich).
+  lastSeenAt DateTime?
   notes      String?
   accountId  Int
   account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
