@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent } from "@/components/ui/card";
 import { NetworkTabs } from "@/components/network/network-tabs";
-import { Network, Server, EthernetPort, Cable } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Network, Server, EthernetPort, Cable, Cpu } from "lucide-react";
 
 export default async function NetworkPage() {
   const session = await safeAuth();
@@ -14,7 +15,7 @@ export default async function NetworkPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [networkDevices, vlans, outlets, clients, iotDevices] = await Promise.all([
+  const [networkDevices, vlans, outlets, clients, iotDevices, hubAgents] = await Promise.all([
     db.networkDevice.findMany({
       where: { accountId },
       include: {
@@ -73,6 +74,11 @@ export default async function NetworkPage() {
       select: { id: true, name: true, type: true, ipAddress: true, lastUpdate: true, isActive: true },
       orderBy: { name: "asc" },
     }),
+    db.hubAgent.findMany({
+      where: { accountId },
+      select: { id: true, name: true, hostname: true, version: true, lastSeenAt: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   // Flache Port-Liste (fuer Port-Auswahl im Geraete-Dialog).
@@ -98,10 +104,46 @@ export default async function NetworkPage() {
     { label: "Anschlüsse", value: outlets.length, icon: Cable, color: "text-sky-600 dark:text-sky-400 bg-sky-500/10" },
   ];
 
+  const fiveMinAgo = new Date();
+  fiveMinAgo.setMinutes(fiveMinAgo.getMinutes() - 5);
+
   return (
     <>
       <Header title="Netzwerk" accountName={session.user.accountName} />
       <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+        {/* Lokaler Hub-Status */}
+        {hubAgents.length > 0 && (
+          <Card className="border-slate-200 dark:border-slate-800">
+            <CardContent className="flex flex-wrap items-center gap-3 p-4">
+              <div className="h-10 w-10 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                <Cpu className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Lokaler Hub</p>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                  {hubAgents.map((h) => {
+                    const online = !!h.lastSeenAt && h.lastSeenAt > fiveMinAgo;
+                    return (
+                      <span key={h.id} className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                        {online ? (
+                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {h.name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> {h.name}
+                          </Badge>
+                        )}
+                        {h.version && <span className="font-mono">({h.version})</span>}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {stats.map((s) => (
             <Card key={s.label} className="border-slate-200 dark:border-slate-800">

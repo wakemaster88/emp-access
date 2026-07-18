@@ -132,6 +132,8 @@ model Account {
   networkDevices  NetworkDevice[]
   networkOutlets  NetworkOutlet[]
   networkClients  NetworkClient[]
+  hubAgents       HubAgent[]
+  hubTasks        HubTask[]
 }
 
 model Admin {
@@ -1271,4 +1273,50 @@ model NetworkClient {
 
   @@index([accountId])
   @@index([vlanId])
+}
+
+// ── Lokaler Hub (On-Site-Agent) ──────────────────────────────────────────────
+
+/// Ein lokal (z. B. auf einem iMac/Mini-PC) laufender Agent, der sich per
+/// Account-API-Token mit der Cloud verbindet: Heartbeat, Task-Abholung,
+/// Netzwerk-Scans, spaeter Kameras/lokale KI. Online-Status ergibt sich aus
+/// `lastSeenAt` (gleiches 5-Minuten-Muster wie bei den Pi-Geraeten).
+model HubAgent {
+  id         Int      @id @default(autoincrement())
+  /// Eindeutiger Name des Agents pro Account (z. B. "imac-technikraum").
+  name       String
+  hostname   String?
+  /// Git-Commit/Version des laufenden Hub-Codes (fuer Update-Diagnose).
+  version    String?
+  /// Aktivierte Module, z. B. ["network-scan", "tasks"].
+  modules    Json?
+  lastSeenAt DateTime?
+  accountId  Int
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId])
+}
+
+/// Task-Queue Cloud -> Hub. Die Cloud (UI/Cron) legt Tasks an, der Hub holt
+/// sie per Polling ab (PENDING -> RUNNING) und meldet das Ergebnis zurueck
+/// (DONE/FAILED). `type` z. B. "PING", "NETWORK_SCAN", "WAKE_ON_LAN".
+model HubTask {
+  id         Int      @id @default(autoincrement())
+  type       String
+  payload    Json?
+  /// "PENDING" | "RUNNING" | "DONE" | "FAILED"
+  status     String   @default("PENDING")
+  result     Json?
+  error      String?
+  accountId  Int
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  @@index([accountId, status])
+  @@index([accountId, createdAt])
 }
