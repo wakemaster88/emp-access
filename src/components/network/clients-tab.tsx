@@ -23,6 +23,7 @@ import {
   Printer, Camera, HardDrive, Phone, Cpu, Laptop, EthernetPort, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { findVlanForIp } from "@/lib/ip";
 import {
   CLIENT_TYPES,
   vlanColor,
@@ -320,6 +321,9 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
                 const online = d.lastUpdate
                   ? new Date(d.lastUpdate).getTime() > fiveMinAgo
                   : null;
+                // VLAN rein anzeigen (aus dem Subnetz abgeleitet) - persistiert
+                // wird es erst bei der Zuordnung.
+                const derivedVlan = findVlanForIp(d.ipAddress, vlans);
                 return (
                   <TableRow key={`iot-${d.id}`} className="border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
                     <TableCell>
@@ -356,7 +360,13 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
                       <span className="text-xs text-slate-400">–</span>
                     </TableCell>
                     <TableCell>
-                      <span className="text-xs text-slate-400">–</span>
+                      {derivedVlan ? (
+                        <Badge className={cn("text-xs opacity-70", vlanColor(derivedVlan.id))} title="Automatisch aus dem Subnetz erkannt">
+                          {derivedVlan.vlanId} · {derivedVlan.name}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-slate-400">–</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end">

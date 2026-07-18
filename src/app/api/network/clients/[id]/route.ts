@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { findVlanForIp } from "@/lib/ip";
 
 const VALID_TYPES = ["PC", "PRINTER", "CAMERA", "NAS", "PHONE", "IOT", "MONITOR", "OTHER"];
 
@@ -53,6 +54,8 @@ export async function PUT(
     }
   }
 
+  const newIp = body.ipAddress !== undefined ? (body.ipAddress?.trim() || null) : existing.ipAddress;
+
   let vlanId = existing.vlanId;
   if (body.vlanId !== undefined) {
     if (body.vlanId === null || body.vlanId === 0 || body.vlanId === "none") {
@@ -64,13 +67,23 @@ export async function PUT(
       vlanId = n;
     }
   }
+  // Automatische VLAN-Erkennung, wenn das VLAN-Feld nicht angefasst wurde
+  // und bisher kein VLAN gesetzt ist (explizites "Kein VLAN" bleibt erhalten,
+  // manuell gewaehlte VLANs werden nie ueberschrieben).
+  if (body.vlanId === undefined && vlanId === null && newIp) {
+    const vlans = await db.networkVlan.findMany({
+      where: { accountId: accountId!, subnet: { not: null } },
+      select: { id: true, subnet: true },
+    });
+    vlanId = findVlanForIp(newIp, vlans)?.id ?? null;
+  }
 
   const client = await db.networkClient.update({
     where: { id: clientId },
     data: {
       name: body.name?.trim() || existing.name,
       type: body.type ?? existing.type,
-      ipAddress: body.ipAddress !== undefined ? (body.ipAddress?.trim() || null) : existing.ipAddress,
+      ipAddress: newIp,
       macAddress: body.macAddress !== undefined ? (body.macAddress?.trim() || null) : existing.macAddress,
       isStatic: typeof body.isStatic === "boolean" ? body.isStatic : existing.isStatic,
       deviceId,

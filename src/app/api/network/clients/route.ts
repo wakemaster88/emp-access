@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { findVlanForIp } from "@/lib/ip";
 
 const VALID_TYPES = ["PC", "PRINTER", "CAMERA", "NAS", "PHONE", "IOT", "MONITOR", "OTHER"];
 
@@ -55,19 +56,28 @@ export async function POST(request: NextRequest) {
     portId = n;
   }
 
+  const ipAddress: string | null = body.ipAddress?.trim() || null;
+
   let vlanId: number | null = null;
   if (body.vlanId) {
     const n = Number(body.vlanId);
     const vlan = await db.networkVlan.findFirst({ where: { id: n, accountId: accountId! } });
     if (!vlan) return NextResponse.json({ error: "VLAN nicht gefunden" }, { status: 400 });
     vlanId = n;
+  } else if (ipAddress) {
+    // Automatische VLAN-Erkennung: IP gegen die VLAN-Subnetze matchen.
+    const vlans = await db.networkVlan.findMany({
+      where: { accountId: accountId!, subnet: { not: null } },
+      select: { id: true, subnet: true },
+    });
+    vlanId = findVlanForIp(ipAddress, vlans)?.id ?? null;
   }
 
   const client = await db.networkClient.create({
     data: {
       name: body.name.trim(),
       type: body.type ?? "OTHER",
-      ipAddress: body.ipAddress?.trim() || null,
+      ipAddress,
       macAddress: body.macAddress?.trim() || null,
       isStatic: body.isStatic ?? false,
       deviceId,

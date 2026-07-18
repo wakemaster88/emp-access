@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { isVirtualMac } from "@/lib/oui";
+import { findVlanForIp } from "@/lib/ip";
 
 const MAX_DEVICES_PER_SCAN = 500;
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
@@ -66,24 +67,36 @@ export async function POST(request: NextRequest) {
   }
 
   // Auto-Sync: Bei bekannten MACs die IP-Adresse der verwalteten Eintraege
-  // aktuell halten (DHCP-Wechsel werden so automatisch nachgezogen).
+  // aktuell halten (DHCP-Wechsel werden so automatisch nachgezogen) und das
+  // VLAN aus dem Subnetz ableiten, sofern keines gesetzt ist.
   let synced = 0;
   const macs = [...byMac.keys()];
   if (macs.length > 0) {
-    const [managedClients, managedDevices] = await Promise.all([
+    const [managedClients, managedDevices, vlans] = await Promise.all([
       db.networkClient.findMany({
         where: { accountId: account.id, macAddress: { in: macs, mode: "insensitive" } },
-        select: { id: true, macAddress: true, ipAddress: true },
+        select: { id: true, macAddress: true, ipAddress: true, vlanId: true },
       }),
       db.networkDevice.findMany({
         where: { accountId: account.id, macAddress: { in: macs, mode: "insensitive" } },
         select: { id: true, macAddress: true, ipAddress: true },
       }),
+      db.networkVlan.findMany({
+        where: { accountId: account.id, subnet: { not: null } },
+        select: { id: true, subnet: true },
+      }),
     ]);
     for (const c of managedClients) {
       const info = c.macAddress ? byMac.get(c.macAddress.toUpperCase()) : undefined;
-      if (info?.ip && info.ip !== c.ipAddress) {
-        await db.networkClient.update({ where: { id: c.id }, data: { ipAddress: info.ip } });
+      if (!info?.ip) continue;
+      const data: { ipAddress?: string; vlanId?: number } = {};
+      if (info.ip !== c.ipAddress) data.ipAddress = info.ip;
+      if (c.vlanId === null) {
+        const vlan = findVlanForIp(info.ip, vlans);
+        if (vlan) data.vlanId = vlan.id;
+      }
+      if (Object.keys(data).length > 0) {
+        await db.networkClient.update({ where: { id: c.id }, data });
         synced++;
       }
     }
