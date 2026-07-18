@@ -18,6 +18,16 @@ export function checkForUpdate(): void {
     const remote = git("rev-parse origin/main");
     if (local === remote) return;
 
+    // Nur updaten, wenn origin/main wirklich neuere Commits hat. Ist der
+    // lokale Stand voraus (z. B. Entwicklung vor dem Push), nichts tun –
+    // sonst beendet sich der Hub in einer Endlosschleife.
+    try {
+      git(`merge-base --is-ancestor ${local} ${remote}`);
+    } catch {
+      log(`Update übersprungen: lokaler Stand ${local.slice(0, 7)} ist origin/main voraus.`);
+      return;
+    }
+
     log(`Update gefunden: ${local.slice(0, 7)} -> ${remote.slice(0, 7)}. Pull + Neustart …`);
     git("pull --ff-only origin main");
     execSync("npm install --no-audit --no-fund", { cwd: CONFIG.hubDir, stdio: "inherit" });
