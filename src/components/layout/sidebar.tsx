@@ -29,6 +29,7 @@ import {
   IdCard,
   PackageSearch,
   Droplets,
+  Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ const navGroups: NavGroup[] = [
     label: "System",
     items: [
       { href: "/devices", label: "Geräte", icon: HardDrive },
+      { href: "/network", label: "Netzwerk", icon: Network },
       { href: "/automation", label: "Automation", icon: Zap },
       { href: "/email", label: "E-Mail", icon: Mail },
       { href: "/settings", label: "Einstellungen", icon: Settings },

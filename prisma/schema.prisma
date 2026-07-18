@@ -48,6 +48,37 @@ enum ScanResult {
   PROTECTED
 }
 
+enum NetworkDeviceType {
+  SWITCH
+  ROUTER
+  ACCESS_POINT
+  FIREWALL
+  OTHER
+}
+
+enum NetworkPortStatus {
+  ACTIVE
+  INACTIVE
+  RESERVED
+  FAULTY
+}
+
+enum NetworkOutletType {
+  WALL_OUTLET
+  PATCH_PANEL
+}
+
+enum NetworkClientType {
+  PC
+  PRINTER
+  CAMERA
+  NAS
+  PHONE
+  IOT
+  MONITOR
+  OTHER
+}
+
 enum ApiProvider {
   ANNY
   WAKESYS
@@ -97,6 +128,10 @@ model Account {
   pushSubscriptions PushSubscription[]
   infoFormTemplates InfoFormTemplate[]
   infoRequests    InfoRequest[]
+  networkVlans    NetworkVlan[]
+  networkDevices  NetworkDevice[]
+  networkOutlets  NetworkOutlet[]
+  networkClients  NetworkClient[]
 }
 
 model Admin {
@@ -177,6 +212,8 @@ model Device {
   /// Wird vor allem fuer Mitarbeiter verwendet, die ohne Bereich-Zugehoerigkeit
   /// nur ein einzelnes Geraet bedienen sollen.
   ticketDevices   TicketDevice[]
+  /// Optionale Netzwerk-Zuordnung (Switch-Port/VLAN) dieses IoT-Geraets.
+  networkClient   NetworkClient?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -1093,4 +1130,145 @@ model ShellyAutomationRun {
   @@index([accountId, triggeredAt])
   @@index([automationId])
   @@index([groupId])
+}
+
+// ── Netzwerk-Verwaltung ──────────────────────────────────────────────────────
+
+/// VLAN (Netz-Segment), z. B. Management, IoT, Gaeste-WLAN.
+model NetworkVlan {
+  id          Int             @id @default(autoincrement())
+  /// IEEE 802.1Q VLAN-ID (1-4094).
+  vlanId      Int
+  name        String
+  /// CIDR-Notation, z. B. "192.168.10.0/24".
+  subnet      String?
+  gateway     String?
+  description String?
+  accountId   Int
+  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Ports mit diesem VLAN als untagged/PVID.
+  ports       NetworkPort[]
+  /// Ports, auf denen dieses VLAN tagged anliegt (Trunk).
+  taggedPorts NetworkPortVlan[]
+  clients     NetworkClient[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([accountId, vlanId])
+  @@index([accountId])
+}
+
+/// Netzwerk-Infrastruktur-Hardware (Switch, Router, Access Point, Firewall).
+/// Beim Anlegen eines Switches werden die Ports automatisch aus `portCount`
+/// generiert (API-Logik).
+model NetworkDevice {
+  id         Int               @id @default(autoincrement())
+  name       String
+  type       NetworkDeviceType @default(SWITCH)
+  vendor     String?
+  model      String?
+  ipAddress  String?
+  macAddress String?
+  /// Freitext-Standort, z. B. "Serverraum", "Technikraum Nord".
+  location   String?
+  notes      String?
+  accountId  Int
+  account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ports      NetworkPort[]
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([accountId])
+}
+
+/// Physischer Port eines Switches/Routers.
+model NetworkPort {
+  id          Int               @id @default(autoincrement())
+  /// Port-Nummer am Geraet (1..n).
+  number      Int
+  /// Optionale Beschriftung (Aufdruck/Etikett).
+  label       String?
+  deviceId    Int
+  device      NetworkDevice     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// Untagged VLAN (PVID) des Ports.
+  vlanId      Int?
+  vlan        NetworkVlan?      @relation(fields: [vlanId], references: [id], onDelete: SetNull)
+  /// Tagged VLANs (Trunk-Konfiguration).
+  taggedVlans NetworkPortVlan[]
+  poe         Boolean           @default(false)
+  status      NetworkPortStatus @default(ACTIVE)
+  /// Verkabelung: mit welcher Dose / welchem Patchfeld-Port verbunden.
+  outletId    Int?              @unique
+  outlet      NetworkOutlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  notes       String?
+  client      NetworkClient?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([deviceId, number])
+  @@index([deviceId])
+  @@index([vlanId])
+}
+
+/// m:n Port <-> VLAN fuer tagged VLANs (Trunk-Ports).
+model NetworkPortVlan {
+  id     Int         @id @default(autoincrement())
+  portId Int
+  port   NetworkPort @relation(fields: [portId], references: [id], onDelete: Cascade)
+  vlanId Int
+  vlan   NetworkVlan @relation(fields: [vlanId], references: [id], onDelete: Cascade)
+
+  @@unique([portId, vlanId])
+  @@index([portId])
+  @@index([vlanId])
+}
+
+/// Physischer Anschluss: Wanddose oder Patchpanel-Port.
+model NetworkOutlet {
+  id        Int               @id @default(autoincrement())
+  /// Beschriftung, z. B. "Dose 2.OG-14" oder "Patch A-07".
+  label     String
+  /// Raum/Bereich, z. B. "Shop", "Technikraum".
+  location  String?
+  type      NetworkOutletType @default(WALL_OUTLET)
+  notes     String?
+  accountId Int
+  account   Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  port      NetworkPort?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([accountId, label])
+  @@index([accountId])
+}
+
+/// Endgeraet im Netzwerk (Kassen-PC, Drucker, Kamera, NAS, ...). Kann
+/// optional auf ein bestehendes IoT-`Device` verweisen – dann kommen Name/
+/// IP/Status aus dem Device-Datensatz und hier wird nur die Netzwerk-
+/// Zuordnung (Port/VLAN) gepflegt.
+model NetworkClient {
+  id         Int               @id @default(autoincrement())
+  name       String
+  type       NetworkClientType @default(OTHER)
+  ipAddress  String?
+  macAddress String?
+  /// true = feste IP, false = DHCP.
+  isStatic   Boolean           @default(false)
+  /// Optionaler Link auf ein bestehendes IoT-/Zutritts-Geraet.
+  deviceId   Int?              @unique
+  device     Device?           @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// An welchem Switch-Port das Geraet haengt (NULL = WLAN/unbekannt).
+  portId     Int?              @unique
+  port       NetworkPort?      @relation(fields: [portId], references: [id], onDelete: SetNull)
+  /// Logisch zugeordnetes VLAN (auch ohne Port-Zuordnung moeglich, z. B. WLAN).
+  vlanId     Int?
+  vlan       NetworkVlan?      @relation(fields: [vlanId], references: [id], onDelete: SetNull)
+  notes      String?
+  accountId  Int
+  account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([accountId])
+  @@index([vlanId])
 }
