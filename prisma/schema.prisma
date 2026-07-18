@@ -1202,6 +1202,9 @@ model NetworkPort {
   /// Tagged VLANs (Trunk-Konfiguration).
   taggedVlans NetworkPortVlan[]
   poe         Boolean           @default(false)
+  /// Uplink/Zuleitung: Verbindung zu einem anderen Switch/Router statt zu
+  /// einem Endgeraet - wird in der Port-Matrix gesondert dargestellt.
+  uplink      Boolean           @default(false)
   status      NetworkPortStatus @default(ACTIVE)
   /// Verkabelung: mit welcher Dose / welchem Patchfeld-Port verbunden.
   outletId    Int?              @unique

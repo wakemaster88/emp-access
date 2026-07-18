@@ -16,7 +16,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Loader2, Zap, Cable, MonitorSmartphone } from "lucide-react";
+import { Loader2, Zap, Cable, MonitorSmartphone, ArrowUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PORT_STATUS, vlanColor } from "@/components/network/network-types";
 
@@ -25,6 +25,7 @@ export interface PortData {
   number: number;
   label: string | null;
   poe: boolean;
+  uplink: boolean;
   status: string;
   notes: string | null;
   vlan: { id: number; vlanId: number; name: string } | null;
@@ -51,6 +52,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
     taggedVlanIds: [] as number[],
     outletId: "none",
     poe: false,
+    uplink: false,
     status: "ACTIVE",
     notes: "",
   });
@@ -65,6 +67,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
       taggedVlanIds: p.taggedVlans.map((v) => v.id),
       outletId: p.outlet ? String(p.outlet.id) : "none",
       poe: p.poe,
+      uplink: p.uplink,
       status: p.status,
       notes: p.notes ?? "",
     });
@@ -95,6 +98,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
           taggedVlanIds: form.taggedVlanIds,
           outletId: form.outletId === "none" ? null : Number(form.outletId),
           poe: form.poe,
+          uplink: form.uplink,
           status: form.status,
           notes: form.notes,
         }),
@@ -132,6 +136,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                 onClick={() => openPort(p)}
                 title={[
                   `Port ${p.number}`,
+                  p.uplink ? "Uplink / Zuleitung" : null,
                   p.label,
                   p.vlan ? `VLAN ${p.vlan.vlanId} (${p.vlan.name})` : null,
                   p.client ? `Gerät: ${p.client.name}` : null,
@@ -145,13 +150,16 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                       ? "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-400"
                       : reserved
                         ? "border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
-                        : p.vlan
-                          ? cn("border-transparent", vlanColor(p.vlan.id))
-                          : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                        : p.uplink
+                          ? "border-violet-500 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                          : p.vlan
+                            ? cn("border-transparent", vlanColor(p.vlan.id))
+                            : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
                 )}
               >
                 <span>{p.number}</span>
                 <span className="flex items-center gap-0.5 mt-0.5">
+                  {p.uplink && <ArrowUp className="h-3 w-3" />}
                   {p.poe && <Zap className="h-3 w-3" />}
                   {p.outlet && <Cable className="h-3 w-3" />}
                   {p.client && <MonitorSmartphone className="h-3 w-3" />}
@@ -166,6 +174,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
 
         {/* Legende */}
         <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+          <span className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400"><ArrowUp className="h-3 w-3" /> Uplink / Zuleitung</span>
           <span className="inline-flex items-center gap-1"><Zap className="h-3 w-3" /> PoE</span>
           <span className="inline-flex items-center gap-1"><Cable className="h-3 w-3" /> Anschluss verbunden</span>
           <span className="inline-flex items-center gap-1"><MonitorSmartphone className="h-3 w-3" /> Gerät zugewiesen</span>
@@ -197,9 +206,17 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                 <TableCell className="font-mono font-semibold text-sm">
                   {p.number}
                   {p.poe && <Zap className="inline h-3 w-3 ml-1 text-amber-500" />}
+                  {p.uplink && <ArrowUp className="inline h-3 w-3 ml-1 text-violet-500" />}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell text-sm text-slate-500">
-                  {p.label || <span className="text-slate-300">–</span>}
+                  <span className="inline-flex items-center gap-1.5">
+                    {p.label || <span className="text-slate-300">–</span>}
+                    {p.uplink && (
+                      <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 text-[10px] h-4 px-1.5">
+                        Uplink
+                      </Badge>
+                    )}
+                  </span>
                 </TableCell>
                 <TableCell>
                   {p.vlan ? (
@@ -331,6 +348,14 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <div>
+                <p className="text-sm font-medium">Uplink / Zuleitung</p>
+                <p className="text-xs text-slate-500">Verbindung zu einem anderen Switch/Router</p>
+              </div>
+              <Switch checked={form.uplink} onCheckedChange={(v) => setForm((f) => ({ ...f, uplink: v }))} />
             </div>
 
             <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">

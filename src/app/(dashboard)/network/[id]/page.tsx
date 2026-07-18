@@ -124,6 +124,7 @@ export default async function NetworkDeviceDetailPage({ params }: Props) {
                 number: p.number,
                 label: p.label,
                 poe: p.poe,
+                uplink: p.uplink,
                 status: p.status,
                 notes: p.notes,
                 vlan: p.vlan,

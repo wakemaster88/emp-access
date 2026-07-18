@@ -62,6 +62,7 @@ export async function PUT(
       vlanId,
       outletId,
       poe: typeof body.poe === "boolean" ? body.poe : existing.poe,
+      uplink: typeof body.uplink === "boolean" ? body.uplink : existing.uplink,
       status: body.status ?? existing.status,
       notes: body.notes !== undefined ? (body.notes?.trim() || null) : existing.notes,
     },
