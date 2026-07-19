@@ -3660,11 +3660,22 @@ function GuestInfoSummaryPanel({
   );
 }
 
+// Farbpalette des Kursblatts (angelehnt an den Shop-Monitor: Slate + Cyan).
+const PDF_SLATE_900: [number, number, number] = [15, 23, 42];
+const PDF_SLATE_600: [number, number, number] = [71, 85, 105];
+const PDF_SLATE_400: [number, number, number] = [148, 163, 184];
+const PDF_SLATE_200: [number, number, number] = [226, 232, 240];
+const PDF_SLATE_50: [number, number, number] = [248, 250, 252];
+const PDF_CYAN_700: [number, number, number] = [14, 116, 144];
+const PDF_CYAN_500: [number, number, number] = [6, 182, 212];
+const PDF_CYAN_50: [number, number, number] = [236, 254, 255];
+const PDF_WHITE: [number, number, number] = [255, 255, 255];
+
 /**
  * A4-Kursblatt fuer die Material-Vorbereitung eines Kurstages:
- *   1. Kopf mit Kurs, Datum und Account
- *   2. Aggregierte Material-Liste (Setups + Neopren)
- *   3. Teilnehmer-Tabelle mit allen Infos + Ausgabe-Checkbox
+ *   1. Dunkles Kopfband mit Kurs, Datum, Account und Antwortquote
+ *   2. Material-Karten (Setups) + Chip-Zeilen (Neopren, sonstige Infos)
+ *   3. Teilnehmer-Tabelle (Zebra) mit allen Infos + Ausgabe-Checkbox
  * Wird im neuen Tab geoeffnet (Ansehen/Drucken/Speichern), mit
  * Download-Fallback falls der Popup geblockt wird.
  */
@@ -3680,6 +3691,10 @@ function exportCourseDayPdf(
   const margin = 14;
   const contentW = pageW - margin * 2;
 
+  const fill = (c: [number, number, number]) => doc.setFillColor(c[0], c[1], c[2]);
+  const stroke = (c: [number, number, number]) => doc.setDrawColor(c[0], c[1], c[2]);
+  const color = (c: [number, number, number]) => doc.setTextColor(c[0], c[1], c[2]);
+
   const dateLabel = new Date(`${dateStr}T12:00:00`).toLocaleDateString("de-DE", {
     weekday: "long",
     day: "2-digit",
@@ -3687,61 +3702,142 @@ function exportCourseDayPdf(
     year: "numeric",
   });
 
-  let y = 18;
+  // ---- Kopfband -----------------------------------------------------------
+  const headerH = 34;
+  fill(PDF_SLATE_900);
+  doc.rect(0, 0, pageW, headerH, "F");
+  // Cyan-Akzentlinie an der Unterkante des Bands.
+  fill(PDF_CYAN_500);
+  doc.rect(0, headerH - 1.4, pageW, 1.4, "F");
 
-  // Kopf
+  color(PDF_CYAN_500);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text(groupName, margin, y);
+  doc.setFontSize(8);
+  doc.text("TAGESÜBERSICHT", margin, 12, { charSpace: 0.6 });
+
+  color(PDF_WHITE);
+  doc.setFontSize(19);
+  doc.text(groupName, margin, 21);
+
+  color(PDF_SLATE_400);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text(`Tagesübersicht · ${dateLabel}${accountName ? ` · ${accountName}` : ""}`, margin, y + 6);
-  doc.setTextColor(0);
-  y += 12;
-  doc.setDrawColor(180);
-  doc.line(margin, y, pageW - margin, y);
-  y += 8;
+  doc.text(`${dateLabel}${accountName ? `  ·  ${accountName}` : ""}`, margin, 28);
 
-  // Aggregierte Material-Liste
-  const sectionTitle = (title: string) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(title, margin, y);
-    y += 5.5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+  // Antwortquote als Pill rechts im Kopfband.
+  const statText = `${summary.answered}/${summary.total} beantwortet`;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  const statW = doc.getTextWidth(statText) + 8;
+  fill(PDF_CYAN_500);
+  doc.roundedRect(pageW - margin - statW, 13, statW, 8, 4, 4, "F");
+  color(PDF_SLATE_900);
+  doc.text(statText, pageW - margin - statW / 2, 18.2, { align: "center" });
+
+  let y = headerH + 12;
+
+  // Seitenumbruch-Helfer fuer die Sektionen.
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageH - 18) {
+      doc.addPage();
+      y = 18;
+    }
   };
 
+  // Sektions-Titel mit Cyan-Akzentbalken.
+  const sectionTitle = (title: string) => {
+    ensureSpace(14);
+    fill(PDF_CYAN_500);
+    doc.rect(margin, y - 3.4, 1.6, 4.4, "F");
+    color(PDF_SLATE_900);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(title.toUpperCase(), margin + 4.5, y, { charSpace: 0.3 });
+    y += 7;
+    doc.setFont("helvetica", "normal");
+  };
+
+  // ---- Material-Karten ------------------------------------------------------
   if (summary.setups.length > 0) {
     sectionTitle("Material");
-    for (const s of summary.setups) {
-      doc.text(`${s.count} ×  ${formatSetup(s)}`, margin + 2, y);
-      y += 5;
+    const gap = 4;
+    const perRow = 3;
+    const cardW = (contentW - gap * (perRow - 1)) / perRow;
+    const cardH = 17;
+    for (let i = 0; i < summary.setups.length; i += perRow) {
+      ensureSpace(cardH + gap);
+      const rowItems = summary.setups.slice(i, i + perRow);
+      let x = margin;
+      for (const s of rowItems) {
+        fill(PDF_SLATE_50);
+        stroke(PDF_SLATE_200);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(x, y, cardW, cardH, 2.5, 2.5, "FD");
+        // Grosse Stueckzahl in Cyan.
+        color(PDF_CYAN_700);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        doc.text(`${s.count}×`, x + 4, y + 8.5);
+        // Setup-Beschreibung daneben (ohne Schuhgroesse, die steht in der
+        // Detail-Zeile darunter), max. 2 Zeilen.
+        const countW = doc.getTextWidth(`${s.count}×`) + 7;
+        color(PDF_SLATE_900);
+        doc.setFontSize(9);
+        const title = [s.sport, s.level].filter(Boolean).join(" · ") || formatSetup(s);
+        const lines = (doc.splitTextToSize(title, cardW - countW - 4) as string[]).slice(0, 2);
+        doc.text(lines, x + countW, y + 6.3);
+        // Kleine Detail-Zeile: Schuhgroesse hervorheben, falls vorhanden.
+        color(PDF_SLATE_600);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.text(
+          s.shoe ? `Schuhgröße ${s.shoe}` : "ohne Schuhgröße",
+          x + 4,
+          y + cardH - 3.5,
+        );
+        x += cardW + gap;
+      }
+      y += cardH + gap;
     }
-    y += 3;
+    y += 4;
   }
+
+  // ---- Chip-Zeilen (Neopren + sonstige Labels) ------------------------------
+  const chipRow = (title: string, entries: [string, number][]) => {
+    sectionTitle(title);
+    doc.setFontSize(8.5);
+    let x = margin;
+    const chipH = 7.5;
+    for (const [value, count] of entries) {
+      doc.setFont("helvetica", "bold");
+      const text = `${value}  ×${count}`;
+      const w = doc.getTextWidth(text) + 8;
+      if (x + w > pageW - margin) {
+        x = margin;
+        y += chipH + 2.5;
+        ensureSpace(chipH + 4);
+      }
+      fill(PDF_CYAN_50);
+      stroke(PDF_CYAN_500);
+      doc.setLineWidth(0.25);
+      doc.roundedRect(x, y, w, chipH, 3.5, 3.5, "FD");
+      color(PDF_CYAN_700);
+      doc.text(text, x + w / 2, y + 5, { align: "center" });
+      x += w + 3;
+    }
+    y += chipH + 8;
+  };
 
   if (summary.neopren.size > 0) {
-    sectionTitle("Neoprenanzüge");
-    const parts = sortSummaryValues(summary.neopren).map(([size, count]) => `${size} ×${count}`);
-    const lines = doc.splitTextToSize(parts.join("   ·   "), contentW - 4);
-    doc.text(lines, margin + 2, y);
-    y += lines.length * 5 + 3;
+    chipRow("Neoprenanzüge", sortSummaryValues(summary.neopren));
   }
-
   for (const [label, values] of summary.labels) {
-    sectionTitle(label);
-    const parts = sortSummaryValues(values).map(([value, count]) => `${value} ×${count}`);
-    const lines = doc.splitTextToSize(parts.join("   ·   "), contentW - 4);
-    doc.text(lines, margin + 2, y);
-    y += lines.length * 5 + 3;
+    chipRow(label, sortSummaryValues(values));
   }
 
-  // Teilnehmer-Tabelle
-  y += 2;
-  sectionTitle(`Teilnehmer (${summary.total})`);
+  // ---- Teilnehmer-Tabelle ---------------------------------------------------
   y += 1;
+  sectionTitle(`Teilnehmer (${summary.total})`);
 
   // Tickets nach Slot + Teilnehmername sortieren.
   const participantName = (t: CheckinTicket): string => {
@@ -3799,7 +3895,7 @@ function exportCourseDayPdf(
   if (hasSlots) cols.push({ header: "Slot", width: 18, value: (r) => r.ticket.slotStart ?? "" });
   cols.push({ header: "Sport", width: 24, value: (r) => r.sport });
   cols.push({ header: "Level", width: 28, value: (r) => r.level });
-  cols.push({ header: "Schuhgr.", width: 18, value: (r) => r.shoe });
+  cols.push({ header: "Schuhgr.", width: 22, value: (r) => r.shoe });
   cols.push({ header: "Neopren", width: 20, value: (r) => r.neopren });
   for (const label of otherLabels) {
     cols.push({ header: label, width: 24, value: (r) => r.other.get(label) ?? "" });
@@ -3810,55 +3906,82 @@ function exportCourseDayPdf(
   // Teilnehmer-Spalte bekommt den Rest der Breite.
   cols[0].width = Math.max(35, contentW - fixedW);
 
-  const rowH = 7;
+  const rowH = 8;
   const drawTableHeader = () => {
+    fill(PDF_SLATE_900);
+    doc.roundedRect(margin, y, contentW, rowH, 1.5, 1.5, "F");
+    // Untere Ecken des Header-Bands eckig machen (Rechteck drueberlegen).
+    doc.rect(margin, y + rowH / 2, contentW, rowH / 2, "F");
+    color(PDF_WHITE);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.5);
-    doc.setFillColor(235, 235, 235);
-    doc.rect(margin, y, contentW, rowH, "F");
-    let x = margin + 1.5;
+    doc.setFontSize(8);
+    let x = margin + 2.5;
     for (const c of cols) {
-      doc.text(c.header, x, y + 4.8, { maxWidth: c.width - 3 });
+      doc.text(c.header.toUpperCase(), x, y + 5.2, { maxWidth: c.width - 3, charSpace: 0.2 });
       x += c.width;
     }
-    doc.text("OK", x + 2, y + 4.8);
+    doc.text("OK", x + 2.5, y + 5.2, { charSpace: 0.2 });
     y += rowH;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
   };
 
   drawTableHeader();
+  let zebra = false;
   for (const r of rows) {
-    if (y + rowH > pageH - 14) {
+    if (y + rowH > pageH - 16) {
       doc.addPage();
-      y = 14;
+      y = 18;
       drawTableHeader();
+      zebra = false;
     }
-    doc.setDrawColor(210);
+    // Zebra-Streifen fuer bessere Zeilen-Lesbarkeit.
+    if (zebra) {
+      fill(PDF_SLATE_50);
+      doc.rect(margin, y, contentW, rowH, "F");
+    }
+    zebra = !zebra;
+    stroke(PDF_SLATE_200);
+    doc.setLineWidth(0.2);
     doc.line(margin, y + rowH, margin + contentW, y + rowH);
-    let x = margin + 1.5;
-    for (const c of cols) {
+    let x = margin + 2.5;
+    for (let i = 0; i < cols.length; i++) {
+      const c = cols[i];
       const text = doc.splitTextToSize(c.value(r), c.width - 3)[0] ?? "";
-      doc.text(text, x, y + 4.8);
+      if (i === 0) {
+        // Teilnehmername fett und dunkel, Rest dezenter.
+        color(PDF_SLATE_900);
+        doc.setFont("helvetica", "bold");
+      } else {
+        color(PDF_SLATE_600);
+        doc.setFont("helvetica", "normal");
+      }
+      doc.text(text, x, y + 5.3);
       x += c.width;
     }
-    // Checkbox zum Abhaken
-    doc.setDrawColor(120);
-    doc.rect(x + 2, y + 1.5, 4, 4);
+    // Checkbox zum Abhaken bei der Material-Ausgabe.
+    stroke(PDF_SLATE_400);
+    doc.setLineWidth(0.35);
+    doc.roundedRect(x + 2, y + 1.9, 4.2, 4.2, 1, 1, "S");
     y += rowH;
   }
 
-  // Fusszeile
+  // ---- Fusszeile auf jeder Seite --------------------------------------------
   const stamp = new Date().toLocaleString("de-DE", {
     day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
-  doc.setFontSize(7.5);
-  doc.setTextColor(130);
-  doc.text(
-    `Erstellt ${stamp} · ${summary.answered}/${summary.total} Teilnehmer-Infos beantwortet`,
-    margin,
-    pageH - 8,
-  );
+  const pageCount = doc.getNumberOfPages();
+  for (let p = 1; p <= pageCount; p++) {
+    doc.setPage(p);
+    stroke(PDF_SLATE_200);
+    doc.setLineWidth(0.3);
+    doc.line(margin, pageH - 11, pageW - margin, pageH - 11);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    color(PDF_SLATE_400);
+    doc.text(`${groupName} · ${dateLabel} · erstellt ${stamp}`, margin, pageH - 6.5);
+    doc.text(`Seite ${p}/${pageCount}`, pageW - margin, pageH - 6.5, { align: "right" });
+  }
 
   // Im neuen Tab oeffnen (Ansehen/Drucken/Speichern); Fallback: Download.
   const slug = groupName.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, "-").replace(/^-|-$/g, "");
