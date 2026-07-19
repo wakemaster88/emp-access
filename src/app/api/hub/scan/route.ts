@@ -69,8 +69,18 @@ export async function POST(request: NextRequest) {
   // Auto-Sync: Bei bekannten MACs die IP-Adresse der verwalteten Eintraege
   // aktuell halten (DHCP-Wechsel werden so automatisch nachgezogen) und das
   // VLAN aus dem Subnetz ableiten, sofern keines gesetzt ist.
+  //
+  // Zusaetzlich zum MAC-Abgleich matchen wir Infrastruktur (Switches/Router/
+  // APs) auch ueber die IP-Adresse: NETGEAR-Switches melden ihre Management-
+  // MAC oft mit einem Offset zur aufgedruckten Chassis-MAC, wuerden per MAC
+  // also nie treffen. Bei fester Management-IP ist der IP-Abgleich zuverlaessig.
   let synced = 0;
   const macs = [...byMac.keys()];
+  const byIp = new Map<string, { ip: string | null; iface: string | null }>();
+  for (const info of byMac.values()) {
+    if (info.ip) byIp.set(info.ip, info);
+  }
+  const ips = [...byIp.keys()];
   if (macs.length > 0) {
     const [managedClients, managedDevices, vlans] = await Promise.all([
       db.networkClient.findMany({
@@ -78,7 +88,13 @@ export async function POST(request: NextRequest) {
         select: { id: true, macAddress: true, ipAddress: true, vlanId: true },
       }),
       db.networkDevice.findMany({
-        where: { accountId: account.id, macAddress: { in: macs, mode: "insensitive" } },
+        where: {
+          accountId: account.id,
+          OR: [
+            { macAddress: { in: macs, mode: "insensitive" } },
+            ...(ips.length > 0 ? [{ ipAddress: { in: ips } }] : []),
+          ],
+        },
         select: { id: true, macAddress: true, ipAddress: true },
       }),
       db.networkVlan.findMany({
@@ -86,6 +102,7 @@ export async function POST(request: NextRequest) {
         select: { id: true, subnet: true },
       }),
     ]);
+    // Clients: nur per MAC abgleichen (DHCP-IPs sind nicht ortsfest).
     for (const c of managedClients) {
       const info = c.macAddress ? byMac.get(c.macAddress.toUpperCase()) : undefined;
       if (!info) continue;
@@ -98,8 +115,11 @@ export async function POST(request: NextRequest) {
       await db.networkClient.update({ where: { id: c.id }, data });
       synced++;
     }
+    // Infrastruktur: MAC bevorzugt, sonst IP-Abgleich.
     for (const d of managedDevices) {
-      const info = d.macAddress ? byMac.get(d.macAddress.toUpperCase()) : undefined;
+      const info =
+        (d.macAddress ? byMac.get(d.macAddress.toUpperCase()) : undefined) ??
+        (d.ipAddress ? byIp.get(d.ipAddress) : undefined);
       if (!info) continue;
       await db.networkDevice.update({
         where: { id: d.id },

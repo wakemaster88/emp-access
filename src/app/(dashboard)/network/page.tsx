@@ -118,6 +118,11 @@ export default async function NetworkPage() {
   const infraByMac = new Map(
     networkDevices.filter((d) => d.macAddress).map((d) => [norm(d.macAddress), d])
   );
+  // Infrastruktur zusaetzlich per (Management-)IP: NETGEAR-Switches melden
+  // im Scan oft eine MAC mit Offset zur aufgedruckten Chassis-MAC.
+  const infraByIp = new Map(
+    networkDevices.filter((d) => d.ipAddress).map((d) => [d.ipAddress!, d])
+  );
   const clientByMac = new Map(
     clients.filter((c) => c.macAddress).map((c) => [norm(c.macAddress), c])
   );
@@ -128,7 +133,9 @@ export default async function NetworkPage() {
   const discoveredRows = discoveredDevices
     .filter((d) => !isVirtualMac(d.macAddress))
     .map((d) => {
-      const infra = infraByMac.get(norm(d.macAddress));
+      const infra =
+        infraByMac.get(norm(d.macAddress)) ??
+        (d.ipAddress ? infraByIp.get(d.ipAddress) : undefined);
       const client = clientByMac.get(norm(d.macAddress));
       const iot = d.ipAddress ? iotByIp.get(d.ipAddress) : undefined;
       return {
