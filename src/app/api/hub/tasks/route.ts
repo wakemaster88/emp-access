@@ -5,7 +5,7 @@ function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
 }
 
-const VALID_TASK_TYPES = ["PING", "NETWORK_SCAN", "WAKE_ON_LAN"];
+const VALID_TASK_TYPES = ["PING", "NETWORK_SCAN", "WAKE_ON_LAN", "CAMERA_SNAPSHOT"];
 
 /**
  * GET (Hub, Token-Auth): holt offene Tasks ab und markiert sie als RUNNING.

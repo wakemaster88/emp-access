@@ -3,6 +3,7 @@ import { executeTask, type HubTask } from "./tasks.js";
 import { checkForUpdate } from "./updater.js";
 import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
+import { pollCameras, CAMERA_POLL_INTERVAL_MS } from "./cameras.js";
 import { STATE, recordHeartbeat, recordTask } from "./state.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
@@ -67,6 +68,7 @@ setInterval(heartbeat, CONFIG.heartbeatIntervalMs);
 setInterval(pollTasks, CONFIG.taskIntervalMs);
 setInterval(checkForUpdate, CONFIG.updateIntervalMs);
 setInterval(autoScan, CONFIG.scanIntervalMs);
+setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 
 process.on("SIGTERM", () => { log("SIGTERM – Hub beendet sich."); process.exit(0); });
 process.on("SIGINT", () => { log("SIGINT – Hub beendet sich."); process.exit(0); });

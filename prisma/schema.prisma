@@ -135,6 +135,8 @@ model Account {
   hubAgents       HubAgent[]
   hubTasks        HubTask[]
   discoveredDevices DiscoveredDevice[]
+  cameras         Camera[]
+  cameraEvents    CameraEvent[]
 }
 
 model Admin {
@@ -1328,6 +1330,54 @@ model HubTask {
 
   @@index([accountId, status])
   @@index([accountId, createdAt])
+}
+
+/// IP-Kamera (Reolink) im lokalen Netz. Der Hub spricht sie ueber die
+/// CGI-HTTP-API an: Event-Polling (Bewegung/KI) und Schnappschuesse.
+/// Zugangsdaten werden nur vom Hub verwendet.
+model Camera {
+  id         Int           @id @default(autoincrement())
+  name       String
+  /// IP oder Hostname im lokalen Netz.
+  host       String
+  httpPort   Int           @default(80)
+  https      Boolean       @default(false)
+  username   String
+  password   String
+  /// Kanal: 0 bei Einzelkameras, 0..n hinter einem NVR/Home Hub.
+  channel    Int           @default(0)
+  enabled    Boolean       @default(true)
+  notes      String?
+  /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
+  snapshot   Bytes?
+  snapshotAt DateTime?
+  /// Zuletzt vom Hub erfolgreich erreicht (Basis fuer Online-Status).
+  lastSeenAt DateTime?
+  accountId  Int
+  account    Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  events     CameraEvent[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId])
+}
+
+/// Bewegungs-/KI-Ereignis einer Kamera, vom Hub per Polling gemeldet.
+model CameraEvent {
+  id        Int       @id @default(autoincrement())
+  cameraId  Int
+  camera    Camera    @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  /// "MOTION" | "PERSON" | "VEHICLE" | "ANIMAL" | "OTHER"
+  type      String
+  startedAt DateTime
+  endedAt   DateTime?
+  accountId Int
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@index([accountId, startedAt])
+  @@index([cameraId, startedAt])
 }
 
 /// Vom Hub automatisch entdecktes Geraet im lokalen Netz (ARP-Scan).

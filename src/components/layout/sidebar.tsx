@@ -30,6 +30,7 @@ import {
   PackageSearch,
   Droplets,
   Network,
+  Cctv,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/devices", label: "Geräte", icon: HardDrive },
       { href: "/network", label: "Netzwerk", icon: Network },
+      { href: "/cameras", label: "Kameras", icon: Cctv },
       { href: "/automation", label: "Automation", icon: Zap },
       { href: "/email", label: "E-Mail", icon: Mail },
       { href: "/settings", label: "Einstellungen", icon: Settings },

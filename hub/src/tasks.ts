@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import dgram from "node:dgram";
 import os from "node:os";
 import { log } from "./config.js";
+import { uploadSnapshot } from "./cameras.js";
 
 const exec = promisify(execFile);
 
@@ -125,6 +126,16 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       return runNetworkScan();
     case "WAKE_ON_LAN":
       return runWakeOnLan(task.payload);
+    case "CAMERA_SNAPSHOT": {
+      const cameraId = Number(task.payload?.cameraId);
+      if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
+      try {
+        const r = await uploadSnapshot(cameraId);
+        return { success: true, result: { cameraId, ...r } };
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
     default:
       return { success: false, error: `Unbekannter Task-Typ: ${task.type}` };
   }

@@ -36,6 +36,13 @@ export const STATE = {
     uploaded: false,
     error: null as string | null,
   },
+  cameras: {
+    lastPollAt: null as string | null,
+    configured: 0,
+    reachable: 0,
+    openEvents: 0,
+    error: null as string | null,
+  },
   tasks: [] as TaskHistoryEntry[],
   logs: [] as LogEntry[],
 };
