@@ -16,8 +16,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Radar, Loader2, Plus, Link2, Server, MonitorSmartphone } from "lucide-react";
+import { Radar, Loader2, Plus, Link2, Server, MonitorSmartphone, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ipToInt } from "@/lib/ip";
 import { CLIENT_TYPES } from "@/components/network/network-types";
 
 export interface DiscoveredRow {
@@ -58,11 +59,32 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
 
   const unknownCount = useMemo(() => devices.filter((d) => !d.match).length, [devices]);
 
-  const filtered = devices.filter((d) => {
-    if (filter === "unknown") return !d.match;
-    if (filter === "known") return !!d.match;
-    return true;
-  });
+  // Doppelbelegung: dieselbe IP bei mehreren aktiven MACs - deutet auf einen
+  // IP-Konflikt (oder einen veralteten ARP-Eintrag kurz nach DHCP-Wechsel) hin.
+  const duplicateIps = useMemo(() => {
+    const byIp = new Map<string, number>();
+    for (const d of devices) {
+      if (!d.ipAddress || new Date(d.lastSeenAt).getTime() <= activeCutoff) continue;
+      byIp.set(d.ipAddress, (byIp.get(d.ipAddress) ?? 0) + 1);
+    }
+    return new Set([...byIp.entries()].filter(([, n]) => n > 1).map(([ip]) => ip));
+  }, [devices, activeCutoff]);
+
+  const filtered = devices
+    .filter((d) => {
+      if (filter === "unknown") return !d.match;
+      if (filter === "known") return !!d.match;
+      return true;
+    })
+    // Numerisch nach IP sortieren; Eintraege ohne IP ans Ende, dort nach MAC.
+    .sort((a, b) => {
+      const ai = a.ipAddress ? ipToInt(a.ipAddress) : null;
+      const bi = b.ipAddress ? ipToInt(b.ipAddress) : null;
+      if (ai !== null && bi !== null) return ai - bi;
+      if (ai !== null) return -1;
+      if (bi !== null) return 1;
+      return a.macAddress.localeCompare(b.macAddress);
+    });
 
   function openAdopt(d: DiscoveredRow) {
     setAdopting(d);
@@ -140,7 +162,17 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
           ))}
         </div>
       </CardHeader>
-      <CardContent className="p-0 sm:px-6 sm:pb-6">
+      <CardContent className="p-0 sm:px-6 sm:pb-6 space-y-3">
+        {duplicateIps.size > 0 && (
+          <div className="mx-4 sm:mx-0 flex items-start gap-2 rounded-lg border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-800 dark:text-rose-300">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              <strong>IP-Doppelbelegung erkannt:</strong>{" "}
+              {[...duplicateIps].sort((a, b) => (ipToInt(a) ?? 0) - (ipToInt(b) ?? 0)).join(", ")}{" "}
+              wird von mehreren Geräten gleichzeitig verwendet. Feste IPs und DHCP-Bereich prüfen.
+            </span>
+          </div>
+        )}
         {filtered.length === 0 ? (
           <p className="text-sm text-slate-500 px-6 pb-6 sm:px-0">
             {devices.length === 0
@@ -177,7 +209,23 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-sm">{d.ipAddress ?? "–"}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {d.ipAddress ? (
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1",
+                              duplicateIps.has(d.ipAddress) && "text-rose-600 dark:text-rose-400 font-semibold"
+                            )}
+                          >
+                            {d.ipAddress}
+                            {duplicateIps.has(d.ipAddress) && (
+                              <AlertTriangle className="h-3.5 w-3.5" aria-label="IP-Doppelbelegung" />
+                            )}
+                          </span>
+                        ) : (
+                          "–"
+                        )}
+                      </TableCell>
                       <TableCell className="font-mono text-xs text-slate-500">{d.macAddress}</TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-slate-500">
                         {d.vendor ?? <span className="text-slate-300">–</span>}

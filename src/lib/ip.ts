@@ -3,7 +3,7 @@
  * dem VLAN zugeordnet, in dessen `subnet` (CIDR) seine IP-Adresse faellt.
  */
 
-function ipToInt(ip: string): number | null {
+export function ipToInt(ip: string): number | null {
   const parts = ip.trim().split(".");
   if (parts.length !== 4) return null;
   let result = 0;
