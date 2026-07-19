@@ -3,7 +3,7 @@ import { validateApiToken } from "@/lib/api-auth";
 import { isVirtualMac } from "@/lib/oui";
 import { findVlanForIp } from "@/lib/ip";
 
-const MAX_DEVICES_PER_SCAN = 500;
+const MAX_DEVICES_PER_SCAN = 1000;
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
 
 /** Multicast-IPs (224.0.0.0/4) und Broadcast sind keine echten Geraete. */
@@ -13,10 +13,34 @@ function isVirtualIp(ip: string | null): boolean {
   return (firstOctet >= 224 && firstOctet <= 239) || ip.endsWith(".255");
 }
 
+interface DeviceInfo {
+  ip: string | null;
+  iface: string | null;
+  hostname: string | null;
+  vendor: string | null;
+  openPorts: number[];
+  deviceType: string | null;
+  responseMs: number | null;
+  reachable: boolean;
+}
+
+function str(v: unknown, max: number): string | null {
+  return typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+}
+
+function ports(v: unknown): number[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((n) => Number(n))
+    .filter((n) => Number.isInteger(n) && n > 0 && n <= 65535)
+    .slice(0, 100);
+}
+
 /**
- * POST (Hub, Token-Auth): nimmt das Ergebnis eines automatischen
- * Netzwerk-Scans entgegen und upserted die Geraete per (accountId, MAC).
- * Body: { hubName?: string, devices: [{ ip, mac, iface? }] }
+ * POST (Hub, Token-Auth): nimmt das Ergebnis eines aktiven Netzwerk-Scans
+ * entgegen und upserted die Geraete per (accountId, MAC). Body:
+ * { hubName?, devices: [{ ip, mac, iface?, hostname?, vendor?, openPorts?,
+ *   deviceType?, responseMs?, reachable? }] }
  */
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -28,40 +52,51 @@ export async function POST(request: NextRequest) {
   if (!rawDevices) {
     return NextResponse.json({ error: "devices-Array fehlt" }, { status: 400 });
   }
-  const hubName = typeof body.hubName === "string" ? body.hubName.slice(0, 100) : null;
+  const hubName = str(body.hubName, 100);
 
   // Pro MAC nur ein Eintrag (letzter gewinnt), ungueltige MACs verwerfen.
-  const byMac = new Map<string, { ip: string | null; iface: string | null }>();
+  const byMac = new Map<string, DeviceInfo>();
   for (const d of rawDevices.slice(0, MAX_DEVICES_PER_SCAN)) {
     const mac = String(d?.mac ?? "").toUpperCase();
     if (!MAC_RE.test(mac) || isVirtualMac(mac)) continue;
     if (isVirtualIp(typeof d.ip === "string" ? d.ip : null)) continue;
+    const responseMs = Number(d?.responseMs);
     byMac.set(mac, {
-      ip: typeof d.ip === "string" ? d.ip.slice(0, 45) : null,
-      iface: typeof d.iface === "string" ? d.iface.slice(0, 30) : null,
+      ip: str(d.ip, 45),
+      iface: str(d.iface, 30),
+      hostname: str(d.hostname, 255),
+      vendor: str(d.vendor, 120),
+      openPorts: ports(d.openPorts),
+      deviceType: str(d.deviceType, 60),
+      responseMs: Number.isFinite(responseMs) && responseMs >= 0 ? Math.round(responseMs) : null,
+      reachable: d.reachable !== false,
     });
   }
 
   const now = new Date();
   let processed = 0;
   for (const [mac, info] of byMac) {
+    const common = {
+      ipAddress: info.ip,
+      iface: info.iface,
+      hostname: info.hostname,
+      vendor: info.vendor,
+      openPorts: info.openPorts,
+      deviceType: info.deviceType,
+      responseMs: info.responseMs,
+      reachable: info.reachable,
+      hubName,
+      lastSeenAt: now,
+    };
     await db.discoveredDevice.upsert({
       where: { accountId_macAddress: { accountId: account.id, macAddress: mac } },
       create: {
         macAddress: mac,
-        ipAddress: info.ip,
-        iface: info.iface,
-        hubName,
         firstSeenAt: now,
-        lastSeenAt: now,
         accountId: account.id,
+        ...common,
       },
-      update: {
-        ipAddress: info.ip,
-        iface: info.iface,
-        hubName,
-        lastSeenAt: now,
-      },
+      update: common,
     });
     processed++;
   }

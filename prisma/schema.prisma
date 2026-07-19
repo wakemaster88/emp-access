@@ -1389,6 +1389,18 @@ model DiscoveredDevice {
   ipAddress   String?
   /// Netzwerk-Interface des Hubs, auf dem das Geraet gesehen wurde (z. B. "en0").
   iface       String?
+  /// Hostname aus Reverse-DNS/mDNS (falls aufloesbar).
+  hostname    String?
+  /// Hersteller aus dem MAC-OUI-Praefix (falls bekannt).
+  vendor      String?
+  /// Offene TCP-Ports, z. B. [22, 80, 443].
+  openPorts   Json?
+  /// Vermuteter Geraetetyp aus offenen Ports/Hostname (Heuristik).
+  deviceType  String?
+  /// Antwortzeit des letzten Pings in Millisekunden.
+  responseMs  Int?
+  /// true, wenn das Geraet im letzten Scan auf Ping/Port geantwortet hat.
+  reachable   Boolean   @default(true)
   /// Name des Hubs, der das Geraet zuletzt gemeldet hat.
   hubName     String?
   firstSeenAt DateTime  @default(now())

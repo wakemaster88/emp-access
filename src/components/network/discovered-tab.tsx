@@ -26,13 +26,47 @@ export interface DiscoveredRow {
   macAddress: string;
   ipAddress: string | null;
   iface: string | null;
+  hostname: string | null;
+  vendor: string | null;
+  openPorts: number[];
+  deviceType: string | null;
+  responseMs: number | null;
+  reachable: boolean;
   hubName: string | null;
   firstSeenAt: string;
   lastSeenAt: string;
-  vendor: string | null;
   /// Automatischer Abgleich gegen verwalteten Bestand: infra = Switch/Router/
   /// AP, client = Netzwerk-Client, device = IoT-/Scanner-Geraet (per IP).
   match: { kind: "infra" | "client" | "device"; name: string } | null;
+}
+
+/** Bekannte Ports auf sprechende Kurznamen abbilden. */
+const PORT_LABELS: Record<number, string> = {
+  21: "FTP", 22: "SSH", 23: "Telnet", 53: "DNS", 80: "HTTP", 139: "SMB",
+  143: "IMAP", 443: "HTTPS", 445: "SMB", 515: "LPD", 548: "AFP", 554: "RTSP",
+  631: "IPP", 993: "IMAPS", 1883: "MQTT", 3389: "RDP", 5000: "UPnP",
+  5900: "VNC", 8080: "HTTP-Alt", 8443: "HTTPS-Alt", 9100: "Druck", 32400: "Plex",
+  62078: "iOS-Sync",
+};
+
+function portLabel(p: number): string {
+  return PORT_LABELS[p] ? `${p} (${PORT_LABELS[p]})` : String(p);
+}
+
+/** Heuristik-Geraetetyp des Scanners auf einen NetworkClient-Typ mappen. */
+function mapType(deviceType: string | null): string {
+  switch (deviceType) {
+    case "Drucker": return "PRINTER";
+    case "Kamera": return "CAMERA";
+    case "NAS/Server":
+    case "Medienserver": return "NAS";
+    case "iPhone/iPad": return "PHONE";
+    case "Windows-PC":
+    case "Server/PC":
+    case "Raspberry Pi": return "PC";
+    case "IoT-Gerät": return "IOT";
+    default: return "OTHER";
+  }
 }
 
 function formatSeen(iso: string): string {
@@ -88,8 +122,9 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
   function openAdopt(d: DiscoveredRow) {
     setAdopting(d);
     setForm({
-      name: "",
-      type: d.vendor?.startsWith("Espressif") || d.vendor?.startsWith("Raspberry") ? "IOT" : "OTHER",
+      // Hostname (ohne Domain-Suffix) als Namensvorschlag.
+      name: d.hostname ? d.hostname.split(".")[0] : "",
+      type: mapType(d.deviceType),
     });
     setError("");
   }
@@ -100,18 +135,13 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
     setSaving(true);
     setError("");
     try {
-      const res = await fetch("/api/network/clients", {
+      const res = await fetch(`/api/network/discovered/${adopting.id}/adopt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          type: form.type,
-          ipAddress: adopting.ipAddress,
-          macAddress: adopting.macAddress,
-        }),
+        body: JSON.stringify({ name: form.name.trim(), type: form.type }),
       });
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setError(data.error ?? "Fehler beim Übernehmen");
       } else {
         setAdopting(null);
@@ -139,7 +169,9 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
             Vom Hub entdeckte Geräte ({devices.length})
           </CardTitle>
           <p className="text-xs text-slate-500 mt-1">
-            Automatischer Netzwerk-Scan des lokalen Hubs. MAC-Abgleich gegen Switches, APs und erfasste Geräte.
+            Der lokale Hub scannt das Netz aktiv (Ping-Sweep + Portscan) und
+            erkennt Hostname, Hersteller, offene Ports und Gerätetyp.
+            MAC-Abgleich gegen Switches, APs und erfasste Geräte.
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
@@ -183,9 +215,13 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                 <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
                   <TableHead>Status</TableHead>
                   <TableHead className="min-w-[120px]">IP-Adresse</TableHead>
-                  <TableHead className="min-w-[150px]">MAC-Adresse</TableHead>
+                  <TableHead className="min-w-[160px]">Hostname</TableHead>
                   <TableHead className="hidden md:table-cell">Hersteller</TableHead>
+                  <TableHead className="hidden xl:table-cell">Typ</TableHead>
+                  <TableHead className="hidden md:table-cell min-w-[160px]">Offene Ports</TableHead>
+                  <TableHead className="hidden sm:table-cell min-w-[150px]">MAC-Adresse</TableHead>
                   <TableHead className="min-w-[160px]">Zuordnung</TableHead>
+                  <TableHead className="hidden xl:table-cell">Ping</TableHead>
                   <TableHead className="hidden lg:table-cell">Zuletzt gesehen</TableHead>
                   <TableHead className="w-28" />
                 </TableRow>
@@ -223,10 +259,44 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                           "–"
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-slate-500">{d.macAddress}</TableCell>
+                      <TableCell className="text-sm">
+                        {d.hostname ? (
+                          <span className="text-slate-700 dark:text-slate-300">{d.hostname}</span>
+                        ) : (
+                          <span className="text-slate-400">–</span>
+                        )}
+                      </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-slate-500">
                         {d.vendor ?? <span className="text-slate-300">–</span>}
                       </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        {d.deviceType ? (
+                          <Badge variant="secondary" className="text-xs h-5 font-normal">{d.deviceType}</Badge>
+                        ) : (
+                          <span className="text-slate-400 text-sm">–</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {d.openPorts.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {d.openPorts.slice(0, 6).map((p) => (
+                              <span
+                                key={p}
+                                className="inline-block rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-600 dark:text-slate-300"
+                                title={portLabel(p)}
+                              >
+                                {PORT_LABELS[p] ?? p}
+                              </span>
+                            ))}
+                            {d.openPorts.length > 6 && (
+                              <span className="text-[11px] text-slate-400">+{d.openPorts.length - 6}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-sm">–</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell font-mono text-xs text-slate-500">{d.macAddress}</TableCell>
                       <TableCell>
                         {d.match ? (
                           <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
@@ -240,6 +310,9 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                         ) : (
                           <Badge variant="secondary" className="text-xs text-slate-400">unbekannt</Badge>
                         )}
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                        {d.responseMs != null ? `${d.responseMs} ms` : "–"}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-slate-500">
                         {formatSeen(d.lastSeenAt)}
@@ -278,7 +351,12 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
             <div className="rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-3 text-xs font-mono text-slate-500 space-y-0.5">
               <p>IP: {adopting?.ipAddress ?? "–"}</p>
               <p>MAC: {adopting?.macAddress}</p>
+              {adopting?.hostname && <p>Hostname: {adopting.hostname}</p>}
               {adopting?.vendor && <p>Hersteller: {adopting.vendor}</p>}
+              {adopting?.deviceType && <p>Erkannt als: {adopting.deviceType}</p>}
+              {adopting && adopting.openPorts.length > 0 && (
+                <p>Offene Ports: {adopting.openPorts.join(", ")}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">

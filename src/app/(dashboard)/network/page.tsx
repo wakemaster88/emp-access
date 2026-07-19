@@ -151,10 +151,15 @@ export default async function NetworkPage() {
         macAddress: d.macAddress,
         ipAddress: d.ipAddress,
         iface: d.iface,
+        hostname: d.hostname,
+        openPorts: Array.isArray(d.openPorts) ? (d.openPorts as number[]) : [],
+        deviceType: d.deviceType,
+        responseMs: d.responseMs,
+        reachable: d.reachable,
         hubName: d.hubName,
         firstSeenAt: d.firstSeenAt.toISOString(),
         lastSeenAt: d.lastSeenAt.toISOString(),
-        vendor: macVendor(d.macAddress),
+        vendor: d.vendor ?? macVendor(d.macAddress),
         match: infra
           ? { kind: "infra" as const, name: infra.name }
           : client
