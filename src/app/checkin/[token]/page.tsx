@@ -44,7 +44,7 @@ import { cn } from "@/lib/utils";
 import { LockerOverlay } from "@/components/checkin/locker-overlay";
 import { LostItemsOverlay } from "@/components/checkin/lost-items-overlay";
 import { Lock, LockOpen, PackageSearch } from "lucide-react";
-import { printPdfBlob, type PrintResult } from "@/lib/print-tickets";
+import { printPdfBlob, downloadBlob, type PrintResult } from "@/lib/print-tickets";
 
 interface TicketExtra {
   name: string;
@@ -102,13 +102,80 @@ interface CheckinTicket {
   _count?: { scans: number };
 }
 
-/** Aggregierte Gaeste-Infos einer Service-Gruppe (Label -> Wert -> Anzahl). */
+/** Kombiniertes Board-Setup eines Teilnehmers (Sport + Level + Schuhgroesse).
+ *  Beispiel: "Wakeboard · Anfänger · Gr. 38" – so weiss das Personal direkt,
+ *  WELCHES Board mit WELCHER Bindungsgroesse bereitgestellt werden muss,
+ *  statt drei getrennte Zaehllisten kombinieren zu muessen. */
+interface EquipmentSetup {
+  sport: string | null;
+  level: string | null;
+  shoe: string | null;
+  count: number;
+}
+
+/** Aggregierte Gaeste-Infos einer Service-Gruppe. */
 interface GuestInfoSummary {
   /** Tickets mit mindestens einer beantworteten Info. */
   answered: number;
   /** Alle Tickets der Gruppe an diesem Tag. */
   total: number;
+  /** Kombinierte Material-Setups (Sport+Level+Schuhgroesse). */
+  setups: EquipmentSetup[];
+  /** Neopren-Groessen aller Teilnehmer, die einen Anzug leihen. */
+  neopren: Map<string, number>;
+  /** Uebrige Infos (Label -> Wert -> Anzahl), die nicht kombinierbar sind. */
   labels: Map<string, Map<string, number>>;
+  /** Alle Tickets der Gruppe an diesem Tag (fuer den PDF-Export). */
+  tickets: CheckinTicket[];
+}
+
+/** Ordnet ein Info-Label einer Rolle fuer die Material-Kombination zu.
+ *  Matcht ueber Teilstrings, damit auch abweichende Template-Labels
+ *  ("Schuhgröße (EU)", "Sportart", ...) korrekt erkannt werden. */
+function classifyInfoLabel(
+  label: string,
+): "name" | "sport" | "level" | "shoe" | "neoprenFlag" | "neoprenSize" | "other" {
+  const l = label.toLowerCase();
+  if (l === "teilnehmer" || l.includes("teilnehmername")) return "name";
+  if (l.includes("schuhgr")) return "shoe";
+  if (l.includes("neopren")) {
+    return l.includes("größe") || l.includes("groesse") || l.includes("grösse")
+      ? "neoprenSize"
+      : "neoprenFlag";
+  }
+  if (l.includes("sport")) return "sport";
+  if (l.includes("level") || l.includes("niveau")) return "level";
+  return "other";
+}
+
+/** "Ja"/"true"/"1" -> true (Boolean-Antworten aus dem Info-Formular). */
+function isYes(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return v === "ja" || v === "true" || v === "1" || v === "yes";
+}
+
+/** Level-Reihenfolge fuer die Setup-Sortierung. */
+const LEVEL_ORDER = ["Anfänger", "Fortgeschritten", "Profi"];
+
+function compareSetups(a: EquipmentSetup, b: EquipmentSetup): number {
+  const sportCmp = (a.sport ?? "~").localeCompare(b.sport ?? "~", "de");
+  if (sportCmp !== 0) return sportCmp;
+  const la = a.level ? LEVEL_ORDER.indexOf(a.level) : -1;
+  const lb = b.level ? LEVEL_ORDER.indexOf(b.level) : -1;
+  if (la !== lb) return (la === -1 ? 99 : la) - (lb === -1 ? 99 : lb);
+  const na = Number((a.shoe ?? "").replace(",", "."));
+  const nb = Number((b.shoe ?? "").replace(",", "."));
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+  return (a.shoe ?? "").localeCompare(b.shoe ?? "", "de");
+}
+
+/** Menschlich lesbare Kurzform eines Setups, z. B. "Wakeboard · Anfänger · Gr. 38". */
+function formatSetup(s: EquipmentSetup): string {
+  const parts: string[] = [];
+  if (s.sport) parts.push(s.sport);
+  if (s.level) parts.push(s.level);
+  if (s.shoe) parts.push(`Gr. ${s.shoe}`);
+  return parts.join(" · ");
 }
 
 interface SubData {
@@ -1077,33 +1144,86 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   }, [filteredPending]);
 
   // Equipment-Übersicht pro Service-Gruppe: aggregiert die Gaeste-Infos aus
-  // den Info-Anfragen (z. B. Neopren-Größe S ×2, M ×3) über ALLE Tickets des
-  // Tages (auch bereits eingecheckte), damit die Material-Vorbereitung
-  // stabil bleibt, während nach und nach eingecheckt wird.
+  // den Info-Anfragen über ALLE Tickets des Tages (auch bereits eingecheckte),
+  // damit die Material-Vorbereitung stabil bleibt, während nach und nach
+  // eingecheckt wird. Sport, Level und Schuhgroesse werden PRO TEILNEHMER
+  // kombiniert ("Wakeboard · Anfänger · Gr. 38 ×2"), weil erst die
+  // Kombination sagt, welches Board vorbereitet werden muss. Neopren wird
+  // nur gezaehlt, wenn tatsaechlich ein Anzug geliehen wird.
   const guestInfoSummaries = useMemo(() => {
     const byGroup = new Map<string, GuestInfoSummary>();
+    const setupMaps = new Map<string, Map<string, EquipmentSetup>>();
     for (const t of dayTickets) {
       if (t.subscriptionId || t.vereinId != null) continue;
       const key = t.service?.name ?? t.subscription?.name ?? t.ticketTypeName ?? "Sonstige";
       let summary = byGroup.get(key);
       if (!summary) {
-        summary = { answered: 0, total: 0, labels: new Map() };
+        summary = { answered: 0, total: 0, setups: [], neopren: new Map(), labels: new Map(), tickets: [] };
         byGroup.set(key, summary);
+        setupMaps.set(key, new Map());
       }
       summary.total++;
+      summary.tickets.push(t);
       const info = t.guestInfo;
       if (!info || Object.keys(info).length === 0) continue;
       summary.answered++;
+
+      let sport: string | null = null;
+      let level: string | null = null;
+      let shoe: string | null = null;
+      let neoprenFlag: string | null = null;
+      let neoprenSize: string | null = null;
+
       for (const [label, value] of Object.entries(info)) {
-        // Teilnehmername ist individuell und nicht aggregierbar.
-        if (label === "Teilnehmer" || !value) continue;
-        let values = summary.labels.get(label);
-        if (!values) {
-          values = new Map();
-          summary.labels.set(label, values);
+        if (!value) continue;
+        switch (classifyInfoLabel(label)) {
+          case "name":
+            // Teilnehmername ist individuell und nicht aggregierbar.
+            break;
+          case "sport":
+            sport = value;
+            break;
+          case "level":
+            level = value;
+            break;
+          case "shoe":
+            shoe = value;
+            break;
+          case "neoprenFlag":
+            neoprenFlag = value;
+            break;
+          case "neoprenSize":
+            neoprenSize = value;
+            break;
+          default: {
+            let values = summary.labels.get(label);
+            if (!values) {
+              values = new Map();
+              summary.labels.set(label, values);
+            }
+            values.set(value, (values.get(value) ?? 0) + 1);
+          }
         }
-        values.set(value, (values.get(value) ?? 0) + 1);
       }
+
+      // Board-Setup: Sport + Level + Schuhgroesse als EIN Eintrag zaehlen.
+      if (sport || level || shoe) {
+        const setups = setupMaps.get(key)!;
+        const setupKey = `${sport ?? ""}|${level ?? ""}|${shoe ?? ""}`;
+        const existing = setups.get(setupKey);
+        if (existing) existing.count++;
+        else setups.set(setupKey, { sport, level, shoe, count: 1 });
+      }
+
+      // Neopren: nur zaehlen wenn geliehen wird (bzw. eine Groesse angegeben
+      // ist, ohne dass explizit "Nein" gewaehlt wurde).
+      if ((neoprenFlag && isYes(neoprenFlag)) || (neoprenSize && !neoprenFlag)) {
+        const sizeKey = neoprenSize ?? "Größe offen";
+        summary.neopren.set(sizeKey, (summary.neopren.get(sizeKey) ?? 0) + 1);
+      }
+    }
+    for (const [key, summary] of byGroup) {
+      summary.setups = [...setupMaps.get(key)!.values()].sort(compareSetups);
     }
     return byGroup;
   }, [dayTickets]);
@@ -1526,7 +1646,14 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                       <div className="border-t border-slate-800/70 p-2">
                         {(() => {
                           const summary = guestInfoSummaries.get(groupName);
-                          return summary ? <GuestInfoSummaryPanel summary={summary} /> : null;
+                          return summary ? (
+                            <GuestInfoSummaryPanel
+                              summary={summary}
+                              groupName={groupName}
+                              dateStr={date}
+                              accountName={data?.accountName ?? ""}
+                            />
+                          ) : null;
                         })()}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                           {tickets.map((t) => (
@@ -3449,11 +3576,25 @@ function sortSummaryValues(values: Map<string, number>): [string, number][] {
   });
 }
 
-/** Aggregierte Equipment-Übersicht einer Kurs-Gruppe (z. B. "Neopren-Größe:
- *  S ×2, M ×3"), damit das Personal das Material fuer den Tag vorbereiten
- *  kann, ohne jede Karte einzeln durchzugehen. */
-function GuestInfoSummaryPanel({ summary }: { summary: GuestInfoSummary }) {
-  if (summary.labels.size === 0) return null;
+/** Aggregierte Equipment-Übersicht einer Kurs-Gruppe: kombinierte Board-
+ *  Setups ("Wakeboard · Anfänger · Gr. 38 ×2"), Neopren-Größen der Leiher
+ *  und restliche Infos – damit das Personal das Material fuer den Tag
+ *  vorbereiten kann, ohne jede Karte einzeln durchzugehen. Inklusive
+ *  PDF-Export als A4-Kursblatt. */
+function GuestInfoSummaryPanel({
+  summary,
+  groupName,
+  dateStr,
+  accountName,
+}: {
+  summary: GuestInfoSummary;
+  groupName: string;
+  dateStr: string;
+  accountName: string;
+}) {
+  const [exporting, setExporting] = useState(false);
+  const hasContent = summary.setups.length > 0 || summary.neopren.size > 0 || summary.labels.size > 0;
+  if (!hasContent) return null;
   return (
     <div className="mb-2 rounded-xl border border-cyan-500/20 bg-cyan-950/20 px-3 py-2">
       <div className="flex items-center gap-2 mb-1.5">
@@ -3462,8 +3603,48 @@ function GuestInfoSummaryPanel({ summary }: { summary: GuestInfoSummary }) {
         <span className="text-[10px] text-slate-500">
           {summary.answered}/{summary.total} beantwortet
         </span>
+        <button
+          type="button"
+          disabled={exporting}
+          onClick={async (e) => {
+            e.stopPropagation();
+            setExporting(true);
+            try {
+              exportCourseDayPdf(groupName, dateStr, accountName, summary);
+            } finally {
+              setExporting(false);
+            }
+          }}
+          className="ml-auto flex items-center gap-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/20 transition-colors disabled:opacity-50"
+        >
+          {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Printer className="h-3 w-3" />}
+          PDF
+        </button>
       </div>
       <div className="space-y-1">
+        {summary.setups.length > 0 && (
+          <div className="flex flex-wrap items-baseline gap-1">
+            <span className="text-[11px] text-slate-400 mr-1">Material:</span>
+            {summary.setups.map((s) => (
+              <span
+                key={`${s.sport}|${s.level}|${s.shoe}`}
+                className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-md font-medium whitespace-nowrap"
+              >
+                {formatSetup(s)} <span className="text-cyan-400/80">×{s.count}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {summary.neopren.size > 0 && (
+          <div className="flex flex-wrap items-baseline gap-1">
+            <span className="text-[11px] text-slate-400 mr-1">Neopren:</span>
+            {sortSummaryValues(summary.neopren).map(([size, count]) => (
+              <span key={size} className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-md font-medium whitespace-nowrap">
+                {size} <span className="text-cyan-400/80">×{count}</span>
+              </span>
+            ))}
+          </div>
+        )}
         {[...summary.labels.entries()].map(([label, values]) => (
           <div key={label} className="flex flex-wrap items-baseline gap-1">
             <span className="text-[11px] text-slate-400 mr-1">{label}:</span>
@@ -3477,6 +3658,216 @@ function GuestInfoSummaryPanel({ summary }: { summary: GuestInfoSummary }) {
       </div>
     </div>
   );
+}
+
+/**
+ * A4-Kursblatt fuer die Material-Vorbereitung eines Kurstages:
+ *   1. Kopf mit Kurs, Datum und Account
+ *   2. Aggregierte Material-Liste (Setups + Neopren)
+ *   3. Teilnehmer-Tabelle mit allen Infos + Ausgabe-Checkbox
+ * Wird im neuen Tab geoeffnet (Ansehen/Drucken/Speichern), mit
+ * Download-Fallback falls der Popup geblockt wird.
+ */
+function exportCourseDayPdf(
+  groupName: string,
+  dateStr: string,
+  accountName: string,
+  summary: GuestInfoSummary,
+) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pageW = 210;
+  const pageH = 297;
+  const margin = 14;
+  const contentW = pageW - margin * 2;
+
+  const dateLabel = new Date(`${dateStr}T12:00:00`).toLocaleDateString("de-DE", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  let y = 18;
+
+  // Kopf
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text(groupName, margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Tagesübersicht · ${dateLabel}${accountName ? ` · ${accountName}` : ""}`, margin, y + 6);
+  doc.setTextColor(0);
+  y += 12;
+  doc.setDrawColor(180);
+  doc.line(margin, y, pageW - margin, y);
+  y += 8;
+
+  // Aggregierte Material-Liste
+  const sectionTitle = (title: string) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(title, margin, y);
+    y += 5.5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+  };
+
+  if (summary.setups.length > 0) {
+    sectionTitle("Material");
+    for (const s of summary.setups) {
+      doc.text(`${s.count} ×  ${formatSetup(s)}`, margin + 2, y);
+      y += 5;
+    }
+    y += 3;
+  }
+
+  if (summary.neopren.size > 0) {
+    sectionTitle("Neoprenanzüge");
+    const parts = sortSummaryValues(summary.neopren).map(([size, count]) => `${size} ×${count}`);
+    const lines = doc.splitTextToSize(parts.join("   ·   "), contentW - 4);
+    doc.text(lines, margin + 2, y);
+    y += lines.length * 5 + 3;
+  }
+
+  for (const [label, values] of summary.labels) {
+    sectionTitle(label);
+    const parts = sortSummaryValues(values).map(([value, count]) => `${value} ×${count}`);
+    const lines = doc.splitTextToSize(parts.join("   ·   "), contentW - 4);
+    doc.text(lines, margin + 2, y);
+    y += lines.length * 5 + 3;
+  }
+
+  // Teilnehmer-Tabelle
+  y += 2;
+  sectionTitle(`Teilnehmer (${summary.total})`);
+  y += 1;
+
+  // Tickets nach Slot + Teilnehmername sortieren.
+  const participantName = (t: CheckinTicket): string => {
+    const info = t.guestInfo ?? {};
+    for (const [label, value] of Object.entries(info)) {
+      if (classifyInfoLabel(label) === "name" && value) return value;
+    }
+    return [t.firstName, t.lastName].filter(Boolean).join(" ") || t.name;
+  };
+  const tickets = [...summary.tickets].sort((a, b) => {
+    const slotCmp = (a.slotStart ?? "~").localeCompare(b.slotStart ?? "~");
+    if (slotCmp !== 0) return slotCmp;
+    return participantName(a).localeCompare(participantName(b), "de");
+  });
+  const hasSlots = tickets.some((t) => t.slotStart);
+
+  // Zell-Inhalte pro Ticket vorbereiten (Neopren-Flag + Groesse zusammengefasst).
+  const rows = tickets.map((t) => {
+    const info = t.guestInfo ?? {};
+    let sport = "";
+    let level = "";
+    let shoe = "";
+    let neoprenFlag = "";
+    let neoprenSize = "";
+    const other = new Map<string, string>();
+    for (const [label, value] of Object.entries(info)) {
+      if (!value) continue;
+      switch (classifyInfoLabel(label)) {
+        case "name": break;
+        case "sport": sport = value; break;
+        case "level": level = value; break;
+        case "shoe": shoe = value; break;
+        case "neoprenFlag": neoprenFlag = value; break;
+        case "neoprenSize": neoprenSize = value; break;
+        default: other.set(label, value);
+      }
+    }
+    const neopren = neoprenFlag
+      ? isYes(neoprenFlag) ? (neoprenSize || "Ja") : "–"
+      : neoprenSize;
+    return { ticket: t, sport, level, shoe, neopren, other };
+  });
+
+  // Dynamische Zusatz-Spalten aus den "other"-Labels (in Erst-Auftritt-Reihenfolge).
+  const otherLabels: string[] = [];
+  for (const r of rows) {
+    for (const label of r.other.keys()) {
+      if (!otherLabels.includes(label)) otherLabels.push(label);
+    }
+  }
+
+  interface Col { header: string; width: number; value: (r: (typeof rows)[number]) => string }
+  const cols: Col[] = [];
+  cols.push({ header: "Teilnehmer", width: 0, value: (r) => participantName(r.ticket) });
+  if (hasSlots) cols.push({ header: "Slot", width: 18, value: (r) => r.ticket.slotStart ?? "" });
+  cols.push({ header: "Sport", width: 24, value: (r) => r.sport });
+  cols.push({ header: "Level", width: 28, value: (r) => r.level });
+  cols.push({ header: "Schuhgr.", width: 18, value: (r) => r.shoe });
+  cols.push({ header: "Neopren", width: 20, value: (r) => r.neopren });
+  for (const label of otherLabels) {
+    cols.push({ header: label, width: 24, value: (r) => r.other.get(label) ?? "" });
+  }
+  // Checkbox-Spalte zum Abhaken bei der Material-Ausgabe.
+  const checkboxW = 12;
+  const fixedW = cols.reduce((sum, c) => sum + c.width, 0) + checkboxW;
+  // Teilnehmer-Spalte bekommt den Rest der Breite.
+  cols[0].width = Math.max(35, contentW - fixedW);
+
+  const rowH = 7;
+  const drawTableHeader = () => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setFillColor(235, 235, 235);
+    doc.rect(margin, y, contentW, rowH, "F");
+    let x = margin + 1.5;
+    for (const c of cols) {
+      doc.text(c.header, x, y + 4.8, { maxWidth: c.width - 3 });
+      x += c.width;
+    }
+    doc.text("OK", x + 2, y + 4.8);
+    y += rowH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+  };
+
+  drawTableHeader();
+  for (const r of rows) {
+    if (y + rowH > pageH - 14) {
+      doc.addPage();
+      y = 14;
+      drawTableHeader();
+    }
+    doc.setDrawColor(210);
+    doc.line(margin, y + rowH, margin + contentW, y + rowH);
+    let x = margin + 1.5;
+    for (const c of cols) {
+      const text = doc.splitTextToSize(c.value(r), c.width - 3)[0] ?? "";
+      doc.text(text, x, y + 4.8);
+      x += c.width;
+    }
+    // Checkbox zum Abhaken
+    doc.setDrawColor(120);
+    doc.rect(x + 2, y + 1.5, 4, 4);
+    y += rowH;
+  }
+
+  // Fusszeile
+  const stamp = new Date().toLocaleString("de-DE", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  doc.setFontSize(7.5);
+  doc.setTextColor(130);
+  doc.text(
+    `Erstellt ${stamp} · ${summary.answered}/${summary.total} Teilnehmer-Infos beantwortet`,
+    margin,
+    pageH - 8,
+  );
+
+  // Im neuen Tab oeffnen (Ansehen/Drucken/Speichern); Fallback: Download.
+  const slug = groupName.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, "-").replace(/^-|-$/g, "");
+  const filename = `tagesuebersicht_${slug}_${dateStr}.pdf`;
+  const blob = doc.output("blob");
+  const url = URL.createObjectURL(blob);
+  const tab = window.open(url, "_blank", "noopener");
+  if (!tab) downloadBlob(url, filename);
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 function TicketCard({
