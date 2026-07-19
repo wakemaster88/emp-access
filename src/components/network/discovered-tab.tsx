@@ -16,7 +16,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Radar, Loader2, Plus, Link2, Server, MonitorSmartphone, AlertTriangle } from "lucide-react";
+import { Radar, Loader2, Plus, Server, MonitorSmartphone, Cpu, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ipToInt } from "@/lib/ip";
 import { CLIENT_TYPES } from "@/components/network/network-types";
@@ -30,10 +30,9 @@ export interface DiscoveredRow {
   firstSeenAt: string;
   lastSeenAt: string;
   vendor: string | null;
-  /// Automatischer MAC-Abgleich gegen verwalteten Bestand.
-  match: { kind: "infra" | "client"; name: string } | null;
-  /// IP-Treffer bei einem IoT-Geraet (Vorschlag fuer die Uebernahme).
-  iotSuggestion: { id: number; name: string } | null;
+  /// Automatischer Abgleich gegen verwalteten Bestand: infra = Switch/Router/
+  /// AP, client = Netzwerk-Client, device = IoT-/Scanner-Geraet (per IP).
+  match: { kind: "infra" | "client" | "device"; name: string } | null;
 }
 
 function formatSeen(iso: string): string {
@@ -53,7 +52,7 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [adopting, setAdopting] = useState<DiscoveredRow | null>(null);
-  const [form, setForm] = useState({ name: "", type: "OTHER", linkIot: true });
+  const [form, setForm] = useState({ name: "", type: "OTHER" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -89,9 +88,8 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
   function openAdopt(d: DiscoveredRow) {
     setAdopting(d);
     setForm({
-      name: d.iotSuggestion?.name ?? "",
-      type: d.iotSuggestion ? "IOT" : d.vendor?.startsWith("Espressif") ? "IOT" : "OTHER",
-      linkIot: !!d.iotSuggestion,
+      name: "",
+      type: d.vendor?.startsWith("Espressif") || d.vendor?.startsWith("Raspberry") ? "IOT" : "OTHER",
     });
     setError("");
   }
@@ -110,7 +108,6 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
           type: form.type,
           ipAddress: adopting.ipAddress,
           macAddress: adopting.macAddress,
-          deviceId: form.linkIot && adopting.iotSuggestion ? adopting.iotSuggestion.id : null,
         }),
       });
       if (!res.ok) {
@@ -235,13 +232,10 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                           <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
                             {d.match.kind === "infra"
                               ? <Server className="h-3.5 w-3.5 text-indigo-500" />
-                              : <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-500" />}
+                              : d.match.kind === "device"
+                                ? <Cpu className="h-3.5 w-3.5 text-violet-500" />
+                                : <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-500" />}
                             {d.match.name}
-                          </span>
-                        ) : d.iotSuggestion ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                            <Link2 className="h-3 w-3" />
-                            vermutlich {d.iotSuggestion.name}
                           </span>
                         ) : (
                           <Badge variant="secondary" className="text-xs text-slate-400">unbekannt</Badge>
@@ -308,21 +302,6 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                 </SelectContent>
               </Select>
             </div>
-
-            {adopting?.iotSuggestion && (
-              <label className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 p-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.linkIot}
-                  onChange={(e) => setForm((f) => ({ ...f, linkIot: e.target.checked }))}
-                  className="mt-0.5"
-                />
-                <span className="text-xs text-amber-800 dark:text-amber-300">
-                  Mit IoT-Gerät <strong>{adopting.iotSuggestion.name}</strong> verknüpfen
-                  (gleiche IP-Adresse) – Name/Status kommen dann vom Gerät.
-                </span>
-              </label>
-            )}
 
             {error && (
               <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>

@@ -72,7 +72,7 @@ export default async function NetworkPage() {
     // Verknuepfungs-Auswahl im Dialog.
     db.device.findMany({
       where: { accountId },
-      select: { id: true, name: true, type: true, ipAddress: true, lastUpdate: true, isActive: true },
+      select: { id: true, name: true, type: true, ipAddress: true, lastUpdate: true, isActive: true, systemInfo: true },
       orderBy: { name: "asc" },
     }),
     db.hubAgent.findMany({
@@ -126,9 +126,17 @@ export default async function NetworkPage() {
   const clientByMac = new Map(
     clients.filter((c) => c.macAddress).map((c) => [norm(c.macAddress), c])
   );
-  const iotByIp = new Map(
-    iotDevices.filter((d) => d.ipAddress).map((d) => [d.ipAddress!, d])
-  );
+  // Verwaltete Geraete (IoT/Scanner) per IP. Neben dem festen ipAddress-Feld
+  // auch die vom Geraet selbst gemeldete Live-IP aus systemInfo.network.ip -
+  // so werden z. B. Raspberry-Pi-Scanner erkannt, die keine feste IP im
+  // Feld haben, ihre aktuelle IP aber im Heartbeat melden.
+  const deviceByIp = new Map<string, { id: number; name: string }>();
+  for (const d of iotDevices) {
+    const sysIp = (d.systemInfo as { network?: { ip?: string } } | null)?.network?.ip;
+    // Festes Feld hat Vorrang; Live-IP nur setzen, wenn noch nichts belegt ist.
+    if (d.ipAddress && !deviceByIp.has(d.ipAddress)) deviceByIp.set(d.ipAddress, { id: d.id, name: d.name });
+    if (sysIp && !deviceByIp.has(sysIp)) deviceByIp.set(sysIp, { id: d.id, name: d.name });
+  }
 
   const discoveredRows = discoveredDevices
     .filter((d) => !isVirtualMac(d.macAddress))
@@ -137,7 +145,7 @@ export default async function NetworkPage() {
         infraByMac.get(norm(d.macAddress)) ??
         (d.ipAddress ? infraByIp.get(d.ipAddress) : undefined);
       const client = clientByMac.get(norm(d.macAddress));
-      const iot = d.ipAddress ? iotByIp.get(d.ipAddress) : undefined;
+      const device = d.ipAddress ? deviceByIp.get(d.ipAddress) : undefined;
       return {
         id: d.id,
         macAddress: d.macAddress,
@@ -151,12 +159,9 @@ export default async function NetworkPage() {
           ? { kind: "infra" as const, name: infra.name }
           : client
             ? { kind: "client" as const, name: client.name }
-            : null,
-        // IP-Treffer bei IoT-Geraeten ist nur ein Vorschlag (IPs koennen
-        // wechseln) - wird im Uebernehmen-Dialog vorausgewaehlt.
-        iotSuggestion: !infra && !client && iot
-          ? { id: iot.id, name: iot.name }
-          : null,
+            : device
+              ? { kind: "device" as const, name: device.name }
+              : null,
       };
     });
 
