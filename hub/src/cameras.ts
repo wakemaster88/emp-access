@@ -216,7 +216,9 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
       `Personen-Snapshot ${cam.config.name}: Match „${match.name}“ score=${match.score.toFixed(3)}`
     );
   } else {
-    log(`Personen-Snapshot ${cam.config.name}: Gesicht erkannt, kein Gallery-Match`);
+    log(
+      `Personen-Snapshot ${cam.config.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match`
+    );
   }
 
   const upload = await api(`/api/hub/person-sightings?${qs}`, {

@@ -132,10 +132,19 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
     const data = (await res.json()) as {
       ok?: boolean;
       model?: string;
-      faces?: { embedding: number[]; det_score: number; bbox: number[] }[];
+      faces?: { embedding: number[]; det_score: number; bbox: number[]; size?: number }[];
+      rejected?: { det_score: number; size: number; need: number }[];
     };
     const best = data.faces?.[0];
-    if (!best?.embedding?.length) return null;
+    if (!best?.embedding?.length) {
+      const r = data.rejected?.[0];
+      if (r) {
+        log(
+          `Face verworfen: det=${r.det_score.toFixed(2)} size=${r.size}px (min ${r.need}px)`
+        );
+      }
+      return null;
+    }
     return {
       embedding: best.embedding,
       detScore: best.det_score,

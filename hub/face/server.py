@@ -16,8 +16,11 @@ import numpy as np
 PORT = int(os.environ.get("FACE_PORT", "8790"))
 HOST = os.environ.get("FACE_HOST", "127.0.0.1")
 MODEL_ROOT = Path(os.environ.get("FACE_MODEL_ROOT", Path(__file__).resolve().parent / ".models"))
-MIN_DET_SCORE = float(os.environ.get("FACE_MIN_DET_SCORE", "0.5"))
-MIN_FACE_SIZE = int(os.environ.get("FACE_MIN_SIZE", "40"))
+# Strenger: Weitwinkel/Personen-KI liefert oft winzige Detektionen ohne erkennbares Gesicht.
+MIN_DET_SCORE = float(os.environ.get("FACE_MIN_DET_SCORE", "0.68"))
+MIN_FACE_SIZE = int(os.environ.get("FACE_MIN_SIZE", "90"))
+# Gesicht muss mind. diesen Anteil der Bildbreite/-hoehe haben (klarer Close-up).
+MIN_FACE_FRAC = float(os.environ.get("FACE_MIN_FRAC", "0.08"))
 
 _app = None
 _lock = threading.Lock()
@@ -57,13 +60,17 @@ def embed_jpeg(data: bytes) -> dict:
 
     app = get_app()
     faces = app.get(img) or []
+    ih, iw = img.shape[:2]
+    min_side = max(MIN_FACE_SIZE, int(min(iw, ih) * MIN_FACE_FRAC))
     out = []
+    rejected = []
     for f in faces:
         bbox = [float(x) for x in f.bbox.tolist()]
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
         det = float(getattr(f, "det_score", 0.0) or 0.0)
-        if det < MIN_DET_SCORE or min(w, h) < MIN_FACE_SIZE:
+        if det < MIN_DET_SCORE or min(w, h) < min_side:
+            rejected.append({"det_score": det, "size": round(min(w, h), 1), "need": min_side})
             continue
         emb = f.normed_embedding
         if emb is None:
@@ -73,11 +80,18 @@ def embed_jpeg(data: bytes) -> dict:
                 "embedding": [float(x) for x in emb.tolist()],
                 "bbox": bbox,
                 "det_score": det,
+                "size": round(min(w, h), 1),
             }
         )
 
     out.sort(key=lambda x: x["det_score"], reverse=True)
-    return {"ok": True, "model": "buffalo_l", "faces": out}
+    return {
+        "ok": True,
+        "model": "buffalo_l",
+        "faces": out,
+        "rejected": rejected[:5],
+        "image": {"w": iw, "h": ih, "min_side": min_side},
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
