@@ -4,6 +4,7 @@ import dgram from "node:dgram";
 import os from "node:os";
 import { log } from "./config.js";
 import { uploadSnapshot } from "./cameras.js";
+import { enrollFromSighting } from "./face.js";
 
 const exec = promisify(execFile);
 
@@ -135,6 +136,16 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
       }
+    }
+    case "FACE_ENROLL": {
+      const sightingId = Number(task.payload?.sightingId);
+      const listedPersonId = Number(task.payload?.listedPersonId);
+      if (!Number.isInteger(sightingId) || !Number.isInteger(listedPersonId)) {
+        return { success: false, error: "sightingId/listedPersonId fehlt" };
+      }
+      const r = await enrollFromSighting(sightingId, listedPersonId);
+      if (!r.ok) return { success: false, error: r.error ?? "Enroll fehlgeschlagen" };
+      return { success: true, result: r };
     }
     default:
       return { success: false, error: `Unbekannter Task-Typ: ${task.type}` };

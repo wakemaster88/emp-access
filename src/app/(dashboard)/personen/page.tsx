@@ -20,6 +20,8 @@ export default async function PersonenPage() {
     source: true,
     listType: true,
     matched: true,
+    matchScore: true,
+    matchMethod: true,
     shellyTriggered: true,
     shellyOk: true,
     notes: true,
@@ -34,7 +36,7 @@ export default async function PersonenPage() {
       include: {
         camera: { select: { id: true, name: true } },
         shellyDevice: { select: { id: true, name: true } },
-        _count: { select: { sightings: true } },
+        _count: { select: { sightings: true, faceEmbeddings: true } },
         sightings: {
           select: sightingSelect,
           orderBy: { seenAt: "desc" },

@@ -141,6 +141,7 @@ model Account {
   vehicleSightings VehicleSighting[]
   listedPersons   ListedPerson[]
   personSightings PersonSighting[]
+  personFaceEmbeddings PersonFaceEmbedding[]
 }
 
 model Admin {
@@ -1466,7 +1467,7 @@ model ListedPerson {
   camera             Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   /// PERSON-Ereignisse an der Kamera in die Historie schreiben.
   trackHistory       Boolean   @default(true)
-  /// Bei PERSON an der Kamera Shelly ausloesen (ohne Personen-Identifikation).
+  /// Bei Face-Match dieser Person Shelly ausloesen.
   triggerOnDetection Boolean   @default(false)
   shellyDeviceId     Int?
   shellyDevice       Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
@@ -1475,12 +1476,30 @@ model ListedPerson {
   cooldownMinutes    Int       @default(5)
   lastTriggeredAt    DateTime?
   sightings          PersonSighting[]
+  faceEmbeddings     PersonFaceEmbedding[]
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   @@index([accountId, listType, isActive])
   @@index([cameraId])
   @@index([shellyDeviceId])
+}
+
+/// Face-Embedding (ArcFace/buffalo_l) einer List-Person fuer lokales Matching am Hub.
+model PersonFaceEmbedding {
+  id               Int          @id @default(autoincrement())
+  accountId        Int
+  account          Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  listedPersonId   Int
+  listedPerson     ListedPerson @relation(fields: [listedPersonId], references: [id], onDelete: Cascade)
+  /// Float32-Vektor (typ. 512 dims) als Bytes.
+  embedding        Bytes
+  model            String       @default("buffalo_l")
+  sourceSightingId Int?
+  createdAt        DateTime     @default(now())
+
+  @@index([accountId, listedPersonId])
+  @@index([listedPersonId])
 }
 
 /// Historie von Personenerkennungen (anonym oder einer ListedPerson zugeordnet).
@@ -1497,6 +1516,10 @@ model PersonSighting {
   /// WHITELIST | BLACKLIST falls zugeordnet, sonst null
   listType        String?
   matched         Boolean       @default(false)
+  /// Cosine-Similarity 0..1 bei Face-Match.
+  matchScore      Float?
+  /// FACE_EMBEDDING | MANUAL | null
+  matchMethod     String?
   shellyTriggered Boolean       @default(false)
   shellyOk        Boolean?
   notes           String?

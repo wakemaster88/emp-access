@@ -58,7 +58,7 @@ export function startDashboard(): void {
     if (req.method === "POST" && url.pathname === "/api/action") {
       const body = await readBody(req);
       const type = String(body.type ?? "");
-      if (!["PING", "NETWORK_SCAN", "WAKE_ON_LAN", "CAMERA_SNAPSHOT"].includes(type)) {
+      if (!["PING", "NETWORK_SCAN", "WAKE_ON_LAN", "CAMERA_SNAPSHOT", "FACE_ENROLL"].includes(type)) {
         return json(res, 400, { error: "Unbekannte Aktion" });
       }
       const id = --actionCounter; // negative IDs = lokal ausgeloest

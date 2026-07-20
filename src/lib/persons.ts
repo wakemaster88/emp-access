@@ -5,6 +5,21 @@ const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 export const PERSON_LIST_TYPES = ["WHITELIST", "BLACKLIST"] as const;
 export type PersonListType = (typeof PERSON_LIST_TYPES)[number];
 
+const EMBEDDING_DIMS = 512;
+
+export function floatsToEmbeddingBytes(values: number[]): Buffer {
+  const buf = Buffer.alloc(values.length * 4);
+  for (let i = 0; i < values.length; i++) buf.writeFloatLE(values[i], i * 4);
+  return buf;
+}
+
+export function embeddingBytesToFloats(bytes: Uint8Array | Buffer): number[] {
+  const buf = Buffer.from(bytes);
+  const out: number[] = [];
+  for (let i = 0; i + 3 < buf.length; i += 4) out.push(buf.readFloatLE(i));
+  return out;
+}
+
 async function triggerShellyForPerson(
   accountId: number,
   person: {
@@ -65,77 +80,92 @@ async function triggerShellyForPerson(
 }
 
 /**
- * PERSON-Ereignis einer Kamera (idealerweise mit Gesichtsschnappschuss).
- * Mit Snapshot: immer Historie-Eintrag unter Personen.
- * Shelly nur fuer Eintraege mit triggerOnDetection an genau dieser Kamera.
+ * PERSON-Ereignis mit optionalem Face-Match vom Hub.
+ * Shelly nur bei Identity-Match + triggerOnDetection.
  */
 export async function processCameraPersonEvent(opts: {
   accountId: number;
   cameraId: number;
   seenAt?: Date;
   snapshot?: Buffer | null;
+  matchedPersonId?: number | null;
+  matchScore?: number | null;
+  matchMethod?: string | null;
 }): Promise<{ sightings: number; triggered: number }> {
   const seenAt = opts.seenAt ?? new Date();
-  // Prisma Bytes erwartet Uint8Array (nicht Node Buffer / SharedArrayBuffer).
   const snapshot =
     opts.snapshot?.length ? new Uint8Array(opts.snapshot) : null;
-
-  const people = await prisma.listedPerson.findMany({
-    where: {
-      accountId: opts.accountId,
-      isActive: true,
-      cameraId: opts.cameraId,
-      OR: [{ trackHistory: true }, { triggerOnDetection: true }],
-    },
-    include: { shellyDevice: true },
-  });
 
   let sightings = 0;
   let triggered = 0;
 
-  // Snapshot allein reicht fuer Historie; sonst nur wenn trackHistory konfiguriert.
-  const trackAnonymous =
-    Boolean(snapshot) || people.some((p) => p.trackHistory);
-
-  if (trackAnonymous) {
-    const preferBlacklist = people.some((p) => p.listType === "BLACKLIST" && p.trackHistory);
-    const hasTracked = people.some((p) => p.trackHistory);
-    await prisma.personSighting.create({
-      data: {
+  if (opts.matchedPersonId) {
+    const person = await prisma.listedPerson.findFirst({
+      where: {
+        id: opts.matchedPersonId,
         accountId: opts.accountId,
-        cameraId: opts.cameraId,
-        source: "CAMERA_PERSON",
-        listType: preferBlacklist ? "BLACKLIST" : hasTracked ? "WHITELIST" : null,
-        matched: false,
-        seenAt,
-        ...(snapshot ? { snapshot } : {}),
+        isActive: true,
       },
+      include: { shellyDevice: true },
     });
-    sightings++;
+    if (!person) {
+      // Fallback: anonym speichern
+    } else {
+      let shellyTriggered = false;
+      let shellyOk: boolean | null = null;
+      if (person.triggerOnDetection) {
+        const r = await triggerShellyForPerson(opts.accountId, person, seenAt);
+        shellyTriggered = r.shellyTriggered;
+        shellyOk = r.shellyOk;
+        if (r.shellyTriggered) triggered++;
+      }
+
+      await prisma.personSighting.create({
+        data: {
+          accountId: opts.accountId,
+          cameraId: opts.cameraId,
+          listedPersonId: person.id,
+          source: "CAMERA_PERSON",
+          listType: person.listType,
+          matched: true,
+          matchScore: opts.matchScore ?? null,
+          matchMethod: opts.matchMethod ?? "FACE_EMBEDDING",
+          shellyTriggered,
+          shellyOk,
+          seenAt,
+          ...(snapshot ? { snapshot } : {}),
+        },
+      });
+      sightings++;
+      return { sightings, triggered };
+    }
   }
 
-  for (const person of people.filter((p) => p.triggerOnDetection)) {
-    const r = await triggerShellyForPerson(opts.accountId, person, seenAt);
-    if (!r.shellyTriggered && r.shellyOk == null) continue;
+  // Unbekannt: Historie mit Snapshot (oder wenn trackHistory an der Kamera).
+  const trackers = await prisma.listedPerson.count({
+    where: {
+      accountId: opts.accountId,
+      isActive: true,
+      cameraId: opts.cameraId,
+      trackHistory: true,
+    },
+  });
+  if (!snapshot && trackers === 0) return { sightings: 0, triggered: 0 };
 
-    await prisma.personSighting.create({
-      data: {
-        accountId: opts.accountId,
-        cameraId: opts.cameraId,
-        listedPersonId: person.id,
-        source: "CAMERA_PERSON",
-        listType: person.listType,
-        matched: true,
-        shellyTriggered: r.shellyTriggered,
-        shellyOk: r.shellyOk,
-        seenAt,
-        ...(snapshot ? { snapshot } : {}),
-      },
-    });
-    sightings++;
-    if (r.shellyTriggered) triggered++;
-  }
-
+  await prisma.personSighting.create({
+    data: {
+      accountId: opts.accountId,
+      cameraId: opts.cameraId,
+      source: "CAMERA_PERSON",
+      listType: null,
+      matched: false,
+      matchScore: opts.matchScore ?? null,
+      matchMethod: null,
+      seenAt,
+      ...(snapshot ? { snapshot } : {}),
+    },
+  });
+  sightings++;
   return { sightings, triggered };
 }
 
@@ -181,6 +211,7 @@ export async function processManualPersonSighting(opts: {
       source: "MANUAL",
       listType: person.listType,
       matched: true,
+      matchMethod: "MANUAL",
       shellyTriggered,
       shellyOk,
       notes: opts.notes?.trim() || null,
@@ -191,7 +222,7 @@ export async function processManualPersonSighting(opts: {
   return { sightingId: sighting.id, shellyTriggered, shellyOk };
 }
 
-/** Bestehende anonyme/Kamera-Sichtung einer ListedPerson zuordnen. */
+/** Bestehende anonyme/Kamera-Sichtung einer ListedPerson zuordnen + FACE_ENROLL Task. */
 export async function assignPersonToSighting(opts: {
   accountId: number;
   sightingId: number;
@@ -201,10 +232,11 @@ export async function assignPersonToSighting(opts: {
   listedPersonId: number;
   listType: string;
   matched: boolean;
+  enrollTaskId: number | null;
 }> {
   const sighting = await prisma.personSighting.findFirst({
     where: { id: opts.sightingId, accountId: opts.accountId },
-    select: { id: true },
+    select: { id: true, snapshot: true },
   });
   if (!sighting) throw new Error("Sichtung nicht gefunden");
 
@@ -220,6 +252,7 @@ export async function assignPersonToSighting(opts: {
       listedPersonId: person.id,
       listType: person.listType,
       matched: true,
+      matchMethod: "MANUAL",
     },
     select: {
       id: true,
@@ -229,10 +262,58 @@ export async function assignPersonToSighting(opts: {
     },
   });
 
+  let enrollTaskId: number | null = null;
+  if (sighting.snapshot) {
+    const task = await prisma.hubTask.create({
+      data: {
+        accountId: opts.accountId,
+        type: "FACE_ENROLL",
+        payload: {
+          sightingId: sighting.id,
+          listedPersonId: person.id,
+        },
+      },
+      select: { id: true },
+    });
+    enrollTaskId = task.id;
+  }
+
   return {
     id: updated.id,
     listedPersonId: updated.listedPersonId!,
     listType: updated.listType!,
     matched: updated.matched,
+    enrollTaskId,
   };
+}
+
+export async function storePersonFaceEmbedding(opts: {
+  accountId: number;
+  listedPersonId: number;
+  embedding: number[];
+  model?: string;
+  sourceSightingId?: number | null;
+}): Promise<{ id: number }> {
+  if (opts.embedding.length < 64) {
+    throw new Error("Embedding zu kurz");
+  }
+  // Auf typische Dimensionalitaet begrenzen (buffalo_l = 512).
+  const values = opts.embedding.slice(0, EMBEDDING_DIMS);
+  const person = await prisma.listedPerson.findFirst({
+    where: { id: opts.listedPersonId, accountId: opts.accountId },
+    select: { id: true },
+  });
+  if (!person) throw new Error("Person nicht gefunden");
+
+  const row = await prisma.personFaceEmbedding.create({
+    data: {
+      accountId: opts.accountId,
+      listedPersonId: person.id,
+      embedding: new Uint8Array(floatsToEmbeddingBytes(values)),
+      model: opts.model ?? "buffalo_l",
+      sourceSightingId: opts.sourceSightingId ?? null,
+    },
+    select: { id: true },
+  });
+  return row;
 }

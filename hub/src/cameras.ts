@@ -4,8 +4,9 @@
  * GetAiState), meldet Start/Ende der Ereignisse an die Cloud und laedt
  * Schnappschuesse hoch (bei Ereignis-Beginn und auf Task-Anforderung).
  */
-import { CONFIG, api, log } from "./config.js";
+import { api, log } from "./config.js";
 import { STATE } from "./state.js";
+import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
 
 export interface CameraConfig {
   id: number;
@@ -176,8 +177,8 @@ export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number 
 }
 
 /**
- * Bei klarer Personen-/Gesichtserkennung: nach kurzer Verzoegerung pruefen,
- * ob PERSON noch aktiv ist — sonst kein Upload (weniger leere Frames).
+ * Bei klarer Personen-/Gesichtserkennung: Delay, Re-Check, lokales Face-Embed,
+ * Gallery-Match, dann Upload (ohne Gesicht: kein Upload).
  */
 async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
@@ -185,7 +186,6 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 
   await new Promise((r) => setTimeout(r, PERSON_SNAP_DELAY_MS));
 
-  // Nochmals pollen: flüchtige Fehlalarme / Person schon weg -> ueberspringen.
   try {
     const states = await pollStates(cam);
     cam.states.PERSON = states.PERSON ?? false;
@@ -199,7 +199,27 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
   }
 
   const buf = await captureSnap(cam);
-  const upload = await api(`/api/hub/person-sightings?cameraId=${cameraId}`, {
+  const face = await embedJpeg(buf);
+  if (!face) {
+    log(`Personen-Snapshot ${cam.config.name}: übersprungen (kein Gesicht)`);
+    return null;
+  }
+
+  await refreshGallery();
+  const match = matchEmbedding(face.embedding);
+  const qs = new URLSearchParams({ cameraId: String(cameraId) });
+  if (match) {
+    qs.set("listedPersonId", String(match.listedPersonId));
+    qs.set("matchScore", match.score.toFixed(4));
+    qs.set("matchMethod", "FACE_EMBEDDING");
+    log(
+      `Personen-Snapshot ${cam.config.name}: Match „${match.name}“ score=${match.score.toFixed(3)}`
+    );
+  } else {
+    log(`Personen-Snapshot ${cam.config.name}: Gesicht erkannt, kein Gallery-Match`);
+  }
+
+  const upload = await api(`/api/hub/person-sightings?${qs}`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
     body: buf,

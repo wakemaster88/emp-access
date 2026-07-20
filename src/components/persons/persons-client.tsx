@@ -40,7 +40,7 @@ export interface PersonRow {
   lastTriggeredAt: string | null;
   camera: { id: number; name: string } | null;
   shellyDevice: { id: number; name: string } | null;
-  _count: { sightings: number };
+  _count: { sightings: number; faceEmbeddings: number };
   recentSightings: PersonSightingRow[];
 }
 
@@ -49,6 +49,8 @@ export interface PersonSightingRow {
   source: string;
   listType: string | null;
   matched: boolean;
+  matchScore: number | null;
+  matchMethod: string | null;
   shellyTriggered: boolean;
   shellyOk: boolean | null;
   notes: string | null;
@@ -362,8 +364,15 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
                           {p._count.sightings} Sichtung{p._count.sightings !== 1 ? "en" : ""}
+                          {" · "}
+                          {p._count.faceEmbeddings} Face-Sample{p._count.faceEmbeddings !== 1 ? "s" : ""}
                           {p.notes ? <> · {p.notes}</> : null}
                         </p>
+                        {p._count.faceEmbeddings === 0 && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                            Noch kein Erkennungsprofil – Sichtung zuordnen erzeugt Samples.
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <Button
@@ -489,8 +498,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
               </Button>
             </CardHeader>
             <CardContent className="text-sm text-slate-500">
-              Bei klarer Personen-/Gesichtserkennung speichert der Hub einen Schnappschuss in der Historie.
-              Unbekannte Sichtungen kannst du zuordnen oder als Fehltreffer löschen.
+              Der Hub erkennt Gesichter lokal und matcht gegen die Gallery.
+              Unbekannte Sichtungen zuordnen → Face-Sample fürs Wiedererkennen.
             </CardContent>
           </Card>
 
@@ -558,7 +567,16 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                           {s.camera?.name ?? "–"}
                         </TableCell>
                         <TableCell className="text-xs text-slate-500">
-                          {s.source === "MANUAL" ? "Manuell" : "Kamera"}
+                          {s.matchMethod === "FACE_EMBEDDING" ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">Auto</Badge>
+                              {s.matchScore != null ? `${Math.round(s.matchScore * 100)}%` : ""}
+                            </span>
+                          ) : s.matchMethod === "MANUAL" || s.source === "MANUAL" ? (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Manuell</Badge>
+                          ) : (
+                            "Kamera"
+                          )}
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-xs">
                           {!s.shellyTriggered ? "–" : s.shellyOk ? (
@@ -648,8 +666,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
             </div>
             <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
               <div>
-                <p className="text-sm font-medium">Bei Erkennung Shelly schalten</p>
-                <p className="text-xs text-slate-500">Ohne Gesichtserkennung: jede Person an der Kamera</p>
+                <p className="text-sm font-medium">Bei Face-Match Shelly schalten</p>
+                <p className="text-xs text-slate-500">Nur wenn diese Person lokal wiedererkannt wird</p>
               </div>
               <Switch checked={form.triggerOnDetection} onCheckedChange={(v) => setForm((f) => ({ ...f, triggerOnDetection: v }))} />
             </div>
@@ -826,7 +844,15 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                       Kamera „{assignSighting.camera.name}“ wird der Person zugeordnet.
                     </p>
                   )}
+                  <p className="text-xs text-slate-500">
+                    Zuordnen erzeugt ein Face-Sample fürs lokale Wiedererkennen.
+                  </p>
                 </div>
+              )}
+              {assignMode === "existing" && (
+                <p className="text-xs text-slate-500">
+                  Zuordnen erzeugt ein zusätzliches Face-Sample für diese Person.
+                </p>
               )}
 
               {assignError && (

@@ -4,6 +4,7 @@ import { checkForUpdate } from "./updater.js";
 import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
 import { pollCameras, CAMERA_POLL_INTERVAL_MS } from "./cameras.js";
+import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { STATE, recordHeartbeat, recordTask } from "./state.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
@@ -64,11 +65,21 @@ startDashboard();
 heartbeat();
 pollTasks();
 autoScan();
+ensureFaceSidecar()
+  .then((ok) => {
+    if (ok) {
+      log("Face-Sidecar bereit");
+      return refreshGallery(true);
+    }
+    log("Face-Sidecar nicht verfügbar – Matching deaktiviert bis installiert");
+  })
+  .catch((e) => log(`Face-Sidecar: ${e instanceof Error ? e.message : e}`));
 setInterval(heartbeat, CONFIG.heartbeatIntervalMs);
 setInterval(pollTasks, CONFIG.taskIntervalMs);
 setInterval(checkForUpdate, CONFIG.updateIntervalMs);
 setInterval(autoScan, CONFIG.scanIntervalMs);
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
+setInterval(() => refreshGallery(true).catch(() => {}), 60_000);
 
 process.on("SIGTERM", () => { log("SIGTERM – Hub beendet sich."); process.exit(0); });
 process.on("SIGINT", () => { log("SIGINT – Hub beendet sich."); process.exit(0); });
