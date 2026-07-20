@@ -52,6 +52,7 @@ export interface PersonSightingRow {
   shellyOk: boolean | null;
   notes: string | null;
   seenAt: string;
+  hasSnapshot: boolean;
   camera: { id: number; name: string } | null;
   listedPerson: { id: number; name: string; listType: string } | null;
 }
@@ -332,7 +333,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
               </Button>
             </CardHeader>
             <CardContent className="text-sm text-slate-500">
-              Ohne Gesichtserkennung werden Kamerasichtungen anonym geloggt.
+              Bei klarer Personen-/Gesichtserkennung speichert der Hub einen Schnappschuss in der Historie.
               Namentliche Zuordnung (z. B. bestätigtes Hausverbot) hier manuell.
             </CardContent>
           </Card>
@@ -343,6 +344,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-50/80 dark:bg-slate-900/50">
+                      <TableHead className="w-16">Bild</TableHead>
                       <TableHead>Zeit</TableHead>
                       <TableHead>Person</TableHead>
                       <TableHead>Liste</TableHead>
@@ -354,13 +356,33 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                   <TableBody>
                     {sightings.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-10 text-sm text-slate-400">
+                        <TableCell colSpan={7} className="text-center py-10 text-sm text-slate-400">
                           Noch keine Sichtungen.
                         </TableCell>
                       </TableRow>
                     )}
                     {sightings.map((s) => (
                       <TableRow key={s.id}>
+                        <TableCell>
+                          {s.hasSnapshot ? (
+                            <a
+                              href={`/api/person-sightings/${s.id}/snapshot`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block h-12 w-12 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+                            >
+                              <img
+                                src={`/api/person-sightings/${s.id}/snapshot`}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
+                            </a>
+                          ) : (
+                            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
+                              <UserRound className="h-4 w-4" />
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="font-mono text-xs text-slate-500 whitespace-nowrap">
                           {new Date(s.seenAt).toLocaleString("de-DE")}
                         </TableCell>

@@ -1,0 +1,32 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSessionWithDb } from "@/lib/api-auth";
+
+/** GET (Session): Schnappschuss einer Personensichtung als JPEG. */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSessionWithDb();
+  if ("error" in session) return session.error;
+  const { db, accountId } = session;
+
+  const id = Number((await params).id);
+  if (isNaN(id)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
+
+  const sighting = await db.personSighting.findFirst({
+    where: { id, accountId: accountId! },
+    select: { snapshot: true, seenAt: true },
+  });
+  if (!sighting) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
+  if (!sighting.snapshot) {
+    return NextResponse.json({ error: "Kein Schnappschuss" }, { status: 404 });
+  }
+
+  return new NextResponse(Buffer.from(sighting.snapshot), {
+    headers: {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "private, max-age=3600",
+      "Last-Modified": sighting.seenAt.toUTCString(),
+    },
+  });
+}

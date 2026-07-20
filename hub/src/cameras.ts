@@ -130,18 +130,20 @@ async function pollStates(cam: CameraRuntime): Promise<Record<string, boolean>> 
       const entry = ai[key] as { alarm_state?: number; support?: number } | undefined;
       if (entry?.support === 1) states[type] = entry.alarm_state === 1;
     }
+    // Klare Gesichtserkennung (falls Modell face liefert) ueberschreibt PERSON.
+    const face = ai.face as { alarm_state?: number; support?: number } | undefined;
+    if (face?.support === 1) {
+      states.PERSON = face.alarm_state === 1;
+    }
   } catch {
     // Aeltere Modelle ohne KI-Erkennung - nur Bewegung melden.
   }
   return states;
 }
 
-/** Schnappschuss von der Kamera holen und in die Cloud laden. */
-export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number }> {
-  const cam = cameras.get(cameraId);
-  if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+/** JPEG von der Kamera holen (ohne Upload). */
+async function captureSnap(cam: CameraRuntime): Promise<Buffer> {
   await ensureLogin(cam);
-
   const rs = Math.random().toString(36).slice(2, 10);
   const res = await fetch(
     `${baseUrl(cam.config)}/cgi-bin/api.cgi?cmd=Snap&channel=${cam.config.channel}&rs=${rs}&token=${encodeURIComponent(cam.token!)}`,
@@ -152,13 +154,40 @@ export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number 
   if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) {
     throw new Error("Snap lieferte kein JPEG (falsche Zugangsdaten?)");
   }
+  return buf;
+}
 
+/** Schnappschuss von der Kamera holen und in die Cloud laden. */
+export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number }> {
+  const cam = cameras.get(cameraId);
+  if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+
+  const buf = await captureSnap(cam);
   const upload = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
     body: buf,
   });
   if (!upload.ok) throw new Error(`Snapshot-Upload fehlgeschlagen: HTTP ${upload.status}`);
+  cam.lastSnapshotAt = Date.now();
+  return { bytes: buf.length };
+}
+
+/**
+ * Bei klarer Personen-/Gesichtserkennung: Schnappschuss unter Personen speichern
+ * (Historie + ggf. Shelly fuer Whitelist-/Blacklist-Eintraege).
+ */
+async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }> {
+  const cam = cameras.get(cameraId);
+  if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+
+  const buf = await captureSnap(cam);
+  const upload = await api(`/api/hub/person-sightings?cameraId=${cameraId}`, {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg" },
+    body: buf,
+  });
+  if (!upload.ok) throw new Error(`Personen-Snapshot fehlgeschlagen: HTTP ${upload.status}`);
   cam.lastSnapshotAt = Date.now();
   return { bytes: buf.length };
 }
@@ -221,6 +250,7 @@ export async function pollCameras(): Promise<void> {
     const seen: number[] = [];
     const now = new Date().toISOString();
     const snapshotJobs: number[] = [];
+    const personSnapshotJobs: number[] = [];
 
     for (const cam of cameras.values()) {
       try {
@@ -243,7 +273,12 @@ export async function pollCameras(): Promise<void> {
               if (plate) event.plate = plate;
             }
             events.push(event);
-            if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
+            if (type === "PERSON") {
+              // Klare Personen-/Gesichtserkennung -> Schnappschuss unter Personen.
+              if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
+                personSnapshotJobs.push(cam.config.id);
+              }
+            } else if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
               snapshotJobs.push(cam.config.id);
             }
           } else if (!active && was) {
@@ -272,8 +307,16 @@ export async function pollCameras(): Promise<void> {
       }
     }
 
-    // Auto-Snapshots nach Ereignis-Beginn (Duplikate vermeiden).
+    // Personen-Schnappschuesse (Historie unter /personen).
+    for (const cameraId of [...new Set(personSnapshotJobs)]) {
+      uploadPersonSnapshot(cameraId).catch((e) =>
+        log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+      );
+    }
+
+    // Auto-Snapshots fuer sonstige Ereignisse (Duplikate vermeiden).
     for (const cameraId of [...new Set(snapshotJobs)]) {
+      if (personSnapshotJobs.includes(cameraId)) continue;
       uploadSnapshot(cameraId).catch((e) =>
         log(`Auto-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
       );

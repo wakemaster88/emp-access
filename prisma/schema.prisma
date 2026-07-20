@@ -1500,6 +1500,8 @@ model PersonSighting {
   shellyTriggered Boolean       @default(false)
   shellyOk        Boolean?
   notes           String?
+  /// Schnappschuss bei klarer Personen-/Gesichtserkennung (JPEG).
+  snapshot        Bytes?
   seenAt          DateTime      @default(now())
   createdAt       DateTime      @default(now())
 

@@ -65,16 +65,18 @@ async function triggerShellyForPerson(
 }
 
 /**
- * PERSON-Ereignis einer Kamera.
- * Ohne Gesichtserkennung: Historie als anonyme Sichtung + Shelly nur fuer
- * Eintraege mit triggerOnDetection an genau dieser Kamera.
+ * PERSON-Ereignis einer Kamera (idealerweise mit Gesichtsschnappschuss).
+ * Mit Snapshot: immer Historie-Eintrag unter Personen.
+ * Shelly nur fuer Eintraege mit triggerOnDetection an genau dieser Kamera.
  */
 export async function processCameraPersonEvent(opts: {
   accountId: number;
   cameraId: number;
   seenAt?: Date;
+  snapshot?: Buffer | null;
 }): Promise<{ sightings: number; triggered: number }> {
   const seenAt = opts.seenAt ?? new Date();
+  const snapshot = opts.snapshot?.length ? opts.snapshot : null;
 
   const people = await prisma.listedPerson.findMany({
     where: {
@@ -86,21 +88,25 @@ export async function processCameraPersonEvent(opts: {
     include: { shellyDevice: true },
   });
 
-  if (people.length === 0) return { sightings: 0, triggered: 0 };
-
   let sightings = 0;
   let triggered = 0;
 
-  if (people.some((p) => p.trackHistory)) {
+  // Snapshot allein reicht fuer Historie; sonst nur wenn trackHistory konfiguriert.
+  const trackAnonymous =
+    Boolean(snapshot) || people.some((p) => p.trackHistory);
+
+  if (trackAnonymous) {
     const preferBlacklist = people.some((p) => p.listType === "BLACKLIST" && p.trackHistory);
+    const hasTracked = people.some((p) => p.trackHistory);
     await prisma.personSighting.create({
       data: {
         accountId: opts.accountId,
         cameraId: opts.cameraId,
         source: "CAMERA_PERSON",
-        listType: preferBlacklist ? "BLACKLIST" : "WHITELIST",
+        listType: preferBlacklist ? "BLACKLIST" : hasTracked ? "WHITELIST" : null,
         matched: false,
         seenAt,
+        ...(snapshot ? { snapshot } : {}),
       },
     });
     sightings++;
@@ -121,6 +127,7 @@ export async function processCameraPersonEvent(opts: {
         shellyTriggered: r.shellyTriggered,
         shellyOk: r.shellyOk,
         seenAt,
+        ...(snapshot ? { snapshot } : {}),
       },
     });
     sightings++;

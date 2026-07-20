@@ -1,5 +1,6 @@
 import { safeAuth } from "@/lib/auth";
-import { tenantClient } from "@/lib/prisma";
+import { prisma, tenantClient } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { PersonsClient } from "@/components/persons/persons-client";
@@ -26,7 +27,15 @@ export default async function PersonenPage() {
     }),
     db.personSighting.findMany({
       where: { accountId },
-      include: {
+      select: {
+        id: true,
+        source: true,
+        listType: true,
+        matched: true,
+        shellyTriggered: true,
+        shellyOk: true,
+        notes: true,
+        seenAt: true,
         camera: { select: { id: true, name: true } },
         listedPerson: { select: { id: true, name: true, listType: true } },
       },
@@ -45,6 +54,17 @@ export default async function PersonenPage() {
     }),
   ]);
 
+  const snapIds = new Set<number>();
+  if (sightings.length > 0) {
+    const rows = await prisma.$queryRaw<{ id: number }[]>`
+      SELECT id FROM "PersonSighting"
+      WHERE "accountId" = ${accountId}
+        AND snapshot IS NOT NULL
+        AND id IN (${Prisma.join(sightings.map((s) => s.id))})
+    `;
+    for (const r of rows) snapIds.add(r.id);
+  }
+
   return (
     <>
       <Header title="Personen" accountName={session.user.accountName} />
@@ -58,6 +78,7 @@ export default async function PersonenPage() {
           sightings={sightings.map((s) => ({
             ...s,
             seenAt: s.seenAt.toISOString(),
+            hasSnapshot: snapIds.has(s.id),
           }))}
           cameras={cameras}
           shellyDevices={shellyDevices}
