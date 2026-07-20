@@ -82,6 +82,7 @@ export async function POST(request: NextRequest) {
       shellyAction: parsed.data.shellyAction ?? "ON",
       timerSeconds: parsed.data.timerSeconds ?? null,
       cooldownMinutes: parsed.data.cooldownMinutes ?? 2,
+      notifyOnDetection: parsed.data.notifyOnDetection ?? false,
     },
     include: {
       shellyDevice: { select: { id: true, name: true } },

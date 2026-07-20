@@ -1414,6 +1414,8 @@ model AllowedVehicle {
   /// Mindestabstand zwischen zwei Ausloesungen (Minuten).
   cooldownMinutes Int       @default(2)
   lastTriggeredAt DateTime?
+  /// Bei Kennzeichen-Match Web-Push an Account-Geraete senden.
+  notifyOnDetection Boolean @default(false)
   sightings       VehicleSighting[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -1441,6 +1443,8 @@ model VehicleSighting {
   matched          Boolean         @default(false)
   shellyTriggered  Boolean         @default(false)
   shellyOk         Boolean?
+  /// Schnappschuss bei Fahrzeugerkennung (JPEG).
+  snapshot         Bytes?
   seenAt           DateTime        @default(now())
   createdAt        DateTime        @default(now())
 

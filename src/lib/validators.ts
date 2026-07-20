@@ -491,6 +491,7 @@ export const allowedVehicleCreateSchema = z.object({
   shellyAction: z.enum(["ON", "OFF", "TOGGLE"]).optional(),
   timerSeconds: z.coerce.number().int().min(1).max(3600).nullable().optional(),
   cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
+  notifyOnDetection: z.boolean().optional(),
 });
 
 export const allowedVehicleUpdateSchema = allowedVehicleCreateSchema.partial();
@@ -500,6 +501,21 @@ export const vehicleSightingCreateSchema = z.object({
   cameraId: z.coerce.number().int().positive().nullable().optional(),
   seenAt: z.string().datetime().optional(),
 });
+
+export const vehicleSightingAssignSchema = z.object({
+  allowedVehicleId: z.coerce.number().int().positive().nullable().optional(),
+  plate: z.string().min(2).max(20).nullable().optional(),
+  createVehicle: z
+    .object({
+      name: z.string().min(1).max(80),
+      plate: z.string().min(2).max(20),
+    })
+    .nullable()
+    .optional(),
+}).refine(
+  (v) => v.allowedVehicleId || v.plate || v.createVehicle,
+  { message: "allowedVehicleId, plate oder createVehicle erforderlich" }
+);
 
 // ─── Personen (White-/Blacklist) ─────────────────────────────────────────────
 

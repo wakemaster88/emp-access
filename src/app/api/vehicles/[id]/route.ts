@@ -82,6 +82,9 @@ export async function PUT(
       ...(parsed.data.cooldownMinutes !== undefined
         ? { cooldownMinutes: parsed.data.cooldownMinutes }
         : {}),
+      ...(parsed.data.notifyOnDetection !== undefined
+        ? { notifyOnDetection: parsed.data.notifyOnDetection }
+        : {}),
     },
     include: {
       shellyDevice: { select: { id: true, name: true } },

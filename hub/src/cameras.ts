@@ -36,8 +36,9 @@ const CONFIG_REFRESH_MS = 60_000;
 const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
-/** Personen-Snap erst nach kurzer Verzoegerung, wenn Erkennung noch aktiv. */
+/** Personen-/Fahrzeug-Snap erst nach kurzer Verzoegerung, wenn Erkennung noch aktiv. */
 const PERSON_SNAP_DELAY_MS = 1_500;
+const VEHICLE_SNAP_DELAY_MS = 1_500;
 
 function baseUrl(c: CameraConfig): string {
   return `${c.https ? "https" : "http"}://${c.host}:${c.httpPort}`;
@@ -231,6 +232,47 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
   return { bytes: buf.length };
 }
 
+/**
+ * Fahrzeug-Erkennung: Delay, Re-Check, Snap, optionales Kennzeichen, Upload.
+ */
+async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
+  const cam = cameras.get(cameraId);
+  if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+
+  await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
+
+  try {
+    const states = await pollStates(cam);
+    cam.states.VEHICLE = states.VEHICLE ?? false;
+    if (!states.VEHICLE) {
+      log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
+      return null;
+    }
+  } catch (e) {
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+
+  const buf = await captureSnap(cam);
+  const plate = await tryReadPlate(cam);
+  const qs = new URLSearchParams({ cameraId: String(cameraId) });
+  if (plate) {
+    qs.set("plate", plate);
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Kennzeichen ${plate}`);
+  } else {
+    log(`Fahrzeug-Snapshot ${cam.config.name}: kein Kennzeichen – Historie für manuelles Mapping`);
+  }
+
+  const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg" },
+    body: buf,
+  });
+  if (!upload.ok) throw new Error(`Fahrzeug-Snapshot fehlgeschlagen: HTTP ${upload.status}`);
+  cam.lastSnapshotAt = Date.now();
+  return { bytes: buf.length };
+}
+
 async function refreshConfigs(): Promise<void> {
   const res = await api("/api/hub/cameras");
   if (!res.ok) throw new Error(`Kamera-Konfig-Abruf fehlgeschlagen: HTTP ${res.status}`);
@@ -290,6 +332,7 @@ export async function pollCameras(): Promise<void> {
     const now = new Date().toISOString();
     const snapshotJobs: number[] = [];
     const personSnapshotJobs: number[] = [];
+    const vehicleSnapshotJobs: number[] = [];
 
     for (const cam of cameras.values()) {
       try {
@@ -300,25 +343,16 @@ export async function pollCameras(): Promise<void> {
         for (const [type, active] of Object.entries(states)) {
           const was = cam.states[type] ?? false;
           if (active && !was) {
-            const event: (typeof events)[number] = {
+            events.push({
               cameraId: cam.config.id,
               type,
               phase: "start",
               at: now,
-            };
-            // Kennzeichen mitliefern, falls die Kamera LPR/AI liefert.
-            if (type === "VEHICLE") {
-              const plate = await tryReadPlate(cam);
-              if (plate) event.plate = plate;
-            }
-            events.push(event);
-            if (type === "PERSON") {
-              // Klare Personen-/Gesichtserkennung -> Schnappschuss unter Personen.
-              if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
-                personSnapshotJobs.push(cam.config.id);
-              }
-            } else if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
-              snapshotJobs.push(cam.config.id);
+            });
+            if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
+              if (type === "PERSON") personSnapshotJobs.push(cam.config.id);
+              else if (type === "VEHICLE") vehicleSnapshotJobs.push(cam.config.id);
+              else snapshotJobs.push(cam.config.id);
             }
           } else if (!active && was) {
             events.push({ cameraId: cam.config.id, type, phase: "end", at: now });
@@ -341,21 +375,24 @@ export async function pollCameras(): Promise<void> {
       if (!res.ok) log(`Kamera-Event-Upload fehlgeschlagen: HTTP ${res.status}`);
       for (const e of events) {
         const cam = cameras.get(e.cameraId);
-        const plateInfo = e.plate ? ` [${e.plate}]` : "";
-        log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}${plateInfo}`);
+        log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
       }
     }
 
-    // Personen-Schnappschuesse (Historie unter /personen).
     for (const cameraId of [...new Set(personSnapshotJobs)]) {
       uploadPersonSnapshot(cameraId).catch((e) =>
         log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
       );
     }
 
-    // Auto-Snapshots fuer sonstige Ereignisse (Duplikate vermeiden).
+    for (const cameraId of [...new Set(vehicleSnapshotJobs)]) {
+      uploadVehicleSnapshot(cameraId).catch((e) =>
+        log(`Fahrzeug-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+      );
+    }
+
     for (const cameraId of [...new Set(snapshotJobs)]) {
-      if (personSnapshotJobs.includes(cameraId)) continue;
+      if (personSnapshotJobs.includes(cameraId) || vehicleSnapshotJobs.includes(cameraId)) continue;
       uploadSnapshot(cameraId).catch((e) =>
         log(`Auto-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
       );

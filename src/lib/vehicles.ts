@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { controlShelly } from "@/lib/shelly";
+import { sendPushToAccount } from "@/lib/web-push";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 
@@ -21,7 +22,7 @@ export function formatPlateDisplay(plate: string): string {
 
 /**
  * Verarbeitet eine Fahrzeug-Sichtung: Historie anlegen, bei bekanntem
- * Kennzeichen gegen die Whitelist pruefen und ggf. Shelly schalten.
+ * Kennzeichen gegen die Whitelist pruefen und ggf. Shelly/Push.
  */
 export async function processVehicleSighting(opts: {
   accountId: number;
@@ -29,6 +30,7 @@ export async function processVehicleSighting(opts: {
   plate?: string | null;
   source?: "CAMERA_VEHICLE" | "CAMERA_PLATE" | "MANUAL";
   seenAt?: Date;
+  snapshot?: Buffer | null;
 }): Promise<{
   sightingId: number;
   matched: boolean;
@@ -42,6 +44,8 @@ export async function processVehicleSighting(opts: {
   const source =
     opts.source ??
     (plateNormalized ? "CAMERA_PLATE" : "CAMERA_VEHICLE");
+  const snapshot =
+    opts.snapshot?.length ? new Uint8Array(opts.snapshot) : null;
 
   let vehicle =
     plateNormalized
@@ -58,8 +62,6 @@ export async function processVehicleSighting(opts: {
 
   if (vehicle && !vehicle.isActive) vehicle = null;
 
-  // Kamera-Einschraenkung: Shelly nur, wenn keine Kamera gesetzt ist,
-  // die Sichtung von genau dieser Kamera kommt, oder manuell getestet wird.
   const cameraAllowed =
     !vehicle ||
     vehicle.cameraId == null ||
@@ -105,6 +107,21 @@ export async function processVehicleSighting(opts: {
     }
   }
 
+  if (vehicle?.notifyOnDetection) {
+    const cam = opts.cameraId
+      ? await prisma.camera.findFirst({
+          where: { id: opts.cameraId, accountId: opts.accountId },
+          select: { name: true },
+        })
+      : null;
+    sendPushToAccount(opts.accountId, {
+      title: `Fahrzeug erkannt: ${vehicle.name}`,
+      body: `${plateRaw ?? "ohne Kennzeichen"} · ${cam?.name ?? "Kamera"}`,
+      url: "/fahrzeuge",
+      tag: `vehicle-match-${vehicle.id}`,
+    }).catch((err) => console.error("[vehicles] push failed:", err));
+  }
+
   const sighting = await prisma.vehicleSighting.create({
     data: {
       accountId: opts.accountId,
@@ -117,6 +134,7 @@ export async function processVehicleSighting(opts: {
       shellyTriggered,
       shellyOk,
       seenAt,
+      ...(snapshot ? { snapshot } : {}),
     },
   });
 
@@ -127,4 +145,89 @@ export async function processVehicleSighting(opts: {
     shellyOk,
     vehicleName: vehicle?.name ?? null,
   };
+}
+
+/** Bestehende Sichtung einem Whitelist-Fahrzeug zuordnen (Plate und/oder ID). */
+export async function assignVehicleToSighting(opts: {
+  accountId: number;
+  sightingId: number;
+  allowedVehicleId?: number | null;
+  plate?: string | null;
+  createVehicle?: { name: string; plate: string } | null;
+}): Promise<{
+  id: number;
+  allowedVehicleId: number | null;
+  plate: string | null;
+  matched: boolean;
+}> {
+  const sighting = await prisma.vehicleSighting.findFirst({
+    where: { id: opts.sightingId, accountId: opts.accountId },
+    select: { id: true, cameraId: true },
+  });
+  if (!sighting) throw new Error("Sichtung nicht gefunden");
+
+  let vehicleId = opts.allowedVehicleId ?? null;
+  let plateRaw =
+    opts.plate?.trim() ? formatPlateDisplay(opts.plate) : null;
+
+  if (opts.createVehicle) {
+    const plate = formatPlateDisplay(opts.createVehicle.plate);
+    const plateNormalized = normalizePlate(plate);
+    if (plateNormalized.length < 2) throw new Error("Ungültiges Kennzeichen");
+    const created = await prisma.allowedVehicle.create({
+      data: {
+        accountId: opts.accountId,
+        name: opts.createVehicle.name.trim() || plate,
+        plate,
+        plateNormalized,
+        cameraId: null,
+        notifyOnDetection: false,
+      },
+      select: { id: true, plate: true },
+    });
+    vehicleId = created.id;
+    plateRaw = created.plate;
+  } else if (vehicleId) {
+    const v = await prisma.allowedVehicle.findFirst({
+      where: { id: vehicleId, accountId: opts.accountId },
+      select: { id: true, plate: true },
+    });
+    if (!v) throw new Error("Fahrzeug nicht gefunden");
+    if (!plateRaw) plateRaw = v.plate;
+  }
+
+  const plateNormalized = plateRaw ? normalizePlate(plateRaw) : null;
+
+  // Falls nur Plate gesetzt: Whitelist-Match versuchen.
+  if (!vehicleId && plateNormalized) {
+    const match = await prisma.allowedVehicle.findUnique({
+      where: {
+        accountId_plateNormalized: {
+          accountId: opts.accountId,
+          plateNormalized,
+        },
+      },
+      select: { id: true },
+    });
+    if (match) vehicleId = match.id;
+  }
+
+  const updated = await prisma.vehicleSighting.update({
+    where: { id: sighting.id },
+    data: {
+      plate: plateRaw,
+      plateNormalized,
+      allowedVehicleId: vehicleId,
+      matched: !!vehicleId,
+      source: plateNormalized ? "MANUAL" : "CAMERA_VEHICLE",
+    },
+    select: {
+      id: true,
+      allowedVehicleId: true,
+      plate: true,
+      matched: true,
+    },
+  });
+
+  return updated;
 }
