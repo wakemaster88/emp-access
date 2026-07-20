@@ -33,6 +33,16 @@ export async function PUT(
     }
   }
 
+  if (parsed.data.cameraId != null) {
+    const camera = await db.camera.findFirst({
+      where: { id: parsed.data.cameraId, accountId: accountId! },
+      select: { id: true },
+    });
+    if (!camera) {
+      return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
+    }
+  }
+
   const updated = await db.shellyAutomation.update({
     where: { id: Number(id) },
     data: {
@@ -43,8 +53,16 @@ export async function PUT(
       ...(parsed.data.daysOfWeek !== undefined ? { daysOfWeek: parsed.data.daysOfWeek } : {}),
       ...(parsed.data.timeOfDay !== undefined ? { timeOfDay: parsed.data.timeOfDay } : {}),
       ...(parsed.data.offsetMinutes !== undefined ? { offsetMinutes: parsed.data.offsetMinutes } : {}),
+      ...(parsed.data.cameraId !== undefined ? { cameraId: parsed.data.cameraId } : {}),
+      ...(parsed.data.eventType !== undefined ? { eventType: parsed.data.eventType } : {}),
+      ...(parsed.data.windowStart !== undefined ? { windowStart: parsed.data.windowStart } : {}),
+      ...(parsed.data.windowEnd !== undefined ? { windowEnd: parsed.data.windowEnd } : {}),
+      ...(parsed.data.cooldownMinutes !== undefined ? { cooldownMinutes: parsed.data.cooldownMinutes } : {}),
     },
-    include: { group: { select: { id: true, name: true } } },
+    include: {
+      group: { select: { id: true, name: true } },
+      camera: { select: { id: true, name: true } },
+    },
   });
   return NextResponse.json(updated);
 }

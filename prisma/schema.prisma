@@ -921,6 +921,8 @@ enum AutomationTrigger {
   SCHEDULE
   SUNRISE
   SUNSET
+  /// Kamera-Ereignis (z. B. PERSON) loest eine Szene aus.
+  CAMERA_EVENT
 }
 
 /// Eine Gruppe fungiert als Szene: mehrere Shelly-Geräte mit jeweils eigener
@@ -957,8 +959,8 @@ model ShellyGroupMember {
   @@index([deviceId])
 }
 
-/// Eine Automation triggert eine Gruppe (Szene) nach einem Zeitplan oder
-/// relativ zu Sonnenauf-/Sonnenuntergang.
+/// Eine Automation triggert eine Gruppe (Szene) nach einem Zeitplan,
+/// relativ zu Sonnenauf-/Sonnenuntergang oder bei einem Kamera-Ereignis.
 model ShellyAutomation {
   id            Int                   @id @default(autoincrement())
   accountId     Int
@@ -975,6 +977,16 @@ model ShellyAutomation {
   /// Offset in Minuten zum Sonnenauf/-untergang (nur SUNRISE/SUNSET).
   /// Negativ = vor dem Ereignis, positiv = danach.
   offsetMinutes Int                   @default(0)
+  /// Kamera fuer trigger=CAMERA_EVENT.
+  cameraId      Int?
+  camera        Camera?               @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  /// Ereignistyp: "MOTION" | "PERSON" | "VEHICLE" | "ANIMAL" | "OTHER".
+  eventType     String?
+  /// Aktives Zeitfenster "HH:mm"–"HH:mm" (Account-TZ). end < start = ueber Mitternacht.
+  windowStart   String?
+  windowEnd     String?
+  /// Mindestabstand zwischen zwei Ausloesungen (Kamera-Events flackern oft).
+  cooldownMinutes Int                 @default(5)
   /// Letzter Lauf – dient als Idempotenz-Guard im Cron (verhindert Doppel-Ausführung).
   lastRunAt     DateTime?
   createdAt     DateTime              @default(now())
@@ -983,6 +995,7 @@ model ShellyAutomation {
 
   @@index([accountId, isActive])
   @@index([groupId])
+  @@index([cameraId])
 }
 
 /// Vereinigung mehrerer Mitglieds-Tickets. Über `VereinAccessTicket` werden
@@ -1356,6 +1369,7 @@ model Camera {
   accountId  Int
   account    Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   events     CameraEvent[]
+  automations ShellyAutomation[]
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 

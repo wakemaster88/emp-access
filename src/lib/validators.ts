@@ -356,12 +356,14 @@ export const shellyGroupCreateSchema = z.object({
 
 export const shellyGroupUpdateSchema = shellyGroupCreateSchema.partial();
 
+const cameraEventType = z.enum(["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"]);
+
 export const shellyAutomationCreateSchema = z
   .object({
     name: z.string().min(1).max(80),
     groupId: z.coerce.number().int().positive(),
     isActive: z.boolean().optional(),
-    trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET"]),
+    trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET", "CAMERA_EVENT"]),
     daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
     timeOfDay: z
       .string()
@@ -369,10 +371,28 @@ export const shellyAutomationCreateSchema = z
       .nullable()
       .optional(),
     offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
+    cameraId: z.coerce.number().int().positive().nullable().optional(),
+    eventType: cameraEventType.nullable().optional(),
+    windowStart: z.string().regex(hhmmRegex, "Format HH:mm").nullable().optional(),
+    windowEnd: z.string().regex(hhmmRegex, "Format HH:mm").nullable().optional(),
+    cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
   })
   .refine(
     (v) => v.trigger !== "SCHEDULE" || (typeof v.timeOfDay === "string" && hhmmRegex.test(v.timeOfDay)),
     { message: "timeOfDay erforderlich bei Trigger=SCHEDULE", path: ["timeOfDay"] }
+  )
+  .refine(
+    (v) => v.trigger !== "CAMERA_EVENT" || (typeof v.cameraId === "number" && v.cameraId > 0),
+    { message: "cameraId erforderlich bei Trigger=CAMERA_EVENT", path: ["cameraId"] }
+  )
+  .refine(
+    (v) =>
+      v.trigger !== "CAMERA_EVENT" ||
+      (typeof v.windowStart === "string" &&
+        typeof v.windowEnd === "string" &&
+        hhmmRegex.test(v.windowStart) &&
+        hhmmRegex.test(v.windowEnd)),
+    { message: "Zeitfenster erforderlich bei Trigger=CAMERA_EVENT", path: ["windowStart"] }
   );
 
 // ─── Email-Automation Schemas ────────────────────────────────────────────────
@@ -448,8 +468,13 @@ export const shellyAutomationUpdateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   groupId: z.coerce.number().int().positive().optional(),
   isActive: z.boolean().optional(),
-  trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET"]).optional(),
+  trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET", "CAMERA_EVENT"]).optional(),
   daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
   timeOfDay: z.string().regex(hhmmRegex).nullable().optional(),
   offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
+  cameraId: z.coerce.number().int().positive().nullable().optional(),
+  eventType: cameraEventType.nullable().optional(),
+  windowStart: z.string().regex(hhmmRegex).nullable().optional(),
+  windowEnd: z.string().regex(hhmmRegex).nullable().optional(),
+  cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
 });

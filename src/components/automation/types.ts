@@ -31,7 +31,13 @@ export type GroupWithMembers = ShellyGroup & {
 
 export type AutomationWithGroup = ShellyAutomation & {
   group: { id: number; name: string };
+  camera: { id: number; name: string } | null;
 };
+
+export interface CameraOption {
+  id: number;
+  name: string;
+}
 
 export type AutomationRunRow = ShellyAutomationRun & {
   automation: { id: number; name: string } | null;

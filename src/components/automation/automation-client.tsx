@@ -26,6 +26,7 @@ import {
   Activity,
   Lightbulb,
   CalendarDays,
+  Cctv,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GroupDialog } from "./group-dialog";
@@ -36,6 +37,7 @@ import type {
   AutomationRunRow,
   ShellyDeviceOption,
   AccountInfo,
+  CameraOption,
 } from "./types";
 
 interface Props {
@@ -44,6 +46,7 @@ interface Props {
   shellyDevices: ShellyDeviceOption[];
   initialRuns: AutomationRunRow[];
   account: AccountInfo;
+  cameras: CameraOption[];
 }
 
 export function AutomationClient({
@@ -52,6 +55,7 @@ export function AutomationClient({
   shellyDevices,
   initialRuns,
   account,
+  cameras,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -230,7 +234,7 @@ export function AutomationClient({
         <TabsContent value="automations" className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-500">
-              Automationen l\u00f6sen Szenen per Zeitplan oder nach Sonnenstand aus.
+              Automationen lösen Szenen per Zeitplan, Sonnenstand oder Kamera-Ereignis aus.
             </p>
             <Button
               size="sm"
@@ -252,7 +256,7 @@ export function AutomationClient({
             <EmptyState
               icon={CalendarDays}
               title="Keine Automationen"
-              text="Plane Szenen zeitgesteuert oder nach Sonnenauf-/-untergang."
+              text="Plane Szenen zeitgesteuert, nach Sonnenstand oder bei Kamera-Erkennung."
             />
           ) : (
             <div className="grid gap-3">
@@ -368,6 +372,7 @@ export function AutomationClient({
           onClose={() => setAutoDialog({ open: false, automation: null })}
           automation={autoDialog.automation}
           groups={groups}
+          cameras={cameras}
           account={account}
           onSaved={() => {
             setAutoDialog({ open: false, automation: null });
@@ -421,11 +426,31 @@ function MemberChip({ member }: { member: GroupWithMembers["members"][number] })
   );
 }
 
+const EVENT_LABELS: Record<string, string> = {
+  PERSON: "Person",
+  MOTION: "Bewegung",
+  VEHICLE: "Fahrzeug",
+  ANIMAL: "Tier",
+  OTHER: "Sonstiges",
+};
+
 function TriggerBadge({ automation }: { automation: AutomationWithGroup }) {
   if (automation.trigger === "SCHEDULE") {
     return (
       <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 text-xs gap-1">
         <Clock className="h-3 w-3" /> {automation.timeOfDay ?? "?"}
+      </Badge>
+    );
+  }
+  if (automation.trigger === "CAMERA_EVENT") {
+    return (
+      <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 text-xs gap-1">
+        <Cctv className="h-3 w-3" />
+        {automation.camera?.name ?? "Kamera"}
+        {automation.eventType ? ` · ${EVENT_LABELS[automation.eventType] ?? automation.eventType}` : ""}
+        {automation.windowStart && automation.windowEnd
+          ? ` · ${automation.windowStart}–${automation.windowEnd}`
+          : ""}
       </Badge>
     );
   }

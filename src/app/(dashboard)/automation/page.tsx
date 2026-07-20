@@ -13,7 +13,7 @@ export default async function AutomationPage() {
 
   const db = tenantClient(session.user.accountId);
 
-  const [groups, automations, shellyDevices, recentRuns, account] = await Promise.all([
+  const [groups, automations, shellyDevices, recentRuns, account, cameras] = await Promise.all([
     db.shellyGroup.findMany({
       where: { accountId: session.user.accountId },
       include: {
@@ -27,7 +27,10 @@ export default async function AutomationPage() {
     }),
     db.shellyAutomation.findMany({
       where: { accountId: session.user.accountId },
-      include: { group: { select: { id: true, name: true } } },
+      include: {
+        group: { select: { id: true, name: true } },
+        camera: { select: { id: true, name: true } },
+      },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
     }),
     db.device.findMany({
@@ -45,6 +48,11 @@ export default async function AutomationPage() {
       where: { id: session.user.accountId },
       select: { latitude: true, longitude: true, timezone: true },
     }),
+    db.camera.findMany({
+      where: { accountId: session.user.accountId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -57,6 +65,7 @@ export default async function AutomationPage() {
           shellyDevices={shellyDevices}
           initialRuns={recentRuns}
           account={account ?? { latitude: null, longitude: null, timezone: null }}
+          cameras={cameras}
         />
       </div>
     </>

@@ -7,10 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Clock, Sunrise, Sunset, MapPin } from "lucide-react";
+import { Loader2, Clock, Sunrise, Sunset, MapPin, Cctv } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSunTimesForAccount } from "@/lib/sun";
-import type { GroupWithMembers, AutomationWithGroup, AccountInfo, AutomationTrigger } from "./types";
+import type {
+  GroupWithMembers,
+  AutomationWithGroup,
+  AccountInfo,
+  AutomationTrigger,
+  CameraOption,
+} from "./types";
 
 interface Props {
   open: boolean;
@@ -18,6 +24,7 @@ interface Props {
   onSaved: () => void;
   automation: AutomationWithGroup | null;
   groups: GroupWithMembers[];
+  cameras: CameraOption[];
   account: AccountInfo;
 }
 
@@ -31,7 +38,16 @@ const DAYS = [
   { bit: 6, short: "So" },
 ];
 
-export function AutomationDialog({ open, onClose, onSaved, automation, groups, account }: Props) {
+const EVENT_TYPES = [
+  { value: "PERSON", label: "Person" },
+  { value: "MOTION", label: "Bewegung" },
+  { value: "VEHICLE", label: "Fahrzeug" },
+  { value: "ANIMAL", label: "Tier" },
+] as const;
+
+export function AutomationDialog({
+  open, onClose, onSaved, automation, groups, cameras, account,
+}: Props) {
   const isEdit = !!automation;
   const [name, setName] = useState(automation?.name ?? "");
   const [groupId, setGroupId] = useState<number>(automation?.groupId ?? groups[0]?.id ?? 0);
@@ -40,6 +56,11 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
   const [offsetMinutes, setOffsetMinutes] = useState<number>(automation?.offsetMinutes ?? 0);
   const [daysOfWeek, setDaysOfWeek] = useState<number>(automation?.daysOfWeek ?? 127);
   const [isActive, setIsActive] = useState<boolean>(automation?.isActive ?? true);
+  const [cameraId, setCameraId] = useState<number>(automation?.cameraId ?? cameras[0]?.id ?? 0);
+  const [eventType, setEventType] = useState(automation?.eventType ?? "PERSON");
+  const [windowStart, setWindowStart] = useState(automation?.windowStart ?? "22:00");
+  const [windowEnd, setWindowEnd] = useState(automation?.windowEnd ?? "08:00");
+  const [cooldownMinutes, setCooldownMinutes] = useState(automation?.cooldownMinutes ?? 5);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +69,7 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
     [account.latitude, account.longitude]
   );
   const tz = account.timezone ?? "Europe/Berlin";
+  const isCamera = trigger === "CAMERA_EVENT";
 
   function toggleDay(bit: number) {
     setDaysOfWeek((prev) => prev ^ (1 << bit));
@@ -64,18 +86,43 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
     if (trigger === "SCHEDULE" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(timeOfDay)) {
       return setError("Zeit im Format HH:mm (z.B. 18:00)");
     }
+    if (isCamera) {
+      if (!cameraId) return setError("Kamera wählen");
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(windowStart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(windowEnd)) {
+        return setError("Zeitfenster im Format HH:mm");
+      }
+    }
 
     setSaving(true);
     try {
-      const payload = {
-        name: name.trim(),
-        groupId,
-        trigger,
-        isActive,
-        daysOfWeek,
-        timeOfDay: trigger === "SCHEDULE" ? timeOfDay : null,
-        offsetMinutes: trigger === "SCHEDULE" ? 0 : offsetMinutes,
-      };
+      const payload = isCamera
+        ? {
+            name: name.trim(),
+            groupId,
+            trigger,
+            isActive,
+            daysOfWeek,
+            cameraId,
+            eventType,
+            windowStart,
+            windowEnd,
+            cooldownMinutes,
+            timeOfDay: null,
+            offsetMinutes: 0,
+          }
+        : {
+            name: name.trim(),
+            groupId,
+            trigger,
+            isActive,
+            daysOfWeek,
+            timeOfDay: trigger === "SCHEDULE" ? timeOfDay : null,
+            offsetMinutes: trigger === "SCHEDULE" ? 0 : offsetMinutes,
+            cameraId: null,
+            eventType: null,
+            windowStart: null,
+            windowEnd: null,
+          };
       const url = isEdit ? `/api/shelly-automations/${automation!.id}` : "/api/shelly-automations";
       const res = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
@@ -94,16 +141,16 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
   }
 
   const previewTime = useMemo(() => {
-    if (trigger === "SCHEDULE") return null;
+    if (trigger === "SCHEDULE" || isCamera) return null;
     const base = trigger === "SUNRISE" ? sun.sunrise : sun.sunset;
     if (!base) return null;
     const shifted = new Date(base.getTime() + offsetMinutes * 60_000);
     return new Intl.DateTimeFormat("de-DE", { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(shifted);
-  }, [trigger, offsetMinutes, sun, tz]);
+  }, [trigger, offsetMinutes, sun, tz, isCamera]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Automation bearbeiten" : "Neue Automation"}</DialogTitle>
         </DialogHeader>
@@ -115,7 +162,7 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
               id="au-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="z.B. Abendlicht automatisch"
+              placeholder="z.B. Aquapark nachts → Licht"
             />
           </div>
 
@@ -137,12 +184,18 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
 
           <div>
             <Label>Auslöser</Label>
-            <div className="grid grid-cols-3 gap-2 mt-1">
+            <div className="grid grid-cols-2 gap-2 mt-1">
               <TriggerTile
                 active={trigger === "SCHEDULE"}
                 icon={Clock}
                 label="Zeitplan"
                 onClick={() => setTrigger("SCHEDULE")}
+              />
+              <TriggerTile
+                active={trigger === "CAMERA_EVENT"}
+                icon={Cctv}
+                label="Kamera"
+                onClick={() => setTrigger("CAMERA_EVENT")}
               />
               <TriggerTile
                 active={trigger === "SUNRISE"}
@@ -159,7 +212,7 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
             </div>
           </div>
 
-          {trigger === "SCHEDULE" ? (
+          {trigger === "SCHEDULE" && (
             <div>
               <Label htmlFor="au-time">Uhrzeit ({tz})</Label>
               <Input
@@ -169,7 +222,9 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
                 onChange={(e) => setTimeOfDay(e.target.value)}
               />
             </div>
-          ) : (
+          )}
+
+          {(trigger === "SUNRISE" || trigger === "SUNSET") && (
             <div>
               <Label htmlFor="au-offset">Offset zum Sonnenereignis (Minuten)</Label>
               <Input
@@ -190,6 +245,82 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
                   <>Heute ca. {previewTime ?? "—"} ({account.latitude.toFixed(2)}, {account.longitude.toFixed(2)})</>
                 )}
               </p>
+            </div>
+          )}
+
+          {isCamera && (
+            <div className="space-y-3 rounded-lg border border-violet-200 dark:border-violet-900 bg-violet-50/40 dark:bg-violet-950/20 p-3">
+              {cameras.length === 0 ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Noch keine Kameras erfasst. Lege zuerst unter „Kameras“ eine an.
+                </p>
+              ) : (
+                <>
+                  <div>
+                    <Label htmlFor="au-camera">Kamera</Label>
+                    <Select value={String(cameraId)} onValueChange={(v) => setCameraId(Number(v))}>
+                      <SelectTrigger id="au-camera">
+                        <SelectValue placeholder="Kamera wählen" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cameras.map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="au-event">Ereignis</Label>
+                    <Select value={eventType} onValueChange={setEventType}>
+                      <SelectTrigger id="au-event">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EVENT_TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="au-win-start">Aktiv ab ({tz})</Label>
+                      <Input
+                        id="au-win-start"
+                        type="time"
+                        value={windowStart}
+                        onChange={(e) => setWindowStart(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="au-win-end">Aktiv bis ({tz})</Label>
+                      <Input
+                        id="au-win-end"
+                        type="time"
+                        value={windowEnd}
+                        onChange={(e) => setWindowEnd(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Über Mitternacht möglich (z. B. 22:00–08:00). Außerhalb dieses Fensters wird nicht geschaltet.
+                  </p>
+                  <div>
+                    <Label htmlFor="au-cooldown">Cooldown (Minuten)</Label>
+                    <Input
+                      id="au-cooldown"
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={cooldownMinutes}
+                      onChange={(e) => setCooldownMinutes(Math.max(1, Number(e.target.value) || 5))}
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Verhindert, dass bei flackernden Erkennungen die Szene ständig neu ausgelöst wird.
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -229,7 +360,11 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
           <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
             <Label htmlFor="au-active" className="cursor-pointer">
               Aktiv
-              <p className="text-xs text-slate-500 font-normal">Pausierte Automationen werden vom Cron ignoriert.</p>
+              <p className="text-xs text-slate-500 font-normal">
+                {isCamera
+                  ? "Pausierte Automationen reagieren nicht auf Kamera-Ereignisse."
+                  : "Pausierte Automationen werden vom Cron ignoriert."}
+              </p>
             </Label>
             <Switch id="au-active" checked={isActive} onCheckedChange={setIsActive} />
           </div>
@@ -243,7 +378,11 @@ export function AutomationDialog({ open, onClose, onSaved, automation, groups, a
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>Abbrechen</Button>
-          <Button onClick={save} disabled={saving || groups.length === 0} className="gap-1.5">
+          <Button
+            onClick={save}
+            disabled={saving || groups.length === 0 || (isCamera && cameras.length === 0)}
+            className="gap-1.5"
+          >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {isEdit ? "Speichern" : "Anlegen"}
           </Button>

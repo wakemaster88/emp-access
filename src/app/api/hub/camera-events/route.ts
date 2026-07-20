@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { runCameraAutomations } from "@/lib/shelly-automation";
 
 const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"];
 const MAX_EVENTS_PER_REQUEST = 100;
@@ -55,6 +56,11 @@ export async function POST(request: NextRequest) {
         data: { cameraId, type, startedAt: at, accountId: account.id },
       });
       created++;
+      // Shelly-Automationen mit Kamera-Trigger asynchron ausloesen
+      // (Fehler duerfen den Event-Ingest nicht blockieren).
+      runCameraAutomations(account.id, cameraId, type, at).catch((err) => {
+        console.error("[camera-events] automation failed:", err);
+      });
     } else if (phase === "end") {
       const open = await db.cameraEvent.findFirst({
         where: { cameraId, type, endedAt: null, accountId: account.id },

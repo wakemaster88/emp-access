@@ -22,7 +22,9 @@ export interface ExecuteResult {
   durationMs: number;
 }
 
-export type TriggerKind = "schedule" | "sunrise" | "sunset" | "manual";
+export type TriggerKind = "schedule" | "sunrise" | "sunset" | "manual" | "camera";
+
+const CAMERA_EVENT_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"] as const;
 
 // ─── Group Execution ─────────────────────────────────────────────────────────
 
@@ -166,6 +168,9 @@ export async function runAutomationTick(now: Date = new Date()): Promise<{
   let triggered = 0;
 
   for (const a of automations) {
+    // Kamera-Automationen werden event-getrieben ausgeloest, nicht per Cron.
+    if (a.trigger === ("CAMERA_EVENT" as AutomationTrigger)) continue;
+
     const dow = berlinWeekdayBitIndex(now, a.account.timezone);
     const todayAllowed = ((a.daysOfWeek >> dow) & 1) === 1;
     if (!todayAllowed) continue;
@@ -182,12 +187,17 @@ export async function runAutomationTick(now: Date = new Date()): Promise<{
       triggerKind = "schedule";
       if (!a.timeOfDay) continue;
       scheduledAt = berlinTimeOfDayToUtc(now, a.timeOfDay, a.account.timezone);
-    } else {
+    } else if (
+      a.trigger === ("SUNRISE" as AutomationTrigger) ||
+      a.trigger === ("SUNSET" as AutomationTrigger)
+    ) {
       triggerKind = a.trigger === ("SUNRISE" as AutomationTrigger) ? "sunrise" : "sunset";
       const sun = getSunTimesForAccount(a.account.latitude, a.account.longitude, now);
       const base = triggerKind === "sunrise" ? sun.sunrise : sun.sunset;
       if (!base) continue;
       scheduledAt = new Date(base.getTime() + a.offsetMinutes * 60_000);
+    } else {
+      continue;
     }
 
     if (!scheduledAt) continue;
@@ -223,7 +233,108 @@ export async function runAutomationTick(now: Date = new Date()): Promise<{
   return { checked: automations.length, triggered, results };
 }
 
+/**
+ * Wird beim Start eines Kamera-Ereignisses (Hub-Ingest) aufgerufen.
+ * Findet passende CAMERA_EVENT-Automationen und fuehrt deren Szene aus.
+ */
+export async function runCameraAutomations(
+  accountId: number,
+  cameraId: number,
+  eventType: string,
+  now: Date = new Date()
+): Promise<{ triggered: number }> {
+  if (!CAMERA_EVENT_TYPES.includes(eventType as (typeof CAMERA_EVENT_TYPES)[number])) {
+    return { triggered: 0 };
+  }
+
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { timezone: true },
+  });
+  if (!account) return { triggered: 0 };
+
+  const automations = await prisma.shellyAutomation.findMany({
+    where: {
+      accountId,
+      isActive: true,
+      trigger: "CAMERA_EVENT",
+      cameraId,
+      eventType,
+    },
+  });
+
+  let triggered = 0;
+  for (const a of automations) {
+    const dow = berlinWeekdayBitIndex(now, account.timezone);
+    if (((a.daysOfWeek >> dow) & 1) !== 1) continue;
+
+    if (a.windowStart && a.windowEnd) {
+      if (!isWithinTimeWindow(now, a.windowStart, a.windowEnd, account.timezone)) continue;
+    }
+
+    const cooldownMs = Math.max(1, a.cooldownMinutes) * 60_000;
+    if (a.lastRunAt && now.getTime() - a.lastRunAt.getTime() < cooldownMs) continue;
+
+    const claimed = await prisma.shellyAutomation.updateMany({
+      where: {
+        id: a.id,
+        OR: [
+          { lastRunAt: null },
+          { lastRunAt: { lt: new Date(now.getTime() - cooldownMs) } },
+        ],
+      },
+      data: { lastRunAt: now },
+    });
+    if (claimed.count === 0) continue;
+
+    triggered++;
+    await executeGroup(a.groupId, accountId, "camera", a.id);
+  }
+
+  return { triggered };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Minuten seit Mitternacht in der Account-Zeitzone. */
+function minutesInTz(now: Date, tz: string | null | undefined): number {
+  const timeZone = tz ?? "Europe/Berlin";
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const h = Number(parts.find((p) => p.type === "hour")?.value);
+  const m = Number(parts.find((p) => p.type === "minute")?.value);
+  // en-GB kann "24" fuer Mitternacht liefern
+  return ((h === 24 ? 0 : h) * 60) + m;
+}
+
+function parseHhmmToMinutes(hhmm: string): number | null {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/**
+ * Prueft, ob `now` im Fenster [start, end) liegt.
+ * end < start bedeutet Ueber-Mitternacht (z. B. 22:00–08:00).
+ */
+export function isWithinTimeWindow(
+  now: Date,
+  start: string,
+  end: string,
+  tz: string | null | undefined
+): boolean {
+  const startM = parseHhmmToMinutes(start);
+  const endM = parseHhmmToMinutes(end);
+  if (startM == null || endM == null) return false;
+  const mins = minutesInTz(now, tz);
+  if (startM === endM) return true;
+  if (startM < endM) return mins >= startM && mins < endM;
+  return mins >= startM || mins < endM;
+}
 
 /**
  * Liefert den Wochentag als Bit-Index (0=Mo, 1=Di, …, 6=So) in der angegebenen
