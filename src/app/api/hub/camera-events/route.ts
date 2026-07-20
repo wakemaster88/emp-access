@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { runCameraAutomations } from "@/lib/shelly-automation";
 import { processVehicleSighting } from "@/lib/vehicles";
+import { processCameraPersonEvent } from "@/lib/persons";
 
 const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"];
 const MAX_EVENTS_PER_REQUEST = 100;
@@ -74,6 +75,17 @@ export async function POST(request: NextRequest) {
           seenAt: at,
         }).catch((err) => {
           console.error("[camera-events] vehicle sighting failed:", err);
+        });
+      }
+
+      // Personen White-/Blacklist-Historie und optionale Shelly-Automation.
+      if (type === "PERSON") {
+        processCameraPersonEvent({
+          accountId: account.id,
+          cameraId,
+          seenAt: at,
+        }).catch((err) => {
+          console.error("[camera-events] person sighting failed:", err);
         });
       }
     } else if (phase === "end") {

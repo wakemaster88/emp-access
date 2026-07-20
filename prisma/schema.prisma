@@ -139,6 +139,8 @@ model Account {
   cameraEvents    CameraEvent[]
   allowedVehicles AllowedVehicle[]
   vehicleSightings VehicleSighting[]
+  listedPersons   ListedPerson[]
+  personSightings PersonSighting[]
 }
 
 model Admin {
@@ -222,6 +224,7 @@ model Device {
   /// Optionale Netzwerk-Zuordnung (Switch-Port/VLAN) dieses IoT-Geraets.
   networkClient   NetworkClient?
   allowedVehicles AllowedVehicle[]
+  listedPersons   ListedPerson[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -1375,6 +1378,8 @@ model Camera {
   automations ShellyAutomation[]
   vehicleSightings VehicleSighting[]
   allowedVehicles AllowedVehicle[]
+  listedPersons   ListedPerson[]
+  personSightings PersonSighting[]
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
@@ -1442,6 +1447,66 @@ model VehicleSighting {
   @@index([cameraId, seenAt])
   @@index([plateNormalized])
   @@index([allowedVehicleId])
+}
+
+/// Person auf White- oder Blacklist (z. B. VIP / Hausverbot).
+/// Ohne Gesichtserkennung: Automatik nur "jede Person an Kamera X";
+/// namentliche Zuordnung erfolgt manuell oder spaeter per Face-ID.
+model ListedPerson {
+  id                 Int       @id @default(autoincrement())
+  accountId          Int
+  account            Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name               String
+  /// WHITELIST | BLACKLIST
+  listType           String
+  isActive           Boolean   @default(true)
+  notes              String?
+  /// Kamera, an der Historie/Automation greifen soll.
+  cameraId           Int?
+  camera             Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  /// PERSON-Ereignisse an der Kamera in die Historie schreiben.
+  trackHistory       Boolean   @default(true)
+  /// Bei PERSON an der Kamera Shelly ausloesen (ohne Personen-Identifikation).
+  triggerOnDetection Boolean   @default(false)
+  shellyDeviceId     Int?
+  shellyDevice       Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
+  shellyAction       String    @default("ON")
+  timerSeconds       Int?
+  cooldownMinutes    Int       @default(5)
+  lastTriggeredAt    DateTime?
+  sightings          PersonSighting[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([accountId, listType, isActive])
+  @@index([cameraId])
+  @@index([shellyDeviceId])
+}
+
+/// Historie von Personenerkennungen (anonym oder einer ListedPerson zugeordnet).
+model PersonSighting {
+  id              Int           @id @default(autoincrement())
+  accountId       Int
+  account         Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  cameraId        Int?
+  camera          Camera?       @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  listedPersonId  Int?
+  listedPerson    ListedPerson? @relation(fields: [listedPersonId], references: [id], onDelete: SetNull)
+  /// CAMERA_PERSON | MANUAL
+  source          String        @default("CAMERA_PERSON")
+  /// WHITELIST | BLACKLIST falls zugeordnet, sonst null
+  listType        String?
+  matched         Boolean       @default(false)
+  shellyTriggered Boolean       @default(false)
+  shellyOk        Boolean?
+  notes           String?
+  seenAt          DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+
+  @@index([accountId, seenAt])
+  @@index([cameraId, seenAt])
+  @@index([listedPersonId])
+  @@index([listType, seenAt])
 }
 
 /// Bewegungs-/KI-Ereignis einer Kamera, vom Hub per Polling gemeldet.

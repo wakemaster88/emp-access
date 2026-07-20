@@ -500,3 +500,28 @@ export const vehicleSightingCreateSchema = z.object({
   cameraId: z.coerce.number().int().positive().nullable().optional(),
   seenAt: z.string().datetime().optional(),
 });
+
+// ─── Personen (White-/Blacklist) ─────────────────────────────────────────────
+
+export const listedPersonCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  listType: z.enum(["WHITELIST", "BLACKLIST"]),
+  isActive: z.boolean().optional(),
+  notes: z.string().max(1000).nullable().optional(),
+  cameraId: z.coerce.number().int().positive().nullable().optional(),
+  trackHistory: z.boolean().optional(),
+  triggerOnDetection: z.boolean().optional(),
+  shellyDeviceId: z.coerce.number().int().positive().nullable().optional(),
+  shellyAction: z.enum(["ON", "OFF", "TOGGLE"]).optional(),
+  timerSeconds: z.coerce.number().int().min(1).max(3600).nullable().optional(),
+  cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
+});
+
+export const listedPersonUpdateSchema = listedPersonCreateSchema.partial();
+
+export const personSightingCreateSchema = z.object({
+  listedPersonId: z.coerce.number().int().positive(),
+  cameraId: z.coerce.number().int().positive().nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
+  triggerShelly: z.boolean().optional(),
+});

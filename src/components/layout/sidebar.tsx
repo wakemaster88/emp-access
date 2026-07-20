@@ -32,6 +32,7 @@ import {
   Network,
   Cctv,
   Car,
+  UserRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,7 @@ const navGroups: NavGroup[] = [
       { href: "/network", label: "Netzwerk", icon: Network },
       { href: "/cameras", label: "Kameras", icon: Cctv },
       { href: "/fahrzeuge", label: "Fahrzeuge", icon: Car },
+      { href: "/personen", label: "Personen", icon: UserRound },
       { href: "/automation", label: "Automation", icon: Zap },
       { href: "/email", label: "E-Mail", icon: Mail },
       { href: "/settings", label: "Einstellungen", icon: Settings },
