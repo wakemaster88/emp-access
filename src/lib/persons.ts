@@ -76,7 +76,9 @@ export async function processCameraPersonEvent(opts: {
   snapshot?: Buffer | null;
 }): Promise<{ sightings: number; triggered: number }> {
   const seenAt = opts.seenAt ?? new Date();
-  const snapshot = opts.snapshot?.length ? opts.snapshot : null;
+  // Prisma Bytes erwartet Uint8Array (nicht Node Buffer / SharedArrayBuffer).
+  const snapshot =
+    opts.snapshot?.length ? new Uint8Array(opts.snapshot) : null;
 
   const people = await prisma.listedPerson.findMany({
     where: {
