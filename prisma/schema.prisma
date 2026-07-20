@@ -1407,6 +1407,8 @@ model SurveillanceConfig {
   cooldownMinutes Int      @default(5)
   alertOnPerson   Boolean  @default(true)
   alertOnVehicle  Boolean  @default(true)
+  /// Bei Sighting mit Snapshot per Telegram (Foto + Caption) benachrichtigen.
+  alertTelegram   Boolean  @default(true)
   /// JSON-Map letzter Pushes: { "10:PERSON": "ISO8601", ... }
   lastPushByKey   Json?
   cameras         SurveillanceCamera[]

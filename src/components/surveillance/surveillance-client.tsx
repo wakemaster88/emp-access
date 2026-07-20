@@ -39,6 +39,7 @@ export interface SurveillanceConfigDTO {
   cooldownMinutes: number;
   alertOnPerson: boolean;
   alertOnVehicle: boolean;
+  alertTelegram: boolean;
   cameraIds: number[];
   armedNow: boolean;
   updatedAt: string | null;
@@ -144,6 +145,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
     cooldownMinutes: initial.cooldownMinutes,
     alertOnPerson: initial.alertOnPerson,
     alertOnVehicle: initial.alertOnVehicle,
+    alertTelegram: initial.alertTelegram,
     cameraIds: initial.cameraIds.length
       ? initial.cameraIds
       : cameras.filter((c) => c.enabled).map((c) => c.id),
@@ -242,6 +244,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
           cooldownMinutes: json.cooldownMinutes,
           alertOnPerson: json.alertOnPerson,
           alertOnVehicle: json.alertOnVehicle,
+          alertTelegram: json.alertTelegram ?? true,
           cameraIds: json.cameraIds ?? [],
         });
         setArmedNow(!!json.armedNow);
@@ -687,6 +690,18 @@ export function SurveillanceClient({ initial, cameras }: Props) {
             <Switch
               checked={form.alertOnVehicle}
               onCheckedChange={(v) => setForm((f) => ({ ...f, alertOnVehicle: v }))}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <Label>Telegram mit Snapshot</Label>
+              <p className="text-xs text-slate-500">
+                Foto + Text an aktive Telegram-Chats (Einstellungen)
+              </p>
+            </div>
+            <Switch
+              checked={form.alertTelegram}
+              onCheckedChange={(v) => setForm((f) => ({ ...f, alertTelegram: v }))}
             />
           </div>
           <div>

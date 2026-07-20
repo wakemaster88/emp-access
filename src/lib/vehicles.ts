@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { controlShelly } from "@/lib/shelly";
+import { maybeSurveillanceTelegramAlert } from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
@@ -137,6 +138,24 @@ export async function processVehicleSighting(opts: {
       ...(snapshot ? { snapshot } : {}),
     },
   });
+
+  if (snapshot && opts.cameraId) {
+    const detail = [
+      vehicle?.name ?? null,
+      plateRaw,
+      vehicle ? "erlaubt" : "unbekannt",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    maybeSurveillanceTelegramAlert({
+      accountId: opts.accountId,
+      cameraId: opts.cameraId,
+      type: "VEHICLE",
+      snapshot,
+      detail,
+      at: seenAt,
+    }).catch((err) => console.error("[vehicles] surveillance telegram failed:", err));
+  }
 
   return {
     sightingId: sighting.id,

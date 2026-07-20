@@ -561,5 +561,6 @@ export const surveillanceUpdateSchema = z.object({
   cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
   alertOnPerson: z.boolean().optional(),
   alertOnVehicle: z.boolean().optional(),
+  alertTelegram: z.boolean().optional(),
   cameraIds: z.array(z.coerce.number().int().positive()).optional(),
 });

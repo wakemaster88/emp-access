@@ -31,6 +31,7 @@ function serialize(
     cooldownMinutes: config.cooldownMinutes,
     alertOnPerson: config.alertOnPerson,
     alertOnVehicle: config.alertOnVehicle,
+    alertTelegram: config.alertTelegram,
     cameraIds,
     cameras: config.cameras.map((c) => c.camera),
     armedNow: isSurveillanceArmed(config, now, timezone),
@@ -63,6 +64,7 @@ export async function GET() {
       cooldownMinutes: 5,
       alertOnPerson: true,
       alertOnVehicle: true,
+      alertTelegram: true,
       cameraIds: [] as number[],
       cameras: [],
       armedNow: false,
@@ -123,6 +125,7 @@ export async function PATCH(request: NextRequest) {
       ...(data.cooldownMinutes !== undefined ? { cooldownMinutes: data.cooldownMinutes } : {}),
       ...(data.alertOnPerson !== undefined ? { alertOnPerson: data.alertOnPerson } : {}),
       ...(data.alertOnVehicle !== undefined ? { alertOnVehicle: data.alertOnVehicle } : {}),
+      ...(data.alertTelegram !== undefined ? { alertTelegram: data.alertTelegram } : {}),
     };
 
     const row = existing
