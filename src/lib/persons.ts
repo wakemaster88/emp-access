@@ -190,3 +190,49 @@ export async function processManualPersonSighting(opts: {
 
   return { sightingId: sighting.id, shellyTriggered, shellyOk };
 }
+
+/** Bestehende anonyme/Kamera-Sichtung einer ListedPerson zuordnen. */
+export async function assignPersonToSighting(opts: {
+  accountId: number;
+  sightingId: number;
+  listedPersonId: number;
+}): Promise<{
+  id: number;
+  listedPersonId: number;
+  listType: string;
+  matched: boolean;
+}> {
+  const sighting = await prisma.personSighting.findFirst({
+    where: { id: opts.sightingId, accountId: opts.accountId },
+    select: { id: true },
+  });
+  if (!sighting) throw new Error("Sichtung nicht gefunden");
+
+  const person = await prisma.listedPerson.findFirst({
+    where: { id: opts.listedPersonId, accountId: opts.accountId },
+    select: { id: true, listType: true },
+  });
+  if (!person) throw new Error("Person nicht gefunden");
+
+  const updated = await prisma.personSighting.update({
+    where: { id: sighting.id },
+    data: {
+      listedPersonId: person.id,
+      listType: person.listType,
+      matched: true,
+    },
+    select: {
+      id: true,
+      listedPersonId: true,
+      listType: true,
+      matched: true,
+    },
+  });
+
+  return {
+    id: updated.id,
+    listedPersonId: updated.listedPersonId!,
+    listType: updated.listType!,
+    matched: updated.matched,
+  };
+}

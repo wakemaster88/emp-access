@@ -20,7 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Pencil, Trash2, Loader2, UserRound, History, ShieldAlert, ShieldCheck,
-  Cctv, Play, CheckCircle2, XCircle,
+  Cctv, Play, CheckCircle2, XCircle, Link2, UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -96,6 +96,15 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
   const [sightNotes, setSightNotes] = useState("");
   const [sightBusy, setSightBusy] = useState(false);
   const [triggeringId, setTriggeringId] = useState<number | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignSighting, setAssignSighting] = useState<PersonSightingRow | null>(null);
+  const [assignMode, setAssignMode] = useState<"existing" | "new">("existing");
+  const [assignPersonId, setAssignPersonId] = useState("");
+  const [assignName, setAssignName] = useState("");
+  const [assignListType, setAssignListType] = useState<ListFilter>("WHITELIST");
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [assignError, setAssignError] = useState("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const whitelist = useMemo(() => people.filter((p) => p.listType === "WHITELIST"), [people]);
   const blacklist = useMemo(() => people.filter((p) => p.listType === "BLACKLIST"), [people]);
@@ -208,6 +217,86 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
       refresh();
     } finally {
       setTriggeringId(null);
+    }
+  }
+
+  function openAssign(s: PersonSightingRow) {
+    setAssignSighting(s);
+    setAssignMode(people.length > 0 ? "existing" : "new");
+    setAssignPersonId("");
+    setAssignName("");
+    setAssignListType("WHITELIST");
+    setAssignError("");
+    setAssignOpen(true);
+  }
+
+  async function confirmAssign() {
+    if (!assignSighting) return;
+    setAssignBusy(true);
+    setAssignError("");
+    try {
+      let listedPersonId = Number(assignPersonId);
+
+      if (assignMode === "new") {
+        const name = assignName.trim();
+        if (!name) {
+          setAssignError("Name fehlt");
+          return;
+        }
+        const createRes = await fetch("/api/persons", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            listType: assignListType,
+            cameraId: assignSighting.camera?.id ?? null,
+            trackHistory: true,
+            triggerOnDetection: false,
+          }),
+        });
+        if (!createRes.ok) {
+          const data = await createRes.json().catch(() => ({}));
+          setAssignError(typeof data.error === "string" ? data.error : "Anlegen fehlgeschlagen");
+          return;
+        }
+        const created = await createRes.json();
+        listedPersonId = created.id;
+      } else if (!listedPersonId) {
+        setAssignError("Person wählen");
+        return;
+      }
+
+      const res = await fetch(`/api/person-sightings/${assignSighting.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listedPersonId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setAssignError(typeof data.error === "string" ? data.error : "Zuordnen fehlgeschlagen");
+        return;
+      }
+      setAssignOpen(false);
+      setAssignSighting(null);
+      refresh();
+    } finally {
+      setAssignBusy(false);
+    }
+  }
+
+  async function deleteSighting(s: PersonSightingRow) {
+    if (!confirm("Diese Sichtung wirklich löschen?")) return;
+    setDeletingId(s.id);
+    try {
+      const res = await fetch(`/api/person-sightings/${s.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(typeof data.error === "string" ? data.error : "Löschen fehlgeschlagen");
+        return;
+      }
+      refresh();
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -334,7 +423,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
             </CardHeader>
             <CardContent className="text-sm text-slate-500">
               Bei klarer Personen-/Gesichtserkennung speichert der Hub einen Schnappschuss in der Historie.
-              Namentliche Zuordnung (z. B. bestätigtes Hausverbot) hier manuell.
+              Unbekannte Sichtungen kannst du zuordnen oder als Fehltreffer löschen.
             </CardContent>
           </Card>
 
@@ -351,12 +440,13 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                       <TableHead className="hidden sm:table-cell">Kamera</TableHead>
                       <TableHead>Quelle</TableHead>
                       <TableHead className="hidden md:table-cell">Shelly</TableHead>
+                      <TableHead className="w-[1%] text-right">Aktion</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sightings.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-sm text-slate-400">
+                        <TableCell colSpan={8} className="text-center py-10 text-sm text-slate-400">
                           Noch keine Sichtungen.
                         </TableCell>
                       </TableRow>
@@ -365,10 +455,9 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                       <TableRow key={s.id}>
                         <TableCell>
                           {s.hasSnapshot ? (
-                            <a
-                              href={`/api/person-sightings/${s.id}/snapshot`}
-                              target="_blank"
-                              rel="noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => openAssign(s)}
                               className="block h-12 w-12 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
                             >
                               <img
@@ -376,7 +465,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                                 alt=""
                                 className="h-full w-full object-cover"
                               />
-                            </a>
+                            </button>
                           ) : (
                             <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
                               <UserRound className="h-4 w-4" />
@@ -410,6 +499,33 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                           ) : (
                             <span className="inline-flex items-center gap-1 text-rose-600"><XCircle className="h-3 w-3" /> Fehler</span>
                           )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center gap-1">
+                            {!s.listedPerson && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 gap-1 text-xs"
+                                onClick={() => openAssign(s)}
+                              >
+                                <Link2 className="h-3.5 w-3.5" />
+                                Zuordnen
+                              </Button>
+                            )}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                              disabled={deletingId === s.id}
+                              onClick={() => deleteSighting(s)}
+                              title="Löschen"
+                            >
+                              {deletingId === s.id
+                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                : <Trash2 className="h-4 w-4" />}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -558,6 +674,117 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Person zuordnen</DialogTitle>
+          </DialogHeader>
+          {assignSighting && (
+            <div className="space-y-4">
+              {assignSighting.hasSnapshot && (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
+                  <img
+                    src={`/api/person-sightings/${assignSighting.id}/snapshot`}
+                    alt="Sichtung"
+                    className="max-h-64 w-full object-contain bg-black/5"
+                  />
+                </div>
+              )}
+              <p className="text-sm text-slate-500">
+                {new Date(assignSighting.seenAt).toLocaleString("de-DE")}
+                {assignSighting.camera ? ` · ${assignSighting.camera.name}` : ""}
+              </p>
+
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={assignMode === "existing" ? "default" : "outline"}
+                  className="gap-1.5"
+                  disabled={people.length === 0}
+                  onClick={() => setAssignMode("existing")}
+                >
+                  <Link2 className="h-3.5 w-3.5" /> Bestehende
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={assignMode === "new" ? "default" : "outline"}
+                  className="gap-1.5"
+                  onClick={() => setAssignMode("new")}
+                >
+                  <UserPlus className="h-3.5 w-3.5" /> Neu anlegen
+                </Button>
+              </div>
+
+              {assignMode === "existing" ? (
+                <div className="space-y-1.5">
+                  <Label>Person</Label>
+                  <Select value={assignPersonId} onValueChange={setAssignPersonId}>
+                    <SelectTrigger><SelectValue placeholder="Person wählen" /></SelectTrigger>
+                    <SelectContent>
+                      {people.map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          {p.name} ({p.listType === "BLACKLIST" ? "Black" : "White"})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label>Name <span className="text-rose-500">*</span></Label>
+                    <Input
+                      value={assignName}
+                      onChange={(e) => setAssignName(e.target.value)}
+                      placeholder="z.B. Max Mustermann"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Liste</Label>
+                    <Select value={assignListType} onValueChange={(v) => setAssignListType(v as ListFilter)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="WHITELIST">Whitelist</SelectItem>
+                        <SelectItem value="BLACKLIST">Blacklist</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {assignSighting.camera && (
+                    <p className="text-xs text-slate-500">
+                      Kamera „{assignSighting.camera.name}“ wird der Person zugeordnet.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {assignError && (
+                <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+                  {assignError}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignOpen(false)} disabled={assignBusy}>
+              Abbrechen
+            </Button>
+            <Button
+              onClick={confirmAssign}
+              disabled={
+                assignBusy ||
+                (assignMode === "existing" ? !assignPersonId : !assignName.trim())
+              }
+              className="gap-1.5"
+            >
+              {assignBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {assignMode === "new" ? "Anlegen & zuordnen" : "Zuordnen"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -525,3 +525,7 @@ export const personSightingCreateSchema = z.object({
   notes: z.string().max(500).nullable().optional(),
   triggerShelly: z.boolean().optional(),
 });
+
+export const personSightingAssignSchema = z.object({
+  listedPersonId: z.coerce.number().int().positive(),
+});

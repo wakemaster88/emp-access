@@ -35,6 +35,8 @@ const CONFIG_REFRESH_MS = 60_000;
 const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
+/** Personen-Snap erst nach kurzer Verzoegerung, wenn Erkennung noch aktiv. */
+const PERSON_SNAP_DELAY_MS = 1_500;
 
 function baseUrl(c: CameraConfig): string {
   return `${c.https ? "https" : "http"}://${c.host}:${c.httpPort}`;
@@ -174,12 +176,27 @@ export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number 
 }
 
 /**
- * Bei klarer Personen-/Gesichtserkennung: Schnappschuss unter Personen speichern
- * (Historie + ggf. Shelly fuer Whitelist-/Blacklist-Eintraege).
+ * Bei klarer Personen-/Gesichtserkennung: nach kurzer Verzoegerung pruefen,
+ * ob PERSON noch aktiv ist — sonst kein Upload (weniger leere Frames).
  */
-async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }> {
+async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+
+  await new Promise((r) => setTimeout(r, PERSON_SNAP_DELAY_MS));
+
+  // Nochmals pollen: flüchtige Fehlalarme / Person schon weg -> ueberspringen.
+  try {
+    const states = await pollStates(cam);
+    cam.states.PERSON = states.PERSON ?? false;
+    if (!states.PERSON) {
+      log(`Personen-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
+      return null;
+    }
+  } catch (e) {
+    log(`Personen-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
 
   const buf = await captureSnap(cam);
   const upload = await api(`/api/hub/person-sightings?cameraId=${cameraId}`, {
