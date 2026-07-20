@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { runCameraAutomations } from "@/lib/shelly-automation";
+import { maybeSurveillanceAlert } from "@/lib/surveillance";
 
 const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"];
 const MAX_EVENTS_PER_REQUEST = 100;
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     const camera = await db.camera.findFirst({
       where: { id: cameraId, accountId: account.id },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!camera) continue;
 
@@ -61,6 +62,18 @@ export async function POST(request: NextRequest) {
       runCameraAutomations(account.id, cameraId, type, at).catch((err) => {
         console.error("[camera-events] automation failed:", err);
       });
+
+      if (type === "PERSON" || type === "VEHICLE") {
+        maybeSurveillanceAlert({
+          accountId: account.id,
+          cameraId,
+          type,
+          cameraName: camera.name,
+          at,
+        }).catch((err) => {
+          console.error("[camera-events] surveillance failed:", err);
+        });
+      }
 
       // PERSON-/VEHICLE-Sichtungen inkl. Schnappschuss laufen ueber
       // POST /api/hub/person-sightings bzw. /api/hub/vehicle-sightings.

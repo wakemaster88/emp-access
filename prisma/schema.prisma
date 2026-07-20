@@ -142,6 +142,7 @@ model Account {
   listedPersons   ListedPerson[]
   personSightings PersonSighting[]
   personFaceEmbeddings PersonFaceEmbedding[]
+  surveillanceConfig SurveillanceConfig?
 }
 
 model Admin {
@@ -1381,11 +1382,46 @@ model Camera {
   allowedVehicles AllowedVehicle[]
   listedPersons   ListedPerson[]
   personSightings PersonSighting[]
+  surveillanceCameras SurveillanceCamera[]
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
+}
+
+/// Account-weiter Überwachungsmodus: manuell und/oder per Zeitplan scharf,
+/// Push bei PERSON/VEHICLE auf ausgewählten Kameras.
+model SurveillanceConfig {
+  id              Int      @id @default(autoincrement())
+  accountId       Int      @unique
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Manueller Schalter (AN = scharf, unabhängig vom Zeitplan).
+  manualArmed     Boolean  @default(false)
+  /// Zeitplan aktiv: in Fenster + Wochentag ebenfalls scharf.
+  scheduleEnabled Boolean  @default(false)
+  /// Bitmaske: Bit0=Mo … Bit6=So.
+  daysOfWeek      Int      @default(127)
+  windowStart     String?
+  windowEnd       String?
+  cooldownMinutes Int      @default(5)
+  alertOnPerson   Boolean  @default(true)
+  alertOnVehicle  Boolean  @default(true)
+  /// JSON-Map letzter Pushes: { "10:PERSON": "ISO8601", ... }
+  lastPushByKey   Json?
+  cameras         SurveillanceCamera[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model SurveillanceCamera {
+  configId Int
+  cameraId Int
+  config   SurveillanceConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  camera   Camera             @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+
+  @@id([configId, cameraId])
+  @@index([cameraId])
 }
 
 /// Erlaubtes Fahrzeug (Kennzeichen-Whitelist). Bei Erkennung kann ein

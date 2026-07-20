@@ -546,3 +546,20 @@ export const personSightingCreateSchema = z.object({
 export const personSightingAssignSchema = z.object({
   listedPersonId: z.coerce.number().int().positive(),
 });
+
+const hhmm = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Ungültige Zeit (HH:mm)")
+  .nullable();
+
+export const surveillanceUpdateSchema = z.object({
+  manualArmed: z.boolean().optional(),
+  scheduleEnabled: z.boolean().optional(),
+  daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
+  windowStart: hhmm.optional(),
+  windowEnd: hhmm.optional(),
+  cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
+  alertOnPerson: z.boolean().optional(),
+  alertOnVehicle: z.boolean().optional(),
+  cameraIds: z.array(z.coerce.number().int().positive()).optional(),
+});
