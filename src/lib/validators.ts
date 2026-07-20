@@ -511,6 +511,7 @@ export const listedPersonCreateSchema = z.object({
   cameraId: z.coerce.number().int().positive().nullable().optional(),
   trackHistory: z.boolean().optional(),
   triggerOnDetection: z.boolean().optional(),
+  notifyOnDetection: z.boolean().optional(),
   shellyDeviceId: z.coerce.number().int().positive().nullable().optional(),
   shellyAction: z.enum(["ON", "OFF", "TOGGLE"]).optional(),
   timerSeconds: z.coerce.number().int().min(1).max(3600).nullable().optional(),

@@ -33,6 +33,7 @@ export interface PersonRow {
   cameraId: number | null;
   trackHistory: boolean;
   triggerOnDetection: boolean;
+  notifyOnDetection: boolean;
   shellyDeviceId: number | null;
   shellyAction: string;
   timerSeconds: number | null;
@@ -79,6 +80,7 @@ const EMPTY = {
   cameraId: "",
   trackHistory: true,
   triggerOnDetection: false,
+  notifyOnDetection: false,
   shellyDeviceId: "",
   shellyAction: "ON",
   timerSeconds: "",
@@ -133,6 +135,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
       cameraId: p.cameraId ? String(p.cameraId) : "",
       trackHistory: p.trackHistory,
       triggerOnDetection: p.triggerOnDetection,
+      notifyOnDetection: p.notifyOnDetection,
       shellyDeviceId: p.shellyDeviceId ? String(p.shellyDeviceId) : "",
       shellyAction: p.shellyAction || "ON",
       timerSeconds: p.timerSeconds != null ? String(p.timerSeconds) : "",
@@ -154,6 +157,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
         cameraId: form.cameraId ? Number(form.cameraId) : null,
         trackHistory: form.trackHistory,
         triggerOnDetection: form.triggerOnDetection,
+        notifyOnDetection: form.notifyOnDetection,
         shellyDeviceId: form.shellyDeviceId ? Number(form.shellyDeviceId) : null,
         shellyAction: form.shellyAction,
         timerSeconds: form.timerSeconds ? Number(form.timerSeconds) : null,
@@ -252,9 +256,10 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
           body: JSON.stringify({
             name,
             listType: assignListType,
-            cameraId: assignSighting.camera?.id ?? null,
+            cameraId: null,
             trackHistory: true,
             triggerOnDetection: false,
+            notifyOnDetection: false,
           }),
         });
         if (!createRes.ok) {
@@ -348,14 +353,14 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                             {isBlack ? "Blacklist" : "Whitelist"}
                           </Badge>
                           {!p.isActive && <Badge variant="secondary">Pausiert</Badge>}
-                          {p.camera ? (
-                            <Badge variant="outline" className="text-xs gap-1">
-                              <Cctv className="h-3 w-3" /> {p.camera.name}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-xs">keine Kamera</Badge>
-                          )}
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Cctv className="h-3 w-3" />
+                            {p.camera ? p.camera.name : "Alle Kameras"}
+                          </Badge>
                           {p.trackHistory && <Badge variant="outline" className="text-xs">Historie</Badge>}
+                          {p.notifyOnDetection && (
+                            <Badge variant="outline" className="text-xs">Push</Badge>
+                          )}
                           {p.triggerOnDetection && (
                             <Badge variant="outline" className="text-xs">
                               Auto → {p.shellyDevice?.name ?? "Shelly"}
@@ -643,26 +648,33 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Kamera</Label>
+              <Label>Bevorzugte Kamera</Label>
               <Select value={form.cameraId || "none"} onValueChange={(v) => setForm((f) => ({ ...f, cameraId: v === "none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="Kamera wählen" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Alle Kameras" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Keine (nur manuell)</SelectItem>
+                  <SelectItem value="none">Alle Kameras</SelectItem>
                   {cameras.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
-                Für automatische Historie/Shelly bei Personenerkennung an dieser Kamera.
+                Face-Wiedererkennen läuft immer auf allen Kameras. Optional eine Heim-/Referenzkamera markieren.
               </p>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
               <div>
                 <p className="text-sm font-medium">Historie führen</p>
-                <p className="text-xs text-slate-500">PERSON-Events der Kamera protokollieren</p>
+                <p className="text-xs text-slate-500">Sichtungen dieser Person protokollieren</p>
               </div>
               <Switch checked={form.trackHistory} onCheckedChange={(v) => setForm((f) => ({ ...f, trackHistory: v }))} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <div>
+                <p className="text-sm font-medium">Push bei Erkennung</p>
+                <p className="text-xs text-slate-500">Web-Push an registrierte Geräte bei Face-Match</p>
+              </div>
+              <Switch checked={form.notifyOnDetection} onCheckedChange={(v) => setForm((f) => ({ ...f, notifyOnDetection: v }))} />
             </div>
             <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
               <div>
@@ -839,13 +851,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                       </SelectContent>
                     </Select>
                   </div>
-                  {assignSighting.camera && (
-                    <p className="text-xs text-slate-500">
-                      Kamera „{assignSighting.camera.name}“ wird der Person zugeordnet.
-                    </p>
-                  )}
                   <p className="text-xs text-slate-500">
-                    Zuordnen erzeugt ein Face-Sample fürs lokale Wiedererkennen.
+                    Zuordnen erzeugt ein Face-Sample. Erkennung gilt danach auf allen Kameras.
                   </p>
                 </div>
               )}

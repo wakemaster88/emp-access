@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       cameraId: parsed.data.cameraId ?? null,
       trackHistory: parsed.data.trackHistory ?? true,
       triggerOnDetection: parsed.data.triggerOnDetection ?? false,
+      notifyOnDetection: parsed.data.notifyOnDetection ?? false,
       shellyDeviceId: parsed.data.shellyDeviceId ?? null,
       shellyAction: parsed.data.shellyAction ?? "ON",
       timerSeconds: parsed.data.timerSeconds ?? null,

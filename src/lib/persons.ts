@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { controlShelly } from "@/lib/shelly";
+import { sendPushToAccount } from "@/lib/web-push";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 export const PERSON_LIST_TYPES = ["WHITELIST", "BLACKLIST"] as const;
@@ -120,6 +121,21 @@ export async function processCameraPersonEvent(opts: {
         if (r.shellyTriggered) triggered++;
       }
 
+      if (person.notifyOnDetection) {
+        const cam = await prisma.camera.findFirst({
+          where: { id: opts.cameraId, accountId: opts.accountId },
+          select: { name: true },
+        });
+        const scorePct =
+          opts.matchScore != null ? ` (${Math.round(opts.matchScore * 100)}%)` : "";
+        sendPushToAccount(opts.accountId, {
+          title: `Person erkannt: ${person.name}`,
+          body: `${cam?.name ?? "Kamera"}${scorePct}`,
+          url: "/personen",
+          tag: `person-match-${person.id}`,
+        }).catch((err) => console.error("[persons] push failed:", err));
+      }
+
       await prisma.personSighting.create({
         data: {
           accountId: opts.accountId,
@@ -141,12 +157,11 @@ export async function processCameraPersonEvent(opts: {
     }
   }
 
-  // Unbekannt: Historie mit Snapshot (oder wenn trackHistory an der Kamera).
+  // Unbekannt: Historie mit Snapshot (oder wenn irgendwo trackHistory aktiv).
   const trackers = await prisma.listedPerson.count({
     where: {
       accountId: opts.accountId,
       isActive: true,
-      cameraId: opts.cameraId,
       trackHistory: true,
     },
   });

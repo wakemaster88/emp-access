@@ -1462,13 +1462,15 @@ model ListedPerson {
   listType           String
   isActive           Boolean   @default(true)
   notes              String?
-  /// Kamera, an der Historie/Automation greifen soll.
+  /// Optionale bevorzugte/Heim-Kamera (Face-Match gilt immer account-weit).
   cameraId           Int?
   camera             Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
-  /// PERSON-Ereignisse an der Kamera in die Historie schreiben.
+  /// PERSON-Ereignisse in die Historie schreiben (alle Kameras).
   trackHistory       Boolean   @default(true)
   /// Bei Face-Match dieser Person Shelly ausloesen.
   triggerOnDetection Boolean   @default(false)
+  /// Bei Face-Match Web-Push an Account-Geraete senden.
+  notifyOnDetection  Boolean   @default(false)
   shellyDeviceId     Int?
   shellyDevice       Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
   shellyAction       String    @default("ON")

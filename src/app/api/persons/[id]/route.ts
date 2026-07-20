@@ -49,6 +49,9 @@ export async function PUT(
       ...(parsed.data.triggerOnDetection !== undefined
         ? { triggerOnDetection: parsed.data.triggerOnDetection }
         : {}),
+      ...(parsed.data.notifyOnDetection !== undefined
+        ? { notifyOnDetection: parsed.data.notifyOnDetection }
+        : {}),
       ...(parsed.data.shellyDeviceId !== undefined
         ? { shellyDeviceId: parsed.data.shellyDeviceId }
         : {}),
