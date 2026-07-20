@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { runCameraAutomations } from "@/lib/shelly-automation";
+import { processVehicleSighting } from "@/lib/vehicles";
 
 const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"];
 const MAX_EVENTS_PER_REQUEST = 100;
@@ -61,6 +62,20 @@ export async function POST(request: NextRequest) {
       runCameraAutomations(account.id, cameraId, type, at).catch((err) => {
         console.error("[camera-events] automation failed:", err);
       });
+
+      // Fahrzeug-Historie + Kennzeichen-Whitelist (optional plate im Event).
+      if (type === "VEHICLE") {
+        const plate = typeof e?.plate === "string" ? e.plate : null;
+        processVehicleSighting({
+          accountId: account.id,
+          cameraId,
+          plate,
+          source: plate ? "CAMERA_PLATE" : "CAMERA_VEHICLE",
+          seenAt: at,
+        }).catch((err) => {
+          console.error("[camera-events] vehicle sighting failed:", err);
+        });
+      }
     } else if (phase === "end") {
       const open = await db.cameraEvent.findFirst({
         where: { cameraId, type, endedAt: null, accountId: account.id },

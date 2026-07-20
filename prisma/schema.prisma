@@ -137,6 +137,8 @@ model Account {
   discoveredDevices DiscoveredDevice[]
   cameras         Camera[]
   cameraEvents    CameraEvent[]
+  allowedVehicles AllowedVehicle[]
+  vehicleSightings VehicleSighting[]
 }
 
 model Admin {
@@ -219,6 +221,7 @@ model Device {
   ticketDevices   TicketDevice[]
   /// Optionale Netzwerk-Zuordnung (Switch-Port/VLAN) dieses IoT-Geraets.
   networkClient   NetworkClient?
+  allowedVehicles AllowedVehicle[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -1370,11 +1373,70 @@ model Camera {
   account    Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   events     CameraEvent[]
   automations ShellyAutomation[]
+  vehicleSightings VehicleSighting[]
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
+}
+
+/// Erlaubtes Fahrzeug (Kennzeichen-Whitelist). Bei Erkennung kann ein
+/// Shelly geschaltet werden (z. B. Tor oeffnen).
+model AllowedVehicle {
+  id              Int       @id @default(autoincrement())
+  accountId       Int
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Anzeige-Kennzeichen, z. B. "BOR-AB 123".
+  plate           String
+  /// Normalisiert fuer Abgleich (ohne Leerzeichen/Bindestriche, Grossbuchstaben).
+  plateNormalized String
+  name            String
+  isActive        Boolean   @default(true)
+  notes           String?
+  /// Shelly, der bei Erkennung geschaltet wird.
+  shellyDeviceId  Int?
+  shellyDevice    Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
+  /// ON | OFF | TOGGLE
+  shellyAction    String    @default("ON")
+  /// Optionaler Auto-Off-Timer in Sekunden (sinnvoll fuer Tore/Impulse).
+  timerSeconds    Int?
+  /// Mindestabstand zwischen zwei Ausloesungen (Minuten).
+  cooldownMinutes Int       @default(2)
+  lastTriggeredAt DateTime?
+  sightings       VehicleSighting[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([accountId, plateNormalized])
+  @@index([accountId, isActive])
+  @@index([shellyDeviceId])
+}
+
+/// Historie: wann ein Fahrzeug (ggf. mit Kennzeichen) gesehen wurde.
+model VehicleSighting {
+  id               Int             @id @default(autoincrement())
+  accountId        Int
+  account          Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  cameraId         Int?
+  camera           Camera?         @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  /// Rohes Kennzeichen falls bekannt.
+  plate            String?
+  plateNormalized  String?
+  allowedVehicleId Int?
+  allowedVehicle   AllowedVehicle? @relation(fields: [allowedVehicleId], references: [id], onDelete: SetNull)
+  /// CAMERA_VEHICLE | CAMERA_PLATE | MANUAL
+  source           String          @default("CAMERA_VEHICLE")
+  matched          Boolean         @default(false)
+  shellyTriggered  Boolean         @default(false)
+  shellyOk         Boolean?
+  seenAt           DateTime        @default(now())
+  createdAt        DateTime        @default(now())
+
+  @@index([accountId, seenAt])
+  @@index([cameraId, seenAt])
+  @@index([plateNormalized])
+  @@index([allowedVehicleId])
 }
 
 /// Bewegungs-/KI-Ereignis einer Kamera, vom Hub per Polling gemeldet.

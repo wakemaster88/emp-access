@@ -478,3 +478,24 @@ export const shellyAutomationUpdateSchema = z.object({
   windowEnd: z.string().regex(hhmmRegex).nullable().optional(),
   cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
 });
+
+// ─── Fahrzeuge ───────────────────────────────────────────────────────────────
+
+export const allowedVehicleCreateSchema = z.object({
+  name: z.string().min(1).max(80),
+  plate: z.string().min(2).max(20),
+  isActive: z.boolean().optional(),
+  notes: z.string().max(500).nullable().optional(),
+  shellyDeviceId: z.coerce.number().int().positive().nullable().optional(),
+  shellyAction: z.enum(["ON", "OFF", "TOGGLE"]).optional(),
+  timerSeconds: z.coerce.number().int().min(1).max(3600).nullable().optional(),
+  cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
+});
+
+export const allowedVehicleUpdateSchema = allowedVehicleCreateSchema.partial();
+
+export const vehicleSightingCreateSchema = z.object({
+  plate: z.string().min(2).max(20),
+  cameraId: z.coerce.number().int().positive().nullable().optional(),
+  seenAt: z.string().datetime().optional(),
+});

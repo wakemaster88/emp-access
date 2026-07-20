@@ -91,6 +91,30 @@ async function ensureLogin(cam: CameraRuntime): Promise<void> {
  * Alarm-Zustaende abfragen. GetAiState liefert je nach Modell people/vehicle/
  * dog_cat; GetMdState die klassische Bewegungserkennung.
  */
+/**
+ * Versucht ein Kennzeichen aus der Reolink-AI zu lesen. Viele Modelle liefern
+ * nur die Klasse "vehicle" ohne Plate – dann bleibt der Rueckgabewert null.
+ */
+async function tryReadPlate(cam: CameraRuntime): Promise<string | null> {
+  try {
+    await ensureLogin(cam);
+    const ai = await cgi(cam, "GetAiState", { channel: cam.config.channel });
+    const candidates: unknown[] = [
+      ai.plate_num,
+      ai.plate,
+      ai.license_plate,
+      (ai.vehicle as { plate?: string } | undefined)?.plate,
+      (ai.vehicle as { plate_num?: string } | undefined)?.plate_num,
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.trim().length >= 2) return c.trim().toUpperCase();
+    }
+  } catch {
+    // Kein LPR / aelteres Modell.
+  }
+  return null;
+}
+
 async function pollStates(cam: CameraRuntime): Promise<Record<string, boolean>> {
   await ensureLogin(cam);
   const channel = cam.config.channel;
@@ -187,7 +211,13 @@ export async function pollCameras(): Promise<void> {
       return;
     }
 
-    const events: { cameraId: number; type: string; phase: "start" | "end"; at: string }[] = [];
+    const events: {
+      cameraId: number;
+      type: string;
+      phase: "start" | "end";
+      at: string;
+      plate?: string;
+    }[] = [];
     const seen: number[] = [];
     const now = new Date().toISOString();
     const snapshotJobs: number[] = [];
@@ -201,7 +231,18 @@ export async function pollCameras(): Promise<void> {
         for (const [type, active] of Object.entries(states)) {
           const was = cam.states[type] ?? false;
           if (active && !was) {
-            events.push({ cameraId: cam.config.id, type, phase: "start", at: now });
+            const event: (typeof events)[number] = {
+              cameraId: cam.config.id,
+              type,
+              phase: "start",
+              at: now,
+            };
+            // Kennzeichen mitliefern, falls die Kamera LPR/AI liefert.
+            if (type === "VEHICLE") {
+              const plate = await tryReadPlate(cam);
+              if (plate) event.plate = plate;
+            }
+            events.push(event);
             if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
               snapshotJobs.push(cam.config.id);
             }
@@ -226,7 +267,8 @@ export async function pollCameras(): Promise<void> {
       if (!res.ok) log(`Kamera-Event-Upload fehlgeschlagen: HTTP ${res.status}`);
       for (const e of events) {
         const cam = cameras.get(e.cameraId);
-        log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
+        const plateInfo = e.plate ? ` [${e.plate}]` : "";
+        log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}${plateInfo}`);
       }
     }
 
