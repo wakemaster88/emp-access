@@ -389,6 +389,3 @@ export const CAMERA_POLL_INTERVAL_MS = (() => {
   const n = Number(process.env.HUB_CAMERA_POLL_INTERVAL);
   return (Number.isFinite(n) && n >= 2 ? n : 5) * 1000;
 })();
-
-// CONFIG erweitern waere ein Zirkel-Import - Modulliste hier ergaenzen.
-if (!CONFIG.modules.includes("cameras")) CONFIG.modules.push("cameras");
