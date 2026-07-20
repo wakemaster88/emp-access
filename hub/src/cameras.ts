@@ -226,9 +226,16 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
   const upload = await api(`/api/hub/person-sightings?${qs}`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
-    body: buf,
+    body: new Uint8Array(buf),
+    signal: AbortSignal.timeout(60_000),
   });
-  if (!upload.ok) throw new Error(`Personen-Snapshot fehlgeschlagen: HTTP ${upload.status}`);
+  if (!upload.ok) {
+    const errText = await upload.text().catch(() => "");
+    throw new Error(
+      `Personen-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
+    );
+  }
+  log(`Personen-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
   cam.lastSnapshotAt = Date.now();
   return { bytes: buf.length };
 }
@@ -281,9 +288,16 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
-    body: buf,
+    body: new Uint8Array(buf),
+    signal: AbortSignal.timeout(60_000),
   });
-  if (!upload.ok) throw new Error(`Fahrzeug-Snapshot fehlgeschlagen: HTTP ${upload.status}`);
+  if (!upload.ok) {
+    const errText = await upload.text().catch(() => "");
+    throw new Error(
+      `Fahrzeug-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
+    );
+  }
+  log(`Fahrzeug-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
   cam.lastSnapshotAt = Date.now();
   return { bytes: buf.length };
 }

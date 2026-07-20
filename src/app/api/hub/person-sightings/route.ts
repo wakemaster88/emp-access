@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { processCameraPersonEvent } from "@/lib/persons";
 
-const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
+const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
 /**
  * POST (Hub, Token-Auth): Schnappschuss bei klarer Gesichtserkennung.

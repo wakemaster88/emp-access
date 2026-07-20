@@ -125,15 +125,20 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
     const res = await fetch(`${FACE_URL}/embed`, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
-      body: jpeg,
+      body: new Uint8Array(jpeg),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      log(`Face-Embed HTTP ${res.status}: ${errText.slice(0, 160) || "ohne Details"}`);
+      return null;
+    }
     const data = (await res.json()) as {
       ok?: boolean;
       model?: string;
       faces?: { embedding: number[]; det_score: number; bbox: number[]; size?: number }[];
       rejected?: { det_score: number; size: number; need: number }[];
+      image?: { w?: number; h?: number; min_side?: number };
     };
     const best = data.faces?.[0];
     if (!best?.embedding?.length) {
@@ -141,6 +146,12 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
       if (r) {
         log(
           `Face verworfen: det=${r.det_score.toFixed(2)} size=${r.size}px (min ${r.need}px)`
+        );
+      } else {
+        const img = data.image;
+        log(
+          `Face: keine Detektion` +
+            (img?.w ? ` (${img.w}x${img.h}, min ${img.min_side ?? "?"}px)` : "")
         );
       }
       return null;
