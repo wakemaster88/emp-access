@@ -15,6 +15,19 @@ export default async function PersonenPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
+  const sightingSelect = {
+    id: true,
+    source: true,
+    listType: true,
+    matched: true,
+    shellyTriggered: true,
+    shellyOk: true,
+    notes: true,
+    seenAt: true,
+    camera: { select: { id: true, name: true } },
+    listedPerson: { select: { id: true, name: true, listType: true } },
+  } as const;
+
   const [people, sightings, cameras, shellyDevices] = await Promise.all([
     db.listedPerson.findMany({
       where: { accountId },
@@ -22,23 +35,17 @@ export default async function PersonenPage() {
         camera: { select: { id: true, name: true } },
         shellyDevice: { select: { id: true, name: true } },
         _count: { select: { sightings: true } },
+        sightings: {
+          select: sightingSelect,
+          orderBy: { seenAt: "desc" },
+          take: 8,
+        },
       },
       orderBy: [{ isActive: "desc" }, { listType: "asc" }, { name: "asc" }],
     }),
     db.personSighting.findMany({
       where: { accountId },
-      select: {
-        id: true,
-        source: true,
-        listType: true,
-        matched: true,
-        shellyTriggered: true,
-        shellyOk: true,
-        notes: true,
-        seenAt: true,
-        camera: { select: { id: true, name: true } },
-        listedPerson: { select: { id: true, name: true, listType: true } },
-      },
+      select: sightingSelect,
       orderBy: { seenAt: "desc" },
       take: 100,
     }),
@@ -54,15 +61,29 @@ export default async function PersonenPage() {
     }),
   ]);
 
+  const allSightingIds = [
+    ...sightings.map((s) => s.id),
+    ...people.flatMap((p) => p.sightings.map((s) => s.id)),
+  ];
+  const uniqueIds = [...new Set(allSightingIds)];
+
   const snapIds = new Set<number>();
-  if (sightings.length > 0) {
+  if (uniqueIds.length > 0) {
     const rows = await prisma.$queryRaw<{ id: number }[]>`
       SELECT id FROM "PersonSighting"
       WHERE "accountId" = ${accountId}
         AND snapshot IS NOT NULL
-        AND id IN (${Prisma.join(sightings.map((s) => s.id))})
+        AND id IN (${Prisma.join(uniqueIds)})
     `;
     for (const r of rows) snapIds.add(r.id);
+  }
+
+  function mapSighting(s: (typeof sightings)[number]) {
+    return {
+      ...s,
+      seenAt: s.seenAt.toISOString(),
+      hasSnapshot: snapIds.has(s.id),
+    };
   }
 
   return (
@@ -70,16 +91,16 @@ export default async function PersonenPage() {
       <Header title="Personen" accountName={session.user.accountName} />
       <div className="p-4 sm:p-6">
         <PersonsClient
-          people={people.map((p) => ({
-            ...p,
-            listType: p.listType as "WHITELIST" | "BLACKLIST",
-            lastTriggeredAt: p.lastTriggeredAt?.toISOString() ?? null,
-          }))}
-          sightings={sightings.map((s) => ({
-            ...s,
-            seenAt: s.seenAt.toISOString(),
-            hasSnapshot: snapIds.has(s.id),
-          }))}
+          people={people.map((p) => {
+            const { sightings: recentSightings, ...rest } = p;
+            return {
+              ...rest,
+              listType: p.listType as "WHITELIST" | "BLACKLIST",
+              lastTriggeredAt: p.lastTriggeredAt?.toISOString() ?? null,
+              recentSightings: recentSightings.map(mapSighting),
+            };
+          })}
+          sightings={sightings.map(mapSighting)}
           cameras={cameras}
           shellyDevices={shellyDevices}
         />

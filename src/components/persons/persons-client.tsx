@@ -41,6 +41,7 @@ export interface PersonRow {
   camera: { id: number; name: string } | null;
   shellyDevice: { id: number; name: string } | null;
   _count: { sightings: number };
+  recentSightings: PersonSightingRow[];
 }
 
 export interface PersonSightingRow {
@@ -327,63 +328,129 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
           </Card>
         ) : (
           <div className="grid gap-3">
-            {items.map((p) => (
-              <Card key={p.id} className={cn("border-slate-200 dark:border-slate-800", !p.isActive && "opacity-60")}>
-                <CardContent className="p-4 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold">{p.name}</h3>
-                      <Badge className={cn(
-                        "text-xs",
-                        isBlack
-                          ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                      )}>
-                        {isBlack ? "Blacklist" : "Whitelist"}
-                      </Badge>
-                      {!p.isActive && <Badge variant="secondary">Pausiert</Badge>}
-                      {p.camera ? (
-                        <Badge variant="outline" className="text-xs gap-1">
-                          <Cctv className="h-3 w-3" /> {p.camera.name}
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-xs">keine Kamera</Badge>
-                      )}
-                      {p.trackHistory && <Badge variant="outline" className="text-xs">Historie</Badge>}
-                      {p.triggerOnDetection && (
-                        <Badge variant="outline" className="text-xs">
-                          Auto → {p.shellyDevice?.name ?? "Shelly"}
-                        </Badge>
-                      )}
+            {items.map((p) => {
+              const personSightings = p.recentSightings ?? [];
+              return (
+                <Card key={p.id} className={cn("border-slate-200 dark:border-slate-800", !p.isActive && "opacity-60")}>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold">{p.name}</h3>
+                          <Badge className={cn(
+                            "text-xs",
+                            isBlack
+                              ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          )}>
+                            {isBlack ? "Blacklist" : "Whitelist"}
+                          </Badge>
+                          {!p.isActive && <Badge variant="secondary">Pausiert</Badge>}
+                          {p.camera ? (
+                            <Badge variant="outline" className="text-xs gap-1">
+                              <Cctv className="h-3 w-3" /> {p.camera.name}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">keine Kamera</Badge>
+                          )}
+                          {p.trackHistory && <Badge variant="outline" className="text-xs">Historie</Badge>}
+                          {p.triggerOnDetection && (
+                            <Badge variant="outline" className="text-xs">
+                              Auto → {p.shellyDevice?.name ?? "Shelly"}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {p._count.sightings} Sichtung{p._count.sightings !== 1 ? "en" : ""}
+                          {p.notes ? <> · {p.notes}</> : null}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1"
+                          title="Manuell melden / Shelly testen"
+                          onClick={() => quickTrigger(p)}
+                          disabled={triggeringId === p.id}
+                        >
+                          {triggeringId === p.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Play className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => openEdit(p)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 px-2 text-rose-600" onClick={() => remove(p)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {p._count.sightings} Sichtung{p._count.sightings !== 1 ? "en" : ""}
-                      {p.notes ? <> · {p.notes}</> : null}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1"
-                      title="Manuell melden / Shelly testen"
-                      onClick={() => quickTrigger(p)}
-                      disabled={triggeringId === p.id}
-                    >
-                      {triggeringId === p.id
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <Play className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => openEdit(p)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-8 px-2 text-rose-600" onClick={() => remove(p)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+
+                    {personSightings.length > 0 ? (
+                      <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                        <p className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1.5">
+                          <History className="h-3.5 w-3.5" /> Letzte Sichtungen
+                        </p>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {personSightings.map((s) => (
+                            <div
+                              key={s.id}
+                              className="shrink-0 w-28 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-50 dark:bg-slate-900"
+                            >
+                              {s.hasSnapshot ? (
+                                <a
+                                  href={`/api/person-sightings/${s.id}/snapshot`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block aspect-square bg-slate-100 dark:bg-slate-950"
+                                >
+                                  <img
+                                    src={`/api/person-sightings/${s.id}/snapshot`}
+                                    alt=""
+                                    className="h-full w-full object-cover"
+                                  />
+                                </a>
+                              ) : (
+                                <div className="aspect-square flex items-center justify-center text-slate-300">
+                                  <UserRound className="h-5 w-5" />
+                                </div>
+                              )}
+                              <div className="px-1.5 py-1 space-y-0.5">
+                                <p className="text-[10px] font-mono text-slate-500 leading-tight">
+                                  {new Date(s.seenAt).toLocaleString("de-DE", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">
+                                  {s.camera?.name ?? (s.source === "MANUAL" ? "Manuell" : "–")}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {p._count.sightings > personSightings.length && (
+                          <button
+                            type="button"
+                            className="mt-2 text-xs text-indigo-600 hover:underline"
+                            onClick={() => setTab("history")}
+                          >
+                            Alle {p._count.sightings} in Historie anzeigen
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                        <p className="text-xs text-slate-400">Noch keine zugeordneten Sichtungen.</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
