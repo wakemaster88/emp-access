@@ -44,7 +44,7 @@ export const CONFIG = {
   updateIntervalMs: intEnv("HUB_UPDATE_INTERVAL", 300) * 1000,
   dashboardPort: intEnv("HUB_DASHBOARD_PORT", 8787),
   scanIntervalMs: intEnv("HUB_SCAN_INTERVAL", 300) * 1000,
-  modules: ["tasks", "ping", "network-scan", "wake-on-lan", "auto-scan", "cameras", "face"],
+  modules: ["tasks", "ping", "network-scan", "wake-on-lan", "auto-scan", "cameras", "face", "vision"],
 };
 
 export async function api(pathname: string, init?: RequestInit): Promise<Response> {

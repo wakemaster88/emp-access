@@ -7,6 +7,7 @@
 import { api, log } from "./config.js";
 import { STATE } from "./state.js";
 import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
+import { jpegContainsVehicle } from "./vision.js";
 
 export interface CameraConfig {
   id: number;
@@ -233,7 +234,8 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 }
 
 /**
- * Fahrzeug-Erkennung: Delay, Re-Check, Snap, optionales Kennzeichen, Upload.
+ * Fahrzeug-Erkennung: Delay, Re-Check, Snap, Vision-Filter (kein leeres Bild),
+ * optionales Kennzeichen, Upload.
  */
 async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
@@ -254,13 +256,26 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   }
 
   const buf = await captureSnap(cam);
+
+  // Reolink-KI löst an Weitwinkel oft falsch aus (Aqua-Park o.ä.) – nur hochladen,
+  // wenn lokal ein Fahrzeug im Bild bestätigt wird (analog: kein Gesicht → Skip).
+  const hasVehicle = await jpegContainsVehicle(buf);
+  if (hasVehicle !== true) {
+    log(
+      `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (${
+        hasVehicle === false ? "kein Fahrzeug im Bild" : "Vision-Check nicht verfügbar"
+      })`
+    );
+    return null;
+  }
+
   const plate = await tryReadPlate(cam);
   const qs = new URLSearchParams({ cameraId: String(cameraId) });
   if (plate) {
     qs.set("plate", plate);
-    log(`Fahrzeug-Snapshot ${cam.config.name}: Kennzeichen ${plate}`);
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Fahrzeug bestätigt, Kennzeichen ${plate}`);
   } else {
-    log(`Fahrzeug-Snapshot ${cam.config.name}: kein Kennzeichen – Historie für manuelles Mapping`);
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Fahrzeug bestätigt, kein Kennzeichen – manuelles Mapping`);
   }
 
   const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
