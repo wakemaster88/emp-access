@@ -12,6 +12,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
@@ -76,13 +79,20 @@ function duration(startIso: string, endIso: string | null): string {
   return `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
+export interface NetworkCameraSuggestion {
+  id: number;
+  name: string;
+  ipAddress: string;
+}
+
 interface CamerasViewProps {
   cameras: CameraRow[];
   events: CameraEventRow[];
   hubOnline: boolean;
+  networkCameras: NetworkCameraSuggestion[];
 }
 
-export function CamerasView({ cameras, events, hubOnline }: CamerasViewProps) {
+export function CamerasView({ cameras, events, hubOnline, networkCameras }: CamerasViewProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CameraRow | null>(null);
@@ -94,6 +104,17 @@ export function CamerasView({ cameras, events, hubOnline }: CamerasViewProps) {
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((p) => ({ ...p, [key]: value }));
+  }
+
+  // Vorschlaege aus dem Netzwerk-Bereich: nur Kameras, deren IP noch nicht
+  // als Kamera-Host erfasst ist.
+  const usedHosts = new Set(cameras.map((c) => c.host));
+  const suggestions = networkCameras.filter((n) => !usedHosts.has(n.ipAddress));
+
+  function applySuggestion(idStr: string) {
+    const s = suggestions.find((n) => String(n.id) === idStr);
+    if (!s) return;
+    setForm((p) => ({ ...p, name: s.name, host: s.ipAddress }));
   }
 
   function openAdd() {
@@ -362,6 +383,26 @@ export function CamerasView({ cameras, events, hubOnline }: CamerasViewProps) {
             <DialogTitle>{editing ? "Kamera bearbeiten" : "Neue Kamera"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {!editing && suggestions.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 p-3">
+                <Label>Aus dem Netzwerk übernehmen</Label>
+                <Select onValueChange={applySuggestion}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Im Netzwerk erfasste Kamera wählen …" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suggestions.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name} ({s.ipAddress})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  Füllt Name und IP-Adresse automatisch aus - nur noch Zugangsdaten ergänzen.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
                 <Label>Name <span className="text-rose-500">*</span></Label>

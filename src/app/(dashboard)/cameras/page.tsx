@@ -12,7 +12,7 @@ export default async function CamerasPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [cameras, events, hubAgents] = await Promise.all([
+  const [cameras, events, hubAgents, networkCameras] = await Promise.all([
     db.camera.findMany({
       where: { accountId },
       select: {
@@ -40,6 +40,13 @@ export default async function CamerasPage() {
       where: { accountId },
       select: { name: true, lastSeenAt: true },
     }),
+    // Im Netzwerk-Bereich erfasste Kameras als Vorschlaege fuer den
+    // "Neue Kamera"-Dialog (Name + IP vorbefuellen).
+    db.networkClient.findMany({
+      where: { accountId, type: "CAMERA", ipAddress: { not: null } },
+      select: { id: true, name: true, ipAddress: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   const fiveMinAgo = new Date();
@@ -64,6 +71,11 @@ export default async function CamerasPage() {
             camera: e.camera,
           }))}
           hubOnline={hubOnline}
+          networkCameras={networkCameras.map((n) => ({
+            id: n.id,
+            name: n.name,
+            ipAddress: n.ipAddress!,
+          }))}
         />
       </div>
     </>
