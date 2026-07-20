@@ -24,7 +24,6 @@ import {
   ChevronRight,
   UserRound,
   Car,
-  Activity,
   ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -380,8 +379,8 @@ export function SurveillanceClient({ initial, cameras }: Props) {
           </div>
           {report && (
             <p className="text-xs text-slate-500 mt-1">
-              Fenster {report.windowStart}–{report.windowEnd} · Sichtungen und Snapshots der
-              ausgewählten Kameras
+              Fenster {report.windowStart}–{report.windowEnd} · nur klare
+              Personen-/Fahrzeug-Erkennungen mit Snapshot
             </p>
           )}
         </CardHeader>
@@ -397,16 +396,14 @@ export function SurveillanceClient({ initial, cameras }: Props) {
           )}
           {!reportLoading && report && (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
                   <div className="flex items-center gap-1.5 text-xs text-slate-500">
                     <UserRound className="h-3.5 w-3.5" />
                     Personen
                   </div>
                   <p className="text-lg font-semibold tabular-nums">{report.summary.persons}</p>
-                  <p className="text-[11px] text-slate-400">
-                    {report.summary.personSnapshots} mit Foto
-                  </p>
+                  <p className="text-[11px] text-slate-400">mit Snapshot</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
                   <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -414,24 +411,12 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     Fahrzeuge
                   </div>
                   <p className="text-lg font-semibold tabular-nums">{report.summary.vehicles}</p>
-                  <p className="text-[11px] text-slate-400">
-                    {report.summary.vehicleSnapshots} mit Foto
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <Activity className="h-3.5 w-3.5" />
-                    Events
-                  </div>
-                  <p className="text-lg font-semibold tabular-nums">{report.summary.events}</p>
-                  <p className="text-[11px] text-slate-400">
-                    {report.summary.byType.MOTION ?? 0} Bewegung
-                  </p>
+                  <p className="text-[11px] text-slate-400">mit Snapshot</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
                   <div className="flex items-center gap-1.5 text-xs text-slate-500">
                     <ImageIcon className="h-3.5 w-3.5" />
-                    Snapshots
+                    Auffälligkeiten
                   </div>
                   <p className="text-lg font-semibold tabular-nums">
                     {report.summary.personSnapshots + report.summary.vehicleSnapshots}
@@ -442,7 +427,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
 
               {report.timeline.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-8">
-                  In diesem Zeitraum nichts erkannt.
+                  Keine klaren Personen-/Fahrzeug-Erkennungen in diesem Zeitraum.
                 </p>
               ) : (
                 <ul className="divide-y divide-slate-100 dark:divide-slate-800 rounded-lg border border-slate-200 dark:border-slate-800">
@@ -450,28 +435,22 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     if (item.kind === "PERSON") {
                       return (
                         <li key={`p-${item.id}`} className="flex gap-3 p-3 items-start">
-                          {item.snapshotUrl ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPreview({
-                                  url: item.snapshotUrl!,
-                                  title: item.listedPerson?.name ?? "Person",
-                                })
-                              }
-                              className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
-                            >
-                              <img
-                                src={item.snapshotUrl}
-                                alt=""
-                                className="h-full w-full object-cover"
-                              />
-                            </button>
-                          ) : (
-                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
-                              <UserRound className="h-5 w-5" />
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreview({
+                                url: item.snapshotUrl!,
+                                title: item.listedPerson?.name ?? "Person",
+                              })
+                            }
+                            className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+                          >
+                            <img
+                              src={item.snapshotUrl!}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          </button>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <Badge variant="outline" className="text-[10px]">
@@ -504,81 +483,53 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                         </li>
                       );
                     }
-                    if (item.kind === "VEHICLE") {
-                      return (
-                        <li key={`v-${item.id}`} className="flex gap-3 p-3 items-start">
-                          {item.snapshotUrl ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPreview({
-                                  url: item.snapshotUrl!,
-                                  title:
-                                    item.allowedVehicle?.name ??
-                                    item.plate ??
-                                    "Fahrzeug",
-                                })
-                              }
-                              className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
-                            >
-                              <img
-                                src={item.snapshotUrl}
-                                alt=""
-                                className="h-full w-full object-cover"
-                              />
-                            </button>
-                          ) : (
-                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
-                              <Car className="h-5 w-5" />
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className="text-[10px]">
-                                Fahrzeug
-                              </Badge>
-                              <span className="font-mono text-xs text-slate-500">
-                                {formatTime(item.seenAt)}
-                              </span>
-                              {item.matched && (
-                                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
-                                  erlaubt
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm font-medium text-slate-900 dark:text-white mt-0.5 truncate">
-                              {item.allowedVehicle?.name ??
-                                item.plate ??
-                                "Unbekanntes Fahrzeug"}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {item.camera?.name ?? "Kamera"}
-                              {item.plate && item.allowedVehicle
-                                ? ` · ${item.plate}`
-                                : ""}
-                            </p>
-                          </div>
-                        </li>
-                      );
-                    }
+                    if (item.kind !== "VEHICLE") return null;
                     return (
-                      <li key={`e-${item.id}`} className="flex gap-3 p-3 items-start">
-                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
-                          <Activity className="h-5 w-5" />
-                        </div>
+                      <li key={`v-${item.id}`} className="flex gap-3 p-3 items-start">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreview({
+                              url: item.snapshotUrl!,
+                              title:
+                                item.allowedVehicle?.name ??
+                                item.plate ??
+                                "Fahrzeug",
+                            })
+                          }
+                          className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+                        >
+                          <img
+                            src={item.snapshotUrl!}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="secondary" className="text-[10px]">
-                              Bewegung
+                            <Badge variant="outline" className="text-[10px]">
+                              Fahrzeug
                             </Badge>
                             <span className="font-mono text-xs text-slate-500">
-                              {formatTime(item.startedAt)}
+                              {formatTime(item.seenAt)}
                             </span>
+                            {item.matched && (
+                              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
+                                erlaubt
+                              </Badge>
+                            )}
                           </div>
-                          <p className="text-sm font-medium text-slate-900 dark:text-white mt-0.5">
-                            {item.camera.name}
+                          <p className="text-sm font-medium text-slate-900 dark:text-white mt-0.5 truncate">
+                            {item.allowedVehicle?.name ??
+                              item.plate ??
+                              "Unbekanntes Fahrzeug"}
                           </p>
-                          <p className="text-xs text-slate-500">ohne Personen-/Fahrzeug-Snapshot</p>
+                          <p className="text-xs text-slate-500">
+                            {item.camera?.name ?? "Kamera"}
+                            {item.plate && item.allowedVehicle
+                              ? ` · ${item.plate}`
+                              : ""}
+                          </p>
                         </div>
                       </li>
                     );

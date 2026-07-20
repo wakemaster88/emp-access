@@ -71,7 +71,7 @@ export interface SurveillanceReport {
   persons: ReportPersonSighting[];
   vehicles: ReportVehicleSighting[];
   events: ReportCameraEvent[];
-  /** Chronologisch (neueste zuerst), Sightings + relevante Events. */
+  /** Chronologisch (neueste zuerst): nur Sightings mit Snapshot. */
   timeline: ReportTimelineItem[];
 }
 
@@ -346,7 +346,9 @@ export async function buildSurveillanceReport(opts: {
   const cameraFilter =
     cameraIds.length > 0 ? { cameraId: { in: cameraIds } } : {};
 
-  const [personRows, vehicleRows, eventRows] = await Promise.all([
+  // Nur klare Hub-Auffälligkeiten: Personen-/Fahrzeug-Sightings mit Snapshot.
+  // Reine Bewegung (MOTION) ohne Bestätigung bleibt draußen.
+  const [personRows, vehicleRows] = await Promise.all([
     prisma.personSighting.findMany({
       where: {
         accountId: opts.accountId,
@@ -373,19 +375,6 @@ export async function buildSurveillanceReport(opts: {
       orderBy: { seenAt: "desc" },
       take: 500,
     }),
-    prisma.cameraEvent.findMany({
-      where: {
-        accountId: opts.accountId,
-        startedAt: { gte: period.start, lt: period.end },
-        type: { in: ["PERSON", "VEHICLE", "MOTION"] },
-        ...(cameraIds.length > 0 ? { cameraId: { in: cameraIds } } : {}),
-      },
-      include: {
-        camera: { select: { id: true, name: true } },
-      },
-      orderBy: { startedAt: "desc" },
-      take: 500,
-    }),
   ]);
 
   const [personSnapIds, vehicleSnapIds] = await Promise.all([
@@ -401,61 +390,41 @@ export async function buildSurveillanceReport(opts: {
     ),
   ]);
 
-  const persons: ReportPersonSighting[] = personRows.map((p) => {
-    const hasSnapshot = personSnapIds.has(p.id);
-    return {
+  const persons: ReportPersonSighting[] = personRows
+    .filter((p) => personSnapIds.has(p.id))
+    .map((p) => ({
       id: p.id,
       kind: "PERSON" as const,
       seenAt: p.seenAt.toISOString(),
-      hasSnapshot,
+      hasSnapshot: true,
       matched: p.matched,
       listType: p.listType,
       matchScore: p.matchScore,
       camera: p.camera,
       listedPerson: p.listedPerson,
-      snapshotUrl: hasSnapshot ? `/api/person-sightings/${p.id}/snapshot` : null,
-    };
-  });
+      snapshotUrl: `/api/person-sightings/${p.id}/snapshot`,
+    }));
 
-  const vehicles: ReportVehicleSighting[] = vehicleRows.map((v) => {
-    const hasSnapshot = vehicleSnapIds.has(v.id);
-    return {
+  const vehicles: ReportVehicleSighting[] = vehicleRows
+    .filter((v) => vehicleSnapIds.has(v.id))
+    .map((v) => ({
       id: v.id,
       kind: "VEHICLE" as const,
       seenAt: v.seenAt.toISOString(),
-      hasSnapshot,
+      hasSnapshot: true,
       matched: v.matched,
       plate: v.plate,
       camera: v.camera,
       allowedVehicle: v.allowedVehicle,
-      snapshotUrl: hasSnapshot ? `/api/vehicle-sightings/${v.id}/snapshot` : null,
-    };
-  });
+      snapshotUrl: `/api/vehicle-sightings/${v.id}/snapshot`,
+    }));
 
-  const events: ReportCameraEvent[] = eventRows.map((e) => ({
-    id: e.id,
-    kind: "EVENT" as const,
-    type: e.type,
-    startedAt: e.startedAt.toISOString(),
-    endedAt: e.endedAt?.toISOString() ?? null,
-    camera: e.camera,
-  }));
-
+  const events: ReportCameraEvent[] = [];
   const byType: Record<string, number> = {};
-  for (const e of events) {
-    byType[e.type] = (byType[e.type] ?? 0) + 1;
-  }
 
-  // Timeline: Sightings immer; Events nur MOTION (PERSON/VEHICLE sind durch Sightings abgedeckt).
-  const timeline: ReportTimelineItem[] = [
-    ...persons,
-    ...vehicles,
-    ...events.filter((e) => e.type === "MOTION"),
-  ].sort((a, b) => {
-    const ta = a.kind === "EVENT" ? a.startedAt : a.seenAt;
-    const tb = b.kind === "EVENT" ? b.startedAt : b.seenAt;
-    return tb.localeCompare(ta);
-  });
+  const timeline: ReportTimelineItem[] = [...persons, ...vehicles].sort((a, b) =>
+    b.seenAt.localeCompare(a.seenAt)
+  );
 
   // Sicherstellen, dass die gewählte Periode in der Liste steht.
   const periodList = [...periods];
