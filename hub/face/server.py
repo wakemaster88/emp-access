@@ -17,13 +17,13 @@ PORT = int(os.environ.get("FACE_PORT", "8790"))
 HOST = os.environ.get("FACE_HOST", "127.0.0.1")
 MODEL_ROOT = Path(os.environ.get("FACE_MODEL_ROOT", Path(__file__).resolve().parent / ".models"))
 # Filter: zu streng blockiert echte Gesichter auf Weitwinkel; zu locker → leere Snaps.
-MIN_DET_SCORE = float(os.environ.get("FACE_MIN_DET_SCORE", "0.55"))
-MIN_FACE_SIZE = int(os.environ.get("FACE_MIN_SIZE", "64"))
+MIN_DET_SCORE = float(os.environ.get("FACE_MIN_DET_SCORE", "0.50"))
+MIN_FACE_SIZE = int(os.environ.get("FACE_MIN_SIZE", "48"))
 # Anteil an der (ggf. skalierten) Bildkante – nicht an 4K-Vollauflösung.
-MIN_FACE_FRAC = float(os.environ.get("FACE_MIN_FRAC", "0.04"))
+MIN_FACE_FRAC = float(os.environ.get("FACE_MIN_FRAC", "0.03"))
 # Vor der Erkennung skalieren (bessere Detektion + weniger RAM als Roh-4K/Panorama).
 MAX_EDGE = int(os.environ.get("FACE_MAX_EDGE", "1920"))
-DET_SIZE = int(os.environ.get("FACE_DET_SIZE", "640"))
+DET_SIZE = int(os.environ.get("FACE_DET_SIZE", "960"))
 MAX_BODY_BYTES = int(os.environ.get("FACE_MAX_BODY", str(32 * 1024 * 1024)))
 
 _app = None
@@ -68,17 +68,9 @@ def downscale(img):
     return out, scale
 
 
-def embed_jpeg(data: bytes) -> dict:
-    img = decode_jpeg(data)
-    if img is None:
-        return {"ok": False, "error": "Kein gültiges JPEG", "faces": []}
-
-    orig_h, orig_w = img.shape[:2]
-    img, scale = downscale(img)
-    app = get_app()
-    faces = app.get(img) or []
-    ih, iw = img.shape[:2]
-    min_side = max(MIN_FACE_SIZE, int(min(iw, ih) * MIN_FACE_FRAC))
+def detect_on(app, region, min_side: int, ox: int, oy: int, scale: float):
+    """Gesichter in einer Bildregion finden; BBox auf Originalkoordinaten mappen."""
+    faces = app.get(region) or []
     out = []
     rejected = []
     for f in faces:
@@ -92,24 +84,71 @@ def embed_jpeg(data: bytes) -> dict:
         emb = f.normed_embedding
         if emb is None:
             continue
-        # BBox zurück auf Originalkoordinaten mappen (für Debugging/UI).
-        if scale != 1.0:
-            bbox = [x / scale for x in bbox]
+        # Region-Offset + Downscale zurück auf Original.
+        mapped = [
+            (bbox[0] + ox) / scale,
+            (bbox[1] + oy) / scale,
+            (bbox[2] + ox) / scale,
+            (bbox[3] + oy) / scale,
+        ]
         out.append(
             {
                 "embedding": [float(x) for x in emb.tolist()],
-                "bbox": bbox,
+                "bbox": mapped,
                 "det_score": det,
                 "size": round(min(w, h) / scale if scale else min(w, h), 1),
             }
         )
+    return out, rejected
+
+
+def embed_jpeg(data: bytes) -> dict:
+    img = decode_jpeg(data)
+    if img is None:
+        return {"ok": False, "error": "Kein gültiges JPEG", "faces": []}
+
+    orig_h, orig_w = img.shape[:2]
+    img, scale = downscale(img)
+    app = get_app()
+    ih, iw = img.shape[:2]
+    min_side = max(MIN_FACE_SIZE, int(min(iw, ih) * MIN_FACE_FRAC))
+
+    # Mehrere ROIs: Vollbild + Zoom-Crops (Weitwinkel/Eingang – Gesicht oft klein).
+    regions: list[tuple[str, object, int, int]] = [("full", img, 0, 0)]
+    # Zentrum 50% → effektiver 2×-Zoom
+    cw, ch = int(iw * 0.50), int(ih * 0.50)
+    cx0, cy0 = (iw - cw) // 2, (ih - ch) // 2
+    regions.append(("center_zoom", img[cy0 : cy0 + ch, cx0 : cx0 + cw], cx0, cy0))
+    # Oberes Mittelfeld (hoch montierte Kameras, Blick nach unten)
+    uw, uh = int(iw * 0.70), int(ih * 0.55)
+    ux0, uy0 = (iw - uw) // 2, int(ih * 0.05)
+    regions.append(("upper", img[uy0 : uy0 + uh, ux0 : ux0 + uw], ux0, uy0))
+    # Links/rechts im Gehweg-Bereich
+    sw, sh = int(iw * 0.55), int(ih * 0.70)
+    sy0 = (ih - sh) // 2
+    regions.append(("left", img[sy0 : sy0 + sh, 0:sw], 0, sy0))
+    regions.append(("right", img[sy0 : sy0 + sh, iw - sw : iw], iw - sw, sy0))
+
+    all_rejected = []
+    used_region = "full"
+    out = []
+    for name, region, ox, oy in regions:
+        if region is None or getattr(region, "size", 0) == 0:
+            continue
+        found, rejected = detect_on(app, region, min_side, ox, oy, scale)
+        all_rejected.extend(rejected)
+        if found:
+            out = found
+            used_region = name
+            break
 
     out.sort(key=lambda x: x["det_score"], reverse=True)
     return {
         "ok": True,
         "model": "buffalo_l",
         "faces": out,
-        "rejected": rejected[:5],
+        "rejected": all_rejected[:8],
+        "region": used_region,
         "image": {
             "w": orig_w,
             "h": orig_h,

@@ -149,9 +149,11 @@ export async function embedJpeg(jpeg: Buffer): Promise<FaceEmbedResult | null> {
         );
       } else {
         const img = data.image;
+        const nRej = data.rejected?.length ?? 0;
         log(
           `Face: keine Detektion` +
-            (img?.w ? ` (${img.w}x${img.h}, min ${img.min_side ?? "?"}px)` : "")
+            (img?.w ? ` (${img.w}x${img.h}, min ${img.min_side ?? "?"}px)` : "") +
+            (nRej ? `, ${nRej} verworfen` : "")
         );
       }
       return null;

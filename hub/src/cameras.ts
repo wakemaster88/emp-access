@@ -37,8 +37,10 @@ const CONFIG_REFRESH_MS = 60_000;
 const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
-/** Personen-/Fahrzeug-Snap erst nach kurzer Verzoegerung, wenn Erkennung noch aktiv. */
-const PERSON_SNAP_DELAY_MS = 1_500;
+/** Personen: kurz warten, dann mehrere Versuche solange PERSON aktiv (Gesicht oft erst frontal). */
+const PERSON_SNAP_DELAY_MS = 1_000;
+const PERSON_SNAP_ATTEMPTS = 4;
+const PERSON_SNAP_RETRY_MS = 1_200;
 const VEHICLE_SNAP_DELAY_MS = 1_500;
 
 function baseUrl(c: CameraConfig): string {
@@ -179,8 +181,8 @@ export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number 
 }
 
 /**
- * Bei klarer Personen-/Gesichtserkennung: Delay, Re-Check, lokales Face-Embed,
- * Gallery-Match, dann Upload (ohne Gesicht: kein Upload).
+ * Bei Personen-Erkennung: Delay, dann bis zu N Snap-/Face-Versuche solange
+ * PERSON noch aktiv – Gallery-Match, Upload (ohne Gesicht: kein Upload).
  */
 async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
@@ -188,22 +190,50 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 
   await new Promise((r) => setTimeout(r, PERSON_SNAP_DELAY_MS));
 
-  try {
-    const states = await pollStates(cam);
-    cam.states.PERSON = states.PERSON ?? false;
-    if (!states.PERSON) {
-      log(`Personen-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
+  let buf: Buffer | null = null;
+  let face: Awaited<ReturnType<typeof embedJpeg>> = null;
+
+  for (let attempt = 1; attempt <= PERSON_SNAP_ATTEMPTS; attempt++) {
+    try {
+      const states = await pollStates(cam);
+      cam.states.PERSON = states.PERSON ?? false;
+      if (!states.PERSON) {
+        log(
+          `Personen-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv` +
+            (attempt > 1 ? `, nach Versuch ${attempt - 1}` : "") +
+            `)`
+        );
+        return null;
+      }
+    } catch (e) {
+      log(
+        `Personen-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${
+          e instanceof Error ? e.message : e
+        }`
+      );
       return null;
     }
-  } catch (e) {
-    log(`Personen-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-    return null;
+
+    buf = await captureSnap(cam);
+    face = await embedJpeg(buf);
+    if (face) {
+      if (attempt > 1) {
+        log(`Personen-Snapshot ${cam.config.name}: Gesicht erst bei Versuch ${attempt}`);
+      }
+      break;
+    }
+    log(
+      `Personen-Snapshot ${cam.config.name}: Versuch ${attempt}/${PERSON_SNAP_ATTEMPTS} ohne Gesicht`
+    );
+    if (attempt < PERSON_SNAP_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, PERSON_SNAP_RETRY_MS));
+    }
   }
 
-  const buf = await captureSnap(cam);
-  const face = await embedJpeg(buf);
-  if (!face) {
-    log(`Personen-Snapshot ${cam.config.name}: übersprungen (kein Gesicht)`);
+  if (!buf || !face) {
+    log(
+      `Personen-Snapshot ${cam.config.name}: übersprungen (kein Gesicht nach ${PERSON_SNAP_ATTEMPTS} Versuchen)`
+    );
     return null;
   }
 
