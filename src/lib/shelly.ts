@@ -36,6 +36,15 @@ export async function shellyCloudControl(
 ): Promise<boolean> {
   if (!config.shellyId || !config.shellyAuthKey) return false;
 
+  // Cloud-IDs koennen Kanal-Suffixe haben (`abc_1` = Kanal 1).
+  const parts = config.shellyId.split("_");
+  const suffix = parts.length > 1 ? Number(parts[parts.length - 1]) : 0;
+  const deviceId =
+    Number.isFinite(suffix) && suffix > 0
+      ? parts.slice(0, -1).join("_")
+      : config.shellyId;
+  const channel = Number.isFinite(suffix) && suffix > 0 ? suffix - 1 : 0;
+
   const server = config.cloudServer ?? "shelly-46-eu.shelly.cloud";
   try {
     const res = await fetch(
@@ -44,9 +53,9 @@ export async function shellyCloudControl(
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          id: config.shellyId,
+          id: deviceId,
           auth_key: config.shellyAuthKey,
-          channel: "0",
+          channel: String(channel),
           turn: action,
         }),
         signal: AbortSignal.timeout(10000),
@@ -109,8 +118,11 @@ export async function controlShelly(
   action: "on" | "off" | "toggle",
   timer?: number
 ): Promise<boolean> {
+  // Lokal bevorzugen (LAN/Hub), bei Fehlschlag Cloud-Fallback – Vercel erreicht
+  // 192.168.x nicht, Cloud-Shellies funktionieren dort trotzdem.
   if (config.ipAddress) {
-    return shellyLocalControl(config.ipAddress, action, timer);
+    const localOk = await shellyLocalControl(config.ipAddress, action, timer);
+    if (localOk) return true;
   }
   return shellyCloudControl(config, action);
 }

@@ -43,15 +43,21 @@ export async function executeGroup(
 ): Promise<ExecuteResult> {
   const startedAt = Date.now();
 
-  const group = await prisma.shellyGroup.findFirst({
-    where: { id: groupId, accountId },
-    include: {
-      members: {
-        include: { device: true },
-        orderBy: { sortOrder: "asc" },
+  const [group, shellyCloud] = await Promise.all([
+    prisma.shellyGroup.findFirst({
+      where: { id: groupId, accountId },
+      include: {
+        members: {
+          include: { device: true },
+          orderBy: { sortOrder: "asc" },
+        },
       },
-    },
-  });
+    }),
+    prisma.apiConfig.findFirst({
+      where: { accountId, provider: "SHELLY" },
+      select: { baseUrl: true },
+    }),
+  ]);
 
   if (!group) {
     const res: ExecuteResult = { success: false, members: [], durationMs: 0 };
@@ -68,6 +74,7 @@ export async function executeGroup(
             ipAddress: m.device.ipAddress,
             shellyId: m.device.shellyId,
             shellyAuthKey: m.device.shellyAuthKey,
+            cloudServer: shellyCloud?.baseUrl ?? undefined,
           },
           actionStr,
           m.timerSeconds ?? undefined
