@@ -14,11 +14,12 @@ export default async function FahrzeugePage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [vehicles, sightings, shellyDevices] = await Promise.all([
+  const [vehicles, sightings, shellyDevices, cameras] = await Promise.all([
     db.allowedVehicle.findMany({
       where: { accountId },
       include: {
         shellyDevice: { select: { id: true, name: true } },
+        camera: { select: { id: true, name: true } },
         _count: { select: { sightings: true } },
       },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
@@ -34,6 +35,11 @@ export default async function FahrzeugePage() {
     }),
     db.device.findMany({
       where: { accountId, type: "SHELLY" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.camera.findMany({
+      where: { accountId },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -53,6 +59,7 @@ export default async function FahrzeugePage() {
             seenAt: s.seenAt.toISOString(),
           }))}
           shellyDevices={shellyDevices}
+          cameras={cameras}
         />
       </div>
     </>

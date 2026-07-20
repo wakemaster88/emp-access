@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Plus, Pencil, Trash2, Loader2, Car, History, Play, CheckCircle2, XCircle,
+  Plus, Pencil, Trash2, Loader2, Car, History, Play, CheckCircle2, XCircle, Cctv,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,12 +29,14 @@ export interface VehicleRow {
   plate: string;
   isActive: boolean;
   notes: string | null;
+  cameraId: number | null;
   shellyDeviceId: number | null;
   shellyAction: string;
   timerSeconds: number | null;
   cooldownMinutes: number;
   lastTriggeredAt: string | null;
   shellyDevice: { id: number; name: string } | null;
+  camera: { id: number; name: string } | null;
   _count: { sightings: number };
 }
 
@@ -55,10 +57,16 @@ export interface ShellyOption {
   name: string;
 }
 
+export interface CameraOption {
+  id: number;
+  name: string;
+}
+
 interface Props {
   vehicles: VehicleRow[];
   sightings: SightingRow[];
   shellyDevices: ShellyOption[];
+  cameras: CameraOption[];
 }
 
 const EMPTY = {
@@ -66,6 +74,7 @@ const EMPTY = {
   plate: "",
   isActive: true,
   notes: "",
+  cameraId: "" as string,
   shellyDeviceId: "" as string,
   shellyAction: "ON",
   timerSeconds: "3",
@@ -78,7 +87,7 @@ const SOURCE_LABEL: Record<string, string> = {
   MANUAL: "Manuell",
 };
 
-export function VehiclesClient({ vehicles, sightings, shellyDevices }: Props) {
+export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -109,6 +118,7 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices }: Props) {
       plate: v.plate,
       isActive: v.isActive,
       notes: v.notes ?? "",
+      cameraId: v.cameraId ? String(v.cameraId) : "",
       shellyDeviceId: v.shellyDeviceId ? String(v.shellyDeviceId) : "",
       shellyAction: v.shellyAction || "ON",
       timerSeconds: v.timerSeconds != null ? String(v.timerSeconds) : "",
@@ -127,6 +137,7 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices }: Props) {
         plate: form.plate.trim(),
         isActive: form.isActive,
         notes: form.notes.trim() || null,
+        cameraId: form.cameraId ? Number(form.cameraId) : null,
         shellyDeviceId: form.shellyDeviceId ? Number(form.shellyDeviceId) : null,
         shellyAction: form.shellyAction,
         timerSeconds: form.timerSeconds ? Number(form.timerSeconds) : null,
@@ -221,8 +232,8 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices }: Props) {
         <TabsContent value="vehicles" className="space-y-3 mt-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-sm text-slate-500">
-              Bekannte Kennzeichen anlegen. Wird das Kennzeichen erkannt, schaltet der zugewiesene Shelly
-              (z. B. Tor öffnen).
+              Bekannte Kennzeichen anlegen und optional eine Kamera zuweisen.
+              Nur bei Erkennung an dieser Kamera schaltet der Shelly (z. B. Tor öffnen).
             </p>
             <Button onClick={openAdd} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 shrink-0">
               <Plus className="h-4 w-4" /> Fahrzeug hinzufügen
@@ -255,6 +266,13 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices }: Props) {
                           {v.plate}
                         </Badge>
                         {!v.isActive && <Badge variant="secondary">Pausiert</Badge>}
+                        {v.camera ? (
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Cctv className="h-3 w-3" /> {v.camera.name}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">alle Kameras</Badge>
+                        )}
                         {v.shellyDevice ? (
                           <Badge variant="outline" className="text-xs">
                             → {v.shellyDevice.name} ({v.shellyAction}
@@ -424,6 +442,26 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices }: Props) {
                 placeholder="z.B. BOR-AB 123"
                 className="font-mono uppercase"
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Kamera für Erkennung</Label>
+              <Select
+                value={form.cameraId || "all"}
+                onValueChange={(v) => setForm((f) => ({ ...f, cameraId: v === "all" ? "" : v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Kamera wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Alle Kameras</SelectItem>
+                  {cameras.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Shelly wird nur ausgelöst, wenn das Kennzeichen an dieser Kamera erkannt wird.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Shelly bei Erkennung</Label>

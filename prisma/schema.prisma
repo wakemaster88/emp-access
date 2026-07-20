@@ -1374,6 +1374,7 @@ model Camera {
   events     CameraEvent[]
   automations ShellyAutomation[]
   vehicleSightings VehicleSighting[]
+  allowedVehicles AllowedVehicle[]
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
@@ -1394,6 +1395,9 @@ model AllowedVehicle {
   name            String
   isActive        Boolean   @default(true)
   notes           String?
+  /// Nur diese Kamera darf den Shelly ausloesen. null = alle Kameras.
+  cameraId        Int?
+  camera          Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   /// Shelly, der bei Erkennung geschaltet wird.
   shellyDeviceId  Int?
   shellyDevice    Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
@@ -1411,6 +1415,7 @@ model AllowedVehicle {
   @@unique([accountId, plateNormalized])
   @@index([accountId, isActive])
   @@index([shellyDeviceId])
+  @@index([cameraId])
 }
 
 /// Historie: wann ein Fahrzeug (ggf. mit Kennzeichen) gesehen wurde.

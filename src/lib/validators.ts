@@ -486,6 +486,7 @@ export const allowedVehicleCreateSchema = z.object({
   plate: z.string().min(2).max(20),
   isActive: z.boolean().optional(),
   notes: z.string().max(500).nullable().optional(),
+  cameraId: z.coerce.number().int().positive().nullable().optional(),
   shellyDeviceId: z.coerce.number().int().positive().nullable().optional(),
   shellyAction: z.enum(["ON", "OFF", "TOGGLE"]).optional(),
   timerSeconds: z.coerce.number().int().min(1).max(3600).nullable().optional(),

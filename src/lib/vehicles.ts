@@ -58,10 +58,18 @@ export async function processVehicleSighting(opts: {
 
   if (vehicle && !vehicle.isActive) vehicle = null;
 
+  // Kamera-Einschraenkung: Shelly nur, wenn keine Kamera gesetzt ist,
+  // die Sichtung von genau dieser Kamera kommt, oder manuell getestet wird.
+  const cameraAllowed =
+    !vehicle ||
+    vehicle.cameraId == null ||
+    source === "MANUAL" ||
+    (opts.cameraId != null && opts.cameraId === vehicle.cameraId);
+
   let shellyTriggered = false;
   let shellyOk: boolean | null = null;
 
-  if (vehicle?.shellyDeviceId && vehicle.shellyDevice) {
+  if (vehicle?.shellyDeviceId && vehicle.shellyDevice && cameraAllowed) {
     const cooldownMs = Math.max(1, vehicle.cooldownMinutes) * 60_000;
     const cooledDown =
       !vehicle.lastTriggeredAt ||

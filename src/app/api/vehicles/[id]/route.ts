@@ -33,6 +33,16 @@ export async function PUT(
     }
   }
 
+  if (parsed.data.cameraId) {
+    const camera = await db.camera.findFirst({
+      where: { id: parsed.data.cameraId, accountId: accountId! },
+      select: { id: true },
+    });
+    if (!camera) {
+      return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
+    }
+  }
+
   let plate = existing.plate;
   let plateNormalized = existing.plateNormalized;
   if (parsed.data.plate !== undefined) {
@@ -63,6 +73,7 @@ export async function PUT(
       ...(parsed.data.plate !== undefined ? { plate, plateNormalized } : {}),
       ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {}),
       ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes?.trim() || null } : {}),
+      ...(parsed.data.cameraId !== undefined ? { cameraId: parsed.data.cameraId } : {}),
       ...(parsed.data.shellyDeviceId !== undefined
         ? { shellyDeviceId: parsed.data.shellyDeviceId }
         : {}),
@@ -74,6 +85,7 @@ export async function PUT(
     },
     include: {
       shellyDevice: { select: { id: true, name: true } },
+      camera: { select: { id: true, name: true } },
       _count: { select: { sightings: true } },
     },
   });

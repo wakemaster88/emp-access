@@ -12,6 +12,7 @@ export async function GET() {
     where: { accountId: accountId! },
     include: {
       shellyDevice: { select: { id: true, name: true } },
+      camera: { select: { id: true, name: true } },
       _count: { select: { sightings: true } },
     },
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
@@ -46,6 +47,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (parsed.data.cameraId) {
+    const camera = await db.camera.findFirst({
+      where: { id: parsed.data.cameraId, accountId: accountId! },
+      select: { id: true },
+    });
+    if (!camera) {
+      return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
+    }
+  }
+
   const existing = await db.allowedVehicle.findUnique({
     where: {
       accountId_plateNormalized: { accountId: accountId!, plateNormalized },
@@ -66,6 +77,7 @@ export async function POST(request: NextRequest) {
       plateNormalized,
       isActive: parsed.data.isActive ?? true,
       notes: parsed.data.notes?.trim() || null,
+      cameraId: parsed.data.cameraId ?? null,
       shellyDeviceId: parsed.data.shellyDeviceId ?? null,
       shellyAction: parsed.data.shellyAction ?? "ON",
       timerSeconds: parsed.data.timerSeconds ?? null,
@@ -73,6 +85,7 @@ export async function POST(request: NextRequest) {
     },
     include: {
       shellyDevice: { select: { id: true, name: true } },
+      camera: { select: { id: true, name: true } },
       _count: { select: { sightings: true } },
     },
   });
