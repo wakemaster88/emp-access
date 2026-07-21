@@ -41,10 +41,28 @@ const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
 const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
 const PERSON_SNAP_RETRY_MS = 1_200;
-/** Fahrzeuge oft kurz im Bild – früher snappen, erneut versuchen (Vision dauert). */
-const VEHICLE_SNAP_DELAY_MS = 800;
-const VEHICLE_SNAP_ATTEMPTS = 2;
-const VEHICLE_SNAP_RETRY_MS = 1_200;
+/**
+ * Fahrzeuge: kurz warten, dann Burst-Snaps (Moment), danach optional Vision.
+ * Vision nur auf Spam-/Weitwinkel-Kameras – Zufahrt vertraut Reolink.
+ */
+const VEHICLE_SNAP_DELAY_MS = 200;
+const VEHICLE_BURST_COUNT = 3;
+const VEHICLE_BURST_GAP_MS = 400;
+
+/**
+ * Ob llava das JPEG prüfen muss. Weitwinkel (Seilbahn/Aquapark) = ja.
+ * Zufahrt/Nähe = nein (Reolink VEHICLE reicht; llava war zu streng).
+ * Override: HUB_VEHICLE_VISION=always|never|auto (Default auto).
+ */
+function vehicleNeedsVision(cam: CameraConfig): boolean {
+  const mode = (process.env.HUB_VEHICLE_VISION || "auto").toLowerCase();
+  if (mode === "always") return true;
+  if (mode === "never") return false;
+  const name = cam.name.toLowerCase();
+  if (/seilbahn|aquapark/.test(name)) return true;
+  if (/eingang|halle|insel|shop|drehkreuz|gastro|umkleide/.test(name)) return false;
+  return true;
+}
 
 function baseUrl(c: CameraConfig): string {
   return `${c.https ? "https" : "http"}://${c.host}:${c.httpPort}`;
@@ -274,8 +292,8 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 }
 
 /**
- * Fahrzeug-Erkennung: Delay, dann bis zu N Snap-/Vision-Versuche solange
- * VEHICLE aktiv – optionales Kennzeichen, Upload.
+ * Fahrzeug-Erkennung: kurzer Delay, Burst-Snaps solange VEHICLE aktiv,
+ * optional llava (nur Spam-/Weitwinkel-Kameras), dann Upload.
  */
 async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
@@ -283,63 +301,82 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
 
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
-  let buf: Buffer | null = null;
-
-  for (let attempt = 1; attempt <= VEHICLE_SNAP_ATTEMPTS; attempt++) {
+  const snaps: Buffer[] = [];
+  for (let i = 0; i < VEHICLE_BURST_COUNT; i++) {
     try {
       const states = await pollStates(cam);
       cam.states.VEHICLE = states.VEHICLE ?? false;
       if (!states.VEHICLE) {
-        log(
-          `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv` +
-            (attempt > 1 ? `, nach Versuch ${attempt - 1}` : "") +
-            `)`
-        );
-        return null;
+        if (snaps.length === 0) {
+          log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
+          return null;
+        }
+        break;
       }
     } catch (e) {
-      log(
-        `Fahrzeug-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${
-          e instanceof Error ? e.message : e
-        }`
-      );
-      return null;
-    }
-
-    buf = await captureSnap(cam);
-    // Reolink-KI löst an Weitwinkel oft falsch aus – llava bestätigt (Vollbild + Zooms).
-    const hasVehicle = await jpegContainsVehicle(buf);
-    if (hasVehicle === true) {
-      if (attempt > 1) {
-        log(`Fahrzeug-Snapshot ${cam.config.name}: bestätigt erst bei Versuch ${attempt}`);
+      if (snaps.length === 0) {
+        log(
+          `Fahrzeug-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${
+            e instanceof Error ? e.message : e
+          }`
+        );
+        return null;
       }
       break;
     }
 
-    log(
-      `Fahrzeug-Snapshot ${cam.config.name}: Versuch ${attempt}/${VEHICLE_SNAP_ATTEMPTS} ` +
-        `(${hasVehicle === false ? "kein Fahrzeug im Bild" : "Vision nicht verfügbar"})`
-    );
-    buf = null;
-    if (attempt < VEHICLE_SNAP_ATTEMPTS) {
-      await new Promise((r) => setTimeout(r, VEHICLE_SNAP_RETRY_MS));
+    snaps.push(await captureSnap(cam));
+    if (i < VEHICLE_BURST_COUNT - 1) {
+      await new Promise((r) => setTimeout(r, VEHICLE_BURST_GAP_MS));
     }
   }
 
-  if (!buf) {
-    log(
-      `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Fahrzeug nach ${VEHICLE_SNAP_ATTEMPTS} Versuchen)`
-    );
+  if (snaps.length === 0) {
+    log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Snap)`);
     return null;
+  }
+
+  const needVision = vehicleNeedsVision(cam.config);
+  let buf: Buffer | null = null;
+
+  if (!needVision) {
+    // Mittleren/letzten Frame nehmen (Auto oft schon weiter im Bild).
+    buf = snaps[Math.min(snaps.length - 1, Math.floor(snaps.length / 2))] ?? snaps[0];
+    log(
+      `Fahrzeug-Snapshot ${cam.config.name}: Reolink vertraut (${snaps.length} Burst-Snaps, ohne Vision)`
+    );
+  } else {
+    log(
+      `Fahrzeug-Snapshot ${cam.config.name}: Vision auf ${snaps.length} Burst-Snap(s) …`
+    );
+    for (let i = 0; i < snaps.length; i++) {
+      const ok = await jpegContainsVehicle(snaps[i]);
+      if (ok === true) {
+        buf = snaps[i];
+        log(`Fahrzeug-Snapshot ${cam.config.name}: Vision YES (Frame ${i + 1}/${snaps.length})`);
+        break;
+      }
+      log(
+        `Fahrzeug-Snapshot ${cam.config.name}: Vision Frame ${i + 1}/${snaps.length} → ${
+          ok === false ? "NO" : "?"
+        }`
+      );
+    }
+    if (!buf) {
+      log(
+        `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (Vision: kein Fahrzeug in ${snaps.length} Frames)`
+      );
+      return null;
+    }
   }
 
   const plate = await tryReadPlate(cam);
   const qs = new URLSearchParams({ cameraId: String(cameraId) });
   if (plate) {
     qs.set("plate", plate);
-    log(`Fahrzeug-Snapshot ${cam.config.name}: Fahrzeug bestätigt, Kennzeichen ${plate}`);
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Kennzeichen ${plate}`);
   } else {
-    log(`Fahrzeug-Snapshot ${cam.config.name}: Fahrzeug bestätigt, kein Kennzeichen – manuelles Mapping`);
+    log(`Fahrzeug-Snapshot ${cam.config.name}: kein Kennzeichen – manuelles Mapping`);
   }
 
   const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
