@@ -41,7 +41,10 @@ const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
 const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
 const PERSON_SNAP_RETRY_MS = 1_200;
-const VEHICLE_SNAP_DELAY_MS = 1_500;
+/** Fahrzeuge oft kurz im Bild – früher snappen, erneut versuchen (Vision dauert). */
+const VEHICLE_SNAP_DELAY_MS = 800;
+const VEHICLE_SNAP_ATTEMPTS = 2;
+const VEHICLE_SNAP_RETRY_MS = 1_200;
 
 function baseUrl(c: CameraConfig): string {
   return `${c.https ? "https" : "http"}://${c.host}:${c.httpPort}`;
@@ -271,8 +274,8 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 }
 
 /**
- * Fahrzeug-Erkennung: Delay, Re-Check, Snap, Vision-Filter (kein leeres Bild),
- * optionales Kennzeichen, Upload.
+ * Fahrzeug-Erkennung: Delay, dann bis zu N Snap-/Vision-Versuche solange
+ * VEHICLE aktiv – optionales Kennzeichen, Upload.
  */
 async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
@@ -280,28 +283,52 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
 
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
-  try {
-    const states = await pollStates(cam);
-    cam.states.VEHICLE = states.VEHICLE ?? false;
-    if (!states.VEHICLE) {
-      log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
+  let buf: Buffer | null = null;
+
+  for (let attempt = 1; attempt <= VEHICLE_SNAP_ATTEMPTS; attempt++) {
+    try {
+      const states = await pollStates(cam);
+      cam.states.VEHICLE = states.VEHICLE ?? false;
+      if (!states.VEHICLE) {
+        log(
+          `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv` +
+            (attempt > 1 ? `, nach Versuch ${attempt - 1}` : "") +
+            `)`
+        );
+        return null;
+      }
+    } catch (e) {
+      log(
+        `Fahrzeug-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${
+          e instanceof Error ? e.message : e
+        }`
+      );
       return null;
     }
-  } catch (e) {
-    log(`Fahrzeug-Snapshot ${cam.config.name}: Re-Check fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-    return null;
+
+    buf = await captureSnap(cam);
+    // Reolink-KI löst an Weitwinkel oft falsch aus – llava bestätigt (Vollbild + Zooms).
+    const hasVehicle = await jpegContainsVehicle(buf);
+    if (hasVehicle === true) {
+      if (attempt > 1) {
+        log(`Fahrzeug-Snapshot ${cam.config.name}: bestätigt erst bei Versuch ${attempt}`);
+      }
+      break;
+    }
+
+    log(
+      `Fahrzeug-Snapshot ${cam.config.name}: Versuch ${attempt}/${VEHICLE_SNAP_ATTEMPTS} ` +
+        `(${hasVehicle === false ? "kein Fahrzeug im Bild" : "Vision nicht verfügbar"})`
+    );
+    buf = null;
+    if (attempt < VEHICLE_SNAP_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, VEHICLE_SNAP_RETRY_MS));
+    }
   }
 
-  const buf = await captureSnap(cam);
-
-  // Reolink-KI löst an Weitwinkel oft falsch aus (Aqua-Park o.ä.) – nur hochladen,
-  // wenn lokal ein Fahrzeug im Bild bestätigt wird (analog: kein Gesicht → Skip).
-  const hasVehicle = await jpegContainsVehicle(buf);
-  if (hasVehicle !== true) {
+  if (!buf) {
     log(
-      `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (${
-        hasVehicle === false ? "kein Fahrzeug im Bild" : "Vision-Check nicht verfügbar"
-      })`
+      `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Fahrzeug nach ${VEHICLE_SNAP_ATTEMPTS} Versuchen)`
     );
     return null;
   }
