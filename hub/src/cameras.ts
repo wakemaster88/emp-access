@@ -42,12 +42,13 @@ const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
 const PERSON_SNAP_RETRY_MS = 1_200;
 /**
- * Fahrzeuge: kurz warten, dann Burst-Snaps (Moment), danach optional Vision.
+ * Fahrzeuge: sofort Burst-Snaps ab Event-Start, danach optional Vision.
  * Vision nur auf Spam-/Weitwinkel-Kameras – Zufahrt vertraut Reolink.
+ * Wichtig: ersten Frame bevorzugen (mittlerer/letzter = oft zu spät).
  */
-const VEHICLE_SNAP_DELAY_MS = 200;
+const VEHICLE_SNAP_DELAY_MS = 0;
 const VEHICLE_BURST_COUNT = 3;
-const VEHICLE_BURST_GAP_MS = 400;
+const VEHICLE_BURST_GAP_MS = 350;
 
 /**
  * Ob llava das JPEG prüfen muss. Weitwinkel (Seilbahn/Aquapark) = ja.
@@ -340,10 +341,11 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   let buf: Buffer | null = null;
 
   if (!needVision) {
-    // Mittleren/letzten Frame nehmen (Auto oft schon weiter im Bild).
-    buf = snaps[Math.min(snaps.length - 1, Math.floor(snaps.length / 2))] ?? snaps[0];
+    // Erster Frame = nah am VEHICLE-Start. Mittel/Ende war oft leere Szene
+    // oder Auto schon aus dem Bild (z.B. Eingang/Halle heute früh).
+    buf = snaps[0];
     log(
-      `Fahrzeug-Snapshot ${cam.config.name}: Reolink vertraut (${snaps.length} Burst-Snaps, ohne Vision)`
+      `Fahrzeug-Snapshot ${cam.config.name}: Reolink vertraut – Frame 1/${snaps.length} (Event-Start)`
     );
   } else {
     log(
