@@ -22,7 +22,8 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden md:flex flex-col h-[100dvh] max-h-[100dvh] bg-slate-900 border-r border-slate-800 transition-all duration-300 w-64 shrink-0",
+          // Breite bestimmt die Sidebar selbst (w-16 eingeklappt / w-64 offen).
+          "hidden md:flex flex-col h-[100dvh] max-h-[100dvh] bg-slate-900 border-r border-slate-800 transition-all duration-300 shrink-0",
           "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
         )}
       >
