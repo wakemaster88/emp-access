@@ -186,6 +186,28 @@ func centerRegion(_ cg: CGImage, frac: CGFloat) -> CGImage? {
     return cg.cropping(to: rect)
 }
 
+/// Überlappende Kacheln (für weit entfernte, kleine Kennzeichen).
+func tileRegions(_ cg: CGImage, cols: Int, rows: Int, overlap: CGFloat) -> [CGImage] {
+    let W = CGFloat(cg.width), H = CGFloat(cg.height)
+    let tw = W / CGFloat(cols)
+    let th = H / CGFloat(rows)
+    let ox = tw * overlap
+    let oy = th * overlap
+    var out: [CGImage] = []
+    for r in 0..<rows {
+        for c in 0..<cols {
+            let x = max(0, CGFloat(c) * tw - ox)
+            let y = max(0, CGFloat(r) * th - oy)
+            let w = min(W - x, tw + ox * 2)
+            let h = min(H - y, th + oy * 2)
+            if let tile = cg.cropping(to: CGRect(x: x, y: y, width: w, height: h)) {
+                out.append(tile)
+            }
+        }
+    }
+    return out
+}
+
 /// Häufige DE-Unterscheidungszeichen (NRW + Umgebung + Großstädte). Kein Vollkatalog.
 let KNOWN_CITY: Set<String> = [
     "RE", "BOR", "UN", "GE", "EN", "DO", "BO", "E", "HA", "HER", "HAM", "BOT",
@@ -274,6 +296,41 @@ func run(path: String) throws -> ResultPayload {
                 rawTexts.append(contentsOf: zh.prefix(10).map(\.text))
                 candidates.append(contentsOf: collect(from: zh, source: "zoom"))
             }
+        }
+    }
+
+    // Kachel-Pass: nur wenn bisher kein brauchbarer Kandidat (weit entfernte Plates).
+    // Vision findet kleinen Text auf 4K-Vollbild nicht – Kacheln + Upscale lösen das.
+    let hasGood = candidates.contains { c in
+        let city = String(c.plate.split(separator: "-").first ?? "")
+        return c.confidence >= 0.50 && KNOWN_CITY.contains(city)
+    }
+    if !hasGood {
+        for tile in tileRegions(full, cols: 3, rows: 2, overlap: 0.15) {
+            guard let up = scale(tile, factor: 2.0) else { continue }
+            let th = try recognize(up)
+            rawTexts.append(contentsOf: th.prefix(10).map(\.text))
+            candidates.append(contentsOf: collect(from: th, source: "tile"))
+            // Zoom auf verdächtige Boxen innerhalb der Kachel
+            for h in th {
+                let aspect = h.box.width / max(h.box.height, 0.001)
+                let interesting = aspect > 2.0 && h.box.height < 0.15
+                    || !platesFromText(h.text).isEmpty
+                if interesting {
+                    if let crop = cropNormalized(up, box: h.box, pad: 0.05),
+                       let zoomed = scale(crop, factor: 3.0) {
+                        let zh = try recognize(zoomed)
+                        rawTexts.append(contentsOf: zh.prefix(6).map(\.text))
+                        candidates.append(contentsOf: collect(from: zh, source: "tile-zoom"))
+                    }
+                }
+            }
+            // Early-Stop: sobald eine Kachel einen guten Treffer liefert
+            let nowGood = candidates.contains { c in
+                let city = String(c.plate.split(separator: "-").first ?? "")
+                return c.confidence >= 0.50 && KNOWN_CITY.contains(city) && scorePlate(c.plate) >= 12
+            }
+            if nowGood { break }
         }
     }
 
