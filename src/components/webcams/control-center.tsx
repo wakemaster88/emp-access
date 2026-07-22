@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -11,10 +11,14 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
   ZoomIn, ZoomOut, Cctv, RefreshCw, Loader2, AlertTriangle,
   Lightbulb, Moon, Siren, Crosshair, MapPin, Radio, Settings2,
+  Gamepad2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WebRTCVideo } from "./webrtc-video";
@@ -189,6 +193,7 @@ function CameraPanel({
   const [speed, setSpeed] = useState(32);
   const [hd, setHd] = useState(false);
   const [live, setLive] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
 
   const run = useCallback(
     async (key: string, action: string, payload: Record<string, unknown> = {}) => {
@@ -239,8 +244,8 @@ function CameraPanel({
   const disabled = !hubOnline || busy !== null;
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800 overflow-hidden">
-      <div className="relative aspect-video bg-slate-900 flex items-center justify-center">
+    <>
+      <div className="group relative aspect-video overflow-hidden rounded-md bg-slate-900 flex items-center justify-center">
         {go2rtcUrl && streamBase ? (
           <WebRTCVideo
             go2rtcUrl={go2rtcUrl}
@@ -260,21 +265,32 @@ function CameraPanel({
           <Cctv className="h-10 w-10 text-slate-300 dark:text-slate-600" />
         )}
 
-        <div className="absolute top-2 left-2 flex items-center gap-1.5">
-          {go2rtcUrl && streamBase && live && (
-            <Badge className="bg-rose-600/90 text-white gap-1 text-[10px] h-5 px-1.5">
-              <Radio className="h-3 w-3" /> LIVE
-            </Badge>
+        {/* Name unten links, dezenter Verlauf – wie im alten Kiosk. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
+          <span className="text-xs font-medium text-white drop-shadow">
+            {cam.name}
+          </span>
+          {!(go2rtcUrl && streamBase) && snapshotAt && (
+            <span className="float-right font-mono text-[10px] text-white/70">
+              {fmtTime(snapshotAt)}
+            </span>
           )}
         </div>
 
-        <div className="absolute top-2 right-2 flex items-center gap-1">
+        {go2rtcUrl && streamBase && live && (
+          <Badge className="absolute top-1.5 left-1.5 bg-rose-600/90 text-white gap-1 text-[9px] h-4 px-1">
+            <Radio className="h-2.5 w-2.5" /> LIVE
+          </Badge>
+        )}
+
+        {/* Buttons nur bei Hover einblenden, damit das Grid ruhig bleibt. */}
+        <div className="absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           {go2rtcUrl && streamBase && (
             <Button
               variant="secondary"
               size="sm"
               className={cn(
-                "h-8 px-2 text-xs font-semibold bg-black/50 hover:bg-black/70",
+                "h-7 px-1.5 text-[10px] font-semibold bg-black/50 hover:bg-black/70",
                 hd ? "text-emerald-400" : "text-white"
               )}
               title={hd ? "Auf Vorschau-Qualität (sub) wechseln" : "Auf volle Qualität (main) wechseln"}
@@ -287,35 +303,39 @@ function CameraPanel({
             <Button
               variant="secondary"
               size="icon"
-              className="h-8 w-8 bg-black/50 hover:bg-black/70 text-white"
+              className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white"
               title="Neuen Schnappschuss anfordern"
               onClick={refreshSnapshot}
               disabled={disabled}
             >
               {busy === "snapshot"
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <RefreshCw className="h-4 w-4" />}
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="h-3.5 w-3.5" />}
             </Button>
           )}
+          <Button
+            variant="secondary"
+            size="icon"
+            className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white"
+            title="Kamera steuern (PTZ, Licht, IR, Sirene)"
+            onClick={() => setControlsOpen(true)}
+          >
+            <Gamepad2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
-
-        {!(go2rtcUrl && streamBase) && snapshotAt && (
-          <span className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white font-mono">
-            {fmtTime(snapshotAt)}
-          </span>
-        )}
       </div>
 
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center justify-between gap-2">
-          <span className="truncate">{cam.name}</span>
-          <span className="text-xs font-mono font-normal text-slate-400 shrink-0">
-            {cam.host}{cam.channel > 0 ? ` · K${cam.channel}` : ""}
-          </span>
-        </CardTitle>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
+      <Dialog open={controlsOpen} onOpenChange={setControlsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between gap-2 pr-6">
+              <span className="truncate">{cam.name}</span>
+              <span className="text-xs font-mono font-normal text-slate-400 shrink-0">
+                {cam.host}{cam.channel > 0 ? ` · K${cam.channel}` : ""}
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
         <div className="flex gap-4">
           {/* PTZ-Pad */}
           <div className="grid grid-cols-3 gap-1 shrink-0">
@@ -460,13 +480,15 @@ function CameraPanel({
           </div>
         </div>
 
-        {error && (
-          <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
-            {error}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+            {error && (
+              <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+                {error}
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -493,7 +515,7 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
   }, [cameras]);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-2">
       {!hubOnline && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -583,7 +605,7 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-1.5">
           {cameras.map((c) => (
             <CameraPanel
               key={c.id}

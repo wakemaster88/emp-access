@@ -42,7 +42,7 @@ export default async function WebcamsPage() {
   return (
     <>
       <Header title="Webcam-Kontrollzentrum" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="p-2 sm:p-3">
         <WebcamControlCenter
           cameras={cameras.map((c) => ({
             id: c.id,
