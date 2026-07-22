@@ -33,6 +33,30 @@ export async function POST(
   const voucherCode = data.voucherCode?.trim() || null;
   const transferCode = data.transferCode === true;
 
+  // Guard: endDate nie vor startDate (z.B. zukuenftiger Ferienkurs-Start
+  // mit Fallback-Ende "heute"). Ohne Korrektur matcht der Shop-Monitor-
+  // Datumsfilter keinen Tag.
+  if (
+    data.startDate
+    && data.endDate
+    && data.validityType !== "DURATION"
+  ) {
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+      const fixedEnd = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate(),
+        23,
+        59,
+        59,
+        999,
+      );
+      data.endDate = fixedEnd.toISOString();
+    }
+  }
+
   let serviceAreaIds: number[] = [];
   if (data.serviceId) {
     const svcAreas = await prisma.serviceArea.findMany({

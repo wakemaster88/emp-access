@@ -5900,6 +5900,11 @@ function AddTicketOverlay({
     // ist das Ticket automatisch fuer "heute" gueltig, statt ohne Datum
     // erstellt zu werden (was im Shop Monitor sonst gar nicht mehr
     // angezeigt wird).
+    //
+    // Wichtig: endDate darf nie vor startDate liegen. Frueher wurde bei
+    // fehlendem endDate immer "heute" gesetzt – bei zukuenftigem startDate
+    // (z.B. Ferienkurs-Woche) entstand ein invertierter Zeitraum und das
+    // Ticket erschien im Monitor an keinem Tag.
     const now = new Date();
     const dayStart = new Date(
       now.getFullYear(),
@@ -5913,12 +5918,24 @@ function AddTicketOverlay({
       now.getDate(),
       23, 59, 59, 999,
     );
+    const endOfLocalDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
     const isDuration = payload.validityType === "DURATION";
     if (!payload.startDate) {
       payload.startDate = dayStart.toISOString();
     }
     if (!payload.endDate && !isDuration) {
-      payload.endDate = dayEnd.toISOString();
+      const start = new Date(String(payload.startDate));
+      payload.endDate = (
+        !isNaN(start.getTime()) ? endOfLocalDay(start) : dayEnd
+      ).toISOString();
+    }
+    if (payload.startDate && payload.endDate && !isDuration) {
+      const start = new Date(String(payload.startDate));
+      const end = new Date(String(payload.endDate));
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+        payload.endDate = endOfLocalDay(start).toISOString();
+      }
     }
     if (!payload.validityType) {
       payload.validityType = "DATE_RANGE";
