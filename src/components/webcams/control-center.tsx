@@ -18,7 +18,7 @@ import {
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
   ZoomIn, ZoomOut, Cctv, RefreshCw, Loader2, AlertTriangle,
   Lightbulb, Moon, Siren, Crosshair, MapPin, Radio, Settings2,
-  Gamepad2, DoorOpen,
+  Gamepad2, DoorOpen, Activity, User, Car, PawPrint, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WebRTCVideo } from "./webrtc-video";
@@ -42,6 +42,100 @@ interface ControlCenterProps {
 interface Preset {
   id: number;
   name: string;
+}
+
+/* ---------------------------------------------------------------------------
+ * Ereignis-Overlay: Hub-Ereignisse (Bewegung/Person/Fahrzeug/Klingel)
+ * werden klein unten in der Kachel eingeblendet. Laufende Events pulsieren.
+ * ------------------------------------------------------------------------- */
+
+export interface CameraEventRow {
+  id: number;
+  cameraId: number;
+  type: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+  MOTION:   { label: "Bewegung", icon: Activity, color: "text-sky-300" },
+  PERSON:   { label: "Person",   icon: User,     color: "text-rose-300" },
+  VEHICLE:  { label: "Fahrzeug", icon: Car,      color: "text-amber-300" },
+  ANIMAL:   { label: "Tier",     icon: PawPrint, color: "text-emerald-300" },
+  DOORBELL: { label: "Klingel",  icon: Bell,     color: "text-violet-300" },
+  OTHER:    { label: "Ereignis", icon: Activity, color: "text-zinc-300" },
+};
+
+function fmtClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Pollt die letzten Ereignisse und liefert sie gruppiert je Kamera. */
+function useCameraEvents(): Record<number, CameraEventRow[]> {
+  const [byCamera, setByCamera] = useState<Record<number, CameraEventRow[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function tick() {
+      try {
+        const res = await fetch("/api/camera-events?minutes=15", { cache: "no-store" });
+        if (!res.ok) return;
+        const events = (await res.json()) as CameraEventRow[];
+        if (cancelled) return;
+        const map: Record<number, CameraEventRow[]> = {};
+        for (const e of events) {
+          (map[e.cameraId] ??= []).push(e);
+        }
+        setByCamera(map);
+      } catch {
+        /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
+      }
+    }
+
+    tick();
+    const t = setInterval(tick, 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  return byCamera;
+}
+
+/** Kleine Ereignis-Zeile für die Kachel: laufende zuerst, sonst das letzte. */
+function EventOverlay({ events }: { events: CameraEventRow[] }) {
+  if (events.length === 0) return null;
+
+  const active = events.filter((e) => !e.endedAt);
+  // Ohne laufendes Event: das jüngste abgeschlossene anzeigen.
+  const shown = (active.length > 0 ? active : events.slice(0, 1)).slice(0, 3);
+
+  return (
+    <span className="flex items-center gap-2 min-w-0">
+      {shown.map((e) => {
+        const meta = EVENT_META[e.type];
+        if (!meta) return null;
+        const Icon = meta.icon;
+        const isActive = !e.endedAt;
+        return (
+          <span
+            key={e.id}
+            className={cn(
+              "flex items-center gap-1 text-[10px] font-medium",
+              meta.color,
+              isActive && "animate-pulse"
+            )}
+            title={`${meta.label} ${isActive ? "läuft" : `um ${fmtClock(e.startedAt)}`}`}
+          >
+            <Icon className="h-3 w-3 shrink-0" />
+            {isActive ? meta.label : `${meta.label} ${fmtClock(e.startedAt)}`}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 type PtzOp =
@@ -176,6 +270,7 @@ function CameraPanel({
   hubOnline,
   go2rtcUrl,
   streamBase,
+  events,
 }: {
   cam: WebcamRow;
   hubOnline: boolean;
@@ -183,6 +278,8 @@ function CameraPanel({
   go2rtcUrl: string | null;
   /** Stream-Basisname in go2rtc (ohne _main/_sub) oder null. */
   streamBase: string | null;
+  /** Letzte Hub-Ereignisse dieser Kamera (fürs Overlay). */
+  events: CameraEventRow[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -277,13 +374,14 @@ function CameraPanel({
           <Cctv className="h-10 w-10 text-slate-300 dark:text-slate-600" />
         )}
 
-        {/* Name unten links, dezenter Verlauf – wie im alten Kiosk. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
-          <span className="text-xs font-medium text-white drop-shadow">
+        {/* Name unten links, Ereignisse rechts – dezenter Verlauf wie im alten Kiosk. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-6">
+          <span className="text-xs font-medium text-white drop-shadow truncate shrink-0">
             {cam.name}
           </span>
+          <EventOverlay events={events} />
           {!(go2rtcUrl && streamBase) && snapshotAt && (
-            <span className="float-right font-mono text-[10px] text-white/70">
+            <span className="font-mono text-[10px] text-white/70 shrink-0">
               {fmtTime(snapshotAt)}
             </span>
           )}
@@ -528,6 +626,7 @@ function CameraPanel({
 
 export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) {
   const [go2rtc, saveGo2rtcUrl] = useGo2rtc();
+  const eventsByCamera = useCameraEvents();
   const [showSettings, setShowSettings] = useState(false);
   const [urlDraft, setUrlDraft] = useState("");
 
@@ -647,6 +746,7 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
               hubOnline={hubOnline}
               go2rtcUrl={go2rtc.reachable ? go2rtc.url : null}
               streamBase={go2rtc.byHost[c.host] ?? null}
+              events={eventsByCamera[c.id] ?? []}
             />
           ))}
         </div>
