@@ -16,7 +16,8 @@ const execFileAsync = promisify(execFile);
 const PLATE_DIR = path.join(CONFIG.hubDir, "plate");
 const BIN = path.join(PLATE_DIR, "plate-ocr");
 const SRC = path.join(PLATE_DIR, "PlateOCR.swift");
-const MIN_CONF = Number(process.env.HUB_PLATE_MIN_CONF || 0.55);
+/** Auto-OCR ohne Whitelist: eher streng, sonst viele False Positives aus Weitwinkel. */
+const MIN_CONF = Number(process.env.HUB_PLATE_MIN_CONF || 0.8);
 const OCR_TIMEOUT_MS = Number(process.env.HUB_PLATE_TIMEOUT_MS || 45_000);
 const WHITELIST_TTL_MS = 60_000;
 
@@ -93,6 +94,12 @@ export async function refreshVehicleWhitelist(): Promise<void> {
   }
 }
 
+/** Für Offline-Backfill: Whitelist ohne Cloud-API setzen. */
+export function setVehicleWhitelist(entries: WhitelistEntry[]): void {
+  whitelist = entries;
+  whitelistLoadedAt = Date.now();
+}
+
 async function ensureWhitelist(): Promise<WhitelistEntry[]> {
   if (Date.now() - whitelistLoadedAt > WHITELIST_TTL_MS) {
     await refreshVehicleWhitelist();
@@ -140,23 +147,79 @@ function runOcr(imagePath: string): Promise<OcrResult> {
   });
 }
 
+function digitSuffix(normalized: string): string {
+  const m = normalized.match(/(\d{3,4}[EH]?)$/);
+  return m?.[1] ?? "";
+}
+
+/** DE-Kennzeichen grob plausibel: 1–3 + 1–2 Buchstaben, ≥3 Ziffern. */
+function isPlausiblePlate(plate: string): boolean {
+  return /^[A-ZÄÖÜ]{1,3}-[A-ZÄÖÜ]{1,2} \d{3,4}[EH]?$/.test(plate.trim().toUpperCase());
+}
+
+function hamming(a: string, b: string): number {
+  if (a.length !== b.length) return 99;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+  return d;
+}
+
 function pickPlate(result: OcrResult, wl: WhitelistEntry[]): string | null {
   const byNorm = new Map(wl.map((v) => [v.plateNormalized, v.plate]));
+  const candNorms = result.candidates.map((c) => ({
+    plate: c.plate,
+    n: normalizePlate(c.plate),
+    conf: c.confidence,
+  }));
+  const rawNorms = result.raw.map((r) => normalizePlate(r)).filter((n) => n.length >= 5);
 
-  // 1) Whitelist-Treffer unter Kandidaten (auch bei niedriger Conf).
-  for (const c of result.candidates) {
-    const n = normalizePlate(c.plate);
+  // 1) Exakter Whitelist-Treffer.
+  for (const { n } of candNorms) {
+    const hit = byNorm.get(n);
+    if (hit) return hit;
+  }
+  for (const n of rawNorms) {
     const hit = byNorm.get(n);
     if (hit) return hit;
   }
 
-  // 2) Auto-Wahl vom Binary, falls Confidence reicht.
-  if (result.plate && result.confidence >= MIN_CONF) {
-    return result.plate;
+  // 2) Fuzzy nur bei gleicher Länge ±1 und ≤2 Zeichenunterschied, gleiche Ziffern-Endung.
+  for (const v of wl) {
+    const want = v.plateNormalized;
+    const wantDigits = digitSuffix(want);
+    if (wantDigits.length < 3) continue;
+    for (const { n, conf } of candNorms) {
+      if (conf < 0.25) continue;
+      if (digitSuffix(n) !== wantDigits) continue;
+      if (Math.abs(n.length - want.length) > 1) continue;
+      if (n.length === want.length && hamming(n, want) <= 2) return v.plate;
+      // Gleicher Ziffernblock, Buchstaben leicht daneben (Q-L 626E vs BOQC626E)
+      if (n.endsWith(wantDigits) && want.endsWith(wantDigits)) {
+        const nLetters = n.slice(0, -wantDigits.length);
+        const wLetters = want.slice(0, -wantDigits.length);
+        if (nLetters.length >= 2 && wLetters.includes(nLetters)) return v.plate;
+      }
+    }
   }
 
-  // 3) Bester Kandidat über Schwelle.
-  const top = result.candidates.find((c) => c.confidence >= MIN_CONF);
+  // Bekannte Kreise (NRW/Umgebung) – gleiche Basis wie PlateOCR.swift.
+  const knownCity = new Set([
+    "RE", "BOR", "UN", "GE", "EN", "DO", "BO", "E", "HA", "HER", "HAM", "BOT",
+    "MG", "NE", "D", "K", "AC", "BN", "SU", "LEV", "GL", "ME", "RS", "W", "SG",
+    "OB", "MH", "DU", "KR", "VIE", "WES", "KLE", "COE", "ST", "SO",
+  ]);
+
+  // 3) Auto-Wahl: plausibles DE-Kennzeichen + bekannter Kreis.
+  const autoOk = (plate: string, conf: number) => {
+    if (conf < MIN_CONF || !isPlausiblePlate(plate)) return false;
+    const city = plate.split("-")[0] ?? "";
+    return city.length >= 2 && knownCity.has(city);
+  };
+
+  if (result.plate && autoOk(result.plate, result.confidence)) {
+    return result.plate;
+  }
+  const top = result.candidates.find((c) => autoOk(c.plate, c.confidence));
   return top?.plate ?? null;
 }
 

@@ -296,9 +296,10 @@ func run(path: String) throws -> ResultPayload {
         return a.confidence > b.confidence
     }
 
-    // Strengere Auto-Wahl; Node kann per Whitelist aus candidates nachschärfen.
+    // Auto-Wahl nur mit bekanntem Kreis (KNOWN_CITY) und guter Confidence.
     let picked = ranked.first { c in
-        c.confidence >= 0.55 && scorePlate(c.plate) >= 7
+        let city = String(c.plate.split(separator: "-").first ?? "")
+        return c.confidence >= 0.50 && scorePlate(c.plate) >= 12 && KNOWN_CITY.contains(city)
     }
 
     return ResultPayload(
