@@ -7,6 +7,7 @@
 import { api, log } from "./config.js";
 import { STATE } from "./state.js";
 import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
+import { readPlateFromJpeg } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 
 export interface CameraConfig {
@@ -372,7 +373,11 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     }
   }
 
-  const plate = await tryReadPlate(cam);
+  // 1) Reolink-LPR (falls vorhanden)  2) lokale Vision-OCR auf dem JPEG
+  let plate = await tryReadPlate(cam);
+  if (!plate) {
+    plate = await readPlateFromJpeg(buf);
+  }
   const qs = new URLSearchParams({ cameraId: String(cameraId) });
   if (plate) {
     qs.set("plate", plate);

@@ -5,6 +5,7 @@ import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
 import { pollCameras, CAMERA_POLL_INTERVAL_MS } from "./cameras.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
+import { refreshVehicleWhitelist } from "./plate.js";
 import { STATE, recordHeartbeat, recordTask } from "./state.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
@@ -80,6 +81,8 @@ setInterval(checkForUpdate, CONFIG.updateIntervalMs);
 setInterval(autoScan, CONFIG.scanIntervalMs);
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 setInterval(() => refreshGallery(true).catch(() => {}), 60_000);
+refreshVehicleWhitelist().catch(() => {});
+setInterval(() => refreshVehicleWhitelist().catch(() => {}), 60_000);
 
 process.on("SIGTERM", () => { log("SIGTERM – Hub beendet sich."); process.exit(0); });
 process.on("SIGINT", () => { log("SIGINT – Hub beendet sich."); process.exit(0); });
