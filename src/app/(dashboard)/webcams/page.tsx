@@ -18,10 +18,11 @@ export default async function WebcamsPage() {
 
   const [cameras, hubAgents] = await Promise.all([
     db.camera.findMany({
-      where: { accountId, kind: "REOLINK", enabled: true },
+      where: { accountId, enabled: true, kind: { in: ["REOLINK", "DOORBIRD"] } },
       select: {
         id: true,
         name: true,
+        kind: true,
         host: true,
         channel: true,
         snapshotAt: true,
@@ -47,6 +48,7 @@ export default async function WebcamsPage() {
           cameras={cameras.map((c) => ({
             id: c.id,
             name: c.name,
+            kind: c.kind,
             host: c.host,
             channel: c.channel,
             snapshotAt: c.snapshotAt?.toISOString() ?? null,

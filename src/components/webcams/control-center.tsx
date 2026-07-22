@@ -18,7 +18,7 @@ import {
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
   ZoomIn, ZoomOut, Cctv, RefreshCw, Loader2, AlertTriangle,
   Lightbulb, Moon, Siren, Crosshair, MapPin, Radio, Settings2,
-  Gamepad2,
+  Gamepad2, DoorOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WebRTCVideo } from "./webrtc-video";
@@ -26,6 +26,8 @@ import { WebRTCVideo } from "./webrtc-video";
 export interface WebcamRow {
   id: number;
   name: string;
+  /** "REOLINK" | "DOORBIRD" */
+  kind: string;
   host: string;
   channel: number;
   snapshotAt: string | null;
@@ -241,15 +243,25 @@ function CameraPanel({
     if (!r.ok) setSirenOn(!on);
   }
 
+  async function openDoor() {
+    if (!confirm(`Tür an "${cam.name}" wirklich öffnen?`)) return;
+    await run("door", "door", { relay: 1 });
+  }
+
   const disabled = !hubOnline || busy !== null;
+  const isDoorbird = cam.kind === "DOORBIRD";
+  // DoorBird-Stream heisst in go2rtc schlicht "doorbird" (kein _main/_sub).
+  const streamSrc = streamBase
+    ? isDoorbird ? streamBase : `${streamBase}_${hd ? "main" : "sub"}`
+    : null;
 
   return (
     <>
       <div className="group relative aspect-video overflow-hidden rounded-md bg-slate-900 flex items-center justify-center">
-        {go2rtcUrl && streamBase ? (
+        {go2rtcUrl && streamSrc ? (
           <WebRTCVideo
             go2rtcUrl={go2rtcUrl}
-            src={`${streamBase}_${hd ? "main" : "sub"}`}
+            src={streamSrc}
             snapshotUrl={snapshotAt ? `/api/cameras/${cam.id}/snapshot` : undefined}
             onConnected={() => setLive(true)}
             onError={() => setLive(false)}
@@ -285,7 +297,7 @@ function CameraPanel({
 
         {/* Buttons nur bei Hover einblenden, damit das Grid ruhig bleibt. */}
         <div className="absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-          {go2rtcUrl && streamBase && (
+          {!isDoorbird && go2rtcUrl && streamSrc && (
             <Button
               variant="secondary"
               size="sm"
@@ -299,7 +311,7 @@ function CameraPanel({
               HD
             </Button>
           )}
-          {!(go2rtcUrl && streamBase) && (
+          {!(go2rtcUrl && streamSrc) && (
             <Button
               variant="secondary"
               size="icon"
@@ -313,16 +325,38 @@ function CameraPanel({
                 : <RefreshCw className="h-3.5 w-3.5" />}
             </Button>
           )}
-          <Button
-            variant="secondary"
-            size="icon"
-            className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white"
-            title="Kamera steuern (PTZ, Licht, IR, Sirene)"
-            onClick={() => setControlsOpen(true)}
-          >
-            <Gamepad2 className="h-3.5 w-3.5" />
-          </Button>
+          {isDoorbird ? (
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-7 w-7 bg-black/50 hover:bg-emerald-700/80 text-white"
+              title="Tür öffnen"
+              onClick={openDoor}
+              disabled={disabled}
+            >
+              {busy === "door"
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <DoorOpen className="h-3.5 w-3.5" />}
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-7 w-7 bg-black/50 hover:bg-black/70 text-white"
+              title="Kamera steuern (PTZ, Licht, IR, Sirene)"
+              onClick={() => setControlsOpen(true)}
+            >
+              <Gamepad2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
+
+        {/* Fehler (z.B. Türöffner) kurz auf der Kachel anzeigen. */}
+        {isDoorbird && error && (
+          <p className="absolute bottom-6 inset-x-2 rounded bg-rose-600/90 px-2 py-1 text-[10px] text-white">
+            {error}
+          </p>
+        )}
       </div>
 
       <Dialog open={controlsOpen} onOpenChange={setControlsOpen}>

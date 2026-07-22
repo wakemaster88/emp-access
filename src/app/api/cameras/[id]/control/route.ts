@@ -14,6 +14,13 @@ const ACTION_TO_TASK: Record<string, string> = {
   siren: "CAMERA_SIREN",
   presets: "CAMERA_PTZ_PRESETS",
   snapshot: "CAMERA_SNAPSHOT",
+  door: "DOORBIRD_OPEN",
+};
+
+/** Erlaubte Aktionen je Geraetetyp. */
+const ACTIONS_BY_KIND: Record<string, string[]> = {
+  REOLINK: ["ptz", "spotlight", "ir", "siren", "presets", "snapshot"],
+  DOORBIRD: ["door", "snapshot"],
 };
 
 const WAIT_TIMEOUT_MS = 15_000;
@@ -39,9 +46,10 @@ export async function POST(
   if (!camera.enabled) {
     return NextResponse.json({ error: "Kamera ist deaktiviert" }, { status: 400 });
   }
-  if (camera.kind !== "REOLINK") {
+  const allowed = ACTIONS_BY_KIND[camera.kind];
+  if (!allowed) {
     return NextResponse.json(
-      { error: "Steuerung wird nur für Reolink-Kameras unterstützt" },
+      { error: "Steuerung wird für diesen Gerätetyp nicht unterstützt" },
       { status: 400 }
     );
   }
@@ -49,9 +57,9 @@ export async function POST(
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
   const action = String(body.action ?? "");
   const taskType = ACTION_TO_TASK[action];
-  if (!taskType) {
+  if (!taskType || !allowed.includes(action)) {
     return NextResponse.json(
-      { error: `Ungültige Aktion (${Object.keys(ACTION_TO_TASK).join(", ")})` },
+      { error: `Ungültige Aktion für ${camera.kind} (${allowed.join(", ")})` },
       { status: 400 }
     );
   }
