@@ -1,16 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { SubscriptionDialog, type SubscriptionData } from "./subscription-dialog";
+import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 import {
   CreditCard, Link2, MapPin, Plus, Ticket, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, Search, Fingerprint, ScanLine,
+  CheckCircle2, XCircle, Clock, Search, Fingerprint, ScanLine, Pencil, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -70,6 +70,14 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
   const [addOpen, setAddOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [searchMap, setSearchMap] = useState<Record<number, string>>({});
+  const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
+  const [ticketLoadingId, setTicketLoadingId] = useState<number | null>(null);
+
+  const subscriptionOptions = subscriptions.map((s) => ({
+    id: s.id,
+    name: s.name,
+    areaIds: s.areas.map((a) => a.id),
+  }));
 
   function toggleExpand(id: number) {
     setExpanded(prev => {
@@ -94,6 +102,19 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
       requiresRfid: sub.requiresRfid ?? false,
     });
     setSelectedAreas(sub.areas.map((a) => a.id));
+  }
+
+  async function openTicketEdit(ticketId: number) {
+    if (readonly) return;
+    setTicketLoadingId(ticketId);
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setSelectedTicket(data);
+    } finally {
+      setTicketLoadingId(null);
+    }
   }
 
   const maxBadges = 4;
@@ -315,13 +336,24 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                                 <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Gültig</th>
                                 <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">RFID / Barcode</th>
                                 <th className="text-right px-3 py-2 font-medium">Status</th>
+                                {!readonly && <th className="w-10 px-2 py-2" />}
                               </tr>
                             </thead>
                             <tbody>
                               {sortedTickets.map((t) => {
                                 const v = ticketValidity(t);
+                                const isLoading = ticketLoadingId === t.id;
                                 return (
-                                  <tr key={t.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800/40">
+                                  <tr
+                                    key={t.id}
+                                    className={cn(
+                                      "border-t border-slate-100 dark:border-slate-800",
+                                      readonly
+                                        ? "hover:bg-white dark:hover:bg-slate-800/40"
+                                        : "hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 cursor-pointer",
+                                    )}
+                                    onClick={() => openTicketEdit(t.id)}
+                                  >
                                     <td className="px-3 py-2">
                                       <span className="font-medium text-slate-800 dark:text-slate-200">
                                         {t.firstName ?? ""} {t.lastName ?? ""}
@@ -379,12 +411,21 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                                         </Badge>
                                       )}
                                     </td>
+                                    {!readonly && (
+                                      <td className="px-2 py-2 text-right">
+                                        {isLoading ? (
+                                          <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500 inline-block" />
+                                        ) : (
+                                          <Pencil className="h-3.5 w-3.5 text-slate-400 group-hover:text-indigo-500 inline-block" />
+                                        )}
+                                      </td>
+                                    )}
                                   </tr>
                                 );
                               })}
                               {sortedTickets.length === 0 && (
                                 <tr>
-                                  <td colSpan={5} className="px-3 py-6 text-center text-slate-400 text-xs">
+                                  <td colSpan={readonly ? 5 : 6} className="px-3 py-6 text-center text-slate-400 text-xs">
                                     Keine Treffer
                                   </td>
                                 </tr>
@@ -423,6 +464,15 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
         open={!!selected}
         onClose={() => setSelected(null)}
       />
+
+      {!readonly && (
+        <EditTicketDialog
+          ticket={selectedTicket}
+          areas={areas}
+          subscriptions={subscriptionOptions}
+          onClose={() => setSelectedTicket(null)}
+        />
+      )}
     </>
   );
 }
