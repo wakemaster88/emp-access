@@ -28,6 +28,8 @@ export async function PUT(
     where: { id: cameraId },
     data: {
       name,
+      kind:
+        body.kind === "DOORBIRD" || body.kind === "REOLINK" ? body.kind : existing.kind,
       host: body.host !== undefined ? String(body.host).trim() : existing.host,
       httpPort: body.httpPort !== undefined ? (Number(body.httpPort) || 80) : existing.httpPort,
       https: typeof body.https === "boolean" ? body.https : existing.https,

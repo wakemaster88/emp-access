@@ -5,6 +5,7 @@ import os from "node:os";
 import { log } from "./config.js";
 import { uploadSnapshot } from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
+import { openDoorbirdDoor, isDoorbird, uploadDoorbirdSnapshot } from "./doorbird.js";
 
 const exec = promisify(execFile);
 
@@ -131,7 +132,9 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const cameraId = Number(task.payload?.cameraId);
       if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
       try {
-        const r = await uploadSnapshot(cameraId);
+        const r = isDoorbird(cameraId)
+          ? await uploadDoorbirdSnapshot(cameraId)
+          : await uploadSnapshot(cameraId);
         return { success: true, result: { cameraId, ...r } };
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
@@ -146,6 +149,14 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const r = await enrollFromSighting(sightingId, listedPersonId);
       if (!r.ok) return { success: false, error: r.error ?? "Enroll fehlgeschlagen" };
       return { success: true, result: r };
+    }
+    case "DOORBIRD_OPEN": {
+      const cameraId = Number(task.payload?.cameraId);
+      if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
+      const relay = Number(task.payload?.relay) || 1;
+      const r = await openDoorbirdDoor(cameraId, relay);
+      if (!r.ok) return { success: false, error: r.error ?? "Türöffner fehlgeschlagen" };
+      return { success: true, result: { cameraId, relay, opened: true } };
     }
     default:
       return { success: false, error: `Unbekannter Task-Typ: ${task.type}` };

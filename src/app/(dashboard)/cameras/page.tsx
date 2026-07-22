@@ -18,6 +18,7 @@ export default async function CamerasPage() {
       select: {
         id: true,
         name: true,
+        kind: true,
         host: true,
         httpPort: true,
         https: true,

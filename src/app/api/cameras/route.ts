@@ -6,6 +6,7 @@ import { getSessionWithDb } from "@/lib/api-auth";
 const LIST_SELECT = {
   id: true,
   name: true,
+  kind: true,
   host: true,
   httpPort: true,
   https: true,
@@ -51,9 +52,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Eine Kamera mit diesem Namen existiert bereits" }, { status: 400 });
   }
 
+  const kind = body.kind === "DOORBIRD" ? "DOORBIRD" : "REOLINK";
+
   const camera = await db.camera.create({
     data: {
       name,
+      kind,
       host,
       httpPort: Number.isInteger(Number(body.httpPort)) && Number(body.httpPort) > 0 ? Number(body.httpPort) : 80,
       https: body.https === true,

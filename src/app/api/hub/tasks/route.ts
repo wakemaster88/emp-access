@@ -11,6 +11,7 @@ const VALID_TASK_TYPES = [
   "WAKE_ON_LAN",
   "CAMERA_SNAPSHOT",
   "FACE_ENROLL",
+  "DOORBIRD_OPEN",
 ];
 
 /**

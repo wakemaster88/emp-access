@@ -1363,6 +1363,8 @@ model HubTask {
 model Camera {
   id         Int           @id @default(autoincrement())
   name       String
+  /// Geraetetyp: "REOLINK" (CGI-Polling) | "DOORBIRD" (LAN-API, Klingel + Tueroeffner).
+  kind       String        @default("REOLINK")
   /// IP oder Hostname im lokalen Netz.
   host       String
   httpPort   Int           @default(80)

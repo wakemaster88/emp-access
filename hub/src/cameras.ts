@@ -11,10 +11,13 @@ import { STATE } from "./state.js";
 import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
 import { scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
+import { syncDoorbirds } from "./doorbird.js";
 
 export interface CameraConfig {
   id: number;
   name: string;
+  /** "REOLINK" (CGI-Polling, Default) | "DOORBIRD" (LAN-API, doorbird.ts). */
+  kind?: string;
   host: string;
   httpPort: number;
   https: boolean;
@@ -565,7 +568,11 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
 async function refreshConfigs(): Promise<void> {
   const res = await api("/api/hub/cameras");
   if (!res.ok) throw new Error(`Kamera-Konfig-Abruf fehlgeschlagen: HTTP ${res.status}`);
-  const configs = (await res.json()) as CameraConfig[];
+  const all = (await res.json()) as CameraConfig[];
+
+  // DoorBirds laufen über ihr eigenes Modul (Event-Push statt Polling).
+  syncDoorbirds(all.filter((c) => c.kind === "DOORBIRD"));
+  const configs = all.filter((c) => c.kind !== "DOORBIRD");
 
   const ids = new Set(configs.map((c) => c.id));
   for (const id of cameras.keys()) {

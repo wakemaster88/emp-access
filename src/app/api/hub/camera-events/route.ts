@@ -3,7 +3,7 @@ import { validateApiToken } from "@/lib/api-auth";
 import { runCameraAutomations } from "@/lib/shelly-automation";
 import { maybeSurveillanceAlert } from "@/lib/surveillance";
 
-const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"];
+const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "DOORBELL", "OTHER"];
 const MAX_EVENTS_PER_REQUEST = 100;
 
 /**
