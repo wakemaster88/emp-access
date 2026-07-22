@@ -5,12 +5,14 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2 } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { TelegramCard } from "@/components/settings/telegram-card";
 import { PushCard } from "@/components/settings/push-card";
+import { DataRetentionCard } from "@/components/settings/data-retention-card";
+import { parseDataRetention } from "@/lib/data-retention";
 
 const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI"] as const;
 
@@ -25,7 +27,16 @@ export default async function SettingsPage() {
 
   const [apiConfigs, account, shellyDevices, gardenaDevices, telegramConfig] = await Promise.all([
     db.apiConfig.findMany({ where: { accountId: session.user.accountId } }),
-    db.account.findUnique({ where: { id: session.user.accountId } }),
+    db.account.findUnique({
+      where: { id: session.user.accountId },
+      select: {
+        id: true,
+        name: true,
+        subdomain: true,
+        apiToken: true,
+        dataRetention: true,
+      },
+    }),
     db.device.findMany({
       where: { accountId: session.user.accountId, type: "SHELLY", shellyId: { not: null } },
       select: { shellyId: true },
@@ -39,6 +50,8 @@ export default async function SettingsPage() {
       select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true },
     }),
   ]);
+
+  const dataRetention = parseDataRetention(account?.dataRetention);
 
   const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
   const shellyConfig = apiConfigs.find((c) => c.provider === "SHELLY");
@@ -148,6 +161,17 @@ export default async function SettingsPage() {
             connections={gardenaConnections}
             existingServiceIds={existingGardenaIds}
           />
+        </section>
+
+        {/* Löschfristen / Datenschutz */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5 text-slate-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+              Datenschutz
+            </h2>
+          </div>
+          <DataRetentionCard initial={dataRetention} />
         </section>
 
         {/* Push-Benachrichtigungen */}

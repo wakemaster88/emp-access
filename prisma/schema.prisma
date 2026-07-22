@@ -99,6 +99,10 @@ model Account {
   latitude        Float?
   longitude       Float?
   timezone        String? // IANA TZ, z.B. "Europe/Berlin"; null = Europe/Berlin
+  /// JSON: Löschfristen in Tagen pro Bereich, null = unbegrenzt.
+  /// Keys: vehicleSightings, personSightings, cameraEvents, scans,
+  /// irrigationRuns, automationRuns, emailSends, hubTasks, discoveredDevices
+  dataRetention   Json?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   admins          Admin[]

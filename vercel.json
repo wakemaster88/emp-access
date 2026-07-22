@@ -60,6 +60,10 @@
       "schedule": "30 1 * * *"
     },
     {
+      "path": "/api/cron/cleanup-retention",
+      "schedule": "45 1 * * *"
+    },
+    {
       "path": "/api/cron/device-offline-check",
       "schedule": "*/5 * * * *"
     }
