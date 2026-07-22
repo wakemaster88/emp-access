@@ -52,6 +52,12 @@ const PERSON_SNAP_RETRY_MS = 1_200;
 const VEHICLE_SNAP_DELAY_MS = 0;
 /** Ab dieser OCR-Confidence früh abbrechen (späte Frames zuerst). */
 const PLATE_EARLY_STOP_CONF = Number(process.env.HUB_PLATE_EARLY_STOP_CONF || 0.85);
+/** Nach VEHICLE-Ende noch ein paar Frames – Alarm flackert, Auto oft noch näher. */
+const VEHICLE_GRACE_FRAMES = Number(process.env.HUB_VEHICLE_GRACE_FRAMES || 3);
+/** Dump-Rotation: max. Ordner und max. Alter. */
+const DUMP_MAX_FOLDERS = Number(process.env.HUB_VEHICLE_DUMP_MAX || 150);
+const DUMP_MAX_AGE_MS =
+  Number(process.env.HUB_VEHICLE_DUMP_MAX_AGE_H || 48) * 3_600_000;
 
 function vehicleBurstPlan(cam: CameraConfig): { count: number; gapMs: number } {
   const name = cam.name.toLowerCase();
@@ -91,6 +97,32 @@ function burstFolderName(camName: string): string {
   return `${ts}_${safe}`;
 }
 
+/** Alte Burst-Ordner löschen (Alter + Anzahl), damit /tmp nicht vollläuft. */
+async function pruneVehicleDumps(root: string): Promise<void> {
+  try {
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    const dirs: Array<{ name: string; mtime: number }> = [];
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const st = await fs.stat(path.join(root, e.name)).catch(() => null);
+      if (st) dirs.push({ name: e.name, mtime: st.mtimeMs });
+    }
+    dirs.sort((a, b) => b.mtime - a.mtime);
+    const now = Date.now();
+    const doomed = dirs.filter(
+      (d, i) => i >= DUMP_MAX_FOLDERS || now - d.mtime > DUMP_MAX_AGE_MS
+    );
+    for (const d of doomed) {
+      await fs.rm(path.join(root, d.name), { recursive: true, force: true });
+    }
+    if (doomed.length > 0) {
+      log(`Fahrzeug-Burst Dump: ${doomed.length} alte Ordner aufgeräumt`);
+    }
+  } catch {
+    // Aufräumen darf nie den Snapshot-Pfad stören.
+  }
+}
+
 async function dumpVehicleBurst(
   dir: string,
   snaps: Buffer[],
@@ -98,6 +130,7 @@ async function dumpVehicleBurst(
   chosen: number | null,
   camName: string
 ): Promise<void> {
+  await pruneVehicleDumps(path.dirname(dir));
   await fs.mkdir(dir, { recursive: true });
   for (let i = 0; i < snaps.length; i++) {
     const tag = chosen === i ? "BEST" : String(i).padStart(2, "0");
@@ -362,8 +395,9 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
 
   const plan = vehicleBurstPlan(cam.config);
   const snaps: Buffer[] = [];
+  let graceLeft = VEHICLE_GRACE_FRAMES;
   log(
-    `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE …`
+    `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE (+${VEHICLE_GRACE_FRAMES} Grace) …`
   );
   for (let i = 0; i < plan.count; i++) {
     try {
@@ -374,10 +408,16 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
           log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
           return null;
         }
-        log(
-          `Fahrzeug-Burst ${cam.config.name}: VEHICLE ende nach ${snaps.length} Frames`
-        );
-        break;
+        // Alarm flackert oft, Auto noch im Bild: ein paar Frames weiter.
+        if (graceLeft <= 0) {
+          log(
+            `Fahrzeug-Burst ${cam.config.name}: VEHICLE ende nach ${snaps.length} Frames`
+          );
+          break;
+        }
+        graceLeft--;
+      } else {
+        graceLeft = VEHICLE_GRACE_FRAMES;
       }
     } catch (e) {
       if (snaps.length === 0) {
@@ -472,6 +512,8 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
         log(
           `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Plate/Fahrzeug in ${snaps.length} Frames)`
         );
+        // Auch Skips throtteln – sonst Dauerschleife bei statischen Fehlalarmen.
+        cam.lastSnapshotAt = Date.now();
         return null;
       }
     }
