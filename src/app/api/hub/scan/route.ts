@@ -36,6 +36,29 @@ function ports(v: unknown): number[] {
     .slice(0, 100);
 }
 
+/** Eintrag der IP-Historie: fruehere IP + wann sie zuletzt gesehen wurde. */
+interface IpHistoryEntry {
+  ip: string;
+  seenUntil: string;
+}
+
+const MAX_IP_HISTORY = 10;
+
+/**
+ * Alte IP in die Historie uebernehmen (neueste zuerst, pro IP nur der
+ * juengste Eintrag, begrenzt auf MAX_IP_HISTORY).
+ */
+function pushIpHistory(history: unknown, ip: string | null, seenUntil: Date): IpHistoryEntry[] {
+  const entries: IpHistoryEntry[] = Array.isArray(history)
+    ? (history as IpHistoryEntry[]).filter((e) => e && typeof e.ip === "string")
+    : [];
+  if (!ip) return entries;
+  return [
+    { ip, seenUntil: seenUntil.toISOString() },
+    ...entries.filter((e) => e.ip !== ip),
+  ].slice(0, MAX_IP_HISTORY);
+}
+
 /**
  * POST (Hub, Token-Auth): nimmt das Ergebnis eines aktiven Netzwerk-Scans
  * entgegen und upserted die Geraete per (accountId, MAC). Body:
@@ -74,8 +97,19 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date();
+
+  // Bestehende Eintraege vorab laden, um IP-Wechsel zu erkennen: die alte IP
+  // wandert dann in die Historie statt kommentarlos ueberschrieben zu werden.
+  const existing = await db.discoveredDevice.findMany({
+    where: { accountId: account.id, macAddress: { in: [...byMac.keys()] } },
+    select: { macAddress: true, ipAddress: true, ipHistory: true, lastSeenAt: true },
+  });
+  const existingByMac = new Map(existing.map((e) => [e.macAddress, e]));
+
   let processed = 0;
   for (const [mac, info] of byMac) {
+    const prev = existingByMac.get(mac);
+    const ipChanged = !!prev && !!prev.ipAddress && !!info.ip && prev.ipAddress !== info.ip;
     const common = {
       ipAddress: info.ip,
       iface: info.iface,
@@ -87,6 +121,9 @@ export async function POST(request: NextRequest) {
       reachable: info.reachable,
       hubName,
       lastSeenAt: now,
+      ...(ipChanged
+        ? { ipHistory: pushIpHistory(prev.ipHistory, prev.ipAddress, prev.lastSeenAt) }
+        : {}),
     };
     await db.discoveredDevice.upsert({
       where: { accountId_macAddress: { accountId: account.id, macAddress: mac } },
@@ -99,6 +136,31 @@ export async function POST(request: NextRequest) {
       update: common,
     });
     processed++;
+  }
+
+  // Eine IP gehoert immer nur dem zuletzt gesehenen Geraet: haelt ein anderer
+  // (aelterer) Eintrag dieselbe IP noch, gibt er sie an seine Historie ab.
+  // Das passiert z. B. nach DHCP-Wechseln oder wenn Geraete das Subnetz
+  // wechseln - sonst zeigen zwei Eintraege dieselbe "aktuelle" IP.
+  const claimedIps = [...byMac.values()].map((i) => i.ip).filter((ip): ip is string => !!ip);
+  if (claimedIps.length > 0) {
+    const stale = await db.discoveredDevice.findMany({
+      where: {
+        accountId: account.id,
+        ipAddress: { in: claimedIps },
+        macAddress: { notIn: [...byMac.keys()] },
+      },
+      select: { id: true, ipAddress: true, ipHistory: true, lastSeenAt: true },
+    });
+    for (const s of stale) {
+      await db.discoveredDevice.update({
+        where: { id: s.id },
+        data: {
+          ipAddress: null,
+          ipHistory: pushIpHistory(s.ipHistory, s.ipAddress, s.lastSeenAt),
+        },
+      });
+    }
   }
 
   // Auto-Sync: Bei bekannten MACs die IP-Adresse der verwalteten Eintraege

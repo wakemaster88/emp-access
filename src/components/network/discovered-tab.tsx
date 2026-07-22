@@ -29,6 +29,8 @@ export interface DiscoveredRow {
   hostname: string | null;
   vendor: string | null;
   openPorts: number[];
+  /// Fruehere IP-Adressen (neueste zuerst), gepflegt vom Scan-Endpoint.
+  ipHistory: { ip: string; seenUntil: string }[];
   deviceType: string | null;
   responseMs: number | null;
   reachable: boolean;
@@ -257,6 +259,17 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                           </span>
                         ) : (
                           "–"
+                        )}
+                        {d.ipHistory.length > 0 && (
+                          <span
+                            className="block text-[11px] text-slate-400 font-normal"
+                            title={d.ipHistory
+                              .map((h) => `${h.ip} (bis ${new Date(h.seenUntil).toLocaleDateString("de-DE")})`)
+                              .join("\n")}
+                          >
+                            vorher: {d.ipHistory[0].ip}
+                            {d.ipHistory.length > 1 && ` +${d.ipHistory.length - 1}`}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-sm">

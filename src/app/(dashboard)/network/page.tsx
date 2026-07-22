@@ -153,6 +153,9 @@ export default async function NetworkPage() {
         iface: d.iface,
         hostname: d.hostname,
         openPorts: Array.isArray(d.openPorts) ? (d.openPorts as number[]) : [],
+        ipHistory: Array.isArray(d.ipHistory)
+          ? (d.ipHistory as { ip: string; seenUntil: string }[])
+          : [],
         deviceType: d.deviceType,
         responseMs: d.responseMs,
         reachable: d.reachable,
