@@ -9,6 +9,7 @@
  */
 import { api, log } from "./config.js";
 import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
+import { jpegContainsVehicle } from "./vision.js";
 import type { CameraConfig } from "./cameras.js";
 
 const RECONNECT_MIN_MS = 3_000;
@@ -17,6 +18,16 @@ const RECONNECT_MAX_MS = 60_000;
 const IDLE_TIMEOUT_MS = 90_000;
 /** Pro Ereignis höchstens alle 20 s eine Snapshot-Pipeline. */
 const EVENT_THROTTLE_MS = 20_000;
+/**
+ * Tor-Öffnungswunsch (Telegram mit "Tor öffnen"-Button): höchstens alle
+ * N Sekunden, damit ein wartendes Auto den Chat nicht flutet.
+ * Env: HUB_GATE_THROTTLE (Sekunden), HUB_GATE_ON_MOTION = vision|always|off
+ */
+const GATE_THROTTLE_MS = (() => {
+  const n = Number(process.env.HUB_GATE_THROTTLE);
+  return (Number.isFinite(n) && n >= 10 ? n : 120) * 1000;
+})();
+const GATE_ON_MOTION = (process.env.HUB_GATE_ON_MOTION || "vision").toLowerCase();
 /** Solange der Monitor verbunden ist: lastSeenAt regelmäßig aktualisieren. */
 const SEEN_PING_MS = 120_000;
 const SNAP_ATTEMPTS = 4;
@@ -28,6 +39,7 @@ interface DoorbirdRuntime {
   reconnectDelay: number;
   states: Record<string, boolean>;
   lastEventPipelineAt: number;
+  lastGateAlertAt: number;
   stopped: boolean;
   unreachableLogged: boolean;
 }
@@ -113,6 +125,54 @@ async function reportEvent(
 }
 
 /**
+ * Öffnungswunsch ans Tor melden: Snapshot → Cloud → Telegram-Foto mit
+ * "Tor öffnen"-Button. DOORBELL immer; MOTION nur wenn der Vision-Check
+ * ein Fahrzeug sieht (bzw. immer bei HUB_GATE_ON_MOTION=always).
+ * Vision nicht erreichbar (null) → im Zweifel senden, Throttle fängt Spam.
+ */
+async function maybeSendGateAlert(
+  rt: DoorbirdRuntime,
+  trigger: "DOORBELL" | "MOTION",
+  buf: Buffer
+): Promise<void> {
+  const now = Date.now();
+  if (now - rt.lastGateAlertAt < GATE_THROTTLE_MS) return;
+
+  if (trigger === "MOTION") {
+    if (GATE_ON_MOTION === "off") return;
+    if (GATE_ON_MOTION !== "always") {
+      const vehicle = await jpegContainsVehicle(buf, { quick: true });
+      if (vehicle === false) {
+        log(`DoorBird ${rt.config.name}: MOTION ohne Fahrzeug – kein Öffnungswunsch`);
+        return;
+      }
+    }
+  }
+
+  rt.lastGateAlertAt = Date.now();
+  try {
+    const res = await api(
+      `/api/hub/doorbird-gate?cameraId=${rt.config.id}&trigger=${trigger}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg" },
+        body: new Uint8Array(buf),
+        signal: AbortSignal.timeout(60_000),
+      }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json().catch(() => ({}))) as { sent?: number };
+    log(
+      `DoorBird ${rt.config.name}: Öffnungswunsch (${trigger}) → Telegram (${data.sent ?? 0} Chats)`
+    );
+  } catch (e) {
+    log(
+      `DoorBird ${rt.config.name}: Öffnungswunsch fehlgeschlagen: ${e instanceof Error ? e.message : e}`
+    );
+  }
+}
+
+/**
  * Klingel/Bewegung: Snapshot-Versuche mit Gesichts-Pipeline; bei Klingeln
  * wird das Bild auch ohne Gesicht als Kamera-Schnappschuss hochgeladen.
  */
@@ -137,6 +197,9 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
     if (attempt < SNAP_ATTEMPTS) await new Promise((r) => setTimeout(r, SNAP_RETRY_MS));
   }
   if (!buf) return;
+
+  // Öffnungswunsch parallel zur Gesichts-Pipeline (blockiert sie nicht).
+  void maybeSendGateAlert(rt, trigger, buf);
 
   // Klingeln: Schnappschuss immer in die Cloud (UI-Kachel), auch ohne Gesicht.
   if (trigger === "DOORBELL") {
@@ -297,6 +360,7 @@ export function syncDoorbirds(configs: CameraConfig[]): void {
       reconnectDelay: RECONNECT_MIN_MS,
       states: {},
       lastEventPipelineAt: 0,
+      lastGateAlertAt: 0,
       stopped: false,
       unreachableLogged: false,
     };
