@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { CONFIG, api, log } from "./config.js";
+import { alprDetect, alprAvailable, type AlprCandidate } from "./alpr.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +19,8 @@ const BIN = path.join(PLATE_DIR, "plate-ocr");
 const SRC = path.join(PLATE_DIR, "PlateOCR.swift");
 /** Auto-OCR ohne Whitelist: eher streng, sonst viele False Positives aus Weitwinkel. */
 const MIN_CONF = Number(process.env.HUB_PLATE_MIN_CONF || 0.8);
+/** fast-alpr Plate-OCR ist spezialisiert – Auto-Übernahme ab dieser Confidence. */
+const ALPR_MIN_CONF = Number(process.env.HUB_ALPR_MIN_CONF || 0.88);
 const OCR_TIMEOUT_MS = Number(process.env.HUB_PLATE_TIMEOUT_MS || 45_000);
 const WHITELIST_TTL_MS = 60_000;
 
@@ -147,6 +150,69 @@ function runOcr(imagePath: string): Promise<OcrResult> {
   });
 }
 
+/** Bekannte Kreise (NRW/Umgebung) – gleiche Basis wie PlateOCR.swift. */
+const KNOWN_CITY = new Set([
+  "RE", "BOR", "UN", "GE", "EN", "DO", "BO", "E", "HA", "HER", "HAM", "BOT",
+  "MG", "NE", "D", "K", "AC", "BN", "SU", "LEV", "GL", "ME", "RS", "W", "SG",
+  "OB", "MH", "DU", "KR", "VIE", "WES", "KLE", "COE", "ST", "SO",
+]);
+
+/** Bewertung eines formatierten Kennzeichens (analog scorePlate in PlateOCR.swift). */
+function scorePlateFormat(plate: string): number {
+  const m = plate.match(/^([A-Z]{1,3})-([A-Z]{1,2}) (\d{1,4})([EH]?)$/);
+  if (!m) return 0;
+  const [, city, mid, digits] = m;
+  let s = 0;
+  if (city.length === 2) s += 3;
+  else if (city.length === 3) s += 2;
+  else s += 1;
+  if (mid.length === 2) s += 3;
+  else s += 1;
+  if (digits.length >= 3) s += 2;
+  if (KNOWN_CITY.has(city)) s += 4;
+  if (new Set(mid).size === mid.length) s += 1;
+  return s;
+}
+
+/** Alle plausiblen DE-Splits eines kompakten OCR-Texts ("BOQC626E" → "BO-QC 626E" …). */
+function expandCompact(text: string): string[] {
+  const compact = text.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const m = compact.match(/^([A-Z]{2,5})(\d{1,4})([EH]?)$/);
+  if (!m) return [];
+  const [, letters, digits, suffix] = m;
+  const out: string[] = [];
+  for (let cityLen = 1; cityLen <= 3; cityLen++) {
+    const midLen = letters.length - cityLen;
+    if (midLen < 1 || midLen > 2) continue;
+    out.push(`${letters.slice(0, cityLen)}-${letters.slice(cityLen)} ${digits}${suffix}`);
+  }
+  return out.sort((a, b) => scorePlateFormat(b) - scorePlateFormat(a));
+}
+
+/** ALPR-Kandidaten → OcrResult (kompatibel mit pickPlate). */
+function alprToOcrResult(cands: AlprCandidate[]): OcrResult {
+  const candidates: OcrCandidate[] = [];
+  for (const c of cands) {
+    for (const plate of expandCompact(c.text)) {
+      candidates.push({ plate, confidence: c.ocrConf, source: c.tiled ? "alpr-tile" : "alpr" });
+    }
+  }
+  const top = candidates[0];
+  const auto =
+    top &&
+    top.confidence >= ALPR_MIN_CONF &&
+    scorePlateFormat(top.plate) >= 12 &&
+    KNOWN_CITY.has(top.plate.split("-")[0] ?? "")
+      ? top
+      : null;
+  return {
+    plate: auto?.plate ?? null,
+    confidence: auto?.confidence ?? 0,
+    candidates,
+    raw: cands.map((c) => c.text),
+  };
+}
+
 function digitSuffix(normalized: string): string {
   const m = normalized.match(/(\d{3,4}[EH]?)$/);
   return m?.[1] ?? "";
@@ -202,18 +268,11 @@ function pickPlate(result: OcrResult, wl: WhitelistEntry[]): string | null {
     }
   }
 
-  // Bekannte Kreise (NRW/Umgebung) – gleiche Basis wie PlateOCR.swift.
-  const knownCity = new Set([
-    "RE", "BOR", "UN", "GE", "EN", "DO", "BO", "E", "HA", "HER", "HAM", "BOT",
-    "MG", "NE", "D", "K", "AC", "BN", "SU", "LEV", "GL", "ME", "RS", "W", "SG",
-    "OB", "MH", "DU", "KR", "VIE", "WES", "KLE", "COE", "ST", "SO",
-  ]);
-
   // 3) Auto-Wahl: plausibles DE-Kennzeichen + bekannter Kreis.
   const autoOk = (plate: string, conf: number) => {
     if (conf < MIN_CONF || !isPlausiblePlate(plate)) return false;
     const city = plate.split("-")[0] ?? "";
-    return city.length >= 2 && knownCity.has(city);
+    return city.length >= 2 && KNOWN_CITY.has(city);
   };
 
   if (result.plate && autoOk(result.plate, result.confidence)) {
@@ -246,12 +305,41 @@ export async function scorePlateFromJpeg(jpeg: Buffer): Promise<PlateScore> {
   if (process.env.HUB_PLATE_OCR === "0" || process.env.HUB_PLATE_OCR === "never") {
     return empty;
   }
-  if (!(await ensureBinary())) return empty;
 
   const tmp = path.join(tmpdir(), `emp-plate-${randomUUID()}.jpg`);
   try {
     await fs.writeFile(tmp, jpeg);
-    const [result, wl] = await Promise.all([runOcr(tmp), ensureWhitelist()]);
+    const wlPromise = ensureWhitelist();
+
+    // Stufe 1: fast-alpr (YOLO-Detektor + Plate-OCR) – findet auch kleine/ferne Plates.
+    if (alprAvailable()) {
+      const alprCands = await alprDetect(tmp);
+      if (alprCands.length > 0) {
+        const result = alprToOcrResult(alprCands);
+        const wl = await wlPromise;
+        const plate = pickPlate(result, wl);
+        if (plate) {
+          const viaWhitelist = wl.some(
+            (v) => normalizePlate(v.plate) === normalizePlate(plate)
+          );
+          const match = result.candidates.find(
+            (c) => normalizePlate(c.plate) === normalizePlate(plate)
+          );
+          return {
+            plate,
+            confidence: match?.confidence ?? result.confidence,
+            candidates: result.candidates,
+            raw: result.raw,
+            viaWhitelist,
+          };
+        }
+        // ALPR fand etwas, aber keine sichere Wahl → Vision darf ergänzen.
+      }
+    }
+
+    // Stufe 2: macOS Vision (Fallback).
+    if (!(await ensureBinary())) return empty;
+    const [result, wl] = await Promise.all([runOcr(tmp), wlPromise]);
     const plate = pickPlate(result, wl);
     const viaWhitelist = !!(
       plate && wl.some((v) => normalizePlate(v.plate) === normalizePlate(plate))
