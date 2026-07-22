@@ -17,6 +17,8 @@ const RECONNECT_MAX_MS = 60_000;
 const IDLE_TIMEOUT_MS = 90_000;
 /** Pro Ereignis höchstens alle 20 s eine Snapshot-Pipeline. */
 const EVENT_THROTTLE_MS = 20_000;
+/** Solange der Monitor verbunden ist: lastSeenAt regelmäßig aktualisieren. */
+const SEEN_PING_MS = 120_000;
 const SNAP_ATTEMPTS = 4;
 const SNAP_RETRY_MS = 1_500;
 
@@ -205,6 +207,7 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
     const abort = new AbortController();
     rt.abort = abort;
     let idleTimer: NodeJS.Timeout | null = null;
+    let seenTimer: NodeJS.Timeout | null = null;
     const resetIdle = () => {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => abort.abort(new Error("idle")), IDLE_TIMEOUT_MS);
@@ -222,6 +225,16 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
       }
       rt.reconnectDelay = RECONNECT_MIN_MS;
       resetIdle();
+
+      // Erreichbarkeit melden (UI-Online-Status), solange verbunden.
+      const seenPing = () =>
+        api("/api/hub/camera-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ seen: [rt.config.id], events: [] }),
+        }).catch(() => undefined);
+      void seenPing();
+      seenTimer = setInterval(seenPing, SEEN_PING_MS);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -248,6 +261,7 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
       }
     } finally {
       if (idleTimer) clearTimeout(idleTimer);
+      if (seenTimer) clearInterval(seenTimer);
       rt.abort = null;
     }
 
