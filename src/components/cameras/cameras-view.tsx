@@ -32,6 +32,7 @@ export interface CameraRow {
   username: string;
   channel: number;
   enabled: boolean;
+  vehicleDetection: boolean;
   notes: string | null;
   snapshotAt: string | null;
   lastSeenAt: string | null;
@@ -62,6 +63,7 @@ const EMPTY = {
   password: "",
   channel: "0",
   enabled: true,
+  vehicleDetection: true,
   notes: "",
 };
 
@@ -135,6 +137,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       password: "",
       channel: String(c.channel),
       enabled: c.enabled,
+      vehicleDetection: c.vehicleDetection,
       notes: c.notes ?? "",
     });
     setError("");
@@ -158,6 +161,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           password: form.password,
           channel: Number(form.channel) || 0,
           enabled: form.enabled,
+          vehicleDetection: form.vehicleDetection,
           notes: form.notes,
         }),
       });
@@ -279,7 +283,15 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     </div>
                     <div className="flex items-center justify-between gap-2 p-3">
                       <div className="min-w-0">
-                        <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">{c.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">{c.name}</p>
+                          {c.vehicleDetection && (
+                            <Car
+                              className="h-3.5 w-3.5 shrink-0 text-amber-500"
+                              aria-label="Fahrzeug-Erkennung aktiv"
+                            />
+                          )}
+                        </div>
                         <p className="text-xs text-slate-400 font-mono truncate">
                           {c.host}{c.channel > 0 ? ` · Kanal ${c.channel}` : ""}
                         </p>
@@ -475,6 +487,19 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 <p className="text-xs text-slate-500">Vom Hub überwachen (Events + Schnappschüsse)</p>
               </div>
               <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <div>
+                <p className="text-sm font-medium">Fahrzeug-Erkennung</p>
+                <p className="text-xs text-slate-500">
+                  Fahrzeug-Events, Kennzeichen-OCR und Sichtungen auf dieser Kamera
+                </p>
+              </div>
+              <Switch
+                checked={form.vehicleDetection}
+                onCheckedChange={(v) => set("vehicleDetection", v)}
+              />
             </div>
 
             <div className="space-y-1.5">

@@ -1372,6 +1372,8 @@ model Camera {
   /// Kanal: 0 bei Einzelkameras, 0..n hinter einem NVR/Home Hub.
   channel    Int           @default(0)
   enabled    Boolean       @default(true)
+  /// Fahrzeug-Erkennung (Burst + Plate-OCR + Sichtungen) auf dieser Kamera.
+  vehicleDetection Boolean @default(true)
   notes      String?
   /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
   snapshot   Bytes?

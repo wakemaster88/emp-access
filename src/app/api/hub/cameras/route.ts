@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       username: true,
       password: true,
       channel: true,
+      vehicleDetection: true,
     },
     orderBy: { id: "asc" },
   });

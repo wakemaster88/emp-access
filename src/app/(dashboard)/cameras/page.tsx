@@ -24,6 +24,7 @@ export default async function CamerasPage() {
         username: true,
         channel: true,
         enabled: true,
+        vehicleDetection: true,
         notes: true,
         snapshotAt: true,
         lastSeenAt: true,

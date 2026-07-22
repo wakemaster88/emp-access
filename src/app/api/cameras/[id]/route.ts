@@ -36,6 +36,10 @@ export async function PUT(
       password: body.password ? String(body.password) : existing.password,
       channel: body.channel !== undefined ? (Number(body.channel) || 0) : existing.channel,
       enabled: typeof body.enabled === "boolean" ? body.enabled : existing.enabled,
+      vehicleDetection:
+        typeof body.vehicleDetection === "boolean"
+          ? body.vehicleDetection
+          : existing.vehicleDetection,
       notes: body.notes !== undefined ? (body.notes?.trim() || null) : existing.notes,
     },
     select: { id: true, name: true, host: true, enabled: true },

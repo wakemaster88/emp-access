@@ -21,6 +21,8 @@ export interface CameraConfig {
   username: string;
   password: string;
   channel: number;
+  /** Fahrzeug-Erkennung auf dieser Kamera (Events + Burst + OCR). */
+  vehicleDetection?: boolean;
 }
 
 interface CameraRuntime {
@@ -247,6 +249,8 @@ async function pollStates(cam: CameraRuntime): Promise<Record<string, boolean>> 
     const ai = await cgi(cam, "GetAiState", { channel });
     const map: Record<string, string> = { people: "PERSON", vehicle: "VEHICLE", dog_cat: "ANIMAL" };
     for (const [key, type] of Object.entries(map)) {
+      // Fahrzeug-Erkennung pro Kamera abschaltbar (Spam-Weitwinkel).
+      if (type === "VEHICLE" && cam.config.vehicleDetection === false) continue;
       const entry = ai[key] as { alarm_state?: number; support?: number } | undefined;
       if (entry?.support === 1) states[type] = entry.alarm_state === 1;
     }
@@ -390,6 +394,10 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+  if (cam.config.vehicleDetection === false) {
+    log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (Fahrzeug-Erkennung aus)`);
+    return null;
+  }
 
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
