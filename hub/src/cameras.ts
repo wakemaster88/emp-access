@@ -42,27 +42,24 @@ const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
 const PERSON_SNAP_RETRY_MS = 1_200;
 /**
- * Fahrzeuge: sofort Burst-Snaps ab Event-Start, danach optional Vision.
- * Vision nur auf Spam-/Weitwinkel-Kameras – Zufahrt vertraut Reolink.
- * Wichtig: ersten Frame bevorzugen (mittlerer/letzter = oft zu spät).
+ * Fahrzeuge: Burst über mehrere Sekunden, dann Vision wählt den besten Frame.
+ * Spätere Frames zuerst (Auto oft näher); leere Szenen → kein Upload.
+ * Spam-Kameras: kürzerer Burst. Override: HUB_VEHICLE_VISION=always|never|auto
  */
 const VEHICLE_SNAP_DELAY_MS = 0;
-const VEHICLE_BURST_COUNT = 3;
-const VEHICLE_BURST_GAP_MS = 350;
 
-/**
- * Ob llava das JPEG prüfen muss. Weitwinkel (Seilbahn/Aquapark) = ja.
- * Zufahrt/Nähe = nein (Reolink VEHICLE reicht; llava war zu streng).
- * Override: HUB_VEHICLE_VISION=always|never|auto (Default auto).
- */
-function vehicleNeedsVision(cam: CameraConfig): boolean {
-  const mode = (process.env.HUB_VEHICLE_VISION || "auto").toLowerCase();
-  if (mode === "always") return true;
-  if (mode === "never") return false;
+function vehicleBurstPlan(cam: CameraConfig): { count: number; gapMs: number } {
   const name = cam.name.toLowerCase();
-  if (/seilbahn|aquapark/.test(name)) return true;
-  if (/eingang|halle|insel|shop|drehkreuz|gastro|umkleide/.test(name)) return false;
-  return true;
+  // Weitwinkel-Spam: kurz prüfen, nicht 5× llava.
+  if (/seilbahn|aquapark/.test(name)) return { count: 2, gapMs: 500 };
+  // Zufahrt: Auto kommt von weit → späterer Frame meist besser.
+  return { count: 5, gapMs: 900 };
+}
+
+function vehicleVisionMode(): "always" | "never" | "auto" {
+  const mode = (process.env.HUB_VEHICLE_VISION || "auto").toLowerCase();
+  if (mode === "always" || mode === "never") return mode;
+  return "auto";
 }
 
 function baseUrl(c: CameraConfig): string {
@@ -293,8 +290,8 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 }
 
 /**
- * Fahrzeug-Erkennung: kurzer Delay, Burst-Snaps solange VEHICLE aktiv,
- * optional llava (nur Spam-/Weitwinkel-Kameras), dann Upload.
+ * Fahrzeug-Erkennung: Burst solange VEHICLE aktiv, Vision wählt den besten
+ * Frame (spätere zuerst). Ohne YES → kein Upload (keine leeren Zufahrts-Snaps).
  */
 async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
@@ -302,8 +299,9 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
 
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
+  const plan = vehicleBurstPlan(cam.config);
   const snaps: Buffer[] = [];
-  for (let i = 0; i < VEHICLE_BURST_COUNT; i++) {
+  for (let i = 0; i < plan.count; i++) {
     try {
       const states = await pollStates(cam);
       cam.states.VEHICLE = states.VEHICLE ?? false;
@@ -327,8 +325,8 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     }
 
     snaps.push(await captureSnap(cam));
-    if (i < VEHICLE_BURST_COUNT - 1) {
-      await new Promise((r) => setTimeout(r, VEHICLE_BURST_GAP_MS));
+    if (i < plan.count - 1) {
+      await new Promise((r) => setTimeout(r, plan.gapMs));
     }
   }
 
@@ -337,36 +335,38 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     return null;
   }
 
-  const needVision = vehicleNeedsVision(cam.config);
+  const mode = vehicleVisionMode();
   let buf: Buffer | null = null;
 
-  if (!needVision) {
-    // Erster Frame = nah am VEHICLE-Start. Mittel/Ende war oft leere Szene
-    // oder Auto schon aus dem Bild (z.B. Eingang/Halle heute früh).
-    buf = snaps[0];
+  if (mode === "never") {
+    // Notfall: letzter Frame (Auto näher) ohne Prüfung.
+    buf = snaps[snaps.length - 1];
     log(
-      `Fahrzeug-Snapshot ${cam.config.name}: Reolink vertraut – Frame 1/${snaps.length} (Event-Start)`
+      `Fahrzeug-Snapshot ${cam.config.name}: Vision aus – Frame ${snaps.length}/${snaps.length}`
     );
   } else {
+    // Spätere Frames zuerst: bei Annäherung oft das beste Bild.
     log(
-      `Fahrzeug-Snapshot ${cam.config.name}: Vision auf ${snaps.length} Burst-Snap(s) …`
+      `Fahrzeug-Snapshot ${cam.config.name}: Vision wählt aus ${snaps.length} Frames (spät→früh) …`
     );
-    for (let i = 0; i < snaps.length; i++) {
-      const ok = await jpegContainsVehicle(snaps[i]);
+    for (let i = snaps.length - 1; i >= 0; i--) {
+      const ok = await jpegContainsVehicle(snaps[i], { quick: true });
       if (ok === true) {
         buf = snaps[i];
-        log(`Fahrzeug-Snapshot ${cam.config.name}: Vision YES (Frame ${i + 1}/${snaps.length})`);
+        log(
+          `Fahrzeug-Snapshot ${cam.config.name}: Vision YES → Frame ${i + 1}/${snaps.length}`
+        );
         break;
       }
       log(
-        `Fahrzeug-Snapshot ${cam.config.name}: Vision Frame ${i + 1}/${snaps.length} → ${
+        `Fahrzeug-Snapshot ${cam.config.name}: Frame ${i + 1}/${snaps.length} → ${
           ok === false ? "NO" : "?"
         }`
       );
     }
     if (!buf) {
       log(
-        `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (Vision: kein Fahrzeug in ${snaps.length} Frames)`
+        `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Fahrzeug in ${snaps.length} Frames)`
       );
       return null;
     }

@@ -137,16 +137,20 @@ async function askOllama(jpeg: Buffer, label: string): Promise<boolean | null> {
 }
 
 /**
- * Prüft, ob im JPEG ein Fahrzeug ist (Vollbild + Zoom-Crops).
- * `null` = Prüfung fehlgeschlagen (Ollama down / Timeout).
+ * Prüft, ob im JPEG ein Fahrzeug ist.
+ * `quick: true` = nur Vollbild (für Burst-Auswahl, schneller).
+ * Sonst Vollbild + Zoom-Crops. `null` = Ollama down / Timeout.
  */
-export async function jpegContainsVehicle(jpeg: Buffer): Promise<boolean | null> {
+export async function jpegContainsVehicle(
+  jpeg: Buffer,
+  opts: { quick?: boolean } = {}
+): Promise<boolean | null> {
   try {
     const full = await sipsResize(jpeg, MAX_EDGE);
-    const fullVerdict = await askOllama(full, "full");
+    const fullVerdict = await askOllama(full, opts.quick ? "full-quick" : "full");
     if (fullVerdict === true) return true;
+    if (opts.quick) return fullVerdict;
 
-    // Bei NO: Zoom Zentrum + untere Hälfte (Straße) – nacheinander, Abbruch bei YES.
     for (const region of ["center", "lower"] as const) {
       const crop = await sipsRegion(jpeg, region);
       if (!crop) continue;
@@ -154,7 +158,6 @@ export async function jpegContainsVehicle(jpeg: Buffer): Promise<boolean | null>
       if (v === true) return true;
     }
 
-    // mind. ein klares NO → kein Fahrzeug; nur nulls → null
     if (fullVerdict === false) return false;
     return fullVerdict;
   } catch (e) {
