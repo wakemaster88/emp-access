@@ -1,0 +1,53 @@
+# go2rtc Beispiel-Konfiguration
+# ================================
+# In Phase 2 wird diese Datei automatisch aus der Cam-Konfiguration generiert.
+# Diese Vorlage zeigt manuelle Einträge zum sofortigen Testen.
+#
+# Installation auf macOS:
+#   brew install go2rtc
+#
+# Starten:
+#   go2rtc -config infra/go2rtc.example.yaml
+#
+# Web-UI: http://localhost:1984
+
+api:
+  listen: ":1984"
+  origin: "*"
+
+log:
+  level: info
+
+webrtc:
+  ice_servers:
+    - urls:
+        - stun:stun.l.google.com:19302
+  # Liste der lokalen IPs/Ports für ICE-Kandidaten.
+  # Wenn alles auf demselben Mac läuft, reicht 127.0.0.1.
+  # Für Zugriff vom LAN: zusätzlich die LAN-IP des Macs.
+  candidates:
+    - 127.0.0.1:8555
+    # - 192.168.1.10:8555  # IP des Macs hier eintragen wenn LAN-Zugriff
+
+# Streams: ein Eintrag pro Cam-Stream.
+# Konvention: <cam-id>_main und <cam-id>_sub
+# Die Cam-ID muss zur ID in config.json passen.
+streams:
+  # ── Beispiel: RLC-823A ───────────────────────────────
+  cam-eingang_sub:
+    - rtsp://admin:DEIN_PW@192.168.1.51:554/h264Preview_01_sub
+  cam-eingang_main:
+    - rtsp://admin:DEIN_PW@192.168.1.51:554/h264Preview_01_main
+
+  # ── Beispiel: GO PT Ultra (Battery) ──────────────────
+  # Im Akku-Modus oft nicht direkt erreichbar; Snapshot reicht für Grid.
+  cam-tor_main:
+    - rtsp://admin:DEIN_PW@192.168.1.55:554/h264Preview_01_main
+  cam-tor_sub:
+    - rtsp://admin:DEIN_PW@192.168.1.55:554/h264Preview_01_sub
+
+  # ── Beispiel: Doorbird ───────────────────────────────
+  # Phase 4: wird vom Admin gesetzt
+  # doorbird:
+  #   - rtsp://API_USER:PW@192.168.1.30:554/mpeg/media.amp
+  #   - doorbird://API_USER:PW@192.168.1.30

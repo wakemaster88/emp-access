@@ -293,7 +293,7 @@ export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number 
   const upload = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
-    body: buf,
+    body: new Uint8Array(buf),
   });
   if (!upload.ok) throw new Error(`Snapshot-Upload fehlgeschlagen: HTTP ${upload.status}`);
   cam.lastSnapshotAt = Date.now();
@@ -563,6 +563,132 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   log(`Fahrzeug-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
   cam.lastSnapshotAt = Date.now();
   return { bytes: buf.length };
+}
+
+/* ---------------------------------------------------------------------------
+ * Kamera-Steuerung (Kontrollzentrum): PTZ, Scheinwerfer, IR, Sirene, Presets.
+ * Wird ueber Hub-Tasks aus der Cloud angestossen (tasks.ts).
+ * ------------------------------------------------------------------------- */
+
+const PTZ_OPS = new Set([
+  "Left", "Right", "Up", "Down",
+  "LeftUp", "LeftDown", "RightUp", "RightDown",
+  "ZoomInc", "ZoomDec", "FocusInc", "FocusDec",
+  "Stop", "Auto", "ToPos", "SetPos",
+]);
+
+/** Richtungs-/Zoom-Ops, die ohne Stop endlos weiterlaufen wuerden. */
+const PTZ_CONTINUOUS_OPS = new Set([
+  "Left", "Right", "Up", "Down",
+  "LeftUp", "LeftDown", "RightUp", "RightDown",
+  "ZoomInc", "ZoomDec", "FocusInc", "FocusDec",
+]);
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+async function getControlCam(cameraId: number): Promise<CameraRuntime> {
+  if (!cameras.has(cameraId)) {
+    // Task kann vor dem ersten Kamera-Poll eintreffen.
+    await refreshConfigs();
+  }
+  const cam = cameras.get(cameraId);
+  if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+  return cam;
+}
+
+/**
+ * PTZ-Steuerung. Bei Richtungs-/Zoom-Ops wird nach `durationMs`
+ * (Default 800 ms, max 5 s) automatisch gestoppt, damit die Kamera bei
+ * Task-Latenz nicht endlos weiterfaehrt.
+ */
+export async function ptzControl(
+  cameraId: number,
+  payload: Record<string, unknown> | null
+): Promise<unknown> {
+  const cam = await getControlCam(cameraId);
+  const op = String(payload?.op ?? "");
+  if (!PTZ_OPS.has(op)) throw new Error(`Ungültige PTZ-Operation: ${op || "—"}`);
+
+  const speed = clamp(Number(payload?.speed) || 32, 1, 64);
+  const param: Record<string, unknown> = { channel: cam.config.channel, op, speed };
+  if (op === "ToPos" || op === "SetPos") {
+    const presetId = Number(payload?.presetId);
+    if (!Number.isInteger(presetId)) throw new Error("presetId fehlt für ToPos/SetPos");
+    param.id = presetId;
+  }
+
+  await ensureLogin(cam);
+  await cgi(cam, "PtzCtrl", param);
+
+  if (PTZ_CONTINUOUS_OPS.has(op)) {
+    const durationMs = clamp(Number(payload?.durationMs) || 800, 100, 5000);
+    await new Promise((r) => setTimeout(r, durationMs));
+    await cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "Stop", speed });
+    return { op, speed, durationMs, stopped: true };
+  }
+  return { op, speed };
+}
+
+/** Weisslicht-Scheinwerfer an/aus (manueller Modus). */
+export async function setSpotlight(
+  cameraId: number,
+  payload: Record<string, unknown> | null
+): Promise<unknown> {
+  const cam = await getControlCam(cameraId);
+  const on = payload?.on === true;
+  const brightness = clamp(Number(payload?.brightness) || 100, 1, 100);
+  await ensureLogin(cam);
+  await cgi(cam, "SetWhiteLed", {
+    WhiteLed: { channel: cam.config.channel, state: on ? 1 : 0, mode: 1, bright: brightness },
+  });
+  return { on, brightness };
+}
+
+/** Infrarot-LEDs: Auto | On | Off. */
+export async function setIrLights(
+  cameraId: number,
+  payload: Record<string, unknown> | null
+): Promise<unknown> {
+  const cam = await getControlCam(cameraId);
+  const state = String(payload?.state ?? "");
+  if (!["Auto", "On", "Off"].includes(state)) {
+    throw new Error(`Ungültiger IR-Zustand: ${state || "—"} (Auto|On|Off)`);
+  }
+  await ensureLogin(cam);
+  await cgi(cam, "SetIrLights", { IrLights: { channel: cam.config.channel, state } });
+  return { state };
+}
+
+/** Sirene manuell ausloesen/stoppen (AudioAlarmPlay). */
+export async function setSiren(
+  cameraId: number,
+  payload: Record<string, unknown> | null
+): Promise<unknown> {
+  const cam = await getControlCam(cameraId);
+  const on = payload?.on === true;
+  await ensureLogin(cam);
+  await cgi(cam, "AudioAlarmPlay", {
+    alarm_mode: "manul",
+    manual_switch: on ? 1 : 0,
+    times: 1,
+    channel: cam.config.channel,
+  });
+  return { on };
+}
+
+/** Gespeicherte PTZ-Presets der Kamera auslesen. */
+export async function getPtzPresets(cameraId: number): Promise<unknown> {
+  const cam = await getControlCam(cameraId);
+  await ensureLogin(cam);
+  const value = await cgi(cam, "GetPtzPreset", { channel: cam.config.channel });
+  const presets = (value.PtzPreset as Array<{ id: number; name: string; enable?: number }> | undefined) ?? [];
+  return {
+    presets: presets
+      .filter((p) => p.enable !== 0 && typeof p.name === "string" && p.name.trim() !== "")
+      .map((p) => ({ id: p.id, name: p.name })),
+  };
 }
 
 async function refreshConfigs(): Promise<void> {

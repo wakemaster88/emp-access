@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "cams": [
+    {
+      "id": "cam-eingang",
+      "name": "Eingang",
+      "model": "RLC-823A",
+      "ip": "192.168.1.51",
+      "port": 80,
+      "rtspPort": 554,
+      "username": "admin",
+      "password": "DEIN_PASSWORT",
+      "channel": 0,
+      "streamMain": "h264Preview_01_main",
+      "streamSub": "h264Preview_01_sub",
+      "enabled": true
+    },
+    {
+      "id": "cam-tor",
+      "name": "Tor",
+      "model": "GO PT Ultra",
+      "ip": "192.168.1.55",
+      "port": 80,
+      "rtspPort": 554,
+      "username": "admin",
+      "password": "DEIN_PASSWORT",
+      "channel": 0,
+      "streamMain": "h264Preview_01_main",
+      "streamSub": "h264Preview_01_sub",
+      "enabled": true
+    }
+  ],
+  "widgets": [
+    {
+      "id": "w-eingang",
+      "type": "reolink",
+      "title": "Eingang",
+      "camId": "cam-eingang",
+      "enabled": true,
+      "showTitleBar": true
+    },
+    {
+      "id": "w-tor",
+      "type": "reolink",
+      "title": "Tor",
+      "camId": "cam-tor",
+      "enabled": true,
+      "showTitleBar": true
+    },
+    {
+      "id": "w-clock",
+      "type": "clock",
+      "title": "Uhrzeit",
+      "format": "24h",
+      "showSeconds": false,
+      "showDate": true,
+      "enabled": true,
+      "showTitleBar": false
+    },
+    {
+      "id": "w-zeit",
+      "type": "iframe",
+      "title": "Zeiterfassung",
+      "url": "https://example.com",
+      "zoom": 1,
+      "sandbox": "allow-scripts allow-same-origin allow-forms",
+      "reloadMin": 60,
+      "enabled": true
+    }
+  ],
+  "layouts": [],
+  "activeLayoutId": null,
+  "doorbird": {
+    "enabled": false,
+    "ip": "",
+    "username": "",
+    "password": "",
+    "webhookSecret": "",
+    "ringWindowSec": 90,
+    "enforceRingWindow": true,
+    "autoHideSec": 60,
+    "relayId": "1",
+    "ringSoundUrl": ""
+  },
+  "settings": {
+    "go2rtcUrl": "http://127.0.0.1:1984",
+    "adminPin": "",
+    "autoRotate": {
+      "enabled": false,
+      "intervalSec": 30,
+      "order": "sequential"
+    },
+    "reloadIntervalMin": 360,
+    "sirenCooldownSec": 60,
+    "sirenMaxDurationSec": 30
+  }
+}

@@ -3,7 +3,14 @@ import { promisify } from "node:util";
 import dgram from "node:dgram";
 import os from "node:os";
 import { log } from "./config.js";
-import { uploadSnapshot } from "./cameras.js";
+import {
+  uploadSnapshot,
+  ptzControl,
+  setSpotlight,
+  setIrLights,
+  setSiren,
+  getPtzPresets,
+} from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
 import { openDoorbirdDoor, isDoorbird, uploadDoorbirdSnapshot } from "./doorbird.js";
 
@@ -149,6 +156,36 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const r = await enrollFromSighting(sightingId, listedPersonId);
       if (!r.ok) return { success: false, error: r.error ?? "Enroll fehlgeschlagen" };
       return { success: true, result: r };
+    }
+    case "CAMERA_PTZ":
+    case "CAMERA_SPOTLIGHT":
+    case "CAMERA_IR":
+    case "CAMERA_SIREN":
+    case "CAMERA_PTZ_PRESETS": {
+      const cameraId = Number(task.payload?.cameraId);
+      if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
+      try {
+        let result: unknown;
+        switch (task.type) {
+          case "CAMERA_PTZ":
+            result = await ptzControl(cameraId, task.payload);
+            break;
+          case "CAMERA_SPOTLIGHT":
+            result = await setSpotlight(cameraId, task.payload);
+            break;
+          case "CAMERA_IR":
+            result = await setIrLights(cameraId, task.payload);
+            break;
+          case "CAMERA_SIREN":
+            result = await setSiren(cameraId, task.payload);
+            break;
+          default:
+            result = await getPtzPresets(cameraId);
+        }
+        return { success: true, result: { cameraId, ...(result as object) } };
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
     }
     case "DOORBIRD_OPEN": {
       const cameraId = Number(task.payload?.cameraId);

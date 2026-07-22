@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.local.webcams-tracker</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/aaronarmnborst/repos/webcams/tracker</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/aaronarmnborst/repos/webcams/tracker/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>WEBCAMS_CONFIG_PATH</key>
+    <string>/Users/aaronarmnborst/repos/webcams/config.json</string>
+    <!-- Falls MPS unrund läuft: auf "cpu" setzen -->
+    <!-- <key>WEBCAMS_TRACKER_DEVICE</key><string>cpu</string> -->
+  </dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/aaronarmnborst/repos/webcams/tracker/.venv/bin/uvicorn</string>
+    <string>main:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8088</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>15</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/aaronarmnborst/Library/Logs/webcams/tracker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/aaronarmnborst/Library/Logs/webcams/tracker.err</string>
+</dict>
+</plist>

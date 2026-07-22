@@ -1,0 +1,8 @@
+# Server-Start (pnpm start) darf node_modules nicht prüfen/verändern.
+# Verhindert, dass ein Neustart an ignorierten Build-Scripts (sharp,
+# unrs-resolver – beides nur transitiv) mit Exit 1 abbricht.
+verifyDepsBeforeRun: false
+
+onlyBuiltDependencies:
+  - sharp
+  - unrs-resolver
