@@ -13,6 +13,7 @@ export async function GET() {
     include: {
       shellyDevice: { select: { id: true, name: true } },
       camera: { select: { id: true, name: true } },
+      doorbird: { select: { id: true, name: true } },
       _count: { select: { sightings: true } },
     },
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
@@ -57,6 +58,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (parsed.data.doorbirdCameraId) {
+    const doorbird = await db.camera.findFirst({
+      where: { id: parsed.data.doorbirdCameraId, accountId: accountId!, kind: "DOORBIRD" },
+      select: { id: true },
+    });
+    if (!doorbird) {
+      return NextResponse.json({ error: "DoorBird nicht gefunden" }, { status: 400 });
+    }
+  }
+
   const existing = await db.allowedVehicle.findUnique({
     where: {
       accountId_plateNormalized: { accountId: accountId!, plateNormalized },
@@ -78,6 +89,7 @@ export async function POST(request: NextRequest) {
       isActive: parsed.data.isActive ?? true,
       notes: parsed.data.notes?.trim() || null,
       cameraId: parsed.data.cameraId ?? null,
+      doorbirdCameraId: parsed.data.doorbirdCameraId ?? null,
       shellyDeviceId: parsed.data.shellyDeviceId ?? null,
       shellyAction: parsed.data.shellyAction ?? "ON",
       timerSeconds: parsed.data.timerSeconds ?? null,
@@ -87,6 +99,7 @@ export async function POST(request: NextRequest) {
     include: {
       shellyDevice: { select: { id: true, name: true } },
       camera: { select: { id: true, name: true } },
+      doorbird: { select: { id: true, name: true } },
       _count: { select: { sightings: true } },
     },
   });

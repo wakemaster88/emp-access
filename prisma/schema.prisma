@@ -1387,7 +1387,8 @@ model Camera {
   events     CameraEvent[]
   automations ShellyAutomation[]
   vehicleSightings VehicleSighting[]
-  allowedVehicles AllowedVehicle[]
+  allowedVehicles AllowedVehicle[] @relation("VehicleTriggerCamera")
+  doorbirdVehicles AllowedVehicle[] @relation("VehicleDoorbird")
   listedPersons   ListedPerson[]
   personSightings PersonSighting[]
   surveillanceCameras SurveillanceCamera[]
@@ -1449,7 +1450,10 @@ model AllowedVehicle {
   notes           String?
   /// Nur diese Kamera darf den Shelly ausloesen. null = alle Kameras.
   cameraId        Int?
-  camera          Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  camera          Camera?   @relation("VehicleTriggerCamera", fields: [cameraId], references: [id], onDelete: SetNull)
+  /// DoorBird, deren Tueroeffner bei Erkennung geschaltet wird (Hub-Task).
+  doorbirdCameraId Int?
+  doorbird        Camera?   @relation("VehicleDoorbird", fields: [doorbirdCameraId], references: [id], onDelete: SetNull)
   /// Shelly, der bei Erkennung geschaltet wird.
   shellyDeviceId  Int?
   shellyDevice    Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)

@@ -43,6 +43,16 @@ export async function PUT(
     }
   }
 
+  if (parsed.data.doorbirdCameraId) {
+    const doorbird = await db.camera.findFirst({
+      where: { id: parsed.data.doorbirdCameraId, accountId: accountId!, kind: "DOORBIRD" },
+      select: { id: true },
+    });
+    if (!doorbird) {
+      return NextResponse.json({ error: "DoorBird nicht gefunden" }, { status: 400 });
+    }
+  }
+
   let plate = existing.plate;
   let plateNormalized = existing.plateNormalized;
   if (parsed.data.plate !== undefined) {
@@ -74,6 +84,9 @@ export async function PUT(
       ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {}),
       ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes?.trim() || null } : {}),
       ...(parsed.data.cameraId !== undefined ? { cameraId: parsed.data.cameraId } : {}),
+      ...(parsed.data.doorbirdCameraId !== undefined
+        ? { doorbirdCameraId: parsed.data.doorbirdCameraId }
+        : {}),
       ...(parsed.data.shellyDeviceId !== undefined
         ? { shellyDeviceId: parsed.data.shellyDeviceId }
         : {}),
@@ -89,6 +102,7 @@ export async function PUT(
     include: {
       shellyDevice: { select: { id: true, name: true } },
       camera: { select: { id: true, name: true } },
+      doorbird: { select: { id: true, name: true } },
       _count: { select: { sightings: true } },
     },
   });

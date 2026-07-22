@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Plus, Pencil, Trash2, Loader2, Car, History, Play, CheckCircle2, XCircle, Cctv, Link2, UserPlus,
+  Plus, Pencil, Trash2, Loader2, Car, History, Play, CheckCircle2, XCircle, Cctv, Link2, UserPlus, DoorOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +43,7 @@ export interface VehicleRow {
   isActive: boolean;
   notes: string | null;
   cameraId: number | null;
+  doorbirdCameraId: number | null;
   shellyDeviceId: number | null;
   shellyAction: string;
   timerSeconds: number | null;
@@ -51,12 +52,13 @@ export interface VehicleRow {
   lastTriggeredAt: string | null;
   shellyDevice: { id: number; name: string } | null;
   camera: { id: number; name: string } | null;
+  doorbird: { id: number; name: string } | null;
   _count: { sightings: number };
   recentSightings: SightingRow[];
 }
 
 export interface ShellyOption { id: number; name: string }
-export interface CameraOption { id: number; name: string }
+export interface CameraOption { id: number; name: string; kind?: string }
 
 interface Props {
   vehicles: VehicleRow[];
@@ -71,6 +73,7 @@ const EMPTY = {
   isActive: true,
   notes: "",
   cameraId: "",
+  doorbirdCameraId: "",
   shellyDeviceId: "",
   shellyAction: "ON",
   timerSeconds: "3",
@@ -120,6 +123,7 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
       isActive: v.isActive,
       notes: v.notes ?? "",
       cameraId: v.cameraId ? String(v.cameraId) : "",
+      doorbirdCameraId: v.doorbirdCameraId ? String(v.doorbirdCameraId) : "",
       shellyDeviceId: v.shellyDeviceId ? String(v.shellyDeviceId) : "",
       shellyAction: v.shellyAction || "ON",
       timerSeconds: v.timerSeconds != null ? String(v.timerSeconds) : "",
@@ -140,6 +144,7 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
         isActive: form.isActive,
         notes: form.notes.trim() || null,
         cameraId: form.cameraId ? Number(form.cameraId) : null,
+        doorbirdCameraId: form.doorbirdCameraId ? Number(form.doorbirdCameraId) : null,
         shellyDeviceId: form.shellyDeviceId ? Number(form.shellyDeviceId) : null,
         shellyAction: form.shellyAction,
         timerSeconds: form.timerSeconds ? Number(form.timerSeconds) : null,
@@ -349,6 +354,12 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
                             ) : (
                               <Badge variant="secondary" className="text-xs">kein Shelly</Badge>
                             )}
+                            {v.doorbird && (
+                              <Badge variant="outline" className="text-xs gap-1">
+                                <DoorOpen className="h-3 w-3" />
+                                {v.doorbird.name}
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-xs text-slate-500 mt-1">
                             {v._count.sightings} Sichtung{v._count.sightings !== 1 ? "en" : ""}
@@ -551,6 +562,30 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
               </div>
               <Switch checked={form.notifyOnDetection} onCheckedChange={(v) => setForm((f) => ({ ...f, notifyOnDetection: v }))} />
             </div>
+            {cameras.some((c) => c.kind === "DOORBIRD") && (
+              <div className="space-y-1.5">
+                <Label>DoorBird-Türöffner bei Erkennung</Label>
+                <Select
+                  value={form.doorbirdCameraId || "none"}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, doorbirdCameraId: v === "none" ? "" : v }))
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Keine Türöffnung</SelectItem>
+                    {cameras
+                      .filter((c) => c.kind === "DOORBIRD")
+                      .map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  Öffnet die Tür automatisch, wenn dieses Kennzeichen erkannt wird (Cooldown gilt).
+                </p>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Shelly bei Erkennung</Label>
               <Select value={form.shellyDeviceId || "none"} onValueChange={(v) => setForm((f) => ({ ...f, shellyDeviceId: v === "none" ? "" : v }))}>

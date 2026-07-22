@@ -37,6 +37,7 @@ export async function processVehicleSighting(opts: {
   matched: boolean;
   shellyTriggered: boolean;
   shellyOk: boolean | null;
+  doorbirdTriggered: boolean;
   vehicleName: string | null;
 }> {
   const seenAt = opts.seenAt ?? new Date();
@@ -71,13 +72,16 @@ export async function processVehicleSighting(opts: {
 
   let shellyTriggered = false;
   let shellyOk: boolean | null = null;
+  let doorbirdTriggered = false;
+
+  // Gemeinsamer Cooldown fuer Shelly- und DoorBird-Ausloesung.
+  const cooldownMs = vehicle ? Math.max(1, vehicle.cooldownMinutes) * 60_000 : 0;
+  const cooledDown =
+    !!vehicle &&
+    (!vehicle.lastTriggeredAt ||
+      seenAt.getTime() - vehicle.lastTriggeredAt.getTime() >= cooldownMs);
 
   if (vehicle?.shellyDeviceId && vehicle.shellyDevice && cameraAllowed) {
-    const cooldownMs = Math.max(1, vehicle.cooldownMinutes) * 60_000;
-    const cooledDown =
-      !vehicle.lastTriggeredAt ||
-      seenAt.getTime() - vehicle.lastTriggeredAt.getTime() >= cooldownMs;
-
     if (cooledDown) {
       const action = (SHELLY_ACTIONS.includes(vehicle.shellyAction as (typeof SHELLY_ACTIONS)[number])
         ? vehicle.shellyAction
@@ -100,12 +104,33 @@ export async function processVehicleSighting(opts: {
         action,
         vehicle.timerSeconds ?? undefined
       );
-
-      await prisma.allowedVehicle.update({
-        where: { id: vehicle.id },
-        data: { lastTriggeredAt: seenAt },
-      });
     }
+  }
+
+  // DoorBird-Türöffner: Hub-Task anlegen, der Hub führt open-door.cgi lokal aus.
+  if (vehicle?.doorbirdCameraId && cameraAllowed && cooledDown) {
+    try {
+      await prisma.hubTask.create({
+        data: {
+          type: "DOORBIRD_OPEN",
+          payload: { cameraId: vehicle.doorbirdCameraId },
+          accountId: opts.accountId,
+        },
+      });
+      doorbirdTriggered = true;
+      console.log(
+        `[vehicles] DoorBird-Türöffner ausgelöst: ${vehicle.name} (${plateRaw}) → Kamera ${vehicle.doorbirdCameraId}`
+      );
+    } catch (err) {
+      console.error("[vehicles] DoorBird-Task fehlgeschlagen:", err);
+    }
+  }
+
+  if (vehicle && (shellyTriggered || doorbirdTriggered)) {
+    await prisma.allowedVehicle.update({
+      where: { id: vehicle.id },
+      data: { lastTriggeredAt: seenAt },
+    });
   }
 
   if (vehicle?.notifyOnDetection) {
@@ -162,6 +187,7 @@ export async function processVehicleSighting(opts: {
     matched: !!vehicle,
     shellyTriggered,
     shellyOk,
+    doorbirdTriggered,
     vehicleName: vehicle?.name ?? null,
   };
 }

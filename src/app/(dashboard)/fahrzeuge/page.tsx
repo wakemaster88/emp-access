@@ -33,6 +33,7 @@ export default async function FahrzeugePage() {
       include: {
         shellyDevice: { select: { id: true, name: true } },
         camera: { select: { id: true, name: true } },
+        doorbird: { select: { id: true, name: true } },
         _count: { select: { sightings: true } },
         sightings: {
           select: sightingSelect,
@@ -55,7 +56,7 @@ export default async function FahrzeugePage() {
     }),
     db.camera.findMany({
       where: { accountId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, kind: true },
       orderBy: { name: "asc" },
     }),
   ]);
