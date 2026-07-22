@@ -223,44 +223,86 @@ function pickPlate(result: OcrResult, wl: WhitelistEntry[]): string | null {
   return top?.plate ?? null;
 }
 
+export interface PlateScore {
+  plate: string | null;
+  /** Confidence des gewählten Plates bzw. besten Kandidaten. */
+  confidence: number;
+  candidates: OcrCandidate[];
+  raw: string[];
+  viaWhitelist: boolean;
+}
+
 /**
- * Liest ein Kennzeichen aus einem Fahrzeug-JPEG.
- * `null` = nichts Lesbares / OCR aus / Binary fehlt.
+ * Plate-OCR mit Score – für Burst-Frame-Auswahl.
  */
-export async function readPlateFromJpeg(jpeg: Buffer): Promise<string | null> {
+export async function scorePlateFromJpeg(jpeg: Buffer): Promise<PlateScore> {
+  const empty: PlateScore = {
+    plate: null,
+    confidence: 0,
+    candidates: [],
+    raw: [],
+    viaWhitelist: false,
+  };
   if (process.env.HUB_PLATE_OCR === "0" || process.env.HUB_PLATE_OCR === "never") {
-    return null;
+    return empty;
   }
-  if (!(await ensureBinary())) return null;
+  if (!(await ensureBinary())) return empty;
 
   const tmp = path.join(tmpdir(), `emp-plate-${randomUUID()}.jpg`);
   try {
     await fs.writeFile(tmp, jpeg);
     const [result, wl] = await Promise.all([runOcr(tmp), ensureWhitelist()]);
     const plate = pickPlate(result, wl);
+    const viaWhitelist = !!(
+      plate && wl.some((v) => normalizePlate(v.plate) === normalizePlate(plate))
+    );
+    let confidence = 0;
     if (plate) {
-      const viaWl = wl.some((v) => normalizePlate(v.plate) === normalizePlate(plate));
-      log(
-        `Plate-OCR: ${plate} (conf=${result.confidence.toFixed(2)}${viaWl ? ", Whitelist" : ""})` +
-          (result.candidates.length > 1
-            ? ` · Alternativen: ${result.candidates
-                .slice(0, 4)
-                .map((c) => c.plate)
-                .join(", ")}`
-            : "")
+      const match = result.candidates.find(
+        (c) => normalizePlate(c.plate) === normalizePlate(plate)
       );
-    } else {
-      log(
-        `Plate-OCR: keines (top=${result.candidates[0]?.plate ?? "—"} conf=${(
-          result.candidates[0]?.confidence ?? 0
-        ).toFixed(2)})`
-      );
+      confidence = match?.confidence ?? result.confidence;
+      if (viaWhitelist && confidence < 0.5) confidence = 0.5;
+    } else if (result.candidates[0]) {
+      confidence = result.candidates[0].confidence;
     }
-    return plate;
+    return {
+      plate,
+      confidence,
+      candidates: result.candidates,
+      raw: result.raw,
+      viaWhitelist,
+    };
   } catch (e) {
     log(`Plate-OCR Fehler: ${e instanceof Error ? e.message : e}`);
-    return null;
+    return empty;
   } finally {
     await fs.unlink(tmp).catch(() => undefined);
   }
+}
+
+/**
+ * Liest ein Kennzeichen aus einem Fahrzeug-JPEG.
+ * `null` = nichts Lesbares / OCR aus / Binary fehlt.
+ */
+export async function readPlateFromJpeg(jpeg: Buffer): Promise<string | null> {
+  const score = await scorePlateFromJpeg(jpeg);
+  if (score.plate) {
+    log(
+      `Plate-OCR: ${score.plate} (conf=${score.confidence.toFixed(2)}${
+        score.viaWhitelist ? ", Whitelist" : ""
+      })` +
+        (score.candidates.length > 1
+          ? ` · Alternativen: ${score.candidates
+              .slice(0, 4)
+              .map((c) => c.plate)
+              .join(", ")}`
+          : "")
+    );
+  } else {
+    log(
+      `Plate-OCR: keines (top=${score.candidates[0]?.plate ?? "—"} conf=${score.confidence.toFixed(2)})`
+    );
+  }
+  return score.plate;
 }

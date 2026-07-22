@@ -4,10 +4,12 @@
  * GetAiState), meldet Start/Ende der Ereignisse an die Cloud und laedt
  * Schnappschuesse hoch (bei Ereignis-Beginn und auf Task-Anforderung).
  */
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { api, log } from "./config.js";
 import { STATE } from "./state.js";
 import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
-import { readPlateFromJpeg } from "./plate.js";
+import { scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 
 export interface CameraConfig {
@@ -43,24 +45,82 @@ const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
 const PERSON_SNAP_RETRY_MS = 1_200;
 /**
- * Fahrzeuge: Burst über mehrere Sekunden, dann Vision wählt den besten Frame.
- * Spätere Frames zuerst (Auto oft näher); leere Szenen → kein Upload.
- * Spam-Kameras: kürzerer Burst. Override: HUB_VEHICLE_VISION=always|never|auto
+ * Fahrzeuge: dichter Burst solange VEHICLE aktiv, lokal dumpen,
+ * Plate-OCR wählt den besten Frame. Fallback: Vision „Fahrzeug?“.
+ * Spam-Kameras: kürzer. Env: HUB_VEHICLE_BURST_*, HUB_VEHICLE_DUMP_DIR
  */
 const VEHICLE_SNAP_DELAY_MS = 0;
+/** Ab dieser OCR-Confidence früh abbrechen (späte Frames zuerst). */
+const PLATE_EARLY_STOP_CONF = Number(process.env.HUB_PLATE_EARLY_STOP_CONF || 0.85);
 
 function vehicleBurstPlan(cam: CameraConfig): { count: number; gapMs: number } {
   const name = cam.name.toLowerCase();
-  // Weitwinkel-Spam: kurz prüfen, nicht 5× llava.
-  if (/seilbahn|aquapark/.test(name)) return { count: 2, gapMs: 500 };
-  // Zufahrt: Auto kommt von weit → späterer Frame meist besser.
-  return { count: 5, gapMs: 900 };
+  const gapEnv = Number(process.env.HUB_VEHICLE_BURST_GAP_MS);
+  const countEnv = Number(process.env.HUB_VEHICLE_BURST_COUNT);
+  // Weitwinkel-Spam: kurz.
+  if (/seilbahn|aquapark/.test(name)) {
+    return {
+      count: Number.isFinite(countEnv) && countEnv > 0 ? Math.min(countEnv, 4) : 3,
+      gapMs: Number.isFinite(gapEnv) && gapEnv >= 200 ? gapEnv : 400,
+    };
+  }
+  // Zufahrt/Halle/Eingang: dichter Burst (~8s bei 20×400ms), stoppt wenn VEHICLE ende.
+  return {
+    count: Number.isFinite(countEnv) && countEnv > 0 ? countEnv : 20,
+    gapMs: Number.isFinite(gapEnv) && gapEnv >= 200 ? gapEnv : 400,
+  };
 }
 
 function vehicleVisionMode(): "always" | "never" | "auto" {
   const mode = (process.env.HUB_VEHICLE_VISION || "auto").toLowerCase();
   if (mode === "always" || mode === "never") return mode;
   return "auto";
+}
+
+/** Lokaler Burst-Dump; Default /tmp/veh-burst, aus mit HUB_VEHICLE_DUMP=0. */
+function vehicleDumpDir(): string | null {
+  if (process.env.HUB_VEHICLE_DUMP === "0" || process.env.HUB_VEHICLE_DUMP === "never") {
+    return null;
+  }
+  return process.env.HUB_VEHICLE_DUMP_DIR || "/tmp/veh-burst";
+}
+
+function burstFolderName(camName: string): string {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const safe = camName.replace(/[^\w\-]+/g, "_").slice(0, 40);
+  return `${ts}_${safe}`;
+}
+
+async function dumpVehicleBurst(
+  dir: string,
+  snaps: Buffer[],
+  scores: Array<{ index: number; score: PlateScore }>,
+  chosen: number | null,
+  camName: string
+): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+  for (let i = 0; i < snaps.length; i++) {
+    const tag = chosen === i ? "BEST" : String(i).padStart(2, "0");
+    await fs.writeFile(path.join(dir, `${tag}.jpg`), snaps[i]);
+  }
+  const meta = {
+    camera: camName,
+    savedAt: new Date().toISOString(),
+    frameCount: snaps.length,
+    chosen,
+    frames: scores.map(({ index, score }) => ({
+      index,
+      plate: score.plate,
+      confidence: score.confidence,
+      viaWhitelist: score.viaWhitelist,
+      topCandidates: score.candidates.slice(0, 5).map((c) => ({
+        plate: c.plate,
+        confidence: c.confidence,
+      })),
+    })),
+  };
+  await fs.writeFile(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+  log(`Fahrzeug-Burst Dump: ${dir} (${snaps.length} Frames, chosen=${chosen ?? "—"})`);
 }
 
 function baseUrl(c: CameraConfig): string {
@@ -291,8 +351,8 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
 }
 
 /**
- * Fahrzeug-Erkennung: Burst solange VEHICLE aktiv, Vision wählt den besten
- * Frame (spätere zuerst). Ohne YES → kein Upload (keine leeren Zufahrts-Snaps).
+ * Fahrzeug-Erkennung: dichter Burst → lokal dumpen → Plate-OCR wählt Frame.
+ * Ohne Plate: Fallback Vision (Fahrzeug?). Ohne beides → kein Upload.
  */
 async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
@@ -302,6 +362,9 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
 
   const plan = vehicleBurstPlan(cam.config);
   const snaps: Buffer[] = [];
+  log(
+    `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE …`
+  );
   for (let i = 0; i < plan.count; i++) {
     try {
       const states = await pollStates(cam);
@@ -311,6 +374,9 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
           log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
           return null;
         }
+        log(
+          `Fahrzeug-Burst ${cam.config.name}: VEHICLE ende nach ${snaps.length} Frames`
+        );
         break;
       }
     } catch (e) {
@@ -336,52 +402,95 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     return null;
   }
 
-  const mode = vehicleVisionMode();
-  let buf: Buffer | null = null;
+  // Plate-OCR spät→früh: Auto oft näher. Mit Dump alle Frames; sonst Early-Stop.
+  const dumpRoot = vehicleDumpDir();
+  const scores: Array<{ index: number; score: PlateScore }> = [];
+  let bestIdx: number | null = null;
+  let bestScore: PlateScore | null = null;
 
-  if (mode === "never") {
-    // Notfall: letzter Frame (Auto näher) ohne Prüfung.
-    buf = snaps[snaps.length - 1];
-    log(
-      `Fahrzeug-Snapshot ${cam.config.name}: Vision aus – Frame ${snaps.length}/${snaps.length}`
-    );
-  } else {
-    // Spätere Frames zuerst: bei Annäherung oft das beste Bild.
-    log(
-      `Fahrzeug-Snapshot ${cam.config.name}: Vision wählt aus ${snaps.length} Frames (spät→früh) …`
-    );
-    for (let i = snaps.length - 1; i >= 0; i--) {
-      const ok = await jpegContainsVehicle(snaps[i], { quick: true });
-      if (ok === true) {
-        buf = snaps[i];
-        log(
-          `Fahrzeug-Snapshot ${cam.config.name}: Vision YES → Frame ${i + 1}/${snaps.length}`
-        );
+  log(
+    `Fahrzeug-Burst ${cam.config.name}: Plate-OCR auf ${snaps.length} Frames (spät→früh${dumpRoot ? ", voller Dump" : ""}) …`
+  );
+  for (let i = snaps.length - 1; i >= 0; i--) {
+    const score = await scorePlateFromJpeg(snaps[i]);
+    scores.push({ index: i, score });
+    const rank =
+      (score.plate ? score.confidence : 0) + (score.viaWhitelist ? 0.25 : 0);
+    const bestRank = bestScore
+      ? (bestScore.plate ? bestScore.confidence : 0) + (bestScore.viaWhitelist ? 0.25 : 0)
+      : -1;
+    if (score.plate && rank > bestRank) {
+      bestIdx = i;
+      bestScore = score;
+      log(
+        `Fahrzeug-Burst ${cam.config.name}: Frame ${i + 1}/${snaps.length} → ${score.plate} conf=${score.confidence.toFixed(2)}${score.viaWhitelist ? " WL" : ""}`
+      );
+      if (
+        !dumpRoot &&
+        (score.confidence >= PLATE_EARLY_STOP_CONF || score.viaWhitelist)
+      ) {
         break;
       }
+    } else {
       log(
-        `Fahrzeug-Snapshot ${cam.config.name}: Frame ${i + 1}/${snaps.length} → ${
-          ok === false ? "NO" : "?"
-        }`
+        `Fahrzeug-Burst ${cam.config.name}: Frame ${i + 1}/${snaps.length} → ${score.candidates[0]?.plate ?? "—"} (${score.confidence.toFixed(2)})`
       );
-    }
-    if (!buf) {
-      log(
-        `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Fahrzeug in ${snaps.length} Frames)`
-      );
-      return null;
     }
   }
 
-  // 1) Reolink-LPR (falls vorhanden)  2) lokale Vision-OCR auf dem JPEG
-  let plate = await tryReadPlate(cam);
-  if (!plate) {
-    plate = await readPlateFromJpeg(buf);
+  scores.sort((a, b) => a.index - b.index);
+
+  let buf: Buffer | null = bestIdx != null ? snaps[bestIdx] : null;
+  let plate = bestScore?.plate ?? null;
+
+  // Fallback ohne Plate: Vision „Fahrzeug?“ (spät→früh) oder letzter Frame.
+  if (!buf) {
+    const mode = vehicleVisionMode();
+    if (mode === "never") {
+      buf = snaps[snaps.length - 1];
+      bestIdx = snaps.length - 1;
+      log(
+        `Fahrzeug-Burst ${cam.config.name}: kein Plate – letzter Frame ${snaps.length}/${snaps.length}`
+      );
+    } else {
+      for (let i = snaps.length - 1; i >= 0; i--) {
+        const ok = await jpegContainsVehicle(snaps[i], { quick: true });
+        if (ok === true) {
+          buf = snaps[i];
+          bestIdx = i;
+          log(
+            `Fahrzeug-Burst ${cam.config.name}: kein Plate – Vision YES Frame ${i + 1}/${snaps.length}`
+          );
+          break;
+        }
+      }
+      if (!buf) {
+        if (dumpRoot) {
+          const dir = path.join(dumpRoot, burstFolderName(cam.config.name));
+          await dumpVehicleBurst(dir, snaps, scores, null, cam.config.name);
+        }
+        log(
+          `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Plate/Fahrzeug in ${snaps.length} Frames)`
+        );
+        return null;
+      }
+    }
   }
+
+  // Reolink-LPR nur wenn OCR nichts fand.
+  if (!plate) {
+    plate = await tryReadPlate(cam);
+  }
+
+  if (dumpRoot) {
+    const dir = path.join(dumpRoot, burstFolderName(cam.config.name));
+    await dumpVehicleBurst(dir, snaps, scores, bestIdx, cam.config.name);
+  }
+
   const qs = new URLSearchParams({ cameraId: String(cameraId) });
   if (plate) {
     qs.set("plate", plate);
-    log(`Fahrzeug-Snapshot ${cam.config.name}: Kennzeichen ${plate}`);
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Kennzeichen ${plate} (Frame ${(bestIdx ?? 0) + 1})`);
   } else {
     log(`Fahrzeug-Snapshot ${cam.config.name}: kein Kennzeichen – manuelles Mapping`);
   }
