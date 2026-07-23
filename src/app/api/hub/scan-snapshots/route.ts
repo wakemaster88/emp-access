@@ -30,6 +30,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "cameraId/deviceId/at ungültig" }, { status: 400 });
   }
 
+  // Frische-Sperre: Aufnahmen, die deutlich nach dem Scan-Zeitpunkt
+  // entstanden sind (Hub-Backlog), nicht mehr zuordnen – sie zeigen mit
+  // hoher Wahrscheinlichkeit die falsche Person.
+  if (Date.now() - at.getTime() > 45_000) {
+    return NextResponse.json({ ok: true, attached: false, stale: true });
+  }
+
   const buf = Buffer.from(await request.arrayBuffer());
   if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) {
     return NextResponse.json({ error: "Kein gültiges JPEG" }, { status: 400 });

@@ -162,6 +162,11 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       if (!Number.isInteger(cameraId) || !Number.isInteger(deviceId)) {
         return { success: false, error: "cameraId/deviceId fehlt" };
       }
+      // Verspaetet abgeholte Tasks (Hub war offline/Neustart) nicht mehr
+      // ausfuehren: Ein Bild Minuten nach dem Scan zeigt die falsche Person.
+      if (at && Date.now() - new Date(at).getTime() > 30_000) {
+        return { success: true, result: { skipped: "stale", at } };
+      }
       try {
         const buf = isDoorbird(cameraId)
           ? await captureDoorbirdSnapshot(cameraId)
