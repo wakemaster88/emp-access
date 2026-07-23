@@ -104,36 +104,28 @@ function useCameraEvents(): Record<number, CameraEventRow[]> {
   return byCamera;
 }
 
-/** Kleine Ereignis-Zeile für die Kachel: laufende zuerst, sonst das letzte. */
+/** Kleine Ereignis-Zeile für die Kachel: nur das aktuellste Ereignis, immer mit Uhrzeit. */
 function EventOverlay({ events }: { events: CameraEventRow[] }) {
-  if (events.length === 0) return null;
+  // Laufendes Ereignis hat Vorrang, sonst das jüngste (Liste kommt absteigend sortiert).
+  const e = events.find((ev) => !ev.endedAt) ?? events[0];
+  if (!e) return null;
 
-  const active = events.filter((e) => !e.endedAt);
-  // Ohne laufendes Event: das jüngste abgeschlossene anzeigen.
-  const shown = (active.length > 0 ? active : events.slice(0, 1)).slice(0, 3);
+  const meta = EVENT_META[e.type];
+  if (!meta) return null;
+  const Icon = meta.icon;
+  const isActive = !e.endedAt;
 
   return (
-    <span className="flex items-center gap-2 min-w-0">
-      {shown.map((e) => {
-        const meta = EVENT_META[e.type];
-        if (!meta) return null;
-        const Icon = meta.icon;
-        const isActive = !e.endedAt;
-        return (
-          <span
-            key={e.id}
-            className={cn(
-              "flex items-center gap-1 text-[10px] font-medium",
-              meta.color,
-              isActive && "animate-pulse"
-            )}
-            title={`${meta.label} ${isActive ? "läuft" : `um ${fmtClock(e.startedAt)}`}`}
-          >
-            <Icon className="h-3 w-3 shrink-0" />
-            {isActive ? meta.label : `${meta.label} ${fmtClock(e.startedAt)}`}
-          </span>
-        );
-      })}
+    <span
+      className={cn(
+        "flex items-center gap-1 text-[10px] font-medium min-w-0",
+        meta.color,
+        isActive && "animate-pulse"
+      )}
+      title={`${meta.label} um ${fmtClock(e.startedAt)}${isActive ? " (läuft)" : ""}`}
+    >
+      <Icon className="h-3 w-3 shrink-0" />
+      {`${meta.label} ${fmtClock(e.startedAt)}`}
     </span>
   );
 }
