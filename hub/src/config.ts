@@ -40,7 +40,10 @@ export const CONFIG = {
   hostname: hostname(),
   version: gitVersion(),
   heartbeatIntervalMs: intEnv("HUB_HEARTBEAT_INTERVAL", 30) * 1000,
-  taskIntervalMs: intEnv("HUB_TASK_INTERVAL", 5) * 1000,
+  // 2 s statt 5 s: Scan-Schnappschuesse (SCAN_SNAPSHOT) sollen moeglichst
+  // nah am Scan-Zeitpunkt entstehen; auch PTZ/Tueroeffner reagieren dadurch
+  // schneller. Per HUB_TASK_INTERVAL uebersteuerbar.
+  taskIntervalMs: intEnv("HUB_TASK_INTERVAL", 2) * 1000,
   updateIntervalMs: intEnv("HUB_UPDATE_INTERVAL", 300) * 1000,
   dashboardPort: intEnv("HUB_DASHBOARD_PORT", 8787),
   scanIntervalMs: intEnv("HUB_SCAN_INTERVAL", 300) * 1000,
