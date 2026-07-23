@@ -11,6 +11,7 @@ import { api, log } from "./config.js";
 import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
 import { jpegContainsVehicle } from "./vision.js";
 import type { CameraConfig } from "./cameras.js";
+import { updateLocalStreams } from "./streams.js";
 
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -351,6 +352,16 @@ export function syncDoorbirds(configs: CameraConfig[]): void {
   for (const config of configs) {
     const existing = doorbirds.get(config.id);
     if (existing) {
+      // Host-Wechsel (z. B. VLAN-Umzug): lokale Stream-Konfiguration
+      // (go2rtc.yaml + Kiosk-config.json) nachziehen und Monitor neu verbinden.
+      const oldHost = existing.config.host;
+      if (oldHost && config.host && oldHost !== config.host) {
+        log(`DoorBird ${config.name}: Host ${oldHost} → ${config.host} (Cloud) – Streams werden umgestellt`);
+        void updateLocalStreams(oldHost, config.host).catch(() => {});
+        existing.config = config;
+        existing.abort?.abort(new Error("host-changed"));
+        continue;
+      }
       existing.config = config;
       continue;
     }

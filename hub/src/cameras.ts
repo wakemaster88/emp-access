@@ -715,6 +715,14 @@ async function refreshConfigs(): Promise<void> {
   for (const config of configs) {
     const existing = cameras.get(config.id);
     if (existing) {
+      // Host in der Cloud geaendert (z. B. manueller Umzug in ein anderes
+      // VLAN): lokale Stream-Konfiguration (go2rtc.yaml + Kiosk-config.json)
+      // sofort nachziehen, sonst zeigt das Live-Video auf die alte IP.
+      const oldHost = existing.config.host;
+      if (oldHost && config.host && oldHost !== config.host) {
+        log(`Kamera ${config.name}: Host ${oldHost} → ${config.host} (Cloud) – Streams werden umgestellt`);
+        void updateLocalStreams(oldHost, config.host).catch(() => {});
+      }
       // Bei geaenderten Zugangsdaten/Adresse Token verwerfen.
       const changed = JSON.stringify(existing.config) !== JSON.stringify(config);
       existing.config = config;
