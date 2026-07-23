@@ -502,7 +502,8 @@ function PresetPicker({
 
 type Schedule = NonNullable<PtzAutoConfig["patrol"]["schedule"]>;
 
-function ScheduleEditor({
+/** Wochentage + von/bis. Wird auch von der Edge-Watch-Sektion benutzt. */
+export function ScheduleEditor({
   value,
   onChange,
 }: {

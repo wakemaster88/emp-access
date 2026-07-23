@@ -13,6 +13,7 @@ import { scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { readArp } from "./scanner.js";
+import { updateLocalStreams } from "./streams.js";
 
 export interface CameraConfig {
   id: number;
@@ -798,6 +799,9 @@ async function tryRelocateCamera(cam: CameraRuntime): Promise<boolean> {
       log(`Kamera ${cam.config.name}: per MAC unter neuer IP gefunden (${oldHost} → ${ip})`);
       const ok = await reportNetworkUpdate(cam.config.id, { host: ip });
       if (!ok) log(`Kamera ${cam.config.name}: IP-Update in der Cloud fehlgeschlagen`);
+      // Lokale Stream-Konfiguration (go2rtc + Kiosk) nachziehen, damit auch
+      // das Live-Video im Kontrollzentrum der neuen IP folgt.
+      void updateLocalStreams(oldHost, ip).catch(() => {});
       return true;
     }
   } catch {
