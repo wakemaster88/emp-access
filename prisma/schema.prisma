@@ -1367,6 +1367,9 @@ model Camera {
   kind       String        @default("REOLINK")
   /// IP oder Hostname im lokalen Netz.
   host       String
+  /// MAC-Adresse (vom Hub automatisch gelernt). Erlaubt IP-Re-Mapping bei
+  /// DHCP-Wechsel: Hub sucht die MAC im ARP-Scan und aktualisiert `host`.
+  macAddress String?
   httpPort   Int           @default(80)
   https      Boolean       @default(false)
   username   String

@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
       name: true,
       kind: true,
       host: true,
+      macAddress: true,
       httpPort: true,
       https: true,
       username: true,

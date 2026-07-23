@@ -12,6 +12,7 @@ import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
 import { scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { syncDoorbirds } from "./doorbird.js";
+import { readArp } from "./scanner.js";
 
 export interface CameraConfig {
   id: number;
@@ -19,6 +20,8 @@ export interface CameraConfig {
   /** "REOLINK" (CGI-Polling, Default) | "DOORBIRD" (LAN-API, doorbird.ts). */
   kind?: string;
   host: string;
+  /** MAC-Adresse (automatisch gelernt) fuer IP-Re-Mapping bei DHCP-Wechsel. */
+  macAddress?: string | null;
   httpPort: number;
   https: boolean;
   username: string;
@@ -36,6 +39,10 @@ interface CameraRuntime {
   states: Record<string, boolean>;
   lastSnapshotAt: number;
   unreachableLogged: boolean;
+  /** Letzter MAC-Lernversuch (Throttle, erfolgreich erreichte Kamera). */
+  lastMacLearnAt: number;
+  /** Letzter IP-Re-Mapping-Versuch per MAC (Throttle bei Unerreichbarkeit). */
+  lastRelocateAt: number;
 }
 
 const cameras = new Map<number, CameraRuntime>();
@@ -722,10 +729,81 @@ async function refreshConfigs(): Promise<void> {
         states: {},
         lastSnapshotAt: 0,
         unreachableLogged: false,
+        lastMacLearnAt: 0,
+        lastRelocateAt: 0,
       });
     }
   }
   configLoadedAt = Date.now();
+}
+
+/* ---------------------------------------------------------------------------
+ * MAC-basiertes IP-Re-Mapping: Der Hub lernt die MAC-Adresse jeder erreichten
+ * Kamera (ARP-Tabelle) und meldet sie an die Cloud. Ist eine Kamera spaeter
+ * unter ihrer IP nicht erreichbar, wird die MAC in der ARP-Tabelle gesucht -
+ * taucht sie unter neuer IP auf (DHCP-Wechsel), stellt der Hub automatisch
+ * um und aktualisiert die Cloud-Konfiguration.
+ * ------------------------------------------------------------------------- */
+
+/** MAC hoechstens einmal pro Stunde pro Kamera nachschlagen/lernen. */
+const MAC_LEARN_INTERVAL_MS = 3_600_000;
+/** Re-Mapping-Versuch hoechstens einmal pro Minute pro Kamera. */
+const RELOCATE_THROTTLE_MS = 60_000;
+
+async function reportNetworkUpdate(
+  cameraId: number,
+  data: { macAddress?: string; host?: string }
+): Promise<boolean> {
+  const res = await api(`/api/hub/cameras/${cameraId}/network`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return res.ok;
+}
+
+/** MAC der (gerade erfolgreich erreichten) Kamera aus der ARP-Tabelle lernen. */
+async function learnCameraMac(cam: CameraRuntime): Promise<void> {
+  if (Date.now() - cam.lastMacLearnAt < MAC_LEARN_INTERVAL_MS) return;
+  cam.lastMacLearnAt = Date.now();
+  try {
+    const arp = await readArp();
+    const mac = arp.get(cam.config.host)?.mac ?? null;
+    if (!mac || mac === cam.config.macAddress) return;
+    const ok = await reportNetworkUpdate(cam.config.id, { macAddress: mac });
+    if (ok) {
+      cam.config.macAddress = mac;
+      log(`Kamera ${cam.config.name}: MAC ${mac} gelernt (${cam.config.host})`);
+    }
+  } catch {
+    // Best-effort: naechster Versuch nach Intervall.
+  }
+}
+
+/**
+ * Kamera unerreichbar: MAC in der ARP-Tabelle suchen. Taucht sie unter einer
+ * anderen IP auf, sofort umstellen und die Cloud aktualisieren.
+ */
+async function tryRelocateCamera(cam: CameraRuntime): Promise<boolean> {
+  if (!cam.config.macAddress) return false;
+  if (Date.now() - cam.lastRelocateAt < RELOCATE_THROTTLE_MS) return false;
+  cam.lastRelocateAt = Date.now();
+  try {
+    const arp = await readArp();
+    for (const [ip, entry] of arp) {
+      if (entry.mac !== cam.config.macAddress || ip === cam.config.host) continue;
+      const oldHost = cam.config.host;
+      cam.config.host = ip;
+      cam.token = null;
+      cam.tokenExpiresAt = 0;
+      log(`Kamera ${cam.config.name}: per MAC unter neuer IP gefunden (${oldHost} → ${ip})`);
+      const ok = await reportNetworkUpdate(cam.config.id, { host: ip });
+      if (!ok) log(`Kamera ${cam.config.name}: IP-Update in der Cloud fehlgeschlagen`);
+      return true;
+    }
+  } catch {
+    // Best-effort: naechster Versuch nach Throttle.
+  }
+  return false;
 }
 
 let pollBusy = false;
@@ -761,6 +839,8 @@ export async function pollCameras(): Promise<void> {
         const states = await pollStates(cam);
         seen.push(cam.config.id);
         cam.unreachableLogged = false;
+        // MAC im Hintergrund lernen/aktualisieren (gedrosselt, best-effort).
+        void learnCameraMac(cam);
 
         for (const [type, active] of Object.entries(states)) {
           const was = cam.states[type] ?? false;
@@ -786,6 +866,9 @@ export async function pollCameras(): Promise<void> {
           log(`Kamera ${cam.config.name}: ${e instanceof Error ? e.message : e}`);
           cam.unreachableLogged = true;
         }
+        // Unerreichbar: per MAC-Abgleich pruefen, ob die Kamera eine neue
+        // DHCP-IP bekommen hat, und ggf. sofort umstellen.
+        void tryRelocateCamera(cam);
       }
     }
 

@@ -101,8 +101,8 @@ async function pingSweep(): Promise<Map<string, number | null>> {
   return result;
 }
 
-/** ARP-Tabelle lesen -> IP/MAC/Interface. */
-async function readArp(): Promise<Map<string, { mac: string; iface: string | null }>> {
+/** ARP-Tabelle lesen -> IP/MAC/Interface. (Auch fuer Kamera-MAC-Re-Mapping genutzt.) */
+export async function readArp(): Promise<Map<string, { mac: string; iface: string | null }>> {
   const map = new Map<string, { mac: string; iface: string | null }>();
   try {
     const { stdout } = await exec("arp", ["-a", "-n"], { timeout: 15000 });
