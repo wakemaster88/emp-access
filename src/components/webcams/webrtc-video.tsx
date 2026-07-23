@@ -301,11 +301,19 @@ export function WebRTCVideo({
       {visible && status !== "live" && snapshotUrl && (
         <SnapshotFallback url={snapshotUrl} fit={fit} />
       )}
+      {/* Klarer "Nicht live"-Marker, sobald der Stream nicht laeuft aber ein
+          Standbild gezeigt wird - sonst wirkt die Kachel faelschlich live. */}
+      {visible && status === "error" && snapshotUrl && (
+        <span className="pointer-events-none absolute top-1.5 left-1.5 flex items-center gap-1 rounded bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-200 ring-1 ring-white/15">
+          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+          Nicht live
+        </span>
+      )}
       {visible && status !== "live" && (
         <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center text-xs text-white/70">
           <span className="rounded-full bg-black/70 px-3 py-1 ring-1 ring-white/10">
-            {status === "connecting" && "Verbinde…"}
-            {status === "error" && (snapshotUrl ? `Stream offline – Standbild` : `Stream offline${errMsg ? ` – ${errMsg}` : ""}`)}
+            {status === "connecting" && (snapshotUrl ? "Verbinde… – Standbild" : "Verbinde…")}
+            {status === "error" && (snapshotUrl ? `Nicht live – Standbild` : `Stream offline${errMsg ? ` – ${errMsg}` : ""}`)}
             {status === "idle" && "Bereit"}
           </span>
         </div>
