@@ -73,6 +73,9 @@ export interface ScanGroupScan {
   /// Blick auf den Zugang direkt aus der Scan-Historie.
   cameraId?: number | null;
   cameraName?: string | null;
+  /// Gesetzt, wenn der Hub ein Kamerabild zum Scan-Zeitpunkt gespeichert hat
+  /// (ScanSnapshot). Dann wird dieses Bild statt des aktuellen gezeigt.
+  snapshotCapturedAt?: string | null;
   result: string;
   ticketTypeName?: string | null;
   note?: string | null;
@@ -191,12 +194,16 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
                 <div className="mt-2 ml-4 space-y-1">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={`/api/cameras/${scan.cameraId}/snapshot`}
+                    src={scan.snapshotCapturedAt
+                      ? `/api/scans/${scan.id}/snapshot`
+                      : `/api/cameras/${scan.cameraId}/snapshot`}
                     alt={`Schnappschuss ${scan.cameraName ?? "Kamera"}`}
                     className="max-w-xs w-full rounded-lg border border-slate-200 dark:border-slate-700"
                   />
                   <p className="text-[10px] text-slate-400">
-                    {scan.cameraName} – aktueller Schnappschuss (nicht der Scan-Zeitpunkt)
+                    {scan.snapshotCapturedAt
+                      ? `${scan.cameraName} – Aufnahme vom Scan (${fmtDateTime(scan.snapshotCapturedAt)})`
+                      : `${scan.cameraName} – aktueller Schnappschuss (nicht der Scan-Zeitpunkt)`}
                   </p>
                 </div>
               )}

@@ -109,6 +109,7 @@ model Account {
   devices         Device[]
   tickets         Ticket[]
   scans           Scan[]
+  scanSnapshots   ScanSnapshot[]
   areas           AccessArea[]
   apiConfigs      ApiConfig[]
   monitors        MonitorConfig[]
@@ -348,6 +349,8 @@ model Scan {
   account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   device    Device?    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   ticket    Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  /// Kamera-Schnappschuss zum Scan-Zeitpunkt (vom Hub aufgenommen).
+  snapshot  ScanSnapshot?
   createdAt DateTime   @default(now())
 
   @@index([accountId])
@@ -357,6 +360,28 @@ model Scan {
   @@index([ticketId])
   @@index([accountId, scanTime])
   @@index([accountId, scanTime, result])
+}
+
+/// Schnappschuss der verknuepften Kamera zum Scan-Zeitpunkt. Wird vom Hub
+/// ueber den Task SCAN_SNAPSHOT aufgenommen (wenige Sekunden nach dem Scan)
+/// und dem zeitlich naechsten Scan des Geraets zugeordnet. Eigene Tabelle,
+/// damit Scan-Listen die Bilddaten nicht mitladen.
+model ScanSnapshot {
+  id         Int      @id @default(autoincrement())
+  scanId     Int      @unique
+  scan       Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  cameraId   Int?
+  camera     Camera?  @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  /// JPEG-Bilddaten.
+  image      Bytes
+  /// Zeitpunkt der Aufnahme durch den Hub.
+  capturedAt DateTime @default(now())
+  accountId  Int
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([accountId])
+  @@index([cameraId])
 }
 
 model AccessArea {
@@ -1403,6 +1428,7 @@ model Camera {
   surveillanceCameras SurveillanceCamera[]
   /// Zugangsgeraete (Drehkreuze/Tueren), denen diese Kamera zugeordnet ist.
   devices         Device[]      @relation("DeviceCamera")
+  scanSnapshots   ScanSnapshot[]
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 

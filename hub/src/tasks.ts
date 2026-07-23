@@ -2,9 +2,10 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import dgram from "node:dgram";
 import os from "node:os";
-import { log } from "./config.js";
+import { log, api } from "./config.js";
 import {
   uploadSnapshot,
+  captureSnapshot,
   ptzControl,
   setSpotlight,
   setIrLights,
@@ -12,7 +13,12 @@ import {
   getPtzPresets,
 } from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
-import { openDoorbirdDoor, isDoorbird, uploadDoorbirdSnapshot } from "./doorbird.js";
+import {
+  openDoorbirdDoor,
+  isDoorbird,
+  uploadDoorbirdSnapshot,
+  captureDoorbirdSnapshot,
+} from "./doorbird.js";
 
 const exec = promisify(execFile);
 
@@ -143,6 +149,38 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
           ? await uploadDoorbirdSnapshot(cameraId)
           : await uploadSnapshot(cameraId);
         return { success: true, result: { cameraId, ...r } };
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    case "SCAN_SNAPSHOT": {
+      // Kamerabild zum Scan-Zeitpunkt: Bild aufnehmen und zur Zuordnung an
+      // die Cloud schicken (dort wird der zeitlich naechste Scan gesucht).
+      const cameraId = Number(task.payload?.cameraId);
+      const deviceId = Number(task.payload?.deviceId);
+      const at = String(task.payload?.at ?? "");
+      if (!Number.isInteger(cameraId) || !Number.isInteger(deviceId)) {
+        return { success: false, error: "cameraId/deviceId fehlt" };
+      }
+      try {
+        const buf = isDoorbird(cameraId)
+          ? await captureDoorbirdSnapshot(cameraId)
+          : await captureSnapshot(cameraId);
+        const params = new URLSearchParams({
+          cameraId: String(cameraId),
+          deviceId: String(deviceId),
+          ...(at ? { at } : {}),
+        });
+        const upload = await api(`/api/hub/scan-snapshots?${params}`, {
+          method: "POST",
+          headers: { "Content-Type": "image/jpeg" },
+          body: new Uint8Array(buf),
+        });
+        if (!upload.ok) {
+          return { success: false, error: `Upload fehlgeschlagen: HTTP ${upload.status}` };
+        }
+        const data = (await upload.json().catch(() => ({}))) as { scanId?: number };
+        return { success: true, result: { cameraId, deviceId, bytes: buf.length, scanId: data.scanId ?? null } };
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
       }

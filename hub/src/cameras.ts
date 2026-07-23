@@ -292,6 +292,13 @@ async function captureSnap(cam: CameraRuntime): Promise<Buffer> {
   return buf;
 }
 
+/** JPEG von einer konfigurierten Kamera holen (ohne Upload) – z. B. fuer Scan-Schnappschuesse. */
+export async function captureSnapshot(cameraId: number): Promise<Buffer> {
+  const cam = cameras.get(cameraId);
+  if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+  return captureSnap(cam);
+}
+
 /** Schnappschuss von der Kamera holen und in die Cloud laden. */
 export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number }> {
   const cam = cameras.get(cameraId);

@@ -90,6 +90,13 @@ export function isDoorbird(cameraId: number): boolean {
   return doorbirds.has(cameraId);
 }
 
+/** JPEG von der DoorBird holen (ohne Upload) – z. B. fuer Scan-Schnappschuesse. */
+export async function captureDoorbirdSnapshot(cameraId: number): Promise<Buffer> {
+  const rt = doorbirds.get(cameraId);
+  if (!rt) throw new Error(`DoorBird ${cameraId} nicht konfiguriert`);
+  return captureSnap(rt.config);
+}
+
 /** Schnappschuss holen und als Kamera-Snapshot in die Cloud laden (Task CAMERA_SNAPSHOT). */
 export async function uploadDoorbirdSnapshot(cameraId: number): Promise<{ bytes: number }> {
   const rt = doorbirds.get(cameraId);

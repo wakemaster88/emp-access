@@ -153,6 +153,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Kamera-Schnappschuss zum Scan-Zeitpunkt: Hat das Geraet eine verknuepfte
+  // Kamera (Device.cameraId), legen wir sofort einen Hub-Task an. Der Hub
+  // nimmt das Bild binnen weniger Sekunden auf und laedt es zu
+  // /api/hub/scan-snapshots hoch; dort wird es dem zeitlich naechsten Scan
+  // dieses Geraets zugeordnet. Ab hier erzeugt jeder Pfad einen Scan-Eintrag
+  // (Debounce-Treffer sind oben bereits zurueckgekehrt).
+  if (device.cameraId != null) {
+    await db.hubTask.create({
+      data: {
+        type: "SCAN_SNAPSHOT",
+        payload: { cameraId: device.cameraId, deviceId, at: new Date().toISOString() },
+        accountId,
+      },
+    }).catch(() => { /* Snapshot ist Best-Effort – Scan-Verarbeitung nicht blockieren. */ });
+  }
+
   // Dashboard-Öffnung: Relais wurde per Button geöffnet → GRANTED-Scan ohne Ticket anlegen
   if (code === DASHBOARD_OPEN_CODE) {
     await db.scan.create({
