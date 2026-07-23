@@ -15,11 +15,16 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, Trash2, Save, GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight, AlertCircle,
+  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface AreaOption {
+  id: number;
+  name: string;
+}
+
+export interface CameraOption {
   id: number;
   name: string;
 }
@@ -36,6 +41,7 @@ export interface DeviceData {
   isActive: boolean;
   accessIn: number | null;
   accessOut: number | null;
+  cameraId: number | null;
   allowReentry: boolean;
   offlineAlertsEnabled: boolean;
   firmware: string | null;
@@ -71,10 +77,11 @@ function inferDirection(accessIn: number | null, accessOut: number | null): Dire
 interface EditDeviceDialogProps {
   device: DeviceData | null;
   areas?: AreaOption[];
+  cameras?: CameraOption[];
   onClose: () => void;
 }
 
-export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDialogProps) {
+export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: EditDeviceDialogProps) {
   const router = useRouter();
   const [form, setForm] = useState({
     name: "",
@@ -86,6 +93,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
     direction: "in" as Direction,
     accessIn: "none",
     accessOut: "none",
+    cameraId: "none",
     allowReentry: false,
     offlineAlertsEnabled: false,
     firmware: "",
@@ -106,6 +114,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
         direction: inferDirection(device.accessIn, device.accessOut),
         accessIn: device.accessIn != null ? String(device.accessIn) : "none",
         accessOut: device.accessOut != null ? String(device.accessOut) : "none",
+        cameraId: device.cameraId != null ? String(device.cameraId) : "none",
         allowReentry: device.allowReentry,
         offlineAlertsEnabled: device.offlineAlertsEnabled,
         firmware: device.firmware ?? "",
@@ -151,6 +160,7 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
           isActive: form.isActive,
           accessIn,
           accessOut,
+          cameraId: form.cameraId !== "none" ? Number(form.cameraId) : null,
           allowReentry: form.allowReentry,
           offlineAlertsEnabled: form.offlineAlertsEnabled,
           firmware: form.firmware || null,
@@ -337,6 +347,25 @@ export function EditDeviceDialog({ device, areas = [], onClose }: EditDeviceDial
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* Kamera-Zuordnung – nur Drehkreuz & Tür (Zugangsgeräte mit Scans) */}
+          {CAT_HAS_ACCESS.has(form.category) && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                <Cctv className="h-3.5 w-3.5" /> Kamera
+              </p>
+              <Select value={form.cameraId} onValueChange={(v) => set("cameraId", v)}>
+                <SelectTrigger><SelectValue placeholder="Keine Kamera" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Keine Kamera</SelectItem>
+                  {cameras.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-400">
+                Kamera, die diesen Zugang im Blick hat. Scans dieses Geräts werden mit dem Kamerabild verknüpft.
+              </p>
             </div>
           )}
 

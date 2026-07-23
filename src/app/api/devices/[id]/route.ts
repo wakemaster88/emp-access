@@ -76,6 +76,24 @@ export async function PUT(
     }
   }
 
+  // Kamera-Zuordnung: Kamera, die diesen Zugang im Blick hat. null/0 loest
+  // die Zuordnung; ein Wert muss eine Kamera desselben Accounts sein.
+  let cameraId = existing.cameraId;
+  if (body.cameraId !== undefined) {
+    const raw = body.cameraId;
+    if (raw === null || raw === 0) {
+      cameraId = null;
+    } else {
+      const camId = Number(raw);
+      if (!Number.isInteger(camId)) {
+        return NextResponse.json({ error: "Ungültige Kamera" }, { status: 400 });
+      }
+      const cam = await db.camera.findFirst({ where: { id: camId, accountId: accountId! } });
+      if (!cam) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
+      cameraId = camId;
+    }
+  }
+
   // Zonen-Stammdaten fuer die Wasserbilanz: Durchsatz (L/h, wie an der Pumpe
   // angezeigt) und Flaeche (m²). null/0 loescht den Wert.
   const parseMetric = (raw: unknown, current: number | null, max: number): number | null => {
@@ -92,6 +110,7 @@ export async function PUT(
     data: {
       name: body.name ?? existing.name,
       pumpDeviceId,
+      cameraId,
       flowLph,
       areaSqm,
       category: body.category !== undefined

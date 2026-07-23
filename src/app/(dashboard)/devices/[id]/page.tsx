@@ -13,7 +13,7 @@ import { EditDeviceDialog } from "@/components/devices/edit-device-dialog";
 import {
   Wifi, WifiOff, Cpu, QrCode, CreditCard, ArrowLeft,
   Ticket, ScanLine, CheckCircle2, XCircle, AlertTriangle,
-  GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
+  GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb, Cctv,
 } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
@@ -39,10 +39,13 @@ export default async function DeviceDetailPage({ params }: Props) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [device, scanStats, areas, account] = await Promise.all([
+  const [device, scanStats, areas, cameras, account] = await Promise.all([
     db.device.findFirst({
       where: { id: deviceId, accountId: session.user.accountId },
-      include: { _count: { select: { scans: true } } },
+      include: {
+        _count: { select: { scans: true } },
+        camera: { select: { id: true, name: true, snapshotAt: true, lastSeenAt: true } },
+      },
     }),
     db.scan.groupBy({
       by: ["result"],
@@ -51,6 +54,11 @@ export default async function DeviceDetailPage({ params }: Props) {
     }),
     db.accessArea.findMany({
       where: { accountId: session.user.accountId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.camera.findMany({
+      where: { accountId: session.user.accountId, enabled: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -208,6 +216,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                 {/* Actions */}
                 <DeviceDetailClient
                   areas={areas}
+                  cameras={cameras}
                   device={{
                     id: device.id,
                     name: device.name,
@@ -220,6 +229,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                     isActive: device.isActive,
                     accessIn: device.accessIn,
                     accessOut: device.accessOut,
+                    cameraId: device.cameraId,
                     allowReentry: device.allowReentry,
                     offlineAlertsEnabled: device.offlineAlertsEnabled,
                     firmware: device.firmware,
@@ -231,6 +241,38 @@ export default async function DeviceDetailPage({ params }: Props) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Verknüpfte Kamera – zeigt den Zugang (z. B. Drehkreuz "Eingang A") */}
+        {device.camera && (
+          <Card className="border-slate-200 dark:border-slate-800 overflow-hidden">
+            <CardContent className="pt-6">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Link href="/cameras" className="shrink-0 block group">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/cameras/${device.camera.id}/snapshot?t=${device.camera.snapshotAt ? new Date(device.camera.snapshotAt).getTime() : ""}`}
+                    alt={`Schnappschuss ${device.camera.name}`}
+                    className="w-full sm:w-64 rounded-lg border border-slate-200 dark:border-slate-700 group-hover:opacity-90 transition-opacity"
+                  />
+                </Link>
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                    <Cctv className="h-3.5 w-3.5" /> Verknüpfte Kamera
+                  </p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{device.camera.name}</p>
+                  {device.camera.snapshotAt && (
+                    <p className="text-xs text-slate-400">
+                      Schnappschuss: {fmtDateTime(device.camera.snapshotAt)}
+                    </p>
+                  )}
+                  <Link href="/cameras" className="inline-block text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                    Zu den Kameras →
+                  </Link>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Nuki Smart Lock – Status mit Battery/State/Letzte Aktion */}
         {device.type === "NUKI_SMARTLOCK" && (

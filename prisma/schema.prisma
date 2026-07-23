@@ -205,6 +205,11 @@ model Device {
   accessIn        Int?
   accessOut       Int?
   allowReentry    Boolean             @default(false)
+  /// Optionale Kamera-Zuordnung: Kamera, die diesen Zugang im Blick hat
+  /// (z. B. Drehkreuz "Eingang A" → Kamera Eingang). Scans dieses Geraets
+  /// werden in der UI mit der Kamera verknuepft (Live-Bild/Schnappschuss).
+  cameraId        Int?
+  camera          Camera?             @relation("DeviceCamera", fields: [cameraId], references: [id], onDelete: SetNull)
   firmware        String?
   schedule        Json?
   systemInfo      Json?
@@ -238,6 +243,7 @@ model Device {
   @@index([accessIn])
   @@index([accessOut])
   @@index([pumpDeviceId])
+  @@index([cameraId])
 }
 
 model Ticket {
@@ -1395,6 +1401,8 @@ model Camera {
   listedPersons   ListedPerson[]
   personSightings PersonSighting[]
   surveillanceCameras SurveillanceCamera[]
+  /// Zugangsgeraete (Drehkreuze/Tueren), denen diese Kamera zugeordnet ist.
+  devices         Device[]      @relation("DeviceCamera")
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 

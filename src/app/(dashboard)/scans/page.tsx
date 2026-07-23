@@ -29,7 +29,10 @@ export default async function ScansPage({ searchParams }: Props) {
       ...(deviceId ? { deviceId } : {}),
       ...(resultFilter ? { result: resultFilter } : {}),
     },
-    include: { device: true, ticket: true },
+    include: {
+      device: { include: { camera: { select: { id: true, name: true } } } },
+      ticket: true,
+    },
     orderBy: { scanTime: "desc" },
     take: 200,
   });
@@ -83,6 +86,8 @@ export default async function ScansPage({ searchParams }: Props) {
                     id: s.id,
                     scanTime: s.scanTime.toISOString(),
                     deviceName: s.device?.name ?? "Web-Scanner",
+                    cameraId: s.device?.camera?.id ?? null,
+                    cameraName: s.device?.camera?.name ?? null,
                     result: s.result,
                     ticketTypeName: s.ticket?.ticketTypeName ?? null,
                     note: s.note,

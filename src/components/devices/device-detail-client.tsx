@@ -10,7 +10,7 @@ import {
   Droplets, Square, Battery, BatteryLow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { EditDeviceDialog, type DeviceData, type AreaOption } from "./edit-device-dialog";
+import { EditDeviceDialog, type DeviceData, type AreaOption, type CameraOption } from "./edit-device-dialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +48,7 @@ function gardenaActivityLabel(activity: string | null): string {
 interface Props {
   device: DeviceData & { task: number };
   areas?: AreaOption[];
+  cameras?: CameraOption[];
 }
 
 // ─── Action definitions ───────────────────────────────────────────────────────
@@ -68,7 +69,7 @@ const NUKI_ACTIONS = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DeviceDetailClient({ device, areas }: Props) {
+export function DeviceDetailClient({ device, areas, cameras }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
@@ -407,6 +408,7 @@ export function DeviceDetailClient({ device, areas }: Props) {
       <EditDeviceDialog
         device={editing ? device : null}
         areas={areas}
+        cameras={cameras}
         onClose={() => setEditing(false)}
       />
     </>

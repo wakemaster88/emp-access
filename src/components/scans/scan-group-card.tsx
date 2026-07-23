@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Hash, Ticket, Wifi } from "lucide-react";
+import { Hash, Ticket, Wifi, Cctv } from "lucide-react";
 
 const VISIBLE_INITIAL = 3;
 
@@ -69,6 +69,10 @@ export interface ScanGroupScan {
   id: number;
   scanTime: string;
   deviceName: string;
+  /// Dem Scan-Geraet zugeordnete Kamera (Device.cameraId) – ermoeglicht den
+  /// Blick auf den Zugang direkt aus der Scan-Historie.
+  cameraId?: number | null;
+  cameraName?: string | null;
   result: string;
   ticketTypeName?: string | null;
   note?: string | null;
@@ -82,6 +86,8 @@ export interface ScanGroupCardProps {
 
 export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
+  // Scan-ID, deren verknuepfte Kamera gerade als Inline-Schnappschuss offen ist.
+  const [openCameraScanId, setOpenCameraScanId] = useState<number | null>(null);
   const visible = expanded ? scans.length : Math.min(VISIBLE_INITIAL, scans.length);
   const hasMore = scans.length > VISIBLE_INITIAL;
   const hiddenCount = scans.length - VISIBLE_INITIAL;
@@ -137,6 +143,21 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
                     {reason}
                   </span>
                 )}
+                {scan.cameraId != null && (
+                  <button
+                    type="button"
+                    onClick={() => setOpenCameraScanId(openCameraScanId === scan.id ? null : scan.id)}
+                    className={`hidden sm:inline-flex items-center gap-1 text-xs shrink-0 rounded-full border px-2 py-0.5 transition-colors ${
+                      openCameraScanId === scan.id
+                        ? "border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30"
+                        : "border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300"
+                    }`}
+                    title={`Kamera ${scan.cameraName ?? ""} anzeigen`}
+                  >
+                    <Cctv className="h-3 w-3" aria-hidden />
+                    {scan.cameraName}
+                  </button>
+                )}
                 <span className="ml-auto shrink-0">
                   <ResultBadge result={scan.result} />
                 </span>
@@ -150,10 +171,33 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
                     {scan.ticketTypeName}
                   </>
                 )}
+                {scan.cameraId != null && (
+                  <button
+                    type="button"
+                    onClick={() => setOpenCameraScanId(openCameraScanId === scan.id ? null : scan.id)}
+                    className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400"
+                  >
+                    <Cctv className="h-3 w-3" aria-hidden />
+                    {scan.cameraName}
+                  </button>
+                )}
               </div>
               {reason && (
                 <div className="lg:hidden mt-1 ml-4 text-xs italic text-rose-600 dark:text-rose-400">
                   {reason}
+                </div>
+              )}
+              {openCameraScanId === scan.id && scan.cameraId != null && (
+                <div className="mt-2 ml-4 space-y-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/cameras/${scan.cameraId}/snapshot`}
+                    alt={`Schnappschuss ${scan.cameraName ?? "Kamera"}`}
+                    className="max-w-xs w-full rounded-lg border border-slate-200 dark:border-slate-700"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    {scan.cameraName} – aktueller Schnappschuss (nicht der Scan-Zeitpunkt)
+                  </p>
                 </div>
               )}
             </li>
