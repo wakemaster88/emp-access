@@ -18,7 +18,7 @@ import {
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
   ZoomIn, ZoomOut, Cctv, RefreshCw, Loader2, AlertTriangle,
   Lightbulb, Moon, Siren, Crosshair, MapPin, Radio, Settings2,
-  Gamepad2, DoorOpen, Activity, User, Car, PawPrint, Bell,
+  Gamepad2, DoorOpen, Activity, User, Car, PawPrint, Bell, ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WebRTCVideo } from "./webrtc-video";
@@ -127,6 +127,115 @@ function EventOverlay({ events }: { events: CameraEventRow[] }) {
       <Icon className="h-3 w-3 shrink-0" />
       {`${meta.label} ${fmtClock(e.startedAt)}`}
     </span>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Scan-Overlay: Scans an Zugangsgeraeten mit verknuepfter Kamera
+ * (Device.cameraId) werden fuer einige Sekunden gross auf der Kachel
+ * eingeblendet – Name + Ticket, gruen (erlaubt) oder rot (abgelehnt).
+ * ------------------------------------------------------------------------- */
+
+/** Wie lange ein Scan nach seinem Zeitpunkt eingeblendet bleibt. */
+const SCAN_OVERLAY_MS = 10_000;
+
+export interface ScanOverlayRow {
+  id: number;
+  cameraId: number;
+  deviceName: string;
+  scanTime: string;
+  result: string;
+  ticketName: string | null;
+  ticketTypeName: string | null;
+}
+
+/**
+ * Pollt die letzten Scans (nur Geraete mit Kamera-Zuordnung) und liefert je
+ * Kamera den juengsten Scan, der noch innerhalb des Anzeigefensters liegt.
+ * Ein 1-Sekunden-Takt prueft das Ausblenden; gefetcht wird alle 3 Sekunden.
+ */
+function useScanOverlays(): Record<number, ScanOverlayRow> {
+  const [byCamera, setByCamera] = useState<Record<number, ScanOverlayRow>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    let rows: ScanOverlayRow[] = [];
+    let tickCount = 0;
+
+    function recompute() {
+      const cutoff = Date.now() - SCAN_OVERLAY_MS;
+      const map: Record<number, ScanOverlayRow> = {};
+      for (const r of rows) {
+        // Liste kommt absteigend sortiert – erster Treffer je Kamera ist der juengste.
+        if (new Date(r.scanTime).getTime() >= cutoff && !(r.cameraId in map)) {
+          map[r.cameraId] = r;
+        }
+      }
+      setByCamera((prev) => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(map);
+        const unchanged =
+          prevKeys.length === nextKeys.length &&
+          nextKeys.every((k) => prev[Number(k)]?.id === map[Number(k)].id);
+        return unchanged ? prev : map;
+      });
+    }
+
+    async function fetchScans() {
+      try {
+        const res = await fetch("/api/scans/recent?seconds=30", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as ScanOverlayRow[];
+        if (!cancelled) rows = data;
+      } catch {
+        /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
+      }
+    }
+
+    fetchScans().then(recompute);
+    const t = setInterval(async () => {
+      tickCount += 1;
+      if (tickCount % 3 === 0) await fetchScans();
+      if (!cancelled) recompute();
+    }, 1_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  return byCamera;
+}
+
+/** Banner oben auf der Kachel: Name + Ticket des letzten Scans. */
+function ScanOverlay({ scan }: { scan: ScanOverlayRow | null }) {
+  if (!scan) return null;
+
+  const granted = scan.result === "GRANTED";
+  const denied = scan.result === "DENIED";
+
+  return (
+    <div className="pointer-events-none absolute inset-x-1.5 top-8 flex justify-center">
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-lg px-3 py-1.5 shadow-lg backdrop-blur-sm text-white animate-in fade-in slide-in-from-top-2 duration-300",
+          granted ? "bg-emerald-600/90" : denied ? "bg-rose-600/90" : "bg-amber-500/90"
+        )}
+      >
+        <ScanLine className="h-4 w-4 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold leading-tight truncate">
+            {scan.ticketName ?? "Unbekanntes Ticket"}
+          </p>
+          <p className="text-[10px] leading-tight text-white/85 truncate">
+            {[scan.ticketTypeName, granted ? "Erlaubt" : denied ? "Abgelehnt" : "Geschützt", fmtClock(scan.scanTime)]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -263,6 +372,7 @@ function CameraPanel({
   go2rtcUrl,
   streamBase,
   events,
+  scan,
 }: {
   cam: WebcamRow;
   hubOnline: boolean;
@@ -272,6 +382,8 @@ function CameraPanel({
   streamBase: string | null;
   /** Letzte Hub-Ereignisse dieser Kamera (fürs Overlay). */
   events: CameraEventRow[];
+  /** Aktueller Scan am verknuepften Zugangsgeraet (fuers Einblend-Banner). */
+  scan: ScanOverlayRow | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -384,6 +496,10 @@ function CameraPanel({
             <Radio className="h-2.5 w-2.5" /> LIVE
           </Badge>
         )}
+
+        {/* Scan am verknuepften Zugang: Name + Ticket kurz einblenden. */}
+        <ScanOverlay scan={scan} />
+
 
         {/* Buttons nur bei Hover einblenden, damit das Grid ruhig bleibt. */}
         <div className="absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -619,6 +735,7 @@ function CameraPanel({
 export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) {
   const [go2rtc, saveGo2rtcUrl] = useGo2rtc();
   const eventsByCamera = useCameraEvents();
+  const scansByCamera = useScanOverlays();
   const [showSettings, setShowSettings] = useState(false);
   const [urlDraft, setUrlDraft] = useState("");
 
@@ -739,6 +856,7 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
               go2rtcUrl={go2rtc.reachable ? go2rtc.url : null}
               streamBase={go2rtc.byHost[c.host] ?? null}
               events={eventsByCamera[c.id] ?? []}
+              scan={scansByCamera[c.id] ?? null}
             />
           ))}
         </div>
