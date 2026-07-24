@@ -12,13 +12,29 @@ export async function GET(request: NextRequest) {
   const personId = request.nextUrl.searchParams.get("personId");
   const take = Math.min(Number(request.nextUrl.searchParams.get("take") ?? 100) || 100, 500);
 
+  // Explizites select ohne `snapshot`: die Bytes (~0,5 MB pro Sichtung)
+  // gehoeren nicht in die JSON-Liste – Bilder laufen ueber /[id]/snapshot.
   const sightings = await db.personSighting.findMany({
     where: {
       accountId: accountId!,
       ...(listType === "WHITELIST" || listType === "BLACKLIST" ? { listType } : {}),
       ...(personId ? { listedPersonId: Number(personId) } : {}),
     },
-    include: {
+    select: {
+      id: true,
+      accountId: true,
+      listedPersonId: true,
+      source: true,
+      listType: true,
+      matched: true,
+      matchScore: true,
+      matchMethod: true,
+      shellyTriggered: true,
+      shellyOk: true,
+      notes: true,
+      seenAt: true,
+      createdAt: true,
+      cameraId: true,
       camera: { select: { id: true, name: true } },
       listedPerson: { select: { id: true, name: true, listType: true } },
     },

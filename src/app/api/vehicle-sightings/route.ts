@@ -11,12 +11,26 @@ export async function GET(request: NextRequest) {
   const vehicleId = request.nextUrl.searchParams.get("vehicleId");
   const take = Math.min(Number(request.nextUrl.searchParams.get("take") ?? 100) || 100, 500);
 
+  // Explizites select ohne `snapshot`: die Bytes (bis ~1 MB pro Sichtung)
+  // gehoeren nicht in die JSON-Liste – Bilder laufen ueber /[id]/snapshot.
   const sightings = await db.vehicleSighting.findMany({
     where: {
       accountId: accountId!,
       ...(vehicleId ? { allowedVehicleId: Number(vehicleId) } : {}),
     },
-    include: {
+    select: {
+      id: true,
+      accountId: true,
+      plate: true,
+      plateNormalized: true,
+      allowedVehicleId: true,
+      source: true,
+      matched: true,
+      shellyTriggered: true,
+      shellyOk: true,
+      seenAt: true,
+      createdAt: true,
+      cameraId: true,
       camera: { select: { id: true, name: true } },
       allowedVehicle: { select: { id: true, name: true, plate: true } },
     },

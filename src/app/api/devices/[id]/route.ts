@@ -88,7 +88,10 @@ export async function PUT(
       if (!Number.isInteger(camId)) {
         return NextResponse.json({ error: "Ungültige Kamera" }, { status: 400 });
       }
-      const cam = await db.camera.findFirst({ where: { id: camId, accountId: accountId! } });
+      const cam = await db.camera.findFirst({
+        where: { id: camId, accountId: accountId! },
+        select: { id: true },
+      });
       if (!cam) return NextResponse.json({ error: "Kamera nicht gefunden" }, { status: 400 });
       cameraId = camId;
     }

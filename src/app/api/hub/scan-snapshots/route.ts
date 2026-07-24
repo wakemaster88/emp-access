@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, attached: false, scanId: scan.id });
   }
 
+  // select {id}: verhindert, dass RETURNING die JPEG-Bytes zurueckueberraegt.
   await db.scanSnapshot.create({
     data: {
       scanId: scan.id,
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
       capturedAt: new Date(),
       accountId: account.id,
     },
+    select: { id: true },
   });
 
   return NextResponse.json({ ok: true, attached: true, scanId: scan.id, bytes: buf.length });

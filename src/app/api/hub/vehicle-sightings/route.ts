@@ -36,9 +36,11 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date();
+  // select {id}: verhindert, dass RETURNING die JPEG-Bytes zurueckueberraegt.
   await db.camera.update({
     where: { id: cameraId },
     data: { snapshot: buf, snapshotAt: now, lastSeenAt: now },
+    select: { id: true },
   });
 
   const result = await processVehicleSighting({

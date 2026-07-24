@@ -162,6 +162,8 @@ export async function processVehicleSighting(opts: {
       seenAt,
       ...(snapshot ? { snapshot } : {}),
     },
+    // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
+    select: { id: true },
   });
 
   if (snapshot && opts.cameraId) {

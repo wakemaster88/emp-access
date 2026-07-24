@@ -349,13 +349,21 @@ export async function buildSurveillanceReport(opts: {
   // Nur klare Hub-Auffälligkeiten: Personen-/Fahrzeug-Sightings mit Snapshot.
   // Reine Bewegung (MOTION) ohne Bestätigung bleibt draußen.
   const [personRows, vehicleRows] = await Promise.all([
+    // Explizites select ohne `snapshot`: mit include wuerden die JPEG-Bytes
+    // aller (bis zu 500) Sichtungen bei jedem Report-Aufbau aus der DB
+    // uebertragen – der Report braucht nur Metadaten + Snapshot-URLs.
     prisma.personSighting.findMany({
       where: {
         accountId: opts.accountId,
         seenAt: { gte: period.start, lt: period.end },
         ...cameraFilter,
       },
-      include: {
+      select: {
+        id: true,
+        seenAt: true,
+        matched: true,
+        listType: true,
+        matchScore: true,
         camera: { select: { id: true, name: true } },
         listedPerson: { select: { id: true, name: true, listType: true } },
       },
@@ -368,7 +376,11 @@ export async function buildSurveillanceReport(opts: {
         seenAt: { gte: period.start, lt: period.end },
         ...cameraFilter,
       },
-      include: {
+      select: {
+        id: true,
+        seenAt: true,
+        matched: true,
+        plate: true,
         camera: { select: { id: true, name: true } },
         allowedVehicle: { select: { id: true, name: true, plate: true } },
       },

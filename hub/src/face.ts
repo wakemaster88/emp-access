@@ -11,7 +11,8 @@ const FACE_URL = process.env.FACE_URL || "http://127.0.0.1:8790";
 const FACE_PORT = Number(process.env.FACE_PORT || 8790);
 /** Cosine-Schwellwert fuer Identity-Match (buffalo_l / ArcFace). */
 export const FACE_MATCH_THRESHOLD = Number(process.env.FACE_MATCH_THRESHOLD || 0.45);
-const GALLERY_TTL_MS = 60_000;
+// 5 min: Gallery aendert sich selten; bei FACE_ENROLL wird sie invalidiert.
+const GALLERY_TTL_MS = 300_000;
 
 export interface FaceEmbedResult {
   embedding: number[];

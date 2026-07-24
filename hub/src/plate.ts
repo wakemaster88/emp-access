@@ -22,7 +22,8 @@ const MIN_CONF = Number(process.env.HUB_PLATE_MIN_CONF || 0.8);
 /** fast-alpr Plate-OCR ist spezialisiert – Auto-Übernahme ab dieser Confidence. */
 const ALPR_MIN_CONF = Number(process.env.HUB_ALPR_MIN_CONF || 0.88);
 const OCR_TIMEOUT_MS = Number(process.env.HUB_PLATE_TIMEOUT_MS || 45_000);
-const WHITELIST_TTL_MS = 60_000;
+// 5 min: Whitelist aendert sich selten – weniger Cloud-Requests bei Bursts.
+const WHITELIST_TTL_MS = 300_000;
 
 interface OcrCandidate {
   plate: string;

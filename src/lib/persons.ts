@@ -152,6 +152,8 @@ export async function processCameraPersonEvent(opts: {
           seenAt,
           ...(snapshot ? { snapshot } : {}),
         },
+        // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
+        select: { id: true },
       });
       sightings++;
 
@@ -194,6 +196,8 @@ export async function processCameraPersonEvent(opts: {
       seenAt,
       ...(snapshot ? { snapshot } : {}),
     },
+    // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
+    select: { id: true },
   });
   sightings++;
 

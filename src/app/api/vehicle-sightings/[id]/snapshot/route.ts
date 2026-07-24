@@ -25,7 +25,8 @@ export async function GET(
   return new NextResponse(Buffer.from(sighting.snapshot), {
     headers: {
       "Content-Type": "image/jpeg",
-      "Cache-Control": "private, max-age=3600",
+      // Bild ist pro Sichtung unveraenderlich – Browser darf lange cachen.
+      "Cache-Control": "private, max-age=86400, immutable",
       "Last-Modified": sighting.seenAt.toUTCString(),
     },
   });

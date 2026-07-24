@@ -827,6 +827,14 @@ async function tryRelocateCamera(cam: CameraRuntime): Promise<boolean> {
 
 let pollBusy = false;
 
+/**
+ * Erreichbarkeits-Meldung (seen) drosseln: Die Cloud markiert Kameras erst
+ * nach 5 min ohne Lebenszeichen als offline – ein Update pro Minute reicht.
+ * Ereignisse werden weiterhin sofort gemeldet.
+ */
+const SEEN_REPORT_MS = 60_000;
+let lastSeenReportAt = 0;
+
 /** Haupt-Loop: Konfiguration aktuell halten, Zustaende pollen, Events melden. */
 export async function pollCameras(): Promise<void> {
   if (pollBusy) return;
@@ -891,12 +899,14 @@ export async function pollCameras(): Promise<void> {
       }
     }
 
-    if (events.length > 0 || seen.length > 0) {
+    const seenDue = Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
+    if (events.length > 0 || (seen.length > 0 && seenDue)) {
       const res = await api("/api/hub/camera-events", {
         method: "POST",
         body: JSON.stringify({ events, seen }),
       });
       if (!res.ok) log(`Kamera-Event-Upload fehlgeschlagen: HTTP ${res.status}`);
+      else if (seen.length > 0) lastSeenReportAt = Date.now();
       for (const e of events) {
         const cam = cameras.get(e.cameraId);
         log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);

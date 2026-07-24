@@ -13,14 +13,34 @@ export async function PUT(
   const cameraId = Number(id);
   if (isNaN(cameraId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
-  const existing = await db.camera.findFirst({ where: { id: cameraId, accountId: accountId! } });
+  // Ohne select wuerde auch der Snapshot (Bytes) mitgeladen.
+  const existing = await db.camera.findFirst({
+    where: { id: cameraId, accountId: accountId! },
+    select: {
+      id: true,
+      name: true,
+      kind: true,
+      host: true,
+      httpPort: true,
+      https: true,
+      username: true,
+      password: true,
+      channel: true,
+      enabled: true,
+      vehicleDetection: true,
+      notes: true,
+    },
+  });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   const body = await request.json();
   const name = body.name !== undefined ? String(body.name).trim() : existing.name;
   if (!name) return NextResponse.json({ error: "Name darf nicht leer sein" }, { status: 400 });
   if (name !== existing.name) {
-    const dup = await db.camera.findFirst({ where: { accountId: accountId!, name, NOT: { id: cameraId } } });
+    const dup = await db.camera.findFirst({
+      where: { accountId: accountId!, name, NOT: { id: cameraId } },
+      select: { id: true },
+    });
     if (dup) return NextResponse.json({ error: "Eine Kamera mit diesem Namen existiert bereits" }, { status: 400 });
   }
 
@@ -61,9 +81,12 @@ export async function DELETE(
   const cameraId = Number(id);
   if (isNaN(cameraId)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
-  const existing = await db.camera.findFirst({ where: { id: cameraId, accountId: accountId! } });
+  const existing = await db.camera.findFirst({
+    where: { id: cameraId, accountId: accountId! },
+    select: { id: true },
+  });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  await db.camera.delete({ where: { id: cameraId } });
+  await db.camera.delete({ where: { id: cameraId }, select: { id: true } });
   return NextResponse.json({ ok: true });
 }

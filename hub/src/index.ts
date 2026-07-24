@@ -81,9 +81,11 @@ setInterval(pollTasks, CONFIG.taskIntervalMs);
 setInterval(checkForUpdate, CONFIG.updateIntervalMs);
 setInterval(autoScan, CONFIG.scanIntervalMs);
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
-setInterval(() => refreshGallery(true).catch(() => {}), 60_000);
+// Gallery/Whitelist werden von den Pipelines TTL-basiert bei Bedarf geladen;
+// das Intervall dient nur als Auffangnetz (statt frueher 60 s Dauer-Polling).
+setInterval(() => refreshGallery(true).catch(() => {}), 900_000);
 refreshVehicleWhitelist().catch(() => {});
-setInterval(() => refreshVehicleWhitelist().catch(() => {}), 60_000);
+setInterval(() => refreshVehicleWhitelist().catch(() => {}), 900_000);
 alprWarmup();
 
 process.on("SIGTERM", () => { log("SIGTERM – Hub beendet sich."); process.exit(0); });

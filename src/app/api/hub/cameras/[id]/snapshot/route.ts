@@ -36,9 +36,12 @@ export async function POST(
   }
 
   const now = new Date();
+  // select {id}: ohne select wuerde Prisma per RETURNING die komplette Zeile
+  // inkl. der eben geschriebenen JPEG-Bytes zurueckuebertragen (Neon-Egress).
   await db.camera.update({
     where: { id: cameraId },
     data: { snapshot: buf, snapshotAt: now, lastSeenAt: now },
+    select: { id: true },
   });
   return NextResponse.json({ ok: true, bytes: buf.length });
 }

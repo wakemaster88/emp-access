@@ -46,7 +46,9 @@ export const CONFIG = {
   taskIntervalMs: intEnv("HUB_TASK_INTERVAL", 2) * 1000,
   updateIntervalMs: intEnv("HUB_UPDATE_INTERVAL", 300) * 1000,
   dashboardPort: intEnv("HUB_DASHBOARD_PORT", 8787),
-  scanIntervalMs: intEnv("HUB_SCAN_INTERVAL", 300) * 1000,
+  // 30 min statt 5 min: Der Auto-Scan (Ping-Sweep + Portscan + Cloud-Upload)
+  // erzeugt spuerbare Netz- und DB-Last; Inventardaten aendern sich selten.
+  scanIntervalMs: intEnv("HUB_SCAN_INTERVAL", 1800) * 1000,
   modules: ["tasks", "ping", "network-scan", "wake-on-lan", "auto-scan", "cameras", "face", "vision"],
 };
 
