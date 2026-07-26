@@ -18,11 +18,13 @@ import {
 } from "@/components/ui/table";
 import { Radar, Loader2, Plus, Server, MonitorSmartphone, Cpu, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { findVlanForIp, ipToInt } from "@/lib/ip";
+import { findAreaForIp, findVlanForIp, ipToInt } from "@/lib/ip";
 import {
   CLIENT_TYPES,
+  areaGroupSortKey,
   vlanColor,
   vlanGroupSortKey,
+  type AreaRow,
   type VlanRow,
 } from "@/components/network/network-types";
 
@@ -89,9 +91,11 @@ type Filter = "all" | "unknown" | "known";
 export function DiscoveredTab({
   devices,
   vlans,
+  areas,
 }: {
   devices: DiscoveredRow[];
   vlans: VlanRow[];
+  areas: AreaRow[];
 }) {
   const router = useRouter();
   // "Aktiv" = im letzten Scan-Fenster gesehen (15 min Toleranz).
@@ -99,7 +103,7 @@ export function DiscoveredTab({
 
   const [filter, setFilter] = useState<Filter>("all");
   const [adopting, setAdopting] = useState<DiscoveredRow | null>(null);
-  const [form, setForm] = useState({ name: "", type: "OTHER" });
+  const [form, setForm] = useState({ name: "", type: "OTHER", areaId: "none" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -136,17 +140,26 @@ export function DiscoveredTab({
   );
 
   const vlanGroups = useMemo(() => {
-    const byKey = new Map<
+    type AreaGroup = {
+      meta: { areaId: number | null; name: string; sortOrder: number | null };
+      items: DiscoveredRow[];
+    };
+    type VlanGroup = {
+      meta: { vlanDbId: number | null; vlanId: number | null; name: string; subnet: string | null };
+      areas: AreaGroup[];
+      showAreas: boolean;
+    };
+
+    const byVlan = new Map<
       string,
-      {
-        meta: { vlanDbId: number | null; vlanId: number | null; name: string; subnet: string | null };
-        items: DiscoveredRow[];
-      }
+      { meta: VlanGroup["meta"]; items: { device: DiscoveredRow; areaId: number | null; areaName: string; areaSort: number | null }[] }
     >();
+
     for (const d of filtered) {
       const v = findVlanForIp(d.ipAddress, vlans);
+      const a = findAreaForIp(d.ipAddress, areas);
       const key = v ? `v-${v.id}` : "none";
-      let g = byKey.get(key);
+      let g = byVlan.get(key);
       if (!g) {
         g = {
           meta: {
@@ -157,21 +170,50 @@ export function DiscoveredTab({
           },
           items: [],
         };
-        byKey.set(key, g);
+        byVlan.set(key, g);
       }
-      g.items.push(d);
+      g.items.push({
+        device: d,
+        areaId: a?.id ?? null,
+        areaName: a?.name ?? "Ohne Bereich",
+        areaSort: a?.sortOrder ?? null,
+      });
     }
-    return [...byKey.values()].sort(
-      (a, b) => vlanGroupSortKey(a.meta.vlanId) - vlanGroupSortKey(b.meta.vlanId)
-    );
-  }, [filtered, vlans]);
+
+    return [...byVlan.values()]
+      .sort((a, b) => vlanGroupSortKey(a.meta.vlanId) - vlanGroupSortKey(b.meta.vlanId))
+      .map((g) => {
+        const byArea = new Map<string, AreaGroup>();
+        for (const row of g.items) {
+          const key = row.areaId != null ? `a-${row.areaId}` : "none";
+          let ag = byArea.get(key);
+          if (!ag) {
+            ag = {
+              meta: { areaId: row.areaId, name: row.areaName, sortOrder: row.areaSort },
+              items: [],
+            };
+            byArea.set(key, ag);
+          }
+          ag.items.push(row.device);
+        }
+        const areaGroups = [...byArea.values()].sort(
+          (a, b) => areaGroupSortKey(a.meta.sortOrder) - areaGroupSortKey(b.meta.sortOrder)
+        );
+        const showAreas = areas.length > 0 && (
+          areaGroups.length > 1 || areaGroups.some((ag) => ag.meta.areaId != null)
+        );
+        return { meta: g.meta, areas: areaGroups, showAreas };
+      });
+  }, [filtered, vlans, areas]);
 
   function openAdopt(d: DiscoveredRow) {
     setAdopting(d);
+    const suggested = findAreaForIp(d.ipAddress, areas);
     setForm({
       // Hostname (ohne Domain-Suffix) als Namensvorschlag.
       name: d.hostname ? d.hostname.split(".")[0] : "",
       type: mapType(d.deviceType),
+      areaId: suggested ? String(suggested.id) : "none",
     });
     setError("");
   }
@@ -185,7 +227,11 @@ export function DiscoveredTab({
       const res = await fetch(`/api/network/discovered/${adopting.id}/adopt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: form.name.trim(), type: form.type }),
+        body: JSON.stringify({
+          name: form.name.trim(),
+          type: form.type,
+          areaId: form.areaId === "none" ? null : Number(form.areaId),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -218,7 +264,7 @@ export function DiscoveredTab({
           <p className="text-xs text-slate-500 mt-1">
             Der lokale Hub scannt das Netz aktiv (Ping-Sweep + Portscan) und
             erkennt Hostname, Hersteller, offene Ports und Gerätetyp.
-            MAC-Abgleich gegen Switches, APs und erfasste Geräte. Gruppiert nach VLAN (Subnetz).
+            MAC-Abgleich gegen Switches, APs und erfasste Geräte. Gruppiert nach VLAN → Bereich.
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
@@ -274,146 +320,167 @@ export function DiscoveredTab({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {vlanGroups.map((group) => (
-                  <Fragment key={group.meta.vlanDbId ?? "none"}>
-                    <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-100/80 dark:bg-slate-900/80">
-                      <TableCell colSpan={11} className="py-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {group.meta.vlanDbId != null ? (
-                            <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId))}>
-                              VLAN {group.meta.vlanId} · {group.meta.name}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-xs">Ohne VLAN</Badge>
-                          )}
-                          {group.meta.subnet && (
-                            <span className="text-[11px] font-mono text-slate-400">{group.meta.subnet}</span>
-                          )}
-                          <span className="text-[11px] text-slate-400">{group.items.length} Geräte</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {group.items.map((d) => {
-                      const active = new Date(d.lastSeenAt).getTime() > activeCutoff;
-                      return (
-                        <TableRow key={d.id} className="border-slate-200 dark:border-slate-700">
-                          <TableCell>
-                            {active ? (
-                              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> aktiv
+                {vlanGroups.map((group) => {
+                  const vlanCount = group.areas.reduce((n, a) => n + a.items.length, 0);
+                  return (
+                    <Fragment key={group.meta.vlanDbId ?? "none"}>
+                      <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-100/80 dark:bg-slate-900/80">
+                        <TableCell colSpan={11} className="py-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {group.meta.vlanDbId != null ? (
+                              <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId))}>
+                                VLAN {group.meta.vlanId} · {group.meta.name}
                               </Badge>
                             ) : (
-                              <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
-                                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> inaktiv
-                              </Badge>
+                              <Badge variant="secondary" className="text-xs">Ohne VLAN</Badge>
                             )}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {d.ipAddress ? (
-                              <span
-                                className={cn(
-                                  "inline-flex items-center gap-1",
-                                  duplicateIps.has(d.ipAddress) && "text-rose-600 dark:text-rose-400 font-semibold"
-                                )}
-                              >
-                                {d.ipAddress}
-                                {duplicateIps.has(d.ipAddress) && (
-                                  <AlertTriangle className="h-3.5 w-3.5" aria-label="IP-Doppelbelegung" />
-                                )}
-                              </span>
-                            ) : (
-                              "–"
+                            {group.meta.subnet && (
+                              <span className="text-[11px] font-mono text-slate-400">{group.meta.subnet}</span>
                             )}
-                            {d.ipHistory.length > 0 && (
-                              <span
-                                className="block text-[11px] text-slate-400 font-normal"
-                                title={d.ipHistory
-                                  .map((h) => `${h.ip} (bis ${new Date(h.seenUntil).toLocaleDateString("de-DE")})`)
-                                  .join("\n")}
-                              >
-                                vorher: {d.ipHistory[0].ip}
-                                {d.ipHistory.length > 1 && ` +${d.ipHistory.length - 1}`}
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {d.hostname ? (
-                              <span className="text-slate-700 dark:text-slate-300">{d.hostname}</span>
-                            ) : (
-                              <span className="text-slate-400">–</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-sm text-slate-500">
-                            {d.vendor ?? <span className="text-slate-300">–</span>}
-                          </TableCell>
-                          <TableCell className="hidden xl:table-cell">
-                            {d.deviceType ? (
-                              <Badge variant="secondary" className="text-xs h-5 font-normal">{d.deviceType}</Badge>
-                            ) : (
-                              <span className="text-slate-400 text-sm">–</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell">
-                            {d.openPorts.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {d.openPorts.slice(0, 6).map((p) => (
-                                  <span
-                                    key={p}
-                                    className="inline-block rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-600 dark:text-slate-300"
-                                    title={portLabel(p)}
-                                  >
-                                    {PORT_LABELS[p] ?? p}
+                            <span className="text-[11px] text-slate-400">{vlanCount} Geräte</span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {group.areas.map((areaGroup) => (
+                        <Fragment key={`${group.meta.vlanDbId ?? "none"}-${areaGroup.meta.areaId ?? "none"}`}>
+                          {group.showAreas && (
+                            <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/90 dark:bg-slate-900/40">
+                              <TableCell colSpan={11} className="py-1.5 pl-6">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                    {areaGroup.meta.name}
                                   </span>
-                                ))}
-                                {d.openPorts.length > 6 && (
-                                  <span className="text-[11px] text-slate-400">+{d.openPorts.length - 6}</span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-400 text-sm">–</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell font-mono text-xs text-slate-500">{d.macAddress}</TableCell>
-                          <TableCell>
-                            {d.match ? (
-                              <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-                                {d.match.kind === "infra"
-                                  ? <Server className="h-3.5 w-3.5 text-indigo-500" />
-                                  : d.match.kind === "device"
-                                    ? <Cpu className="h-3.5 w-3.5 text-violet-500" />
-                                    : <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-500" />}
-                                {d.match.name}
-                              </span>
-                            ) : (
-                              <Badge variant="secondary" className="text-xs text-slate-400">unbekannt</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden xl:table-cell text-sm text-slate-500">
-                            {d.responseMs != null ? `${d.responseMs} ms` : "–"}
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell text-sm text-slate-500">
-                            {formatSeen(d.lastSeenAt)}
-                          </TableCell>
-                          <TableCell>
-                            {!d.match && (
-                              <div className="flex justify-end">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 text-xs gap-1"
-                                  onClick={() => openAdopt(d)}
-                                >
-                                  <Plus className="h-3 w-3" />
-                                  Übernehmen
-                                </Button>
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </Fragment>
-                ))}
+                                  <span className="text-[11px] text-slate-400">
+                                    {areaGroup.items.length} Geräte
+                                  </span>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          {areaGroup.items.map((d) => {
+                            const active = new Date(d.lastSeenAt).getTime() > activeCutoff;
+                            return (
+                              <TableRow key={d.id} className="border-slate-200 dark:border-slate-700">
+                                <TableCell>
+                                  {active ? (
+                                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> aktiv
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> inaktiv
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-mono text-sm">
+                                  {d.ipAddress ? (
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center gap-1",
+                                        duplicateIps.has(d.ipAddress) && "text-rose-600 dark:text-rose-400 font-semibold"
+                                      )}
+                                    >
+                                      {d.ipAddress}
+                                      {duplicateIps.has(d.ipAddress) && (
+                                        <AlertTriangle className="h-3.5 w-3.5" aria-label="IP-Doppelbelegung" />
+                                      )}
+                                    </span>
+                                  ) : (
+                                    "–"
+                                  )}
+                                  {d.ipHistory.length > 0 && (
+                                    <span
+                                      className="block text-[11px] text-slate-400 font-normal"
+                                      title={d.ipHistory
+                                        .map((h) => `${h.ip} (bis ${new Date(h.seenUntil).toLocaleDateString("de-DE")})`)
+                                        .join("\n")}
+                                    >
+                                      vorher: {d.ipHistory[0].ip}
+                                      {d.ipHistory.length > 1 && ` +${d.ipHistory.length - 1}`}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {d.hostname ? (
+                                    <span className="text-slate-700 dark:text-slate-300">{d.hostname}</span>
+                                  ) : (
+                                    <span className="text-slate-400">–</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                                  {d.vendor ?? <span className="text-slate-300">–</span>}
+                                </TableCell>
+                                <TableCell className="hidden xl:table-cell">
+                                  {d.deviceType ? (
+                                    <Badge variant="secondary" className="text-xs h-5 font-normal">{d.deviceType}</Badge>
+                                  ) : (
+                                    <span className="text-slate-400 text-sm">–</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="hidden md:table-cell">
+                                  {d.openPorts.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {d.openPorts.slice(0, 6).map((p) => (
+                                        <span
+                                          key={p}
+                                          className="inline-block rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-600 dark:text-slate-300"
+                                          title={portLabel(p)}
+                                        >
+                                          {PORT_LABELS[p] ?? p}
+                                        </span>
+                                      ))}
+                                      {d.openPorts.length > 6 && (
+                                        <span className="text-[11px] text-slate-400">+{d.openPorts.length - 6}</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-sm">–</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="hidden sm:table-cell font-mono text-xs text-slate-500">{d.macAddress}</TableCell>
+                                <TableCell>
+                                  {d.match ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                                      {d.match.kind === "infra"
+                                        ? <Server className="h-3.5 w-3.5 text-indigo-500" />
+                                        : d.match.kind === "device"
+                                          ? <Cpu className="h-3.5 w-3.5 text-violet-500" />
+                                          : <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-500" />}
+                                      {d.match.name}
+                                    </span>
+                                  ) : (
+                                    <Badge variant="secondary" className="text-xs text-slate-400">unbekannt</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                                  {d.responseMs != null ? `${d.responseMs} ms` : "–"}
+                                </TableCell>
+                                <TableCell className="hidden lg:table-cell text-sm text-slate-500">
+                                  {formatSeen(d.lastSeenAt)}
+                                </TableCell>
+                                <TableCell>
+                                  {!d.match && (
+                                    <div className="flex justify-end">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-xs gap-1"
+                                        onClick={() => openAdopt(d)}
+                                      >
+                                        <Plus className="h-3 w-3" />
+                                        Übernehmen
+                                      </Button>
+                                    </div>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
+                    </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -459,6 +526,20 @@ export function DiscoveredTab({
                 </SelectContent>
               </Select>
             </div>
+            {areas.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Bereich</Label>
+                <Select value={form.areaId} onValueChange={(v) => setForm((f) => ({ ...f, areaId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Automatisch" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Automatisch aus IP</SelectItem>
+                    {areas.map((a) => (
+                      <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {error && (
               <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>

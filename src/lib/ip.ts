@@ -52,3 +52,32 @@ export function findVlanForIp<T extends { id: number; subnet: string | null }>(
   }
   return best;
 }
+
+/**
+ * Findet den passenden Netzwerk-Bereich fuer eine IP anhand von ipFrom/ipTo.
+ * Bei Ueberlappungen gewinnt die engste Range (kleinste Spanne).
+ */
+export function findAreaForIp<
+  T extends { id: number; ipFrom: string | null; ipTo: string | null },
+>(ip: string | null | undefined, areas: T[]): T | null {
+  if (!ip) return null;
+  const ipInt = ipToInt(ip);
+  if (ipInt === null) return null;
+  let best: T | null = null;
+  let bestSpan = Number.POSITIVE_INFINITY;
+  for (const area of areas) {
+    if (!area.ipFrom || !area.ipTo) continue;
+    const from = ipToInt(area.ipFrom);
+    const to = ipToInt(area.ipTo);
+    if (from === null || to === null) continue;
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    if (ipInt < lo || ipInt > hi) continue;
+    const span = hi - lo;
+    if (span < bestSpan) {
+      best = area;
+      bestSpan = span;
+    }
+  }
+  return best;
+}

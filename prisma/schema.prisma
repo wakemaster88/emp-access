@@ -137,6 +137,7 @@ model Account {
   networkDevices  NetworkDevice[]
   networkOutlets  NetworkOutlet[]
   networkClients  NetworkClient[]
+  networkAreas    NetworkArea[]
   hubAgents       HubAgent[]
   hubTasks        HubTask[]
   discoveredDevices DiscoveredDevice[]
@@ -1212,11 +1213,37 @@ model NetworkVlan {
   /// Ports, auf denen dieses VLAN tagged anliegt (Trunk).
   taggedPorts NetworkPortVlan[]
   clients     NetworkClient[]
+  areas       NetworkArea[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@unique([accountId, vlanId])
   @@index([accountId])
+}
+
+/// Physischer/organisatorischer Bereich innerhalb eines VLANs
+/// (z. B. „Imbisscontainer“, „Imbiss“, „Strandbad“ im VLAN Kassen).
+model NetworkArea {
+  id          Int             @id @default(autoincrement())
+  name        String
+  /// Sortierung in der UI (aufsteigend).
+  sortOrder   Int             @default(0)
+  description String?
+  /// Typischerweise einem VLAN zugeordnet (kann leer sein).
+  vlanId      Int?
+  vlan        NetworkVlan?    @relation(fields: [vlanId], references: [id], onDelete: SetNull)
+  /// Optionale IP-Range fuer Auto-Zuordnung (inklusive), z. B. 192.168.20.10 .. 192.168.20.39.
+  ipFrom      String?
+  ipTo        String?
+  accountId   Int
+  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clients     NetworkClient[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@index([vlanId])
 }
 
 /// Netzwerk-Infrastruktur-Hardware (Switch, Router, Access Point, Firewall).
@@ -1330,6 +1357,9 @@ model NetworkClient {
   /// Logisch zugeordnetes VLAN (auch ohne Port-Zuordnung moeglich, z. B. WLAN).
   vlanId     Int?
   vlan       NetworkVlan?      @relation(fields: [vlanId], references: [id], onDelete: SetNull)
+  /// Physischer Bereich (Imbiss, Container, Strandbad, …).
+  areaId     Int?
+  area       NetworkArea?      @relation(fields: [areaId], references: [id], onDelete: SetNull)
   /// Zuletzt vom Hub-Netzwerk-Scan gesehen (MAC-Abgleich).
   lastSeenAt DateTime?
   notes      String?
@@ -1340,6 +1370,7 @@ model NetworkClient {
 
   @@index([accountId])
   @@index([vlanId])
+  @@index([areaId])
 }
 
 // ── Lokaler Hub (On-Site-Agent) ──────────────────────────────────────────────

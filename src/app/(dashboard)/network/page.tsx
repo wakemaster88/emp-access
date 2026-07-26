@@ -16,7 +16,7 @@ export default async function NetworkPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [networkDevices, vlans, outlets, clients, iotDevices, hubAgents, discoveredDevices] = await Promise.all([
+  const [networkDevices, vlans, areas, outlets, clients, iotDevices, hubAgents, discoveredDevices] = await Promise.all([
     db.networkDevice.findMany({
       where: { accountId },
       include: {
@@ -39,6 +39,11 @@ export default async function NetworkPage() {
         _count: { select: { ports: true, taggedPorts: true, clients: true } },
       },
       orderBy: { vlanId: "asc" },
+    }),
+    db.networkArea.findMany({
+      where: { accountId },
+      include: { _count: { select: { clients: true } } },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
     db.networkOutlet.findMany({
       where: { accountId },
@@ -65,6 +70,7 @@ export default async function NetworkPage() {
           },
         },
         vlan: { select: { id: true, vlanId: true, name: true } },
+        area: { select: { id: true, name: true, sortOrder: true, vlanId: true } },
       },
       orderBy: { name: "asc" },
     }),
@@ -252,6 +258,16 @@ export default async function NetworkPage() {
             taggedPortCount: v._count.taggedPorts,
             clientCount: v._count.clients,
           }))}
+          areas={areas.map((a) => ({
+            id: a.id,
+            name: a.name,
+            sortOrder: a.sortOrder,
+            description: a.description,
+            vlanId: a.vlanId,
+            ipFrom: a.ipFrom,
+            ipTo: a.ipTo,
+            clientCount: a._count.clients,
+          }))}
           outlets={outlets.map((o) => ({
             id: o.id,
             label: o.label,
@@ -284,6 +300,7 @@ export default async function NetworkPage() {
               ? { id: c.port.id, number: c.port.number, deviceId: c.port.device.id, deviceName: c.port.device.name }
               : null,
             vlan: c.vlan,
+            area: c.area,
           }))}
           iotDevices={iotDevices.map((d) => ({
             id: d.id,

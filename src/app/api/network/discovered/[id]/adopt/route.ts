@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { findAreaForIp, findVlanForIp } from "@/lib/ip";
 
 const VALID_TYPES = ["PC", "PRINTER", "CAMERA", "NAS", "PHONE", "IOT", "MONITOR", "OTHER"];
 
@@ -47,6 +48,27 @@ export async function POST(
     }
   }
 
+  const [vlans, areas] = await Promise.all([
+    db.networkVlan.findMany({
+      where: { accountId: accountId!, subnet: { not: null } },
+      select: { id: true, subnet: true },
+    }),
+    db.networkArea.findMany({
+      where: { accountId: accountId!, ipFrom: { not: null }, ipTo: { not: null } },
+      select: { id: true, ipFrom: true, ipTo: true },
+    }),
+  ]);
+
+  let areaId: number | null = null;
+  if (body.areaId) {
+    const n = Number(body.areaId);
+    const area = await db.networkArea.findFirst({ where: { id: n, accountId: accountId! } });
+    if (!area) return NextResponse.json({ error: "Bereich nicht gefunden" }, { status: 400 });
+    areaId = n;
+  } else {
+    areaId = findAreaForIp(discovered.ipAddress, areas)?.id ?? null;
+  }
+
   const client = await db.networkClient.create({
     data: {
       name: body.name.trim(),
@@ -54,6 +76,8 @@ export async function POST(
       ipAddress: discovered.ipAddress,
       macAddress: discovered.macAddress,
       isStatic: false,
+      vlanId: findVlanForIp(discovered.ipAddress, vlans)?.id ?? null,
+      areaId,
       accountId: accountId!,
     },
   });

@@ -10,6 +10,7 @@ import { ClientsTab } from "@/components/network/clients-tab";
 import type {
   NetworkDeviceRow,
   VlanRow,
+  AreaRow,
   OutletRow,
   ClientRow,
   IotDeviceOption,
@@ -19,6 +20,7 @@ import type {
 interface NetworkTabsProps {
   networkDevices: NetworkDeviceRow[];
   vlans: VlanRow[];
+  areas: AreaRow[];
   outlets: OutletRow[];
   clients: ClientRow[];
   iotDevices: IotDeviceOption[];
@@ -29,6 +31,7 @@ interface NetworkTabsProps {
 export function NetworkTabs({
   networkDevices,
   vlans,
+  areas,
   outlets,
   clients,
   iotDevices,
@@ -76,11 +79,12 @@ export function NetworkTabs({
           clients={clients}
           iotDevices={iotDevices}
           vlans={vlans}
+          areas={areas}
           ports={allPorts}
         />
       </TabsContent>
       <TabsContent value="discovered">
-        <DiscoveredTab devices={discoveredDevices} vlans={vlans} />
+        <DiscoveredTab devices={discoveredDevices} vlans={vlans} areas={areas} />
       </TabsContent>
     </Tabs>
   );

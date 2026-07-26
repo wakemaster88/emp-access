@@ -38,6 +38,17 @@ export interface OutletRow {
   port: { id: number; number: number; deviceId: number; deviceName: string } | null;
 }
 
+export interface AreaRow {
+  id: number;
+  name: string;
+  sortOrder: number;
+  description: string | null;
+  vlanId: number | null;
+  ipFrom: string | null;
+  ipTo: string | null;
+  clientCount: number;
+}
+
 export interface ClientRow {
   id: number;
   name: string;
@@ -57,6 +68,7 @@ export interface ClientRow {
   } | null;
   port: { id: number; number: number; deviceId: number; deviceName: string } | null;
   vlan: { id: number; vlanId: number; name: string } | null;
+  area: { id: number; name: string; sortOrder: number; vlanId: number | null } | null;
 }
 
 export interface IotDeviceOption {
@@ -125,6 +137,11 @@ export function vlanColor(vlanDbId: number): string {
 /** Sortierschluessel: bekannte VLANs nach vlanId, danach „Ohne VLAN“. */
 export function vlanGroupSortKey(vlanId: number | null): number {
   return vlanId == null ? Number.POSITIVE_INFINITY : vlanId;
+}
+
+/** Sortierschluessel: Bereiche nach sortOrder, danach „Ohne Bereich“. */
+export function areaGroupSortKey(sortOrder: number | null): number {
+  return sortOrder == null ? Number.POSITIVE_INFINITY : sortOrder;
 }
 
 export type VlanGroupMeta = {

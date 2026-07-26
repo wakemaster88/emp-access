@@ -23,12 +23,14 @@ import {
   Printer, Camera, HardDrive, Phone, Cpu, Laptop, EthernetPort, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { findVlanForIp, ipToInt } from "@/lib/ip";
+import { findAreaForIp, findVlanForIp, ipToInt } from "@/lib/ip";
 import {
   CLIENT_TYPES,
+  areaGroupSortKey,
   scanOnline,
   vlanColor,
   vlanGroupSortKey,
+  type AreaRow,
   type ClientRow,
   type IotDeviceOption,
   type PortOption,
@@ -55,6 +57,7 @@ const EMPTY = {
   deviceId: "none",
   portId: "none",
   vlanId: "none",
+  areaId: "none",
   notes: "",
 };
 
@@ -62,10 +65,11 @@ interface ClientsTabProps {
   clients: ClientRow[];
   iotDevices: IotDeviceOption[];
   vlans: VlanRow[];
+  areas: AreaRow[];
   ports: PortOption[];
 }
 
-export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProps) {
+export function ClientsTab({ clients, iotDevices, vlans, areas, ports }: ClientsTabProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ClientRow | null>(null);
@@ -114,6 +118,7 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
       deviceId: c.device ? String(c.device.id) : "none",
       portId: c.port ? String(c.port.id) : "none",
       vlanId: c.vlan ? String(c.vlan.id) : "none",
+      areaId: c.area ? String(c.area.id) : "none",
       notes: c.notes ?? "",
     });
     setError("");
@@ -141,6 +146,7 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
             deviceId: form.deviceId === "none" ? null : Number(form.deviceId),
             portId: form.portId === "none" ? null : Number(form.portId),
             vlanId: form.vlanId === "none" ? null : Number(form.vlanId),
+            areaId: form.areaId === "none" ? null : Number(form.areaId),
             notes: form.notes,
           }),
         }
@@ -177,10 +183,30 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
 
   const fiveMinAgo = Date.now() - 5 * 60 * 1000;
 
-  // VLAN-Gruppen: explizite Zuordnung, sonst Subnetz-Ableitung aus der IP.
+  // VLAN → Bereich: explizite Zuordnung, sonst Ableitung aus IP/Subnetz.
   type Row =
-    | { kind: "client"; client: ClientRow; vlanDbId: number | null; vlanId: number | null; vlanName: string; subnet: string | null }
-    | { kind: "iot"; device: IotDeviceOption; vlanDbId: number | null; vlanId: number | null; vlanName: string; subnet: string | null };
+    | {
+        kind: "client";
+        client: ClientRow;
+        vlanDbId: number | null;
+        vlanId: number | null;
+        vlanName: string;
+        subnet: string | null;
+        areaId: number | null;
+        areaName: string;
+        areaSort: number | null;
+      }
+    | {
+        kind: "iot";
+        device: IotDeviceOption;
+        vlanDbId: number | null;
+        vlanId: number | null;
+        vlanName: string;
+        subnet: string | null;
+        areaId: number | null;
+        areaName: string;
+        areaSort: number | null;
+      };
 
   const vlanGroups = useMemo(() => {
     const rows: Row[] = [];
@@ -190,6 +216,10 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
       const v = c.vlan
         ? vlans.find((x) => x.id === c.vlan!.id) ?? null
         : derived;
+      const derivedArea = c.area ? null : findAreaForIp(ip, areas);
+      const area = c.area ?? (derivedArea
+        ? { id: derivedArea.id, name: derivedArea.name, sortOrder: derivedArea.sortOrder, vlanId: derivedArea.vlanId }
+        : null);
       rows.push({
         kind: "client",
         client: c,
@@ -197,10 +227,14 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
         vlanId: c.vlan?.vlanId ?? derived?.vlanId ?? null,
         vlanName: c.vlan?.name ?? derived?.name ?? "Ohne VLAN",
         subnet: v?.subnet ?? null,
+        areaId: area?.id ?? null,
+        areaName: area?.name ?? "Ohne Bereich",
+        areaSort: area?.sortOrder ?? null,
       });
     }
     for (const d of unlinkedIot) {
       const derived = findVlanForIp(d.ipAddress, vlans);
+      const derivedArea = findAreaForIp(d.ipAddress, areas);
       rows.push({
         kind: "iot",
         device: d,
@@ -208,13 +242,26 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
         vlanId: derived?.vlanId ?? null,
         vlanName: derived?.name ?? "Ohne VLAN",
         subnet: derived?.subnet ?? null,
+        areaId: derivedArea?.id ?? null,
+        areaName: derivedArea?.name ?? "Ohne Bereich",
+        areaSort: derivedArea?.sortOrder ?? null,
       });
     }
 
-    const byKey = new Map<string, { meta: { vlanDbId: number | null; vlanId: number | null; name: string; subnet: string | null }; items: Row[] }>();
+    type AreaGroup = {
+      meta: { areaId: number | null; name: string; sortOrder: number | null };
+      items: Row[];
+    };
+    type VlanGroup = {
+      meta: { vlanDbId: number | null; vlanId: number | null; name: string; subnet: string | null };
+      areas: AreaGroup[];
+      showAreas: boolean;
+    };
+
+    const byVlan = new Map<string, { meta: VlanGroup["meta"]; items: Row[] }>();
     for (const row of rows) {
       const key = row.vlanDbId != null ? `v-${row.vlanDbId}` : "none";
-      let g = byKey.get(key);
+      let g = byVlan.get(key);
       if (!g) {
         g = {
           meta: {
@@ -225,23 +272,45 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
           },
           items: [],
         };
-        byKey.set(key, g);
+        byVlan.set(key, g);
       }
       g.items.push(row);
     }
 
-    const groups = [...byKey.values()].sort(
-      (a, b) => vlanGroupSortKey(a.meta.vlanId) - vlanGroupSortKey(b.meta.vlanId)
-    );
-    for (const g of groups) {
-      g.items.sort((a, b) => {
-        const ai = ipToInt(a.kind === "client" ? (a.client.ipAddress || a.client.device?.ipAddress || "") : (a.device.ipAddress || "")) ?? Number.MAX_SAFE_INTEGER;
-        const bi = ipToInt(b.kind === "client" ? (b.client.ipAddress || b.client.device?.ipAddress || "") : (b.device.ipAddress || "")) ?? Number.MAX_SAFE_INTEGER;
-        return ai - bi;
+    const groups: VlanGroup[] = [...byVlan.values()]
+      .sort((a, b) => vlanGroupSortKey(a.meta.vlanId) - vlanGroupSortKey(b.meta.vlanId))
+      .map((g) => {
+        const byArea = new Map<string, AreaGroup>();
+        for (const row of g.items) {
+          const key = row.areaId != null ? `a-${row.areaId}` : "none";
+          let ag = byArea.get(key);
+          if (!ag) {
+            ag = {
+              meta: { areaId: row.areaId, name: row.areaName, sortOrder: row.areaSort },
+              items: [],
+            };
+            byArea.set(key, ag);
+          }
+          ag.items.push(row);
+        }
+        const areaGroups = [...byArea.values()].sort(
+          (a, b) => areaGroupSortKey(a.meta.sortOrder) - areaGroupSortKey(b.meta.sortOrder)
+        );
+        for (const ag of areaGroups) {
+          ag.items.sort((a, b) => {
+            const ai = ipToInt(a.kind === "client" ? (a.client.ipAddress || a.client.device?.ipAddress || "") : (a.device.ipAddress || "")) ?? Number.MAX_SAFE_INTEGER;
+            const bi = ipToInt(b.kind === "client" ? (b.client.ipAddress || b.client.device?.ipAddress || "") : (b.device.ipAddress || "")) ?? Number.MAX_SAFE_INTEGER;
+            return ai - bi;
+          });
+        }
+        const showAreas = areas.length > 0 && (
+          areaGroups.length > 1 || areaGroups.some((ag) => ag.meta.areaId != null)
+        );
+        return { meta: g.meta, areas: areaGroups, showAreas };
       });
-    }
+
     return groups;
-  }, [clients, unlinkedIot, vlans]);
+  }, [clients, unlinkedIot, vlans, areas]);
 
   return (
     <Card className="border-slate-200 dark:border-slate-800">
@@ -263,7 +332,7 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
                 <TableHead className="hidden md:table-cell">IP-Adresse</TableHead>
                 <TableHead className="hidden lg:table-cell">MAC</TableHead>
                 <TableHead className="hidden sm:table-cell">Switch / Port</TableHead>
-                <TableHead>VLAN</TableHead>
+                <TableHead>Bereich</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
@@ -282,205 +351,223 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
                 </TableRow>
               )}
 
-              {vlanGroups.map((group) => (
-                <Fragment key={group.meta.vlanDbId ?? "none"}>
-                  <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-100/80 dark:bg-slate-900/80">
-                    <TableCell colSpan={6} className="py-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {group.meta.vlanDbId != null ? (
-                          <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId))}>
-                            VLAN {group.meta.vlanId} · {group.meta.name}
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs">Ohne VLAN</Badge>
-                        )}
-                        {group.meta.subnet && (
-                          <span className="text-[11px] font-mono text-slate-400">{group.meta.subnet}</span>
-                        )}
-                        <span className="text-[11px] text-slate-400">{group.items.length} Geräte</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-
-                  {group.items.map((row) => {
-                    if (row.kind === "client") {
-                      const c = row.client;
-                      const Icon = TYPE_ICON[c.type] ?? MonitorSmartphone;
-                      const ip = c.ipAddress || c.device?.ipAddress || null;
-                      const scanned = scanOnline(c.lastSeenAt);
-                      const deviceOnline = c.device?.lastUpdate
-                        ? new Date(c.device.lastUpdate).getTime() > fiveMinAgo
-                        : null;
-                      const online =
-                        scanned === null && deviceOnline === null
-                          ? null
-                          : scanned === true || deviceOnline === true;
-                      return (
-                        <TableRow key={`c-${c.id}`} className="border-slate-200 dark:border-slate-700">
-                          <TableCell>
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                                <Icon className="h-4 w-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
-                                  {c.name}
-                                </p>
-                                <div className="flex items-center gap-1.5">
-                                  <p className="text-xs text-slate-400">
-                                    {CLIENT_TYPES.find((t) => t.value === c.type)?.label ?? c.type}
-                                  </p>
-                                  {c.device && (
-                                    <Link
-                                      href={`/devices/${c.device.id}`}
-                                      className="inline-flex items-center gap-0.5 text-xs text-indigo-500 hover:underline"
-                                    >
-                                      <Link2 className="h-3 w-3" />
-                                      {c.device.name}
-                                    </Link>
-                                  )}
-                                  {online === true && (
-                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online" />
-                                  )}
-                                  {online === false && (
-                                    <span className="h-1.5 w-1.5 rounded-full bg-slate-300" title="Offline" />
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell font-mono text-xs text-slate-500">
-                            {ip ? (
-                              <span>
-                                {ip}
-                                {c.isStatic && <span className="ml-1 text-slate-400" title="Feste IP">(fest)</span>}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">–</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
-                            {c.macAddress || <span className="text-slate-300">–</span>}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell">
-                            {c.port ? (
-                              <Link
-                                href={`/network/${c.port.deviceId}`}
-                                className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-                              >
-                                <EthernetPort className="h-3 w-3" />
-                                {c.port.deviceName} · Port {c.port.number}
-                              </Link>
-                            ) : (
-                              <span className="text-xs text-slate-400">–</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {c.vlan ? (
-                              <Badge className={cn("text-xs", vlanColor(c.vlan.id))}>
-                                {c.vlan.vlanId} · {c.vlan.name}
-                              </Badge>
-                            ) : row.vlanDbId != null ? (
-                              <Badge className={cn("text-xs opacity-70", vlanColor(row.vlanDbId))} title="Automatisch aus dem Subnetz erkannt">
-                                {row.vlanId} · {row.vlanName}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-slate-400">–</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-slate-400 hover:text-indigo-600"
-                                onClick={() => openEdit(c)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-slate-400 hover:text-rose-600"
-                                onClick={() => handleDelete(c)}
-                                disabled={deletingId === c.id}
-                              >
-                                {deletingId === c.id
-                                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                                  : <Trash2 className="h-4 w-4" />}
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
-
-                    const d = row.device;
-                    const online = d.lastUpdate
-                      ? new Date(d.lastUpdate).getTime() > fiveMinAgo
-                      : null;
-                    return (
-                      <TableRow key={`iot-${d.id}`} className="border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
-                        <TableCell>
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-8 w-8 rounded-lg bg-slate-500/10 text-slate-500 flex items-center justify-center shrink-0">
-                              <Cpu className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <Link
-                                href={`/devices/${d.id}`}
-                                className="font-medium text-sm text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 truncate block"
-                              >
-                                {d.name}
-                              </Link>
-                              <div className="flex items-center gap-1.5">
-                                <p className="text-xs text-slate-400">IoT-Gerät (nicht zugeordnet)</p>
-                                {online === true && (
-                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online" />
-                                )}
-                                {online === false && (
-                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-300" title="Offline" />
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell font-mono text-xs text-slate-500">
-                          {d.ipAddress || <span className="text-slate-300">–</span>}
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell">
-                          <span className="text-slate-300 text-xs">–</span>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          <span className="text-xs text-slate-400">–</span>
-                        </TableCell>
-                        <TableCell>
-                          {row.vlanDbId != null ? (
-                            <Badge className={cn("text-xs opacity-70", vlanColor(row.vlanDbId))} title="Automatisch aus dem Subnetz erkannt">
-                              {row.vlanId} · {row.vlanName}
+              {vlanGroups.map((group) => {
+                const vlanCount = group.areas.reduce((n, a) => n + a.items.length, 0);
+                return (
+                  <Fragment key={group.meta.vlanDbId ?? "none"}>
+                    <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-100/80 dark:bg-slate-900/80">
+                      <TableCell colSpan={6} className="py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {group.meta.vlanDbId != null ? (
+                            <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId))}>
+                              VLAN {group.meta.vlanId} · {group.meta.name}
                             </Badge>
                           ) : (
-                            <span className="text-xs text-slate-400">–</span>
+                            <Badge variant="secondary" className="text-xs">Ohne VLAN</Badge>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs gap-1"
-                              onClick={() => openAdd(d)}
-                            >
-                              <Link2 className="h-3 w-3" />
-                              Zuordnen
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </Fragment>
-              ))}
+                          {group.meta.subnet && (
+                            <span className="text-[11px] font-mono text-slate-400">{group.meta.subnet}</span>
+                          )}
+                          <span className="text-[11px] text-slate-400">{vlanCount} Geräte</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+
+                    {group.areas.map((areaGroup) => (
+                      <Fragment key={`${group.meta.vlanDbId ?? "none"}-${areaGroup.meta.areaId ?? "none"}`}>
+                        {group.showAreas && (
+                          <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/90 dark:bg-slate-900/40">
+                            <TableCell colSpan={6} className="py-1.5 pl-6">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                  {areaGroup.meta.name}
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  {areaGroup.items.length} Geräte
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+
+                        {areaGroup.items.map((row) => {
+                          if (row.kind === "client") {
+                            const c = row.client;
+                            const Icon = TYPE_ICON[c.type] ?? MonitorSmartphone;
+                            const ip = c.ipAddress || c.device?.ipAddress || null;
+                            const scanned = scanOnline(c.lastSeenAt);
+                            const deviceOnline = c.device?.lastUpdate
+                              ? new Date(c.device.lastUpdate).getTime() > fiveMinAgo
+                              : null;
+                            const online =
+                              scanned === null && deviceOnline === null
+                                ? null
+                                : scanned === true || deviceOnline === true;
+                            return (
+                              <TableRow key={`c-${c.id}`} className="border-slate-200 dark:border-slate-700">
+                                <TableCell>
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                      <Icon className="h-4 w-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
+                                        {c.name}
+                                      </p>
+                                      <div className="flex items-center gap-1.5">
+                                        <p className="text-xs text-slate-400">
+                                          {CLIENT_TYPES.find((t) => t.value === c.type)?.label ?? c.type}
+                                        </p>
+                                        {c.device && (
+                                          <Link
+                                            href={`/devices/${c.device.id}`}
+                                            className="inline-flex items-center gap-0.5 text-xs text-indigo-500 hover:underline"
+                                          >
+                                            <Link2 className="h-3 w-3" />
+                                            {c.device.name}
+                                          </Link>
+                                        )}
+                                        {online === true && (
+                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online" />
+                                        )}
+                                        {online === false && (
+                                          <span className="h-1.5 w-1.5 rounded-full bg-slate-300" title="Offline" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="hidden md:table-cell font-mono text-xs text-slate-500">
+                                  {ip ? (
+                                    <span>
+                                      {ip}
+                                      {c.isStatic && <span className="ml-1 text-slate-400" title="Feste IP">(fest)</span>}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-300">–</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
+                                  {c.macAddress || <span className="text-slate-300">–</span>}
+                                </TableCell>
+                                <TableCell className="hidden sm:table-cell">
+                                  {c.port ? (
+                                    <Link
+                                      href={`/network/${c.port.deviceId}`}
+                                      className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                                    >
+                                      <EthernetPort className="h-3 w-3" />
+                                      {c.port.deviceName} · Port {c.port.number}
+                                    </Link>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">–</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {row.areaId != null ? (
+                                    <Badge variant="secondary" className="text-xs font-normal">
+                                      {row.areaName}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">–</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-slate-400 hover:text-indigo-600"
+                                      onClick={() => openEdit(c)}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                                      onClick={() => handleDelete(c)}
+                                      disabled={deletingId === c.id}
+                                    >
+                                      {deletingId === c.id
+                                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                                        : <Trash2 className="h-4 w-4" />}
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
+
+                          const d = row.device;
+                          const online = d.lastUpdate
+                            ? new Date(d.lastUpdate).getTime() > fiveMinAgo
+                            : null;
+                          return (
+                            <TableRow key={`iot-${d.id}`} className="border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
+                              <TableCell>
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="h-8 w-8 rounded-lg bg-slate-500/10 text-slate-500 flex items-center justify-center shrink-0">
+                                    <Cpu className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <Link
+                                      href={`/devices/${d.id}`}
+                                      className="font-medium text-sm text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 truncate block"
+                                    >
+                                      {d.name}
+                                    </Link>
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-xs text-slate-400">IoT-Gerät (nicht zugeordnet)</p>
+                                      {online === true && (
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online" />
+                                      )}
+                                      {online === false && (
+                                        <span className="h-1.5 w-1.5 rounded-full bg-slate-300" title="Offline" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell font-mono text-xs text-slate-500">
+                                {d.ipAddress || <span className="text-slate-300">–</span>}
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell">
+                                <span className="text-slate-300 text-xs">–</span>
+                              </TableCell>
+                              <TableCell className="hidden sm:table-cell">
+                                <span className="text-xs text-slate-400">–</span>
+                              </TableCell>
+                              <TableCell>
+                                {row.areaId != null ? (
+                                  <Badge variant="secondary" className="text-xs font-normal opacity-70">
+                                    {row.areaName}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-slate-400">–</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center justify-end">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs gap-1"
+                                    onClick={() => openAdd(d)}
+                                  >
+                                    <Link2 className="h-3 w-3" />
+                                    Zuordnen
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -572,6 +659,21 @@ export function ClientsTab({ clients, iotDevices, vlans, ports }: ClientsTabProp
                       {vlans.map((v) => (
                         <SelectItem key={v.id} value={String(v.id)}>
                           {v.vlanId} · {v.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs">Bereich</Label>
+                  <Select value={form.areaId} onValueChange={(v) => set("areaId", v)}>
+                    <SelectTrigger><SelectValue placeholder="Kein Bereich" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Kein Bereich / automatisch</SelectItem>
+                      {areas.map((a) => (
+                        <SelectItem key={a.id} value={String(a.id)}>
+                          {a.name}
+                          {a.ipFrom && a.ipTo ? ` (${a.ipFrom}–${a.ipTo})` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>

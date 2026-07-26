@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { findVlanForIp } from "@/lib/ip";
+import { findAreaForIp, findVlanForIp } from "@/lib/ip";
 
 const VALID_TYPES = ["PC", "PRINTER", "CAMERA", "NAS", "PHONE", "IOT", "MONITOR", "OTHER"];
 
@@ -15,6 +15,7 @@ export async function GET() {
       device: { select: { id: true, name: true, type: true, ipAddress: true, lastUpdate: true } },
       port: { include: { device: { select: { id: true, name: true } } } },
       vlan: true,
+      area: { select: { id: true, name: true, sortOrder: true, vlanId: true } },
     },
     orderBy: { name: "asc" },
   });
@@ -73,6 +74,20 @@ export async function POST(request: NextRequest) {
     vlanId = findVlanForIp(ipAddress, vlans)?.id ?? null;
   }
 
+  let areaId: number | null = null;
+  if (body.areaId) {
+    const n = Number(body.areaId);
+    const area = await db.networkArea.findFirst({ where: { id: n, accountId: accountId! } });
+    if (!area) return NextResponse.json({ error: "Bereich nicht gefunden" }, { status: 400 });
+    areaId = n;
+  } else if (ipAddress) {
+    const areas = await db.networkArea.findMany({
+      where: { accountId: accountId!, ipFrom: { not: null }, ipTo: { not: null } },
+      select: { id: true, ipFrom: true, ipTo: true },
+    });
+    areaId = findAreaForIp(ipAddress, areas)?.id ?? null;
+  }
+
   const client = await db.networkClient.create({
     data: {
       name: body.name.trim(),
@@ -83,6 +98,7 @@ export async function POST(request: NextRequest) {
       deviceId,
       portId,
       vlanId,
+      areaId,
       notes: body.notes?.trim() || null,
       accountId: accountId!,
     },
