@@ -282,12 +282,30 @@ async function fullScan(): Promise<ScannedDevice[]> {
   return devices;
 }
 
-export async function autoScan(): Promise<void> {
-  if (busy) return;
+export type CloudScanResult = {
+  ok: boolean;
+  devices: number;
+  processed: number;
+  error?: string;
+};
+
+/**
+ * Vollscan + Cloud-Upload. Wartet ggf. auf einen laufenden Scan
+ * (z. B. wenn der Intervall-Scan gerade aktiv ist).
+ */
+export async function runCloudScan(label = "Auto-Scan"): Promise<CloudScanResult> {
+  const waitUntil = Date.now() + 180_000;
+  while (busy && Date.now() < waitUntil) {
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (busy) {
+    return { ok: false, devices: 0, processed: 0, error: "Scan läuft bereits" };
+  }
+
   busy = true;
   const startedAt = Date.now();
   try {
-    log("Auto-Scan gestartet (Ping-Sweep + Portscan) …");
+    log(`${label} gestartet (Ping-Sweep + Portscan) …`);
     const devices = await fullScan();
 
     const res = await api("/api/hub/scan", {
@@ -295,19 +313,38 @@ export async function autoScan(): Promise<void> {
       body: JSON.stringify({ hubName: CONFIG.name, devices }),
     });
     if (!res.ok) {
-      log(`Auto-Scan-Upload fehlgeschlagen: HTTP ${res.status}`);
-      STATE.autoScan = { lastRunAt: new Date().toISOString(), devices: devices.length, uploaded: false, error: `HTTP ${res.status}` };
-      return;
+      const error = `HTTP ${res.status}`;
+      log(`${label}-Upload fehlgeschlagen: ${error}`);
+      STATE.autoScan = {
+        lastRunAt: new Date().toISOString(),
+        devices: devices.length,
+        uploaded: false,
+        error,
+      };
+      return { ok: false, devices: devices.length, processed: 0, error };
     }
     const data = (await res.json()) as { processed?: number };
+    const processed = data.processed ?? 0;
     const secs = Math.round((Date.now() - startedAt) / 1000);
-    log(`Auto-Scan: ${devices.length} Geräte in ${secs}s, ${data.processed ?? 0} in der Cloud aktualisiert.`);
-    STATE.autoScan = { lastRunAt: new Date().toISOString(), devices: devices.length, uploaded: true, error: null };
+    log(`${label}: ${devices.length} Geräte in ${secs}s, ${processed} in der Cloud aktualisiert.`);
+    STATE.autoScan = {
+      lastRunAt: new Date().toISOString(),
+      devices: devices.length,
+      uploaded: true,
+      error: null,
+    };
+    return { ok: true, devices: devices.length, processed };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    log(`Auto-Scan-Fehler: ${msg}`);
+    log(`${label}-Fehler: ${msg}`);
     STATE.autoScan = { lastRunAt: new Date().toISOString(), devices: 0, uploaded: false, error: msg };
+    return { ok: false, devices: 0, processed: 0, error: msg };
   } finally {
     busy = false;
   }
+}
+
+export async function autoScan(): Promise<void> {
+  if (busy) return;
+  await runCloudScan("Auto-Scan");
 }

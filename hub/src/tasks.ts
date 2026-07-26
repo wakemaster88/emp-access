@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import dgram from "node:dgram";
-import os from "node:os";
 import { log, api } from "./config.js";
 import {
   uploadSnapshot,
@@ -50,58 +49,16 @@ async function runPing(payload: Record<string, unknown> | null): Promise<TaskRes
 }
 
 /**
- * Aktiver Ping-Sweep ueber alle lokalen /24-Subnetze. Der Zweck ist nicht die
- * ICMP-Antwort, sondern das Fuellen der ARP-Tabelle: Schon die ARP-Anfrage
- * erzeugt einen Eintrag, auch wenn das Geraet Ping blockiert. Ohne Sweep
- * enthaelt die ARP-Tabelle nur Geraete, mit denen der Rechner selbst
- * kommuniziert hat - Switches/APs fehlen dann fast immer.
- */
-async function pingSweep(): Promise<void> {
-  const targets: string[] = [];
-  for (const ifaces of Object.values(os.networkInterfaces())) {
-    for (const iface of ifaces ?? []) {
-      if (iface.family !== "IPv4" || iface.internal) continue;
-      // Nur klassische private /24-Netze sweepen (254 Hosts sind vertretbar).
-      if (!iface.netmask.endsWith("255.255.255.0")) continue;
-      const base = iface.address.split(".").slice(0, 3).join(".");
-      for (let i = 1; i <= 254; i++) targets.push(`${base}.${i}`);
-    }
-  }
-  if (targets.length === 0) return;
-
-  const CONCURRENCY = 50;
-  let index = 0;
-  async function worker() {
-    while (index < targets.length) {
-      const ip = targets[index++];
-      // 1 Paket, 1s Timeout - Fehler sind egal, der ARP-Eintrag zaehlt.
-      await exec("ping", ["-c", "1", "-W", "1000", "-n", "-q", ip], { timeout: 3000 }).catch(() => {});
-    }
-  }
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-}
-
-/**
- * Netzwerk-Scan: aktiver Ping-Sweep zum Fuellen der ARP-Tabelle, danach
- * Auslesen der IP/MAC-Paare des lokalen Segments.
+ * Netzwerk-Scan: nutzt denselben Ping-Sweep + Portscan + Cloud-Upload
+ * wie der Intervall-Auto-Scan (aktualisiert „Geräte“ in der UI).
  */
 export async function runNetworkScan(): Promise<TaskResult> {
-  try {
-    await pingSweep();
-    const { stdout } = await exec("arp", ["-a"], { timeout: 15000 });
-    const devices: { ip: string; mac: string; iface: string | null }[] = [];
-    for (const line of stdout.split("\n")) {
-      // macOS: "? (192.168.1.4) at 8c:3b:ad:65:b1:0 on en0 ifscope [ethernet]"
-      const m = line.match(/\(([\d.]+)\) at ([0-9a-fA-F:]+) (?:on (\S+))?/);
-      if (!m || m[2] === "ff:ff:ff:ff:ff:ff") continue;
-      // MAC-Oktette auf 2 Stellen normalisieren (macOS kuerzt fuehrende Nullen).
-      const mac = m[2].split(":").map((o) => o.padStart(2, "0")).join(":").toUpperCase();
-      devices.push({ ip: m[1], mac, iface: m[3] ?? null });
-    }
-    return { success: true, result: { count: devices.length, devices } };
-  } catch (e) {
-    return { success: false, error: `arp fehlgeschlagen: ${e instanceof Error ? e.message : e}` };
+  const { runCloudScan } = await import("./scanner.js");
+  const r = await runCloudScan("Netzwerk-Scan");
+  if (!r.ok) {
+    return { success: false, error: r.error ?? "Scan fehlgeschlagen", result: r };
   }
+  return { success: true, result: r };
 }
 
 /** Wake-on-LAN Magic Packet an die Broadcast-Adresse senden. */
