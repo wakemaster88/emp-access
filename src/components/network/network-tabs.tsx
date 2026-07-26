@@ -1,8 +1,7 @@
 "use client";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Server, Network, Cable, MonitorSmartphone, Radar } from "lucide-react";
-import { DiscoveredTab, type DiscoveredRow } from "@/components/network/discovered-tab";
+import { Server, Network, Cable, MonitorSmartphone } from "lucide-react";
 import { NetworkDevicesTab } from "@/components/network/network-devices-tab";
 import { VlansTab } from "@/components/network/vlans-tab";
 import { OutletsTab } from "@/components/network/outlets-tab";
@@ -15,6 +14,7 @@ import type {
   ClientRow,
   IotDeviceOption,
   PortOption,
+  DiscoveredRow,
 } from "@/components/network/network-types";
 
 interface NetworkTabsProps {
@@ -38,6 +38,8 @@ export function NetworkTabs({
   allPorts,
   discoveredDevices,
 }: NetworkTabsProps) {
+  const unknownScanCount = discoveredDevices.filter((d) => !d.match).length;
+
   return (
     <Tabs defaultValue="devices">
       <TabsList className="w-full sm:w-auto overflow-x-auto">
@@ -57,11 +59,11 @@ export function NetworkTabs({
         <TabsTrigger value="clients" className="gap-1.5">
           <MonitorSmartphone className="h-4 w-4" />
           Geräte
-        </TabsTrigger>
-        <TabsTrigger value="discovered" className="gap-1.5">
-          <Radar className="h-4 w-4" />
-          <span className="hidden sm:inline">Entdeckt</span>
-          <span className="sm:hidden">Scan</span>
+          {unknownScanCount > 0 && (
+            <span className="ml-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 px-1.5 text-[10px] font-semibold tabular-nums">
+              {unknownScanCount}
+            </span>
+          )}
         </TabsTrigger>
       </TabsList>
 
@@ -81,10 +83,8 @@ export function NetworkTabs({
           vlans={vlans}
           areas={areas}
           ports={allPorts}
+          discovered={discoveredDevices}
         />
-      </TabsContent>
-      <TabsContent value="discovered">
-        <DiscoveredTab devices={discoveredDevices} vlans={vlans} areas={areas} />
       </TabsContent>
     </Tabs>
   );

@@ -80,6 +80,26 @@ export interface IotDeviceOption {
   isActive: boolean;
 }
 
+/** Vom Hub gescannte Hosts (fuer den kombinierten Geraete-Tab). */
+export interface DiscoveredRow {
+  id: number;
+  macAddress: string;
+  ipAddress: string | null;
+  iface: string | null;
+  hostname: string | null;
+  vendor: string | null;
+  openPorts: number[];
+  ipHistory: { ip: string; seenUntil: string }[];
+  deviceType: string | null;
+  responseMs: number | null;
+  reachable: boolean;
+  hubName: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  /// Auto-Match: infra = Switch/AP, client = NetworkClient, device = IoT.
+  match: { kind: "infra" | "client" | "device"; name: string } | null;
+}
+
 export interface PortOption {
   id: number;
   number: number;
