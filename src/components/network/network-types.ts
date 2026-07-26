@@ -122,6 +122,19 @@ export function vlanColor(vlanDbId: number): string {
   return VLAN_COLORS[vlanDbId % VLAN_COLORS.length];
 }
 
+/** Sortierschluessel: bekannte VLANs nach vlanId, danach „Ohne VLAN“. */
+export function vlanGroupSortKey(vlanId: number | null): number {
+  return vlanId == null ? Number.POSITIVE_INFINITY : vlanId;
+}
+
+export type VlanGroupMeta = {
+  key: string;
+  vlanDbId: number | null;
+  vlanId: number | null;
+  name: string;
+  subnet: string | null;
+};
+
 /// Der Hub scannt alle 5 Minuten - 15 Minuten Toleranz fuer ARP-Aussetzer.
 export const ONLINE_THRESHOLD_MS = 15 * 60 * 1000;
 

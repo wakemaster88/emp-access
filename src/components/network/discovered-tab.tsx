@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,8 +18,13 @@ import {
 } from "@/components/ui/table";
 import { Radar, Loader2, Plus, Server, MonitorSmartphone, Cpu, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ipToInt } from "@/lib/ip";
-import { CLIENT_TYPES } from "@/components/network/network-types";
+import { findVlanForIp, ipToInt } from "@/lib/ip";
+import {
+  CLIENT_TYPES,
+  vlanColor,
+  vlanGroupSortKey,
+  type VlanRow,
+} from "@/components/network/network-types";
 
 export interface DiscoveredRow {
   id: number;
@@ -81,7 +86,13 @@ function formatSeen(iso: string): string {
 
 type Filter = "all" | "unknown" | "known";
 
-export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
+export function DiscoveredTab({
+  devices,
+  vlans,
+}: {
+  devices: DiscoveredRow[];
+  vlans: VlanRow[];
+}) {
   const router = useRouter();
   // "Aktiv" = im letzten Scan-Fenster gesehen (15 min Toleranz).
   const activeCutoff = Date.now() - 15 * 60_000;
@@ -105,21 +116,55 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
     return new Set([...byIp.entries()].filter(([, n]) => n > 1).map(([ip]) => ip));
   }, [devices, activeCutoff]);
 
-  const filtered = devices
-    .filter((d) => {
-      if (filter === "unknown") return !d.match;
-      if (filter === "known") return !!d.match;
-      return true;
-    })
-    // Numerisch nach IP sortieren; Eintraege ohne IP ans Ende, dort nach MAC.
-    .sort((a, b) => {
-      const ai = a.ipAddress ? ipToInt(a.ipAddress) : null;
-      const bi = b.ipAddress ? ipToInt(b.ipAddress) : null;
-      if (ai !== null && bi !== null) return ai - bi;
-      if (ai !== null) return -1;
-      if (bi !== null) return 1;
-      return a.macAddress.localeCompare(b.macAddress);
-    });
+  const filtered = useMemo(
+    () =>
+      devices
+        .filter((d) => {
+          if (filter === "unknown") return !d.match;
+          if (filter === "known") return !!d.match;
+          return true;
+        })
+        .sort((a, b) => {
+          const ai = a.ipAddress ? ipToInt(a.ipAddress) : null;
+          const bi = b.ipAddress ? ipToInt(b.ipAddress) : null;
+          if (ai !== null && bi !== null) return ai - bi;
+          if (ai !== null) return -1;
+          if (bi !== null) return 1;
+          return a.macAddress.localeCompare(b.macAddress);
+        }),
+    [devices, filter]
+  );
+
+  const vlanGroups = useMemo(() => {
+    const byKey = new Map<
+      string,
+      {
+        meta: { vlanDbId: number | null; vlanId: number | null; name: string; subnet: string | null };
+        items: DiscoveredRow[];
+      }
+    >();
+    for (const d of filtered) {
+      const v = findVlanForIp(d.ipAddress, vlans);
+      const key = v ? `v-${v.id}` : "none";
+      let g = byKey.get(key);
+      if (!g) {
+        g = {
+          meta: {
+            vlanDbId: v?.id ?? null,
+            vlanId: v?.vlanId ?? null,
+            name: v?.name ?? "Ohne VLAN",
+            subnet: v?.subnet ?? null,
+          },
+          items: [],
+        };
+        byKey.set(key, g);
+      }
+      g.items.push(d);
+    }
+    return [...byKey.values()].sort(
+      (a, b) => vlanGroupSortKey(a.meta.vlanId) - vlanGroupSortKey(b.meta.vlanId)
+    );
+  }, [filtered, vlans]);
 
   function openAdopt(d: DiscoveredRow) {
     setAdopting(d);
@@ -173,7 +218,7 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
           <p className="text-xs text-slate-500 mt-1">
             Der lokale Hub scannt das Netz aktiv (Ping-Sweep + Portscan) und
             erkennt Hostname, Hersteller, offene Ports und Gerätetyp.
-            MAC-Abgleich gegen Switches, APs und erfasste Geräte.
+            MAC-Abgleich gegen Switches, APs und erfasste Geräte. Gruppiert nach VLAN (Subnetz).
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
@@ -229,125 +274,146 @@ export function DiscoveredTab({ devices }: { devices: DiscoveredRow[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((d) => {
-                  const active = new Date(d.lastSeenAt).getTime() > activeCutoff;
-                  return (
-                    <TableRow key={d.id} className="border-slate-200 dark:border-slate-700">
-                      <TableCell>
-                        {active ? (
-                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> aktiv
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> inaktiv
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {d.ipAddress ? (
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1",
-                              duplicateIps.has(d.ipAddress) && "text-rose-600 dark:text-rose-400 font-semibold"
-                            )}
-                          >
-                            {d.ipAddress}
-                            {duplicateIps.has(d.ipAddress) && (
-                              <AlertTriangle className="h-3.5 w-3.5" aria-label="IP-Doppelbelegung" />
-                            )}
-                          </span>
-                        ) : (
-                          "–"
-                        )}
-                        {d.ipHistory.length > 0 && (
-                          <span
-                            className="block text-[11px] text-slate-400 font-normal"
-                            title={d.ipHistory
-                              .map((h) => `${h.ip} (bis ${new Date(h.seenUntil).toLocaleDateString("de-DE")})`)
-                              .join("\n")}
-                          >
-                            vorher: {d.ipHistory[0].ip}
-                            {d.ipHistory.length > 1 && ` +${d.ipHistory.length - 1}`}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {d.hostname ? (
-                          <span className="text-slate-700 dark:text-slate-300">{d.hostname}</span>
-                        ) : (
-                          <span className="text-slate-400">–</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-slate-500">
-                        {d.vendor ?? <span className="text-slate-300">–</span>}
-                      </TableCell>
-                      <TableCell className="hidden xl:table-cell">
-                        {d.deviceType ? (
-                          <Badge variant="secondary" className="text-xs h-5 font-normal">{d.deviceType}</Badge>
-                        ) : (
-                          <span className="text-slate-400 text-sm">–</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {d.openPorts.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {d.openPorts.slice(0, 6).map((p) => (
-                              <span
-                                key={p}
-                                className="inline-block rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-600 dark:text-slate-300"
-                                title={portLabel(p)}
-                              >
-                                {PORT_LABELS[p] ?? p}
-                              </span>
-                            ))}
-                            {d.openPorts.length > 6 && (
-                              <span className="text-[11px] text-slate-400">+{d.openPorts.length - 6}</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-400 text-sm">–</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell font-mono text-xs text-slate-500">{d.macAddress}</TableCell>
-                      <TableCell>
-                        {d.match ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-                            {d.match.kind === "infra"
-                              ? <Server className="h-3.5 w-3.5 text-indigo-500" />
-                              : d.match.kind === "device"
-                                ? <Cpu className="h-3.5 w-3.5 text-violet-500" />
-                                : <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-500" />}
-                            {d.match.name}
-                          </span>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs text-slate-400">unbekannt</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden xl:table-cell text-sm text-slate-500">
-                        {d.responseMs != null ? `${d.responseMs} ms` : "–"}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell text-sm text-slate-500">
-                        {formatSeen(d.lastSeenAt)}
-                      </TableCell>
-                      <TableCell>
-                        {!d.match && (
-                          <div className="flex justify-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs gap-1"
-                              onClick={() => openAdopt(d)}
-                            >
-                              <Plus className="h-3 w-3" />
-                              Übernehmen
-                            </Button>
-                          </div>
-                        )}
+                {vlanGroups.map((group) => (
+                  <Fragment key={group.meta.vlanDbId ?? "none"}>
+                    <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-100/80 dark:bg-slate-900/80">
+                      <TableCell colSpan={11} className="py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {group.meta.vlanDbId != null ? (
+                            <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId))}>
+                              VLAN {group.meta.vlanId} · {group.meta.name}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">Ohne VLAN</Badge>
+                          )}
+                          {group.meta.subnet && (
+                            <span className="text-[11px] font-mono text-slate-400">{group.meta.subnet}</span>
+                          )}
+                          <span className="text-[11px] text-slate-400">{group.items.length} Geräte</span>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  );
-                })}
+                    {group.items.map((d) => {
+                      const active = new Date(d.lastSeenAt).getTime() > activeCutoff;
+                      return (
+                        <TableRow key={d.id} className="border-slate-200 dark:border-slate-700">
+                          <TableCell>
+                            {active ? (
+                              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> aktiv
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> inaktiv
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {d.ipAddress ? (
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1",
+                                  duplicateIps.has(d.ipAddress) && "text-rose-600 dark:text-rose-400 font-semibold"
+                                )}
+                              >
+                                {d.ipAddress}
+                                {duplicateIps.has(d.ipAddress) && (
+                                  <AlertTriangle className="h-3.5 w-3.5" aria-label="IP-Doppelbelegung" />
+                                )}
+                              </span>
+                            ) : (
+                              "–"
+                            )}
+                            {d.ipHistory.length > 0 && (
+                              <span
+                                className="block text-[11px] text-slate-400 font-normal"
+                                title={d.ipHistory
+                                  .map((h) => `${h.ip} (bis ${new Date(h.seenUntil).toLocaleDateString("de-DE")})`)
+                                  .join("\n")}
+                              >
+                                vorher: {d.ipHistory[0].ip}
+                                {d.ipHistory.length > 1 && ` +${d.ipHistory.length - 1}`}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {d.hostname ? (
+                              <span className="text-slate-700 dark:text-slate-300">{d.hostname}</span>
+                            ) : (
+                              <span className="text-slate-400">–</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                            {d.vendor ?? <span className="text-slate-300">–</span>}
+                          </TableCell>
+                          <TableCell className="hidden xl:table-cell">
+                            {d.deviceType ? (
+                              <Badge variant="secondary" className="text-xs h-5 font-normal">{d.deviceType}</Badge>
+                            ) : (
+                              <span className="text-slate-400 text-sm">–</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {d.openPorts.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {d.openPorts.slice(0, 6).map((p) => (
+                                  <span
+                                    key={p}
+                                    className="inline-block rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[11px] font-mono text-slate-600 dark:text-slate-300"
+                                    title={portLabel(p)}
+                                  >
+                                    {PORT_LABELS[p] ?? p}
+                                  </span>
+                                ))}
+                                {d.openPorts.length > 6 && (
+                                  <span className="text-[11px] text-slate-400">+{d.openPorts.length - 6}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-sm">–</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell font-mono text-xs text-slate-500">{d.macAddress}</TableCell>
+                          <TableCell>
+                            {d.match ? (
+                              <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                                {d.match.kind === "infra"
+                                  ? <Server className="h-3.5 w-3.5 text-indigo-500" />
+                                  : d.match.kind === "device"
+                                    ? <Cpu className="h-3.5 w-3.5 text-violet-500" />
+                                    : <MonitorSmartphone className="h-3.5 w-3.5 text-emerald-500" />}
+                                {d.match.name}
+                              </span>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs text-slate-400">unbekannt</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                            {d.responseMs != null ? `${d.responseMs} ms` : "–"}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell text-sm text-slate-500">
+                            {formatSeen(d.lastSeenAt)}
+                          </TableCell>
+                          <TableCell>
+                            {!d.match && (
+                              <div className="flex justify-end">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => openAdopt(d)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Übernehmen
+                                </Button>
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </Fragment>
+                ))}
               </TableBody>
             </Table>
           </div>

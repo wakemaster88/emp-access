@@ -80,7 +80,7 @@ export function NetworkTabs({
         />
       </TabsContent>
       <TabsContent value="discovered">
-        <DiscoveredTab devices={discoveredDevices} />
+        <DiscoveredTab devices={discoveredDevices} vlans={vlans} />
       </TabsContent>
     </Tabs>
   );
