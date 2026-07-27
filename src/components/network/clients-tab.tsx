@@ -126,6 +126,8 @@ const EMPTY = {
 };
 
 type ListFilter = "all" | "managed" | "unknown";
+/** "all" = jedes VLAN, "none" = ohne VLAN, sonst DB-ID des VLANs. */
+type VlanFilter = "all" | "none" | number;
 
 function mapDiscoveredType(deviceType: string | null): string {
   switch (deviceType) {
@@ -181,6 +183,7 @@ export function ClientsTab({
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<ListFilter>("all");
+  const [vlanFilter, setVlanFilter] = useState<VlanFilter>("all");
 
   const [adopting, setAdopting] = useState<DiscoveredRow | null>(null);
   const [adoptForm, setAdoptForm] = useState({ name: "", type: "OTHER", areaId: "none" });
@@ -515,6 +518,13 @@ export function ClientsTab({
       }
     }
 
+    const filteredRows =
+      vlanFilter === "all"
+        ? rows
+        : rows.filter((row) =>
+            vlanFilter === "none" ? row.vlanDbId == null : row.vlanDbId === vlanFilter
+          );
+
     type AreaGroup = {
       meta: { areaId: number | null; name: string; sortOrder: number | null };
       items: Row[];
@@ -526,7 +536,7 @@ export function ClientsTab({
     };
 
     const byVlan = new Map<string, { meta: VlanGroup["meta"]; items: Row[] }>();
-    for (const row of rows) {
+    for (const row of filteredRows) {
       const key = row.vlanDbId != null ? `v-${row.vlanDbId}` : "none";
       let g = byVlan.get(key);
       if (!g) {
@@ -575,17 +585,54 @@ export function ClientsTab({
         );
         return { meta: g.meta, areas: areaGroups, showAreas };
       });
-  }, [clients, unlinkedIot, unknownDiscovered, vlans, areas, filter]);
+  }, [clients, unlinkedIot, unknownDiscovered, vlans, areas, filter, vlanFilter]);
 
   const visibleCount = vlanGroups.reduce(
     (n, g) => n + g.areas.reduce((m, a) => m + a.items.length, 0),
     0
   );
 
+  const vlanChipCounts = useMemo(() => {
+    const counts = new Map<number | "none", number>();
+    const bump = (key: number | "none") => counts.set(key, (counts.get(key) ?? 0) + 1);
+
+    if (filter !== "unknown") {
+      for (const c of clients) {
+        const ip = c.ipAddress || c.device?.ipAddress || null;
+        const derived = c.vlan ? null : findVlanForIp(ip, vlans);
+        const id = c.vlan?.id ?? derived?.id ?? null;
+        bump(id ?? "none");
+      }
+      for (const d of unlinkedIot) {
+        const derived = findVlanForIp(d.ipAddress, vlans);
+        bump(derived?.id ?? "none");
+      }
+    }
+    if (filter !== "managed") {
+      for (const d of unknownDiscovered) {
+        const derived = findVlanForIp(d.ipAddress, vlans);
+        bump(derived?.id ?? "none");
+      }
+    }
+    return counts;
+  }, [clients, unlinkedIot, unknownDiscovered, vlans, filter]);
+
   const FILTERS: { value: ListFilter; label: string }[] = [
     { value: "all", label: `Alle (${managedCount + unknownDiscovered.length})` },
     { value: "managed", label: `Verwaltet (${managedCount})` },
     { value: "unknown", label: `Neu vom Scan (${unknownDiscovered.length})` },
+  ];
+
+  const totalForVlanChips = [...vlanChipCounts.values()].reduce((a, b) => a + b, 0);
+  const VLAN_FILTERS: { value: VlanFilter; label: string }[] = [
+    { value: "all", label: `Alle VLANs (${totalForVlanChips})` },
+    ...vlans.map((v) => ({
+      value: v.id as VlanFilter,
+      label: `${v.vlanId} · ${v.name}${vlanChipCounts.has(v.id) ? ` (${vlanChipCounts.get(v.id)})` : ""}`,
+    })),
+    ...((vlanChipCounts.get("none") ?? 0) > 0 || vlanFilter === "none"
+      ? [{ value: "none" as VlanFilter, label: `Ohne VLAN (${vlanChipCounts.get("none") ?? 0})` }]
+      : []),
   ];
 
   const lastScanAt = useMemo(() => {
@@ -649,22 +696,43 @@ export function ClientsTab({
         {scanMsg && (
           <p className="text-xs text-slate-500">{scanMsg}</p>
         )}
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 self-start">
-          {FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setFilter(f.value)}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
-                filter === f.value
-                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+        <div className="flex flex-col gap-2 w-full min-w-0">
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 self-start flex-wrap">
+            {FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setFilter(f.value)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
+                  filter === f.value
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {vlans.length > 0 && (
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 overflow-x-auto max-w-full">
+              {VLAN_FILTERS.map((f) => (
+                <button
+                  key={String(f.value)}
+                  type="button"
+                  onClick={() => setVlanFilter(f.value)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition-all whitespace-nowrap shrink-0",
+                    vlanFilter === f.value
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-0 sm:px-6 sm:pb-6 space-y-3">
