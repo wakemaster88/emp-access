@@ -25,7 +25,11 @@ function intEnv(key: string, fallback: number): number {
 /** Kurzer Git-Commit-Hash des laufenden Codes (fuer Update-Diagnose). */
 function gitVersion(): string {
   try {
-    return execSync("git rev-parse --short HEAD", { cwd: hubDir, encoding: "utf8" }).trim();
+    // Repo-Root (Parent von hub/), nicht hubDir – sonst falsche Version bei Submodulen.
+    return execSync("git rev-parse --short HEAD", {
+      cwd: path.resolve(hubDir, ".."),
+      encoding: "utf8",
+    }).trim();
   } catch {
     return "unknown";
   }

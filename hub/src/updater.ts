@@ -6,10 +6,12 @@ function git(args: string): string {
 }
 
 /**
- * Selbst-Update ueber GitHub: Wenn origin/main neue Commits hat, wird per
- * fast-forward gepullt, `npm install` im Hub-Ordner ausgefuehrt und der
- * Prozess beendet - launchd (KeepAlive) startet den Hub automatisch mit dem
- * neuen Code neu.
+ * Selbst-Update ueber GitHub: Hub-Maschinen sind reine Deployment-Targets und
+ * sollen exakt origin/main fahren. Lokale Aenderungen (z. B. Webcam-IP in
+ * go2rtc.yaml ohne erfolgreichen Push) duerfen Updates nicht blockieren.
+ *
+ * Ablauf: fetch → bei Abweichung reset --hard → npm install → exit
+ * (launchd KeepAlive startet neu).
  */
 export function checkForUpdate(): void {
   try {
@@ -18,30 +20,12 @@ export function checkForUpdate(): void {
     const remote = git("rev-parse origin/main");
     if (local === remote) return;
 
-    // Liegt der lokale Stand sauber hinter origin/main, reicht ein
-    // fast-forward. Ist er abgewichen (z. B. Merge-Commit durch manuelles
-    // "git pull"), wuerde der Hub sonst fuer immer auf altem Code haengen:
-    // Ein Hub soll exakt origin/main fahren - bei unveraendertem
-    // Arbeitsverzeichnis setzen wir deshalb hart zurueck.
-    let behind = true;
-    try {
-      git(`merge-base --is-ancestor ${local} ${remote}`);
-    } catch {
-      behind = false;
+    const dirty = git("status --porcelain --untracked-files=no");
+    if (dirty) {
+      log(`Update: lokale Aenderungen werden verworfen:\n${dirty}`);
     }
-
-    if (behind) {
-      log(`Update gefunden: ${local.slice(0, 7)} -> ${remote.slice(0, 7)}. Pull + Neustart …`);
-      git("pull --ff-only origin main");
-    } else {
-      const dirty = git("status --porcelain --untracked-files=no");
-      if (dirty) {
-        log(`Update übersprungen: lokaler Stand ${local.slice(0, 7)} weicht ab und hat lokale Änderungen.`);
-        return;
-      }
-      log(`Lokaler Stand ${local.slice(0, 7)} weicht von origin/main ab - reset --hard auf ${remote.slice(0, 7)} …`);
-      git("reset --hard origin/main");
-    }
+    log(`Update gefunden: ${local.slice(0, 7)} -> ${remote.slice(0, 7)}. reset --hard + Neustart …`);
+    git("reset --hard origin/main");
     execSync("npm install --no-audit --no-fund", { cwd: CONFIG.hubDir, stdio: "inherit" });
     log("Update installiert – Prozess wird beendet (launchd startet neu).");
     process.exit(0);

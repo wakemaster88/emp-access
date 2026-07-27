@@ -162,7 +162,12 @@ export function ClientsTab({
           return;
         }
         if (body.status === "FAILED") {
-          setScanMsg(body.error ?? "Scan fehlgeschlagen");
+          const err = String(body.error ?? "");
+          setScanMsg(
+            /arp fehlgeschlagen/i.test(err)
+              ? "Hub-Software veraltet – bitte auf dem iMac einmal aktualisieren: hub/install/update.sh"
+              : (body.error ?? "Scan fehlgeschlagen")
+          );
           setScanning(false);
           return;
         }
