@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "DiscoveredDevice" ADD COLUMN IF NOT EXISTS "absentScans" INTEGER NOT NULL DEFAULT 0;

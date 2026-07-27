@@ -58,12 +58,14 @@ function pushIpHistory(history: unknown, ip: string | null, seenUntil: Date): Ip
  * Hub-Scan-Ergebnisse (Auto-Scan oder NETWORK_SCAN-Task) in DiscoveredDevice
  * schreiben und bekannte Clients/Infra per MAC/IP aktualisieren.
  */
+const ABSENT_SCANS_BEFORE_PRUNE = 2;
+
 export async function ingestHubScanDevices(
   db: Db,
   accountId: number,
   rawDevices: unknown[],
   hubName: string | null = null
-): Promise<{ processed: number; synced: number }> {
+): Promise<{ processed: number; synced: number; pruned: number }> {
   const byMac = new Map<string, DeviceInfo>();
   for (const d of rawDevices.slice(0, MAX_DEVICES_PER_SCAN)) {
     const row = d as Record<string, unknown> | null;
@@ -83,7 +85,7 @@ export async function ingestHubScanDevices(
     });
   }
 
-  if (byMac.size === 0) return { processed: 0, synced: 0 };
+  if (byMac.size === 0) return { processed: 0, synced: 0, pruned: 0 };
 
   const now = new Date();
   const existing = await db.discoveredDevice.findMany({
@@ -105,6 +107,7 @@ export async function ingestHubScanDevices(
       deviceType: info.deviceType,
       responseMs: info.responseMs,
       reachable: info.reachable,
+      absentScans: 0,
       hubName,
       lastSeenAt: now,
       ...(ipChanged
@@ -201,5 +204,61 @@ export async function ingestHubScanDevices(
     }
   }
 
-  return { processed, synced };
+  // Fehlende Hosts: absentScans++. Unzugeordnete nach 2 Scans in Folge loeschen
+  // (gleiche Zuordnungslogik wie in der UI: Client/Infra per MAC, IoT per IP).
+  const missing = await db.discoveredDevice.findMany({
+    where: { accountId, macAddress: { notIn: [...byMac.keys()] } },
+    select: { id: true, macAddress: true, ipAddress: true, absentScans: true },
+  });
+  let pruned = 0;
+  if (missing.length > 0) {
+    const missingMacs = missing.map((m) => m.macAddress);
+    const missingIps = missing.map((m) => m.ipAddress).filter((ip): ip is string => !!ip);
+    const [knownClients, knownInfra, knownIot] = await Promise.all([
+      db.networkClient.findMany({
+        where: { accountId, macAddress: { in: missingMacs, mode: "insensitive" } },
+        select: { macAddress: true },
+      }),
+      db.networkDevice.findMany({
+        where: { accountId, macAddress: { in: missingMacs, mode: "insensitive" } },
+        select: { macAddress: true },
+      }),
+      missingIps.length > 0
+        ? db.device.findMany({
+            where: { accountId, ipAddress: { in: missingIps } },
+            select: { ipAddress: true },
+          })
+        : Promise.resolve([] as { ipAddress: string | null }[]),
+    ]);
+    const assignedMacs = new Set(
+      [...knownClients, ...knownInfra]
+        .map((x) => x.macAddress?.toUpperCase())
+        .filter((m): m is string => !!m)
+    );
+    const assignedIps = new Set(
+      knownIot.map((d) => d.ipAddress).filter((ip): ip is string => !!ip)
+    );
+
+    const toDelete: number[] = [];
+    for (const m of missing) {
+      const next = m.absentScans + 1;
+      const isAssigned =
+        assignedMacs.has(m.macAddress.toUpperCase()) ||
+        (!!m.ipAddress && assignedIps.has(m.ipAddress));
+      if (!isAssigned && next >= ABSENT_SCANS_BEFORE_PRUNE) {
+        toDelete.push(m.id);
+        continue;
+      }
+      await db.discoveredDevice.update({
+        where: { id: m.id },
+        data: { absentScans: next, reachable: false },
+      });
+    }
+    if (toDelete.length > 0) {
+      const del = await db.discoveredDevice.deleteMany({ where: { id: { in: toDelete } } });
+      pruned = del.count;
+    }
+  }
+
+  return { processed, synced, pruned };
 }

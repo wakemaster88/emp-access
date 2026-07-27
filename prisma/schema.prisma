@@ -1696,6 +1696,9 @@ model DiscoveredDevice {
   responseMs  Int?
   /// true, wenn das Geraet im letzten Scan auf Ping/Port geantwortet hat.
   reachable   Boolean   @default(true)
+  /// Wie oft das Geraet in Folge beim Hub-Scan gefehlt hat (bei Treffer = 0).
+  /// Unzugeordnete Eintraege werden ab 2 entfernt.
+  absentScans Int       @default(0)
   /// Fruehere IP-Adressen (neueste zuerst): [{ ip, seenUntil }]. Wird beim
   /// IP-Wechsel gefuellt; eine IP "gehoert" immer nur dem zuletzt gesehenen
   /// Geraet, aeltere Eintraege geben sie hierhin ab.
