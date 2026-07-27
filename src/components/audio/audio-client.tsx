@@ -1,14 +1,25 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   CalendarClock,
   CheckCircle2,
+  Clock,
   History,
   ListMusic,
   Loader2,
@@ -28,10 +39,19 @@ import { cn } from "@/lib/utils";
 import { formatDaysOfWeek } from "@/lib/audio-constants";
 import { AnnouncePanel } from "./announce-panel";
 import { AnnouncementDialog } from "./announcement-dialog";
-import { LibraryPanel, formatDuration } from "./library-panel";
+import { LibraryPanel } from "./library-panel";
+import {
+  JOB_KIND_LABELS,
+  JOB_STATUS_LABELS,
+  formatDuration,
+  formatRelativeTime,
+  triggerLabel,
+} from "./labels";
 import { PlaylistDialog } from "./playlist-dialog";
 import { ScheduleDialog, ACTION_LABELS } from "./schedule-dialog";
+import { useAudioStatus } from "./use-audio-status";
 import { ZoneDialog } from "./zone-dialog";
+import { ZoneStatusBar } from "./zone-status-bar";
 import type {
   AnnouncementRow,
   AudioDeviceOption,
@@ -40,6 +60,7 @@ import type {
   ScheduleRow,
   TrackRow,
   ZoneRow,
+  ZoneStatus,
 } from "./types";
 
 interface Props {
@@ -63,6 +84,10 @@ export function AudioClient({
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  const [tab, setTab] = useState("announce");
+  const [highlightZone, setHighlightZone] = useState<number | null>(null);
+
+  const { zones: liveZones, jobs: liveJobs, refresh: refreshStatus } = useAudioStatus(true);
 
   const [zoneDialog, setZoneDialog] = useState<{ open: boolean; zone: ZoneRow | null }>({
     open: false,
@@ -88,10 +113,27 @@ export function AudioClient({
     name: string;
   } | null>(null);
 
+  // Die Hervorhebung dient nur dem Wiederfinden nach dem Sprung aus der
+  // Statusleiste und verschwindet danach wieder.
+  useEffect(() => {
+    if (highlightZone === null) return;
+    const timer = setTimeout(() => setHighlightZone(null), 2500);
+    return () => clearTimeout(timer);
+  }, [highlightZone]);
+
   const templates = announcements.filter((a) => a.isTemplate);
+
+  // Der Verlauf kommt live nach, sobald die erste Statusabfrage durch ist.
+  const historyJobs = liveJobs ?? jobs;
 
   function refresh() {
     startTransition(() => router.refresh());
+    void refreshStatus();
+  }
+
+  function showZone(zoneId: number) {
+    setTab("zones");
+    setHighlightZone(zoneId);
   }
 
   async function control(zoneId: number, body: object) {
@@ -134,7 +176,9 @@ export function AudioClient({
 
   return (
     <div className="max-w-6xl">
-      <Tabs defaultValue="announce">
+      <ZoneStatusBar zones={zones} status={liveZones} onSelect={showZone} />
+
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-4 flex-wrap h-auto">
           <TabsTrigger value="announce" className="gap-1.5">
             <Megaphone className="h-4 w-4" />
@@ -213,6 +257,8 @@ export function AudioClient({
                 <ZoneCard
                   key={zone.id}
                   zone={zone}
+                  live={liveZones.get(zone.id)}
+                  highlight={highlightZone === zone.id}
                   busy={busyZone === zone.id}
                   onPlay={() => control(zone.id, { action: "PLAY" })}
                   onStop={() => control(zone.id, { action: "STOP" })}
@@ -284,6 +330,8 @@ export function AudioClient({
                         variant="ghost"
                         size="sm"
                         onClick={() => setPlaylistDialog({ open: true, playlist })}
+                        aria-label={`Playlist ${playlist.name} bearbeiten`}
+                        title="Bearbeiten"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -297,6 +345,8 @@ export function AudioClient({
                             name: playlist.name,
                           })
                         }
+                        aria-label={`Playlist ${playlist.name} löschen`}
+                        title="Löschen"
                         className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -373,6 +423,8 @@ export function AudioClient({
                         variant="ghost"
                         size="sm"
                         onClick={() => setAnnouncementDialog({ open: true, announcement: template })}
+                        aria-label={`Durchsage ${template.name} bearbeiten`}
+                        title="Bearbeiten"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -386,6 +438,8 @@ export function AudioClient({
                             name: template.name,
                           })
                         }
+                        aria-label={`Durchsage ${template.name} löschen`}
+                        title="Löschen"
                         className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -459,6 +513,7 @@ export function AudioClient({
                         variant="ghost"
                         size="sm"
                         onClick={() => toggleSchedule(schedule)}
+                        aria-label={`Zeitplan ${schedule.name} ${schedule.isActive ? "deaktivieren" : "aktivieren"}`}
                         title={schedule.isActive ? "Deaktivieren" : "Aktivieren"}
                       >
                         {schedule.isActive ? (
@@ -471,6 +526,8 @@ export function AudioClient({
                         variant="ghost"
                         size="sm"
                         onClick={() => setScheduleDialog({ open: true, schedule })}
+                        aria-label={`Zeitplan ${schedule.name} bearbeiten`}
+                        title="Bearbeiten"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -484,6 +541,8 @@ export function AudioClient({
                             name: schedule.name,
                           })
                         }
+                        aria-label={`Zeitplan ${schedule.name} löschen`}
+                        title="Löschen"
                         className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -498,21 +557,7 @@ export function AudioClient({
 
         {/* ── VERLAUF ──────────────────────────────────────────────────────── */}
         <TabsContent value="history">
-          {jobs.length === 0 ? (
-            <EmptyState
-              icon={History}
-              title="Noch nichts abgespielt"
-              text="Hier erscheinen alle Durchsagen und Steuerbefehle der letzten Zeit."
-            />
-          ) : (
-            <Card className="border-slate-200 dark:border-slate-800">
-              <CardContent className="p-0 divide-y divide-slate-100 dark:divide-slate-800">
-                {jobs.map((job) => (
-                  <JobItem key={job.id} job={job} />
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          <HistoryPanel jobs={historyJobs} />
         </TabsContent>
       </Tabs>
 
@@ -572,20 +617,36 @@ export function AudioClient({
         />
       )}
 
-      {deleteConfirm && (
-        <ConfirmDialog
-          title={`„${deleteConfirm.name}" löschen?`}
-          text="Das lässt sich nicht rückgängig machen."
-          onCancel={() => setDeleteConfirm(null)}
-          onConfirm={confirmDelete}
-        />
-      )}
+      <AlertDialog
+        open={deleteConfirm !== null}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>„{deleteConfirm?.name}&ldquo; löschen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Das lässt sich nicht rückgängig machen.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
 function ZoneCard({
   zone,
+  live,
+  highlight,
   busy,
   onPlay,
   onStop,
@@ -595,6 +656,8 @@ function ZoneCard({
   onDelete,
 }: {
   zone: ZoneRow;
+  live: ZoneStatus | undefined;
+  highlight: boolean;
   busy: boolean;
   onPlay: () => void;
   onStop: () => void;
@@ -603,10 +666,30 @@ function ZoneCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const [volume, setVolume] = useState(zone.volume);
+  const serverVolume = live?.volume ?? zone.volume;
+  const isPlaying = live?.isPlaying ?? zone.isPlaying;
+  const deviceOnline = live?.deviceOnline ?? zone.deviceOnline;
+  const currentTitle = live?.currentTitle ?? zone.currentTitle;
+  const pendingJobs = live?.pendingJobs ?? 0;
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  const volume = useCommittedVolume(serverVolume, onVolume);
+
+  useEffect(() => {
+    if (highlight) cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlight]);
+
+  const lastSeen = formatRelativeTime(live?.lastStateAt ?? zone.lastStateAt);
 
   return (
-    <Card className={cn("border-slate-200 dark:border-slate-800", !zone.isActive && "opacity-60")}>
+    <Card
+      ref={cardRef}
+      className={cn(
+        "border-slate-200 transition-shadow dark:border-slate-800",
+        !zone.isActive && "opacity-60",
+        highlight && "ring-2 ring-indigo-500"
+      )}
+    >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -616,12 +699,12 @@ function ZoneCard({
                 <Badge
                   className={cn(
                     "text-xs",
-                    zone.deviceOnline
+                    deviceOnline
                       ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                       : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                   )}
                 >
-                  {zone.deviceOnline ? "Online" : "Offline"}
+                  {deviceOnline ? "Online" : "Offline"}
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-xs">
@@ -633,35 +716,59 @@ function ZoneCard({
                   Sync: {zone.syncGroup}
                 </Badge>
               )}
-              {zone.isPlaying && (
+              {isPlaying && (
                 <Badge className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-xs gap-1">
                   <Volume2 className="h-3 w-3" /> läuft
+                </Badge>
+              )}
+              {pendingJobs > 0 && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-amber-300 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-500"
+                >
+                  <Clock className="h-3 w-3" />
+                  {pendingJobs} wartet
                 </Badge>
               )}
             </div>
 
             <p className="text-xs text-slate-500 mt-1">
-              {zone.currentTitle ??
+              {currentTitle ??
                 (zone.sourceKind === "PLAYLIST"
                   ? (zone.playlistName ?? "Playlist")
                   : zone.sourceKind === "STREAM"
                     ? "Webradio"
                     : "Keine Wiedergabe")}
               {zone.quietFrom && zone.quietTo && ` · Ruhe ${zone.quietFrom}–${zone.quietTo}`}
+              {lastSeen && ` · gemeldet ${lastSeen}`}
             </p>
           </div>
 
           <div className="flex gap-1 shrink-0">
-            <Button variant="ghost" size="sm" onClick={onSync} title="Dateicache abgleichen">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onSync}
+              aria-label={`Dateicache von ${zone.name} abgleichen`}
+              title="Dateicache abgleichen"
+            >
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={onEdit}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onEdit}
+              aria-label={`Zone ${zone.name} bearbeiten`}
+              title="Bearbeiten"
+            >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={onDelete}
+              aria-label={`Zone ${zone.name} löschen`}
+              title="Löschen"
               className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -669,7 +776,7 @@ function ZoneCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <Button size="sm" onClick={onPlay} disabled={busy} className="gap-1.5">
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
             Start
@@ -679,19 +786,21 @@ function ZoneCard({
             Stopp
           </Button>
 
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Volume2 className="h-4 w-4 text-slate-400 shrink-0" />
+          <div className="flex min-w-[180px] flex-1 items-center gap-2">
+            <Volume2 className="h-4 w-4 shrink-0 text-slate-400" />
             <input
               type="range"
               min={0}
               max={100}
-              value={volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
-              onMouseUp={() => onVolume(volume)}
-              onTouchEnd={() => onVolume(volume)}
+              value={volume.value}
+              onChange={(e) => volume.change(Number(e.target.value))}
+              aria-label={`Lautstärke ${zone.name}`}
+              aria-valuetext={`${volume.value} Prozent`}
               className="flex-1 accent-indigo-600"
             />
-            <span className="text-xs text-slate-500 w-9 text-right">{volume}%</span>
+            <span className="w-9 text-right text-xs tabular-nums text-slate-500">
+              {volume.value}%
+            </span>
           </div>
         </div>
       </CardContent>
@@ -699,34 +808,146 @@ function ZoneCard({
   );
 }
 
+/** Verzögerung, bis eine Reglerbewegung als abgeschlossen gilt. */
+const VOLUME_COMMIT_MS = 400;
+
+/**
+ * Lautstärkeregler, der jede Eingabeart unterstützt.
+ *
+ * Vorher wurde nur bei `mouseup`/`touchend` gesendet – per Tastatur bedient
+ * kam die Änderung nie am Abspieler an. Jetzt zählt der Wert selbst, kurz
+ * entprellt, damit beim Ziehen nicht pro Pixel ein Befehl entsteht.
+ *
+ * Solange eine eigene Eingabe offen ist, hat sie Vorrang vor dem Serverwert.
+ * Erst wenn der Server den gewünschten Wert bestätigt, folgt der Regler wieder
+ * ihm – sonst würde er nach dem Loslassen kurz auf den alten Stand zurück-
+ * springen, bis die nächste Statusabfrage durch ist.
+ */
+function useCommittedVolume(serverVolume: number, onCommit: (volume: number) => void) {
+  const [pending, setPending] = useState<number | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+
+  if (pending !== null && pending === serverVolume) setPending(null);
+
+  function change(next: number) {
+    setPending(next);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => onCommit(next), VOLUME_COMMIT_MS);
+  }
+
+  return { value: pending ?? serverVolume, change };
+}
+
+type HistoryFilter = "all" | "announcements" | "problems";
+
+const HISTORY_FILTERS: { value: HistoryFilter; label: string }[] = [
+  { value: "all", label: "Alles" },
+  { value: "announcements", label: "Nur Durchsagen" },
+  { value: "problems", label: "Nur Probleme" },
+];
+
+function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
+  const [filter, setFilter] = useState<HistoryFilter>("all");
+
+  const visible = useMemo(() => {
+    if (filter === "announcements") return jobs.filter((job) => job.kind === "ANNOUNCE");
+    if (filter === "problems") return jobs.filter((job) => job.status === "FAILED");
+    return jobs;
+  }, [jobs, filter]);
+
+  const failures = jobs.filter((job) => job.status === "FAILED").length;
+
+  if (jobs.length === 0) {
+    return (
+      <EmptyState
+        icon={History}
+        title="Noch nichts abgespielt"
+        text="Hier erscheinen alle Durchsagen und Steuerbefehle der letzten Zeit."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {HISTORY_FILTERS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setFilter(option.value)}
+              aria-pressed={filter === option.value}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                filter === option.value
+                  ? "border-indigo-600 bg-indigo-600 text-white"
+                  : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              )}
+            >
+              {option.label}
+              {option.value === "problems" && failures > 0 && ` (${failures})`}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500">Aktualisiert sich automatisch</p>
+      </div>
+
+      {visible.length === 0 ? (
+        <EmptyState
+          icon={CheckCircle2}
+          title="Nichts gefunden"
+          text="Für diesen Filter gibt es keine Einträge – bei „Nur Probleme“ ist das die gute Nachricht."
+        />
+      ) : (
+        <Card className="border-slate-200 dark:border-slate-800">
+          <CardContent className="p-0 divide-y divide-slate-100 dark:divide-slate-800">
+            {visible.map((job) => (
+              <JobItem key={job.id} job={job} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function JobItem({ job }: { job: JobRow }) {
   const failed = job.status === "FAILED";
   const done = job.status === "DONE";
+  const running = job.status === "PLAYING";
+  const waiting = job.status === "PENDING" || job.status === "SENT";
 
   return (
     <div className="flex items-center gap-3 p-3">
-      <div className="shrink-0">
+      <div className="shrink-0" title={JOB_STATUS_LABELS[job.status]}>
         {failed ? (
           <XCircle className="h-4 w-4 text-red-500" />
         ) : done ? (
           <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+        ) : running ? (
+          <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
         ) : (
-          <Loader2 className="h-4 w-4 text-slate-400" />
+          <Clock className="h-4 w-4 text-amber-500" />
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium truncate">
-            {job.announcementName ?? job.kind}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium">
+            {job.announcementName ?? JOB_KIND_LABELS[job.kind]}
           </span>
-          <Badge variant="outline" className="text-[10px] uppercase">
+          <Badge variant="outline" className="text-[10px]">
             {job.zoneName}
           </Badge>
-          <Badge variant="secondary" className="text-[10px] uppercase">
-            {job.triggerKind}
+          <Badge variant="secondary" className="text-[10px]">
+            {triggerLabel(job.triggerKind)}
           </Badge>
+          {(waiting || running) && (
+            <span className="text-xs text-slate-500">{JOB_STATUS_LABELS[job.status]}</span>
+          )}
           {job.errorMessage && (
-            <span className="text-xs text-red-600 truncate">{job.errorMessage}</span>
+            <span className="truncate text-xs text-red-600">{job.errorMessage}</span>
           )}
         </div>
         <p className="text-xs text-slate-500">
@@ -760,33 +981,3 @@ function EmptyState({
   );
 }
 
-function ConfirmDialog({
-  title,
-  text,
-  onCancel,
-  onConfirm,
-}: {
-  title: string;
-  text: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="w-full max-w-sm border-slate-200 dark:border-slate-800">
-        <CardContent className="p-5">
-          <h3 className="font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-          <p className="text-sm text-slate-500 mt-1">{text}</p>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={onCancel}>
-              Abbrechen
-            </Button>
-            <Button size="sm" onClick={onConfirm} className="bg-red-600 hover:bg-red-700 text-white">
-              Löschen
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}

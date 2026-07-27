@@ -93,6 +93,20 @@ export interface JobRow {
   createdAt: string;
 }
 
+/** Ist-Zustand einer Zone aus `/api/audio/status` – überschreibt die Serverdaten. */
+export interface ZoneStatus {
+  id: number;
+  isActive: boolean;
+  isPlaying: boolean;
+  currentTitle: string | null;
+  volume: number;
+  reportedVolume: number | null;
+  deviceOnline: boolean;
+  lastStateAt: string | null;
+  /** Befehle, die der Abspieler noch nicht bestätigt hat. */
+  pendingJobs: number;
+}
+
 export interface AudioDeviceOption {
   id: number;
   name: string;

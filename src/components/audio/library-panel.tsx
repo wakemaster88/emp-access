@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -12,15 +13,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Music, Trash2, Upload } from "lucide-react";
+import { Loader2, Music, Pause, Play, Search, Trash2, Upload } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { TRACK_KIND_LABELS as KIND_LABELS, formatDuration } from "./labels";
 import type { AudioTrackKind, TrackRow } from "./types";
 
-const KIND_LABELS: Record<AudioTrackKind, string> = {
-  MUSIC: "Musik",
-  JINGLE: "Jingle",
-  CHIME: "Gong",
-  ANNOUNCEMENT: "Ansage",
-};
+/** Ab dieser Anzahl lohnt sich die Suche – darunter nur unnötiges Bedienelement. */
+const SEARCH_THRESHOLD = 8;
 
 interface Props {
   tracks: TrackRow[];
@@ -33,6 +32,25 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [filterKind, setFilterKind] = useState<AudioTrackKind | "ALL">("ALL");
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const previewRef = useRef<HTMLAudioElement>(null);
+
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return tracks.filter((track) => {
+      if (filterKind !== "ALL" && track.kind !== filterKind) return false;
+      if (!needle) return true;
+      return (
+        track.title.toLowerCase().includes(needle) ||
+        (track.artist?.toLowerCase().includes(needle) ?? false)
+      );
+    });
+  }, [tracks, search, filterKind]);
+
+  const totalSec = tracks.reduce((sum, track) => sum + (track.durationSec ?? 0), 0);
 
   /** Dauer aus der Datei lesen, damit Playlists eine Gesamtlänge anzeigen können. */
   async function readDuration(file: File): Promise<number | null> {
@@ -101,7 +119,34 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
     }
   }
 
+  /**
+   * Vorschau umschalten.
+   *
+   * `play()` muss direkt im Klick laufen – aus einem Effekt heraus werten
+   * Browser es nicht mehr als Nutzeraktion und blockieren die Wiedergabe still.
+   * Ein einziges Audio-Element für die ganze Liste sorgt außerdem dafür, dass
+   * nie zwei Titel gleichzeitig laufen.
+   */
+  function togglePreview(track: TrackRow) {
+    const audio = previewRef.current;
+    if (!audio) return;
+
+    if (playingId === track.id) {
+      audio.pause();
+      setPlayingId(null);
+      return;
+    }
+
+    audio.src = track.url;
+    setPlayingId(track.id);
+    void audio.play().catch(() => setPlayingId(null));
+  }
+
   async function remove(track: TrackRow) {
+    if (playingId === track.id) {
+      previewRef.current?.pause();
+      setPlayingId(null);
+    }
     await fetch(`/api/audio/tracks/${track.id}`, { method: "DELETE" });
     onChanged();
   }
@@ -172,45 +217,155 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardContent className="p-0 divide-y divide-slate-100 dark:divide-slate-800">
-            {tracks.map((track) => (
-              <div key={track.id} className="flex items-center gap-3 p-3">
-                <Music className="h-4 w-4 text-slate-400 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium truncate">{track.title}</span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {KIND_LABELS[track.kind]}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    {track.artist ? `${track.artist} · ` : ""}
-                    {formatDuration(track.durationSec)}
-                    {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}
-                  </p>
-                </div>
-                <audio src={track.url} controls preload="none" className="h-8 max-w-[200px]" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => remove(track)}
-                  className="h-8 px-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950 shrink-0"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+        <>
+          {tracks.length >= SEARCH_THRESHOLD && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[200px] flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Titel oder Interpret suchen"
+                  aria-label="Mediathek durchsuchen"
+                  className="h-9 pl-8"
+                />
               </div>
-            ))}
-          </CardContent>
-        </Card>
+              <div className="flex flex-wrap gap-1.5">
+                <FilterChip
+                  active={filterKind === "ALL"}
+                  onClick={() => setFilterKind("ALL")}
+                  label="Alle"
+                />
+                {(Object.keys(KIND_LABELS) as AudioTrackKind[]).map((k) => (
+                  <FilterChip
+                    key={k}
+                    active={filterKind === k}
+                    onClick={() => setFilterKind(k)}
+                    label={KIND_LABELS[k]}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {visible.length === 0 ? (
+            <Card className="border-dashed border-slate-300 dark:border-slate-700">
+              <CardContent className="py-8 text-center">
+                <p className="text-sm text-slate-500">
+                  Kein Titel passt zur Suche.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-slate-200 dark:border-slate-800">
+              <CardContent className="p-0 divide-y divide-slate-100 dark:divide-slate-800">
+                {visible.map((track) => (
+                  <TrackItem
+                    key={track.id}
+                    track={track}
+                    playing={playingId === track.id}
+                    onTogglePlay={() => togglePreview(track)}
+                    onRemove={() => remove(track)}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          <p className="text-xs text-slate-500">
+            {visible.length === tracks.length
+              ? `${tracks.length} Titel`
+              : `${visible.length} von ${tracks.length} Titeln`}
+            {totalSec > 0 && ` · Gesamtlänge ${formatDuration(totalSec)}`}
+          </p>
+
+          <audio ref={previewRef} onEnded={() => setPlayingId(null)} className="hidden" />
+        </>
       )}
     </div>
   );
 }
 
-export function formatDuration(seconds: number | null): string {
-  if (seconds == null) return "–";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
+function FilterChip({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+        active
+          ? "border-indigo-600 bg-indigo-600 text-white"
+          : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Ein Titel in der Liste.
+ *
+ * Statt eines nativen `<audio controls>` pro Zeile – das jede Zeile 200 px
+ * breiter und optisch unruhig macht – gibt es einen kompakten Abspielknopf.
+ * Abgespielt wird über das gemeinsame Audio-Element der Mediathek.
+ */
+function TrackItem({
+  track,
+  playing,
+  onTogglePlay,
+  onRemove,
+}: {
+  track: TrackRow;
+  playing: boolean;
+  onTogglePlay: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 p-3">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onTogglePlay}
+        aria-label={playing ? `${track.title} anhalten` : `${track.title} anhören`}
+        className="h-8 w-8 shrink-0 p-0"
+      >
+        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </Button>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium">{track.title}</span>
+          <Badge variant="outline" className="text-[10px]">
+            {KIND_LABELS[track.kind]}
+          </Badge>
+        </div>
+        <p className="text-xs text-slate-500">
+          {track.artist ? `${track.artist} · ` : ""}
+          {formatDuration(track.durationSec)}
+          {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}
+        </p>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onRemove}
+        aria-label={`${track.title} löschen`}
+        title="Löschen"
+        className="h-8 shrink-0 px-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
 }
