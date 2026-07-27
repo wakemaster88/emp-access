@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { ingestHubScanDevices } from "@/lib/network-scan-ingest";
 
 /** Hub meldet das Ergebnis eines Tasks zurueck (Token-Auth). */
 export async function POST(
@@ -22,6 +23,26 @@ export async function POST(
   const body = await request.json().catch(() => ({}));
   const success = body.success !== false;
 
+  // Aeltere Hub-Versionen liefern bei NETWORK_SCAN nur ARP-Listen im Task-Result
+  // (ohne /api/hub/scan-Upload) – diese hier nachziehen.
+  let ingest: { processed: number; synced: number } | null = null;
+  if (success && task.type === "NETWORK_SCAN") {
+    const result = body.result as { devices?: unknown[] } | null;
+    if (Array.isArray(result?.devices) && result.devices.length > 0) {
+      const hub = await db.hubAgent.findFirst({
+        where: { accountId: account.id },
+        orderBy: { lastSeenAt: "desc" },
+        select: { name: true },
+      });
+      ingest = await ingestHubScanDevices(
+        db,
+        account.id,
+        result.devices,
+        hub?.name ?? null
+      );
+    }
+  }
+
   const updated = await db.hubTask.update({
     where: { id: taskId },
     data: {
@@ -31,5 +52,5 @@ export async function POST(
       finishedAt: new Date(),
     },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json({ ...updated, ingest });
 }

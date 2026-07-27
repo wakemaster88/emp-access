@@ -21,7 +21,7 @@ import {
 import {
   Plus, Loader2, Pencil, Trash2, MonitorSmartphone, Monitor as MonitorIcon,
   Printer, Camera, HardDrive, Phone, Cpu, Laptop, EthernetPort, Link2,
-  Radar, AlertTriangle,
+  Radar, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { findAreaForIp, findVlanForIp, ipToInt } from "@/lib/ip";
@@ -124,8 +124,57 @@ export function ClientsTab({
   const [adoptForm, setAdoptForm] = useState({ name: "", type: "OTHER", areaId: "none" });
   const [adoptSaving, setAdoptSaving] = useState(false);
   const [adoptError, setAdoptError] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState("");
 
   const activeCutoff = Date.now() - 15 * 60_000;
+
+  async function triggerScan() {
+    if (scanning) return;
+    setScanning(true);
+    setScanMsg("Scan wird gestartet …");
+    try {
+      const res = await fetch("/api/network/scan", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setScanMsg(data.error ?? "Scan konnte nicht gestartet werden");
+        setScanning(false);
+        return;
+      }
+      const taskId = data.taskId as number;
+      setScanMsg(data.reused ? "Scan läuft bereits …" : "Hub scannt das Netz …");
+
+      const deadline = Date.now() + 180_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const st = await fetch(`/api/network/scan?taskId=${taskId}`);
+        const body = await st.json().catch(() => ({}));
+        if (!st.ok) continue;
+        if (body.status === "DONE") {
+          setScanMsg(
+            typeof body.deviceCount === "number"
+              ? `Scan fertig · ${body.deviceCount} Geräte`
+              : "Scan fertig"
+          );
+          router.refresh();
+          setScanning(false);
+          setTimeout(() => setScanMsg(""), 4000);
+          return;
+        }
+        if (body.status === "FAILED") {
+          setScanMsg(body.error ?? "Scan fehlgeschlagen");
+          setScanning(false);
+          return;
+        }
+        setScanMsg(body.status === "RUNNING" ? "Hub scannt …" : "Warte auf Hub …");
+      }
+      setScanMsg("Timeout – Seite später neu laden");
+      setScanning(false);
+    } catch {
+      setScanMsg("Netzwerkfehler");
+      setScanning(false);
+    }
+  }
 
   // IoT-Geraete, die noch nicht als NetworkClient erfasst sind.
   const linkedDeviceIds = useMemo(
@@ -467,11 +516,28 @@ export function ClientsTab({
               Verwaltete Geräte und unbekannte Hub-Funde, gruppiert nach VLAN → Bereich.
             </p>
           </div>
-          <Button onClick={() => openAdd()} className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm shrink-0">
-            <Plus className="h-4 w-4" />
-            Gerät hinzufügen
-          </Button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={triggerScan}
+              disabled={scanning}
+              className="gap-2"
+            >
+              {scanning
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCw className="h-4 w-4" />}
+              {scanning ? "Scannt …" : "Netzwerk scannen"}
+            </Button>
+            <Button onClick={() => openAdd()} className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm">
+              <Plus className="h-4 w-4" />
+              Gerät hinzufügen
+            </Button>
+          </div>
         </div>
+        {scanMsg && (
+          <p className="text-xs text-slate-500">{scanMsg}</p>
+        )}
         <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 self-start">
           {FILTERS.map((f) => (
             <button
