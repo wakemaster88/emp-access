@@ -21,7 +21,7 @@ import {
 import {
   Plus, Loader2, Pencil, Trash2, MonitorSmartphone, Monitor as MonitorIcon,
   Printer, Camera, HardDrive, Phone, Cpu, Laptop, EthernetPort, Link2,
-  Radar, AlertTriangle, RefreshCw, BadgeCheck,
+  Radar, AlertTriangle, RefreshCw, BadgeCheck, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { findAreaForIp, findVlanForIp, ipToInt } from "@/lib/ip";
@@ -64,7 +64,7 @@ function StatusBadge({ online }: { online: boolean | null }) {
   );
 }
 
-/** IP neben Verified-Haken, wenn der Hub-Scan MAC+IP kürzlich bestätigt hat. */
+/** IP mit Schloss bei fester IP; Verified-Haken wenn Scan MAC+IP bestätigt. */
 function IpCell({
   ip,
   verified,
@@ -84,6 +84,12 @@ function IpCell({
         conflict ? "text-rose-600 dark:text-rose-400 font-semibold" : "text-slate-500"
       )}
     >
+      {isStatic && (
+        <Lock
+          className="h-3 w-3 text-amber-500 shrink-0"
+          aria-label="Feste IP"
+        />
+      )}
       {ip}
       {verified && (
         <BadgeCheck
@@ -91,7 +97,6 @@ function IpCell({
           aria-label="IP vom Scan bestätigt"
         />
       )}
-      {isStatic && <span className="text-slate-400 font-sans" title="Feste IP">(fest)</span>}
     </span>
   );
 }
