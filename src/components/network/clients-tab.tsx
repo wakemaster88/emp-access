@@ -21,12 +21,13 @@ import {
 import {
   Plus, Loader2, Pencil, Trash2, MonitorSmartphone, Monitor as MonitorIcon,
   Printer, Camera, HardDrive, Phone, Cpu, Laptop, EthernetPort, Link2,
-  Radar, AlertTriangle, RefreshCw,
+  Radar, AlertTriangle, RefreshCw, BadgeCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { findAreaForIp, findVlanForIp, ipToInt } from "@/lib/ip";
 import {
   CLIENT_TYPES,
+  ONLINE_THRESHOLD_MS,
   areaGroupSortKey,
   scanOnline,
   vlanColor,
@@ -38,6 +39,62 @@ import {
   type PortOption,
   type VlanRow,
 } from "@/components/network/network-types";
+
+function StatusBadge({ online }: { online: boolean | null }) {
+  if (online === true) {
+    return (
+      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1.5 text-xs h-6 font-medium">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Online
+      </Badge>
+    );
+  }
+  if (online === false) {
+    return (
+      <Badge variant="secondary" className="text-slate-500 gap-1.5 text-xs h-6 font-medium">
+        <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+        Offline
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-slate-400 gap-1.5 text-xs h-6 font-normal">
+      Unbekannt
+    </Badge>
+  );
+}
+
+/** IP neben Verified-Haken, wenn der Hub-Scan MAC+IP kürzlich bestätigt hat. */
+function IpCell({
+  ip,
+  verified,
+  isStatic,
+  conflict,
+}: {
+  ip: string | null;
+  verified: boolean;
+  isStatic?: boolean;
+  conflict?: boolean;
+}) {
+  if (!ip) return <span className="text-slate-300">–</span>;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 font-mono text-xs",
+        conflict ? "text-rose-600 dark:text-rose-400 font-semibold" : "text-slate-500"
+      )}
+    >
+      {ip}
+      {verified && (
+        <BadgeCheck
+          className="h-3.5 w-3.5 text-emerald-500 shrink-0"
+          aria-label="IP vom Scan bestätigt"
+        />
+      )}
+      {isStatic && <span className="text-slate-400 font-sans" title="Feste IP">(fest)</span>}
+    </span>
+  );
+}
 
 const TYPE_ICON: Record<string, React.ElementType> = {
   PC: Laptop,
@@ -193,6 +250,23 @@ export function ClientsTab({
     () => discovered.filter((d) => !d.match),
     [discovered]
   );
+
+  /// MAC → letzter Scan-Treffer (fuer Online + IP-Verified).
+  const scanByMac = useMemo(() => {
+    const map = new Map<string, DiscoveredRow>();
+    for (const d of discovered) {
+      map.set(d.macAddress.toUpperCase(), d);
+    }
+    return map;
+  }, [discovered]);
+
+  function ipVerified(mac: string | null | undefined, ip: string | null | undefined): boolean {
+    if (!mac || !ip) return false;
+    const hit = scanByMac.get(mac.toUpperCase());
+    if (!hit?.ipAddress) return false;
+    if (hit.ipAddress !== ip) return false;
+    return Date.now() - new Date(hit.lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
+  }
 
   const duplicateIps = useMemo(() => {
     const byIp = new Map<string, number>();
@@ -576,6 +650,7 @@ export function ClientsTab({
           <Table>
             <TableHeader>
               <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
+                <TableHead className="w-[100px]">Status</TableHead>
                 <TableHead className="min-w-[180px]">Gerät</TableHead>
                 <TableHead className="hidden md:table-cell">IP-Adresse</TableHead>
                 <TableHead className="hidden lg:table-cell">MAC</TableHead>
@@ -587,7 +662,7 @@ export function ClientsTab({
             <TableBody>
               {visibleCount === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="text-center py-16">
+                  <TableCell colSpan={7} className="text-center py-16">
                     <div className="flex flex-col items-center gap-3 text-slate-500">
                       {filter === "unknown" ? (
                         <Radar className="h-12 w-12 text-slate-300 dark:text-slate-600" />
@@ -614,7 +689,7 @@ export function ClientsTab({
                 return (
                   <Fragment key={group.meta.vlanDbId ?? "none"}>
                     <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-100/80 dark:bg-slate-900/80">
-                      <TableCell colSpan={6} className="py-2">
+                      <TableCell colSpan={7} className="py-2">
                         <div className="flex flex-wrap items-center gap-2">
                           {group.meta.vlanDbId != null ? (
                             <Badge className={cn("text-xs font-mono", vlanColor(group.meta.vlanDbId))}>
@@ -635,7 +710,7 @@ export function ClientsTab({
                       <Fragment key={`${group.meta.vlanDbId ?? "none"}-${areaGroup.meta.areaId ?? "none"}`}>
                         {group.showAreas && (
                           <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/90 dark:bg-slate-900/40">
-                            <TableCell colSpan={6} className="py-1.5 pl-6">
+                            <TableCell colSpan={7} className="py-1.5 pl-6">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
                                   {areaGroup.meta.name}
@@ -653,7 +728,11 @@ export function ClientsTab({
                             const c = row.client;
                             const Icon = TYPE_ICON[c.type] ?? MonitorSmartphone;
                             const ip = c.ipAddress || c.device?.ipAddress || null;
-                            const scanned = scanOnline(c.lastSeenAt);
+                            const scanHit = c.macAddress
+                              ? scanByMac.get(c.macAddress.toUpperCase())
+                              : undefined;
+                            const scanned = scanOnline(c.lastSeenAt)
+                              ?? scanOnline(scanHit?.lastSeenAt ?? null);
                             const deviceOnline = c.device?.lastUpdate
                               ? new Date(c.device.lastUpdate).getTime() > fiveMinAgo
                               : null;
@@ -661,8 +740,12 @@ export function ClientsTab({
                               scanned === null && deviceOnline === null
                                 ? null
                                 : scanned === true || deviceOnline === true;
+                            const verified = ipVerified(c.macAddress, ip);
                             return (
                               <TableRow key={`c-${c.id}`} className="border-slate-200 dark:border-slate-700">
+                                <TableCell>
+                                  <StatusBadge online={online} />
+                                </TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-3 min-w-0">
                                     <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
@@ -685,25 +768,12 @@ export function ClientsTab({
                                             {c.device.name}
                                           </Link>
                                         )}
-                                        {online === true && (
-                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online" />
-                                        )}
-                                        {online === false && (
-                                          <span className="h-1.5 w-1.5 rounded-full bg-slate-300" title="Offline" />
-                                        )}
                                       </div>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="hidden md:table-cell font-mono text-xs text-slate-500">
-                                  {ip ? (
-                                    <span>
-                                      {ip}
-                                      {c.isStatic && <span className="ml-1 text-slate-400" title="Feste IP">(fest)</span>}
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-300">–</span>
-                                  )}
+                                <TableCell className="hidden md:table-cell">
+                                  <IpCell ip={ip} verified={verified} isStatic={c.isStatic} />
                                 </TableCell>
                                 <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
                                   {c.macAddress || <span className="text-slate-300">–</span>}
@@ -765,6 +835,9 @@ export function ClientsTab({
                             return (
                               <TableRow key={`iot-${d.id}`} className="border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
                                 <TableCell>
+                                  <StatusBadge online={online} />
+                                </TableCell>
+                                <TableCell>
                                   <div className="flex items-center gap-3 min-w-0">
                                     <div className="h-8 w-8 rounded-lg bg-slate-500/10 text-slate-500 flex items-center justify-center shrink-0">
                                       <Cpu className="h-4 w-4" />
@@ -776,20 +849,12 @@ export function ClientsTab({
                                       >
                                         {d.name}
                                       </Link>
-                                      <div className="flex items-center gap-1.5">
-                                        <p className="text-xs text-slate-400">IoT-Gerät (nicht zugeordnet)</p>
-                                        {online === true && (
-                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Online" />
-                                        )}
-                                        {online === false && (
-                                          <span className="h-1.5 w-1.5 rounded-full bg-slate-300" title="Offline" />
-                                        )}
-                                      </div>
+                                      <p className="text-xs text-slate-400">IoT-Gerät (nicht zugeordnet)</p>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="hidden md:table-cell font-mono text-xs text-slate-500">
-                                  {d.ipAddress || <span className="text-slate-300">–</span>}
+                                <TableCell className="hidden md:table-cell">
+                                  <IpCell ip={d.ipAddress} verified={false} />
                                 </TableCell>
                                 <TableCell className="hidden lg:table-cell">
                                   <span className="text-slate-300 text-xs">–</span>
@@ -835,6 +900,9 @@ export function ClientsTab({
                               className="border-slate-200 dark:border-slate-700 bg-violet-50/40 dark:bg-violet-950/20"
                             >
                               <TableCell>
+                                <StatusBadge online={active} />
+                              </TableCell>
+                              <TableCell>
                                 <div className="flex items-center gap-3 min-w-0">
                                   <div className="h-8 w-8 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
                                     <Radar className="h-4 w-4" />
@@ -850,27 +918,16 @@ export function ClientsTab({
                                       {d.deviceType && (
                                         <span className="text-xs text-slate-400">{d.deviceType}</span>
                                       )}
-                                      {active ? (
-                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Aktiv im Scan" />
-                                      ) : (
-                                        <span className="h-1.5 w-1.5 rounded-full bg-slate-300" title="Inaktiv" />
-                                      )}
                                     </div>
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell className="hidden md:table-cell font-mono text-xs text-slate-500">
-                                {d.ipAddress ? (
-                                  <span
-                                    className={cn(
-                                      duplicateIps.has(d.ipAddress) && "text-rose-600 dark:text-rose-400 font-semibold"
-                                    )}
-                                  >
-                                    {d.ipAddress}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-300">–</span>
-                                )}
+                              <TableCell className="hidden md:table-cell">
+                                <IpCell
+                                  ip={d.ipAddress}
+                                  verified={active && !!d.ipAddress}
+                                  conflict={!!d.ipAddress && duplicateIps.has(d.ipAddress)}
+                                />
                               </TableCell>
                               <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
                                 {d.macAddress}

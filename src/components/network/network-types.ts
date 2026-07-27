@@ -172,8 +172,8 @@ export type VlanGroupMeta = {
   subnet: string | null;
 };
 
-/// Der Hub scannt alle 5 Minuten - 15 Minuten Toleranz fuer ARP-Aussetzer.
-export const ONLINE_THRESHOLD_MS = 15 * 60 * 1000;
+/// Hub Auto-Scan ca. alle 30 Min. – Toleranz inkl. Sweep-Dauer.
+export const ONLINE_THRESHOLD_MS = 45 * 60 * 1000;
 
 /**
  * Online-Status aus dem letzten Scan-Zeitpunkt: true/false, oder null wenn
