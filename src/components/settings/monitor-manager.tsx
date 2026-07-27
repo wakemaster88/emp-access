@@ -17,12 +17,13 @@ import {
   Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { DeviceCategory } from "@prisma/client";
 
 interface Device {
   id: number;
   name: string;
   type: string;
-  category: "DREHKREUZ" | "TUER" | "SENSOR" | "SCHALTER" | "BELEUCHTUNG" | null;
+  category: DeviceCategory | null;
   isActive: boolean;
 }
 

@@ -17,6 +17,7 @@ enum DeviceType {
   SHELLY
   NUKI_SMARTLOCK
   GARDENA_VALVE
+  AUDIO_PLAYER
 }
 
 enum DeviceCategory {
@@ -25,6 +26,7 @@ enum DeviceCategory {
   SENSOR
   SCHALTER
   BELEUCHTUNG
+  AUDIO
 }
 
 enum TicketStatus {
@@ -149,6 +151,12 @@ model Account {
   personSightings PersonSighting[]
   personFaceEmbeddings PersonFaceEmbedding[]
   surveillanceConfig SurveillanceConfig?
+  audioZones      AudioZone[]
+  audioTracks     AudioTrack[]
+  audioPlaylists  AudioPlaylist[]
+  audioAnnouncements AudioAnnouncement[]
+  audioSchedules  AudioSchedule[]
+  audioJobs       AudioJob[]
 }
 
 model Admin {
@@ -238,6 +246,8 @@ model Device {
   networkClient   NetworkClient?
   allowedVehicles AllowedVehicle[]
   listedPersons   ListedPerson[]
+  /// Beschallungszone, die dieser Abspieler (type = AUDIO_PLAYER) bedient.
+  audioZone       AudioZone?          @relation("AudioZoneDevice")
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -1714,4 +1724,251 @@ model DiscoveredDevice {
 
   @@unique([accountId, macAddress])
   @@index([accountId, lastSeenAt])
+}
+
+// ── Audio: Musik & Durchsagen ────────────────────────────────────────────────
+
+/// Dauerquelle, die eine Zone im Hintergrund abspielt.
+enum AudioSourceKind {
+  SILENCE
+  PLAYLIST
+  STREAM
+}
+
+enum AudioTrackKind {
+  MUSIC
+  JINGLE
+  /// Gong/Signal vor einer Durchsage.
+  CHIME
+  /// Fertige Ansage – hochgeladen oder aus TTS gerendert.
+  ANNOUNCEMENT
+}
+
+enum AudioAnnouncementSource {
+  /// Text wird serverseitig zu Sprache gerendert und als Track gecacht.
+  TTS
+  /// Vorproduzierte Datei aus der Bibliothek.
+  FILE
+  /// Im Browser aufgenommene Live-Durchsage (Push-to-Talk).
+  LIVE
+}
+
+enum AudioJobKind {
+  ANNOUNCE
+  PLAY
+  STOP
+  VOLUME
+  /// Zone soll ihren lokalen Dateicache mit der Bibliothek abgleichen.
+  SYNC_LIBRARY
+}
+
+enum AudioJobStatus {
+  PENDING
+  SENT
+  PLAYING
+  DONE
+  FAILED
+}
+
+enum AudioScheduleAction {
+  ANNOUNCE
+  PLAY
+  STOP
+  VOLUME
+}
+
+/// Eine Beschallungszone = ein Raspberry-Pi-Abspieler mit angeschlossenem
+/// Verstaerker. Haelt Soll-Zustand (Quelle, Lautstaerken) und den vom Pi
+/// gemeldeten Ist-Zustand.
+model AudioZone {
+  id                 Int             @id @default(autoincrement())
+  accountId          Int
+  account            Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name               String
+  /// Abspieler-Geraet (Device.type = AUDIO_PLAYER). Zonen koennen auch ohne
+  /// Hardware angelegt werden (Planung) – sie spielen dann nichts ab.
+  deviceId           Int?            @unique
+  device             Device?         @relation("AudioZoneDevice", fields: [deviceId], references: [id], onDelete: SetNull)
+  sortOrder          Int             @default(0)
+  isActive           Boolean         @default(true)
+  /// Snapcast-Gruppe: Zonen mit demselben Namen spielen synchron. Noetig, wenn
+  /// sich Bereiche akustisch ueberlappen (Aussengelaende). null = eigenstaendig.
+  syncGroup          String?
+  /// Grundlautstaerke der Musik (0–100).
+  volume             Int             @default(50)
+  /// Lautstaerke der Durchsage selbst (0–100).
+  announcementVolume Int             @default(85)
+  /// Musiklautstaerke waehrend einer Durchsage (Ducking, 0–100).
+  duckVolume         Int             @default(15)
+  sourceKind         AudioSourceKind @default(SILENCE)
+  playlistId         Int?
+  playlist           AudioPlaylist?  @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  /// Webradio-/Stream-URL fuer sourceKind = STREAM.
+  streamUrl          String?
+  /// Ruhezeit "HH:mm"–"HH:mm" (Account-TZ): in diesem Fenster laeuft keine
+  /// Musik, Durchsagen aber weiterhin. end < start = ueber Mitternacht.
+  quietFrom          String?
+  quietTo            String?
+  /// Ist-Zustand, vom Pi im Heartbeat gemeldet.
+  isPlaying          Boolean         @default(false)
+  currentTitle       String?
+  reportedVolume     Int?
+  lastStateAt        DateTime?
+  jobs               AudioJob[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([accountId, sortOrder])
+  @@index([playlistId])
+}
+
+/// Audiodatei in der Mediathek. Die Datei liegt im Blob-Storage; die Zonen-Pis
+/// laden sie einmal herunter und halten sie lokal vor, damit die Wiedergabe
+/// auch ohne Internetverbindung funktioniert.
+model AudioTrack {
+  id            Int                 @id @default(autoincrement())
+  accountId     Int
+  account       Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  title         String
+  artist        String?
+  kind          AudioTrackKind      @default(MUSIC)
+  url           String
+  /// Blob-Pfad, damit die Datei beim Loeschen des Tracks mit entfernt wird.
+  blobPathname  String?
+  contentType   String?
+  sizeBytes     Int?
+  durationSec   Int?
+  /// Cache-Schluessel fuer TTS: Hash aus Text + Stimme. Gleicher Text ergibt
+  /// denselben Track, sodass keine erneuten TTS-Kosten anfallen.
+  ttsHash       String?
+  playlistItems AudioPlaylistItem[]
+  announcements AudioAnnouncement[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([accountId, ttsHash])
+  @@index([accountId, kind])
+}
+
+model AudioPlaylist {
+  id           Int                 @id @default(autoincrement())
+  accountId    Int
+  account      Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  shuffle      Boolean             @default(true)
+  /// Uebergangszeit zwischen zwei Titeln in Sekunden (0 = hart schneiden).
+  crossfadeSec Int                 @default(3)
+  items        AudioPlaylistItem[]
+  zones        AudioZone[]
+  schedules    AudioSchedule[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([accountId])
+}
+
+model AudioPlaylistItem {
+  id         Int           @id @default(autoincrement())
+  playlistId Int
+  playlist   AudioPlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  trackId    Int
+  track      AudioTrack    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  sortOrder  Int           @default(0)
+
+  @@index([playlistId, sortOrder])
+  @@index([trackId])
+}
+
+/// Eine Durchsage – entweder als wiederverwendbare Vorlage (Betriebsschluss,
+/// Kursbeginn) oder einmalig aus dem Dashboard abgeschickt.
+model AudioAnnouncement {
+  id           Int                     @id @default(autoincrement())
+  accountId    Int
+  account      Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name         String
+  source       AudioAnnouncementSource @default(TTS)
+  /// Ansagetext fuer source = TTS.
+  text         String?
+  /// Stimmen-ID des TTS-Anbieters. null = Account-Standard.
+  voice        String?
+  /// Gerenderte bzw. hochgeladene Audiodatei. Bei TTS wird sie beim ersten
+  /// Abspielen erzeugt und danach wiederverwendet.
+  trackId      Int?
+  track        AudioTrack?             @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  /// Gong vor der Ansage abspielen.
+  chime        Boolean                 @default(true)
+  repeatCount  Int                     @default(1)
+  /// Hoehere Prioritaet unterbricht eine laufende Durchsage (Notfall = 100).
+  priority     Int                     @default(0)
+  /// Zielzonen als AudioZone-ID-Array. Leeres Array = alle aktiven Zonen.
+  zoneIds      Json                    @default("[]")
+  /// Vorlage = im Dashboard als Schnellwahl sichtbar und in Zeitplaenen nutzbar.
+  isTemplate   Boolean                 @default(false)
+  lastPlayedAt DateTime?
+  schedules    AudioSchedule[]
+  jobs         AudioJob[]
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  @@index([accountId, isTemplate])
+  @@index([trackId])
+}
+
+/// Zeitgesteuerte Aktion: Oeffnungsmusik, Kursdurchsage, Betriebsschluss.
+/// Wird vom selben Cron-Muster ausgewertet wie die Shelly-Automationen.
+model AudioSchedule {
+  id             Int                 @id @default(autoincrement())
+  accountId      Int
+  account        Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name           String
+  isActive       Boolean             @default(true)
+  action         AudioScheduleAction
+  /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
+  daysOfWeek     Int                 @default(127)
+  /// "HH:mm" in der Account-Zeitzone.
+  timeOfDay      String
+  /// Zielzonen als AudioZone-ID-Array. Leeres Array = alle aktiven Zonen.
+  zoneIds        Json                @default("[]")
+  announcementId Int?
+  announcement   AudioAnnouncement?  @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  playlistId     Int?
+  playlist       AudioPlaylist?      @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  /// Ziellautstaerke fuer action = VOLUME (0–100).
+  volume         Int?
+  /// Letzter Lauf – Idempotenz-Guard im Cron gegen Doppelausfuehrung.
+  lastRunAt      DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([accountId, isActive])
+  @@index([announcementId])
+  @@index([playlistId])
+}
+
+/// Kommando an eine Zone plus Verlaufseintrag. Der Zonen-Pi holt offene Jobs
+/// ueber den Realtime-Kanal ab und meldet den Status zurueck.
+model AudioJob {
+  id             Int                @id @default(autoincrement())
+  accountId      Int
+  account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  zoneId         Int
+  zone           AudioZone          @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  kind           AudioJobKind
+  status         AudioJobStatus     @default(PENDING)
+  announcementId Int?
+  announcement   AudioAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: SetNull)
+  /// Kommandoparameter, z. B. { url, volume, playlistId, trackUrls, chime }.
+  payload        Json?
+  /// Ausloeser: "MANUAL" | "SCHEDULE" | "MONITOR" | "EMERGENCY".
+  triggerKind    String             @default("MANUAL")
+  errorMessage   String?
+  createdAt      DateTime           @default(now())
+  sentAt         DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  @@index([accountId, createdAt])
+  @@index([zoneId, status])
+  @@index([announcementId])
 }

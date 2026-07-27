@@ -73,3 +73,32 @@ Benachrichtigung (Zustandsübergang, kein Spam).
 5 Min = offline), Shelly über die Shelly Cloud, GARDENA über die GARDENA Cloud.
 Nuki wird nicht geprüft. Shelly-Geräte ohne Cloud-Anbindung (nur lokale IP)
 können von Vercel aus nicht erreicht und daher nicht überwacht werden.
+
+## Audio (Musik & Durchsagen)
+
+Zentrale Beschallung über Zonen-Abspieler. Jede **Zone** ist ein Raspberry Pi
+mit angeschlossenem Verstärker; gesteuert wird alles im Dashboard unter
+**Audio**. Musik und Ansagen liegen im Blob-Storage, die Pis halten die Dateien
+lokal vor und spielen auch ohne Internetverbindung weiter.
+
+**Umgebungsvariablen (Vercel → Settings → Environment Variables):**
+
+- `BLOB_READ_WRITE_TOKEN` – Vercel Blob. Ohne den Token schlagen Uploads und
+  das Rendern von Sprachansagen fehl (die API antwortet dann mit 501).
+- `OPENAI_API_KEY` – Text-zu-Sprache für Durchsagen. Gleicher Text mit gleicher
+  Stimme wird gecacht, es fällt also nur beim ersten Mal ein Aufruf an.
+- `CRON_SECRET` – wird von `/api/cron/audio-schedules` mitgenutzt (alle 5 Min).
+
+**Zone einrichten:**
+
+1. Unter **Geräte** einen Abspieler vom Typ `AUDIO_PLAYER` anlegen.
+2. Unter **Audio → Zonen** eine Zone anlegen und das Gerät zuordnen.
+3. Lautstärken setzen: *Musik* (Grundpegel), *Durchsage* und *Ducking*
+   (Musikpegel während einer Ansage).
+4. Überlappen sich Zonen akustisch, bei allen dieselbe **Sync-Gruppe**
+   eintragen – die Abspieler laufen dann über Snapcast synchron.
+
+**Geräte-Schnittstelle** (Auth wie bei den Scanner-Pis über das Account-Token):
+
+- `GET /api/devices/audio?id=<deviceId>` – Zonenkonfiguration und offene Jobs
+- `POST /api/devices/audio` – Heartbeat mit Ist-Zustand und Job-Rückmeldungen

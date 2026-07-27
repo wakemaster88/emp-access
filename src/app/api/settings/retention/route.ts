@@ -26,6 +26,7 @@ const retentionPatchSchema = z
     emailSends: dayOrNull.optional(),
     hubTasks: dayOrNull.optional(),
     discoveredDevices: dayOrNull.optional(),
+    audioJobs: dayOrNull.optional(),
   })
   .strict();
 

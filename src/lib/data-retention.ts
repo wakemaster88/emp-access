@@ -15,6 +15,7 @@ export const RETENTION_KEYS = [
   "emailSends",
   "hubTasks",
   "discoveredDevices",
+  "audioJobs",
 ] as const;
 
 export type RetentionKey = (typeof RETENTION_KEYS)[number];
@@ -34,6 +35,7 @@ export const DEFAULT_DATA_RETENTION: DataRetentionConfig = {
   emailSends: 180,
   hubTasks: 14,
   discoveredDevices: 60,
+  audioJobs: 30,
 };
 
 export const RETENTION_LABELS: Record<
@@ -75,6 +77,10 @@ export const RETENTION_LABELS: Record<
   discoveredDevices: {
     label: "Netzwerk-Discovery",
     description: "Geräte, die länger nicht mehr gesehen wurden",
+  },
+  audioJobs: {
+    label: "Audio",
+    description: "Protokoll abgespielter Durchsagen und Steuerbefehle",
   },
 };
 
@@ -184,6 +190,17 @@ export async function purgeAccountRetention(
 
   await del("hubTasks", async (cutoff) => {
     const r = await prisma.hubTask.deleteMany({
+      where: {
+        accountId,
+        createdAt: { lt: cutoff },
+        status: { in: ["DONE", "FAILED"] },
+      },
+    });
+    return r.count;
+  });
+
+  await del("audioJobs", async (cutoff) => {
+    const r = await prisma.audioJob.deleteMany({
       where: {
         accountId,
         createdAt: { lt: cutoff },

@@ -35,6 +35,7 @@ import {
   Car,
   UserRound,
   Eye,
+  Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -85,6 +86,7 @@ const navGroups: NavGroup[] = [
       { href: "/scanner", label: "Scanner", icon: QrCode },
       { href: "/scans", label: "Scans", icon: ScanLine },
       { href: "/bewaesserung", label: "Bewässerung", icon: Droplets },
+      { href: "/audio", label: "Audio", icon: Volume2 },
       { href: "/monitor", label: "Live Monitor", icon: Monitor },
       { href: "/monitors", label: "Monitore", icon: MonitorCog },
     ],

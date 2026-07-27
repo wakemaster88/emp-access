@@ -66,6 +66,10 @@
     {
       "path": "/api/cron/device-offline-check",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/audio-schedules",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
