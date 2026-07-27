@@ -1,0 +1,19 @@
+[Unit]
+Description=EMP Access Audio Player
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/emp-audio/raspberry-pi
+ExecStart=/opt/emp-audio/venv/bin/python -m emp_audio.main
+Restart=always
+RestartSec=5
+WatchdogSec=120
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

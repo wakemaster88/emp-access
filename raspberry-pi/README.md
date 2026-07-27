@@ -2,6 +2,8 @@
 
 Python-basierter Scanner-Client für Raspberry Pi zur Zugangs&shy;kontrolle über QR-Codes und RFID.
 
+> Für Musik und Durchsagen gibt es einen eigenen Client: [README-audio.md](README-audio.md).
+
 ## Funktionen
 
 - **QR + RFID über einen USB-Scanner** – ein Kombi-Gerät liest QR-Codes und RFID-Karten (HID-Modus)

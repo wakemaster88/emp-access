@@ -102,3 +102,6 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
 
 - `GET /api/devices/audio?id=<deviceId>` – Zonenkonfiguration und offene Jobs
 - `POST /api/devices/audio` – Heartbeat mit Ist-Zustand und Job-Rückmeldungen
+
+**Pi-Client:** `raspberry-pi/emp_audio` spricht diese Schnittstelle. Installation
+und Fehlerbehebung stehen in [raspberry-pi/README-audio.md](raspberry-pi/README-audio.md).

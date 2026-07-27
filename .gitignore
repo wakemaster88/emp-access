@@ -41,6 +41,12 @@ yarn-error.log*
 # hub (lokaler Agent)
 /hub/node_modules
 
+# raspberry pi (Geräte-Konfiguration entsteht erst auf dem Pi)
+/raspberry-pi/config.json
+/raspberry-pi/audio-config.json
+__pycache__/
+*.pyc
+
 # vercel
 .vercel
 
