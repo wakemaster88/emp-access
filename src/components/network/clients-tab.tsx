@@ -588,6 +588,31 @@ export function ClientsTab({
     { value: "unknown", label: `Neu vom Scan (${unknownDiscovered.length})` },
   ];
 
+  const lastScanAt = useMemo(() => {
+    let latest = 0;
+    for (const d of discovered) {
+      const t = new Date(d.lastSeenAt).getTime();
+      if (t > latest) latest = t;
+    }
+    return latest > 0 ? new Date(latest) : null;
+  }, [discovered]);
+
+  function formatLastScan(at: Date): string {
+    const diffMin = Math.floor((Date.now() - at.getTime()) / 60_000);
+    const absolute = at.toLocaleString("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    if (diffMin < 1) return `gerade eben (${absolute})`;
+    if (diffMin < 60) return `vor ${diffMin} Min. (${absolute})`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 48) return `vor ${diffH} Std. (${absolute})`;
+    return absolute;
+  }
+
   return (
     <Card className="border-slate-200 dark:border-slate-800">
       <CardHeader className="flex flex-col gap-3 pb-4">
@@ -597,7 +622,9 @@ export function ClientsTab({
               Geräte im Netzwerk ({visibleCount})
             </CardTitle>
             <p className="text-xs text-slate-500 mt-1">
-              Verwaltete Geräte und unbekannte Hub-Funde, gruppiert nach VLAN → Bereich.
+              {lastScanAt
+                ? <>Letzter Hub-Scan: <span className="text-slate-700 dark:text-slate-300 font-medium">{formatLastScan(lastScanAt)}</span></>
+                : "Noch kein Hub-Scan in der Cloud"}
             </p>
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
