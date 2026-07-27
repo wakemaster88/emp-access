@@ -43,7 +43,7 @@ import {
 function StatusBadge({ online }: { online: boolean | null }) {
   if (online === true) {
     return (
-      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1.5 text-xs h-6 font-medium">
+      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1 text-[11px] h-5 px-1.5 font-medium">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
         Online
       </Badge>
@@ -51,15 +51,15 @@ function StatusBadge({ online }: { online: boolean | null }) {
   }
   if (online === false) {
     return (
-      <Badge variant="secondary" className="text-slate-500 gap-1.5 text-xs h-6 font-medium">
+      <Badge variant="secondary" className="text-slate-500 gap-1 text-[11px] h-5 px-1.5 font-medium">
         <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
         Offline
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="text-slate-400 gap-1.5 text-xs h-6 font-normal">
-      Unbekannt
+    <Badge variant="outline" className="text-slate-400 gap-1 text-[11px] h-5 px-1.5 font-normal">
+      ?
     </Badge>
   );
 }
@@ -652,16 +652,16 @@ export function ClientsTab({
         )}
 
         <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
-          <Table>
+          <Table className="table-fixed w-full min-w-[640px]">
             <TableHeader>
               <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-                <TableHead className="w-[100px]">Status</TableHead>
-                <TableHead className="min-w-[180px]">Gerät</TableHead>
-                <TableHead className="hidden md:table-cell">IP-Adresse</TableHead>
-                <TableHead className="hidden lg:table-cell">MAC</TableHead>
-                <TableHead className="hidden sm:table-cell">Switch / Port</TableHead>
-                <TableHead>Bereich</TableHead>
-                <TableHead className="w-28" />
+                <TableHead className="w-[88px]">Status</TableHead>
+                <TableHead className="w-[28%]">Gerät</TableHead>
+                <TableHead className="w-[140px]">IP</TableHead>
+                <TableHead className="hidden xl:table-cell w-[140px]">MAC</TableHead>
+                <TableHead className="hidden lg:table-cell w-[130px]">Port</TableHead>
+                <TableHead className="w-[100px]">Bereich</TableHead>
+                <TableHead className="w-[72px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -751,54 +751,55 @@ export function ClientsTab({
                                 <TableCell>
                                   <StatusBadge online={online} />
                                 </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                                      <Icon className="h-4 w-4" />
+                                <TableCell className="max-w-0">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="h-7 w-7 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                      <Icon className="h-3.5 w-3.5" />
                                     </div>
-                                    <div className="min-w-0">
-                                      <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate" title={c.name}>
                                         {c.name}
                                       </p>
-                                      <div className="flex items-center gap-1.5">
-                                        <p className="text-xs text-slate-400">
-                                          {CLIENT_TYPES.find((t) => t.value === c.type)?.label ?? c.type}
-                                        </p>
+                                      <p className="text-[11px] text-slate-400 truncate">
+                                        {CLIENT_TYPES.find((t) => t.value === c.type)?.label ?? c.type}
                                         {c.device && (
-                                          <Link
-                                            href={`/devices/${c.device.id}`}
-                                            className="inline-flex items-center gap-0.5 text-xs text-indigo-500 hover:underline"
-                                          >
-                                            <Link2 className="h-3 w-3" />
-                                            {c.device.name}
-                                          </Link>
+                                          <>
+                                            {" · "}
+                                            <Link
+                                              href={`/devices/${c.device.id}`}
+                                              className="text-indigo-500 hover:underline"
+                                            >
+                                              {c.device.name}
+                                            </Link>
+                                          </>
                                         )}
-                                      </div>
+                                      </p>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="hidden md:table-cell">
+                                <TableCell>
                                   <IpCell ip={ip} verified={verified} isStatic={c.isStatic} />
                                 </TableCell>
-                                <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
+                                <TableCell className="hidden xl:table-cell font-mono text-xs text-slate-500 truncate">
                                   {c.macAddress || <span className="text-slate-300">–</span>}
                                 </TableCell>
-                                <TableCell className="hidden sm:table-cell">
+                                <TableCell className="hidden lg:table-cell">
                                   {c.port ? (
                                     <Link
                                       href={`/network/${c.port.deviceId}`}
-                                      className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                                      className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-full"
+                                      title={`${c.port.deviceName} · Port ${c.port.number}`}
                                     >
-                                      <EthernetPort className="h-3 w-3" />
-                                      {c.port.deviceName} · Port {c.port.number}
+                                      <EthernetPort className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">P{c.port.number}</span>
                                     </Link>
                                   ) : (
                                     <span className="text-xs text-slate-400">–</span>
                                   )}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="max-w-0">
                                   {row.areaId != null ? (
-                                    <Badge variant="secondary" className="text-xs font-normal">
+                                    <Badge variant="secondary" className="text-xs font-normal max-w-full truncate">
                                       {row.areaName}
                                     </Badge>
                                   ) : (
@@ -806,25 +807,25 @@ export function ClientsTab({
                                   )}
                                 </TableCell>
                                 <TableCell>
-                                  <div className="flex items-center justify-end gap-1">
+                                  <div className="flex items-center justify-end gap-0.5">
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 text-slate-400 hover:text-indigo-600"
+                                      className="h-7 w-7 text-slate-400 hover:text-indigo-600"
                                       onClick={() => openEdit(c)}
                                     >
-                                      <Pencil className="h-4 w-4" />
+                                      <Pencil className="h-3.5 w-3.5" />
                                     </Button>
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                                      className="h-7 w-7 text-slate-400 hover:text-rose-600"
                                       onClick={() => handleDelete(c)}
                                       disabled={deletingId === c.id}
                                     >
                                       {deletingId === c.id
-                                        ? <Loader2 className="h-4 w-4 animate-spin" />
-                                        : <Trash2 className="h-4 w-4" />}
+                                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        : <Trash2 className="h-3.5 w-3.5" />}
                                     </Button>
                                   </div>
                                 </TableCell>
@@ -842,29 +843,30 @@ export function ClientsTab({
                                 <TableCell>
                                   <StatusBadge online={online} />
                                 </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="h-8 w-8 rounded-lg bg-slate-500/10 text-slate-500 flex items-center justify-center shrink-0">
-                                      <Cpu className="h-4 w-4" />
+                                <TableCell className="max-w-0">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="h-7 w-7 rounded-md bg-slate-500/10 text-slate-500 flex items-center justify-center shrink-0">
+                                      <Cpu className="h-3.5 w-3.5" />
                                     </div>
-                                    <div className="min-w-0">
+                                    <div className="min-w-0 flex-1">
                                       <Link
                                         href={`/devices/${d.id}`}
                                         className="font-medium text-sm text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 truncate block"
+                                        title={d.name}
                                       >
                                         {d.name}
                                       </Link>
-                                      <p className="text-xs text-slate-400">IoT-Gerät (nicht zugeordnet)</p>
+                                      <p className="text-[11px] text-slate-400 truncate">IoT (nicht zugeordnet)</p>
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="hidden md:table-cell">
+                                <TableCell>
                                   <IpCell ip={d.ipAddress} verified={false} />
                                 </TableCell>
-                                <TableCell className="hidden lg:table-cell">
+                                <TableCell className="hidden xl:table-cell">
                                   <span className="text-slate-300 text-xs">–</span>
                                 </TableCell>
-                                <TableCell className="hidden sm:table-cell">
+                                <TableCell className="hidden lg:table-cell">
                                   <span className="text-xs text-slate-400">–</span>
                                 </TableCell>
                                 <TableCell>
@@ -907,37 +909,33 @@ export function ClientsTab({
                               <TableCell>
                                 <StatusBadge online={active} />
                               </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="h-8 w-8 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
-                                    <Radar className="h-4 w-4" />
+                              <TableCell className="max-w-0">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="h-7 w-7 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                                    <Radar className="h-3.5 w-3.5" />
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate" title={label}>
                                       {label}
                                     </p>
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                      <Badge variant="secondary" className="text-[10px] h-5 font-normal text-violet-700 dark:text-violet-300">
-                                        neu vom Scan
-                                      </Badge>
-                                      {d.deviceType && (
-                                        <span className="text-xs text-slate-400">{d.deviceType}</span>
-                                      )}
-                                    </div>
+                                    <p className="text-[11px] text-slate-400 truncate">
+                                      neu vom Scan
+                                      {d.deviceType ? ` · ${d.deviceType}` : ""}
+                                    </p>
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell className="hidden md:table-cell">
+                              <TableCell>
                                 <IpCell
                                   ip={d.ipAddress}
                                   verified={active && !!d.ipAddress}
                                   conflict={!!d.ipAddress && duplicateIps.has(d.ipAddress)}
                                 />
                               </TableCell>
-                              <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
+                              <TableCell className="hidden xl:table-cell font-mono text-xs text-slate-500 truncate">
                                 {d.macAddress}
                               </TableCell>
-                              <TableCell className="hidden sm:table-cell">
+                              <TableCell className="hidden lg:table-cell">
                                 <span className="text-xs text-slate-400">–</span>
                               </TableCell>
                               <TableCell>
