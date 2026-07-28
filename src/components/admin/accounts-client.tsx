@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Building2, Copy, Check, Users, Loader2, Eye, EyeOff } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Copy, Check, Users, Loader2, Eye, EyeOff, ShieldCheck, ShieldOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +60,7 @@ interface AdminUser {
   role: string;
   lastLogin: string | null;
   createdAt: string;
+  twoFactorEnabledAt: string | null;
 }
 
 interface FormState {
@@ -97,6 +98,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
   const [showUserForm, setShowUserForm] = useState(false);
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [deleteUser, setDeleteUser] = useState<AdminUser | null>(null);
+  const [resetTwoFactorUser, setResetTwoFactorUser] = useState<AdminUser | null>(null);
   const [userForm, setUserForm] = useState<UserFormState>(EMPTY_USER_FORM);
   const [userSaving, setUserSaving] = useState(false);
   const [userError, setUserError] = useState("");
@@ -318,6 +320,29 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
       setDeleteUser(null);
     } catch {
       setUserError("Fehler beim Löschen");
+    } finally {
+      setUserSaving(false);
+    }
+  }
+
+  async function handleTwoFactorReset() {
+    if (!usersAccount || !resetTwoFactorUser) return;
+    setUserSaving(true);
+    try {
+      const res = await fetch(
+        `/api/admin/accounts/${usersAccount.id}/users/${resetTwoFactorUser.id}/two-factor`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(typeof data.error === "string" ? data.error : "Fehler beim Zurücksetzen");
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === resetTwoFactorUser.id ? { ...u, twoFactorEnabledAt: null } : u))
+      );
+      setResetTwoFactorUser(null);
+    } catch (e) {
+      setUserError(e instanceof Error ? e.message : "Fehler beim Zurücksetzen");
     } finally {
       setUserSaving(false);
     }
@@ -559,14 +584,15 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                     <TableHead>Name</TableHead>
                     <TableHead>E-Mail</TableHead>
                     <TableHead>Rolle</TableHead>
+                    <TableHead>2FA</TableHead>
                     <TableHead>Letzter Login</TableHead>
-                    <TableHead className="w-[100px]"></TableHead>
+                    <TableHead className="w-[140px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {users.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-slate-500 py-8">
+                      <TableCell colSpan={6} className="text-center text-slate-500 py-8">
                         Keine Benutzer vorhanden
                       </TableCell>
                     </TableRow>
@@ -584,6 +610,16 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                           {u.role === "ADMIN" ? "Admin" : "Benutzer"}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        {u.twoFactorEnabledAt ? (
+                          <span className="inline-flex items-center gap-1 text-sm text-emerald-600 dark:text-emerald-400">
+                            <ShieldCheck className="h-4 w-4" />
+                            Aktiv
+                          </span>
+                        ) : (
+                          <span className="text-sm text-slate-400">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm text-slate-500">
                         {u.lastLogin
                           ? new Date(u.lastLogin).toLocaleString("de-DE", {
@@ -597,6 +633,17 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditUser(u)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
+                          {u.twoFactorEnabledAt && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                              title="Zwei-Faktor zurücksetzen"
+                              onClick={() => setResetTwoFactorUser(u)}
+                            >
+                              <ShieldOff className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -727,6 +774,32 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
               className="bg-rose-600 hover:bg-rose-700 text-white"
             >
               {userSaving ? "Löschen..." : "Endgültig löschen"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reset 2FA Confirmation */}
+      <AlertDialog
+        open={!!resetTwoFactorUser}
+        onOpenChange={(open) => { if (!open) setResetTwoFactorUser(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Zwei-Faktor zurücksetzen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{resetTwoFactorUser?.name}</strong> ({resetTwoFactorUser?.email}) meldet sich danach
+              wieder nur mit Passwort an. Bitte erst zurücksetzen, wenn zweifelsfrei feststeht, wer da fragt –
+              und den Benutzer bitten, die Zwei-Faktor-Anmeldung sofort neu einzurichten.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleTwoFactorReset}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {userSaving ? "Zurücksetzen..." : "Zurücksetzen"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

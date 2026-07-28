@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  ShieldCheck,
   LogOut,
   Settings,
   CreditCard,
@@ -104,6 +105,7 @@ const navGroups: NavGroup[] = [
       { href: "/automation", label: "Automation", icon: Zap },
       { href: "/email", label: "E-Mail", icon: Mail },
       { href: "/settings", label: "Einstellungen", icon: Settings },
+      { href: "/sicherheit", label: "Sicherheit", icon: ShieldCheck },
     ],
   },
 ];
@@ -111,6 +113,7 @@ const navGroups: NavGroup[] = [
 const adminItems: NavItem[] = [
   { href: "/admin", label: "Admin Dashboard", icon: Shield },
   { href: "/admin/accounts", label: "Mandanten", icon: LayoutDashboard },
+  { href: "/sicherheit", label: "Sicherheit", icon: ShieldCheck },
 ];
 
 interface SidebarProps {

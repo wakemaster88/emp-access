@@ -175,6 +175,20 @@ model Admin {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  /// TOTP-Secret, verschluesselt mit AUTH_SECRET (siehe src/lib/secret-box.ts).
+  /// Wird schon beim Start der Einrichtung gesetzt; scharf ist der zweite
+  /// Faktor erst mit twoFactorEnabledAt.
+  twoFactorSecret        String?
+  twoFactorEnabledAt     DateTime?
+  /// bcrypt-Hashes der Wiederherstellungscodes. Ein benutzter Code wird aus
+  /// der Liste entfernt, damit er kein zweites Mal funktioniert.
+  twoFactorRecoveryCodes String[]  @default([])
+  /// Zuletzt akzeptierter TOTP-Zeitschritt. Verhindert, dass ein abgefangener
+  /// Code innerhalb seiner Gueltigkeit ein zweites Mal eingeloest wird.
+  twoFactorLastStep      Int?
+  twoFactorFailures      Int       @default(0)
+  twoFactorLockedUntil   DateTime?
+
   @@index([accountId])
   @@index([email])
 }

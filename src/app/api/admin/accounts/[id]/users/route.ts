@@ -30,6 +30,7 @@ export async function GET(
       role: true,
       lastLogin: true,
       createdAt: true,
+      twoFactorEnabledAt: true,
     },
     orderBy: { name: "asc" },
   });

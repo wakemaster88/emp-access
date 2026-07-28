@@ -2,6 +2,7 @@ import NextAuth, { type Session } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { prisma } from "./prisma";
+import { isTwoFactorActive, verifySecondFactor } from "./two-factor";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -10,6 +11,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        code: { label: "Code", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
@@ -26,6 +28,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           admin.password
         );
         if (!valid) return null;
+
+        // Zweiter Faktor wird ausschliesslich hier geprueft. Der Vorab-Check
+        // beim Login sagt nur, ob ein Code noetig ist – wuerde er ihn selbst
+        // einloesen, waere der Code fuer diesen Aufruf schon verbraucht.
+        if (isTwoFactorActive(admin)) {
+          const second = await verifySecondFactor(admin, credentials.code as string | undefined);
+          if (!second.ok) return null;
+        }
 
         await prisma.admin.update({
           where: { id: admin.id },

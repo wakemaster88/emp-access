@@ -186,3 +186,40 @@ Die Zuordnung liegt in `src/lib/device-controls.ts` und wird von der
 Mitarbeiter-PWA und der API gemeinsam genutzt – die App zeigt also genau die
 Knöpfe, die auch die API meldet. `npx tsx scripts/device-controls-check.ts`
 prüft, dass jeder gemeldete Knopf vom Action-Endpunkt angenommen wird.
+
+## Zwei-Faktor-Anmeldung (Admin-Login)
+
+Jeder Admin kann seine Anmeldung unter **Sicherheit** in der Seitenleiste um
+einen Einmalcode aus einer Authenticator-App absichern (TOTP nach RFC 6238,
+sechs Stellen, 30 Sekunden – Google Authenticator, Microsoft Authenticator,
+1Password, Aegis und alle anderen gängigen Apps).
+
+**Einrichten:** Passwort bestätigen, QR-Code scannen (oder das Secret abtippen),
+einen Code aus der App eingeben. Danach erscheinen einmalig zehn
+**Wiederherstellungscodes** – die Rückfalltür, wenn das Handy weg ist. Jeder
+davon funktioniert genau einmal.
+
+**Anmeldung:** Nach E-Mail und Passwort fragt der Login nach dem Code. An dieser
+Stelle wird auch ein Wiederherstellungscode akzeptiert.
+
+**Wenn niemand mehr hineinkommt:**
+
+- Mandanten-Benutzer: Der SUPER_ADMIN setzt den zweiten Faktor unter
+  *Mandanten → Benutzer* zurück (Schild-Symbol in der Zeile).
+- Der SUPER_ADMIN selbst: `npx tsx scripts/reset-2fa.ts admin@example.de`
+  direkt am Server. `--list` zeigt vorher, wer 2FA aktiv hat.
+
+**Was die Umsetzung absichert:**
+
+- Nach fünf Fehlversuchen ist das Konto 15 Minuten gesperrt – sonst wären eine
+  Million mögliche Codes schnell durchprobiert.
+- Ein akzeptierter Code gilt nur ein einziges Mal, auch innerhalb seiner
+  30 Sekunden.
+- Das TOTP-Secret liegt mit AES-256-GCM verschlüsselt in der Datenbank; der
+  Schlüssel kommt aus `AUTH_SECRET` (oder `TWO_FACTOR_KEY`, falls gesetzt). Ein
+  Datenbank-Dump allein genügt also nicht, um fremde Codes zu erzeugen.
+- Ändert sich `AUTH_SECRET`, sind bestehende Secrets unlesbar. Betroffene müssen
+  ihre 2FA neu einrichten (Reset wie oben).
+
+`npx tsx scripts/two-factor-check.ts` prüft die Umsetzung gegen die Testvektoren
+aus RFC 6238 sowie Sperre, Einmaligkeit und Wiederherstellungscodes.
