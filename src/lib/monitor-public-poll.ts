@@ -1,7 +1,35 @@
 import type { PrismaClient } from "@prisma/client";
-import { berlinDayStart } from "@/lib/berlin-day";
+import { berlinDayStart, berlinYmd } from "@/lib/berlin-day";
 
 const MAX_TICKETS = 2500;
+
+/** Laengstes Zeitfenster, das noch als Tagestermin (statt Tages-/Mehrtageskarte)
+ *  gilt - identisch zur Slot-Label-Heuristik in `monitor-ticket-subtitle.ts`. */
+const DAY_APPOINTMENT_MAX_MS = 8 * 60 * 60 * 1000;
+
+type SeriesCandidate = {
+  uuid: string | null;
+  serviceId: number | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  validityType: string;
+};
+
+/** Schluessel "ANNY-Kunde + Service" – Sammelbuchung und Tagestermine einer
+ *  Kursbuchung teilen ihn, weil sie sich nur in der Booking-ID unterscheiden. */
+function annySeriesKey(t: SeriesCandidate): string | null {
+  if (!t.uuid?.startsWith("anny:") || t.serviceId == null) return null;
+  const customerId = t.uuid.split(":")[1];
+  return customerId ? `${customerId}|${t.serviceId}` : null;
+}
+
+/** Buchung fuer genau den heutigen Kurstag (z.B. Ferienkurs 10:00–12:00). */
+function isDayAppointmentToday(t: SeriesCandidate, todayYmd: string): boolean {
+  if (t.validityType === "DURATION" || !t.startDate || !t.endDate) return false;
+  if (berlinYmd(t.startDate) !== todayYmd || berlinYmd(t.endDate) !== todayYmd) return false;
+  const durationMs = t.endDate.getTime() - t.startDate.getTime();
+  return durationMs > 0 && durationMs <= DAY_APPOINTMENT_MAX_MS;
+}
 
 export type PublicMonitorPollResult = {
   name: string;
@@ -224,11 +252,31 @@ async function loadTickets(
 
   const photoIds = new Set(ticketIdsWithPhoto.map((r) => r.id));
 
+  // ANNY bucht Kurse als Serie: eine Sammelbuchung ueber den ganzen Kurszeitraum
+  // PLUS eine Buchung pro Kurstag - jede mit eigener Booking-ID, also jede als
+  // eigenes Ticket. Damit stand derselbe Teilnehmer zweimal im Monitor: einmal
+  // im Slot-Abschnitt des Tagestermins ("10:00–12:00 Uhr") und einmal unter
+  // "Ohne feste Uhrzeit", weil die mehrtaegige Sammelbuchung keine Slot-Zeit
+  // ableiten kann. Existiert der Tagestermin, ist die Sammelbuchung redundant
+  // und wird ausgeblendet; fehlt er, bleibt sie sichtbar - sonst wuerde der
+  // Teilnehmer ganz aus der Liste fallen.
+  const todayYmd = berlinYmd(now);
+  const dayAppointmentKeys = new Set(
+    rawTickets
+      .filter((t) => isDayAppointmentToday(t, todayYmd))
+      .map(annySeriesKey)
+      .filter((k): k is string => k != null),
+  );
+
   return rawTickets
     .filter((t) => {
       if (t.validityType === "DURATION" && t.firstScanAt && t.validityDurationMinutes) {
         const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
         if (now.getTime() > expiresAt) return false;
+      }
+      if (t.startDate && t.endDate && berlinYmd(t.startDate) !== berlinYmd(t.endDate)) {
+        const key = annySeriesKey(t);
+        if (key && dayAppointmentKeys.has(key)) return false;
       }
       return true;
     })
