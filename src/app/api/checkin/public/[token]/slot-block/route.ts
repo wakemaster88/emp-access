@@ -87,6 +87,7 @@ export async function POST(
       id: true,
       name: true,
       annyNames: true,
+      slotCapacity: true,
       serviceAreas: {
         select: { area: { select: { annyLinks: { select: { annyResourceId: true } } } } },
       },
@@ -155,10 +156,22 @@ export async function POST(
     return NextResponse.json({ error: "Keine ANNY-Resource fuer diesen Slot gefunden." }, { status: 422 });
   }
 
-  // Wieviele Plaetze belegen, um den Slot komplett zu sperren?
+  // Wieviele Plaetze belegen, um den Slot komplett zu sperren? Bei Services
+  // mit eigener Kapazitaet ist ANNYs Restwert unbrauchbar (er zaehlt die
+  // Buchungen der anderen Services derselben Resource mit) - dann nehmen wir
+  // die konfigurierte Kapazitaet.
   const remaining = typeof slot?.remaining === "number" ? slot.remaining : null;
-  const capacity = typeof slot?.capacity === "number" ? slot.capacity : null;
-  const quantity = Math.max(1, remaining && remaining > 0 ? remaining : capacity && capacity > 0 ? capacity : 1);
+  const capacity =
+    svc.slotCapacity != null && svc.slotCapacity > 0
+      ? svc.slotCapacity
+      : typeof slot?.capacity === "number" ? slot.capacity : null;
+  const effectiveRemaining = svc.slotCapacity != null && svc.slotCapacity > 0 ? null : remaining;
+  const quantity = Math.max(
+    1,
+    effectiveRemaining && effectiveRemaining > 0
+      ? effectiveRemaining
+      : capacity && capacity > 0 ? capacity : 1,
+  );
 
   // Exakte ISO-Zeiten: aus dem Slot, sonst aus date+time in Berlin-Offset.
   const startIso = slot?.startIso ?? buildIso(date, slotStart);

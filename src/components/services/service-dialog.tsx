@@ -37,6 +37,8 @@ export interface ServiceData {
   allowManualCheckin?: boolean;
   requiresPhoto?: boolean;
   requiresRfid?: boolean;
+  /** Plaetze pro Slot, die EMP selbst verwaltet. NULL = ANNY ist maßgeblich. */
+  slotCapacity?: number | null;
   /** Hauptressource: Wird beim Verkauf als `Ticket.accessAreaId` verwendet
    *  und steuert, an welchem Gate die Zeitgueltigkeit (DURATION) startet
    *  bzw. die Hauptressourcen-Logik im Pi-Scanner greift. NULL = keine
@@ -164,6 +166,7 @@ export function ServiceDialog({
   const [allowManualCheckin, setAllowManualCheckin] = useState(true);
   const [requiresPhoto, setRequiresPhoto] = useState(false);
   const [requiresRfid, setRequiresRfid] = useState(false);
+  const [slotCapacity, setSlotCapacity] = useState("");
   // "none" = keine Hauptressource gesetzt; sonst stringified areaId
   const [mainAccessAreaId, setMainAccessAreaId] = useState<string>("none");
   const [saving, setSaving] = useState(false);
@@ -200,6 +203,7 @@ export function ServiceDialog({
         setAllowManualCheckin(service.allowManualCheckin !== false);
         setRequiresPhoto(service.requiresPhoto ?? false);
         setRequiresRfid(service.requiresRfid ?? false);
+        setSlotCapacity(service.slotCapacity != null ? String(service.slotCapacity) : "");
         setMainAccessAreaId(service.mainAccessAreaId != null ? String(service.mainAccessAreaId) : "none");
       } else {
         setName("");
@@ -215,6 +219,7 @@ export function ServiceDialog({
         setAllowManualCheckin(true);
         setRequiresPhoto(false);
         setRequiresRfid(false);
+        setSlotCapacity("");
         setMainAccessAreaId("none");
       }
     }
@@ -266,6 +271,7 @@ export function ServiceDialog({
         allowManualCheckin,
         requiresPhoto,
         requiresRfid,
+        slotCapacity: slotCapacity.trim() === "" ? null : Number(slotCapacity),
         mainAccessAreaId: mainAccessAreaId === "none" ? null : Number(mainAccessAreaId),
         areas: serviceAreas.map((sa) => {
           const out: Record<string, unknown> = { areaId: sa.areaId };
@@ -541,6 +547,28 @@ export function ServiceDialog({
                 </button>
               </div>
             )}
+
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-1.5">
+              <Label htmlFor="svc-slot-capacity" className="text-[11px] font-medium">
+                Plätze pro Slot selbst verwalten
+              </Label>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Nur nötig, wenn sich mehrere Services in anny <em>eine</em> Ressource teilen. anny zählt Buchungen
+                dann pro Ressource statt pro Service, wodurch jede Buchung die freien Plätze aller beteiligten
+                Services senkt. Mit einem Wert hier rechnet EMP die Belegung selbst – nur aus den Buchungen
+                dieses Services. Leer lassen = anny ist maßgeblich.
+              </p>
+              <Input
+                id="svc-slot-capacity"
+                type="number"
+                min={1}
+                inputMode="numeric"
+                value={slotCapacity}
+                onChange={(e) => setSlotCapacity(e.target.value)}
+                placeholder="z.B. 15 – leer = anny"
+                className="h-8 text-xs"
+              />
+            </div>
           </div>
         )}
 

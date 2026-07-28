@@ -6,6 +6,17 @@ function toValidityType(v: string | null | undefined): ValidityType | null {
   return v && ["DATE_RANGE", "TIME_SLOT", "DURATION"].includes(v) ? (v as ValidityType) : null;
 }
 
+/**
+ * Plaetze pro Slot, die EMP selbst verwaltet. Leer / 0 / ungueltig = NULL,
+ * dann bleibt ANNYs Verfuegbarkeit maßgeblich.
+ */
+export function parseSlotCapacity(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
 export async function GET() {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
@@ -50,10 +61,13 @@ export async function POST(request: NextRequest) {
     ? rawMainAreaId
     : null;
 
+  const slotCapacity = parseSlotCapacity(body.slotCapacity);
+
   const service = await db.service.create({
     data: {
       name: body.name.trim(),
       annyNames: annyNames.length > 0 ? JSON.stringify(annyNames) : null,
+      slotCapacity,
       accountId: accountId!,
       defaultValidityType,
       defaultStartDate: body.defaultStartDate ? new Date(body.defaultStartDate) : null,

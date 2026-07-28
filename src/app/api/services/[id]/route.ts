@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ValidityType } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { parseSlotCapacity } from "../route";
 
 const VALIDITY_TYPES: ValidityType[] = ["DATE_RANGE", "TIME_SLOT", "DURATION"];
 function toValidityType(v: string | null | undefined): ValidityType | null {
@@ -115,6 +116,7 @@ export async function PUT(
       ...(body.allowManualCheckin !== undefined && { allowManualCheckin: !!body.allowManualCheckin }),
       ...(body.requiresPhoto !== undefined && { requiresPhoto: !!body.requiresPhoto }),
       ...(body.requiresRfid !== undefined && { requiresRfid: !!body.requiresRfid }),
+      ...(body.slotCapacity !== undefined && { slotCapacity: parseSlotCapacity(body.slotCapacity) }),
       ...(mainAccessAreaIdField ?? {}),
     },
     include: {

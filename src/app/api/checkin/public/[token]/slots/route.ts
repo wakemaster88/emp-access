@@ -6,8 +6,13 @@ import {
   fetchAnnyServiceStartSlots,
   applyLocalSalesOverrides,
   resolveServiceResourceId,
+  berlinOffset,
   type AvailabilitySlot,
 } from "@/lib/anny-availability";
+import {
+  fetchAnnyResourceDayUsage,
+  applyOwnSlotCapacity,
+} from "@/lib/anny-slot-usage";
 
 export const maxDuration = 15;
 
@@ -58,6 +63,7 @@ export async function GET(
       name: true,
       annyNames: true,
       defaultValidityDurationMinutes: true,
+      slotCapacity: true,
       serviceAreas: {
         select: { area: { select: { annyLinks: { select: { annyResourceId: true } } } } },
       },
@@ -230,6 +236,62 @@ export async function GET(
   // Vor-Ort-Verkaufs-Overrides: Lead-Time ignorieren, ANNY-Quirks fuer
   // unkonfigurierte Kapazitaet ausblenden. Siehe applyLocalSalesOverrides.
   rawSlots = applyLocalSalesOverrides(rawSlots);
+
+  // Eigene Kapazitaet konfiguriert? Dann ANNYs Restplaetze verwerfen und aus
+  // den Buchungen DIESES Service neu rechnen - sonst zeigt der Picker den Slot
+  // als voll, weil ein anderer Service dieselbe ANNY-Resource belegt.
+  const usageResourceId =
+    targetResourceId
+    ?? match.resourceIds?.[0]
+    ?? rawSlots.flatMap((s) => s.resourceIds ?? [])[0];
+  if (service.slotCapacity != null && service.slotCapacity > 0 && usageResourceId) {
+    const [usage, ticketsToday, slotBlocks] = await Promise.all([
+      fetchAnnyResourceDayUsage(
+        baseUrl, annyConfig.token, usageResourceId, dateStr, organizationId,
+      ).catch(() => null),
+      prisma.ticket.findMany({
+        where: {
+          accountId,
+          serviceId: service.id,
+          status: { in: ["VALID", "REDEEMED"] },
+          slotStart: { not: null },
+          startDate: { lte: new Date(`${dateStr}T23:59:59${berlinOffset(dateStr)}`) },
+          endDate: { gte: new Date(`${dateStr}T00:00:00${berlinOffset(dateStr)}`) },
+        },
+        select: { slotStart: true },
+      }),
+      // Sperren der ANDEREN Services derselben Resource - die duerfen diesen
+      // Service nicht blockieren.
+      prisma.slotBlock.findMany({
+        where: { accountId, date: dateStr, serviceId: { not: service.id } },
+        select: { annyBookingIds: true },
+      }),
+    ]);
+    if (usage) {
+      const empByStart = new Map<string, number>();
+      for (const t of ticketsToday) {
+        const key = t.slotStart?.slice(0, 5);
+        if (!key) continue;
+        empByStart.set(key, (empByStart.get(key) ?? 0) + 1);
+      }
+      const ignoredBlockerIds = new Set<string>();
+      for (const b of slotBlocks) {
+        try {
+          const parsed = JSON.parse(b.annyBookingIds ?? "[]");
+          if (Array.isArray(parsed)) {
+            for (const id of parsed) if (typeof id === "string") ignoredBlockerIds.add(id);
+          }
+        } catch { /* ignore */ }
+      }
+      rawSlots = applyOwnSlotCapacity(rawSlots, {
+        slotCapacity: service.slotCapacity,
+        annyServiceIds: [annyServiceUuid],
+        usage,
+        ignoredBlockerIds,
+        empBookingsByStart: empByStart,
+      });
+    }
+  }
 
   // Wir reichen ALLE Slots durch (auch nicht-verfuegbare), damit das UI
   // dem Mitarbeiter ehrlich zeigt: "diese Zeit kennt ANNY, ist aber voll".

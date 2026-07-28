@@ -18,6 +18,11 @@ import {
   type AnnyServiceCatalogEntry,
   type AnnyResource,
 } from "@/lib/anny-availability";
+import {
+  fetchAnnyResourceDayUsage,
+  applyOwnSlotCapacity,
+  type ResourceDayUsage,
+} from "@/lib/anny-slot-usage";
 
 export const maxDuration = 30;
 
@@ -155,6 +160,7 @@ export async function GET(
         name: true,
         annyNames: true,
         defaultValidityDurationMinutes: true,
+        slotCapacity: true,
         serviceAreas: {
           select: {
             area: {
@@ -252,13 +258,51 @@ export async function GET(
   // Aktive manuelle Slot-Sperren dieses Tages. Map-Key: "serviceId|HH:mm".
   const slotBlocks = await prisma.slotBlock.findMany({
     where: { accountId, date: dateStr },
-    select: { id: true, serviceId: true, slotStart: true, reason: true },
+    select: { id: true, serviceId: true, slotStart: true, reason: true, annyBookingIds: true },
   });
   const blockByKey = new Map<string, { id: number; reason: string | null }>();
+  // ANNY-Blocker-IDs je EMP-Service. Bei Services, die sich eine Resource
+  // teilen, liegt eine Sperre technisch auf der gemeinsamen Resource und wuerde
+  // sonst auch die anderen Services sperren. Pro Service ignorieren wir daher
+  // die Blocker der jeweils anderen Services.
+  const blockerIdsByService = new Map<number, string[]>();
   for (const b of slotBlocks) {
     if (b.serviceId == null) continue;
     blockByKey.set(`${b.serviceId}|${b.slotStart.slice(0, 5)}`, { id: b.id, reason: b.reason });
+    try {
+      const parsed = JSON.parse(b.annyBookingIds ?? "[]");
+      if (Array.isArray(parsed)) {
+        const list = blockerIdsByService.get(b.serviceId) ?? [];
+        for (const id of parsed) if (typeof id === "string") list.push(id);
+        blockerIdsByService.set(b.serviceId, list);
+      }
+    } catch { /* ignore */ }
   }
+  /** Sperren aller ANDEREN Services - die duerfen `serviceId` nicht blockieren. */
+  const foreignBlockerIds = (serviceId: number): Set<string> => {
+    const out = new Set<string>();
+    for (const [sid, ids] of blockerIdsByService) {
+      if (sid === serviceId) continue;
+      for (const id of ids) out.add(id);
+    }
+    return out;
+  };
+
+  // Buchungen pro Resource fuer diesen Tag - nur fuer Services mit eigener
+  // Kapazitaet, und pro Resource nur einmal (mehrere Services teilen sie sich
+  // ja gerade). Erlaubt uns, ANNYs resource-weite Belegung nach Service
+  // aufzuschluesseln.
+  const usageCache = new Map<string, Promise<ResourceDayUsage>>();
+  const getResourceUsage = (resourceId: string): Promise<ResourceDayUsage> => {
+    let p = usageCache.get(resourceId);
+    if (!p) {
+      p = fetchAnnyResourceDayUsage(
+        baseUrl, annyConfig!.token, resourceId, dateStr, organizationId,
+      ).catch(() => ({ byService: new Map(), blockersByStart: new Map() }));
+      usageCache.set(resourceId, p);
+    }
+    return p;
+  };
 
   // Helper: extrahiert primaere Resource aus einem Catalog-Match (entweder
   // direkt aus match.resourceIds[0] oder aus den geladenen Slots als
@@ -448,7 +492,7 @@ export async function GET(
           if (!slotsByStart.has(s.startTime)) slotsByStart.set(s.startTime, s);
         }
       }
-      const rawSlots = Array.from(slotsByStart.values()).sort((a, b) => a.startTime.localeCompare(b.startTime));
+      let rawSlots = Array.from(slotsByStart.values()).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
       // EMP-Buchungen pro Slot: anhand `slotStart` (HH:MM) gruppieren.
       const empByStart = new Map<string, number>();
@@ -457,6 +501,23 @@ export async function GET(
         const key = normalizeSlotKey(t);
         if (!key) continue;
         empByStart.set(key, (empByStart.get(key) ?? 0) + 1);
+      }
+
+      // Eigene Kapazitaet konfiguriert? Dann ANNYs resource-weite Belegung
+      // verwerfen und aus den Buchungen DIESES Service neu rechnen.
+      const usageResourceId =
+        targetResourceId
+        ?? matches.flatMap((m) => m.resourceIds)[0]
+        ?? rawSlots.flatMap((s) => s.resourceIds ?? [])[0];
+      if (svc.slotCapacity != null && svc.slotCapacity > 0 && usageResourceId) {
+        const usage = await getResourceUsage(usageResourceId);
+        rawSlots = applyOwnSlotCapacity(rawSlots, {
+          slotCapacity: svc.slotCapacity,
+          annyServiceIds: matches.map((m) => m.id),
+          usage,
+          ignoredBlockerIds: foreignBlockerIds(svc.id),
+          empBookingsByStart: empByStart,
+        });
       }
 
       const slots: SlotEntry[] = rawSlots

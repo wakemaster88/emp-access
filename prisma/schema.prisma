@@ -627,6 +627,18 @@ model Service {
   /// `serviceArea` nach ID).
   mainAccessAreaId               Int?
   mainAccessArea                 AccessArea?   @relation("ServiceMainArea", fields: [mainAccessAreaId], references: [id], onDelete: SetNull)
+  /// Plaetze pro Slot, die EMP selbst verwaltet. Wenn gesetzt, ignorieren wir
+  /// ANNYs `number_available` und rechnen die Belegung selbst aus den
+  /// ANNY-Buchungen DIESES Service plus den EMP-Tickets.
+  ///
+  /// Notwendig, wenn sich mehrere EMP-Services in ANNY eine Resource teilen:
+  /// ANNY zaehlt Buchungen pro Resource, nicht pro Service. Beispiel
+  /// "Anfaengerkurs Uebungslift" (10 Plaetze) und "Anfaengerkurs Seilbahn B"
+  /// (15 Plaetze) haengen beide an der Resource "Wake & Ski - Anfaengerkurse" -
+  /// ohne dieses Feld senkt jede Buchung die freien Plaetze bei BEIDEN Kursen.
+  ///
+  /// NULL = ANNYs Verfuegbarkeit ist maßgeblich (Normalfall).
+  slotCapacity                   Int?
   accountId                      Int
   account                        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   serviceAreas                   ServiceArea[]
