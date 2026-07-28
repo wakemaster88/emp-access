@@ -28,6 +28,11 @@ const ENDPOINTS = [
   },
   { method: "GET", path: "/api/devices/[id]", desc: "Einzelnes Gerät abrufen (inkl. control und controls)" },
   {
+    method: "GET",
+    path: "/api/employees",
+    desc: "Mitarbeiter auflisten mit ihren Bereichen (areaIds) und einzeln freigegebenen Geräten (deviceIds); gesetzt werden beide über den emp-control-Webhook",
+  },
+  {
     method: "POST",
     path: "/api/devices/[id]/action",
     desc: "Gerät steuern – Zutritt und Schalter: open, emergency, reset, deactivate; Markise/Rolltor: open, stop, close",

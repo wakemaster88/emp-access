@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { employeeCreateSchema } from "@/lib/validators";
 import { randomBytes } from "crypto";
 
@@ -8,14 +8,32 @@ import { randomBytes } from "crypto";
  * Diese Route fasst Listen-/Create-Operationen aus Sicht des Backoffice
  * zusammen – der Webhook (`/api/integrations/emp-control/webhook`) bleibt der
  * primaere Sync-Pfad, hier wird nur manuell gepflegt.
+ *
+ * Die Liste ist zusaetzlich per Account-API-Token lesbar, damit emp-control die
+ * bereits vergebenen Bereiche und Direkt-Geraete einlesen kann, bevor es selbst
+ * welche setzt. Ohne diesen Abgleich wuerde ein erster Sync mit leerer
+ * Geraeteliste bestehende Freigaben stillschweigend entfernen.
  */
 
 const EMPLOYEE_TICKET_TYPE = "Mitarbeiter";
 
+function hasApiToken(request: NextRequest) {
+  return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
+}
+
 export async function GET(request: NextRequest) {
-  const session = await getSessionWithDb();
-  if ("error" in session) return session.error;
-  const { db, accountId } = session;
+  let db, accountId: number;
+  if (hasApiToken(request)) {
+    const auth = await validateApiToken(request);
+    if ("error" in auth) return auth.error;
+    db = auth.db;
+    accountId = auth.account.id;
+  } else {
+    const session = await getSessionWithDb();
+    if ("error" in session) return session.error;
+    db = session.db;
+    accountId = session.accountId!;
+  }
 
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
@@ -23,7 +41,7 @@ export async function GET(request: NextRequest) {
   const areaId = url.searchParams.get("areaId");
 
   const where: Record<string, unknown> = {
-    accountId: accountId!,
+    accountId,
     source: "EMP_CONTROL",
   };
 
@@ -89,7 +107,7 @@ export async function GET(request: NextRequest) {
   const ids = employees.map((e) => e.id);
   const lastScans = ids.length
     ? await db.scan.findMany({
-        where: { accountId: accountId!, ticketId: { in: ids } },
+        where: { accountId, ticketId: { in: ids } },
         select: { ticketId: true, scanTime: true, result: true, deviceId: true },
         orderBy: { scanTime: "desc" },
         take: ids.length * 3,
@@ -119,6 +137,10 @@ export async function GET(request: NextRequest) {
       hasSchedule: !!e.weekSchedule,
       areas: e.ticketAreas.map((ta) => ({ id: ta.accessAreaId, name: ta.accessArea?.name ?? `#${ta.accessAreaId}` })),
       directDevices: e.ticketDevices.map((td) => ({ id: td.deviceId, name: td.device?.name ?? `#${td.deviceId}`, type: td.device?.type ?? null })),
+      // Blanke ID-Listen, damit ein Fremdsystem genau das zurueckschicken kann,
+      // was es hier gelesen hat (siehe Webhook-Felder `areaIds`/`deviceIds`).
+      areaIds: e.ticketAreas.map((ta) => ta.accessAreaId),
+      deviceIds: e.ticketDevices.map((td) => td.deviceId),
       uuid: e.uuid,
       lastScan: lastScanByTicket.get(e.id) ?? null,
       updatedAt: e.updatedAt,

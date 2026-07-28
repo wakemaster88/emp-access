@@ -2,11 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 
 /**
+ * Zahlen aus einem Payload-Feld einsammeln und dabei in bekannt und unbekannt
+ * trennen. Nimmt einzelne Werte genauso wie Listen, weil emp-control je Feld
+ * beides schickt (`areaId` und `areaIds`).
+ */
+function collectIds(
+  value: unknown,
+  valid: Set<number>,
+  known: number[],
+  unknown: number[],
+): void {
+  const items = Array.isArray(value) ? value : value != null ? [value] : [];
+  for (const raw of items) {
+    const n = Number(raw);
+    if (!Number.isInteger(n)) continue;
+    (valid.has(n) ? known : unknown).push(n);
+  }
+}
+
+/**
  * Webhook für emp-control: Mitarbeiter per POST übermitteln.
  * Auth: Header "Authorization: Bearer <webhookSecret>" oder "X-Webhook-Secret: <webhookSecret>".
- * Body: { "employees": [ { "id", "firstName", "lastName", "rfidCode"|"cardId", "contractStart", "contractEnd", "active", "areaId"|"areaIds"|"resourceIds" } ] }
+ * Body: { "employees": [ { "id", "firstName", "lastName", "rfidCode"|"cardId", "contractStart", "contractEnd", "active", "areaId"|"areaIds"|"resourceIds", "deviceId"|"deviceIds" } ] }
  * areaId  = einzelne AccessArea-ID
  * areaIds / resourceIds = Array von AccessArea-IDs (Mitarbeiter hat Zugang zu mehreren Bereichen)
+ * deviceId / deviceIds = einzelne Geraete, die dieser Mitarbeiter zusaetzlich
+ *   bedienen darf – gedacht fuer den Fall, dass jemand genau eine Tuer braucht,
+ *   ohne dafuer einen eigenen Bereich anzulegen. Wirkt additiv zu den Bereichen
+ *   und gilt in der Mitarbeiter-App wie am RFID-Leser. IDs kommen aus
+ *   `GET /api/devices`.
  */
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -46,6 +70,12 @@ export async function POST(request: NextRequest) {
   const validAreaIds = new Set(
     (await db.accessArea.findMany({ where: { accountId }, select: { id: true } })).map((a) => a.id)
   );
+  // Auch abgeschaltete Geraete zaehlen als gueltig: Die Zuweisung darf schon
+  // stehen, bevor ein Geraet in Betrieb geht. Ob es tatsaechlich erscheint,
+  // entscheidet spaeter `isActive` beim Auflesen der Zugriffsrechte.
+  const validDeviceIds = new Set(
+    (await db.device.findMany({ where: { accountId }, select: { id: true } })).map((d) => d.id)
+  );
 
   let body: unknown;
   try {
@@ -66,6 +96,13 @@ export async function POST(request: NextRequest) {
 
   let created = 0;
   let updated = 0;
+  /**
+   * IDs, die emp-control geschickt hat, die es hier aber nicht gibt. Sie werden
+   * uebersprungen statt den ganzen Aufruf abzulehnen – aber gemeldet: Sonst
+   * fehlt einem Mitarbeiter stillschweigend die Freigabe, und niemand erfaehrt
+   * warum.
+   */
+  const unknown: { employeeId: string; areaIds?: number[]; deviceIds?: number[] }[] = [];
 
   for (const emp of employees) {
     const id = emp.id ?? emp.employeeId;
@@ -74,22 +111,36 @@ export async function POST(request: NextRequest) {
     // Bereiche (alle moeglichen Aliase mergen). Leere Liste bedeutet
     // "Webhook hat keine Areas mitgeschickt" - dann lassen wir die
     // bestehenden Bereiche stehen, statt sie zu loeschen (vgl. rfidCode).
-    const rawIds: number[] = [];
-    if (Array.isArray(emp.areaIds)) {
-      for (const a of emp.areaIds) if (validAreaIds.has(Number(a))) rawIds.push(Number(a));
-    }
-    if (Array.isArray(emp.resourceIds)) {
-      for (const a of emp.resourceIds) if (validAreaIds.has(Number(a))) rawIds.push(Number(a));
-    }
-    if (emp.areaId != null && validAreaIds.has(Number(emp.areaId))) rawIds.push(Number(emp.areaId));
-    if (emp.accessAreaId != null && validAreaIds.has(Number(emp.accessAreaId))) rawIds.push(Number(emp.accessAreaId));
-    const areaIds = [...new Set(rawIds)];
+    const areaKnown: number[] = [];
+    const areaUnknown: number[] = [];
+    collectIds(emp.areaIds, validAreaIds, areaKnown, areaUnknown);
+    collectIds(emp.resourceIds, validAreaIds, areaKnown, areaUnknown);
+    collectIds(emp.areaId, validAreaIds, areaKnown, areaUnknown);
+    collectIds(emp.accessAreaId, validAreaIds, areaKnown, areaUnknown);
+    const areaIds = [...new Set(areaKnown)];
     const primaryAreaId = areaIds[0] ?? null;
     const areasInPayload =
       Array.isArray(emp.areaIds)
       || Array.isArray(emp.resourceIds)
       || emp.areaId != null
       || emp.accessAreaId != null;
+
+    // Einzelne Geraete, zusaetzlich zu den Bereichen. Dieselbe Regel wie oben:
+    // Feld fehlt = bestehende Zuweisung bleibt, leere Liste = alle entfernen.
+    const deviceKnown: number[] = [];
+    const deviceUnknown: number[] = [];
+    collectIds(emp.deviceIds, validDeviceIds, deviceKnown, deviceUnknown);
+    collectIds(emp.deviceId, validDeviceIds, deviceKnown, deviceUnknown);
+    const deviceIds = [...new Set(deviceKnown)];
+    const devicesInPayload = Array.isArray(emp.deviceIds) || emp.deviceId != null;
+
+    if (areaUnknown.length > 0 || deviceUnknown.length > 0) {
+      unknown.push({
+        employeeId: String(id),
+        ...(areaUnknown.length > 0 ? { areaIds: [...new Set(areaUnknown)] } : {}),
+        ...(deviceUnknown.length > 0 ? { deviceIds: [...new Set(deviceUnknown)] } : {}),
+      });
+    }
 
     const uuid = `emp-${id}`;
     const existing = await db.ticket.findFirst({ where: { uuid } });
@@ -180,6 +231,17 @@ export async function POST(request: NextRequest) {
         });
       }
     }
+
+    // Direkt zugewiesene Geraete, nach derselben Regel wie die Bereiche.
+    if (devicesInPayload) {
+      await db.ticketDevice.deleteMany({ where: { ticketId } });
+      if (deviceIds.length > 0) {
+        await db.ticketDevice.createMany({
+          data: deviceIds.map((deviceId) => ({ ticketId, deviceId })),
+          skipDuplicates: true,
+        });
+      }
+    }
   }
 
   await prisma.apiConfig.update({
@@ -187,5 +249,10 @@ export async function POST(request: NextRequest) {
     data: { lastUpdate: new Date() },
   });
 
-  return NextResponse.json({ ok: true, created, updated });
+  return NextResponse.json({
+    ok: true,
+    created,
+    updated,
+    ...(unknown.length > 0 ? { unknown } : {}),
+  });
 }
