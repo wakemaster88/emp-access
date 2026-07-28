@@ -43,7 +43,8 @@ import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import { LockerOverlay } from "@/components/checkin/locker-overlay";
 import { LostItemsOverlay } from "@/components/checkin/lost-items-overlay";
-import { Lock, LockOpen, PackageSearch } from "lucide-react";
+import { BulkOverlay } from "@/components/checkin/bulk-overlay";
+import { Lock, LockOpen, PackageSearch, Layers } from "lucide-react";
 import { printPdfBlob, downloadBlob, type PrintResult } from "@/lib/print-tickets";
 
 interface TicketExtra {
@@ -468,6 +469,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [addTicketOpen, setAddTicketOpen] = useState(false);
   const [lockerOverlayOpen, setLockerOverlayOpen] = useState(false);
   const [lostItemsOverlayOpen, setLostItemsOverlayOpen] = useState(false);
+  const [bulkOverlayOpen, setBulkOverlayOpen] = useState(false);
   const [addTicketPrefill, setAddTicketPrefill] = useState<{
     firstName?: string;
     lastName?: string;
@@ -758,6 +760,10 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // Waehrend der Serien-Erstellung gehoeren alle Scans dem Overlay. Ohne
+      // diese Sperre wuerde ein Baendchen, das gescannt wird waehrend der
+      // Fokus gerade nicht im Scanfeld liegt, hier als Ticket-Suche landen.
+      if (bulkOverlayOpen) return;
 
       if (e.key === "Enter") {
         const code = scanBufferRef.current.trim();
@@ -782,7 +788,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [bulkOverlayOpen]);
 
   const handleCheckin = useCallback(async (ticketId: number) => {
     setCheckingIn(ticketId);
@@ -1411,6 +1417,14 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <span className="hidden xl:inline">Ticket</span>
           </button>
           <button
+            onClick={() => setBulkOverlayOpen(true)}
+            title="Mehrere Tickets oder Bändchen auf einmal anlegen"
+            className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+          >
+            <Layers className="h-5 w-5 shrink-0" />
+            <span className="hidden xl:inline">Serie</span>
+          </button>
+          <button
             onClick={() => { setAnnouncementError(null); setAnnouncementOpen(true); }}
             title="Hinweis an die Live-Monitore schicken"
             className={cn(
@@ -1932,6 +1946,19 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         <LostItemsOverlay
           token={token}
           onClose={() => setLostItemsOverlayOpen(false)}
+        />
+      )}
+
+      {/* Serien-Erstellung: Bons und RFID-Bändchen */}
+      {bulkOverlayOpen && (
+        <BulkOverlay
+          token={token}
+          accountName={data?.accountName ?? ""}
+          areas={data?.areas ?? []}
+          services={data?.services ?? []}
+          subscriptions={data?.allSubscriptions ?? []}
+          onClose={() => setBulkOverlayOpen(false)}
+          onCreated={() => { refreshRef.current?.(); }}
         />
       )}
 

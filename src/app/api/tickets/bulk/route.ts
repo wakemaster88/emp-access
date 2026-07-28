@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { createTicketBulk } from "@/lib/ticket-bulk";
 import { ticketBulkCreateSchema } from "@/lib/validators";
 
 /**
@@ -10,18 +11,10 @@ import { ticketBulkCreateSchema } from "@/lib/validators";
  * Alle Tickets aus einem POST-Request teilen sich eine `bulkBatchId`
  * (UUID). Damit kann das Backoffice spaeter die Bulks listen und
  * komplett erneut drucken.
+ *
+ * Die eigentliche Erstellung liegt in `src/lib/ticket-bulk.ts` – der
+ * Shop-Monitor nutzt sie ueber seine eigene Token-Route mit.
  */
-
-function randomUuid(): string {
-  return typeof globalThis.crypto?.randomUUID === "function"
-    ? globalThis.crypto.randomUUID()
-    : `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
-}
-
-function randomCode(prefix: string): string {
-  const compact = randomUuid().replace(/-/g, "").slice(0, 8).toUpperCase();
-  return `${prefix}-${compact}`;
-}
 
 interface BulkOverview {
   id: string;
@@ -178,233 +171,13 @@ export async function POST(request: NextRequest) {
   }
 
   const { db, accountId } = session;
-  const data = parsed.data;
-  const codePrefix = (data.codePrefix ?? "BLK").toUpperCase();
-  const namePrefix = data.namePrefix?.trim() || "Ticket";
-  const bulkBatchId = randomUuid();
-
-  // RFID-Modus: ein Ticket pro gescanntem Code, kein Barcode/QR, kein Druck.
-  // Doppelte Eingaben innerhalb des Batches werden hier dedupliziert
-  // (Whitespace-getrimmt). count ergibt sich daraus.
-  const rfidCodes: string[] = [];
-  const isRfidMode = Array.isArray(data.rfidCodes) && data.rfidCodes.length > 0;
-  if (isRfidMode) {
-    const seen = new Set<string>();
-    for (const c of data.rfidCodes!) {
-      const trimmed = c.trim();
-      if (!trimmed) continue;
-      if (seen.has(trimmed)) continue;
-      seen.add(trimmed);
-      rfidCodes.push(trimmed);
-    }
-    if (rfidCodes.length === 0) {
-      return NextResponse.json(
-        { error: { formErrors: ["Keine gueltigen RFID-Codes uebergeben."] } },
-        { status: 400 },
-      );
-    }
-  }
-
-  const totalCount = isRfidMode ? rfidCodes.length : data.count!;
-
-  // Bei RFID-Mode pruefen wir vorab, ob einer der Codes schon einem Ticket
-  // im Account zugeordnet ist (rfidCode/qrCode/barcode). So vermeiden wir
-  // halb-erstellte Bulks bei Konflikten.
-  if (isRfidMode) {
-    const conflicts = await db.ticket.findMany({
-      where: {
-        accountId: accountId!,
-        OR: [
-          { rfidCode: { in: rfidCodes } },
-          { qrCode: { in: rfidCodes } },
-          { barcode: { in: rfidCodes } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        rfidCode: true,
-        qrCode: true,
-        barcode: true,
-        ticketTypeName: true,
-      },
-    });
-    if (conflicts.length > 0) {
-      const conflictCodes = new Set<string>();
-      const conflictTickets = conflicts.map((c) => {
-        const hit =
-          (c.rfidCode && rfidCodes.includes(c.rfidCode) && c.rfidCode) ||
-          (c.qrCode && rfidCodes.includes(c.qrCode) && c.qrCode) ||
-          (c.barcode && rfidCodes.includes(c.barcode) && c.barcode) ||
-          "";
-        if (hit) conflictCodes.add(hit);
-        return {
-          id: c.id,
-          name: c.name,
-          ticketTypeName: c.ticketTypeName,
-          code: hit,
-        };
-      });
-      const codesList = [...conflictCodes].slice(0, 5).join(", ");
-      const more =
-        conflictCodes.size > 5 ? ` (+${conflictCodes.size - 5} weitere)` : "";
-      return NextResponse.json(
-        {
-          error: {
-            formErrors: [
-              `${conflictCodes.size} RFID-Code(s) sind bereits anderen Tickets zugeordnet: ${codesList}${more}.`,
-            ],
-            code: "CODE_CONFLICT",
-            conflictCodes: [...conflictCodes],
-            conflictTickets,
-          },
-        },
-        { status: 409 },
-      );
-    }
-  }
-
-  let serviceAreaIds: number[] = [];
-  if (data.serviceId) {
-    const svcAreas = await db.serviceArea.findMany({
-      where: { serviceId: data.serviceId },
-      select: { accessAreaId: true },
-    });
-    serviceAreaIds = svcAreas.map((sa: { accessAreaId: number }) => sa.accessAreaId);
-  }
-
-  const startDate = data.startDate ? new Date(data.startDate) : undefined;
-  const endDate = data.endDate ? new Date(data.endDate) : undefined;
-
-  let accessAreaName: string | null = null;
-  if (data.accessAreaId) {
-    const area = await db.accessArea.findFirst({
-      where: { id: data.accessAreaId, accountId: accountId! },
-      select: { name: true },
-    });
-    accessAreaName = area?.name ?? null;
-  }
-
-  const created: Array<{
-    id: number;
-    name: string;
-    barcode: string;
-    qrCode: string | null;
-    rfidCode: string | null;
-    ticketTypeName: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    slotStart: string | null;
-    slotEnd: string | null;
-    accessAreaId: number | null;
-    accessAreaName: string | null;
-    validityType: string;
-    validityDurationMinutes: number | null;
-  }> = [];
-
-  for (let i = 0; i < totalCount; i++) {
-    const rfid = isRfidMode ? rfidCodes[i] : null;
-    // RFID-Bulk: Name = "Praefix CODE" (z. B. "Baendchen ABC123"), wie vom
-    // Nutzer gewuenscht. Kein Auto-Counter, weil der Code als Identifier
-    // schon eindeutig ist.
-    const fallbackName = isRfidMode
-      ? `${namePrefix} ${rfid}`
-      : `${namePrefix} ${i + 1}`;
-    const name = data.names?.[i]?.trim() || fallbackName;
-
-    let attempts = 0;
-    let inserted: Awaited<ReturnType<typeof db.ticket.create>> | null = null;
-    while (attempts < 5 && inserted == null) {
-      attempts++;
-      try {
-        inserted = await db.ticket.create({
-          data: {
-            name,
-            // PRINT-Bulk: zufaelliger eindeutiger Barcode + QR.
-            // RFID-Bulk: kein Barcode/QR, dafuer rfidCode.
-            ...(isRfidMode
-              ? { rfidCode: rfid }
-              : (() => {
-                  const code = randomCode(codePrefix);
-                  return { barcode: code, qrCode: code };
-                })()),
-            startDate,
-            endDate,
-            accessAreaId: data.accessAreaId ?? undefined,
-            subscriptionId: data.subscriptionId ?? undefined,
-            serviceId: data.serviceId ?? undefined,
-            status: "VALID",
-            ticketTypeName: data.ticketTypeName ?? undefined,
-            validityType: data.validityType ?? "DATE_RANGE",
-            slotStart: data.slotStart ?? undefined,
-            slotEnd: data.slotEnd ?? undefined,
-            validityDurationMinutes: data.validityDurationMinutes ?? undefined,
-            bulkBatchId,
-            accountId: accountId!,
-            ...(serviceAreaIds.length > 0
-              ? {
-                  ticketAreas: {
-                    create: serviceAreaIds.map((areaId) => ({ accessAreaId: areaId })),
-                  },
-                }
-              : {}),
-          },
-        });
-      } catch (e) {
-        // Unique-Konflikt → in PRINT-Mode erneut versuchen mit neuem Code.
-        // In RFID-Mode hatten wir den Konflikt vorab gecheckt; falls hier
-        // doch noch einer auftritt (Race), abbrechen statt endlos retryen.
-        const msg = e instanceof Error ? e.message : "";
-        const isUnique = msg.includes("Unique") || msg.includes("unique");
-        if (!isUnique) throw e;
-        if (isRfidMode) {
-          return NextResponse.json(
-            {
-              error: {
-                formErrors: [
-                  `RFID-Code "${rfid}" wurde zwischenzeitlich vergeben. Bitte erneut versuchen.`,
-                ],
-                code: "CODE_CONFLICT",
-                conflictCodes: [rfid],
-              },
-              createdCount: created.length,
-            },
-            { status: 409 },
-          );
-        }
-      }
-    }
-
-    if (!inserted) {
-      return NextResponse.json(
-        {
-          error: "Bulk-Erstellung fehlgeschlagen: Konnten keine eindeutigen Codes erzeugen.",
-          createdCount: created.length,
-        },
-        { status: 500 },
-      );
-    }
-
-    created.push({
-      id: inserted.id,
-      name: inserted.name,
-      barcode: inserted.barcode ?? "",
-      qrCode: inserted.qrCode,
-      rfidCode: inserted.rfidCode,
-      ticketTypeName: inserted.ticketTypeName,
-      startDate: inserted.startDate?.toISOString() ?? null,
-      endDate: inserted.endDate?.toISOString() ?? null,
-      slotStart: inserted.slotStart,
-      slotEnd: inserted.slotEnd,
-      accessAreaId: inserted.accessAreaId,
-      accessAreaName,
-      validityType: inserted.validityType,
-      validityDurationMinutes: inserted.validityDurationMinutes,
-    });
+  const result = await createTicketBulk(db, accountId!, parsed.data);
+  if (!result.ok) {
+    return NextResponse.json(result.body, { status: result.status });
   }
 
   return NextResponse.json(
-    { tickets: created, bulkBatchId, kind: isRfidMode ? "RFID" : "PRINT" },
+    { tickets: result.tickets, bulkBatchId: result.bulkBatchId, kind: result.kind },
     { status: 201 },
   );
 }
