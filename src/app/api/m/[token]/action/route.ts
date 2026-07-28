@@ -4,6 +4,7 @@ import {
   triggerDeviceAction,
   isValidDeviceAction,
   isActionAllowedForDevice,
+  deviceSendsRemoteCommand,
 } from "@/lib/device-open";
 import { loadEmployeeByMobileToken } from "@/lib/employee-access";
 
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     );
   }
 
-  // Geraet vollstaendig laden (nukiSmartlockId, shellyId, ipAddress) - wird
+  // Geraet vollstaendig laden (Schloss-Kennungen, shellyId, ipAddress) - wird
   // von `triggerDeviceAction` benoetigt. `category` und die Cover-Kanaele
   // entscheiden, ob ein Shelly als Schalter oder als Antrieb geschaltet wird.
   const fullDevice = await prisma.device.findFirst({
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       coverDownChannel: true,
       coverRuntimeSec: true,
       nukiSmartlockId: true,
+      loqedLockId: true,
       gardenaServiceId: true,
       gardenaConfigId: true,
       pumpDeviceId: true,
@@ -99,6 +101,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   const db = tenantClient(profile.accountId);
   let task = 0;
   let sent = false;
+  let actionError: string | undefined;
   try {
     const res = await triggerDeviceAction(
       db,
@@ -108,6 +111,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     );
     task = res.task;
     sent = res.sent;
+    actionError = res.error;
   } catch (err) {
     await prisma.scan.create({
       data: {
@@ -124,18 +128,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
   // Scan-Log: GRANTED, wenn die Aktion versendet wurde oder kein Remote-
   // Versand noetig war (Pi setzt nur task=1, kein "sent"-Signal).
-  const isRemoteDevice = fullDevice.type === "SHELLY" || fullDevice.type === "NUKI_SMARTLOCK";
+  const isRemoteDevice = deviceSendsRemoteCommand(fullDevice.type);
   const result = isRemoteDevice ? (sent ? "GRANTED" : "DENIED") : "GRANTED";
+  // Der Grund gehoert in den Verlauf. Ein blankes "Remote-Fehler" laesst
+  // hinterher niemanden erkennen, ob das Geraet stumm war oder gar keinen
+  // Befehl annimmt.
+  const note = isRemoteDevice && !sent
+    ? `PWA ${action} fehlgeschlagen: ${actionError ?? "Gerät antwortete nicht"}`.slice(0, 250)
+    : `PWA ${action}${isRemoteDevice ? " ok" : ""}`;
   await prisma.scan.create({
     data: {
       accountId: profile.accountId,
       deviceId: fullDevice.id,
       ticketId: profile.id,
       code: `mobile:${profile.id}:${action}`,
-      note: `PWA ${action}${isRemoteDevice ? (sent ? " ok" : " - Remote-Fehler") : ""}`,
+      note,
       result,
     },
   });
+
+  // Bisher meldete die App auch dann Erfolg, wenn der Befehl nie ankam –
+  // deshalb hat es am Technikraum niemand gemerkt und immer wieder gedrueckt.
+  if (isRemoteDevice && !sent) {
+    return NextResponse.json(
+      { error: actionError ?? "Gerät nicht erreichbar – der Befehl kam nicht an." },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json({
     ok: true,

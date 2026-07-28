@@ -4,6 +4,7 @@ import {
   triggerDeviceAction,
   isValidDeviceAction,
   isActionAllowedForDevice,
+  deviceSendsRemoteCommand,
 } from "@/lib/device-open";
 
 function hasApiToken(request: NextRequest) {
@@ -61,10 +62,7 @@ export async function POST(
     { seconds },
   );
 
-  const hasRemoteAction =
-    existing.type === "SHELLY" ||
-    existing.type === "NUKI_SMARTLOCK" ||
-    existing.type === "GARDENA_VALVE";
+  const hasRemoteAction = deviceSendsRemoteCommand(existing.type);
   return NextResponse.json({
     ok: true,
     task,

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle, DoorOpen, ToggleRight, RotateCcw, Loader2, Pencil,
-  Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock,
+  Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock, LockOpen,
   Droplets, Square, Battery, BatteryLow, ArrowUpFromLine, ArrowDownToLine,
   Settings2,
 } from "lucide-react";
@@ -125,6 +125,13 @@ const NUKI_ACTIONS = [
   { key: "open",       label: "Öffnen",      icon: DoorOpen, base: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
   { key: "deactivate", label: "Abschließen", icon: Lock,     base: "bg-slate-700 hover:bg-slate-800 text-white",     activeTask: 3 },
 ];
+// LOQED: drei echte Riegelzustände. "Entriegeln" ist die Tagverriegelung –
+// Tür zu, aber von innen per Klinke zu öffnen.
+const LOQED_ACTIONS = [
+  { key: "open",       label: "Öffnen",      icon: DoorOpen,  base: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
+  { key: "reset",      label: "Entriegeln",  icon: LockOpen,  base: "bg-amber-500 hover:bg-amber-600 text-white",     activeTask: 0 },
+  { key: "deactivate", label: "Abschließen", icon: Lock,      base: "bg-slate-700 hover:bg-slate-800 text-white",     activeTask: 3 },
+];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -137,6 +144,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
   // Shelly live status
   const isShelly = device.type === "SHELLY";
   const isNuki = device.type === "NUKI_SMARTLOCK";
+  const isLoqed = device.type === "LOQED_SMARTLOCK";
   const isGardena = device.type === "GARDENA_VALVE";
   const isSwitch = device.category === "SCHALTER" || device.category === "BELEUCHTUNG";
   const isSensor = device.category === "SENSOR";
@@ -523,8 +531,10 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
       );
     }
 
-    // Access control (Pi / Nuki)
-    const actions = isNuki
+    // Access control (Pi / Schlösser)
+    const actions = isLoqed
+      ? LOQED_ACTIONS
+      : isNuki
       ? NUKI_ACTIONS
       : isDrehkreuz
         ? ACCESS_ACTIONS

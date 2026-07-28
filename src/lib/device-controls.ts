@@ -71,7 +71,7 @@ export function deviceControlModel(device: ControllableDevice): DeviceControlMod
   if (device.category === "SENSOR") return "SENSOR";
   if (device.type === "AUDIO_PLAYER" || device.category === "AUDIO") return "AUDIO";
   if (isCoverDevice(device)) return "COVER";
-  if (device.type === "NUKI_SMARTLOCK") return "LOCK";
+  if (device.type === "NUKI_SMARTLOCK" || device.type === "LOQED_SMARTLOCK") return "LOCK";
   if (device.type === "GARDENA_VALVE") return "VALVE";
   if (device.category === "BELEUCHTUNG") return "LIGHT";
   if (device.category === "SCHALTER") return "SWITCH";
@@ -108,6 +108,12 @@ export function deviceControls(device: ControllableDevice): DeviceControl[] {
     case "LOCK":
       return [
         { action: "open", label: "Tür öffnen", role: "primary" },
+        // Ein LOQED hat drei Riegelzustaende. Ohne den mittleren liesse sich
+        // "zu, aber nicht abgeschlossen" nicht herstellen – genau der Zustand,
+        // in dem eine Technikraumtuer normalerweise steht.
+        ...(device.type === "LOQED_SMARTLOCK"
+          ? [{ action: "reset" as const, label: "Entriegeln", role: "secondary" as const }]
+          : []),
         { action: "deactivate", label: "Abschließen", role: "secondary" },
       ];
 

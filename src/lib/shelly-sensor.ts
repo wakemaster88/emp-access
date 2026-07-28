@@ -13,6 +13,7 @@
  * direkt importieren koennen.
  */
 
+import { loqedBoltNeedsAttention, loqedBoltStateLabel } from "./loqed-constants";
 import type { ShellyDeviceStatusMap } from "./shelly-cloud";
 
 export type SensorReadingKind =
@@ -102,22 +103,19 @@ function readContact(status: ShellyDeviceStatusMap): SensorReading | null {
 }
 
 /**
- * Riegelzustand eines Schlosses. Die drei Zustaende eines LOQED bedeuten:
- * `open` aufgeschlossen, `day_lock` zu mit freier Klinke, `night_lock`
- * abgeschlossen.
+ * Riegelzustand eines Schlosses, das ueber die Shelly Cloud mitgelesen wird.
+ * Beschriftung und Bewertung kommen aus `loqed-constants`, damit derselbe
+ * Zustand hier und in der LOQED-Anbindung gleich heisst.
  */
-const LOCK_STATES: Record<string, { value: string; emphasis?: "warn" }> = {
-  open: { value: "offen", emphasis: "warn" },
-  day_lock: { value: "zu (Tagverriegelung)" },
-  night_lock: { value: "abgeschlossen" },
-  unknown: { value: "unbekannt" },
-};
-
 function readLock(status: ShellyDeviceStatusMap): SensorReading | null {
   const bolt = status.bolt_state;
   if (typeof bolt !== "string") return null;
-  const state = LOCK_STATES[bolt] ?? { value: bolt };
-  return { kind: "lock", label: "Riegel", ...state };
+  return {
+    kind: "lock",
+    label: "Riegel",
+    value: loqedBoltStateLabel(bolt),
+    ...(loqedBoltNeedsAttention(bolt) ? { emphasis: "warn" as const } : {}),
+  };
 }
 
 function readBattery(status: ShellyDeviceStatusMap): SensorReading | null {

@@ -131,7 +131,7 @@ function actionsFor(device: MobileDevice): DeviceActions | null {
 }
 
 function deviceIcon(device: MobileDevice) {
-  if (device.type === "NUKI_SMARTLOCK") return KeyRound;
+  if (device.type === "NUKI_SMARTLOCK" || device.type === "LOQED_SMARTLOCK") return KeyRound;
   if (device.category === "DREHKREUZ") return GitMerge;
   if (device.category === "TUER") return DoorOpen;
   if (device.category === "BELEUCHTUNG") return Lightbulb;
@@ -143,7 +143,7 @@ function deviceIcon(device: MobileDevice) {
 }
 
 function categoryMeta(cat: string | null, type: string | null) {
-  if (type === "NUKI_SMARTLOCK") {
+  if (type === "NUKI_SMARTLOCK" || type === "LOQED_SMARTLOCK") {
     return { label: "Smart Locks", accent: "rose", order: 1 };
   }
   switch (cat) {

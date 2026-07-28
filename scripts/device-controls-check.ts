@@ -16,7 +16,10 @@ import {
 } from "../src/lib/device-controls";
 import { isActionAllowedForDevice, isValidDeviceAction } from "../src/lib/device-open";
 
-const TYPES = ["RASPBERRY_PI", "SHELLY", "NUKI_SMARTLOCK", "GARDENA_VALVE", "AUDIO_PLAYER"];
+const TYPES = [
+  "RASPBERRY_PI", "SHELLY", "NUKI_SMARTLOCK", "LOQED_SMARTLOCK",
+  "GARDENA_VALVE", "AUDIO_PLAYER",
+];
 const CATEGORIES = [
   "DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG", "AUDIO",
   "MARKISE", "ROLLTOR", null,
@@ -81,6 +84,8 @@ const cases: Array<[string, { type: string; category: string | null }, string[]]
   ["Tuer", { type: "RASPBERRY_PI", category: "TUER" }, ["open"]],
   ["Schalter", { type: "SHELLY", category: "SCHALTER" }, ["open", "reset"]],
   ["Smart Lock", { type: "NUKI_SMARTLOCK", category: "TUER" }, ["open", "deactivate"]],
+  // Das LOQED hat drei Riegelzustaende, deshalb einen Knopf mehr als ein Nuki.
+  ["LOQED", { type: "LOQED_SMARTLOCK", category: "TUER" }, ["open", "reset", "deactivate"]],
   ["Ventil", { type: "GARDENA_VALVE", category: null }, ["open", "reset"]],
   ["Sensor", { type: "SHELLY", category: "SENSOR" }, []],
   ["Audio-Zone", { type: "AUDIO_PLAYER", category: "AUDIO" }, []],

@@ -20,6 +20,7 @@ import { DeviceDetailClient } from "@/components/devices/device-detail-client";
 import { ScheduleCard } from "@/components/devices/schedule-card";
 import { SystemInfoCard } from "@/components/devices/system-info-card";
 import { NukiStatusCard } from "@/components/devices/nuki-status-card";
+import { LoqedStatusCard } from "@/components/devices/loqed-status-card";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
 
 interface Props {
@@ -151,9 +152,11 @@ export default async function DeviceDetailPage({ params }: Props) {
                         ? "Raspberry Pi – Drehkreuz/Tür"
                         : device.type === "NUKI_SMARTLOCK"
                           ? "Nuki Smart Lock"
-                          : device.type === "GARDENA_VALVE"
-                            ? "GARDENA smart – Ventil/Pumpe"
-                            : "Shelly – Relais"}
+                          : device.type === "LOQED_SMARTLOCK"
+                            ? "LOQED – Türschloss"
+                            : device.type === "GARDENA_VALVE"
+                              ? "GARDENA smart – Ventil/Pumpe"
+                              : "Shelly – Relais"}
                     </p>
                     {device.ipAddress && (
                       <p className="text-xs text-slate-400 font-mono mt-1">{device.ipAddress}</p>
@@ -289,6 +292,19 @@ export default async function DeviceDetailPage({ params }: Props) {
                 : null
             }
             firmware={device.firmware ?? null}
+            lastUpdate={device.lastUpdate?.toISOString() ?? null}
+          />
+        )}
+
+        {/* LOQED – Riegelzustand, Batterie und letztes Ereignis */}
+        {device.type === "LOQED_SMARTLOCK" && (
+          <LoqedStatusCard
+            deviceId={device.id}
+            initialInfo={
+              device.systemInfo && typeof device.systemInfo === "object"
+                ? (device.systemInfo as Parameters<typeof LoqedStatusCard>[0]["initialInfo"])
+                : null
+            }
             lastUpdate={device.lastUpdate?.toISOString() ?? null}
           />
         )}

@@ -1,4 +1,6 @@
 import { nukiAction, NUKI_ACTION } from "./nuki";
+import { loqedSetBoltState } from "./loqed";
+import type { LoqedBoltState } from "./loqed-constants";
 import { gardenaControlValve, gardenaStatusMap } from "./gardena";
 import { logIrrigationRun } from "./irrigation-run-log";
 import { shellySetRelay } from "./shelly-relay";
@@ -48,6 +50,22 @@ export function isValidDeviceAction(action: string): action is DeviceAction {
 }
 
 /**
+ * Geraete, denen EMP den Befehl selbst zuschickt.
+ *
+ * Nur bei ihnen sagt das `sent` aus `triggerDeviceAction` etwas aus: Kam der
+ * Befehl an oder nicht? Ein Raspberry Pi holt sich seinen Auftrag dagegen
+ * selbst ab – dort ist `sent` immer falsch, ohne dass etwas schiefgelaufen ist.
+ */
+export function deviceSendsRemoteCommand(type: string): boolean {
+  return (
+    type === "SHELLY" ||
+    type === "NUKI_SMARTLOCK" ||
+    type === "LOQED_SMARTLOCK" ||
+    type === "GARDENA_VALVE"
+  );
+}
+
+/**
  * Prueft, ob eine Aktion fuer dieses Geraet zulaessig ist. `close`/`stop` gibt
  * es nur bei Antrieben, `emergency` (NOT-AUF) ergibt bei einem Antrieb keinen
  * eindeutigen Sinn – bei einer Markise waere Ausfahren im Sturm sogar falsch.
@@ -73,6 +91,8 @@ interface DeviceForAction {
   coverDownChannel?: number | null;
   coverRuntimeSec?: number | null;
   nukiSmartlockId?: string | null;
+  /// Kennung des Schlosses in der LOQED Integrations-API.
+  loqedLockId?: string | null;
   gardenaServiceId?: string | null;
   /// GARDENA-Verbindung (ApiConfig-ID) fuer dieses Geraet – waehlt bei mehreren
   /// GARDENA-Konten die richtigen Zugangsdaten.
@@ -109,7 +129,7 @@ interface DbLike {
   apiConfig: {
     findFirst: (args: {
       where:
-        | { accountId: number; provider: "SHELLY" | "NUKI" | "GARDENA" }
+        | { accountId: number; provider: "SHELLY" | "NUKI" | "GARDENA" | "LOQED" }
         | { id: number; accountId: number };
     }) => Promise<{ token: string | null; baseUrl: string | null; extraConfig: string | null } | null>;
   };
@@ -244,6 +264,36 @@ export async function triggerDeviceAction(
         : NUKI_ACTION.LOCK;
     const res = await nukiAction(config.token, device.nukiSmartlockId, nukiActionId);
     return { task, sent: res.ok };
+  }
+
+  if (device.type === "LOQED_SMARTLOCK") {
+    if (!device.loqedLockId) {
+      return {
+        task,
+        sent: false,
+        error: "Für dieses Schloss ist keine LOQED-Kennung hinterlegt – bitte unter Einstellungen → LOQED abgleichen.",
+      };
+    }
+    const config = await db.apiConfig.findFirst({ where: { accountId, provider: "LOQED" } });
+    if (!config?.token) {
+      return {
+        task,
+        sent: false,
+        error: "LOQED ist nicht eingerichtet – bitte unter Einstellungen den Zugriffstoken eintragen.",
+      };
+    }
+
+    // open/emergency => Riegel ganz zurueck, die Tuer geht auf.
+    // reset          => Tagverriegelung: zu, aber von innen per Klinke zu oeffnen.
+    // deactivate     => abschliessen.
+    const state: LoqedBoltState =
+      action === "open" || action === "emergency"
+        ? "open"
+        : action === "reset"
+          ? "day_lock"
+          : "night_lock";
+    const res = await loqedSetBoltState(config.token, device.loqedLockId, state);
+    return { task, sent: res.ok, ...(res.error ? { error: res.error } : {}) };
   }
 
   if (device.type !== "SHELLY") return { task, sent: false };

@@ -18,6 +18,11 @@ enum DeviceType {
   NUKI_SMARTLOCK
   GARDENA_VALVE
   AUDIO_PLAYER
+  /// LOQED Touch bzw. Pure – Schloss mit drei Riegelzustaenden (offen,
+  /// Tagverriegelung, abgeschlossen). Laeuft ueber die LOQED Integrations-API,
+  /// NICHT ueber die Shelly Cloud: Die kennt das Schloss zwar und liefert
+  /// seinen Zustand, nimmt aber keine Befehle dafuer an.
+  LOQED_SMARTLOCK
 }
 
 enum DeviceCategory {
@@ -93,6 +98,7 @@ enum ApiProvider {
   SHELLY
   NUKI
   GARDENA
+  LOQED
 }
 
 model Account {
@@ -216,6 +222,13 @@ model Device {
   /// Wird beim Sync aus `GET /smartlock` befuellt; identifiziert das Geraet
   /// fuer `POST /smartlock/{id}/action` und Webhook-Events.
   nukiSmartlockId String?
+  /// LOQED Lock-ID (20-stellige Zeichenfolge, z. B. "QnZk1ldDbpR82jVA47oL").
+  /// Wird beim Sync aus `GET /api/locks/` befuellt; identifiziert das Schloss
+  /// fuer `GET /api/locks/{id}/bolt_state/{zustand}` und Webhook-Events.
+  ///
+  /// Achtung: Steht dasselbe Schloss auch in der Shelly Cloud, tragt es dort
+  /// eine eigene, laengere ID mit Praefix – die beiden sind nicht dasselbe.
+  loqedLockId     String?
   /// GARDENA smart system Service-ID des VALVE-Service (z. B.
   /// "ee5b3996-defe-4903-934a-a33822e85b0c:2"). Identifiziert Ventil bzw.
   /// Pumpe fuer `PUT /v1/command/{serviceId}` und den Status-Abgleich ueber

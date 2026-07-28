@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { coverMotionLabel, type CoverMotion } from "@/lib/cover-constants";
+import { loqedBoltStateLabel } from "@/lib/loqed-constants";
 import type { SensorReading } from "@/lib/shelly-sensor";
 import { SensorReadings } from "./sensor-readings";
 
@@ -84,6 +85,20 @@ function nukiStatus(info: unknown): {
     charging: !!(i.batteryCharging ?? inner.batteryCharging),
     keypadCritical: !!(i.keypadBatteryCritical ?? inner.keypadBatteryCritical),
   };
+}
+
+/**
+ * Riegel und Batterie eines LOQED aus `device.systemInfo`, wie der Abgleich sie
+ * hinterlegt. Ein Wert unter null bedeutet bei LOQED "Schloss offline", nicht
+ * "leer" – deshalb faellt er hier weg statt als 0 % zu erscheinen.
+ */
+function loqedStatus(info: unknown): { bolt: string | null; charge: number | null } {
+  if (!info || typeof info !== "object") return { bolt: null, charge: null };
+  const i = info as Record<string, unknown>;
+  const charge = typeof i.batteryPercentage === "number" && i.batteryPercentage >= 0
+    ? i.batteryPercentage
+    : null;
+  return { bolt: typeof i.boltState === "string" ? i.boltState : null, charge };
 }
 
 interface ShellyStatus {
@@ -248,6 +263,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           const isShelly = device.type === "SHELLY";
           const isPi     = device.type === "RASPBERRY_PI";
           const isNuki   = device.type === "NUKI_SMARTLOCK";
+          const isLoqed  = device.type === "LOQED_SMARTLOCK";
           const isGardena = device.type === "GARDENA_VALVE";
           const isSensor = device.category === "SENSOR";
           const cat      = device.category ? CATEGORY_META[device.category] : null;
@@ -406,6 +422,36 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                   {ns.keypadCritical && (
                     <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 gap-1 text-xs h-5">
                       <KeyRound className="h-3 w-3" /> Keypad
+                    </Badge>
+                  )}
+                </div>
+              );
+            }
+
+            // LOQED-Schloss: Riegelzustand + Batterie
+            if (isLoqed) {
+              const ls = loqedStatus(device.systemInfo);
+              const boltCls =
+                ls.bolt === "night_lock" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                : ls.bolt === "open" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
+              const batCls = ls.charge != null && ls.charge < 15
+                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                : ls.charge != null && ls.charge < 30
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400";
+              const BatIcon = ls.charge != null && ls.charge < 15 ? BatteryWarning
+                : ls.charge != null && ls.charge < 30 ? BatteryLow
+                : Battery;
+              return (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge className={cn("gap-1 text-xs h-5", boltCls)}>
+                    {ls.bolt === "night_lock" ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                    {loqedBoltStateLabel(ls.bolt)}
+                  </Badge>
+                  {ls.charge != null && (
+                    <Badge className={cn("gap-1 text-xs h-5", batCls)}>
+                      <BatIcon className="h-3 w-3" /> {Math.round(ls.charge)}%
                     </Badge>
                   )}
                 </div>

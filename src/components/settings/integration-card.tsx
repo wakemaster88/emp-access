@@ -37,6 +37,34 @@ const SYNC_ENDPOINTS: Record<string, { method: string; url: string }> = {
   ANNY: { method: "POST", url: "/api/integrations/anny" },
   EMP_CONTROL: { method: "GET", url: "/api/integrations/emp-control" },
   NUKI: { method: "POST", url: "/api/integrations/nuki" },
+  LOQED: { method: "POST", url: "/api/integrations/loqed" },
+};
+
+/**
+ * Anbieter, die uns von aussen aufrufen. Fehlt ein Eintrag, zeigt die Karte
+ * keinen Webhook-Abschnitt.
+ */
+const WEBHOOK_INFO: Record<string, { path: string; title: string; hint: string }> = {
+  EMP_CONTROL: {
+    path: "/api/webhook/emp-control",
+    title: "Webhook – Mitarbeiter von emp-control pushen",
+    hint: "emp-control sendet Mitarbeiterdaten per POST an diesen Webhook.",
+  },
+  ANNY: {
+    path: "/api/integrations/anny/webhook",
+    title: "Webhook – Buchungen von anny.co empfangen",
+    hint: "In anny.co diese URL als Webhook eintragen. Bei neuer/geänderter Buchung sendet anny.co automatisch einen POST und EMP legt daraus ein Ticket an oder aktualisiert es.",
+  },
+  NUKI: {
+    path: "/api/integrations/nuki/webhook",
+    title: "Webhook – Tür-Events von Nuki empfangen",
+    hint: "Wird beim Sync automatisch bei Nuki registriert. Bei jedem Lock-/Unlock-Event sendet Nuki einen POST – EMP loggt das als Scan und aktualisiert den Akkustand.",
+  },
+  LOQED: {
+    path: "/api/integrations/loqed/webhook",
+    title: "Webhook – Tür-Events von LOQED empfangen",
+    hint: "Diese URL auf app.loqed.com unter API als ausgehenden Webhook eintragen – LOQED registriert sie nicht selbst. Danach meldet das Schloss jede Riegelbewegung sofort, statt dass EMP nachfragen muss: Der Statusabruf von LOQED ist auf zwölf Anfragen pro Tag begrenzt.",
+  },
 };
 
 const PROVIDER_META: Record<string, ProviderMeta> = {
@@ -89,6 +117,14 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
       token: "Nuki Web API Token (Nuki Web → Account → API)",
     },
   },
+  LOQED: {
+    label: "LOQED",
+    description: "Türschlösser – Öffnen, Entriegeln, Abschließen über die LOQED Integrations-API",
+    color: "bg-lime-600",
+    fields: {
+      token: "Persönlicher Zugriffstoken (integrations.production.loqed.com/personal-access-tokens, LOQED-Konto als Admin)",
+    },
+  },
 };
 
 interface IntegrationCardProps {
@@ -132,19 +168,16 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     : provider === "EMP_CONTROL" ? !!initialData
     : !!initialData?.token;
 
-  const webhookSecret = (provider === "EMP_CONTROL" || provider === "ANNY" || provider === "NUKI") && data.extraConfig
+  const webhook = WEBHOOK_INFO[provider];
+
+  const webhookSecret = webhook && data.extraConfig
     ? (() => { try { const e = JSON.parse(data.extraConfig); return e?.webhookSecret ?? null; } catch { return null; } })()
     : null;
-  const webhookBaseUrl = typeof window !== "undefined"
-    ? provider === "EMP_CONTROL"
-      ? `${window.location.origin}/api/webhook/emp-control`
-      : provider === "ANNY"
-        ? `${window.location.origin}/api/integrations/anny/webhook`
-        : provider === "NUKI"
-          ? `${window.location.origin}/api/integrations/nuki/webhook`
-          : ""
+  const webhookBaseUrl = typeof window !== "undefined" && webhook
+    ? `${window.location.origin}${webhook.path}`
     : "";
-  const webhookUrl = (provider === "ANNY" || provider === "NUKI") && webhookSecret
+  // Bei emp-control steht das Geheimnis nicht in der URL, sondern im Aufruf.
+  const webhookUrl = provider !== "EMP_CONTROL" && webhookSecret
     ? `${webhookBaseUrl}?secret=${webhookSecret}`
     : webhookBaseUrl;
 
@@ -413,6 +446,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   <p><strong>Sync:</strong> Smart Locks → Geräte. <strong>Webhook:</strong> Tür-Events → Scans. Details beim Öffnen.</p>
                 </div>
               )}
+              {provider === "LOQED" && isConfigured && (
+                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  <p><strong>Sync:</strong> Schlösser → Geräte. <strong>Webhook:</strong> Riegelbewegungen → Scans. Details beim Öffnen.</p>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 text-slate-400">
@@ -612,22 +650,10 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               </div>
             )}
 
-            {(provider === "EMP_CONTROL" || provider === "ANNY" || provider === "NUKI") && (
+            {webhook && (
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
-                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                  {provider === "EMP_CONTROL"
-                    ? "Webhook – Mitarbeiter von emp-control pushen"
-                    : provider === "ANNY"
-                      ? "Webhook – Buchungen von anny.co empfangen"
-                      : "Webhook – Tür-Events von Nuki empfangen"}
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-500">
-                  {provider === "ANNY"
-                    ? "In anny.co diese URL als Webhook eintragen. Bei neuer/geänderter Buchung sendet anny.co automatisch einen POST und EMP legt daraus ein Ticket an oder aktualisiert es."
-                    : provider === "NUKI"
-                      ? "Wird beim Sync automatisch bei Nuki registriert. Bei jedem Lock-/Unlock-Event sendet Nuki einen POST – EMP loggt das als Scan und aktualisiert den Akkustand."
-                      : "emp-control sendet Mitarbeiterdaten per POST an diesen Webhook."}
-                </p>
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">{webhook.title}</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-500">{webhook.hint}</p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Label className="text-[11px] text-slate-500 shrink-0">URL</Label>

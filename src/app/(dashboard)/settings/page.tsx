@@ -14,7 +14,7 @@ import { PushCard } from "@/components/settings/push-card";
 import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
 
-const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI"] as const;
+const PROVIDERS = ["ANNY", "WAKESYS", "BINARYTEC", "EMP_CONTROL", "NUKI", "LOQED"] as const;
 
 export const dynamic = "force-dynamic";
 

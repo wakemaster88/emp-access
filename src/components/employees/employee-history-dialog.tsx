@@ -82,7 +82,7 @@ const SOURCE_OPTIONS = [
 
 function deviceIcon(device: HistoryScan["device"]) {
   if (!device) return DoorOpen;
-  if (device.type === "NUKI_SMARTLOCK") return KeyRound;
+  if (device.type === "NUKI_SMARTLOCK" || device.type === "LOQED_SMARTLOCK") return KeyRound;
   if (device.category === "DREHKREUZ") return GitMerge;
   if (device.category === "BELEUCHTUNG") return Lightbulb;
   if (device.category === "SCHALTER") return ToggleRight;

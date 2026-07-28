@@ -144,6 +144,7 @@ export async function PUT(
       shellyId: body.shellyId ?? existing.shellyId,
       shellyAuthKey: body.shellyAuthKey ?? existing.shellyAuthKey,
       nukiSmartlockId: body.nukiSmartlockId ?? existing.nukiSmartlockId,
+      loqedLockId: body.loqedLockId ?? existing.loqedLockId,
       isActive: body.isActive ?? existing.isActive,
       accessIn: body.accessIn ?? existing.accessIn,
       accessOut: body.accessOut ?? existing.accessOut,
