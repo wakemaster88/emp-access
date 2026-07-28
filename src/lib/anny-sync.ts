@@ -40,6 +40,21 @@ function spansMultipleBerlinDays(start: Date | null, end: Date | null): boolean 
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
 const SYNC_WINDOW_DAYS = 60;
+/**
+ * Zeitfenster (Ausstellungsdatum) fuer den Rechnungs-Scan, aus dem die
+ * Zusatzartikel kommen. Ohne Fenster liest der Sync bei jedem Lauf die
+ * komplette Rechnungshistorie und laeuft mit steigender Rechnungszahl
+ * unweigerlich ins Funktions-Timeout.
+ *
+ * Die Rechnung entsteht 1-7 Minuten nach der Bestellung, der Sync laeuft
+ * stuendlich - ein Fenster ab dem letzten erfolgreichen Lauf genuegt also.
+ * Nach einer laengeren Sync-Pause reicht das Fenster entsprechend weiter
+ * zurueck; die Untergrenze deckt den Normalbetrieb mit Puffer ab.
+ */
+const ADDON_INVOICE_WINDOW_MIN_DAYS = 7;
+const ADDON_INVOICE_WINDOW_MAX_DAYS = 45;
+/** Obergrenze fuer den Rechnungs-Scan, auch beim einmaligen Voll-Backfill. */
+const ADDON_INVOICE_PAGE_LIMIT = 60;
 
 interface BookingEntry {
   id: string;
@@ -93,6 +108,10 @@ interface AnnyMapping {
   resources?: string[];
   subscriptions?: string[];
   resourceIds?: Record<string, string>;
+  /// Zeitpunkt, zu dem die Zusatzartikel einmal aus der kompletten
+  /// Rechnungshistorie nachgezogen wurden. Danach genuegt der Scan des
+  /// Zeitfensters, weil aeltere Auftraege ihre Artikel schon am Ticket haben.
+  addOnBackfillAt?: string;
   /// Auto-Pause bei offener/ueberfaelliger Abo-Zahlung. Wenn aktiv, werden Abos
   /// mit einer noch nicht beglichenen (`sent`) Abo-Rechnung, deren Faelligkeit
   /// (`due_date`) um >= `graceDays` ueberschritten ist, automatisch auf PAUSED
@@ -385,6 +404,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   const baseUrl = config.baseUrl?.replace(/\/+$/, "") || DEFAULT_BASE_URL;
   const apiBase = `${baseUrl}/api/v1`;
 
+  let annyConfig: AnnyMapping = {};
+  try {
+    if (config.extraConfig) annyConfig = JSON.parse(config.extraConfig);
+  } catch { /* ignore */ }
+
   const syncCutoff = new Date();
   syncCutoff.setDate(syncCutoff.getDate() - SYNC_WINDOW_DAYS);
   syncCutoff.setHours(0, 0, 0, 0);
@@ -625,32 +649,48 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
    *  erlaubtes `include`) noch am Order aus – `modification_total` bleibt 0.
    *  Die einzige strukturierte Quelle in der Admin-API sind die Positionen der
    *  Auftragsrechnung. Die wird 1–7 Minuten nach der Bestellung ausgestellt,
-   *  steht also auch bei Vorausbuchungen lange vor dem Besuch bereit. */
-  async function fetchAddOnsByOrder(addOnNames: Set<string>): Promise<Map<string, TicketAddOn[]>> {
-    const out = new Map<string, TicketAddOn[]>();
-    if (addOnNames.size === 0) return out;
+   *  steht also auch bei Vorausbuchungen lange vor dem Besuch bereit.
+   *
+   *  `coveredOrders` enthaelt alle Auftraege, zu denen wir in diesem Lauf eine
+   *  Rechnung gesehen haben – auch die ohne Zusatzartikel. Nur fuer die darf der
+   *  Sync das `addOns`-Feld ueberschreiben bzw. leeren; bei allen anderen bleibt
+   *  der gespeicherte Stand stehen, weil "nicht gescannt" nicht "keine Artikel"
+   *  bedeutet.
+   *
+   *  `fullScan` ignoriert das Zeitfenster und liest die komplette Historie –
+   *  einmalig, um Auftraege aus der Zeit vor diesem Feature nachzuziehen. */
+  async function fetchAddOnsByOrder(
+    addOnNames: Set<string>,
+    windowDays: number,
+    fullScan: boolean,
+  ): Promise<{
+    byOrder: Map<string, TicketAddOn[]>;
+    coveredOrders: Set<string>;
+    pagesRead: number;
+    complete: boolean;
+  }> {
+    const byOrder = new Map<string, TicketAddOn[]>();
+    const coveredOrders = new Set<string>();
+    if (addOnNames.size === 0) {
+      return { byOrder, coveredOrders, pagesRead: 0, complete: false };
+    }
 
     const pageSize = 100;
-    const pageLimit = 50;
     const buildUrl = (n: number) => {
       const p = new URLSearchParams({
         include: "items,reference",
+        // Neueste Rechnung zuerst, damit wir am Zeitfenster abbrechen koennen.
+        // ANNY erlaubt hier nur `issued_at` - `sort=-created_at`/`-id` quittiert
+        // die API mit 400.
+        sort: "-issued_at",
         "page[size]": String(pageSize),
         "page[number]": String(n),
       });
       return `${apiBase}/invoices?${p}`;
     };
-    const firstRes = await fetch(buildUrl(1), { headers, signal: AbortSignal.timeout(20000) });
-    if (!firstRes.ok) return out;
-    const firstJson = await firstRes.json();
-    const lastPage: number = firstJson?.meta?.page?.["last-page"] ?? 1;
 
-    // Neueste Rechnungen stehen am Ende der (unsortierten) Liste; `sort` liefert
-    // bei /invoices eine leere Antwort, daher von hinten nach vorne lesen.
-    const pages: number[] = [lastPage];
-    for (let n = lastPage - 1; n >= 1 && pages.length < pageLimit; n--) pages.push(n);
-
-    const collect = (json: unknown) => {
+    /** Sammelt eine Seite ein und liefert das aelteste `issued_at` darin. */
+    const collect = (json: unknown): number | null => {
       const root = (json ?? {}) as Record<string, unknown>;
       const data = Array.isArray(root.data) ? (root.data as Record<string, unknown>[]) : [];
       const included = Array.isArray(root.included) ? (root.included as Record<string, unknown>[]) : [];
@@ -658,10 +698,18 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       for (const inc of included) {
         if (inc.type === "items" && inc.id != null) itemsById.set(String(inc.id), flattenResource(inc));
       }
+      let oldest: number | null = null;
       for (const inv of data) {
+        const attrs = (inv.attributes ?? {}) as Record<string, unknown>;
+        const issued = attrs.issued_at ? Date.parse(String(attrs.issued_at)) : NaN;
+        if (Number.isFinite(issued) && (oldest == null || issued < oldest)) oldest = issued;
+
         const rels = (inv.relationships ?? {}) as Record<string, { data?: unknown }>;
         const ref = rels.reference?.data as { type?: string; id?: string } | undefined;
         if (!ref || ref.type !== "orders" || !ref.id) continue;
+        const orderId = String(ref.id);
+        coveredOrders.add(orderId);
+
         const itemRefs = (rels.items?.data ?? []) as { id?: string }[];
         const addOns: TicketAddOn[] = [];
         for (const ir of itemRefs) {
@@ -679,10 +727,9 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
           else addOns.push({ name: title, quantity: qty, note });
         }
         if (addOns.length === 0) continue;
-        const orderId = String(ref.id);
-        const prev = out.get(orderId);
+        const prev = byOrder.get(orderId);
         if (!prev) {
-          out.set(orderId, addOns);
+          byOrder.set(orderId, addOns);
         } else {
           // Storno-/Nachtragsrechnungen zum selben Order: hoechste Menge gewinnt.
           for (const a of addOns) {
@@ -692,13 +739,30 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
           }
         }
       }
+      return oldest;
     };
 
-    collect(firstJson);
-    const CHUNK = 4;
-    const rest = pages.slice(1);
-    for (let i = 0; i < rest.length; i += CHUNK) {
-      const chunk = rest.slice(i, i + CHUNK);
+    const firstRes = await fetch(buildUrl(1), { headers, signal: AbortSignal.timeout(20000) });
+    if (!firstRes.ok) return { byOrder, coveredOrders, pagesRead: 0, complete: false };
+    const firstJson = await firstRes.json();
+    const lastPage: number = firstJson?.meta?.page?.["last-page"] ?? 1;
+    const cap = Math.min(lastPage, ADDON_INVOICE_PAGE_LIMIT);
+    const cutoffMs = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+
+    let oldestSeen = collect(firstJson);
+    let pagesRead = 1;
+    let stoppedAtWindow = false;
+    let failedPages = 0;
+
+    const CHUNK = 8;
+    let next = 2;
+    while (next <= cap) {
+      if (!fullScan && oldestSeen != null && oldestSeen < cutoffMs) {
+        stoppedAtWindow = true;
+        break;
+      }
+      const chunk: number[] = [];
+      while (chunk.length < CHUNK && next <= cap) chunk.push(next++);
       const responses = await Promise.all(
         chunk.map((n) =>
           fetch(buildUrl(n), { headers, signal: AbortSignal.timeout(20000) })
@@ -706,9 +770,25 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
             .catch(() => null),
         ),
       );
-      for (const j of responses) if (j) collect(j);
+      for (const j of responses) {
+        if (!j) {
+          failedPages++;
+          continue;
+        }
+        pagesRead++;
+        const oldest = collect(j);
+        if (oldest != null && (oldestSeen == null || oldest < oldestSeen)) oldestSeen = oldest;
+      }
     }
-    return out;
+
+    // "complete" nur, wenn wir lueckenlos bis zur aeltesten Rechnung gelesen
+    // haben - sonst darf das Backfill nicht als erledigt vermerkt werden.
+    return {
+      byOrder,
+      coveredOrders,
+      pagesRead,
+      complete: !stoppedAtWindow && failedPages === 0 && lastPage <= cap,
+    };
   }
 
   // --- Bookings: page[size]=500 + parallel pages ---
@@ -743,8 +823,10 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     const remainingPages: number[] = [];
     const cap = Math.min(lastBookingPage, 50);
     for (let n = 2; n <= cap; n++) remainingPages.push(n);
-    // 4er-Chunks parallel, um die anny.co API nicht zu ueberlasten.
-    const CHUNK = 4;
+    // 8er-Chunks parallel. Eine Seite dauert ~4.5s, egal ob 4 oder 8 gleichzeitig
+    // laufen (gemessen: 4 parallel 4.0s, 8 parallel 5.0s, 12 parallel 5.2s) -
+    // mit 8 halbiert sich die Gesamtzeit der Buchungsseiten.
+    const CHUNK = 8;
     for (let i = 0; i < remainingPages.length; i += CHUNK) {
       const chunk = remainingPages.slice(i, i + CHUNK);
       const responses = await Promise.all(
@@ -796,13 +878,24 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   // Zusatzartikel/Verleihmaterial je Auftrag. Braucht den Katalog, um die
   // Add-On-Positionen der Rechnung von den Buchungspositionen zu trennen.
-  const addOnsByOrder = await fetchAddOnsByOrder(addOnNames).catch((err: unknown) => {
+  // Beim ersten Lauf einmal die komplette Rechnungshistorie, danach nur noch
+  // das Zeitfenster - sonst sprengt der Scan das Funktions-Zeitbudget.
+  const addOnFullScan = !annyConfig.addOnBackfillAt;
+  const daysSinceLastSync = config.lastUpdate
+    ? (Date.now() - config.lastUpdate.getTime()) / (24 * 60 * 60 * 1000)
+    : ADDON_INVOICE_WINDOW_MAX_DAYS;
+  const addOnWindowDays = Math.min(
+    ADDON_INVOICE_WINDOW_MAX_DAYS,
+    Math.max(ADDON_INVOICE_WINDOW_MIN_DAYS, Math.ceil(daysSinceLastSync) + 3),
+  );
+  const addOnScan = await fetchAddOnsByOrder(addOnNames, addOnWindowDays, addOnFullScan).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[anny sync] add-ons via invoices failed: ${msg}`);
-    return new Map<string, TicketAddOn[]>();
+    return { byOrder: new Map<string, TicketAddOn[]>(), coveredOrders: new Set<string>(), pagesRead: 0, complete: false };
   });
-  if (addOnsByOrder.size > 0) {
-    console.log(`[anny sync] account=${accountId} ${addOnsByOrder.size} Auftraege mit Zusatzartikeln (${addOnNames.size} Katalogartikel)`);
+  const addOnsByOrder = addOnScan.byOrder;
+  if (addOnScan.pagesRead > 0) {
+    console.log(`[anny sync] account=${accountId} Zusatzartikel: ${addOnsByOrder.size} von ${addOnScan.coveredOrders.size} gescannten Auftraegen, ${addOnScan.pagesRead} Rechnungsseiten${addOnFullScan ? " (Voll-Backfill)" : ` (Fenster ${addOnWindowDays}d)`}, ${addOnNames.size} Katalogartikel`);
   }
 
   for (const raw of resourcesRaw) {
@@ -839,11 +932,6 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       uniqueBookings.push(b);
     }
   }
-
-  let annyConfig: AnnyMapping = {};
-  try {
-    if (config.extraConfig) annyConfig = JSON.parse(config.extraConfig);
-  } catch { /* ignore */ }
 
   const annyLinks = await prisma.annyResourceLink.findMany({
     where: { accountId },
@@ -1057,12 +1145,12 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   }
   const existingByBookingId = new Map<string, typeof existingTickets[number]>();
   if (allBookingIds.size > 0) {
-    const byBidTickets = await prisma.ticket.findMany({
-      where: {
-        accountId,
-        source: "ANNY",
-        OR: [...allBookingIds].map((bid) => ({ uuid: { endsWith: `:${bid}` } })),
-      },
+    // Die Zuordnung lief frueher ueber ein OR aus ~10.000 `endsWith`-Bedingungen
+    // (LIKE '%:<id>'). Das kostete allein ~13s, las am Ende ohnehin die ganze
+    // Tabelle und war der zweite Grund fuers Sync-Timeout. Einmal alle
+    // ANNY-Tickets holen und in JS zuordnen ist rund zehnmal schneller.
+    const annyTickets = await prisma.ticket.findMany({
+      where: { accountId, source: "ANNY" },
       select: {
         id: true, uuid: true, name: true, firstName: true, lastName: true,
         startDate: true, endDate: true, status: true, ticketTypeName: true,
@@ -1072,9 +1160,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       },
       orderBy: { id: "asc" },
     });
-    for (const t of byBidTickets) {
-      const bid = t.uuid?.split(":").pop();
-      if (!bid) continue;
+    for (const t of annyTickets) {
+      const parts = t.uuid?.split(":") ?? [];
+      if (parts.length < 2) continue;
+      const bid = parts[parts.length - 1];
+      if (!bid || !allBookingIds.has(bid)) continue;
       existingByBookingId.set(bid, t);
     }
   }
@@ -1230,6 +1320,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         else groupAddOns.push({ ...a });
       }
     }
+    // Nur wenn der Auftrag im Rechnungs-Scan vorkam, kennen wir seine
+    // Zusatzartikel sicher. Sonst bleibt `addOns` unangetastet, damit ein
+    // Auftrag ausserhalb des Scan-Fensters sein Verleihmaterial nicht verliert.
+    const addOnsKnown =
+      groupAddOns.length > 0 || group.orderIds.some((oid) => addOnScan.coveredOrders.has(oid));
 
     const ticketData = {
       name: group.customerName || `Buchung ${group.entries[0].id}`,
@@ -1246,7 +1341,9 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       extras: group.extras.length > 0 ? JSON.parse(JSON.stringify(group.extras)) : undefined,
       // DbNull statt null: raeumt die Spalte wirklich auf (SQL NULL), sonst
       // schreibt Prisma ein JSON-`null` und "IS NOT NULL" trifft jedes Ticket.
-      addOns: groupAddOns.length > 0 ? JSON.parse(JSON.stringify(groupAddOns)) : Prisma.DbNull,
+      ...(addOnsKnown
+        ? { addOns: groupAddOns.length > 0 ? JSON.parse(JSON.stringify(groupAddOns)) : Prisma.DbNull }
+        : {}),
       annyOrderId: group.orderIds[0] ?? null,
       source: "ANNY" as const,
       accessAreaId,
@@ -1548,6 +1645,12 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     resources: [...discoveredResourceNames].sort(),
     subscriptions: [...discoveredSubscriptionNames].sort(),
     resourceIds: { ...(annyConfig.resourceIds || {}), ...discoveredResourceIds },
+    // Erst vermerken, wenn die Historie wirklich einmal komplett gelesen wurde.
+    ...(annyConfig.addOnBackfillAt
+      ? {}
+      : addOnScan.complete
+        ? { addOnBackfillAt: new Date().toISOString() }
+        : {}),
   };
 
   const syncResult = {

@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncAnnyForAccount } from "@/lib/anny-sync";
 
-export const maxDuration = 60;
+// Voll-Sync, angestossen ueber den Checkin-Monitor. Bewusst niedriger als der
+// Cron (300s): der Endpoint haengt nur an einem Monitor-Token, soll also nicht
+// beliebig lange Funktionslaufzeit binden koennen.
+export const maxDuration = 120;
 
 export async function POST(
   _request: NextRequest,

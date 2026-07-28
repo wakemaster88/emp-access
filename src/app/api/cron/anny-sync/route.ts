@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncAnnyForAccount } from "@/lib/anny-sync";
 
-export const maxDuration = 60;
+// Ein Voll-Sync liest ~11.500 Buchungen (24 API-Seiten) plus Rechnungen und
+// schreibt mehrere Tausend Tickets. Bei 60s lief das regelmaessig ins Timeout,
+// wodurch der Sync mitten im Ticket-Upsert abbrach.
+export const maxDuration = 300;
 
 function verifyCronAuth(request: NextRequest): { ok: true } | { ok: false; status: number; body: object } {
   const secret = process.env.CRON_SECRET?.trim();
@@ -49,8 +52,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Accounts parallel syncen - jeder Sync ist account-isoliert (eigener
-  // Anny-Token, eigene DB-Eintraege). maxDuration=60s, daher reicht die
-  // Parallelitaet locker fuer mehrere Accounts.
+  // Anny-Token, eigene DB-Eintraege).
   const results = await Promise.all(
     configs.map(async (config) => {
       try {

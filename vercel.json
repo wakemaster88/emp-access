@@ -32,6 +32,18 @@
     "src/app/api/cron/**/*.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "src/app/api/cron/anny-sync/route.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
+    "src/app/api/integrations/anny/route.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
+    "src/app/api/checkin/public/[token]/anny-sync/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
     }
   },
   "crons": [

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { syncAnnyForAccount } from "@/lib/anny-sync";
 
-export const maxDuration = 60;
+// Gleiches Zeitbudget wie der Cron - ein manuell ausgeloester Voll-Sync macht
+// dieselbe Arbeit und brach bei 60s mitten im Ticket-Upsert ab.
+export const maxDuration = 300;
 
 export async function POST() {
   const session = await getSessionWithDb();
