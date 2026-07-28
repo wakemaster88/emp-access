@@ -53,6 +53,79 @@ interface TicketExtra {
   quantity: number;
 }
 
+/** In ANNY zugebuchtes Verleihmaterial/Zusatzartikel (Neoprenanzug, Wakeboard,
+ *  Helm, Flex-Option ...). `note` ist der ANNY-Zusatztext, meist die Leihdauer. */
+interface TicketAddOn {
+  name: string;
+  quantity: number;
+  note?: string | null;
+}
+
+/** Artikel, die das Personal am Shop tatsaechlich herausgeben muss. Buchbare
+ *  Optionen wie die Flex-Option sind zwar auch Add-Ons, aber kein Material. */
+function isRentalAddOn(name: string): boolean {
+  return !/flex/i.test(name);
+}
+
+/** Summiert das Verleihmaterial eines Tages je Artikel.
+ *
+ *  Wichtig: `addOns` gehoert dem ANNY-Auftrag, nicht dem einzelnen Ticket. Ein
+ *  Auftrag mit 5 Gaesten erzeugt 5 Tickets, die alle dieselbe Materialliste
+ *  tragen - stumpfes Summieren wuerde die Mengen verfuenffachen. Deshalb wird
+ *  jeder Auftrag nur einmal gezaehlt. Tickets ohne `annyOrderId` (manuell
+ *  angelegt oder Altbestand) zaehlen je Ticket. */
+function aggregateRentalAddOns(tickets: CheckinTicket[]): { name: string; quantity: number }[] {
+  const seenOrders = new Set<string>();
+  const totals = new Map<string, number>();
+  for (const t of tickets) {
+    const addOns = t.addOns;
+    if (!Array.isArray(addOns) || addOns.length === 0) continue;
+    const orderKey = t.annyOrderId ?? `ticket:${t.id}`;
+    if (seenOrders.has(orderKey)) continue;
+    seenOrders.add(orderKey);
+    for (const a of addOns) {
+      if (!a?.name || !isRentalAddOn(a.name)) continue;
+      totals.set(a.name, (totals.get(a.name) ?? 0) + (a.quantity > 0 ? a.quantity : 1));
+    }
+  }
+  return [...totals.entries()]
+    .map(([name, quantity]) => ({ name, quantity }))
+    .sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name, "de"));
+}
+
+/** Verleihmaterial-Bedarf des Tages. Steht ganz oben im Shop-Monitor, damit
+ *  das Personal Neoprenanzuege, Boards und Helme vorbereiten kann, ohne jede
+ *  Ticketkarte einzeln durchzugehen. */
+function RentalOverviewPanel({ tickets }: { tickets: CheckinTicket[] }) {
+  const totals = useMemo(() => aggregateRentalAddOns(tickets), [tickets]);
+  if (totals.length === 0) return null;
+  const bookings = new Set(
+    tickets.filter((t) => Array.isArray(t.addOns) && t.addOns.some((a) => isRentalAddOn(a.name)))
+      .map((t) => t.annyOrderId ?? `ticket:${t.id}`),
+  ).size;
+  return (
+    <div className="rounded-2xl border border-fuchsia-500/25 bg-fuchsia-950/20 px-4 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <PackageSearch className="h-4 w-4 text-fuchsia-400 shrink-0" />
+        <span className="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Verleihmaterial heute</span>
+        <span className="text-[11px] text-slate-500">
+          {bookings} {bookings === 1 ? "Buchung" : "Buchungen"}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {totals.map((t) => (
+          <span
+            key={t.name}
+            className="text-sm bg-fuchsia-500/15 text-fuchsia-100 border border-fuchsia-500/35 px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap"
+          >
+            {t.name} <span className="text-fuchsia-300">×{t.quantity}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface CheckinTicket {
   id: number;
   name: string;
@@ -90,6 +163,11 @@ interface CheckinTicket {
   notes: string | null;
   /** Antworten aus Info-Anfragen (Label -> Wert), z. B. Schuhgroesse/Level. */
   guestInfo: Record<string, string> | null;
+  /** In ANNY zugebuchtes Verleihmaterial. null = nichts zugebucht.
+   *  Gilt fuer den gesamten Auftrag (`annyOrderId`), nicht pro Ticket. */
+  addOns: TicketAddOn[] | null;
+  /** ANNY-Auftrag des Tickets. Mehrere Tickets teilen sich einen Auftrag. */
+  annyOrderId: string | null;
   /** true = Info-Anfrage verschickt, aber noch keine Antwort ("Infos fehlen"). */
   infoPending?: boolean;
   checkedIn: boolean;
@@ -1696,6 +1774,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe monitor-scrollbar">
+
+        {/* Zugebuchtes Verleihmaterial des Tages (aus ANNY). */}
+        <RentalOverviewPanel tickets={dayTickets} />
 
         {/* Slot-Auslastung (ANNY-verknuepfte Services). Wird nur gerendert,
             wenn mindestens ein Service auch tatsaechlich Slots hat - sonst
@@ -4173,6 +4254,7 @@ function TicketCard({
   bundleSize?: number;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
+  const addOns = (ticket.addOns ?? []) as TicketAddOn[];
   const needsPhoto = (ticket.service?.requiresPhoto || ticket.subscription?.requiresPhoto) && !ticket.profileImage;
   const needsRfid = (ticket.service?.requiresRfid || ticket.subscription?.requiresRfid) && !ticket.rfidCode;
   // ANNY-Sync-Status:
@@ -4244,6 +4326,27 @@ function TicketCard({
             {extras.map((ex, i) => (
               <span key={i} className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-md font-medium">
                 {ex.quantity > 1 ? `${ex.quantity}× ` : ""}{ex.name}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* In ANNY zugebuchtes Verleihmaterial. Absichtlich auffaellig, weil das
+            Personal es beim Check-in herausgeben muss. */}
+        {addOns.length > 0 && (
+          <div className="flex gap-1 mt-1 flex-wrap">
+            {addOns.map((a, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "text-[10px] px-1.5 py-0.5 rounded-md font-semibold inline-flex items-center gap-1",
+                  isRentalAddOn(a.name)
+                    ? "bg-fuchsia-500/25 text-fuchsia-200 ring-1 ring-fuchsia-500/40"
+                    : "bg-slate-700/50 text-slate-300",
+                )}
+                title={a.note ? `${a.name} (${a.note})` : a.name}
+              >
+                {isRentalAddOn(a.name) && <PackageSearch className="h-2.5 w-2.5" />}
+                {a.quantity > 1 ? `${a.quantity}× ` : ""}{a.name}
               </span>
             ))}
           </div>
@@ -4587,6 +4690,7 @@ function TicketOverlay({
   bundleParts: BundlePart[];
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
+  const addOns = (ticket.addOns ?? []) as TicketAddOn[];
   const isSub = !!ticket.subscriptionId;
   // Vereinsmitglieder (vereinId) wie Abos behandeln: tagesbezogener Check-in
   // über das checkedIn-Flag, nicht über dauerhaftes REDEEMED.
@@ -4809,6 +4913,32 @@ function TicketOverlay({
               {extras.map((ex, i) => (
                 <span key={i} className="text-sm bg-amber-500/15 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-xl font-medium">
                   {ex.quantity > 1 ? `${ex.quantity}× ` : ""}{ex.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* In ANNY zugebuchtes Verleihmaterial - das gibt das Personal beim
+            Check-in heraus. */}
+        {addOns.length > 0 && (
+          <div className="px-5 py-3 border-b border-slate-800">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+              <PackageSearch className="h-3.5 w-3.5 inline mr-1.5" />Verleihmaterial
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {addOns.map((a, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    "text-sm px-3 py-1.5 rounded-xl font-semibold border",
+                    isRentalAddOn(a.name)
+                      ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-500/40"
+                      : "bg-slate-800/60 text-slate-300 border-slate-700",
+                  )}
+                >
+                  {a.quantity > 1 ? `${a.quantity}× ` : ""}{a.name}
+                  {a.note && <span className="ml-1.5 text-xs font-normal opacity-70">{a.note}</span>}
                 </span>
               ))}
             </div>

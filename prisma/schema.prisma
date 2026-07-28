@@ -367,6 +367,22 @@ model Ticket {
   /// `InfoFormTemplate`. Wird im Check-in-Monitor als Badges angezeigt und
   /// kann dort auch manuell editiert werden. NULL = keine Infos erfasst.
   guestInfo               Json?
+  /// Vom Gast in ANNY zugebuchte Zusatzartikel/Verleihmaterial (Neoprenanzug,
+  /// Wakeboard, Helm, Flex-Option ...) als Array:
+  /// [{"name": "Neoprenanzug", "quantity": 2, "note": "2 Stunden"}]
+  /// ANNY liefert Add-Ons NICHT an der Booking selbst; sie stehen nur als
+  /// Positionen auf der Auftragsrechnung. Der Sync liest sie ueber
+  /// /invoices?include=items,reference und ordnet sie per Order-ID den
+  /// Buchungen zu. Bewusst ein eigenes Feld statt `extras`, weil `extras`
+  /// bereits die Pause-/Zahlungs-Flags als Objekt traegt.
+  /// NULL = keine Zusatzartikel gebucht.
+  addOns                  Json?
+  /// ID des ANNY-Auftrags (Order) dieser Buchung. Ein Auftrag umfasst oft eine
+  /// ganze Buchungsgruppe (Bucher + Begleitpersonen = mehrere Tickets), und
+  /// `addOns` gilt immer fuer den GESAMTEN Auftrag. Ohne diese ID wuerde eine
+  /// Tagessumme das Material je Ticket zaehlen und damit vervielfachen.
+  /// NULL = nicht von ANNY, oder Sync vor diesem Feature.
+  annyOrderId             String?
   accountId               Int
   account                 Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accessArea              AccessArea?          @relation(fields: [accessAreaId], references: [id], onDelete: SetNull)
@@ -396,6 +412,7 @@ model Ticket {
   @@index([accountId, status])
   @@index([accountId, source])
   @@index([accountId, bulkBatchId])
+  @@index([annyOrderId])
 }
 
 model Scan {

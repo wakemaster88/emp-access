@@ -56,8 +56,11 @@ export interface AnnyBooking {
   modifiers?: AnnyLineItem[];
   additional_services?: AnnyLineItem[];
   additionalServices?: AnnyLineItem[];
-  /** Manche Webhook-Payloads liefern Add-Ons unter `order.bookings[].add_ons` */
+  /** Zugehoeriger ANNY-Auftrag. Die `id` verknuepft die Buchung mit den
+   *  Rechnungspositionen und damit mit den gebuchten Zusatzartikeln.
+   *  Manche Webhook-Payloads liefern Add-Ons unter `order.bookings[].add_ons`. */
   order?: {
+    id?: string | number;
     add_ons?: AnnyLineItem[];
     addOns?: AnnyLineItem[];
     modifications?: AnnyLineItem[];

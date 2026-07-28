@@ -62,6 +62,11 @@ export async function GET(
     notes: true,
     // Antworten aus Info-Anfragen (Label -> Wert), Badges im TicketCard.
     guestInfo: true,
+    // In ANNY zugebuchtes Verleihmaterial (Neoprenanzug, Wakeboard, Helm ...).
+    addOns: true,
+    // Auftrag, zu dem `addOns` gehoert. Das Frontend zaehlt das Material je
+    // Auftrag, weil ein Auftrag mehrere Tickets umfasst.
+    annyOrderId: true,
   } as const;
 
   const [

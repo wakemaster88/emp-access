@@ -75,6 +75,7 @@ export function normalizeAnnyBookingItem(
       ["service", "service"],
       ["subscription", "subscription"],
       ["ticket", "ticket"],
+      ["order", "order"],
     ];
     for (const [relKey, prop] of pairs) {
       const resolved = resolveRel(rels[relKey], includedMap);

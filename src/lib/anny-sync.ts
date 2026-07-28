@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
@@ -52,6 +53,15 @@ interface TicketExtra {
   quantity: number;
 }
 
+/// In ANNY zugebuchter Zusatzartikel/Verleihmaterial (Neoprenanzug, Wakeboard,
+/// Helm, Flex-Option ...). `note` ist der ANNY-Zusatztext der Rechnungsposition
+/// (z. B. die Leihdauer "2 Stunden").
+interface TicketAddOn {
+  name: string;
+  quantity: number;
+  note: string | null;
+}
+
 interface BookingGroup {
   key: string;
   entries: BookingEntry[];
@@ -73,6 +83,8 @@ interface BookingGroup {
   endDate: Date | null;
   statuses: string[];
   extras: TicketExtra[];
+  /// ANNY-Order-IDs aller Buchungen dieser Gruppe (fuer die Add-On-Zuordnung).
+  orderIds: string[];
 }
 
 interface AnnyMapping {
@@ -263,7 +275,7 @@ function ticketChanged(
   incoming: Record<string, any>,
 ): boolean {
   const keys = ["name", "firstName", "lastName", "email", "ticketTypeName", "barcode",
-    "status", "accessAreaId", "annyResourceId", "subscriptionId", "serviceId", "qrCode"];
+    "status", "accessAreaId", "annyResourceId", "annyOrderId", "subscriptionId", "serviceId", "qrCode"];
   for (const k of keys) {
     if ((incoming[k] ?? null) !== (existing[k] ?? null)) return true;
   }
@@ -273,7 +285,21 @@ function ticketChanged(
   const eEnd = existing.endDate ? new Date(existing.endDate).getTime() : null;
   const iEnd = incoming.endDate ? new Date(incoming.endDate).getTime() : null;
   if (eEnd !== iEnd) return true;
+  // Zusatzartikel koennen nachtraeglich dazukommen (Rechnung wird erst wenige
+  // Minuten nach der Buchung ausgestellt), muessen also ein Update ausloesen.
+  // Prisma.DbNull/JsonNull und DB-null bedeuten alle "keine Artikel" - ohne
+  // Normalisierung wuerde jeder Sync ein Update fuer jedes Ticket schreiben.
+  if ("addOns" in incoming && !extrasEqual(normalizeJsonNull(existing.addOns), normalizeJsonNull(incoming.addOns))) {
+    return true;
+  }
   return false;
+}
+
+/** Prisma.DbNull / Prisma.JsonNull / null / undefined -> null. */
+function normalizeJsonNull(v: unknown): unknown {
+  if (v == null) return null;
+  if (v === Prisma.DbNull || v === Prisma.JsonNull) return null;
+  return v;
 }
 
 /** Stabiler (key-order-unabhaengiger) Vergleich zweier extras-JSON-Objekte.
@@ -572,9 +598,124 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     return out;
   }
 
+  /** Liest den Add-On-Katalog (/add-ons) und liefert die Artikelnamen.
+   *  Wird gebraucht, um auf der Rechnung die Zusatzartikel-Positionen von den
+   *  Buchungspositionen zu unterscheiden: Buchungspositionen heissen
+   *  "Strandbad (Strandbad - Tageskarte): 12.07.2026 10:00 - 20:00 (CET)",
+   *  Add-On-Positionen exakt wie der Katalogartikel ("Neoprenanzug"). */
+  async function fetchAddOnNames(): Promise<Set<string>> {
+    const raw = await fetchAllPages("add-ons").catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[anny sync] discovery add-ons failed: ${msg}`);
+      return [] as Record<string, unknown>[];
+    });
+    const names = new Set<string>();
+    for (const item of raw) {
+      const a = flattenResource(item);
+      const name = (a.name ?? a.title) as string | undefined;
+      if (name) names.add(name.trim().toLowerCase());
+    }
+    return names;
+  }
+
+  /** Liest /invoices?include=items,reference und liefert je ANNY-Order-ID die
+   *  gebuchten Zusatzartikel.
+   *
+   *  Hintergrund: ANNY gibt Add-Ons weder an der Booking (kein Attribut, kein
+   *  erlaubtes `include`) noch am Order aus – `modification_total` bleibt 0.
+   *  Die einzige strukturierte Quelle in der Admin-API sind die Positionen der
+   *  Auftragsrechnung. Die wird 1–7 Minuten nach der Bestellung ausgestellt,
+   *  steht also auch bei Vorausbuchungen lange vor dem Besuch bereit. */
+  async function fetchAddOnsByOrder(addOnNames: Set<string>): Promise<Map<string, TicketAddOn[]>> {
+    const out = new Map<string, TicketAddOn[]>();
+    if (addOnNames.size === 0) return out;
+
+    const pageSize = 100;
+    const pageLimit = 50;
+    const buildUrl = (n: number) => {
+      const p = new URLSearchParams({
+        include: "items,reference",
+        "page[size]": String(pageSize),
+        "page[number]": String(n),
+      });
+      return `${apiBase}/invoices?${p}`;
+    };
+    const firstRes = await fetch(buildUrl(1), { headers, signal: AbortSignal.timeout(20000) });
+    if (!firstRes.ok) return out;
+    const firstJson = await firstRes.json();
+    const lastPage: number = firstJson?.meta?.page?.["last-page"] ?? 1;
+
+    // Neueste Rechnungen stehen am Ende der (unsortierten) Liste; `sort` liefert
+    // bei /invoices eine leere Antwort, daher von hinten nach vorne lesen.
+    const pages: number[] = [lastPage];
+    for (let n = lastPage - 1; n >= 1 && pages.length < pageLimit; n--) pages.push(n);
+
+    const collect = (json: unknown) => {
+      const root = (json ?? {}) as Record<string, unknown>;
+      const data = Array.isArray(root.data) ? (root.data as Record<string, unknown>[]) : [];
+      const included = Array.isArray(root.included) ? (root.included as Record<string, unknown>[]) : [];
+      const itemsById = new Map<string, Record<string, unknown>>();
+      for (const inc of included) {
+        if (inc.type === "items" && inc.id != null) itemsById.set(String(inc.id), flattenResource(inc));
+      }
+      for (const inv of data) {
+        const rels = (inv.relationships ?? {}) as Record<string, { data?: unknown }>;
+        const ref = rels.reference?.data as { type?: string; id?: string } | undefined;
+        if (!ref || ref.type !== "orders" || !ref.id) continue;
+        const itemRefs = (rels.items?.data ?? []) as { id?: string }[];
+        const addOns: TicketAddOn[] = [];
+        for (const ir of itemRefs) {
+          if (!ir?.id) continue;
+          const item = itemsById.get(String(ir.id));
+          if (!item) continue;
+          const title = String(item.title ?? "").trim();
+          if (!title || !addOnNames.has(title.toLowerCase())) continue;
+          const qty = typeof item.quantity === "number" && item.quantity > 0 ? item.quantity : 1;
+          const note = item.subtitle ? String(item.subtitle).trim() || null : null;
+          // Gleiche Artikel derselben Rechnung addieren (ANNY legt pro
+          // Teilbuchung eine eigene Position an).
+          const existing = addOns.find((x) => x.name === title);
+          if (existing) existing.quantity += qty;
+          else addOns.push({ name: title, quantity: qty, note });
+        }
+        if (addOns.length === 0) continue;
+        const orderId = String(ref.id);
+        const prev = out.get(orderId);
+        if (!prev) {
+          out.set(orderId, addOns);
+        } else {
+          // Storno-/Nachtragsrechnungen zum selben Order: hoechste Menge gewinnt.
+          for (const a of addOns) {
+            const hit = prev.find((x) => x.name === a.name);
+            if (hit) hit.quantity = Math.max(hit.quantity, a.quantity);
+            else prev.push(a);
+          }
+        }
+      }
+    };
+
+    collect(firstJson);
+    const CHUNK = 4;
+    const rest = pages.slice(1);
+    for (let i = 0; i < rest.length; i += CHUNK) {
+      const chunk = rest.slice(i, i + CHUNK);
+      const responses = await Promise.all(
+        chunk.map((n) =>
+          fetch(buildUrl(n), { headers, signal: AbortSignal.timeout(20000) })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+        ),
+      );
+      for (const j of responses) if (j) collect(j);
+    }
+    return out;
+  }
+
   // --- Bookings: page[size]=500 + parallel pages ---
 
-  const bookingsExtra = { include: "customer,resource,service" };
+  // `order` ist noetig, um die Rechnungspositionen (Zusatzartikel) der Buchung
+  // zuordnen zu koennen – ANNY liefert Add-Ons nur ueber die Rechnung.
+  const bookingsExtra = { include: "customer,resource,service,order" };
   const firstBookingsRes = await fetch(
     `${apiBase}/bookings?` + new URLSearchParams({ ...bookingsExtra, "page[size]": "500", "page[number]": "1" }),
     { headers, signal: AbortSignal.timeout(20000) },
@@ -641,7 +782,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     console.warn(`[anny sync] discovery ${kind} failed: ${msg}`);
     return [] as Record<string, unknown>[];
   };
-  const [resourcesRaw, servicesRaw, plansRaw, allPlanSubscriptions] = await Promise.all([
+  const [resourcesRaw, servicesRaw, plansRaw, allPlanSubscriptions, addOnNames] = await Promise.all([
     fetchAllPages("resources").catch(logDiscoveryError("resources")),
     fetchAllPages("services").catch(logDiscoveryError("services")),
     fetchAllPages("plans").catch(logDiscoveryError("plans")),
@@ -650,7 +791,19 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       console.warn(`[anny sync] discovery plan-subscriptions failed: ${msg}`);
       return [] as PlanSubscription[];
     }),
+    fetchAddOnNames(),
   ]);
+
+  // Zusatzartikel/Verleihmaterial je Auftrag. Braucht den Katalog, um die
+  // Add-On-Positionen der Rechnung von den Buchungspositionen zu trennen.
+  const addOnsByOrder = await fetchAddOnsByOrder(addOnNames).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[anny sync] add-ons via invoices failed: ${msg}`);
+    return new Map<string, TicketAddOn[]>();
+  });
+  if (addOnsByOrder.size > 0) {
+    console.log(`[anny sync] account=${accountId} ${addOnsByOrder.size} Auftraege mit Zusatzartikeln (${addOnNames.size} Katalogartikel)`);
+  }
 
   for (const raw of resourcesRaw) {
     const r = flattenResource(raw);
@@ -740,9 +893,11 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     };
 
     const bookingExtras = extractExtras(booking);
+    const orderId = booking.order?.id != null ? String(booking.order.id) : null;
     const existing = groups.get(key);
 
     if (existing) {
+      if (orderId && !existing.orderIds.includes(orderId)) existing.orderIds.push(orderId);
       const isDupeId = existing.entries.some((e) => e.id === entry.id);
       if (!isDupeId) existing.entries.push(entry);
       if (!existing.bookingNumber && booking.number) existing.bookingNumber = booking.number;
@@ -779,6 +934,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         endDate,
         statuses: booking.status ? [booking.status] : [],
         extras: bookingExtras,
+        orderIds: orderId ? [orderId] : [],
       });
     }
   }
@@ -876,7 +1032,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
           startDate: true, endDate: true, status: true, ticketTypeName: true,
           barcode: true, accessAreaId: true, annyResourceId: true,
           subscriptionId: true, serviceId: true,
-          qrCode: true, email: true,
+          qrCode: true, email: true, addOns: true, annyOrderId: true,
         },
       })
     : [];
@@ -912,7 +1068,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         startDate: true, endDate: true, status: true, ticketTypeName: true,
         barcode: true, accessAreaId: true, annyResourceId: true,
         subscriptionId: true, serviceId: true,
-        qrCode: true, email: true,
+        qrCode: true, email: true, addOns: true, annyOrderId: true,
       },
       orderBy: { id: "asc" },
     });
@@ -1064,6 +1220,17 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     const custId = uuid.split(":")[1];
     const custData = custId ? customerDataMap.get(custId) : null;
 
+    // Zusatzartikel des Auftrags. Ein Kombi-Ticket buendelt mehrere Buchungen
+    // desselben Auftrags, deshalb ueber alle Order-IDs der Gruppe sammeln.
+    const groupAddOns: TicketAddOn[] = [];
+    for (const oid of group.orderIds) {
+      for (const a of addOnsByOrder.get(oid) ?? []) {
+        const hit = groupAddOns.find((x) => x.name === a.name);
+        if (hit) hit.quantity = Math.max(hit.quantity, a.quantity);
+        else groupAddOns.push({ ...a });
+      }
+    }
+
     const ticketData = {
       name: group.customerName || `Buchung ${group.entries[0].id}`,
       firstName: group.firstName || null,
@@ -1077,6 +1244,10 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       barcode,
       qrCode: JSON.stringify(group.entries),
       extras: group.extras.length > 0 ? JSON.parse(JSON.stringify(group.extras)) : undefined,
+      // DbNull statt null: raeumt die Spalte wirklich auf (SQL NULL), sonst
+      // schreibt Prisma ein JSON-`null` und "IS NOT NULL" trifft jedes Ticket.
+      addOns: groupAddOns.length > 0 ? JSON.parse(JSON.stringify(groupAddOns)) : Prisma.DbNull,
+      annyOrderId: group.orderIds[0] ?? null,
       source: "ANNY" as const,
       accessAreaId,
       annyResourceId: group.resourceId,
