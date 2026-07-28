@@ -100,9 +100,11 @@ export function BulkOverlay({
   const [duplicateFlash, setDuplicateFlash] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ type: "service" | "subscription"; id: number } | null>(null);
   const [areaId, setAreaId] = useState<number | null>(null);
+  // Am Tresen ist Schneiden der Normalfall – ohne Trennung kommt die Serie als
+  // ein langer Streifen raus. Nur ein ausdrueckliches Abwaehlen wird gemerkt.
   const [cutPerTicket, setCutPerTicket] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(CUT_STORAGE_KEY) === "1";
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem(CUT_STORAGE_KEY) !== "0";
   });
 
   const [loading, setLoading] = useState(false);
