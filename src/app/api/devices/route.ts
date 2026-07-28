@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
-import { availableDeviceActions } from "@/lib/device-open";
+import { withDeviceControlInfo } from "@/lib/device-controls";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -44,11 +44,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  // `actions` sagt Integrationen ohne Kategorie-Wissen, was dieses Gerät
-  // versteht – bei Antrieben eben nicht "open/emergency", sondern Fahrbefehle.
-  return NextResponse.json(
-    devices.map((device) => ({ ...device, actions: availableDeviceActions(device) })),
-  );
+  return NextResponse.json(devices.map(withDeviceControlInfo));
 }
 
 export async function POST(request: NextRequest) {
@@ -98,8 +94,5 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return NextResponse.json(
-    { ...device, actions: availableDeviceActions(device) },
-    { status: 201 },
-  );
+  return NextResponse.json(withDeviceControlInfo(device), { status: 201 });
 }

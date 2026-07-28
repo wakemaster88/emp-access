@@ -60,19 +60,6 @@ export function isActionAllowedForDevice(
   return action in TASK_MAP;
 }
 
-/**
- * Aktionen, die `POST /api/devices/[id]/action` fuer dieses Geraet annimmt.
- * Wird in den API-Antworten mitgeliefert, damit Integrationen nicht aus der
- * Kategorie raten muessen. Antriebe akzeptieren zusaetzlich `deactivate` und
- * `reset` als Synonyme fuer `stop`; ausgewiesen werden die klaren Begriffe.
- */
-export function availableDeviceActions(
-  device: { type: string; category: string | null },
-): DeviceAction[] {
-  if (isCoverDevice(device)) return ["open", "stop", "close"];
-  return ["open", "emergency", "deactivate", "reset"];
-}
-
 interface DeviceForAction {
   id: number;
   type: string;

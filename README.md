@@ -135,10 +135,54 @@ statt Ein/Aus/Toggle die Aktionen Auf, Stopp und Zu zur Auswahl.
 
 - `GET /api/devices` und `GET /api/devices/[id]` liefern bei Antrieben
   zusätzlich `coverUpChannel`, `coverDownChannel` und `coverRuntimeSec`.
-- Beide Endpunkte nennen in `actions`, welche Befehle das jeweilige Gerät
-  annimmt – bei Antrieben `["open","stop","close"]`, sonst die Zutrittsbefehle.
-  So muss eine Integration nicht aus der Kategorie raten.
 - `POST /api/devices/[id]/action` mit `{"action":"close"}` bzw. `"stop"` fährt
   zu oder hält an. Passt die Aktion nicht zum Gerät, antwortet die API mit 400.
 - Antwortet sie mit `"sent": false`, wurde der Befehl angenommen, aber nicht
   zugestellt; das Feld `error` nennt den Grund.
+
+## Geräte über die API steuern
+
+Damit ein fremdes System die richtigen Knöpfe anbieten kann, liefert jedes
+Gerät aus `GET /api/devices` und `GET /api/devices/[id]` seine Bedienung mit:
+
+```json
+{
+  "id": 12, "name": "Markise Terrasse", "type": "SHELLY", "category": "MARKISE",
+  "control": "COVER",
+  "controls": [
+    { "action": "open",  "label": "Ausfahren", "role": "primary" },
+    { "action": "stop",  "label": "Stopp",     "role": "secondary" },
+    { "action": "close", "label": "Einfahren", "role": "secondary" }
+  ],
+  "actions": ["open", "stop", "close"]
+}
+```
+
+- **`control`** ist das Bedienmodell: `DOOR`, `TURNSTILE`, `LOCK`, `SWITCH`,
+  `LIGHT`, `COVER`, `VALVE`, `SENSOR` oder `AUDIO`.
+- **`controls`** sind die Knöpfe in Anzeigereihenfolge – der Hauptbefehl steht
+  vorn (`role: "primary"`), `role: "danger"` markiert Eingriffe wie NOT-AUF.
+  Eine leere Liste heißt: Das Gerät wird nicht über Aktionen gesteuert
+  (Sensor, Audio-Zone).
+- **`actions`** ist die weiter gefasste Liste der Befehle, die der Endpunkt
+  annimmt. Ein Schalter versteht z. B. auch `emergency`, ein Antrieb nimmt
+  `reset` als Synonym für `stop`. Für eine Oberfläche ist `controls` richtig.
+
+Ein Auszug, wie sich die Gerätetypen unterscheiden:
+
+| Gerät | `control` | Knöpfe |
+| --- | --- | --- |
+| Tür (Pi) | `DOOR` | Öffnen |
+| Drehkreuz | `TURNSTILE` | Öffnen, NOT-AUF |
+| Nuki Smart Lock | `LOCK` | Tür öffnen, Abschließen |
+| Shelly-Schalter | `SWITCH` | Einschalten, Ausschalten |
+| Beleuchtung | `LIGHT` | Anschalten, Ausschalten |
+| Markise | `COVER` | Ausfahren, Stopp, Einfahren |
+| Rolltor | `COVER` | Öffnen, Stopp, Schließen |
+| GARDENA-Ventil | `VALVE` | Bewässern, Stopp |
+| Sensor / Audio-Zone | `SENSOR` / `AUDIO` | keine |
+
+Die Zuordnung liegt in `src/lib/device-controls.ts` und wird von der
+Mitarbeiter-PWA und der API gemeinsam genutzt – die App zeigt also genau die
+Knöpfe, die auch die API meldet. `npx tsx scripts/device-controls-check.ts`
+prüft, dass jeder gemeldete Knopf vom Action-Endpunkt angenommen wird.

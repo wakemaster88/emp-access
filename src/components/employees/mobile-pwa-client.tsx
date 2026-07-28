@@ -5,9 +5,14 @@ import {
   DoorOpen, Lock, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
   Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, KeyRound,
   RefreshCw, ChevronDown, Building2, Umbrella, Blinds, Square,
-  ArrowUpFromLine, ArrowDownToLine,
+  ArrowUpFromLine, ArrowDownToLine, Droplets,
 } from "lucide-react";
-import { coverActionLabels, isCoverCategory } from "@/lib/cover-constants";
+import {
+  deviceControlModel,
+  deviceControls,
+  type DeviceControlAction,
+  type DeviceControlModel,
+} from "@/lib/device-controls";
 import { cn } from "@/lib/utils";
 import {
   parseSchedule, DAY_KEYS, DAY_LABELS, hasAnySchedule,
@@ -45,7 +50,7 @@ interface Props {
   profile: MobileProfile;
 }
 
-type ActionKey = "open" | "deactivate" | "reset" | "emergency" | "close" | "stop";
+type ActionKey = DeviceControlAction;
 
 // ─── Action Defs ─────────────────────────────────────────────────────────────
 
@@ -70,87 +75,58 @@ interface DeviceActions {
   secondary?: SecondaryAction[];
 }
 
+/** Symbol je Bedienmodell und Aktion – die Beschriftungen kommen aus der Lib. */
+function controlIcon(
+  model: DeviceControlModel,
+  action: DeviceControlAction,
+): React.ComponentType<{ className?: string }> {
+  if (model === "COVER") {
+    if (action === "open") return ArrowUpFromLine;
+    if (action === "close") return ArrowDownToLine;
+    return Square;
+  }
+  if (model === "SWITCH" || model === "LIGHT") {
+    return action === "open" ? Power : PowerOff;
+  }
+  if (model === "LOCK") return action === "open" ? DoorOpen : Lock;
+  if (model === "VALVE") return action === "open" ? Droplets : Square;
+  if (action === "emergency") return AlertTriangle;
+  return DoorOpen;
+}
+
+const PRIMARY_GRADIENT: Partial<Record<DeviceControlModel, string>> = {
+  SWITCH: "from-amber-400 to-amber-600",
+  LIGHT: "from-amber-400 to-amber-600",
+  VALVE: "from-sky-400 to-sky-600",
+};
+
+/**
+ * Bedienelemente eines Geraets. Welche Aktionen es gibt und wie sie heissen,
+ * legt `src/lib/device-controls.ts` fest – dieselbe Quelle, aus der die API
+ * ihre Angaben speist. Hier kommen nur Symbol und Farbe dazu.
+ */
 function actionsFor(device: MobileDevice): DeviceActions | null {
-  const cat = device.category;
+  const controls = deviceControls(device);
+  if (controls.length === 0) return null;
 
-  if (cat === "SENSOR") return null;
+  const model = deviceControlModel(device);
+  const [primary, ...rest] = controls;
 
-  if (cat === "SCHALTER" || cat === "BELEUCHTUNG") {
-    return {
-      primary: {
-        key: "open",
-        label: cat === "BELEUCHTUNG" ? "Anschalten" : "Ein",
-        icon: Power,
-        gradient: "from-amber-400 to-amber-600",
-      },
-      secondary: [{
-        key: "reset",
-        label: cat === "BELEUCHTUNG" ? "Aus" : "Aus",
-        icon: PowerOff,
-        tone: "neutral",
-      }],
-    };
-  }
-
-  // Antrieb: Auf als Hauptbefehl, Stopp und Zu daneben.
-  if (isCoverCategory(cat)) {
-    const labels = coverActionLabels(cat);
-    return {
-      primary: {
-        key: "open",
-        label: labels.open,
-        icon: ArrowUpFromLine,
-        gradient: "from-emerald-400 to-emerald-600",
-      },
-      secondary: [
-        { key: "stop", label: "Stopp", icon: Square, tone: "neutral" },
-        { key: "close", label: labels.close, icon: ArrowDownToLine, tone: "neutral" },
-      ],
-    };
-  }
-
-  if (device.type === "NUKI_SMARTLOCK") {
-    return {
-      primary: {
-        key: "open",
-        label: "Tür öffnen",
-        icon: DoorOpen,
-        gradient: "from-emerald-400 to-emerald-600",
-      },
-      secondary: [{
-        key: "deactivate",
-        label: "Abschließen",
-        icon: Lock,
-        tone: "neutral",
-      }],
-    };
-  }
-
-  if (cat === "DREHKREUZ") {
-    return {
-      primary: {
-        key: "open",
-        label: "Öffnen",
-        icon: DoorOpen,
-        gradient: "from-emerald-400 to-emerald-600",
-      },
-      secondary: [{
-        key: "emergency",
-        label: "NOT-AUF",
-        icon: AlertTriangle,
-        tone: "danger",
-      }],
-    };
-  }
-
-  // TUER (Pi-Tuer, kein Drehkreuz)
   return {
     primary: {
-      key: "open",
-      label: "Öffnen",
-      icon: DoorOpen,
-      gradient: "from-emerald-400 to-emerald-600",
+      key: primary.action,
+      label: primary.label,
+      icon: controlIcon(model, primary.action),
+      gradient: PRIMARY_GRADIENT[model] ?? "from-emerald-400 to-emerald-600",
     },
+    secondary: rest.length > 0
+      ? rest.map((c) => ({
+          key: c.action,
+          label: c.label,
+          icon: controlIcon(model, c.action),
+          tone: c.role === "danger" ? ("danger" as const) : ("neutral" as const),
+        }))
+      : undefined,
   };
 }
 

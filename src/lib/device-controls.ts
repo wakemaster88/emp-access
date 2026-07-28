@@ -1,0 +1,171 @@
+/**
+ * Welche Bedienelemente gehoeren zu einem Geraet?
+ *
+ * Ein Drehkreuz braucht "Öffnen" und "NOT-AUF", eine Lampe "Anschalten" und
+ * "Aus", eine Markise "Ausfahren/Stopp/Einfahren". Diese Zuordnung lag bisher
+ * nur in den Oberflaechen – fremde Systeme mussten sie aus Typ und Kategorie
+ * nachbauen und lagen bei Antrieben zwangslaeufig daneben.
+ *
+ * Dieses Modul ist die gemeinsame Quelle: Mitarbeiter-PWA und API liefern
+ * dieselben Aktionen in derselben Reihenfolge mit denselben Beschriftungen.
+ *
+ * Bewusst ohne Netzwerk- und Prisma-Code, damit die Oberflaechen es direkt
+ * importieren koennen. Das Ausfuehren liegt in `src/lib/device-open.ts`.
+ */
+
+import { coverActionLabels, isCoverDevice } from "./cover-constants";
+
+/**
+ * Bedienmodell eines Geraets. Sagt einer Integration, wie die Bedienung
+ * grundsaetzlich aussieht – auch wenn sie die Beschriftungen selbst setzt.
+ */
+export type DeviceControlModel =
+  /// Tuer: ein Impuls zum Oeffnen.
+  | "DOOR"
+  /// Drehkreuz: Impuls plus Dauer-Freigabe (NOT-AUF).
+  | "TURNSTILE"
+  /// Smart Lock: oeffnen und abschliessen.
+  | "LOCK"
+  /// Relais: ein und aus.
+  | "SWITCH"
+  /// Beleuchtung – wie SWITCH, nur anders beschriftet.
+  | "LIGHT"
+  /// Antrieb mit zwei Fahrtrichtungen: auf, stopp, zu.
+  | "COVER"
+  /// Bewaesserungsventil: starten und stoppen.
+  | "VALVE"
+  /// Nur Messwerte, nichts zu schalten.
+  | "SENSOR"
+  /// Audio-Zone – wird ueber das Audio-Modul gesteuert, nicht ueber Aktionen.
+  | "AUDIO";
+
+export type DeviceControlAction =
+  | "open"
+  | "close"
+  | "stop"
+  | "emergency"
+  | "deactivate"
+  | "reset";
+
+export interface DeviceControl {
+  /// Wert fuer `POST /api/devices/[id]/action`.
+  action: DeviceControlAction;
+  /// Beschriftung in der Landessprache, passend zum Geraet.
+  label: string;
+  /**
+   * Gewicht in der Bedienung:
+   *  - `primary`   Hauptbefehl, prominent darstellen
+   *  - `secondary` Nebenbefehl
+   *  - `danger`    Eingriff mit Folgen (NOT-AUF haelt das Drehkreuz offen)
+   */
+  role: "primary" | "secondary" | "danger";
+}
+
+export interface ControllableDevice {
+  type: string;
+  category: string | null;
+}
+
+/** Bedienmodell eines Geraets aus Typ und Kategorie ableiten. */
+export function deviceControlModel(device: ControllableDevice): DeviceControlModel {
+  if (device.category === "SENSOR") return "SENSOR";
+  if (device.type === "AUDIO_PLAYER" || device.category === "AUDIO") return "AUDIO";
+  if (isCoverDevice(device)) return "COVER";
+  if (device.type === "NUKI_SMARTLOCK") return "LOCK";
+  if (device.type === "GARDENA_VALVE") return "VALVE";
+  if (device.category === "BELEUCHTUNG") return "LIGHT";
+  if (device.category === "SCHALTER") return "SWITCH";
+  if (device.category === "DREHKREUZ") return "TURNSTILE";
+  return "DOOR";
+}
+
+/**
+ * Die Bedienelemente eines Geraets in Anzeigereihenfolge – der Hauptbefehl
+ * steht immer vorn. Eine leere Liste heisst: Dieses Geraet wird nicht ueber
+ * Aktionen gesteuert (Sensor, Audio-Zone).
+ *
+ * Alle hier genannten Aktionen nimmt `POST /api/devices/[id]/action` fuer das
+ * Geraet auch an. Umgekehrt gilt das nicht: Aus Kompatibilitaetsgruenden
+ * akzeptiert der Endpunkt bei manchen Geraeten mehr, als hier steht (siehe
+ * `availableDeviceActions` in `src/lib/device-open.ts`).
+ */
+export function deviceControls(device: ControllableDevice): DeviceControl[] {
+  switch (deviceControlModel(device)) {
+    case "SENSOR":
+    case "AUDIO":
+      return [];
+
+    case "COVER": {
+      // Bei einer Markise heisst "auf" ausfahren, bei einem Rolltor oeffnen.
+      const labels = coverActionLabels(device.category);
+      return [
+        { action: "open", label: labels.open, role: "primary" },
+        { action: "stop", label: "Stopp", role: "secondary" },
+        { action: "close", label: labels.close, role: "secondary" },
+      ];
+    }
+
+    case "LOCK":
+      return [
+        { action: "open", label: "Tür öffnen", role: "primary" },
+        { action: "deactivate", label: "Abschließen", role: "secondary" },
+      ];
+
+    case "VALVE":
+      return [
+        { action: "open", label: "Bewässern", role: "primary" },
+        { action: "reset", label: "Stopp", role: "secondary" },
+      ];
+
+    case "LIGHT":
+      return [
+        { action: "open", label: "Anschalten", role: "primary" },
+        { action: "reset", label: "Ausschalten", role: "secondary" },
+      ];
+
+    case "SWITCH":
+      return [
+        { action: "open", label: "Einschalten", role: "primary" },
+        { action: "reset", label: "Ausschalten", role: "secondary" },
+      ];
+
+    case "TURNSTILE":
+      return [
+        { action: "open", label: "Öffnen", role: "primary" },
+        // NOT-AUF haelt dauerhaft offen, bis zurueckgesetzt wird.
+        { action: "emergency", label: "NOT-AUF", role: "danger" },
+      ];
+
+    case "DOOR":
+    default:
+      return [{ action: "open", label: "Öffnen", role: "primary" }];
+  }
+}
+
+/**
+ * Aktionen, die `POST /api/devices/[id]/action` fuer dieses Geraet annimmt.
+ *
+ * Bewusst weiter gefasst als `deviceControls`: Ein Schalter versteht auch
+ * `emergency` und `deactivate` (beides schaltet ihn), ein Antrieb nimmt
+ * `deactivate`/`reset` als Synonym fuer `stop`. Fuer die Bedienoberflaeche ist
+ * `deviceControls` die richtige Liste, fuer die Frage "wird mein Aufruf
+ * angenommen?" diese hier.
+ */
+export function availableDeviceActions(device: ControllableDevice): DeviceControlAction[] {
+  if (isCoverDevice(device)) return ["open", "stop", "close"];
+  return ["open", "emergency", "deactivate", "reset"];
+}
+
+/**
+ * Ergaenzt einen Geraetedatensatz um die Steuerungs-Angaben fuer die API.
+ * Damit muss eine Integration weder Kategorie-Tabellen pflegen noch raten,
+ * welche Knoepfe zu einem Geraet gehoeren.
+ */
+export function withDeviceControlInfo<T extends ControllableDevice>(device: T) {
+  return {
+    ...device,
+    control: deviceControlModel(device),
+    controls: deviceControls(device),
+    actions: availableDeviceActions(device),
+  };
+}

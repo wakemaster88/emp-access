@@ -21,8 +21,12 @@ const ENDPOINTS = [
     path: "/api/webhook/utilization?date=YYYY-MM-DD",
     desc: "Auslastung pro Ressource (Tickets am Tag / personLimit); optional &all=1 für alle Bereiche",
   },
-  { method: "GET", path: "/api/devices", desc: "Geräte auflisten; jedes Gerät nennt in actions seine erlaubten Befehle" },
-  { method: "GET", path: "/api/devices/[id]", desc: "Einzelnes Gerät abrufen (inkl. actions)" },
+  {
+    method: "GET",
+    path: "/api/devices",
+    desc: "Geräte auflisten; jedes Gerät nennt in controls seine Bedienknöpfe (Aktion + Beschriftung) und in control sein Bedienmodell",
+  },
+  { method: "GET", path: "/api/devices/[id]", desc: "Einzelnes Gerät abrufen (inkl. control und controls)" },
   {
     method: "POST",
     path: "/api/devices/[id]/action",

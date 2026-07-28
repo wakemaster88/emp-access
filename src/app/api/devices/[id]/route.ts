@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
-import { availableDeviceActions } from "@/lib/device-open";
+import { withDeviceControlInfo } from "@/lib/device-controls";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -40,7 +40,7 @@ export async function GET(
   });
   if (!device) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  return NextResponse.json({ ...device, actions: availableDeviceActions(device) });
+  return NextResponse.json(withDeviceControlInfo(device));
 }
 
 export async function PUT(
@@ -156,7 +156,7 @@ export async function PUT(
     },
   });
 
-  return NextResponse.json({ ...device, actions: availableDeviceActions(device) });
+  return NextResponse.json(withDeviceControlInfo(device));
 }
 
 export async function DELETE(
