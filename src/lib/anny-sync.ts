@@ -48,6 +48,10 @@ interface BookingGroup {
   birthDate: Date | null;
   serviceName: string | null;
   resourceName: string | null;
+  /** ANNY-Ressourcen-ID dieser Buchung. Unterscheidet die Teilbuchungen
+   *  eines Kombi-Tickets (Aquapark vs. Strandbad), die `accessAreaId` nach
+   *  dem Hauptressourcen-Override nicht mehr auseinanderhalten kann. */
+  resourceId: string | null;
   subscriptionName: string | null;
   startDate: Date | null;
   endDate: Date | null;
@@ -243,7 +247,7 @@ function ticketChanged(
   incoming: Record<string, any>,
 ): boolean {
   const keys = ["name", "firstName", "lastName", "email", "ticketTypeName", "barcode",
-    "status", "accessAreaId", "subscriptionId", "serviceId", "qrCode"];
+    "status", "accessAreaId", "annyResourceId", "subscriptionId", "serviceId", "qrCode"];
   for (const k of keys) {
     if ((incoming[k] ?? null) !== (existing[k] ?? null)) return true;
   }
@@ -753,6 +757,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         birthDate: customer?.birth_date ? new Date(customer.birth_date) : null,
         serviceName,
         resourceName,
+        resourceId: resId != null ? String(resId) : null,
         subscriptionName,
         startDate,
         endDate,
@@ -853,7 +858,8 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
         select: {
           id: true, uuid: true, name: true, firstName: true, lastName: true,
           startDate: true, endDate: true, status: true, ticketTypeName: true,
-          barcode: true, accessAreaId: true, subscriptionId: true, serviceId: true,
+          barcode: true, accessAreaId: true, annyResourceId: true,
+          subscriptionId: true, serviceId: true,
           qrCode: true, email: true,
         },
       })
@@ -888,7 +894,8 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       select: {
         id: true, uuid: true, name: true, firstName: true, lastName: true,
         startDate: true, endDate: true, status: true, ticketTypeName: true,
-        barcode: true, accessAreaId: true, subscriptionId: true, serviceId: true,
+        barcode: true, accessAreaId: true, annyResourceId: true,
+        subscriptionId: true, serviceId: true,
         qrCode: true, email: true,
       },
       orderBy: { id: "asc" },
@@ -1056,6 +1063,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       extras: group.extras.length > 0 ? JSON.parse(JSON.stringify(group.extras)) : undefined,
       source: "ANNY" as const,
       accessAreaId,
+      annyResourceId: group.resourceId,
       subscriptionId,
       serviceId,
       ...(defaults.validityType ? { validityType: defaults.validityType as "DATE_RANGE" | "DURATION" | "TIME_SLOT" } : {}),

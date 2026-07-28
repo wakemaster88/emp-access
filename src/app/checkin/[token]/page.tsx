@@ -46,6 +46,7 @@ import { LostItemsOverlay } from "@/components/checkin/lost-items-overlay";
 import { BulkOverlay } from "@/components/checkin/bulk-overlay";
 import { Lock, LockOpen, PackageSearch, Layers } from "lucide-react";
 import { printPdfBlob, downloadBlob, type PrintResult } from "@/lib/print-tickets";
+import { bundleAnnyTickets, type TicketBundle } from "@/lib/anny-ticket-bundle";
 
 interface TicketExtra {
   name: string;
@@ -81,6 +82,10 @@ interface CheckinTicket {
   /** UUID der zugehoerigen ANNY-Buchung. null wenn Service keinen ANNY-Link
    * hatte oder der Sync vor diesem Feature passiert ist. */
   annyBookingId: string | null;
+  /** Gebuchte ANNY-Ressource. Kombi-Services legen pro Gast eine Buchung je
+   * Ressource an - darueber werden die Tickets wieder zu einem Gast
+   * zusammengefasst. null = nicht von ANNY oder Sync vor diesem Feature. */
+  annyResourceId: string | null;
   /** Freitext-Notiz, die das Personal am Shop-Monitor zum Ticket hinterlegt. */
   notes: string | null;
   /** Antworten aus Info-Anfragen (Label -> Wert), z. B. Schuhgroesse/Level. */
@@ -790,18 +795,50 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [bulkOverlayOpen]);
 
+  /** Alle Nicht-Abo-Tickets des Tages, zu Gaesten gebuendelt. Kombi-Services
+   *  (z.B. Aquapark Tageskarte = Aquapark + Strandbad) erzeugen in ANNY eine
+   *  Buchung je Ressource, also mehrere Tickets fuer denselben Gast. */
+  const dayBundles = useMemo(
+    () => bundleAnnyTickets((data?.tickets ?? []).filter((t) => !t.subscriptionId)),
+    [data?.tickets],
+  );
+
+  /** Teilbuchungen je Ticket-ID. Ein Kombi-Ticket wird als eine Karte
+   *  angezeigt und muss deshalb auch gemeinsam eingecheckt werden - sonst
+   *  bliebe die zweite Buchung offen und der Gast taucht am naechsten Poll
+   *  wieder als ausstehend auf. */
+  const bundledTicketIds = useMemo(() => {
+    const map = new Map<number, number[]>();
+    for (const bundle of dayBundles) {
+      if (bundle.members.length < 2) continue;
+      const ids = bundle.members.map((m) => m.id);
+      for (const id of ids) map.set(id, ids);
+    }
+    return map;
+  }, [dayBundles]);
+
   const handleCheckin = useCallback(async (ticketId: number) => {
+    const ticketIds = bundledTicketIds.get(ticketId) ?? [ticketId];
     setCheckingIn(ticketId);
     try {
-      const res = await fetch(`/api/checkin/public/${token}/checkin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticketId }),
-      });
-      const json = await res.json();
-      if (json.success) {
+      let ok = false;
+      let failure: string | null = null;
+      // Sequentiell, damit die Scan-Eintraege eine nachvollziehbare
+      // Reihenfolge behalten und wir bei Teilfehlern trotzdem so viele
+      // Buchungen wie moeglich einchecken.
+      for (const id of ticketIds) {
+        const res = await fetch(`/api/checkin/public/${token}/checkin`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId: id }),
+        });
+        const json = await res.json();
+        if (json.success) ok = true;
+        else if (json.message && !failure) failure = json.message;
+      }
+      if (ok) {
         refreshRef.current?.();
-        if (selectedTicket?.id === ticketId) {
+        if (selectedTicket && ticketIds.includes(selectedTicket.id)) {
           setSelectedTicket((prev) => prev
             ? {
                 ...prev,
@@ -812,13 +849,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
               }
             : null);
         }
-      } else if (json.message) {
-        alert(json.message);
       }
+      if (failure) alert(failure);
     } finally {
       setCheckingIn(null);
     }
-  }, [token, selectedTicket]);
+  }, [token, selectedTicket, bundledTicketIds]);
 
   const handleScan = useCallback(async (code: string) => {
     if (!code.trim()) return;
@@ -1020,38 +1056,45 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const dayTickets = data?.tickets ?? [];
   const subscriptions = data?.subscriptions ?? [];
 
-  const { upcoming, checkedInTickets, pendingTickets } = useMemo(() => {
+  // Erst buendeln, dann einsortieren: ein Kombi-Ticket besteht aus mehreren
+  // ANNY-Buchungen desselben Gastes. Wuerde erst einsortiert und dann je
+  // Liste geb\u00fcndelt, landete ein Gast mit nur teilweise eingecheckten
+  // Buchungen gleichzeitig unter „Ausstehend“ und „Eingecheckt“.
+  const { upcomingBundles, checkedInBundles, pendingBundles } = useMemo(() => {
     const now = new Date();
     const berlinStr = now.toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
     const [ch, cm] = berlinStr.split(":").map(Number);
     const nowMin = ch * 60 + cm;
 
-    const upcoming: CheckinTicket[] = [];
-    const checked: CheckinTicket[] = [];
-    const pending: CheckinTicket[] = [];
+    const upcoming: TicketBundle<CheckinTicket>[] = [];
+    const checked: TicketBundle<CheckinTicket>[] = [];
+    const pending: TicketBundle<CheckinTicket>[] = [];
 
-    for (const t of dayTickets.filter((t) => !t.subscriptionId)) {
+    for (const bundle of dayBundles) {
       // Vereinsmitglieder (vereinId) sind Jahres-Mitgliedschaften: „eingecheckt“
       // ist tagesbezogen über das API-Flag checkedIn, NICHT über dauerhaftes
       // REDEEMED – sonst stuenden sie an jedem Tag in der Eingecheckt-Liste.
-      if (t.checkedIn || (t.status === "REDEEMED" && !t.vereinId)) {
-        checked.push(t);
+      // Beim Kombi-Ticket genuegt eine eingecheckte Teilbuchung: der Gast ist
+      // dann bereits am Drehkreuz der Hauptressource durch.
+      if (bundle.members.some((m) => m.checkedIn || (m.status === "REDEEMED" && !m.vereinId))) {
+        checked.push(bundle);
         continue;
       }
-      if (t.slotStart) {
-        const [sh, sm] = t.slotStart.split(":").map(Number);
+      const slotStart = bundle.primary.slotStart;
+      if (slotStart) {
+        const [sh, sm] = slotStart.split(":").map(Number);
         const slotMin = sh * 60 + sm;
         if (slotMin >= nowMin && slotMin <= nowMin + 60) {
-          upcoming.push(t);
+          upcoming.push(bundle);
           continue;
         }
       }
-      pending.push(t);
+      pending.push(bundle);
     }
 
-    upcoming.sort((a, b) => (a.slotStart ?? "").localeCompare(b.slotStart ?? ""));
-    return { upcoming, checkedInTickets: checked, pendingTickets: pending };
-  }, [dayTickets]);
+    upcoming.sort((a, b) => (a.primary.slotStart ?? "").localeCompare(b.primary.slotStart ?? ""));
+    return { upcomingBundles: upcoming, checkedInBundles: checked, pendingBundles: pending };
+  }, [dayBundles]);
 
   const checkedInAbos = useMemo(() => {
     const all: CheckinTicket[] = [];
@@ -1066,7 +1109,14 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     return all;
   }, [subscriptions]);
 
-  const allCheckedIn = useMemo(() => [...checkedInTickets, ...checkedInAbos], [checkedInTickets, checkedInAbos]);
+  const allCheckedIn = useMemo(
+    () => [
+      ...checkedInBundles,
+      // Abo-Tickets sind nie Teil einer Kombi-Buchung und bleiben einzeln.
+      ...checkedInAbos.map((t) => ({ primary: t, members: [t] })),
+    ],
+    [checkedInBundles, checkedInAbos],
+  );
 
   const matchesSearch = useCallback((t: CheckinTicket) => {
     if (!searchQuery.trim()) return true;
@@ -1086,9 +1136,17 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     );
   }, [searchQuery]);
 
-  const filteredUpcoming = useMemo(() => upcoming.filter(matchesSearch), [upcoming, matchesSearch]);
-  const filteredCheckedIn = useMemo(() => allCheckedIn.filter(matchesSearch), [allCheckedIn, matchesSearch]);
-  const filteredPending = useMemo(() => pendingTickets.filter(matchesSearch), [pendingTickets, matchesSearch]);
+  // Ein Bundle bleibt sichtbar, sobald IRGENDEINE seiner Teilbuchungen passt -
+  // die Barcodes der Teilbuchungen unterscheiden sich, eine Suche nach dem
+  // Code der zweiten Buchung soll den Gast trotzdem finden.
+  const matchesBundle = useCallback(
+    (b: TicketBundle<CheckinTicket>) => b.members.some(matchesSearch),
+    [matchesSearch],
+  );
+
+  const filteredUpcoming = useMemo(() => upcomingBundles.filter(matchesBundle), [upcomingBundles, matchesBundle]);
+  const filteredCheckedIn = useMemo(() => allCheckedIn.filter(matchesBundle), [allCheckedIn, matchesBundle]);
+  const filteredPending = useMemo(() => pendingBundles.filter(matchesBundle), [pendingBundles, matchesBundle]);
 
   const filteredSubscriptions = useMemo(() => {
     return subscriptions.map((s) => ({
@@ -1103,15 +1161,18 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   // mehreren Slots (z.B. Anfaengerkurs 12-13 / 16-17) sauber gruppiert
   // angezeigt werden statt in Erstellungs-Reihenfolge zu liegen.
   const serviceGroups = useMemo(() => {
-    const groups = new Map<string, CheckinTicket[]>();
-    for (const t of filteredPending) {
-      if (t.vereinId != null) continue;
+    const groups = new Map<string, TicketBundle<CheckinTicket>[]>();
+    for (const b of filteredPending) {
+      if (b.primary.vereinId != null) continue;
+      const t = b.primary;
       const key = t.service?.name ?? t.subscription?.name ?? t.ticketTypeName ?? "Sonstige";
       if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(t);
+      groups.get(key)!.push(b);
     }
-    for (const tickets of groups.values()) {
-      tickets.sort((a, b) => {
+    for (const bundles of groups.values()) {
+      bundles.sort((x, y) => {
+        const a = x.primary;
+        const b = y.primary;
         // Tickets ohne Slot ans Ende (Tageskarten o.ae.), damit Slot-Tickets
         // oben blockweise stehen.
         const slotCmp = (a.slotStart ?? "~").localeCompare(b.slotStart ?? "~");
@@ -1131,7 +1192,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   // automatisch ausgeklappt, damit man trotzdem klicken kann.
   const vereinGroups = useMemo(() => {
     const groups = new Map<number, { id: number; name: string; tickets: CheckinTicket[] }>();
-    for (const t of filteredPending) {
+    for (const b of filteredPending) {
+      const t = b.primary;
       if (t.vereinId == null) continue;
       const name = t.verein?.name ?? `Verein #${t.vereinId}`;
       const entry = groups.get(t.vereinId) ?? { id: t.vereinId, name, tickets: [] };
@@ -1159,7 +1221,8 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const guestInfoSummaries = useMemo(() => {
     const byGroup = new Map<string, GuestInfoSummary>();
     const setupMaps = new Map<string, Map<string, EquipmentSetup>>();
-    for (const t of dayTickets) {
+    for (const bundle of dayBundles) {
+      const t = bundle.primary;
       if (t.subscriptionId || t.vereinId != null) continue;
       const key = t.service?.name ?? t.subscription?.name ?? t.ticketTypeName ?? "Sonstige";
       let summary = byGroup.get(key);
@@ -1170,7 +1233,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       }
       summary.total++;
       summary.tickets.push(t);
-      const info = t.guestInfo;
+      // Die Infos haengen je nach Buchungsweg an irgendeiner Teilbuchung des
+      // Gastes - erste gefuellte gewinnt.
+      const info = bundle.members.find(
+        (m) => m.guestInfo && Object.keys(m.guestInfo).length > 0,
+      )?.guestInfo;
       if (!info || Object.keys(info).length === 0) continue;
       summary.answered++;
 
@@ -1232,7 +1299,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       summary.setups = [...setupMaps.get(key)!.values()].sort(compareSetups);
     }
     return byGroup;
-  }, [dayTickets]);
+  }, [dayBundles]);
 
   if (error) {
     return (
@@ -1600,10 +1667,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         {filteredUpcoming.length > 0 && (
           <Section title="Nächste Gäste" icon={Clock} count={filteredUpcoming.length} color="amber">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filteredUpcoming.map((t) => (
+              {filteredUpcoming.map(({ primary: t, members }) => (
                 <TicketCard
                   key={t.id}
                   ticket={t}
+                  bundleSize={members.length}
                   onTap={() => setSelectedTicket(t)}
                   onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
                   checkingIn={checkingIn === t.id}
@@ -1620,11 +1688,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             <p className="text-sm text-slate-500 text-center py-6">Keine ausstehenden Tickets</p>
           ) : (
             <div className="space-y-3">
-              {[...serviceGroups.entries()].map(([groupName, tickets]) => {
+              {[...serviceGroups.entries()].map(([groupName, bundles]) => {
                 // Leere Gruppen werden ohnehin durch das filteredPending-
                 // Verfahren rausgefiltert; defensiv noch ein expliziter Skip
                 // damit kein Header ohne Inhalt erscheint.
-                if (tickets.length === 0) return null;
+                if (bundles.length === 0) return null;
                 const isSearching = searchQuery.trim().length > 0;
                 const isExpanded = isSearching || expandedServiceGroups.has(groupName);
                 return (
@@ -1647,7 +1715,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         {groupName}
                       </span>
                       <Badge className="ml-1 bg-indigo-500/20 text-indigo-300 border-indigo-500/30 font-normal">
-                        {tickets.length}
+                        {bundles.length}
                       </Badge>
                       <ChevronDown
                         className={cn(
@@ -1670,10 +1738,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                           ) : null;
                         })()}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                          {tickets.map((t) => (
+                          {bundles.map(({ primary: t, members }) => (
                             <TicketCard
                               key={t.id}
                               ticket={t}
+                              bundleSize={members.length}
                               onTap={() => setSelectedTicket(t)}
                               onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
                               checkingIn={checkingIn === t.id}
@@ -1751,10 +1820,11 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         {filteredCheckedIn.length > 0 && (
           <Section title="Eingecheckt" icon={CheckCircle2} count={filteredCheckedIn.length} color="emerald">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filteredCheckedIn.map((t) => (
+              {filteredCheckedIn.map(({ primary: t, members }) => (
                 <TicketCard
                   key={t.id}
                   ticket={t}
+                  bundleSize={members.length}
                   onTap={() => setSelectedTicket(t)}
                   checked
                   isSub={!!t.subscriptionId}
@@ -4028,6 +4098,7 @@ function TicketCard({
   checked,
   isSub,
   highlight,
+  bundleSize = 1,
 }: {
   ticket: CheckinTicket;
   onTap: () => void;
@@ -4036,6 +4107,9 @@ function TicketCard({
   checked?: boolean;
   isSub?: boolean;
   highlight?: string;
+  /** Anzahl der ANNY-Teilbuchungen hinter dieser Karte. > 1 bei Kombi-
+   *  Tickets, die mehrere Bereiche abdecken (z.B. Aquapark + Strandbad). */
+  bundleSize?: number;
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const needsPhoto = (ticket.service?.requiresPhoto || ticket.subscription?.requiresPhoto) && !ticket.profileImage;
@@ -4124,8 +4198,16 @@ function TicketCard({
             ))}
           </div>
         )}
-        {(needsPhoto || needsRfid || annyState || ticket.infoPending) && (
+        {(needsPhoto || needsRfid || annyState || ticket.infoPending || bundleSize > 1) && (
           <div className="flex gap-1 mt-1 flex-wrap">
+            {bundleSize > 1 && (
+              <span
+                className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded-md font-medium"
+                title={`Kombi-Ticket aus ${bundleSize} ANNY-Buchungen (mehrere Bereiche). Wird gemeinsam eingecheckt.`}
+              >
+                Kombi {bundleSize}×
+              </span>
+            )}
             {needsPhoto && <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-md font-medium">Foto fehlt</span>}
             {needsRfid && <span className="text-[10px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded-md font-medium">RFID fehlt</span>}
             {ticket.infoPending && (
