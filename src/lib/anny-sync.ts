@@ -3,6 +3,7 @@ import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
 import { fmtTimeBerlin } from "@/lib/anny-availability";
+import { berlinYmd } from "@/lib/berlin-day";
 
 /**
  * Slot-Uhrzeit (HH:mm) aus der tatsaechlichen Buchungszeit ableiten – fuer
@@ -14,11 +15,26 @@ function slotTimesFromBooking(
   end: Date | null,
 ): { slotStart: string; slotEnd: string } | null {
   if (!start || !end) return null;
+  if (spansMultipleBerlinDays(start, end)) return null;
   const s = fmtTimeBerlin(start.toISOString());
   const e = fmtTimeBerlin(end.toISOString());
   if (!s || !e || s === e) return null;
   if (s === "00:00" && (e === "23:59" || e === "00:00")) return null;
   return { slotStart: s, slotEnd: e };
+}
+
+/**
+ * Buchung ueber mehrere Berliner Kalendertage - typisch fuer die
+ * Sammelbuchung einer Kursserie ("Ferienkurs 27.–31.07."), die ANNY neben den
+ * einzelnen Kurstagen mitliefert. Solche Buchungen bekommen KEINE Slot-Zeit
+ * aus dem Service-Default: sie beschreiben den ganzen Kurszeitraum, nicht
+ * einen Termin. Mit Slot-Zeit wuerden sie in der Shop-Slot-Uebersicht an
+ * jedem Kurstag zusaetzlich zum echten Tagestermin mitgezaehlt und den Slot
+ * faelschlich als voll ausweisen.
+ */
+function spansMultipleBerlinDays(start: Date | null, end: Date | null): boolean {
+  if (!start || !end) return false;
+  return berlinYmd(start) !== berlinYmd(end);
 }
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
@@ -1071,7 +1087,8 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       // Slot-Zeit: bevorzugt Service-/Abo-Default, sonst – bei TIME_SLOT – die
       // echte Buchungszeit (damit z.B. Anfaengerkurs-Slots 13:00/15:00/17:00
       // am Ticket stehen und im Monitor nach Slot gruppiert werden koennen).
-      ...((defaults.slotStart && defaults.slotEnd)
+      ...((defaults.slotStart && defaults.slotEnd
+        && !spansMultipleBerlinDays(group.startDate, group.endDate))
         ? { slotStart: defaults.slotStart, slotEnd: defaults.slotEnd }
         : (defaults.validityType === "TIME_SLOT"
             ? (() => {

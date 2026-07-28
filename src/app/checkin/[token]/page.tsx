@@ -6030,6 +6030,15 @@ function AddTicketOverlay({
             payload.validityDurationMinutes = svc.defaultValidityDurationMinutes;
           }
         }
+        // Kurszeit auch ohne TIME_SLOT-Validitaet uebernehmen: ein Ferienkurs
+        // laeuft taeglich 10:00–12:00, das Ticket gilt aber als DATE_RANGE
+        // ueber die ganze Kurswoche. Ohne slotStart/slotEnd steht so ein
+        // manuell angelegter Teilnehmer im Monitor unter "Ohne feste Uhrzeit"
+        // statt bei seiner Kursgruppe.
+        if (payload.slotStart == null && svc.defaultSlotStart && svc.defaultSlotEnd) {
+          payload.slotStart = svc.defaultSlotStart;
+          payload.slotEnd = svc.defaultSlotEnd;
+        }
       }
     }
 

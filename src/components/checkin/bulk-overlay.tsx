@@ -244,6 +244,13 @@ export function BulkOverlay({
           payload.validityDurationMinutes = def.defaultValidityDurationMinutes;
         }
       }
+      // Kurszeit auch ohne TIME_SLOT-Validitaet uebernehmen - siehe
+      // Ticket-Dialog: sonst fehlt der Serie die Uhrzeit und die Tickets
+      // landen im Monitor unter "Ohne feste Uhrzeit".
+      if (payload.slotStart == null && def.defaultSlotStart && def.defaultSlotEnd) {
+        payload.slotStart = def.defaultSlotStart;
+        payload.slotEnd = def.defaultSlotEnd;
+      }
 
       const ids = selectedOpt.data.areaIds ?? [];
       if (selectedOpt.type === "service") {
