@@ -25,6 +25,9 @@
 *.pem
 /tmp
 
+# einmalige Diagnose- und Analyseskripte (bleiben lokal)
+/scripts/tmp-*.ts
+
 # old project
 /emp-access-alt
 
