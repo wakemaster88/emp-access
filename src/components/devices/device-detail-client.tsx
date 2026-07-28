@@ -7,18 +7,30 @@ import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle, DoorOpen, ToggleRight, RotateCcw, Loader2, Pencil,
   Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock,
-  Droplets, Square, Battery, BatteryLow,
+  Droplets, Square, Battery, BatteryLow, ArrowUpFromLine, ArrowDownToLine,
+  Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  COVER_MOTION_LABELS, coverActionLabels, isCoverDevice, type CoverMotion,
+} from "@/lib/cover-constants";
 import { EditDeviceDialog, type DeviceData, type AreaOption, type CameraOption } from "./edit-device-dialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface CoverStatus {
+  motion: CoverMotion;
+  upOn: boolean | null;
+  downOn: boolean | null;
+  configured: boolean;
+}
 
 interface ShellyStatus {
   online: boolean;
   output: boolean | null;
   power?: number;
   source: "local" | "cloud" | "unavailable";
+  cover?: CoverStatus;
 }
 
 interface GardenaStatus {
@@ -49,6 +61,39 @@ interface Props {
   device: DeviceData & { task: number };
   areas?: AreaOption[];
   cameras?: CameraOption[];
+}
+
+/**
+ * Fahrtrichtung eines Antriebs. "Beide Richtungen aktiv" ist ein Alarmzustand:
+ * Dann liegt Spannung auf beiden Wicklungsrichtungen und der Antrieb sollte
+ * sofort gestoppt werden.
+ */
+function CoverMotionBadge({ cover }: { cover?: CoverStatus }) {
+  if (!cover) return null;
+  const label = COVER_MOTION_LABELS[cover.motion];
+
+  if (cover.motion === "conflict") {
+    return (
+      <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 gap-1.5 text-xs">
+        <AlertTriangle className="h-3 w-3" /> {label} – sofort stoppen
+      </Badge>
+    );
+  }
+  if (cover.motion === "opening" || cover.motion === "closing") {
+    return (
+      <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5 text-xs">
+        {cover.motion === "opening"
+          ? <ArrowUpFromLine className="h-3 w-3" />
+          : <ArrowDownToLine className="h-3 w-3" />}
+        {label}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="secondary" className="gap-1.5 text-slate-500 text-xs">
+      <Square className="h-3 w-3" /> {label}
+    </Badge>
+  );
 }
 
 // ─── Action definitions ───────────────────────────────────────────────────────
@@ -83,8 +128,10 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
   const isSensor = device.category === "SENSOR";
   const isDrehkreuz = device.category === "DREHKREUZ";
   const isTuer = device.category === "TUER";
+  const isCover = isCoverDevice(device);
 
   const [shellyStatus, setShellyStatus] = useState<ShellyStatus | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [gardenaStatus, setGardenaStatus] = useState<GardenaStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(isShelly || isGardena);
 
@@ -115,14 +162,32 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
     fetchGardenaStatus();
   }, [fetchShellyStatus, fetchGardenaStatus]);
 
+  // Waehrend einer Fahrt haeufiger nachfragen, damit sichtbar wird, wann der
+  // Antrieb steht. Danach ruht die Abfrage wieder.
+  const motion = shellyStatus?.cover?.motion;
+  useEffect(() => {
+    if (motion !== "opening" && motion !== "closing") return;
+    const timer = setInterval(fetchShellyStatus, 3000);
+    return () => clearInterval(timer);
+  }, [motion, fetchShellyStatus]);
+
   // ─── Action handler ─────────────────────────────────────────────────────────
 
   async function handleAction(action: string, minutes?: number) {
     setLoading(minutes ? `open:${minutes}` : action);
+    setActionError(null);
 
     // Optimistic update for Shelly switch
     if (isShelly && isSwitch) {
       setShellyStatus((prev) => prev ? { ...prev, output: action === "open" } : prev);
+    }
+    // Optimistic update for cover drives
+    if (isCover) {
+      const nextMotion: CoverMotion =
+        action === "open" ? "opening" : action === "close" ? "closing" : "idle";
+      setShellyStatus((prev) =>
+        prev?.cover ? { ...prev, cover: { ...prev.cover, motion: nextMotion } } : prev
+      );
     }
     // Optimistic update for GARDENA valve
     if (isGardena) {
@@ -140,15 +205,24 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
       if (res.ok) {
         const data = await res.json();
         setTask(data.task);
+        // `sent: false` heisst: Befehl wurde angenommen, aber nicht zugestellt.
+        if (data.sent === false) {
+          setActionError(data.error ?? "Gerät nicht erreichbar – Befehl kam nicht an");
+        }
         router.refresh();
         // Re-fetch real status after short delay
         if (isShelly) setTimeout(fetchShellyStatus, 1500);
         if (isGardena) setTimeout(fetchGardenaStatus, 2500);
       } else {
+        const data = await res.json().catch(() => null);
+        setActionError(data?.error ?? "Aktion fehlgeschlagen");
         // Revert optimistic update
         fetchShellyStatus();
         fetchGardenaStatus();
       }
+    } catch {
+      setActionError("Netzwerkfehler");
+      fetchShellyStatus();
     } finally {
       setLoading(null);
     }
@@ -175,7 +249,9 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
             </Badge>
           )}
 
-          {shellyStatus.output === true ? (
+          {isCover ? (
+            <CoverMotionBadge cover={shellyStatus.cover} />
+          ) : shellyStatus.output === true ? (
             <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5 text-xs">
               <Power className="h-3 w-3" />
               {device.category === "BELEUCHTUNG" ? "Eingeschaltet" : "Ein"}
@@ -321,6 +397,67 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
       );
     }
 
+    // Antrieb mit zwei Fahrtrichtungen (Markise, Rolltor)
+    if (isCover) {
+      const cover = shellyStatus?.cover;
+      const labels = coverActionLabels(device.category);
+      const moving = cover?.motion === "opening" || cover?.motion === "closing";
+
+      if (cover && !cover.configured) {
+        return (
+          <span className="flex items-center gap-1.5 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+            <Settings2 className="h-3.5 w-3.5 shrink-0" />
+            Kanäle für Auf und Zu fehlen – bitte unter „Bearbeiten“ zuordnen.
+          </span>
+        );
+      }
+
+      return (
+        <>
+          <Button
+            size="sm"
+            onClick={() => handleAction("open")}
+            disabled={loading !== null}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {loading === "open"
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <ArrowUpFromLine className="h-4 w-4" />}
+            {labels.open}
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => handleAction("stop")}
+            disabled={loading !== null}
+            className={cn(
+              "gap-1.5",
+              moving
+                ? "bg-slate-700 hover:bg-slate-800 text-white"
+                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700",
+            )}
+          >
+            {loading === "stop"
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Square className="h-4 w-4" />}
+            Stopp
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => handleAction("close")}
+            disabled={loading !== null}
+            className="gap-1.5 bg-sky-700 hover:bg-sky-800 text-white"
+          >
+            {loading === "close"
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <ArrowDownToLine className="h-4 w-4" />}
+            {labels.close}
+          </Button>
+        </>
+      );
+    }
+
     // Shelly switch / light
     if (isShelly && isSwitch) {
       const isOn  = shellyStatus?.output === true;
@@ -405,6 +542,15 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
         </Button>
         {ActionButtons}
       </div>
+      {actionError && (
+        <p
+          role="alert"
+          className="mt-2 flex items-start gap-2 rounded-lg border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-950/20 px-3 py-2 text-xs text-rose-700 dark:text-rose-400"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          {actionError}
+        </p>
+      )}
       <EditDeviceDialog
         device={editing ? device : null}
         areas={areas}

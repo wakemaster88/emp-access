@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
-import { triggerDeviceAction, DEVICE_TASK_MAP } from "@/lib/device-open";
+import {
+  triggerDeviceAction,
+  isValidDeviceAction,
+  isActionAllowedForDevice,
+} from "@/lib/device-open";
 import { loadEmployeeByMobileToken } from "@/lib/employee-access";
 
 /**
@@ -38,7 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if (!deviceId || Number.isNaN(deviceId)) {
     return NextResponse.json({ error: "deviceId fehlt" }, { status: 400 });
   }
-  if (!(action in DEVICE_TASK_MAP)) {
+  if (!isValidDeviceAction(action)) {
     return NextResponse.json({ error: "Ungueltige Aktion" }, { status: 400 });
   }
 
@@ -63,14 +67,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   }
 
   // Geraet vollstaendig laden (nukiSmartlockId, shellyId, ipAddress) - wird
-  // von `triggerDeviceAction` benoetigt.
+  // von `triggerDeviceAction` benoetigt. `category` und die Cover-Kanaele
+  // entscheiden, ob ein Shelly als Schalter oder als Antrieb geschaltet wird.
   const fullDevice = await prisma.device.findFirst({
     where: { id: deviceId, accountId: profile.accountId },
     select: {
       id: true,
       type: true,
+      category: true,
       shellyId: true,
       ipAddress: true,
+      coverUpChannel: true,
+      coverDownChannel: true,
+      coverRuntimeSec: true,
       nukiSmartlockId: true,
       gardenaServiceId: true,
       gardenaConfigId: true,
@@ -79,6 +88,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   });
   if (!fullDevice) {
     return NextResponse.json({ error: "Geraet nicht gefunden" }, { status: 404 });
+  }
+  if (!isActionAllowedForDevice(action, fullDevice)) {
+    return NextResponse.json(
+      { error: "Aktion ist fuer dieses Geraet nicht vorgesehen" },
+      { status: 400 },
+    );
   }
 
   const db = tenantClient(profile.accountId);
@@ -89,7 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       db,
       fullDevice,
       profile.accountId,
-      action as keyof typeof DEVICE_TASK_MAP,
+      action,
     );
     task = res.task;
     sent = res.sent;

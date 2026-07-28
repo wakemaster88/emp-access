@@ -1,8 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { controlShelly } from "@/lib/shelly";
+import { runCoverAction } from "@/lib/shelly-cover";
+import { isCoverDevice, type CoverAction } from "@/lib/cover-constants";
 import { getSunTimesForAccount } from "@/lib/sun";
 import type { ShellyAction, AutomationTrigger } from "@prisma/client";
+
+/** Shelly-Cloud-Server, wenn im Account keiner hinterlegt ist. */
+const DEFAULT_CLOUD_SERVER = "shelly-46-eu.shelly.cloud";
+
+/** Szenen-Aktion → Fahrbefehl eines Antriebs. */
+const COVER_ACTIONS: Partial<Record<ShellyAction, CoverAction>> = {
+  OPEN: "open",
+  CLOSE: "close",
+  STOP: "stop",
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +37,76 @@ export interface ExecuteResult {
 export type TriggerKind = "schedule" | "sunrise" | "sunset" | "manual" | "camera";
 
 const CAMERA_EVENT_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"] as const;
+
+// ─── Member Execution ────────────────────────────────────────────────────────
+
+interface MemberDevice {
+  type: string;
+  category: string | null;
+  ipAddress: string | null;
+  shellyId: string | null;
+  shellyAuthKey: string | null;
+  coverUpChannel: number | null;
+  coverDownChannel: number | null;
+  coverRuntimeSec: number | null;
+}
+
+const SWITCH_ACTIONS: Partial<Record<ShellyAction, "on" | "off" | "toggle">> = {
+  ON: "on",
+  OFF: "off",
+  TOGGLE: "toggle",
+};
+
+async function runMemberSwitch(
+  device: MemberDevice,
+  action: ShellyAction,
+  timerSeconds: number | null,
+  cloudServer: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const actionStr = SWITCH_ACTIONS[action];
+  if (!actionStr) {
+    return { ok: false, error: "Auf/Zu/Stopp gibt es nur bei Markisen und Rolltoren" };
+  }
+  const ok = await controlShelly(
+    {
+      ipAddress: device.ipAddress,
+      shellyId: device.shellyId,
+      shellyAuthKey: device.shellyAuthKey,
+      cloudServer: cloudServer ?? undefined,
+    },
+    actionStr,
+    timerSeconds ?? undefined,
+  );
+  return { ok, error: ok ? undefined : "Gerät nicht erreichbar" };
+}
+
+async function runMemberCover(
+  device: MemberDevice,
+  action: ShellyAction,
+  cloudServer: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const coverAction = COVER_ACTIONS[action];
+  if (!coverAction) {
+    return { ok: false, error: "Ein Antrieb kennt nur Auf, Zu und Stopp" };
+  }
+  const cloud = device.shellyAuthKey
+    ? { baseUrl: cloudServer ?? DEFAULT_CLOUD_SERVER, token: device.shellyAuthKey }
+    : null;
+  const res = await runCoverAction(
+    {
+      type: device.type,
+      category: device.category,
+      ipAddress: device.ipAddress,
+      shellyId: device.shellyId,
+      coverUpChannel: device.coverUpChannel,
+      coverDownChannel: device.coverDownChannel,
+      coverRuntimeSec: device.coverRuntimeSec,
+    },
+    cloud,
+    coverAction,
+  );
+  return { ok: res.ok, error: res.error };
+}
 
 // ─── Group Execution ─────────────────────────────────────────────────────────
 
@@ -67,18 +149,10 @@ export async function executeGroup(
 
   const memberResults: MemberResult[] = await Promise.all(
     group.members.map(async (m) => {
-      const actionStr = m.action.toLowerCase() as "on" | "off" | "toggle";
       try {
-        const ok = await controlShelly(
-          {
-            ipAddress: m.device.ipAddress,
-            shellyId: m.device.shellyId,
-            shellyAuthKey: m.device.shellyAuthKey,
-            cloudServer: shellyCloud?.baseUrl ?? undefined,
-          },
-          actionStr,
-          m.timerSeconds ?? undefined
-        );
+        const { ok, error } = isCoverDevice(m.device)
+          ? await runMemberCover(m.device, m.action, shellyCloud?.baseUrl ?? null)
+          : await runMemberSwitch(m.device, m.action, m.timerSeconds, shellyCloud?.baseUrl ?? null);
         return {
           memberId: m.id,
           deviceId: m.deviceId,
@@ -86,7 +160,7 @@ export async function executeGroup(
           action: m.action,
           timerSeconds: m.timerSeconds,
           ok,
-          error: ok ? undefined : "Gerät nicht erreichbar",
+          error,
         };
       } catch (err) {
         return {

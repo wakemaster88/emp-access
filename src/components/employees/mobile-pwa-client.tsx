@@ -4,8 +4,10 @@ import { createElement, useEffect, useMemo, useState, useCallback } from "react"
 import {
   DoorOpen, Lock, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
   Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, KeyRound,
-  RefreshCw, ChevronDown, Building2,
+  RefreshCw, ChevronDown, Building2, Umbrella, Blinds, Square,
+  ArrowUpFromLine, ArrowDownToLine,
 } from "lucide-react";
+import { coverActionLabels, isCoverCategory } from "@/lib/cover-constants";
 import { cn } from "@/lib/utils";
 import {
   parseSchedule, DAY_KEYS, DAY_LABELS, hasAnySchedule,
@@ -43,7 +45,7 @@ interface Props {
   profile: MobileProfile;
 }
 
-type ActionKey = "open" | "deactivate" | "reset" | "emergency";
+type ActionKey = "open" | "deactivate" | "reset" | "emergency" | "close" | "stop";
 
 // ─── Action Defs ─────────────────────────────────────────────────────────────
 
@@ -64,7 +66,8 @@ interface SecondaryAction {
 
 interface DeviceActions {
   primary: PrimaryAction;
-  secondary?: SecondaryAction;
+  /// Zusatzbefehle links neben dem Hauptbutton, in Anzeigereihenfolge.
+  secondary?: SecondaryAction[];
 }
 
 function actionsFor(device: MobileDevice): DeviceActions | null {
@@ -80,12 +83,29 @@ function actionsFor(device: MobileDevice): DeviceActions | null {
         icon: Power,
         gradient: "from-amber-400 to-amber-600",
       },
-      secondary: {
+      secondary: [{
         key: "reset",
         label: cat === "BELEUCHTUNG" ? "Aus" : "Aus",
         icon: PowerOff,
         tone: "neutral",
+      }],
+    };
+  }
+
+  // Antrieb: Auf als Hauptbefehl, Stopp und Zu daneben.
+  if (isCoverCategory(cat)) {
+    const labels = coverActionLabels(cat);
+    return {
+      primary: {
+        key: "open",
+        label: labels.open,
+        icon: ArrowUpFromLine,
+        gradient: "from-emerald-400 to-emerald-600",
       },
+      secondary: [
+        { key: "stop", label: "Stopp", icon: Square, tone: "neutral" },
+        { key: "close", label: labels.close, icon: ArrowDownToLine, tone: "neutral" },
+      ],
     };
   }
 
@@ -97,12 +117,12 @@ function actionsFor(device: MobileDevice): DeviceActions | null {
         icon: DoorOpen,
         gradient: "from-emerald-400 to-emerald-600",
       },
-      secondary: {
+      secondary: [{
         key: "deactivate",
         label: "Abschließen",
         icon: Lock,
         tone: "neutral",
-      },
+      }],
     };
   }
 
@@ -114,12 +134,12 @@ function actionsFor(device: MobileDevice): DeviceActions | null {
         icon: DoorOpen,
         gradient: "from-emerald-400 to-emerald-600",
       },
-      secondary: {
+      secondary: [{
         key: "emergency",
         label: "NOT-AUF",
         icon: AlertTriangle,
         tone: "danger",
-      },
+      }],
     };
   }
 
@@ -141,6 +161,8 @@ function deviceIcon(device: MobileDevice) {
   if (device.category === "BELEUCHTUNG") return Lightbulb;
   if (device.category === "SCHALTER") return ToggleRight;
   if (device.category === "SENSOR") return Activity;
+  if (device.category === "MARKISE") return Umbrella;
+  if (device.category === "ROLLTOR") return Blinds;
   return DoorOpen;
 }
 
@@ -153,7 +175,9 @@ function categoryMeta(cat: string | null, type: string | null) {
     case "DREHKREUZ":   return { label: "Drehkreuze",   accent: "indigo",  order: 2 };
     case "SCHALTER":    return { label: "Schalter",     accent: "amber",   order: 3 };
     case "BELEUCHTUNG": return { label: "Beleuchtung",  accent: "yellow",  order: 4 };
-    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 5 };
+    case "MARKISE":     return { label: "Markisen",     accent: "teal",    order: 5 };
+    case "ROLLTOR":     return { label: "Rolltore",     accent: "slate",   order: 6 };
+    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 7 };
     default:            return { label: "Sonstige",     accent: "slate",   order: 9 };
   }
 }
@@ -165,6 +189,7 @@ const ACCENT_CLS: Record<string, { bg: string; text: string; ring: string }> = {
   amber:   { bg: "bg-amber-500/10",   text: "text-amber-600 dark:text-amber-400",     ring: "ring-amber-200/50 dark:ring-amber-900/40" },
   yellow:  { bg: "bg-yellow-500/10",  text: "text-yellow-600 dark:text-yellow-400",   ring: "ring-yellow-200/50 dark:ring-yellow-900/40" },
   emerald: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", ring: "ring-emerald-200/50 dark:ring-emerald-900/40" },
+  teal:    { bg: "bg-teal-500/10",    text: "text-teal-600 dark:text-teal-400",       ring: "ring-teal-200/50 dark:ring-teal-900/40" },
   slate:   { bg: "bg-slate-500/10",   text: "text-slate-600 dark:text-slate-400",     ring: "ring-slate-200/50 dark:ring-slate-700" },
 };
 
@@ -403,7 +428,6 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
   // Pro Device: zeigen wir den letzten Feedback-Status der primary action.
   const primaryFb = feedback?.id === `${device.id}:${actions?.primary.key}` ? feedback : null;
   const primaryLoading = loading === `${device.id}:${actions?.primary.key}`;
-  const secondaryLoading = actions?.secondary && loading === `${device.id}:${actions.secondary.key}`;
 
   return (
     <div className="flex items-center gap-2 px-2.5 py-1.5">
@@ -430,25 +454,26 @@ function DeviceRow({ device, loading, feedback, enabled, onAction }: DeviceRowPr
         <span className="text-[9px] text-slate-400 italic shrink-0 pr-1">—</span>
       ) : (
         <div className="flex items-center gap-1 shrink-0">
-          {actions.secondary && (
+          {actions.secondary?.map((action) => (
             <button
+              key={action.key}
               type="button"
-              onClick={() => onAction(device, actions.secondary!.key)}
+              onClick={() => onAction(device, action.key)}
               disabled={!enabled || loading !== null}
-              aria-label={actions.secondary.label}
-              title={actions.secondary.label}
+              aria-label={action.label}
+              title={action.label}
               className={cn(
                 "h-7 w-7 rounded-lg flex items-center justify-center transition active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed",
-                actions.secondary.tone === "danger"
+                action.tone === "danger"
                   ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20"
                   : "bg-slate-500/10 text-slate-600 dark:text-slate-300 hover:bg-slate-500/20",
               )}
             >
-              {secondaryLoading
+              {loading === `${device.id}:${action.key}`
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : createElement(actions.secondary.icon, { className: "h-3.5 w-3.5" })}
+                : createElement(action.icon, { className: "h-3.5 w-3.5" })}
             </button>
-          )}
+          ))}
 
           <button
             type="button"

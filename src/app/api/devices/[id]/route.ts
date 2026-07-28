@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
+import { availableDeviceActions } from "@/lib/device-open";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
 }
+
+const VALID_CATEGORIES = [
+  "DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG", "MARKISE", "ROLLTOR",
+];
 
 export async function GET(
   request: NextRequest,
@@ -34,7 +40,7 @@ export async function GET(
   });
   if (!device) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  return NextResponse.json(device);
+  return NextResponse.json({ ...device, actions: availableDeviceActions(device) });
 }
 
 export async function PUT(
@@ -56,7 +62,23 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  const VALID_CATEGORIES = ["DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG"];
+  const category = body.category !== undefined
+    ? (body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null)
+    : existing.category;
+
+  if (isCoverCategory(category) && existing.type !== "SHELLY") {
+    return NextResponse.json(
+      { error: "Markise und Rolltor lassen sich nur mit einem Shelly steuern" },
+      { status: 400 },
+    );
+  }
+
+  const cover = parseCoverInput(body, isCoverCategory(category), {
+    coverUpChannel: existing.coverUpChannel,
+    coverDownChannel: existing.coverDownChannel,
+    coverRuntimeSec: existing.coverRuntimeSec,
+  });
+  if (!cover.ok) return NextResponse.json({ error: cover.error }, { status: 400 });
 
   // Ventil → Pumpe Zuordnung. null/0 loest die Zuordnung; ein Wert muss ein
   // anderes Geraet desselben Accounts sein (kein Selbstbezug).
@@ -116,9 +138,8 @@ export async function PUT(
       cameraId,
       flowLph,
       areaSqm,
-      category: body.category !== undefined
-        ? (body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null)
-        : existing.category,
+      category,
+      ...cover.value,
       ipAddress: body.ipAddress ?? existing.ipAddress,
       shellyId: body.shellyId ?? existing.shellyId,
       shellyAuthKey: body.shellyAuthKey ?? existing.shellyAuthKey,
@@ -135,7 +156,7 @@ export async function PUT(
     },
   });
 
-  return NextResponse.json(device);
+  return NextResponse.json({ ...device, actions: availableDeviceActions(device) });
 }
 
 export async function DELETE(

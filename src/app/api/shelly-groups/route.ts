@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { shellyGroupCreateSchema } from "@/lib/validators";
+import { isGroupActionValid } from "@/lib/cover-constants";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -42,13 +43,24 @@ export async function POST(request: NextRequest) {
     const deviceIds = parsed.data.members.map((m) => m.deviceId);
     const valid = await db.device.findMany({
       where: { id: { in: deviceIds }, accountId: accountId!, type: "SHELLY" },
-      select: { id: true },
+      select: { id: true, name: true, category: true },
     });
     if (valid.length !== new Set(deviceIds).size) {
       return NextResponse.json(
         { error: "Ein oder mehrere Geräte sind keine Shelly-Geräte oder geh\u00f6ren nicht zum Mandanten" },
         { status: 400 }
       );
+    }
+
+    const byId = new Map(valid.map((d) => [d.id, d]));
+    for (const member of parsed.data.members) {
+      const device = byId.get(member.deviceId);
+      if (device && !isGroupActionValid(member.action, device.category)) {
+        return NextResponse.json(
+          { error: `Aktion passt nicht zu „${device.name}“` },
+          { status: 400 },
+        );
+      }
     }
   }
 

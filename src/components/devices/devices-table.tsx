@@ -31,11 +31,14 @@ import {
   Square,
   ToggleRight,
   Unlock,
+  Umbrella,
   Wifi,
   WifiOff,
   Zap,
+  Blinds,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { COVER_MOTION_LABELS, type CoverMotion } from "@/lib/cover-constants";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -87,6 +90,8 @@ interface ShellyStatus {
   output: boolean | null;
   power?: number;
   source: "local" | "cloud" | "unavailable";
+  /// Nur bei Antrieben (Markise, Rolltor).
+  motion?: CoverMotion;
 }
 
 interface GardenaStatus {
@@ -123,6 +128,8 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ElementType; co
   SENSOR:      { label: "Sensor",      icon: Activity,    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
   SCHALTER:    { label: "Schalter",    icon: ToggleRight, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
   BELEUCHTUNG: { label: "Beleuchtung", icon: Lightbulb,   color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
+  MARKISE:     { label: "Markise",     icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
+  ROLLTOR:     { label: "Rolltor",     icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
 };
 
 const TASK_LABEL: Record<number, { label: string; color: string }> = {
@@ -266,12 +273,26 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                       <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Offline
                     </Badge>
                   )}
-                  {shelly.online && shelly.output === true && (
+                  {shelly.online && shelly.motion && shelly.motion !== "unknown" && (
+                    <Badge
+                      className={cn(
+                        "gap-1 text-xs h-5",
+                        shelly.motion === "conflict"
+                          ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                          : shelly.motion === "idle"
+                            ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                            : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                      )}
+                    >
+                      {COVER_MOTION_LABELS[shelly.motion]}
+                    </Badge>
+                  )}
+                  {shelly.online && !shelly.motion && shelly.output === true && (
                     <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1 text-xs h-5">
                       <Power className="h-3 w-3" /> Ein
                     </Badge>
                   )}
-                  {shelly.online && shelly.output === false && (
+                  {shelly.online && !shelly.motion && shelly.output === false && (
                     <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
                       <PowerOff className="h-3 w-3" /> Aus
                     </Badge>

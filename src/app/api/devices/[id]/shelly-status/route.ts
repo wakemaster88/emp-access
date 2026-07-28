@@ -3,16 +3,32 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import {
   shellyBaseId,
   shellyCloudAllStatuses,
+  shellyLocalStatusMap,
   shellySwitchIndex,
   shellySwitchState,
+  type ShellyDeviceStatusMap,
 } from "@/lib/shelly-cloud";
+import { coverChannels, coverMotion, isCoverDevice, type CoverMotion } from "@/lib/shelly-cover";
+
+export interface ShellyCoverStatus {
+  /// Abgeleitete Fahrtrichtung aus beiden Relaiszustaenden.
+  motion: CoverMotion;
+  upOn: boolean | null;
+  downOn: boolean | null;
+  /// false = Kanalzuordnung fehlt oder ist unbrauchbar (z. B. Auf = Zu).
+  configured: boolean;
+}
 
 export interface ShellyStatus {
   online: boolean;
   output: boolean | null;   // true = on, false = off, null = unknown
   power?: number;           // current power in W
   source: "local" | "cloud" | "unavailable";
+  /// Nur bei Antrieben (MARKISE/ROLLTOR) gesetzt.
+  cover?: ShellyCoverStatus;
 }
+
+const UNAVAILABLE: ShellyStatus = { online: false, output: null, source: "unavailable" };
 
 export async function GET(
   _request: NextRequest,
@@ -33,47 +49,49 @@ export async function GET(
 
   if (!device) return NextResponse.json({ error: "Gerät nicht gefunden" }, { status: 404 });
 
-  const switchIndex = shellySwitchIndex(device.shellyId);
+  const isCover = isCoverDevice(device);
+  const channels = isCover ? coverChannels(device) : null;
 
-  // 1. Try local IP first (Gen2 API)
+  if (isCover && !channels) {
+    // Kategorie ist gesetzt, die Kanalzuordnung fehlt aber noch.
+    return NextResponse.json({
+      ...UNAVAILABLE,
+      cover: { motion: "unknown", upOn: null, downOn: null, configured: false },
+    } satisfies ShellyStatus);
+  }
+
+  const build = (
+    status: ShellyDeviceStatusMap,
+    online: boolean,
+    source: "local" | "cloud",
+  ): ShellyStatus => {
+    if (channels) {
+      const up = shellySwitchState(status, channels.up, true);
+      const down = shellySwitchState(status, channels.down, true);
+      const power = (up.power ?? 0) + (down.power ?? 0);
+      return {
+        online,
+        // Ein Antrieb gilt als "aktiv", solange eine Fahrtrichtung anliegt.
+        output: up.output == null && down.output == null ? null : !!(up.output || down.output),
+        power: up.power == null && down.power == null ? undefined : power,
+        source,
+        cover: {
+          motion: coverMotion(up.output, down.output),
+          upOn: up.output,
+          downOn: down.output,
+          configured: true,
+        },
+      };
+    }
+
+    const sw = shellySwitchState(status, shellySwitchIndex(device.shellyId));
+    return { online, output: sw.output, power: sw.power, source };
+  };
+
+  // 1. Lokale IP (Gen2 Shelly.GetStatus, sonst Gen1 /status)
   if (device.ipAddress) {
-    try {
-      const res = await fetch(
-        `http://${device.ipAddress}/rpc/Switch.GetStatus?id=${switchIndex}`,
-        { signal: AbortSignal.timeout(3000) }
-      );
-      if (res.ok) {
-        const data = await res.json() as { output?: boolean; apower?: number };
-        return NextResponse.json({
-          online: true,
-          output: data.output ?? null,
-          power: data.apower,
-          source: "local",
-        } satisfies ShellyStatus);
-      }
-    } catch {
-      // fall through to Gen1 local
-    }
-
-    // Gen1 fallback: /status
-    try {
-      const res = await fetch(
-        `http://${device.ipAddress}/status`,
-        { signal: AbortSignal.timeout(3000) }
-      );
-      if (res.ok) {
-        const data = await res.json() as { relays?: { ison?: boolean }[]; meters?: { power?: number }[] };
-        const relay = data.relays?.[switchIndex] ?? data.relays?.[0];
-        return NextResponse.json({
-          online: true,
-          output: relay?.ison ?? null,
-          power: data.meters?.[switchIndex]?.power ?? data.meters?.[0]?.power,
-          source: "local",
-        } satisfies ShellyStatus);
-      }
-    } catch {
-      // fall through to cloud
-    }
+    const local = await shellyLocalStatusMap(device.ipAddress);
+    if (local) return NextResponse.json(build(local, true, "local"));
   }
 
   // 2. Shelly Cloud – gemeinsamer, gecachter all_status-Abruf statt einzelner
@@ -86,16 +104,12 @@ export async function GET(
   if (config?.token && config?.baseUrl && baseId) {
     const cloudStatuses = await shellyCloudAllStatuses(config.baseUrl, config.token);
     const entry = cloudStatuses?.get(baseId) ?? cloudStatuses?.get(baseId.toLowerCase());
-    if (entry) {
-      const sw = shellySwitchState(entry.status, switchIndex);
-      return NextResponse.json({
-        online: entry.online,
-        output: sw.output,
-        power: sw.power,
-        source: "cloud",
-      } satisfies ShellyStatus);
-    }
+    if (entry) return NextResponse.json(build(entry.status, entry.online, "cloud"));
   }
 
-  return NextResponse.json({ online: false, output: null, source: "unavailable" } satisfies ShellyStatus);
+  return NextResponse.json(
+    channels
+      ? { ...UNAVAILABLE, cover: { motion: "unknown", upOn: null, downOn: null, configured: true } }
+      : UNAVAILABLE,
+  );
 }

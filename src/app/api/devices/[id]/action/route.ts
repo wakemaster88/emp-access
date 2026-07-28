@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
-import { triggerDeviceAction, DEVICE_TASK_MAP } from "@/lib/device-open";
+import {
+  triggerDeviceAction,
+  isValidDeviceAction,
+  isActionAllowedForDevice,
+} from "@/lib/device-open";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -33,7 +37,7 @@ export async function POST(
   const minutes = Number(body.minutes);
   const seconds = Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : undefined;
 
-  if (!(action in DEVICE_TASK_MAP)) {
+  if (!isValidDeviceAction(action)) {
     return NextResponse.json({ error: "Ungültige Aktion" }, { status: 400 });
   }
 
@@ -42,11 +46,18 @@ export async function POST(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  const { task, sent } = await triggerDeviceAction(
+  if (!isActionAllowedForDevice(action, existing)) {
+    return NextResponse.json(
+      { error: "Aktion ist für dieses Gerät nicht vorgesehen" },
+      { status: 400 },
+    );
+  }
+
+  const { task, sent, error } = await triggerDeviceAction(
     db,
     existing,
     accountId!,
-    action as keyof typeof DEVICE_TASK_MAP,
+    action,
     { seconds },
   );
 
@@ -54,5 +65,10 @@ export async function POST(
     existing.type === "SHELLY" ||
     existing.type === "NUKI_SMARTLOCK" ||
     existing.type === "GARDENA_VALVE";
-  return NextResponse.json({ ok: true, task, sent: hasRemoteAction ? sent : undefined });
+  return NextResponse.json({
+    ok: true,
+    task,
+    sent: hasRemoteAction ? sent : undefined,
+    error,
+  });
 }

@@ -105,3 +105,40 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
 
 **Pi-Client:** `raspberry-pi/emp_audio` spricht diese Schnittstelle. Installation
 und Fehlerbehebung stehen in [raspberry-pi/README-audio.md](raspberry-pi/README-audio.md).
+
+## Markisen und Rolltore (Antriebe mit zwei Fahrtrichtungen)
+
+Geräte der Funktion **Markise** oder **Rolltor** werden nicht als Relais
+geschaltet, sondern gefahren: Auf, Stopp, Zu. Dahinter steckt ein Shelly mit
+zwei getrennten Relais – ein Kanal je Fahrtrichtung.
+
+**Einrichten:** Beim Anlegen oder Bearbeiten des Geräts die Funktion *Markise*
+bzw. *Rolltor* wählen und im Abschnitt **Antrieb** hinterlegen, welcher
+Shelly-Kanal auf-, welcher zufährt, sowie die volle Fahrzeit in Sekunden.
+
+**Wichtig zur Sicherheit:** Beide Relais dürfen nie gleichzeitig anziehen, sonst
+arbeitet der Motor gegen sich selbst. Die Steuerung schaltet deshalb vor jeder
+Fahrt zuerst die Gegenrichtung ab, wartet eine halbe Sekunde und zieht erst dann
+das Zielrelais an. Lässt sich die Gegenrichtung nicht abschalten, startet die
+Fahrt gar nicht erst. Deshalb müssen Auf und Zu zwingend auf unterschiedlichen
+Kanälen liegen; das prüfen Formular und API.
+
+Die Fahrzeit geht als Shelly-eigener Auto-Off-Timer mit. Das Relais fällt damit
+auch dann wieder ab, wenn die Verbindung mitten in der Fahrt abreißt. Eine
+zusätzliche Absicherung im Gerät selbst (Auto-Off in den Shelly-Einstellungen)
+schadet trotzdem nicht.
+
+Antriebe lassen sich auch in **Szenen und Automationen** verwenden – dort stehen
+statt Ein/Aus/Toggle die Aktionen Auf, Stopp und Zu zur Auswahl.
+
+**Über die API** (Account-Token, siehe Einstellungen → Eigene API):
+
+- `GET /api/devices` und `GET /api/devices/[id]` liefern bei Antrieben
+  zusätzlich `coverUpChannel`, `coverDownChannel` und `coverRuntimeSec`.
+- Beide Endpunkte nennen in `actions`, welche Befehle das jeweilige Gerät
+  annimmt – bei Antrieben `["open","stop","close"]`, sonst die Zutrittsbefehle.
+  So muss eine Integration nicht aus der Kategorie raten.
+- `POST /api/devices/[id]/action` mit `{"action":"close"}` bzw. `"stop"` fährt
+  zu oder hält an. Passt die Aktion nicht zum Gerät, antwortet die API mit 400.
+- Antwortet sie mit `"sent": false`, wurde der Befehl angenommen, aber nicht
+  zugestellt; das Feld `error` nennt den Grund.

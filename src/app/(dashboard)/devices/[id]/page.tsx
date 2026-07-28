@@ -13,7 +13,7 @@ import { EditDeviceDialog } from "@/components/devices/edit-device-dialog";
 import {
   Wifi, WifiOff, Cpu, QrCode, CreditCard, ArrowLeft,
   Ticket, ScanLine, CheckCircle2, XCircle, AlertTriangle,
-  GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb, Cctv,
+  GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb, Cctv, Umbrella, Blinds,
 } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
@@ -106,6 +106,8 @@ export default async function DeviceDetailPage({ params }: Props) {
     SENSOR:      { label: "Sensor",     icon: Activity,    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
     SCHALTER:    { label: "Schalter",   icon: ToggleRight, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
     BELEUCHTUNG: { label: "Beleuchtung",icon: Lightbulb,   color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
+    MARKISE:     { label: "Markise",    icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
+    ROLLTOR:     { label: "Rolltor",    icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
   };
 
   const taskLabel: Record<number, string> = {
@@ -225,6 +227,9 @@ export default async function DeviceDetailPage({ params }: Props) {
                     ipAddress: device.ipAddress,
                     shellyId: device.shellyId,
                     shellyAuthKey: device.shellyAuthKey,
+                    coverUpChannel: device.coverUpChannel,
+                    coverDownChannel: device.coverDownChannel,
+                    coverRuntimeSec: device.coverRuntimeSec,
                     gardenaServiceId: device.gardenaServiceId,
                     isActive: device.isActive,
                     accessIn: device.accessIn,

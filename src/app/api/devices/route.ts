@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
+import { availableDeviceActions } from "@/lib/device-open";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
 }
+
+const VALID_CATEGORIES = [
+  "DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG", "MARKISE", "ROLLTOR",
+];
 
 export async function GET(request: NextRequest) {
   let db, accountId: number;
@@ -31,9 +37,18 @@ export async function GET(request: NextRequest) {
       accessIn: true,
       accessOut: true,
       lastUpdate: true,
+      // Antriebe (MARKISE/ROLLTOR): Kanalzuordnung und Fahrzeit.
+      coverUpChannel: true,
+      coverDownChannel: true,
+      coverRuntimeSec: true,
     },
   });
-  return NextResponse.json(devices);
+
+  // `actions` sagt Integrationen ohne Kategorie-Wissen, was dieses Gerät
+  // versteht – bei Antrieben eben nicht "open/emergency", sondern Fahrbefehle.
+  return NextResponse.json(
+    devices.map((device) => ({ ...device, actions: availableDeviceActions(device) })),
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -48,7 +63,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ungültiger Gerätetyp" }, { status: 400 });
   }
 
-  const VALID_CATEGORIES = ["DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG"];
+  const category =
+    body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null;
+
+  // Antriebe brauchen zwei schaltbare Relais – das gibt es nur beim Shelly.
+  if (isCoverCategory(category) && body.type !== "SHELLY") {
+    return NextResponse.json(
+      { error: "Markise und Rolltor lassen sich nur mit einem Shelly steuern" },
+      { status: 400 },
+    );
+  }
+
+  const cover = parseCoverInput(body, isCoverCategory(category));
+  if (!cover.ok) return NextResponse.json({ error: cover.error }, { status: 400 });
 
   const { db, accountId } = session;
 
@@ -56,7 +83,8 @@ export async function POST(request: NextRequest) {
     data: {
       name: body.name.trim(),
       type: body.type,
-      category: body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null,
+      category,
+      ...cover.value,
       ipAddress: body.ipAddress || null,
       shellyId: body.shellyId || null,
       shellyAuthKey: body.shellyAuthKey || null,
@@ -70,5 +98,8 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return NextResponse.json(device, { status: 201 });
+  return NextResponse.json(
+    { ...device, actions: availableDeviceActions(device) },
+    { status: 201 },
+  );
 }

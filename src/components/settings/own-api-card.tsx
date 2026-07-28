@@ -21,9 +21,13 @@ const ENDPOINTS = [
     path: "/api/webhook/utilization?date=YYYY-MM-DD",
     desc: "Auslastung pro Ressource (Tickets am Tag / personLimit); optional &all=1 für alle Bereiche",
   },
-  { method: "GET", path: "/api/devices", desc: "Geräte auflisten" },
-  { method: "GET", path: "/api/devices/[id]", desc: "Einzelnes Gerät abrufen" },
-  { method: "POST", path: "/api/devices/[id]/action", desc: "Gerät steuern (action: open, emergency, reset, deactivate)" },
+  { method: "GET", path: "/api/devices", desc: "Geräte auflisten; jedes Gerät nennt in actions seine erlaubten Befehle" },
+  { method: "GET", path: "/api/devices/[id]", desc: "Einzelnes Gerät abrufen (inkl. actions)" },
+  {
+    method: "POST",
+    path: "/api/devices/[id]/action",
+    desc: "Gerät steuern – Zutritt und Schalter: open, emergency, reset, deactivate; Markise/Rolltor: open, stop, close",
+  },
   {
     method: "GET",
     path: "/api/lost-items?filter=open&kind=found&q=...",

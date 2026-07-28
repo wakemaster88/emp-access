@@ -342,7 +342,9 @@ const hhmmRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export const shellyGroupMemberSchema = z.object({
   deviceId: z.coerce.number().int().positive(),
-  action: z.enum(["ON", "OFF", "TOGGLE"]),
+  // OPEN/CLOSE/STOP gelten nur fuer Antriebe (MARKISE/ROLLTOR); ob die Aktion
+  // zum Geraet passt, prueft die Route beim Abgleich der Geraeteliste.
+  action: z.enum(["ON", "OFF", "TOGGLE", "OPEN", "CLOSE", "STOP"]),
   timerSeconds: z.coerce.number().int().min(1).max(86400).nullable().optional(),
   sortOrder: z.coerce.number().int().optional(),
 });

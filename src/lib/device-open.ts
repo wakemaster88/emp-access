@@ -1,6 +1,9 @@
 import { nukiAction, NUKI_ACTION } from "./nuki";
 import { gardenaControlValve, gardenaStatusMap } from "./gardena";
 import { logIrrigationRun } from "./irrigation-run-log";
+import { shellySetRelay } from "./shelly-relay";
+import { shellyBaseId, shellySwitchIndex } from "./shelly-cloud";
+import { isCoverDevice, runCoverAction, type CoverAction } from "./shelly-cover";
 
 // Standard-Bewässerungsdauer (Sekunden), falls beim Öffnen keine Dauer
 // mitgegeben wird (z. B. Auslösung über den Public-Checkin-Monitor).
@@ -17,90 +20,71 @@ const TASK_MAP: Record<TaskAction, number> = {
   reset: 0,
 };
 
-// Shelly Cloud verwendet 1-basierte Channel-Suffixe (_1 = switch 0).
-// Auf 0-basierten Switch-Index mappen.
-function toSwitchIndex(shellyId: string | null): number {
-  if (!shellyId?.includes("_")) return 0;
-  const suffix = Number(shellyId.split("_").pop());
-  return isNaN(suffix) || suffix === 0 ? 0 : suffix - 1;
+/**
+ * Zusaetzliche Aktionen fuer Antriebe (MARKISE/ROLLTOR). Sie werden nur fuer
+ * diese Geraete akzeptiert; bei allen anderen Typen fehlt die Fahrtrichtung.
+ */
+const COVER_TASK_MAP = {
+  close: 3,
+  stop: 0,
+} as const;
+
+export type DeviceAction = TaskAction | keyof typeof COVER_TASK_MAP;
+
+const ALL_TASK_MAP: Record<DeviceAction, number> = { ...TASK_MAP, ...COVER_TASK_MAP };
+
+/** Aktionen, die ein Antrieb versteht. */
+const COVER_ALLOWED: Record<string, CoverAction> = {
+  open: "open",
+  close: "close",
+  stop: "stop",
+  // "Zurueck in den Ruhezustand" bedeutet bei einem Antrieb: Fahrt beenden.
+  deactivate: "stop",
+  reset: "stop",
+};
+
+export function isValidDeviceAction(action: string): action is DeviceAction {
+  return action in ALL_TASK_MAP;
 }
 
-async function shellySendLocal(
-  ip: string,
-  switchIdx: number,
-  turnOn: boolean,
-  timerSec?: number,
-): Promise<boolean> {
-  const onStr = turnOn ? "true" : "false";
-  const turnStr = turnOn ? "on" : "off";
-
-  // Gen2: POST /rpc/Switch.Set
-  try {
-    const body: Record<string, unknown> = { id: switchIdx, on: turnOn };
-    if (timerSec) body.toggle_after = timerSec;
-    const res = await fetch(`http://${ip}/rpc/Switch.Set`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(3000),
-    });
-    if (res.ok) return true;
-  } catch { /* try Gen2 GET */ }
-
-  // Gen2 GET fallback
-  try {
-    const params = new URLSearchParams({ id: String(switchIdx), on: onStr });
-    if (timerSec) params.set("toggle_after", String(timerSec));
-    const res = await fetch(`http://${ip}/rpc/Switch.Set?${params}`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (res.ok) return true;
-  } catch { /* try Gen1 */ }
-
-  // Gen1: /relay/{idx}?turn=on/off
-  try {
-    let url = `http://${ip}/relay/${switchIdx}?turn=${turnStr}`;
-    if (timerSec) url += `&timer=${timerSec}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) return true;
-  } catch { /* unavailable */ }
-
-  return false;
+/**
+ * Prueft, ob eine Aktion fuer dieses Geraet zulaessig ist. `close`/`stop` gibt
+ * es nur bei Antrieben, `emergency` (NOT-AUF) ergibt bei einem Antrieb keinen
+ * eindeutigen Sinn – bei einer Markise waere Ausfahren im Sturm sogar falsch.
+ */
+export function isActionAllowedForDevice(
+  action: DeviceAction,
+  device: { type: string; category: string | null },
+): boolean {
+  if (isCoverDevice(device)) return action in COVER_ALLOWED;
+  return action in TASK_MAP;
 }
 
-async function shellySendCloud(
-  baseUrl: string,
-  authKey: string,
-  shellyBaseId: string,
-  switchIdx: number,
-  turnOn: boolean,
-): Promise<boolean> {
-  try {
-    const body = new URLSearchParams({
-      auth_key: authKey.trim(),
-      id: shellyBaseId,
-      channel: String(switchIdx),
-      turn: turnOn ? "on" : "off",
-    });
-    const res = await fetch(`${baseUrl}/device/relay/control`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = await res.json() as { isok?: boolean };
-      return data.isok === true;
-    }
-  } catch { /* unavailable */ }
-  return false;
+/**
+ * Aktionen, die `POST /api/devices/[id]/action` fuer dieses Geraet annimmt.
+ * Wird in den API-Antworten mitgeliefert, damit Integrationen nicht aus der
+ * Kategorie raten muessen. Antriebe akzeptieren zusaetzlich `deactivate` und
+ * `reset` als Synonyme fuer `stop`; ausgewiesen werden die klaren Begriffe.
+ */
+export function availableDeviceActions(
+  device: { type: string; category: string | null },
+): DeviceAction[] {
+  if (isCoverDevice(device)) return ["open", "stop", "close"];
+  return ["open", "emergency", "deactivate", "reset"];
 }
 
 interface DeviceForAction {
   id: number;
   type: string;
+  /// Steuert bei Shelly-Geraeten, ob als Schalter oder als Antrieb (MARKISE/
+  /// ROLLTOR) geschaltet wird.
+  category?: string | null;
   shellyId: string | null;
   ipAddress: string | null;
+  /// Kanalzuordnung eines Antriebs – siehe `src/lib/shelly-cover.ts`.
+  coverUpChannel?: number | null;
+  coverDownChannel?: number | null;
+  coverRuntimeSec?: number | null;
   nukiSmartlockId?: string | null;
   gardenaServiceId?: string | null;
   /// GARDENA-Verbindung (ApiConfig-ID) fuer dieses Geraet – waehlt bei mehreren
@@ -214,10 +198,10 @@ export async function triggerDeviceAction(
   db: DbLike,
   device: DeviceForAction,
   accountId: number,
-  action: TaskAction,
+  action: DeviceAction,
   options: TriggerOptions = {},
-): Promise<{ task: number; sent: boolean }> {
-  const task = TASK_MAP[action];
+): Promise<{ task: number; sent: boolean; error?: string }> {
+  const task = ALL_TASK_MAP[action];
   await db.device.update({
     where: { id: device.id },
     data: { task },
@@ -277,25 +261,63 @@ export async function triggerDeviceAction(
 
   if (device.type !== "SHELLY") return { task, sent: false };
 
-  const turnOn = action === "open" || action === "emergency";
-  const timerSec = action === "open" ? 3 : undefined;
-  const switchIdx = toSwitchIndex(device.shellyId);
-
-  let sent = false;
-
-  if (device.ipAddress) {
-    sent = await shellySendLocal(device.ipAddress, switchIdx, turnOn, timerSec);
-  }
-
-  if (!sent) {
-    const shellyBaseId = device.shellyId?.split("_")[0] ?? device.shellyId;
+  const loadCloud = async () => {
     const config = await db.apiConfig.findFirst({
       where: { accountId, provider: "SHELLY" },
     });
-    if (config?.token && config?.baseUrl && shellyBaseId) {
-      const cloudBaseUrl = `https://${config.baseUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
-      sent = await shellySendCloud(cloudBaseUrl, config.token, shellyBaseId, switchIdx, turnOn);
+    return config?.token && config?.baseUrl
+      ? { token: config.token, baseUrl: config.baseUrl }
+      : null;
+  };
+
+  // Antrieb mit zwei Fahrtrichtungen (Markise, Rolltor). Braucht die Cloud-
+  // Zugangsdaten vorab, weil eine Fahrt aus mehreren Schaltbefehlen besteht.
+  if (isCoverDevice({ type: device.type, category: device.category ?? null })) {
+    const coverAction = COVER_ALLOWED[action];
+    if (!coverAction) {
+      return { task, sent: false, error: "Aktion ist für einen Antrieb nicht vorgesehen" };
     }
+    const res = await runCoverAction(
+      {
+        type: device.type,
+        category: device.category ?? null,
+        ipAddress: device.ipAddress,
+        shellyId: device.shellyId,
+        coverUpChannel: device.coverUpChannel ?? null,
+        coverDownChannel: device.coverDownChannel ?? null,
+        coverRuntimeSec: device.coverRuntimeSec ?? null,
+      },
+      await loadCloud(),
+      coverAction,
+    );
+    return { task, sent: res.ok, error: res.error };
+  }
+
+  const turnOn = action === "open" || action === "emergency";
+  const timerSec = action === "open" ? 3 : undefined;
+  const switchIdx = shellySwitchIndex(device.shellyId);
+  const baseId = shellyBaseId(device.shellyId);
+
+  // Lokal zuerst; die Cloud-Verbindung wird nur bei Bedarf nachgeladen, damit
+  // ein Zutritt im LAN ohne zusaetzliche DB-Abfrage auskommt.
+  let sent = false;
+  if (device.ipAddress) {
+    sent = await shellySetRelay(
+      { ipAddress: device.ipAddress, baseId: null },
+      null,
+      switchIdx,
+      turnOn,
+      timerSec,
+    );
+  }
+  if (!sent && baseId) {
+    sent = await shellySetRelay(
+      { ipAddress: null, baseId },
+      await loadCloud(),
+      switchIdx,
+      turnOn,
+      timerSec,
+    );
   }
 
   return { task, sent };

@@ -3,9 +3,12 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import {
   shellyBaseId,
   shellyCloudAllStatuses,
+  shellyLocalStatusMap,
   shellySwitchIndex,
   shellySwitchState,
+  type ShellyDeviceStatusMap,
 } from "@/lib/shelly-cloud";
+import { coverChannels, coverMotion, isCoverDevice, type CoverMotion } from "@/lib/shelly-cover";
 
 export interface ShellyDeviceStatus {
   id: number;
@@ -13,32 +16,13 @@ export interface ShellyDeviceStatus {
   output: boolean | null;
   power?: number;
   source: "local" | "cloud" | "unavailable";
+  /// Nur bei Antrieben (MARKISE/ROLLTOR): abgeleitete Fahrtrichtung.
+  motion?: CoverMotion;
 }
 
-async function fetchLocal(ip: string, switchIdx: number): Promise<{ online: true; output: boolean | null; power?: number } | null> {
-  // Gen2
-  try {
-    const res = await fetch(`http://${ip}/rpc/Switch.GetStatus?id=${switchIdx}`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (res.ok) {
-      const d = await res.json() as { output?: boolean; apower?: number };
-      return { online: true, output: d.output ?? null, power: d.apower };
-    }
-  } catch { /* try Gen1 */ }
-
-  // Gen1
-  try {
-    const res = await fetch(`http://${ip}/status`, { signal: AbortSignal.timeout(1500) });
-    if (res.ok) {
-      const d = await res.json() as { relays?: { ison?: boolean }[]; meters?: { power?: number }[] };
-      const relay = d.relays?.[switchIdx] ?? d.relays?.[0];
-      return { online: true, output: relay?.ison ?? null, power: d.meters?.[switchIdx]?.power ?? d.meters?.[0]?.power };
-    }
-  } catch { /* unavailable */ }
-
-  return null;
-}
+// Geraeteliste: knappe Timeouts, damit ein nicht erreichbarer Shelly die
+// gesamte Tabelle nicht ausbremst.
+const LOCAL_TIMEOUT_MS = 1500;
 
 export async function GET(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -52,7 +36,16 @@ export async function GET(request: NextRequest) {
 
   const devices = await db.device.findMany({
     where: { id: { in: ids }, accountId: accountId!, type: "SHELLY" },
-    select: { id: true, ipAddress: true, shellyId: true },
+    select: {
+      id: true,
+      type: true,
+      category: true,
+      ipAddress: true,
+      shellyId: true,
+      coverUpChannel: true,
+      coverDownChannel: true,
+      coverRuntimeSec: true,
+    },
   });
 
   // Load saved Shelly Cloud config once
@@ -67,25 +60,50 @@ export async function GET(request: NextRequest) {
     : null;
 
   const results = await Promise.all(devices.map(async (device): Promise<ShellyDeviceStatus> => {
-    const switchIdx = shellySwitchIndex(device.shellyId);
+    const channels = isCoverDevice(device) ? coverChannels(device) : null;
+
+    const build = (
+      status: ShellyDeviceStatusMap,
+      online: boolean,
+      source: "local" | "cloud",
+    ): ShellyDeviceStatus => {
+      if (channels) {
+        const up = shellySwitchState(status, channels.up, true);
+        const down = shellySwitchState(status, channels.down, true);
+        return {
+          id: device.id,
+          online,
+          output: up.output == null && down.output == null ? null : !!(up.output || down.output),
+          power:
+            up.power == null && down.power == null ? undefined : (up.power ?? 0) + (down.power ?? 0),
+          source,
+          motion: coverMotion(up.output, down.output),
+        };
+      }
+      const sw = shellySwitchState(status, shellySwitchIndex(device.shellyId));
+      return { id: device.id, online, output: sw.output, power: sw.power, source };
+    };
 
     // 1. Local
     if (device.ipAddress) {
-      const local = await fetchLocal(device.ipAddress, switchIdx);
-      if (local) return { id: device.id, ...local, source: "local" };
+      const local = await shellyLocalStatusMap(device.ipAddress, LOCAL_TIMEOUT_MS);
+      if (local) return build(local, true, "local");
     }
 
     // 2. Cloud (aus dem gemeinsamen all_status-Abruf)
     const baseId = shellyBaseId(device.shellyId);
     if (cloudStatuses && baseId) {
       const entry = cloudStatuses.get(baseId) ?? cloudStatuses.get(baseId.toLowerCase());
-      if (entry) {
-        const sw = shellySwitchState(entry.status, switchIdx);
-        return { id: device.id, online: entry.online, output: sw.output, power: sw.power, source: "cloud" };
-      }
+      if (entry) return build(entry.status, entry.online, "cloud");
     }
 
-    return { id: device.id, online: false, output: null, source: "unavailable" };
+    return {
+      id: device.id,
+      online: false,
+      output: null,
+      source: "unavailable",
+      ...(channels ? { motion: "unknown" as const } : {}),
+    };
   }));
 
   return NextResponse.json(results);

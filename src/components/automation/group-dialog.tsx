@@ -6,9 +6,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, GripVertical, Power, PowerOff, Activity } from "lucide-react";
+import {
+  Loader2, Plus, Trash2, GripVertical, Power, PowerOff, Activity,
+  ArrowUpFromLine, ArrowDownToLine, Square,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { coverActionLabels, isCoverCategory } from "@/lib/cover-constants";
 import type { GroupWithMembers, ShellyDeviceOption, ShellyAction } from "./types";
+
+/**
+ * Auswaehlbare Aktionen je Geraet. Antriebe kennen nur Fahrbefehle, alle
+ * anderen Shellys nur Schaltbefehle – eine Szene mit "Ein" auf einer Markise
+ * waere nicht ausfuehrbar.
+ */
+function actionsForDevice(device: ShellyDeviceOption) {
+  if (isCoverCategory(device.category)) {
+    const labels = coverActionLabels(device.category);
+    return [
+      { value: "OPEN" as ShellyAction, label: labels.open, icon: ArrowUpFromLine },
+      { value: "STOP" as ShellyAction, label: "Stopp", icon: Square },
+      { value: "CLOSE" as ShellyAction, label: labels.close, icon: ArrowDownToLine },
+    ];
+  }
+  return [
+    { value: "ON" as ShellyAction, label: "Ein", icon: Power },
+    { value: "OFF" as ShellyAction, label: "Aus", icon: PowerOff },
+    { value: "TOGGLE" as ShellyAction, label: "Toggle", icon: Activity },
+  ];
+}
+
+function defaultActionFor(device: ShellyDeviceOption): ShellyAction {
+  return actionsForDevice(device)[0].value;
+}
 
 interface MemberDraft {
   deviceId: number;
@@ -44,11 +73,26 @@ export function GroupDialog({ open, onClose, onSaved, group, shellyDevices }: Pr
   function addMember() {
     const next = availableDevices[0];
     if (!next) return;
-    setMembers((prev) => [...prev, { deviceId: next.id, action: "ON", timerSeconds: null }]);
+    setMembers((prev) => [
+      ...prev,
+      { deviceId: next.id, action: defaultActionFor(next), timerSeconds: null },
+    ]);
   }
 
   function updateMember(idx: number, patch: Partial<MemberDraft>) {
-    setMembers((prev) => prev.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
+    setMembers((prev) =>
+      prev.map((m, i) => {
+        if (i !== idx) return m;
+        const merged = { ...m, ...patch };
+        // Nach einem Gerätewechsel kann die bisherige Aktion unpassend sein
+        // (z. B. "Ein" auf einer Markise) – dann auf die erste gültige setzen.
+        const device = shellyDevices.find((d) => d.id === merged.deviceId);
+        if (device && !actionsForDevice(device).some((a) => a.value === merged.action)) {
+          merged.action = defaultActionFor(device);
+        }
+        return merged;
+      }),
+    );
   }
 
   function removeMember(idx: number) {
@@ -196,35 +240,40 @@ export function GroupDialog({ open, onClose, onSaved, group, shellyDevices }: Pr
                         value={m.action}
                         onValueChange={(v) => updateMember(idx, { action: v as ShellyAction })}
                       >
-                        <SelectTrigger className="h-8 w-[100px] shrink-0">
+                        <SelectTrigger className="h-8 w-[120px] shrink-0">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="ON">
-                            <span className="flex items-center gap-1.5"><Power className="h-3 w-3" /> Ein</span>
-                          </SelectItem>
-                          <SelectItem value="OFF">
-                            <span className="flex items-center gap-1.5"><PowerOff className="h-3 w-3" /> Aus</span>
-                          </SelectItem>
-                          <SelectItem value="TOGGLE">
-                            <span className="flex items-center gap-1.5"><Activity className="h-3 w-3" /> Toggle</span>
-                          </SelectItem>
+                          {actionsForDevice(device).map((a) => {
+                            const Icon = a.icon;
+                            return (
+                              <SelectItem key={a.value} value={a.value}>
+                                <span className="flex items-center gap-1.5">
+                                  <Icon className="h-3 w-3" /> {a.label}
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
 
-                      <Input
-                        type="number"
-                        min={0}
-                        max={86400}
-                        value={m.timerSeconds ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          updateMember(idx, { timerSeconds: v === "" ? null : Math.max(0, Number(v)) });
-                        }}
-                        placeholder="Timer s"
-                        className="h-8 w-[90px] shrink-0"
-                        title="Optionaler Auto-Off Timer in Sekunden"
-                      />
+                      {/* Antriebe stoppen selbst nach ihrer Fahrzeit – ein
+                          zusätzlicher Auto-Off-Timer ergibt dort keinen Sinn. */}
+                      {!isCoverCategory(device.category) && (
+                        <Input
+                          type="number"
+                          min={0}
+                          max={86400}
+                          value={m.timerSeconds ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            updateMember(idx, { timerSeconds: v === "" ? null : Math.max(0, Number(v)) });
+                          }}
+                          placeholder="Timer s"
+                          className="h-8 w-[90px] shrink-0"
+                          title="Optionaler Auto-Off Timer in Sekunden"
+                        />
+                      )}
 
                       <Button
                         type="button"

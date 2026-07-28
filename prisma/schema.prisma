@@ -27,6 +27,10 @@ enum DeviceCategory {
   SCHALTER
   BELEUCHTUNG
   AUDIO
+  /// Markise – Antrieb mit zwei Fahrtrichtungen (Auf/Stopp/Zu).
+  MARKISE
+  /// Rolltor, Rollladen oder Sektionaltor – gleiche Steuerlogik wie MARKISE.
+  ROLLTOR
 }
 
 enum TicketStatus {
@@ -183,6 +187,17 @@ model Device {
   ipAddress       String?
   shellyId        String?
   shellyAuthKey   String?
+  /// Antriebe (MARKISE/ROLLTOR) mit zwei getrennten Relais: Shelly-Kanal, der
+  /// die Fahrtrichtung "Auf" schaltet (0-basiert). NULL = Gerät ist kein
+  /// Antrieb bzw. noch nicht eingerichtet.
+  coverUpChannel   Int?
+  /// Shelly-Kanal fuer "Zu". Muss sich von coverUpChannel unterscheiden – beide
+  /// Relais duerfen nie gleichzeitig anziehen (Motor faehrt sonst gegen sich
+  /// selbst). Die Verriegelung erzwingt das in `src/lib/shelly-cover.ts`.
+  coverDownChannel Int?
+  /// Volle Fahrzeit in Sekunden. Wird als Shelly-eigener Auto-Off-Timer
+  /// mitgesendet, damit das Relais auch bei Netzwerkausfall wieder abfaellt.
+  coverRuntimeSec  Int?
   /// Nuki Smart Lock ID (numerische ID aus der Nuki Web API).
   /// Wird beim Sync aus `GET /smartlock` befuellt; identifiziert das Geraet
   /// fuer `POST /smartlock/{id}/action` und Webhook-Events.
@@ -969,6 +984,12 @@ enum ShellyAction {
   ON
   OFF
   TOGGLE
+  /// Antriebe (MARKISE/ROLLTOR): auffahren.
+  OPEN
+  /// Antriebe: zufahren.
+  CLOSE
+  /// Antriebe: beide Fahrtrichtungen abschalten.
+  STOP
 }
 
 enum AutomationTrigger {

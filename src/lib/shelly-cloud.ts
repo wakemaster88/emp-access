@@ -109,11 +109,15 @@ export function shellyCloudAllStatuses(
 export function shellySwitchState(
   status: ShellyDeviceStatusMap,
   switchIdx: number,
+  /// Antriebe brauchen exakt den angefragten Kanal – bei ihnen unterscheidet
+  /// sich "Auf" von "Zu" nur durch den Index. Der Ausweich-Griff auf einen
+  /// beliebigen anderen Kanal wuerde dort die falsche Richtung melden.
+  strict = false,
 ): ShellySwitchState {
   type SwitchEntry = { output?: boolean; apower?: number };
 
   let sw = status[`switch:${switchIdx}`] as SwitchEntry | undefined;
-  if (sw === undefined) {
+  if (sw === undefined && !strict) {
     for (let i = 0; i <= 4; i++) {
       const entry = status[`switch:${i}`] as SwitchEntry | undefined;
       if (entry !== undefined) { sw = entry; break; }
@@ -123,12 +127,43 @@ export function shellySwitchState(
 
   const relays = status.relays as { ison?: boolean }[] | undefined;
   const meters = status.meters as { power?: number }[] | undefined;
-  const relay = relays?.[switchIdx] ?? relays?.[0];
+  const relay = strict ? relays?.[switchIdx] : (relays?.[switchIdx] ?? relays?.[0]);
   if (relay !== undefined) {
-    return { output: relay.ison ?? null, power: meters?.[switchIdx]?.power ?? meters?.[0]?.power };
+    return {
+      output: relay.ison ?? null,
+      power: strict
+        ? meters?.[switchIdx]?.power
+        : (meters?.[switchIdx]?.power ?? meters?.[0]?.power),
+    };
   }
 
   return { output: null };
+}
+
+/**
+ * Vollstaendigen Status eines Geraets ueber die lokale IP holen: Gen2 liefert
+ * alle Komponenten mit `Shelly.GetStatus`, Gen1 mit `/status`. Ein Abruf statt
+ * einer Anfrage je Kanal – wichtig fuer Antriebe, die zwei Relais haben.
+ */
+export async function shellyLocalStatusMap(
+  ip: string,
+  timeoutMs = 3000,
+): Promise<ShellyDeviceStatusMap | null> {
+  try {
+    const res = await fetch(`http://${ip}/rpc/Shelly.GetStatus`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.ok) return (await res.json()) as ShellyDeviceStatusMap;
+  } catch { /* Gen1 versuchen */ }
+
+  try {
+    const res = await fetch(`http://${ip}/status`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.ok) return (await res.json()) as ShellyDeviceStatusMap;
+  } catch { /* nicht erreichbar */ }
+
+  return null;
 }
 
 /** Cloud-Suffix (`abc_1` → 1) auf 0-basierten Switch-Index mappen. */

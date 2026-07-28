@@ -27,8 +27,13 @@ import {
   Lightbulb,
   CalendarDays,
   Cctv,
+  ArrowUpFromLine,
+  ArrowDownToLine,
+  Square,
+  Blinds,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isCoverCategory } from "@/lib/cover-constants";
 import { GroupDialog } from "./group-dialog";
 import { AutomationDialog } from "./automation-dialog";
 import type {
@@ -398,24 +403,30 @@ export function AutomationClient({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const ACTION_STYLES: Record<
+  string,
+  { label: string; icon: typeof Power; cls: string }
+> = {
+  ON:     { label: "EIN",   icon: Power,           cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
+  OFF:    { label: "AUS",   icon: PowerOff,        cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+  TOGGLE: { label: "TOGGLE",icon: Activity,        cls: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
+  OPEN:   { label: "AUF",   icon: ArrowUpFromLine, cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
+  CLOSE:  { label: "ZU",    icon: ArrowDownToLine, cls: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
+  STOP:   { label: "STOPP", icon: Square,          cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+};
+
 function MemberChip({ member }: { member: GroupWithMembers["members"][number] }) {
-  const actionIcon =
-    member.action === "ON" ? <Power className="h-3 w-3" /> :
-    member.action === "OFF" ? <PowerOff className="h-3 w-3" /> :
-    <Activity className="h-3 w-3" />;
-  const actionCls =
-    member.action === "ON" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-    member.action === "OFF" ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" :
-    "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400";
-  const label = member.action === "ON" ? "EIN" : member.action === "OFF" ? "AUS" : "TOGGLE";
+  const style = ACTION_STYLES[member.action] ?? ACTION_STYLES.TOGGLE;
+  const ActionIcon = style.icon;
+  const DeviceIcon = isCoverCategory(member.device.category) ? Blinds : Lightbulb;
 
   return (
-    <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium", actionCls)}>
-      <Lightbulb className="h-3 w-3 opacity-60" />
+    <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium", style.cls)}>
+      <DeviceIcon className="h-3 w-3 opacity-60" />
       {member.device.name}
       <span className="opacity-50">·</span>
-      {actionIcon}
-      {label}
+      <ActionIcon className="h-3 w-3" />
+      {style.label}
       {member.timerSeconds ? (
         <span className="flex items-center gap-0.5 opacity-60">
           <Timer className="h-2.5 w-2.5" />

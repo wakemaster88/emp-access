@@ -17,11 +17,16 @@ import {
 import {
   Plus, Loader2, Cpu, Wifi, AlertCircle,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight,
+  LogIn, LogOut, ArrowLeftRight, Umbrella, Blinds,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WeekScheduleEditor, emptySchedule } from "@/components/devices/week-schedule-editor";
 import type { WeekSchedule } from "@/lib/schedule";
+import { isCoverCategory } from "@/lib/cover-constants";
+import {
+  CoverFields, EMPTY_COVER_VALUES, coverPayload, validateCoverValues,
+  type CoverFormValues,
+} from "@/components/devices/cover-fields";
 
 interface Area {
   id: number;
@@ -57,12 +62,16 @@ const DEVICE_CATEGORIES = [
   { value: "SENSOR",      label: "Sensor",       icon: Activity,    color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800" },
   { value: "SCHALTER",    label: "Schalter",     icon: ToggleRight, color: "text-amber-600 dark:text-amber-400",     bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800" },
   { value: "BELEUCHTUNG", label: "Beleuchtung",  icon: Lightbulb,   color: "text-yellow-600 dark:text-yellow-400",  bg: "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800" },
+  { value: "MARKISE",     label: "Markise",      icon: Umbrella,    color: "text-teal-600 dark:text-teal-400",      bg: "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800" },
+  { value: "ROLLTOR",     label: "Rolltor",      icon: Blinds,      color: "text-slate-600 dark:text-slate-300",    bg: "bg-slate-100 dark:bg-slate-800/50 border-slate-300 dark:border-slate-700" },
 ];
 
 // Per-category feature flags
 const CAT_HAS_ACCESS   = new Set(["DREHKREUZ", "TUER"]);
 const CAT_HAS_REENTRY  = new Set(["DREHKREUZ", "TUER"]);
 const CAT_HAS_SCHEDULE = new Set(["BELEUCHTUNG", "SCHALTER"]);
+// Antriebe brauchen zwei schaltbare Relais – das bietet nur der Shelly-Pfad.
+const CAT_SHELLY_ONLY  = new Set(["MARKISE", "ROLLTOR"]);
 
 type Direction = "in" | "out" | "bidir";
 
@@ -91,6 +100,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [schedule, setSchedule] = useState<WeekSchedule>(emptySchedule());
+  const [cover, setCover] = useState<CoverFormValues>(EMPTY_COVER_VALUES);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -101,12 +111,23 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
   function reset() {
     setForm(EMPTY);
     setSchedule(emptySchedule());
+    setCover(EMPTY_COVER_VALUES);
     setError("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.type || !form.category) return;
+
+    const isCover = isCoverCategory(form.category);
+    if (isCover) {
+      const coverError = validateCoverValues(cover);
+      if (coverError) {
+        setError(coverError);
+        return;
+      }
+    }
+
     setSaving(true);
     setError("");
 
@@ -145,6 +166,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
           allowReentry: hasAccess ? form.allowReentry : false,
           isActive: form.isActive,
           schedule: hasSchedule ? schedule : null,
+          ...(isCover ? coverPayload(cover) : {}),
         }),
       });
 
@@ -165,6 +187,9 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
 
   const isShelly = form.type === "SHELLY";
   const cat = form.category;
+  const availableCategories = DEVICE_CATEGORIES.filter(
+    (c) => isShelly || !CAT_SHELLY_ONLY.has(c.value),
+  );
 
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
@@ -193,7 +218,18 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                   <button
                     key={t.value}
                     type="button"
-                    onClick={() => set("type", t.value)}
+                    onClick={() => {
+                      // Antriebe gibt es nur bei Shelly – beim Wechsel auf
+                      // Raspberry Pi darf keine unpassende Auswahl stehen bleiben.
+                      setForm((p) => ({
+                        ...p,
+                        type: t.value,
+                        category:
+                          t.value !== "SHELLY" && CAT_SHELLY_ONLY.has(p.category)
+                            ? ""
+                            : p.category,
+                      }));
+                    }}
                     className={cn(
                       "flex flex-col items-center gap-2 rounded-xl border-2 p-4 text-center transition-all",
                       selected ? t.activeColor : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
@@ -221,8 +257,8 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
           {form.type && (
             <div className="space-y-2">
               <Label>Funktion <span className="text-rose-500">*</span></Label>
-              <div className="grid grid-cols-5 gap-2">
-                {DEVICE_CATEGORIES.map((c) => {
+              <div className="grid grid-cols-4 gap-2">
+                {availableCategories.map((c) => {
                   const Icon = c.icon;
                   const selected = form.category === c.value;
                   return (
@@ -261,6 +297,8 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                     cat === "TUER"      ? "z.B. Tür VIP-Resource" :
                     cat === "SENSOR"    ? "z.B. Temperatur Eingang" :
                     cat === "SCHALTER"  ? "z.B. Pumpe Becken A" :
+                    cat === "MARKISE"   ? "z.B. Markise Terrasse" :
+                    cat === "ROLLTOR"   ? "z.B. Rolltor Verleih" :
                                           "z.B. Flutlicht Feld 1"
                   }
                   required
@@ -306,6 +344,15 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                     Shelly ID und Auth Key in der Shelly Cloud unter Geräteeinstellungen.
                   </div>
                 </div>
+              )}
+
+              {/* Antrieb – Kanalzuordnung fuer Markise/Rolltor */}
+              {isShelly && isCoverCategory(cat) && (
+                <CoverFields
+                  category={cat}
+                  values={cover}
+                  onChange={(patch) => setCover((p) => ({ ...p, ...patch }))}
+                />
               )}
 
               {/* Zugangsbereiche – nur für Drehkreuz & Tür */}

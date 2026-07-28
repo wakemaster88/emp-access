@@ -15,9 +15,13 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, Trash2, Save, GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv,
+  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv, Umbrella, Blinds,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isCoverCategory, DEFAULT_COVER_RUNTIME_SEC } from "@/lib/cover-constants";
+import {
+  CoverFields, coverPayload, validateCoverValues, type CoverFormValues,
+} from "./cover-fields";
 
 export interface AreaOption {
   id: number;
@@ -37,6 +41,9 @@ export interface DeviceData {
   ipAddress: string | null;
   shellyId: string | null;
   shellyAuthKey: string | null;
+  coverUpChannel?: number | null;
+  coverDownChannel?: number | null;
+  coverRuntimeSec?: number | null;
   gardenaServiceId?: string | null;
   isActive: boolean;
   accessIn: number | null;
@@ -57,6 +64,8 @@ const DEVICE_CATEGORIES = [
   { value: "SENSOR",      label: "Sensor",       icon: Activity },
   { value: "SCHALTER",    label: "Schalter",     icon: ToggleRight },
   { value: "BELEUCHTUNG", label: "Beleuchtung",  icon: Lightbulb },
+  { value: "MARKISE",     label: "Markise",      icon: Umbrella },
+  { value: "ROLLTOR",     label: "Rolltor",      icon: Blinds },
 ];
 
 type Direction = "in" | "out" | "bidir";
@@ -98,6 +107,11 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
     offlineAlertsEnabled: false,
     firmware: "",
   });
+  const [cover, setCover] = useState<CoverFormValues>({
+    coverUpChannel: "0",
+    coverDownChannel: "1",
+    coverRuntimeSec: String(DEFAULT_COVER_RUNTIME_SEC),
+  });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -119,6 +133,11 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
         offlineAlertsEnabled: device.offlineAlertsEnabled,
         firmware: device.firmware ?? "",
       });
+      setCover({
+        coverUpChannel: String(device.coverUpChannel ?? 0),
+        coverDownChannel: String(device.coverDownChannel ?? 1),
+        coverRuntimeSec: String(device.coverRuntimeSec ?? DEFAULT_COVER_RUNTIME_SEC),
+      });
       setError("");
     }
   }, [device]);
@@ -130,6 +149,15 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!device) return;
+    const isCover = isCoverCategory(form.category);
+    if (isCover) {
+      const coverError = validateCoverValues(cover);
+      if (coverError) {
+        setError(coverError);
+        return;
+      }
+    }
+
     setSaving(true);
     setError("");
 
@@ -164,10 +192,16 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
           allowReentry: form.allowReentry,
           offlineAlertsEnabled: form.offlineAlertsEnabled,
           firmware: form.firmware || null,
+          // Kanalzuordnung nur bei Antrieben senden; wechselt das Gerät die
+          // Funktion, wird sie bewusst zurückgesetzt.
+          ...(isCover
+            ? coverPayload(cover)
+            : { coverUpChannel: null, coverDownChannel: null, coverRuntimeSec: null }),
         }),
       });
       if (!res.ok) {
-        setError("Fehler beim Speichern");
+        const data = await res.json().catch(() => null);
+        setError(data?.error ?? "Fehler beim Speichern");
       } else {
         onClose();
         router.refresh();
@@ -211,7 +245,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
 
           <div className="space-y-2">
             <Label>Funktion</Label>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {DEVICE_CATEGORIES.map((cat) => {
                 const Icon = cat.icon;
                 const selected = form.category === cat.value;
@@ -252,6 +286,15 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
                 <Input id="d-shelly-key" type="password" value={form.shellyAuthKey} onChange={(e) => set("shellyAuthKey", e.target.value)} className="font-mono" />
               </div>
             </>
+          )}
+
+          {/* Antrieb – Kanalzuordnung fuer Markise/Rolltor */}
+          {isShelly && isCoverCategory(form.category) && (
+            <CoverFields
+              category={form.category}
+              values={cover}
+              onChange={(patch) => setCover((p) => ({ ...p, ...patch }))}
+            />
           )}
 
           {/* GARDENA – Service-ID (Info) */}
