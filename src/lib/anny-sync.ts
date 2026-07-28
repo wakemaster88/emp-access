@@ -41,6 +41,22 @@ function spansMultipleBerlinDays(start: Date | null, end: Date | null): boolean 
 const DEFAULT_BASE_URL = "https://b.anny.co";
 const SYNC_WINDOW_DAYS = 60;
 /**
+ * Rueckblick des stuendlichen Laufs. Fuer den Betrieb zaehlen heutige und
+ * kuenftige Buchungen; die zwei Tage Puffer fangen Status-Nachtraege von
+ * gestern (Check-out, Storno) mit ein.
+ *
+ * Hintergrund: ANNY kann nicht nach Aenderungszeit filtern oder sortieren
+ * (`updated_at` ist nur ein Attribut, weder in `filter` noch in `sort`
+ * erlaubt), ein echtes Delta ist also nicht moeglich. Statt jede Stunde alle
+ * ~11.500 Buchungen zu lesen (24 Seiten), liest der stuendliche Lauf nur
+ * dieses Fenster (~1.250 Buchungen, 3 Seiten). Aenderungen an weiter
+ * zurueckliegenden Buchungen liefert der Webhook in Echtzeit, der taegliche
+ * Volllauf ist das Netz darunter.
+ */
+const INCREMENTAL_WINDOW_BACK_DAYS = 2;
+/** Spaetestens nach dieser Zeit laeuft wieder ein Volllauf (60-Tage-Fenster). */
+const FULL_SYNC_MAX_AGE_HOURS = 20;
+/**
  * Zeitfenster (Ausstellungsdatum) fuer den Rechnungs-Scan, aus dem die
  * Zusatzartikel kommen. Ohne Fenster liest der Sync bei jedem Lauf die
  * komplette Rechnungshistorie und laeuft mit steigender Rechnungszahl
@@ -112,6 +128,9 @@ interface AnnyMapping {
   /// Rechnungshistorie nachgezogen wurden. Danach genuegt der Scan des
   /// Zeitfensters, weil aeltere Auftraege ihre Artikel schon am Ticket haben.
   addOnBackfillAt?: string;
+  /// Letzter Volllauf ueber das ganze 60-Tage-Fenster. Steuert, wann `auto`
+  /// wieder einen Volllauf statt des schnellen Fensterlaufs waehlt.
+  lastFullSyncAt?: string;
   /// Auto-Pause bei offener/ueberfaelliger Abo-Zahlung. Wenn aktiv, werden Abos
   /// mit einer noch nicht beglichenen (`sent`) Abo-Rechnung, deren Faelligkeit
   /// (`due_date`) um >= `graceDays` ueberschritten ist, automatisch auf PAUSED
@@ -165,7 +184,21 @@ interface PlanSubscription {
   };
 }
 
+/**
+ * `full`: 60-Tage-Fenster inkl. Aufraeumen alter Buchungen - der taegliche
+ * Abgleich. `incremental`: nur heutige/kuenftige Buchungen, fuer den
+ * stuendlichen Lauf.
+ */
+export type AnnySyncMode = "full" | "incremental";
+
+export interface AnnySyncOptions {
+  /// `auto` waehlt den Volllauf, wenn der letzte laenger als
+  /// FULL_SYNC_MAX_AGE_HOURS zurueckliegt, sonst den Fensterlauf.
+  mode?: AnnySyncMode | "auto";
+}
+
 export interface AnnySyncResult {
+  mode: AnnySyncMode;
   created: number;
   updated: number;
   skipped: number;
@@ -392,7 +425,10 @@ async function createTicketSafe(
   }
 }
 
-export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncResult> {
+export async function syncAnnyForAccount(
+  accountId: number,
+  options: AnnySyncOptions = {},
+): Promise<AnnySyncResult> {
   const config = await prisma.apiConfig.findFirst({
     where: { accountId, provider: "ANNY" },
   });
@@ -409,8 +445,22 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     if (config.extraConfig) annyConfig = JSON.parse(config.extraConfig);
   } catch { /* ignore */ }
 
+  const lastFullSyncMs = annyConfig.lastFullSyncAt ? Date.parse(annyConfig.lastFullSyncAt) : NaN;
+  const fullSyncDue =
+    !Number.isFinite(lastFullSyncMs)
+    || Date.now() - lastFullSyncMs >= FULL_SYNC_MAX_AGE_HOURS * 60 * 60 * 1000;
+  const requestedMode = options.mode ?? "auto";
+  const mode: AnnySyncMode =
+    requestedMode === "auto" ? (fullSyncDue ? "full" : "incremental") : requestedMode;
+
+  // Rueckblick dieses Laufs. Er steuert BEIDES: welche Buchungen wir von ANNY
+  // holen und welche Tickets das Aufraeumen am Ende anfassen darf. Die beiden
+  // muessen zwingend identisch sein - sonst wuerde der Fensterlauf alle
+  // Tickets ausserhalb seines Fensters invalidieren, weil er sie nicht
+  // gesehen hat, und die Gaeste kaemen nicht mehr durchs Drehkreuz.
+  const windowBackDays = mode === "full" ? SYNC_WINDOW_DAYS : INCREMENTAL_WINDOW_BACK_DAYS;
   const syncCutoff = new Date();
-  syncCutoff.setDate(syncCutoff.getDate() - SYNC_WINDOW_DAYS);
+  syncCutoff.setDate(syncCutoff.getDate() - windowBackDays);
   syncCutoff.setHours(0, 0, 0, 0);
 
   // Mit Accept: application/vnd.api+json bekommen wir konsistent JSON:API mit
@@ -795,7 +845,20 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
 
   // `order` ist noetig, um die Rechnungspositionen (Zusatzartikel) der Buchung
   // zuordnen zu koennen – ANNY liefert Add-Ons nur ueber die Rechnung.
-  const bookingsExtra = { include: "customer,resource,service,order" };
+  //
+  // Das Fenster wird serverseitig gefiltert, statt alles zu holen und lokal zu
+  // verwerfen. ANNY erwartet die Grenzen doppelpunkt-getrennt (Y-m-d:Y-m-d) -
+  // ein Komma oder verschachtelte from/to-Keys quittiert die API mit 400. Die
+  // Obergrenze liegt bewusst weit in der Zukunft, damit auch langfristige
+  // Buchungen erfasst bleiben und das Aufraeumen am Ende keine Buchung
+  // uebersieht, die es invalidieren wuerde.
+  const ymd = (d: Date) => d.toISOString().slice(0, 10);
+  const windowEnd = new Date();
+  windowEnd.setFullYear(windowEnd.getFullYear() + 10);
+  const bookingsExtra = {
+    include: "customer,resource,service,order",
+    "filter[start_date_range]": `${ymd(syncCutoff)}:${ymd(windowEnd)}`,
+  };
   const firstBookingsRes = await fetch(
     `${apiBase}/bookings?` + new URLSearchParams({ ...bookingsExtra, "page[size]": "500", "page[number]": "1" }),
     { headers, signal: AbortSignal.timeout(20000) },
@@ -880,7 +943,9 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   // Add-On-Positionen der Rechnung von den Buchungspositionen zu trennen.
   // Beim ersten Lauf einmal die komplette Rechnungshistorie, danach nur noch
   // das Zeitfenster - sonst sprengt der Scan das Funktions-Zeitbudget.
-  const addOnFullScan = !annyConfig.addOnBackfillAt;
+  // Der einmalige Voll-Backfill gehoert in den Volllauf; der stuendliche
+  // Fensterlauf soll schnell bleiben.
+  const addOnFullScan = mode === "full" && !annyConfig.addOnBackfillAt;
   const daysSinceLastSync = config.lastUpdate
     ? (Date.now() - config.lastUpdate.getTime()) / (24 * 60 * 60 * 1000)
     : ADDON_INVOICE_WINDOW_MAX_DAYS;
@@ -942,7 +1007,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     areaMappings[link.annyName] = link.accessAreaId;
   }
 
-  console.log(`[anny sync] account=${accountId} ${uniqueBookings.length} bookings in window (${SYNC_WINDOW_DAYS}d), ${oldSkipped} older skipped, ${pageCount} pages, total reported=${totalBookingsReported ?? "?"}`);
+  console.log(`[anny sync] account=${accountId} mode=${mode} ${uniqueBookings.length} bookings in window (${windowBackDays}d zurueck), ${oldSkipped} older skipped, ${pageCount} pages, total reported=${totalBookingsReported ?? "?"}`);
 
   // --- Group bookings ---
 
@@ -1651,10 +1716,13 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
       : addOnScan.complete
         ? { addOnBackfillAt: new Date().toISOString() }
         : {}),
+    ...(mode === "full" ? { lastFullSyncAt: new Date().toISOString() } : {}),
   };
 
   const syncResult = {
     at: new Date().toISOString(),
+    mode,
+    windowBackDays,
     created,
     updated,
     skipped,
@@ -1694,6 +1762,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
   } catch { /* best-effort */ }
 
   return {
+    mode,
     created,
     updated,
     skipped,
@@ -1702,7 +1771,7 @@ export async function syncAnnyForAccount(accountId: number): Promise<AnnySyncRes
     invalidated: orphaned.count,
     total: uniqueBookings.length,
     oldSkipped,
-    syncWindowDays: SYNC_WINDOW_DAYS,
+    syncWindowDays: windowBackDays,
     pages: pageCount,
     groups: groups.size,
     resources: discoveredResourceNames.size,

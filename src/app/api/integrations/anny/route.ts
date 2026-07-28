@@ -17,7 +17,9 @@ export async function POST() {
   }
 
   try {
-    const result = await syncAnnyForAccount(accountId);
+    // Manuell ausgeloest: immer der Volllauf. Wer hier klickt, will einen
+    // vollstaendigen Abgleich sehen, nicht nur das Tagesfenster.
+    const result = await syncAnnyForAccount(accountId, { mode: "full" });
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unbekannt";

@@ -57,11 +57,14 @@ export async function GET(request: NextRequest) {
     configs.map(async (config) => {
       try {
         console.log(`[cron anny-sync] Starting sync for account ${config.accountId}`);
-        const result = await syncAnnyForAccount(config.accountId);
-        console.log(`[cron anny-sync] Account ${config.accountId}: created=${result.created} updated=${result.updated} errors=${result.errors}`);
+        // "auto": stuendlich der schnelle Fensterlauf, einmal taeglich der
+        // Volllauf ueber das ganze 60-Tage-Fenster inkl. Aufraeumen.
+        const result = await syncAnnyForAccount(config.accountId, { mode: "auto" });
+        console.log(`[cron anny-sync] Account ${config.accountId}: mode=${result.mode} created=${result.created} updated=${result.updated} errors=${result.errors}`);
         return {
           accountId: config.accountId,
           ok: true as const,
+          mode: result.mode,
           created: result.created,
           updated: result.updated,
         };
