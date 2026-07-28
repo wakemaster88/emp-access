@@ -39,6 +39,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { coverMotionLabel, type CoverMotion } from "@/lib/cover-constants";
+import type { SensorReading } from "@/lib/shelly-sensor";
+import { SensorReadings } from "./sensor-readings";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +96,8 @@ interface ShellyStatus {
   motion?: CoverMotion;
   /// Fahrposition in Prozent (100 = offen) – nur bei kalibrierten Antrieben.
   position?: number | null;
+  /// Messwerte des Geräts (Türkontakt, Temperatur, Batterie …).
+  readings?: SensorReading[];
 }
 
 interface GardenaStatus {
@@ -245,6 +249,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           const isPi     = device.type === "RASPBERRY_PI";
           const isNuki   = device.type === "NUKI_SMARTLOCK";
           const isGardena = device.type === "GARDENA_VALVE";
+          const isSensor = device.category === "SENSOR";
           const cat      = device.category ? CATEGORY_META[device.category] : null;
           const lastUpd  = device.lastUpdate ? new Date(device.lastUpdate) : null;
           const piOnline = !!(lastUpd && lastUpd > fiveMinAgo);
@@ -292,15 +297,23 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                       {shelly.position != null && ` · ${shelly.position} %`}
                     </Badge>
                   )}
-                  {shelly.online && !shelly.motion && shelly.output === true && (
+                  {/* Ein Sensor hat keinen Ausgang. Steht er auf demselben
+                      Shelly wie ein Schaltkanal, wuerde dessen Zustand hier
+                      sonst als der des Sensors erscheinen. */}
+                  {shelly.online && !shelly.motion && !isSensor && shelly.output === true && (
                     <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1 text-xs h-5">
                       <Power className="h-3 w-3" /> Ein
                     </Badge>
                   )}
-                  {shelly.online && !shelly.motion && shelly.output === false && (
+                  {shelly.online && !shelly.motion && !isSensor && shelly.output === false && (
                     <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
                       <PowerOff className="h-3 w-3" /> Aus
                     </Badge>
+                  )}
+                  {/* Offline sind die letzten Messwerte veraltet – dann sagt
+                      "Offline" mehr aus als ein alter Wert. */}
+                  {shelly.online && shelly.readings && (
+                    <SensorReadings readings={shelly.readings} />
                   )}
                   {shelly.power !== undefined && shelly.power > 0.5 && (
                     <span className="flex items-center gap-0.5 text-xs text-slate-400">

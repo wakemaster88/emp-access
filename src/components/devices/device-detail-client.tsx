@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import {
   coverActionLabels, coverMotionLabel, isCoverDevice, type CoverMotion,
 } from "@/lib/cover-constants";
+import type { SensorReading } from "@/lib/shelly-sensor";
+import { SensorReadings } from "./sensor-readings";
 import { EditDeviceDialog, type DeviceData, type AreaOption, type CameraOption } from "./edit-device-dialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -33,6 +35,8 @@ interface ShellyStatus {
   power?: number;
   source: "local" | "cloud" | "unavailable";
   cover?: CoverStatus;
+  /// Messwerte des Geräts (Türkontakt, Riegel, Temperatur, Batterie …).
+  readings?: SensorReading[];
 }
 
 interface GardenaStatus {
@@ -261,6 +265,10 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
 
           {isCover ? (
             <CoverMotionBadge cover={shellyStatus.cover} category={device.category ?? null} />
+          ) : isSensor ? (
+            // Ein Sensor hat keinen Ausgang. Steht er auf demselben Shelly wie
+            // ein Schaltkanal, waere dessen Zustand hier irrefuehrend.
+            null
           ) : shellyStatus.output === true ? (
             <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5 text-xs">
               <Power className="h-3 w-3" />
@@ -272,6 +280,12 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
               {device.category === "BELEUCHTUNG" ? "Ausgeschaltet" : "Aus"}
             </Badge>
           ) : null}
+
+          {/* Offline sind die letzten Messwerte veraltet – dann sagt "Offline"
+              mehr aus als ein alter Wert. */}
+          {shellyStatus.online && shellyStatus.readings && (
+            <SensorReadings readings={shellyStatus.readings} />
+          )}
 
           {shellyStatus.power !== undefined && shellyStatus.power > 0.5 && (
             <Badge variant="outline" className="gap-1 text-xs text-slate-500">

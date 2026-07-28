@@ -14,6 +14,7 @@ import {
   readCoverStatus,
   type CoverMotion,
 } from "@/lib/shelly-cover";
+import { readSensorReadings, type SensorReading } from "@/lib/shelly-sensor";
 
 export interface ShellyDeviceStatus {
   id: number;
@@ -25,6 +26,8 @@ export interface ShellyDeviceStatus {
   motion?: CoverMotion;
   /// Nur bei Antrieben im Cover-Profil: Fahrposition in Prozent (100 = offen).
   position?: number | null;
+  /// Messwerte, die das Gerät meldet (Türkontakt, Temperatur, Batterie …).
+  readings?: SensorReading[];
 }
 
 // Geraeteliste: knappe Timeouts, damit ein nicht erreichbarer Shelly die
@@ -74,6 +77,11 @@ export async function GET(request: NextRequest) {
       online: boolean,
       source: "local" | "cloud",
     ): ShellyDeviceStatus => {
+      // Messwerte haengen am Geraet, nicht am Bedienmodell: Auch ein Schalter
+      // darf ein Thermometer mitbringen.
+      const readings = readSensorReadings(status);
+      const extra = readings.length > 0 ? { readings } : {};
+
       if (isCover) {
         const cover = readCoverStatus(status, device);
         return {
@@ -84,10 +92,11 @@ export async function GET(request: NextRequest) {
           source,
           motion: cover.motion,
           position: cover.position,
+          ...extra,
         };
       }
       const sw = shellySwitchState(status, shellySwitchIndex(device.shellyId));
-      return { id: device.id, online, output: sw.output, power: sw.power, source };
+      return { id: device.id, online, output: sw.output, power: sw.power, source, ...extra };
     };
 
     // 1. Local

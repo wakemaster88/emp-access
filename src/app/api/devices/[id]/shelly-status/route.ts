@@ -15,6 +15,7 @@ import {
   readCoverStatus,
   type CoverMotion,
 } from "@/lib/shelly-cover";
+import { readSensorReadings, type SensorReading } from "@/lib/shelly-sensor";
 
 export interface ShellyCoverStatus {
   motion: CoverMotion;
@@ -38,6 +39,8 @@ export interface ShellyStatus {
   source: "local" | "cloud" | "unavailable";
   /// Nur bei Antrieben (MARKISE/ROLLTOR) gesetzt.
   cover?: ShellyCoverStatus;
+  /// Messwerte, die das Gerät meldet (Türkontakt, Temperatur, Batterie …).
+  readings?: SensorReading[];
 }
 
 const UNAVAILABLE: ShellyStatus = { online: false, output: null, source: "unavailable" };
@@ -76,6 +79,11 @@ export async function GET(
     online: boolean,
     source: "local" | "cloud",
   ): ShellyStatus => {
+    // Messwerte haengen am Geraet, nicht am Bedienmodell: Auch ein Schalter
+    // darf ein Thermometer mitbringen.
+    const readings = readSensorReadings(status);
+    const extra = readings.length > 0 ? { readings } : {};
+
     if (isCover) {
       // Ob zwei Relais oder ein Cover-Profil vorliegt, steht im Gerätestatus –
       // nicht in der Konfiguration.
@@ -85,6 +93,7 @@ export async function GET(
         output: coverIsMoving(cover.motion),
         power: cover.power,
         source,
+        ...extra,
         cover: {
           motion: cover.motion,
           position: cover.position,
@@ -97,7 +106,7 @@ export async function GET(
     }
 
     const sw = shellySwitchState(status, shellySwitchIndex(device.shellyId));
-    return { online, output: sw.output, power: sw.power, source };
+    return { online, output: sw.output, power: sw.power, source, ...extra };
   };
 
   // 1. Lokale IP (Gen2 Shelly.GetStatus, sonst Gen1 /status)
