@@ -69,6 +69,7 @@ export async function GET(
     allSubscriptions,
     services,
     areas,
+    annyResourceLinks,
     recentScans,
     grantedTicketIdsToday,
     openableDevices,
@@ -181,6 +182,17 @@ export async function GET(
     prisma.accessArea.findMany({
       where: { accountId },
       select: { id: true, name: true },
+    }),
+
+    // Zuordnung ANNY-Resource -> AccessArea. Das Frontend loest damit die
+    // `annyResourceId` eines Kombi-Teiltickets in einen lesbaren Bereichsnamen
+    // auf ("Aquapark" / "Strandbad"). Eine Resource-ID kann in mehreren Areas
+    // auftauchen (historisch falsch gepflegte Links), deshalb liefern wir alle
+    // Kandidaten und das Frontend waehlt den passenden zum Service.
+    prisma.annyResourceLink.findMany({
+      where: { accountId },
+      select: { annyResourceId: true, accessAreaId: true },
+      distinct: ["annyResourceId", "accessAreaId"],
     }),
 
     prisma.scan.findMany({
@@ -412,6 +424,10 @@ export async function GET(
       subscriptions: enrichedSubscriptions,
       services: servicesWithAreas,
       areas,
+      annyResourceAreas: annyResourceLinks.map((l) => ({
+        resourceId: l.annyResourceId,
+        areaId: l.accessAreaId,
+      })),
       allSubscriptions: subsWithAreas,
       recentScans,
       annySyncStatus,

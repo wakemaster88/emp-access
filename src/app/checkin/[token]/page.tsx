@@ -108,6 +108,15 @@ interface CheckinTicket {
   _count?: { scans: number };
 }
 
+/** Ein Teilticket eines Kombi-Tickets, mit aufgeloestem Bereichsnamen.
+ *  "Aquapark Tageskarte" besteht z.B. aus einer Aquapark- und einer
+ *  Strandbad-Buchung; im Ticket-Overlay wird beides aufgelistet, damit das
+ *  Personal sieht, welche Bereiche der Gast tatsaechlich nutzen darf. */
+interface BundlePart {
+  ticket: CheckinTicket;
+  areaName: string;
+}
+
 /** Kombiniertes Board-Setup eines Teilnehmers (Sport + Level + Schuhgroesse).
  *  Beispiel: "Wakeboard · Anfänger · Gr. 38" – so weiss das Personal direkt,
  *  WELCHES Board mit WELCHER Bindungsgroesse bereitgestellt werden muss,
@@ -303,6 +312,9 @@ interface CheckinData {
   subscriptions: SubData[];
   services: ServiceData[];
   areas: { id: number; name: string }[];
+  /** Zuordnung ANNY-Resource -> AccessArea, um die `annyResourceId` eines
+   *  Kombi-Teiltickets als Bereichsnamen anzeigen zu koennen. */
+  annyResourceAreas?: { resourceId: string; areaId: number }[];
   allSubscriptions?: SubOption[];
   recentScans: ScanEntry[];
   annySyncStatus?: AnnySyncStatus | null;
@@ -807,18 +819,66 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
    *  angezeigt und muss deshalb auch gemeinsam eingecheckt werden - sonst
    *  bliebe die zweite Buchung offen und der Gast taucht am naechsten Poll
    *  wieder als ausstehend auf. */
-  const bundledTicketIds = useMemo(() => {
-    const map = new Map<number, number[]>();
+  const bundleByTicketId = useMemo(() => {
+    const map = new Map<number, CheckinTicket[]>();
     for (const bundle of dayBundles) {
       if (bundle.members.length < 2) continue;
-      const ids = bundle.members.map((m) => m.id);
-      for (const id of ids) map.set(id, ids);
+      for (const m of bundle.members) map.set(m.id, bundle.members);
     }
     return map;
   }, [dayBundles]);
 
+  /** Bereichsnamen je ANNY-Resource. Eine Resource-ID kann auf mehrere
+   *  Bereiche zeigen (historisch gepflegte Links), daher alle Kandidaten. */
+  const areasByResource = useMemo(() => {
+    const nameById = new Map<number, string>();
+    for (const a of data?.areas ?? []) nameById.set(a.id, a.name);
+    const map = new Map<string, Array<{ areaId: number; name: string }>>();
+    for (const link of data?.annyResourceAreas ?? []) {
+      const name = nameById.get(link.areaId);
+      if (!name) continue;
+      const arr = map.get(link.resourceId) ?? [];
+      if (!arr.some((x) => x.areaId === link.areaId)) arr.push({ areaId: link.areaId, name });
+      map.set(link.resourceId, arr);
+    }
+    return map;
+  }, [data?.annyResourceAreas, data?.areas]);
+
+  const areaIdsByService = useMemo(() => {
+    const map = new Map<number, number[]>();
+    for (const s of data?.services ?? []) map.set(s.id, s.areaIds ?? []);
+    return map;
+  }, [data?.services]);
+
+  /** Loest die ANNY-Resource eines Teiltickets in einen Bereichsnamen auf.
+   *  Bei mehrdeutiger Resource gewinnt der Bereich, der auch zum Service des
+   *  Tickets gehoert. */
+  const resolveResourceArea = useCallback(
+    (t: CheckinTicket): string | null => {
+      if (!t.annyResourceId) return null;
+      const candidates = areasByResource.get(t.annyResourceId) ?? [];
+      if (candidates.length === 0) return null;
+      if (candidates.length === 1) return candidates[0].name;
+      const allowed = t.serviceId != null ? areaIdsByService.get(t.serviceId) ?? [] : [];
+      return (candidates.find((c) => allowed.includes(c.areaId)) ?? candidates[0]).name;
+    },
+    [areasByResource, areaIdsByService],
+  );
+
+  /** Teiltickets des gerade geoeffneten Gastes, mit aufgeloestem Bereich.
+   *  Leer bei Einzeltickets - dann zeigt das Overlay keine Kombi-Sektion. */
+  const selectedBundleParts = useMemo<BundlePart[]>(() => {
+    if (!selectedTicket) return [];
+    const members = bundleByTicketId.get(selectedTicket.id);
+    if (!members || members.length < 2) return [];
+    return members.map((m) => ({
+      ticket: m,
+      areaName: resolveResourceArea(m) ?? m.accessArea?.name ?? "Unbekannter Bereich",
+    }));
+  }, [selectedTicket, bundleByTicketId, resolveResourceArea]);
+
   const handleCheckin = useCallback(async (ticketId: number) => {
-    const ticketIds = bundledTicketIds.get(ticketId) ?? [ticketId];
+    const ticketIds = bundleByTicketId.get(ticketId)?.map((m) => m.id) ?? [ticketId];
     setCheckingIn(ticketId);
     try {
       let ok = false;
@@ -854,7 +914,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     } finally {
       setCheckingIn(null);
     }
-  }, [token, selectedTicket, bundledTicketIds]);
+  }, [token, selectedTicket, bundleByTicketId]);
 
   const handleScan = useCallback(async (code: string) => {
     if (!code.trim()) return;
@@ -1946,6 +2006,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             handlePauseTicket(selectedTicket.id, "pause", { duration, reason })
           }
           onResume={() => handlePauseTicket(selectedTicket.id, "resume")}
+          bundleParts={selectedBundleParts}
         />
       )}
 
@@ -4493,6 +4554,7 @@ function TicketOverlay({
   onSaveGuestInfo,
   onPause,
   onResume,
+  bundleParts,
 }: {
   ticket: CheckinTicket;
   onClose: () => void;
@@ -4521,6 +4583,8 @@ function TicketOverlay({
   onSaveGuestInfo: (info: Record<string, string> | null) => void;
   onPause: (duration: string, reason: string) => void;
   onResume: () => void;
+  /** Teiltickets eines Kombi-Tickets. Leer bei normalen Einzeltickets. */
+  bundleParts: BundlePart[];
 }) {
   const extras = (ticket.extras ?? []) as TicketExtra[];
   const isSub = !!ticket.subscriptionId;
@@ -4854,8 +4918,52 @@ function TicketOverlay({
         {/* Info */}
         <div className="px-5 py-3 border-b border-slate-800 space-y-2">
           <InfoRow label="RFID" value={ticket.rfidCode ?? "–"} icon={Fingerprint} />
-          {ticket.accessArea && <InfoRow label="Bereich" value={ticket.accessArea.name} icon={Users} />}
-          {ticket.barcode && <InfoRow label="Barcode" value={ticket.barcode} icon={ScanLine} />}
+          {ticket.accessArea && bundleParts.length === 0 && (
+            <InfoRow label="Bereich" value={ticket.accessArea.name} icon={Users} />
+          )}
+          {/* Kombi-Ticket: die einzelnen ANNY-Buchungen auflisten. Ohne das
+              sieht das Personal nur eine Karte und kann nicht pruefen, welche
+              Bereiche der Gast abgedeckt hat und ob wirklich alle
+              Teilbuchungen eingecheckt sind. */}
+          {bundleParts.length > 0 && (
+            <div className="rounded-xl border border-sky-800/50 bg-sky-950/30 p-2.5 space-y-2">
+              <div className="flex items-center gap-2 text-xs">
+                <Layers className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+                <span className="font-semibold text-sky-300">
+                  Kombi-Ticket · {bundleParts.length} Bereiche
+                </span>
+              </div>
+              {bundleParts.map(({ ticket: part, areaName }) => {
+                const partChecked = part.checkedIn || part.status === "REDEEMED";
+                return (
+                  <div key={part.id} className="flex items-center gap-2 text-xs">
+                    {partChecked ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Clock className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                    )}
+                    <span className="font-medium text-slate-200 shrink-0">{areaName}</span>
+                    {part.barcode && (
+                      <span className="font-mono text-[10px] text-slate-500 truncate">
+                        {part.barcode}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "ml-auto shrink-0 text-[10px] font-semibold",
+                        partChecked ? "text-emerald-400" : "text-slate-500",
+                      )}
+                    >
+                      {partChecked ? "eingecheckt" : "offen"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {ticket.barcode && bundleParts.length === 0 && (
+            <InfoRow label="Barcode" value={ticket.barcode} icon={ScanLine} />
+          )}
           {editMode === "dates" ? (
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs text-slate-400">
