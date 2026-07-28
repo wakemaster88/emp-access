@@ -4,7 +4,7 @@
  * und Antriebe mit zwei Fahrtrichtungen (`shelly-cover.ts`).
  */
 
-import { normalizeShellyServer } from "./shelly-cloud";
+import { shellyCloudPost } from "./shelly-cloud";
 
 export interface ShellyCloudCreds {
   /// Cloud-Host aus ApiConfig.baseUrl, mit oder ohne Schema.
@@ -68,27 +68,16 @@ export async function shellySetRelayCloud(
   on: boolean,
   timerSec?: number,
 ): Promise<boolean> {
-  try {
-    const body = new URLSearchParams({
-      auth_key: creds.token.trim(),
-      id: baseId,
-      channel: String(channel),
-      turn: on ? "on" : "off",
-    });
-    if (timerSec) body.set("timer", String(timerSec));
+  const body = new URLSearchParams({
+    auth_key: creds.token.trim(),
+    id: baseId,
+    channel: String(channel),
+    turn: on ? "on" : "off",
+  });
+  if (timerSec) body.set("timer", String(timerSec));
 
-    const res = await fetch(`${normalizeShellyServer(creds.baseUrl)}/device/relay/control`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { isok?: boolean };
-    return data.isok === true;
-  } catch {
-    return false;
-  }
+  const reply = await shellyCloudPost(creds.baseUrl, "/device/relay/control", body);
+  return reply.isok;
 }
 
 /**

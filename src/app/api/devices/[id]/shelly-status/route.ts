@@ -8,15 +8,27 @@ import {
   shellySwitchState,
   type ShellyDeviceStatusMap,
 } from "@/lib/shelly-cloud";
-import { coverChannels, coverMotion, isCoverDevice, type CoverMotion } from "@/lib/shelly-cover";
+import {
+  coverChannels,
+  coverIsMoving,
+  isCoverDevice,
+  readCoverStatus,
+  type CoverMotion,
+} from "@/lib/shelly-cover";
 
 export interface ShellyCoverStatus {
-  /// Abgeleitete Fahrtrichtung aus beiden Relaiszustaenden.
   motion: CoverMotion;
+  /// Fahrposition in Prozent (100 = offen); null, wenn der Antrieb sie nicht kennt.
+  position: number | null;
   upOn: boolean | null;
   downOn: boolean | null;
-  /// false = Kanalzuordnung fehlt oder ist unbrauchbar (z. B. Auf = Zu).
+  /// false = Antrieb läuft über zwei Relais, aber die Kanalzuordnung fehlt.
   configured: boolean;
+  /**
+   * Wie der Shelly den Antrieb führt: `cover` = als Rollladen im Gerät selbst,
+   * `relays` = zwei getrennte Relais. Bestimmt, welche Angaben belegt sind.
+   */
+  mode: "cover" | "relays";
 }
 
 export interface ShellyStatus {
@@ -29,6 +41,14 @@ export interface ShellyStatus {
 }
 
 const UNAVAILABLE: ShellyStatus = { online: false, output: null, source: "unavailable" };
+
+/**
+ * Ein Shelly im selben Netz antwortet in wenigen Millisekunden. Ist die
+ * hinterlegte Adresse von hier aus gar nicht erreichbar, darf der Versuch die
+ * Anzeige nicht ausbremsen – während einer Fahrt wird der Status alle drei
+ * Sekunden neu geholt.
+ */
+const LOCAL_TIMEOUT_MS = 1500;
 
 export async function GET(
   _request: NextRequest,
@@ -50,36 +70,28 @@ export async function GET(
   if (!device) return NextResponse.json({ error: "Gerät nicht gefunden" }, { status: 404 });
 
   const isCover = isCoverDevice(device);
-  const channels = isCover ? coverChannels(device) : null;
-
-  if (isCover && !channels) {
-    // Kategorie ist gesetzt, die Kanalzuordnung fehlt aber noch.
-    return NextResponse.json({
-      ...UNAVAILABLE,
-      cover: { motion: "unknown", upOn: null, downOn: null, configured: false },
-    } satisfies ShellyStatus);
-  }
 
   const build = (
     status: ShellyDeviceStatusMap,
     online: boolean,
     source: "local" | "cloud",
   ): ShellyStatus => {
-    if (channels) {
-      const up = shellySwitchState(status, channels.up, true);
-      const down = shellySwitchState(status, channels.down, true);
-      const power = (up.power ?? 0) + (down.power ?? 0);
+    if (isCover) {
+      // Ob zwei Relais oder ein Cover-Profil vorliegt, steht im Gerätestatus –
+      // nicht in der Konfiguration.
+      const cover = readCoverStatus(status, device);
       return {
         online,
-        // Ein Antrieb gilt als "aktiv", solange eine Fahrtrichtung anliegt.
-        output: up.output == null && down.output == null ? null : !!(up.output || down.output),
-        power: up.power == null && down.power == null ? undefined : power,
+        output: coverIsMoving(cover.motion),
+        power: cover.power,
         source,
         cover: {
-          motion: coverMotion(up.output, down.output),
-          upOn: up.output,
-          downOn: down.output,
-          configured: true,
+          motion: cover.motion,
+          position: cover.position,
+          upOn: cover.upOn,
+          downOn: cover.downOn,
+          configured: cover.configured,
+          mode: cover.mode,
         },
       };
     }
@@ -90,7 +102,7 @@ export async function GET(
 
   // 1. Lokale IP (Gen2 Shelly.GetStatus, sonst Gen1 /status)
   if (device.ipAddress) {
-    const local = await shellyLocalStatusMap(device.ipAddress);
+    const local = await shellyLocalStatusMap(device.ipAddress, LOCAL_TIMEOUT_MS);
     if (local) return NextResponse.json(build(local, true, "local"));
   }
 
@@ -107,9 +119,21 @@ export async function GET(
     if (entry) return NextResponse.json(build(entry.status, entry.online, "cloud"));
   }
 
+  // Ohne Antwort vom Gerät bleibt das Profil offen; `configured` bezieht sich
+  // deshalb nur darauf, ob wenigstens der Relais-Betrieb eingerichtet wäre.
   return NextResponse.json(
-    channels
-      ? { ...UNAVAILABLE, cover: { motion: "unknown", upOn: null, downOn: null, configured: true } }
+    isCover
+      ? {
+          ...UNAVAILABLE,
+          cover: {
+            motion: "unknown" as const,
+            position: null,
+            upOn: null,
+            downOn: null,
+            configured: coverChannels(device) !== null,
+            mode: "relays" as const,
+          },
+        }
       : UNAVAILABLE,
   );
 }

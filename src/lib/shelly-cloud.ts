@@ -36,33 +36,113 @@ export function normalizeShellyServer(baseUrl: string): string {
   return `https://${baseUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
 }
 
+export interface ShellyCloudReply {
+  /// HTTP-Status der Antwort; 0 = die Anfrage kam nicht zustande.
+  status: number;
+  isok: boolean;
+  errors?: Record<string, unknown>;
+  data?: unknown;
+}
+
+/**
+ * Wartezeiten vor den weiteren Versuchen, wenn die Cloud das Ratenlimit meldet.
+ *
+ * Gemessen an der echten Cloud: Ein Statusabruf und ein direkt folgender
+ * Schaltbefehl gehen zusammen durch, ein zweiter Schaltbefehl kurz danach wird
+ * abgewiesen. Nach etwa einer Sekunde ist wieder frei – nach einem
+ * vorangegangenen Statusabruf aber erst spaeter. Zwei Versuche mit rund zwei
+ * Sekunden Abstand deckten in den Messungen alle Faelle ab.
+ */
+const RATE_LIMIT_RETRY_MS = [2000, 2500];
+
+/**
+ * Die Cloud lehnt zu schnelle Aufrufe mit HTTP 401 und
+ * `errors: { max_req: "Request limit reached!" }` ab – nicht mit 429, wie man
+ * erwarten wuerde. Ohne diese Unterscheidung sieht eine Ratenbegrenzung wie ein
+ * falscher Auth-Key aus.
+ */
+function isRateLimited(reply: ShellyCloudReply): boolean {
+  return reply.errors !== undefined && "max_req" in reply.errors;
+}
+
+/**
+ * POST an die Shelly Cloud mit einem Wiederholungsversuch bei
+ * Ratenbegrenzung.
+ *
+ * Pro Auth-Key erlaubt die Cloud nur etwa einen Aufruf pro Sekunde – und dieses
+ * Budget teilen sich Statusabrufe und Schaltbefehle. Zwei schnell
+ * aufeinanderfolgende Bedienschritte, etwa "Zu" und gleich danach "Stopp",
+ * liefen deshalb ins Leere, ohne dass an der Verbindung etwas fehlte.
+ */
+export async function shellyCloudPost(
+  baseUrl: string,
+  path: string,
+  params: URLSearchParams,
+  timeoutMs = 5000,
+): Promise<ShellyCloudReply> {
+  const url = `${normalizeShellyServer(baseUrl)}${path}`;
+
+  const attempt = async (): Promise<ShellyCloudReply> => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    try {
+      const body = (await res.json()) as {
+        isok?: boolean;
+        errors?: Record<string, unknown>;
+        data?: unknown;
+      };
+      return {
+        status: res.status,
+        isok: body.isok === true,
+        errors: body.errors,
+        data: body.data,
+      };
+    } catch {
+      // Antwort ohne JSON-Koerper – dann zaehlt allein der HTTP-Status.
+      return { status: res.status, isok: false };
+    }
+  };
+
+  try {
+    let reply = await attempt();
+    for (const waitMs of RATE_LIMIT_RETRY_MS) {
+      if (reply.isok || !isRateLimited(reply)) return reply;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      reply = await attempt();
+    }
+    return reply;
+  } catch {
+    return { status: 0, isok: false };
+  }
+}
+
 async function fetchAllStatuses(
   server: string,
   authKey: string,
 ): Promise<Map<string, ShellyAllStatusEntry> | null> {
   try {
-    const res = await fetch(`${server}/device/all_status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      // show_info liefert _dev_info.online fuer jedes Geraet mit.
-      body: new URLSearchParams({ auth_key: authKey, show_info: "true" }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
+    // show_info liefert _dev_info.online fuer jedes Geraet mit.
+    const reply = await shellyCloudPost(
+      server,
+      "/device/all_status",
+      new URLSearchParams({ auth_key: authKey, show_info: "true" }),
+      8000,
+    );
+    if (!reply.isok) return null;
 
-    const data = (await res.json()) as {
-      isok?: boolean;
-      data?: {
-        devices_status?: Record<
-          string,
-          ShellyDeviceStatusMap & { _dev_info?: { online?: boolean } }
-        >;
-      };
-    };
-    if (!data.isok) return null;
+    const data = reply.data as {
+      devices_status?: Record<
+        string,
+        ShellyDeviceStatusMap & { _dev_info?: { online?: boolean } }
+      >;
+    } | undefined;
 
     const map = new Map<string, ShellyAllStatusEntry>();
-    for (const [id, status] of Object.entries(data.data?.devices_status ?? {})) {
+    for (const [id, status] of Object.entries(data?.devices_status ?? {})) {
       const entry: ShellyAllStatusEntry = {
         online: status._dev_info?.online ?? false,
         status,
@@ -138,6 +218,105 @@ export function shellySwitchState(
   }
 
   return { output: null };
+}
+
+/**
+ * Index der Cover-Komponente, wenn der Shelly den Antrieb selbst als Rollladen
+ * fuehrt – sonst `null`.
+ *
+ * Das Geraeteprofil entscheidet darueber, wie ein Antrieb ueberhaupt
+ * ansprechbar ist: Gen2/Gen3 im Cover-Profil stellen `cover:N` bereit und gar
+ * keine `switch:N`-Komponente, Relaisbefehle laufen dort ins Leere. Gen1
+ * (Shelly 2/2.5 im Roller-Modus) meldet stattdessen ein `rollers`-Array.
+ */
+export function shellyCoverComponentId(status: ShellyDeviceStatusMap): number | null {
+  // Kleinster Index, damit die Auswahl bei mehreren Antrieben nicht von der
+  // Schluesselreihenfolge der JSON-Antwort abhaengt.
+  let lowest: number | null = null;
+  for (const key of Object.keys(status)) {
+    if (!key.startsWith("cover:")) continue;
+    const id = Number(key.slice("cover:".length));
+    if (Number.isInteger(id) && (lowest === null || id < lowest)) lowest = id;
+  }
+  if (lowest !== null) return lowest;
+
+  const rollers = status.rollers;
+  return Array.isArray(rollers) && rollers.length > 0 ? 0 : null;
+}
+
+/** Fahrzustand, den ein Shelly im Cover-Profil meldet. */
+export type ShellyCoverStateName =
+  | "opening"
+  | "closing"
+  | "open"
+  | "closed"
+  | "stopped"
+  | "calibrating";
+
+export interface ShellyCoverReading {
+  state: ShellyCoverStateName | null;
+  /**
+   * Fahrposition in Prozent (100 = offen). `null`, wenn der Antrieb nicht
+   * kalibriert ist – ohne Kalibrierung kennt der Shelly seine Lage nicht
+   * (`pos_control: false`) und meldet keine Position.
+   */
+  position: number | null;
+  power?: number;
+}
+
+const COVER_STATES = new Set<string>([
+  "opening", "closing", "open", "closed", "stopped", "calibrating",
+]);
+
+/**
+ * Gen1 benutzt fuer denselben Sachverhalt ein anderes Vokabular: "open" und
+ * "close" heissen dort *faehrt gerade*, nicht *steht offen*. Ohne diese
+ * Umschluesselung wuerde ein fahrender Gen1-Antrieb als "offen" gemeldet.
+ */
+const GEN1_ROLLER_STATES: Record<string, ShellyCoverStateName> = {
+  open: "opening",
+  close: "closing",
+  stop: "stopped",
+};
+
+function asCoverState(raw: unknown): ShellyCoverStateName | null {
+  return typeof raw === "string" && COVER_STATES.has(raw)
+    ? (raw as ShellyCoverStateName)
+    : null;
+}
+
+/**
+ * Zustand und Position eines Antriebs im Cover-Profil aus einem Geraetestatus
+ * lesen. Anders als bei zwei getrennten Relais muss die Fahrtrichtung hier
+ * nicht erraten werden – der Shelly meldet sie samt Endlage selbst.
+ */
+export function shellyCoverReading(
+  status: ShellyDeviceStatusMap,
+  coverId: number,
+): ShellyCoverReading {
+  const cover = status[`cover:${coverId}`] as
+    | { state?: unknown; current_pos?: number | null; apower?: number }
+    | undefined;
+  if (cover !== undefined) {
+    return {
+      state: asCoverState(cover.state),
+      position: cover.current_pos ?? null,
+      power: cover.apower,
+    };
+  }
+
+  const roller = (status.rollers as
+    | Array<{ state?: string; current_pos?: number }>
+    | undefined)?.[coverId];
+  if (roller !== undefined) {
+    return {
+      state: roller.state ? (GEN1_ROLLER_STATES[roller.state] ?? null) : null,
+      position: roller.current_pos ?? null,
+      power: (status.meters as Array<{ power?: number }> | undefined)?.[coverId]?.power,
+    };
+  }
+
+  return { state: null, position: null };
 }
 
 /**

@@ -38,7 +38,7 @@ import {
   Blinds,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { COVER_MOTION_LABELS, type CoverMotion } from "@/lib/cover-constants";
+import { coverMotionLabel, type CoverMotion } from "@/lib/cover-constants";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +92,8 @@ interface ShellyStatus {
   source: "local" | "cloud" | "unavailable";
   /// Nur bei Antrieben (Markise, Rolltor).
   motion?: CoverMotion;
+  /// Fahrposition in Prozent (100 = offen) – nur bei kalibrierten Antrieben.
+  position?: number | null;
 }
 
 interface GardenaStatus {
@@ -279,12 +281,15 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                         "gap-1 text-xs h-5",
                         shelly.motion === "conflict"
                           ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                          : shelly.motion === "idle"
-                            ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                            : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                          // Nur eine laufende Fahrt wird hervorgehoben; Endlagen
+                          // und Stillstand bleiben ruhig.
+                          : shelly.motion === "opening" || shelly.motion === "closing"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                            : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
                       )}
                     >
-                      {COVER_MOTION_LABELS[shelly.motion]}
+                      {coverMotionLabel(shelly.motion, device.category)}
+                      {shelly.position != null && ` · ${shelly.position} %`}
                     </Badge>
                   )}
                   {shelly.online && !shelly.motion && shelly.output === true && (

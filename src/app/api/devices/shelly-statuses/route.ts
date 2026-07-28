@@ -8,7 +8,12 @@ import {
   shellySwitchState,
   type ShellyDeviceStatusMap,
 } from "@/lib/shelly-cloud";
-import { coverChannels, coverMotion, isCoverDevice, type CoverMotion } from "@/lib/shelly-cover";
+import {
+  coverIsMoving,
+  isCoverDevice,
+  readCoverStatus,
+  type CoverMotion,
+} from "@/lib/shelly-cover";
 
 export interface ShellyDeviceStatus {
   id: number;
@@ -18,6 +23,8 @@ export interface ShellyDeviceStatus {
   source: "local" | "cloud" | "unavailable";
   /// Nur bei Antrieben (MARKISE/ROLLTOR): abgeleitete Fahrtrichtung.
   motion?: CoverMotion;
+  /// Nur bei Antrieben im Cover-Profil: Fahrposition in Prozent (100 = offen).
+  position?: number | null;
 }
 
 // Geraeteliste: knappe Timeouts, damit ein nicht erreichbarer Shelly die
@@ -60,24 +67,23 @@ export async function GET(request: NextRequest) {
     : null;
 
   const results = await Promise.all(devices.map(async (device): Promise<ShellyDeviceStatus> => {
-    const channels = isCoverDevice(device) ? coverChannels(device) : null;
+    const isCover = isCoverDevice(device);
 
     const build = (
       status: ShellyDeviceStatusMap,
       online: boolean,
       source: "local" | "cloud",
     ): ShellyDeviceStatus => {
-      if (channels) {
-        const up = shellySwitchState(status, channels.up, true);
-        const down = shellySwitchState(status, channels.down, true);
+      if (isCover) {
+        const cover = readCoverStatus(status, device);
         return {
           id: device.id,
           online,
-          output: up.output == null && down.output == null ? null : !!(up.output || down.output),
-          power:
-            up.power == null && down.power == null ? undefined : (up.power ?? 0) + (down.power ?? 0),
+          output: coverIsMoving(cover.motion),
+          power: cover.power,
           source,
-          motion: coverMotion(up.output, down.output),
+          motion: cover.motion,
+          position: cover.position,
         };
       }
       const sw = shellySwitchState(status, shellySwitchIndex(device.shellyId));
@@ -102,7 +108,7 @@ export async function GET(request: NextRequest) {
       online: false,
       output: null,
       source: "unavailable",
-      ...(channels ? { motion: "unknown" as const } : {}),
+      ...(isCover ? { motion: "unknown" as const } : {}),
     };
   }));
 

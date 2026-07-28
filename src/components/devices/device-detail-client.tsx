@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  COVER_MOTION_LABELS, coverActionLabels, isCoverDevice, type CoverMotion,
+  coverActionLabels, coverMotionLabel, isCoverDevice, type CoverMotion,
 } from "@/lib/cover-constants";
 import { EditDeviceDialog, type DeviceData, type AreaOption, type CameraOption } from "./edit-device-dialog";
 
@@ -20,9 +20,11 @@ import { EditDeviceDialog, type DeviceData, type AreaOption, type CameraOption }
 
 interface CoverStatus {
   motion: CoverMotion;
+  position: number | null;
   upOn: boolean | null;
   downOn: boolean | null;
   configured: boolean;
+  mode: "cover" | "relays";
 }
 
 interface ShellyStatus {
@@ -68,9 +70,17 @@ interface Props {
  * Dann liegt Spannung auf beiden Wicklungsrichtungen und der Antrieb sollte
  * sofort gestoppt werden.
  */
-function CoverMotionBadge({ cover }: { cover?: CoverStatus }) {
+function CoverMotionBadge({
+  cover,
+  category,
+}: {
+  cover?: CoverStatus;
+  category: string | null;
+}) {
   if (!cover) return null;
-  const label = COVER_MOTION_LABELS[cover.motion];
+  // Die Position kennt nur ein kalibrierter Antrieb im Cover-Profil.
+  const position = cover.position != null ? ` · ${cover.position} %` : "";
+  const label = coverMotionLabel(cover.motion, category) + position;
 
   if (cover.motion === "conflict") {
     return (
@@ -250,7 +260,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
           )}
 
           {isCover ? (
-            <CoverMotionBadge cover={shellyStatus.cover} />
+            <CoverMotionBadge cover={shellyStatus.cover} category={device.category ?? null} />
           ) : shellyStatus.output === true ? (
             <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5 text-xs">
               <Power className="h-3 w-3" />

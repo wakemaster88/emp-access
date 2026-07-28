@@ -61,7 +61,22 @@ export function coverChannels(device: CoverDeviceConfig): CoverChannels | null {
   return { up, down, runtimeSec };
 }
 
-export type CoverMotion = "opening" | "closing" | "idle" | "conflict" | "unknown";
+/**
+ * Fahrzustand eines Antriebs.
+ *
+ * `open`/`closed` gibt es nur, wenn der Shelly den Antrieb selbst als Rollladen
+ * fuehrt – dann kennt er seine Endlage. Bei zwei getrennten Relais laesst sich
+ * aus den Schaltzustaenden nur ablesen, ob gefahren wird: dort heisst Stillstand
+ * `idle`, ohne Aussage darueber, ob offen oder geschlossen.
+ */
+export type CoverMotion =
+  | "opening"
+  | "closing"
+  | "open"
+  | "closed"
+  | "idle"
+  | "conflict"
+  | "unknown";
 
 /**
  * Leitet die Fahrtrichtung aus den beiden Relaiszustaenden ab. `conflict` heisst:
@@ -76,13 +91,59 @@ export function coverMotion(upOn: boolean | null, downOn: boolean | null): Cover
   return "idle";
 }
 
+/**
+ * Fahrtrichtung aus dem Zustand, den ein Shelly im Cover-Profil selbst meldet.
+ * `conflict` kann hier nicht auftreten: In diesem Profil verriegelt die
+ * Geraete-Firmware die beiden Richtungen gegeneinander.
+ */
+export function coverMotionFromState(state: string | null): CoverMotion {
+  switch (state) {
+    case "opening": return "opening";
+    case "closing": return "closing";
+    case "open": return "open";
+    case "closed": return "closed";
+    case "stopped": return "idle";
+    // "calibrating" und alles Unbekannte: keine belastbare Aussage.
+    default: return "unknown";
+  }
+}
+
 export const COVER_MOTION_LABELS: Record<CoverMotion, string> = {
   opening: "Fährt auf",
   closing: "Fährt zu",
+  open: "Offen",
+  closed: "Geschlossen",
   idle: "Steht",
   conflict: "Beide Richtungen aktiv",
   unknown: "Unbekannt",
 };
+
+/**
+ * Liegt eine Fahrt an? `null`, wenn der Zustand unbekannt ist. `conflict` zaehlt
+ * als aktiv – da liegt Spannung an, auch wenn der Antrieb sich nicht bewegt.
+ */
+export function coverIsMoving(motion: CoverMotion): boolean | null {
+  if (motion === "unknown") return null;
+  return motion === "opening" || motion === "closing" || motion === "conflict";
+}
+
+/** Eine Markise faehrt aus und ein, sie oeffnet und schliesst nicht. */
+const COVER_MOTION_LABELS_MARKISE: Partial<Record<CoverMotion, string>> = {
+  opening: "Fährt aus",
+  closing: "Fährt ein",
+  open: "Ausgefahren",
+  closed: "Eingefahren",
+};
+
+export function coverMotionLabel(
+  motion: CoverMotion,
+  category: string | null | undefined,
+): string {
+  if (category === "MARKISE") {
+    return COVER_MOTION_LABELS_MARKISE[motion] ?? COVER_MOTION_LABELS[motion];
+  }
+  return COVER_MOTION_LABELS[motion];
+}
 
 /** Szenen-Aktionen, die es nur bei Antrieben gibt. */
 const COVER_ONLY_ACTIONS = new Set(["OPEN", "CLOSE", "STOP"]);

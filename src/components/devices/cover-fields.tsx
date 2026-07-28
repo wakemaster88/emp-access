@@ -74,6 +74,12 @@ export function CoverFields({ category, values, onChange }: Props) {
         Zwei getrennte Relais am selben Shelly – ein Kanal je Fahrtrichtung. Die
         Steuerung schaltet vor jeder Fahrt zuerst die Gegenrichtung ab.
       </p>
+      <p className="text-xs text-slate-400">
+        Steht der Shelly selbst im Rollladen-Modus (Geräteprofil „Cover“), werden
+        Kanäle und Fahrzeit nicht verwendet: Dann fährt das Gerät über seine
+        eigenen Cover-Befehle und verriegelt die Richtungen in der Firmware. Das
+        erkennt die Steuerung selbst, hier ist nichts umzustellen.
+      </p>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
