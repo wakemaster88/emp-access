@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 
 export async function POST(
   request: NextRequest,
@@ -19,6 +20,7 @@ export async function POST(
 
   const ticket = await prisma.ticket.findFirst({
     where: { id: ticketId, accountId: monitor.accountId },
+    include: { service: { select: { mainAccessAreaId: true } } },
   });
 
   if (!ticket) {
@@ -69,8 +71,32 @@ export async function POST(
     },
   });
 
+  // Standort des Monitors: eigene Bereichszuordnung plus die Bereiche seiner
+  // Geraete. Der Strandbad-Monitor haengt an den Strandbad-Drehkreuzen, der
+  // Seilbahn-A-Monitor am Seilbahn-Drehkreuz. Nur wenn die Hauptressource des
+  // Tickets darunter ist, darf der Handscan die Zeit starten - sonst laeuft
+  // die gebuchte Stunde eines "Öffentlicher Betrieb - 1 Stunde"-Tickets schon
+  // los, wenn es am Strandbad-Monitor durchgewinkt wird.
+  const monitorAreaIds = (monitor.areaIds as number[] | null) ?? [];
+  const monitorDeviceAreas = deviceIds.length
+    ? await prisma.device.findMany({
+        where: { id: { in: deviceIds }, accountId: monitor.accountId },
+        select: { accessIn: true, accessOut: true },
+      })
+    : [];
+  const scanAreaIds = [
+    ...monitorAreaIds,
+    ...monitorDeviceAreas.flatMap((d) =>
+      [d.accessIn, d.accessOut].filter((a): a is number => a != null),
+    ),
+  ];
+
   const updateData: Record<string, unknown> = {};
-  if (ticket.validityType === "DURATION" && !ticket.firstScanAt) {
+  if (
+    ticket.validityType === "DURATION"
+    && !ticket.firstScanAt
+    && isMainResourceScan(resolveMainAreaId(ticket), scanAreaIds)
+  ) {
     updateData.firstScanAt = now;
   }
 

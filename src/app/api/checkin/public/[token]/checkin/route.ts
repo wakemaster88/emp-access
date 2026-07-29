@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 
 export async function POST(
   request: NextRequest,
@@ -65,19 +66,17 @@ export async function POST(
     },
   });
 
-  // Hauptressource (am Service konfiguriert, sonst Ticket-Feld). Beim
-  // manuellen Einchecken gibt es kein Geraet/keinen Bereich als Kontext –
+  // Beim manuellen Einchecken gibt es kein Geraet/keinen Bereich als Kontext –
   // der Shop-/Check-in-Monitor steht typischerweise am Eingang/Strandbad,
-  // nicht an der Hauptressource. Ein DURATION-Ticket mit Hauptressource
-  // (z.B. "1 Stunde Seilbahn A") darf deshalb hier NICHT eingeloest werden
-  // und der Timer NICHT starten: sonst laeuft die Zeit schon ab dem Shop-
-  // Check-in statt erst am Seilbahn-Drehkreuz. Der GRANTED-Scan oben markiert
-  // den Gast trotzdem als "heute eingecheckt" (checkedInForTicket prueft
-  // GRANTED-Scan ODER REDEEMED). Hat das Ticket gar keine Hauptressource
-  // (mainAreaId == null), bleibt das alte Verhalten.
-  const mainAreaId = ticket.service?.mainAccessAreaId ?? ticket.accessAreaId;
+  // nicht an der Hauptressource. Deshalb `null` als Scan-Ort: ein
+  // DURATION-Ticket mit Hauptressource (z.B. "1 Stunde Seilbahn A") wird hier
+  // NICHT eingeloest und der Timer startet NICHT, sonst laeuft die Zeit schon
+  // ab dem Shop-Check-in statt erst am Seilbahn-Drehkreuz. Der GRANTED-Scan
+  // oben markiert den Gast trotzdem als "heute eingecheckt"
+  // (checkedInForTicket prueft GRANTED-Scan ODER REDEEMED).
   const isDuration = ticket.validityType === "DURATION";
-  const isTransitCheckin = isDuration && mainAreaId != null;
+  const isTransitCheckin =
+    isDuration && !isMainResourceScan(resolveMainAreaId(ticket), null);
 
   const updateData: Record<string, unknown> = {};
   // Mehrtage-/Abo-/Vereins-Tickets bleiben VALID – „eingecheckt“ = Scan heute,

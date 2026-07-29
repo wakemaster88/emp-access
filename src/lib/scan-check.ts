@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { isWithinSchedule } from "@/lib/schedule";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
+import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -422,16 +423,41 @@ export async function performScanCheck({
     }
   }
 
-  // Hauptressource (am Service konfiguriert, sonst Ticket-Feld). Der Scanner
-  // uebergibt mit `accessAreaId` die gerade gescannte Ressource. Nur wenn der
-  // Scan an der Hauptressource passiert (oder gar keine Ressource bestimmbar
-  // ist), darf er den DURATION-Timer starten / das Ticket einloesen. Scans an
-  // Nebenressourcen (z.B. Strandbad-Scanner fuer ein "Seilbahn A"-Ticket)
-  // sind Transit: Zutritt wird gewaehrt, aber Status/firstScanAt bleiben
-  // unveraendert, damit die Zeit erst an der Seilbahn laeuft.
-  const mainAreaId = ticket.service?.mainAccessAreaId ?? ticket.accessAreaId;
-  const isMainResourceScan =
-    mainAreaId == null || accessAreaId == null || accessAreaId === mainAreaId;
+  // Nur ein Scan an der Hauptressource darf den DURATION-Timer starten und das
+  // Ticket einloesen. Scans an Nebenressourcen (z.B. Strandbad-Scanner fuer ein
+  // "Seilbahn A"-Ticket) sind Transit: Zutritt wird gewaehrt, aber
+  // Status/firstScanAt bleiben unveraendert, damit die Zeit erst an der
+  // Seilbahn laeuft.
+  //
+  // Standort des Scans: bevorzugt der im Scanner gewaehlte Bereich, sonst die
+  // Bereiche des hinterlegten Geraets.
+  const mainAreaId = resolveMainAreaId(ticket);
+  let scanAreaIds: number[] | null = accessAreaId != null ? [accessAreaId] : null;
+  if (scanAreaIds == null && deviceId != null) {
+    const scanDevice = await db.device.findFirst({
+      where: { id: deviceId, accountId },
+      select: { accessIn: true, accessOut: true },
+    });
+    const deviceAreas = [scanDevice?.accessIn, scanDevice?.accessOut].filter(
+      (a): a is number => a != null,
+    );
+    if (deviceAreas.length > 0) scanAreaIds = deviceAreas;
+  }
+
+  // Steht weder Bereich noch Geraet zur Verfuegung (Scanner auf "Alle
+  // Bereiche" ohne hinterlegtes Geraet), ist der Ort unbekannt. Dann werden
+  // gezielt nur Zeit-Tickets geschont: deren Timer darf nicht blind starten,
+  // weil der Handscanner typischerweise am Eingang steht und nicht an der
+  // Seilbahn. Wer die Zeit bewusst per Handscanner starten will, waehlt im
+  // Scanner den Bereich der Hauptressource.
+  //
+  // Alle anderen Ticketarten werden bei unbekanntem Ort weiterhin eingeloest -
+  // sonst blieben Einmal-Tickets nach einem Handscan VALID und waeren beliebig
+  // oft wiederverwendbar.
+  const scanHitsMainResource =
+    scanAreaIds != null
+      ? isMainResourceScan(mainAreaId, scanAreaIds)
+      : mainAreaId == null || vType !== "DURATION";
 
   // Atomar: Scan + optionale Statusaenderung in einer Transaktion mit version-Check.
   // Vereinsmitglieder (vereinId) sind Jahres-Mitgliedschaften und werden – wie
@@ -442,7 +468,7 @@ export async function performScanCheck({
     !isEmployee &&
     ticket.subscriptionId == null &&
     ticket.vereinId == null &&
-    isMainResourceScan;
+    scanHitsMainResource;
 
   const txResult = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
