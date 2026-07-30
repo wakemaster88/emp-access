@@ -45,7 +45,7 @@ const ENDPOINTS = [
   {
     method: "POST",
     path: "/api/lost-items",
-    desc: 'Eintrag anlegen – Fundsache: {"description","foundDate"}; Verlustmeldung: {"kind":"LOST_REPORT","description","reporterName","callbackPhone"}',
+    desc: 'Eintrag anlegen – Fundsache: {"description","foundDate"}; Verlustmeldung: {"kind":"LOST_REPORT","description","reporterName"} (callbackPhone optional)',
   },
   { method: "PATCH", path: "/api/lost-items/[id]", desc: 'Eintrag ändern, z. B. {"pickedUp": true}' },
 ];

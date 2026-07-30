@@ -114,10 +114,6 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
         setError("Name erforderlich");
         return;
       }
-      if (!callbackPhone.trim()) {
-        setError("Rückrufnummer erforderlich");
-        return;
-      }
     }
     setSaving(true);
     setError("");
@@ -128,7 +124,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
         foundDate: kind === "FOUND" ? foundDate : (foundDate || toDateInputValue(null)),
         contact: kind === "FOUND" ? (contact.trim() || null) : null,
         reporterName: kind === "LOST_REPORT" ? reporterName.trim() : null,
-        callbackPhone: kind === "LOST_REPORT" ? callbackPhone.trim() : null,
+        callbackPhone: kind === "LOST_REPORT" ? (callbackPhone.trim() || null) : null,
         image: kind === "FOUND" ? image : null,
         pickedUp,
       };
@@ -246,7 +242,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="li-callbackPhone">Rückrufnummer *</Label>
+                <Label htmlFor="li-callbackPhone">Rückrufnummer</Label>
                 <Input
                   id="li-callbackPhone"
                   type="tel"

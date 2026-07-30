@@ -439,10 +439,6 @@ function AddForm({
         setLocalError("Name erforderlich");
         return;
       }
-      if (!callbackPhone.trim()) {
-        setLocalError("Rückrufnummer erforderlich");
-        return;
-      }
     }
     setSaving(true);
     setLocalError("");
@@ -456,7 +452,7 @@ function AddForm({
           foundDate: isLostReport ? foundDate : foundDate,
           contact: isLostReport ? null : (contact.trim() || null),
           reporterName: isLostReport ? reporterName.trim() : null,
-          callbackPhone: isLostReport ? callbackPhone.trim() : null,
+          callbackPhone: isLostReport ? (callbackPhone.trim() || null) : null,
           image: isLostReport ? null : image,
         }),
       });
@@ -567,7 +563,7 @@ function AddForm({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300">Rückrufnummer *</label>
+              <label className="text-sm font-medium text-slate-300">Rückrufnummer</label>
               <input
                 type="tel"
                 value={callbackPhone}

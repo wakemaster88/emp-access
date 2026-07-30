@@ -319,9 +319,6 @@ export const lostItemCreateSchema = lostItemBaseSchema.superRefine((data, ctx) =
     if (!data.reporterName?.trim()) {
       ctx.addIssue({ code: "custom", path: ["reporterName"], message: "Name erforderlich" });
     }
-    if (!data.callbackPhone?.trim()) {
-      ctx.addIssue({ code: "custom", path: ["callbackPhone"], message: "Rückrufnummer erforderlich" });
-    }
   } else if (!data.foundDate) {
     ctx.addIssue({ code: "custom", path: ["foundDate"], message: "Funddatum erforderlich" });
   }
@@ -331,9 +328,6 @@ export const lostItemUpdateSchema = lostItemBaseSchema.partial().superRefine((da
   if (data.kind !== "LOST_REPORT") return;
   if (data.reporterName !== undefined && !data.reporterName?.trim()) {
     ctx.addIssue({ code: "custom", path: ["reporterName"], message: "Name erforderlich" });
-  }
-  if (data.callbackPhone !== undefined && !data.callbackPhone?.trim()) {
-    ctx.addIssue({ code: "custom", path: ["callbackPhone"], message: "Rückrufnummer erforderlich" });
   }
 });
 
