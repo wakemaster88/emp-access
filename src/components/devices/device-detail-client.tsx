@@ -8,12 +8,13 @@ import {
   AlertTriangle, DoorOpen, ToggleRight, RotateCcw, Loader2, Pencil,
   Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock, LockOpen,
   Droplets, Square, Battery, BatteryLow, ArrowUpFromLine, ArrowDownToLine,
-  Settings2,
+  Settings2, CircleDot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   coverActionLabels, coverMotionLabel, isCoverDevice, type CoverMotion,
 } from "@/lib/cover-constants";
+import { formatPulseDuration, isPulseCategory, pulseSeconds } from "@/lib/pulse-constants";
 import type { SensorReading } from "@/lib/shelly-sensor";
 import { SensorReadings } from "./sensor-readings";
 import { EditDeviceDialog, type DeviceData, type AreaOption, type CameraOption } from "./edit-device-dialog";
@@ -151,6 +152,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
   const isDrehkreuz = device.category === "DREHKREUZ";
   const isTuer = device.category === "TUER";
   const isCover = isCoverDevice(device);
+  const isPulse = isPulseCategory(device.category);
 
   const [shellyStatus, setShellyStatus] = useState<ShellyStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -200,7 +202,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
     setActionError(null);
 
     // Optimistic update for Shelly switch
-    if (isShelly && isSwitch) {
+    if (isShelly && (isSwitch || isPulse)) {
       setShellyStatus((prev) => prev ? { ...prev, output: action === "open" } : prev);
     }
     // Optimistic update for cover drives
@@ -280,7 +282,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
           ) : shellyStatus.output === true ? (
             <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5 text-xs">
               <Power className="h-3 w-3" />
-              {device.category === "BELEUCHTUNG" ? "Eingeschaltet" : "Ein"}
+              {device.category === "BELEUCHTUNG" ? "Eingeschaltet" : isPulse ? "Läuft" : "Ein"}
             </Badge>
           ) : shellyStatus.output === false ? (
             <Badge variant="secondary" className="gap-1.5 text-slate-500 text-xs">
@@ -486,6 +488,47 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
               : <ArrowDownToLine className="h-4 w-4" />}
             {labels.close}
           </Button>
+        </>
+      );
+    }
+
+    // Taster: ein Druck, danach fällt das Relais von selbst wieder ab.
+    if (isShelly && isPulse) {
+      const running = shellyStatus?.output === true;
+      const seconds = pulseSeconds(device.pulseSeconds);
+
+      return (
+        <>
+          <Button
+            size="sm"
+            onClick={() => handleAction("open")}
+            disabled={loading !== null}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {loading === "open"
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <CircleDot className="h-4 w-4" />}
+            Betätigen
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => handleAction("reset")}
+            disabled={loading !== null || (shellyStatus != null && !running)}
+            className={cn(
+              "gap-1.5",
+              running
+                ? "bg-slate-700 hover:bg-slate-800 text-white"
+                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700",
+            )}
+          >
+            {loading === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <PowerOff className="h-4 w-4" />}
+            Ausschalten
+          </Button>
+
+          <span className="flex items-center text-xs text-slate-400 px-1">
+            schaltet für {formatPulseDuration(seconds)} ein
+          </span>
         </>
       );
     }

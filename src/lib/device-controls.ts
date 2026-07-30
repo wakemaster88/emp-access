@@ -14,6 +14,7 @@
  */
 
 import { coverActionLabels, isCoverDevice } from "./cover-constants";
+import { isPulseCategory } from "./pulse-constants";
 
 /**
  * Bedienmodell eines Geraets. Sagt einer Integration, wie die Bedienung
@@ -30,6 +31,8 @@ export type DeviceControlModel =
   | "SWITCH"
   /// Beleuchtung – wie SWITCH, nur anders beschriftet.
   | "LIGHT"
+  /// Taster: schaltet fuer eine feste Dauer ein und faellt selbst wieder ab.
+  | "PULSE"
   /// Antrieb mit zwei Fahrtrichtungen: auf, stopp, zu.
   | "COVER"
   /// Bewaesserungsventil: starten und stoppen.
@@ -75,6 +78,7 @@ export function deviceControlModel(device: ControllableDevice): DeviceControlMod
   if (device.type === "GARDENA_VALVE") return "VALVE";
   if (device.category === "BELEUCHTUNG") return "LIGHT";
   if (device.category === "SCHALTER") return "SWITCH";
+  if (isPulseCategory(device.category)) return "PULSE";
   if (device.category === "DREHKREUZ") return "TURNSTILE";
   return "DOOR";
 }
@@ -132,6 +136,14 @@ export function deviceControls(device: ControllableDevice): DeviceControl[] {
     case "SWITCH":
       return [
         { action: "open", label: "Einschalten", role: "primary" },
+        { action: "reset", label: "Ausschalten", role: "secondary" },
+      ];
+
+    case "PULSE":
+      return [
+        // Die Dauer steht am Geraet und laeuft im Shelly ab; "Ausschalten"
+        // bricht sie vorzeitig ab.
+        { action: "open", label: "Betätigen", role: "primary" },
         { action: "reset", label: "Ausschalten", role: "secondary" },
       ];
 

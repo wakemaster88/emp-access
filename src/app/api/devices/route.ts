@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
+import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
 import { withDeviceControlInfo } from "@/lib/device-controls";
 
 function hasApiToken(request: NextRequest) {
@@ -9,6 +10,7 @@ function hasApiToken(request: NextRequest) {
 
 const VALID_CATEGORIES = [
   "DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG", "MARKISE", "ROLLTOR",
+  "TASTER",
 ];
 
 export async function GET(request: NextRequest) {
@@ -41,6 +43,8 @@ export async function GET(request: NextRequest) {
       coverUpChannel: true,
       coverDownChannel: true,
       coverRuntimeSec: true,
+      // Taster: Einschaltdauer.
+      pulseSeconds: true,
     },
   });
 
@@ -70,8 +74,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Ein Taster laesst das Relais nach der Einschaltdauer selbst wieder
+  // abfallen – diesen Auto-Off-Timer kennt nur der Shelly.
+  if (isPulseCategory(category) && body.type !== "SHELLY") {
+    return NextResponse.json(
+      { error: "Ein Taster lässt sich nur mit einem Shelly steuern" },
+      { status: 400 },
+    );
+  }
+
   const cover = parseCoverInput(body, isCoverCategory(category));
   if (!cover.ok) return NextResponse.json({ error: cover.error }, { status: 400 });
+
+  const pulse = parsePulseInput(body, isPulseCategory(category));
+  if (!pulse.ok) return NextResponse.json({ error: pulse.error }, { status: 400 });
 
   const { db, accountId } = session;
 
@@ -81,6 +97,7 @@ export async function POST(request: NextRequest) {
       type: body.type,
       category,
       ...cover.value,
+      ...pulse.value,
       ipAddress: body.ipAddress || null,
       shellyId: body.shellyId || null,
       shellyAuthKey: body.shellyAuthKey || null,

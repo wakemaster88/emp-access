@@ -140,6 +140,31 @@ statt Ein/Aus/Toggle die Aktionen Auf, Stopp und Zu zur Auswahl.
 - Antwortet sie mit `"sent": false`, wurde der Befehl angenommen, aber nicht
   zugestellt; das Feld `error` nennt den Grund.
 
+## Taster (schaltet für eine feste Dauer ein)
+
+Ein Gerät der Funktion **Taster** bleibt nicht an, bis jemand ausschaltet: Ein
+Druck schaltet das Relais ein, nach der eingestellten **Einschaltdauer** fällt es
+von selbst wieder ab. Gedacht für alles, was nur kurz laufen soll – Außendusche,
+Wasserhahn, Torimpuls.
+
+**Einrichten:** Beim Anlegen oder Bearbeiten die Funktion *Taster* wählen und im
+Abschnitt **Taster** die Einschaltdauer in Sekunden hinterlegen (1 bis 1800,
+Vorgabe 30). Ohne eigenen Wert gilt die Vorgabe – ein Taster bliebe sonst
+dauerhaft an.
+
+Den Timer übernimmt der Shelly selbst (`toggle_after` bzw. `timer`), nicht der
+Server. Das Relais fällt deshalb auch dann wieder ab, wenn die Verbindung direkt
+nach dem Einschalten abreißt. Aus demselben Grund gibt es einen Taster nur mit
+einem Shelly, nicht mit einem Raspberry Pi.
+
+Bedient wird er mit **Betätigen** (startet den Impuls) und **Ausschalten**
+(bricht ihn vorzeitig ab), über die API mit `{"action":"open"}` bzw.
+`{"action":"reset"}`.
+
+**Abgrenzung zum Schalter:** Ein *Schalter* und eine *Beleuchtung* bleiben nach
+dem Einschalten an, bis jemand ausschaltet. Nur *Taster* und Zugangsgeräte
+(Tür, Drehkreuz – kurzer Türöffner-Impuls) bekommen einen Auto-Off-Timer.
+
 ## Geräte über die API steuern
 
 Damit ein fremdes System die richtigen Knöpfe anbieten kann, liefert jedes
@@ -159,7 +184,7 @@ Gerät aus `GET /api/devices` und `GET /api/devices/[id]` seine Bedienung mit:
 ```
 
 - **`control`** ist das Bedienmodell: `DOOR`, `TURNSTILE`, `LOCK`, `SWITCH`,
-  `LIGHT`, `COVER`, `VALVE`, `SENSOR` oder `AUDIO`.
+  `LIGHT`, `PULSE`, `COVER`, `VALVE`, `SENSOR` oder `AUDIO`.
 - **`controls`** sind die Knöpfe in Anzeigereihenfolge – der Hauptbefehl steht
   vorn (`role: "primary"`), `role: "danger"` markiert Eingriffe wie NOT-AUF.
   Eine leere Liste heißt: Das Gerät wird nicht über Aktionen gesteuert
@@ -177,6 +202,7 @@ Ein Auszug, wie sich die Gerätetypen unterscheiden:
 | Nuki Smart Lock | `LOCK` | Tür öffnen, Abschließen |
 | Shelly-Schalter | `SWITCH` | Einschalten, Ausschalten |
 | Beleuchtung | `LIGHT` | Anschalten, Ausschalten |
+| Taster | `PULSE` | Betätigen, Ausschalten |
 | Markise | `COVER` | Ausfahren, Stopp, Einfahren |
 | Rolltor | `COVER` | Öffnen, Stopp, Schließen |
 | GARDENA-Ventil | `VALVE` | Bewässern, Stopp |

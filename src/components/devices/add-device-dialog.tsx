@@ -17,16 +17,21 @@ import {
 import {
   Plus, Loader2, Cpu, Wifi, AlertCircle,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight, Umbrella, Blinds,
+  LogIn, LogOut, ArrowLeftRight, Umbrella, Blinds, CircleDot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WeekScheduleEditor, emptySchedule } from "@/components/devices/week-schedule-editor";
 import type { WeekSchedule } from "@/lib/schedule";
 import { isCoverCategory } from "@/lib/cover-constants";
+import { isPulseCategory } from "@/lib/pulse-constants";
 import {
   CoverFields, EMPTY_COVER_VALUES, coverPayload, validateCoverValues,
   type CoverFormValues,
 } from "@/components/devices/cover-fields";
+import {
+  PulseFields, EMPTY_PULSE_VALUES, pulsePayload, validatePulseValues,
+  type PulseFormValues,
+} from "@/components/devices/pulse-fields";
 
 interface Area {
   id: number;
@@ -64,14 +69,16 @@ const DEVICE_CATEGORIES = [
   { value: "BELEUCHTUNG", label: "Beleuchtung",  icon: Lightbulb,   color: "text-yellow-600 dark:text-yellow-400",  bg: "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800" },
   { value: "MARKISE",     label: "Markise",      icon: Umbrella,    color: "text-teal-600 dark:text-teal-400",      bg: "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800" },
   { value: "ROLLTOR",     label: "Rolltor",      icon: Blinds,      color: "text-slate-600 dark:text-slate-300",    bg: "bg-slate-100 dark:bg-slate-800/50 border-slate-300 dark:border-slate-700" },
+  { value: "TASTER",      label: "Taster",       icon: CircleDot,   color: "text-rose-600 dark:text-rose-400",      bg: "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800" },
 ];
 
 // Per-category feature flags
 const CAT_HAS_ACCESS   = new Set(["DREHKREUZ", "TUER"]);
 const CAT_HAS_REENTRY  = new Set(["DREHKREUZ", "TUER"]);
 const CAT_HAS_SCHEDULE = new Set(["BELEUCHTUNG", "SCHALTER"]);
-// Antriebe brauchen zwei schaltbare Relais – das bietet nur der Shelly-Pfad.
-const CAT_SHELLY_ONLY  = new Set(["MARKISE", "ROLLTOR"]);
+// Antriebe brauchen zwei schaltbare Relais, ein Taster den Auto-Off-Timer –
+// beides bietet nur der Shelly-Pfad.
+const CAT_SHELLY_ONLY  = new Set(["MARKISE", "ROLLTOR", "TASTER"]);
 
 type Direction = "in" | "out" | "bidir";
 
@@ -101,6 +108,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
   const [form, setForm] = useState(EMPTY);
   const [schedule, setSchedule] = useState<WeekSchedule>(emptySchedule());
   const [cover, setCover] = useState<CoverFormValues>(EMPTY_COVER_VALUES);
+  const [pulse, setPulse] = useState<PulseFormValues>(EMPTY_PULSE_VALUES);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -112,6 +120,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
     setForm(EMPTY);
     setSchedule(emptySchedule());
     setCover(EMPTY_COVER_VALUES);
+    setPulse(EMPTY_PULSE_VALUES);
     setError("");
   }
 
@@ -124,6 +133,14 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
       const coverError = validateCoverValues(cover);
       if (coverError) {
         setError(coverError);
+        return;
+      }
+    }
+    const isPulse = isPulseCategory(form.category);
+    if (isPulse) {
+      const pulseError = validatePulseValues(pulse);
+      if (pulseError) {
+        setError(pulseError);
         return;
       }
     }
@@ -167,6 +184,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
           isActive: form.isActive,
           schedule: hasSchedule ? schedule : null,
           ...(isCover ? coverPayload(cover) : {}),
+          ...(isPulse ? pulsePayload(pulse) : {}),
         }),
       });
 
@@ -299,6 +317,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                     cat === "SCHALTER"  ? "z.B. Pumpe Becken A" :
                     cat === "MARKISE"   ? "z.B. Markise Terrasse" :
                     cat === "ROLLTOR"   ? "z.B. Rolltor Verleih" :
+                    cat === "TASTER"    ? "z.B. Außendusche" :
                                           "z.B. Flutlicht Feld 1"
                   }
                   required
@@ -352,6 +371,14 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                   category={cat}
                   values={cover}
                   onChange={(patch) => setCover((p) => ({ ...p, ...patch }))}
+                />
+              )}
+
+              {/* Taster – Einschaltdauer */}
+              {isShelly && isPulseCategory(cat) && (
+                <PulseFields
+                  values={pulse}
+                  onChange={(patch) => setPulse((p) => ({ ...p, ...patch }))}
                 />
               )}
 

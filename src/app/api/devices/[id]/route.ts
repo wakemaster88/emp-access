@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
+import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
 import { withDeviceControlInfo } from "@/lib/device-controls";
 
 function hasApiToken(request: NextRequest) {
@@ -9,6 +10,7 @@ function hasApiToken(request: NextRequest) {
 
 const VALID_CATEGORIES = [
   "DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG", "MARKISE", "ROLLTOR",
+  "TASTER",
 ];
 
 export async function GET(
@@ -73,12 +75,22 @@ export async function PUT(
     );
   }
 
+  if (isPulseCategory(category) && existing.type !== "SHELLY") {
+    return NextResponse.json(
+      { error: "Ein Taster lässt sich nur mit einem Shelly steuern" },
+      { status: 400 },
+    );
+  }
+
   const cover = parseCoverInput(body, isCoverCategory(category), {
     coverUpChannel: existing.coverUpChannel,
     coverDownChannel: existing.coverDownChannel,
     coverRuntimeSec: existing.coverRuntimeSec,
   });
   if (!cover.ok) return NextResponse.json({ error: cover.error }, { status: 400 });
+
+  const pulse = parsePulseInput(body, isPulseCategory(category), existing.pulseSeconds);
+  if (!pulse.ok) return NextResponse.json({ error: pulse.error }, { status: 400 });
 
   // Ventil → Pumpe Zuordnung. null/0 loest die Zuordnung; ein Wert muss ein
   // anderes Geraet desselben Accounts sein (kein Selbstbezug).
@@ -140,6 +152,7 @@ export async function PUT(
       areaSqm,
       category,
       ...cover.value,
+      ...pulse.value,
       ipAddress: body.ipAddress ?? existing.ipAddress,
       shellyId: body.shellyId ?? existing.shellyId,
       shellyAuthKey: body.shellyAuthKey ?? existing.shellyAuthKey,

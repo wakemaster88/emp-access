@@ -69,7 +69,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
   // Geraet vollstaendig laden (Schloss-Kennungen, shellyId, ipAddress) - wird
   // von `triggerDeviceAction` benoetigt. `category` und die Cover-Kanaele
-  // entscheiden, ob ein Shelly als Schalter oder als Antrieb geschaltet wird.
+  // entscheiden, ob ein Shelly als Schalter oder als Antrieb geschaltet wird;
+  // `pulseSeconds` ist die Einschaltdauer eines Tasters.
   const fullDevice = await prisma.device.findFirst({
     where: { id: deviceId, accountId: profile.accountId },
     select: {
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       coverUpChannel: true,
       coverDownChannel: true,
       coverRuntimeSec: true,
+      pulseSeconds: true,
       nukiSmartlockId: true,
       loqedLockId: true,
       gardenaServiceId: true,

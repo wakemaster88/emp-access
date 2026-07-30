@@ -14,7 +14,12 @@ import {
   deviceControls,
   availableDeviceActions,
 } from "../src/lib/device-controls";
-import { isActionAllowedForDevice, isValidDeviceAction } from "../src/lib/device-open";
+import {
+  isActionAllowedForDevice,
+  isValidDeviceAction,
+  shellyAutoOffSec,
+} from "../src/lib/device-open";
+import { DEFAULT_PULSE_SECONDS } from "../src/lib/pulse-constants";
 
 const TYPES = [
   "RASPBERRY_PI", "SHELLY", "NUKI_SMARTLOCK", "LOQED_SMARTLOCK",
@@ -22,7 +27,7 @@ const TYPES = [
 ];
 const CATEGORIES = [
   "DREHKREUZ", "TUER", "SENSOR", "SCHALTER", "BELEUCHTUNG", "AUDIO",
-  "MARKISE", "ROLLTOR", null,
+  "MARKISE", "ROLLTOR", "TASTER", null,
 ];
 
 let failed = 0;
@@ -83,6 +88,7 @@ const cases: Array<[string, { type: string; category: string | null }, string[]]
   ["Drehkreuz", { type: "RASPBERRY_PI", category: "DREHKREUZ" }, ["open", "emergency"]],
   ["Tuer", { type: "RASPBERRY_PI", category: "TUER" }, ["open"]],
   ["Schalter", { type: "SHELLY", category: "SCHALTER" }, ["open", "reset"]],
+  ["Taster", { type: "SHELLY", category: "TASTER" }, ["open", "reset"]],
   ["Smart Lock", { type: "NUKI_SMARTLOCK", category: "TUER" }, ["open", "deactivate"]],
   // Das LOQED hat drei Riegelzustaende, deshalb einen Knopf mehr als ein Nuki.
   ["LOQED", { type: "LOQED_SMARTLOCK", category: "TUER" }, ["open", "reset", "deactivate"]],
@@ -111,6 +117,29 @@ console.log(
   `${labelsDiffer ? "  ok  " : " FEHL "} Beschriftung je Antrieb: Markise "${markise[0].label}", Rolltor "${rolltor[0].label}"`,
 );
 if (!labelsDiffer) failed++;
+
+// 6) Auto-Off-Timer des Shelly. Hier liegt der fachliche Unterschied zwischen
+//    Taster (faellt nach der eingestellten Dauer ab) und Schalter (bleibt an).
+const timerCases: Array<[string, { category: string | null; pulseSeconds?: number | null }, "open" | "emergency" | "reset", number | undefined]> = [
+  ["Taster mit 90 s", { category: "TASTER", pulseSeconds: 90 }, "open", 90],
+  ["Taster ohne Dauer", { category: "TASTER", pulseSeconds: null }, "open", DEFAULT_PULSE_SECONDS],
+  ["Taster ausschalten", { category: "TASTER", pulseSeconds: 90 }, "reset", undefined],
+  ["Schalter bleibt an", { category: "SCHALTER" }, "open", undefined],
+  ["Beleuchtung bleibt an", { category: "BELEUCHTUNG" }, "open", undefined],
+  ["Tuer-Impuls", { category: "TUER" }, "open", 3],
+  ["NOT-AUF ohne Timer", { category: "DREHKREUZ" }, "emergency", undefined],
+];
+
+console.log("");
+for (const [label, device, action, expected] of timerCases) {
+  const actual = shellyAutoOffSec(device, action);
+  const ok = actual === expected;
+  console.log(`${ok ? "  ok  " : " FEHL "} ${label}: ${actual ?? "kein Timer"}`);
+  if (!ok) {
+    failed++;
+    console.log(`        erwartet: ${expected ?? "kein Timer"}`);
+  }
+}
 
 console.log(failed === 0 ? "\nAlle Pruefungen bestanden." : `\n${failed} Pruefung(en) fehlgeschlagen.`);
 process.exit(failed === 0 ? 0 : 1);

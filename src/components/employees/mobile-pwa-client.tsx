@@ -5,7 +5,7 @@ import {
   DoorOpen, Lock, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
   Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, KeyRound,
   RefreshCw, ChevronDown, Building2, Umbrella, Blinds, Square,
-  ArrowUpFromLine, ArrowDownToLine, Droplets,
+  ArrowUpFromLine, ArrowDownToLine, Droplets, CircleDot,
 } from "lucide-react";
 import {
   deviceControlModel,
@@ -88,6 +88,7 @@ function controlIcon(
   if (model === "SWITCH" || model === "LIGHT") {
     return action === "open" ? Power : PowerOff;
   }
+  if (model === "PULSE") return action === "open" ? CircleDot : PowerOff;
   if (model === "LOCK") return action === "open" ? DoorOpen : Lock;
   if (model === "VALVE") return action === "open" ? Droplets : Square;
   if (action === "emergency") return AlertTriangle;
@@ -98,6 +99,7 @@ const PRIMARY_GRADIENT: Partial<Record<DeviceControlModel, string>> = {
   SWITCH: "from-amber-400 to-amber-600",
   LIGHT: "from-amber-400 to-amber-600",
   VALVE: "from-sky-400 to-sky-600",
+  PULSE: "from-rose-400 to-rose-600",
 };
 
 /**
@@ -139,6 +141,7 @@ function deviceIcon(device: MobileDevice) {
   if (device.category === "SENSOR") return Activity;
   if (device.category === "MARKISE") return Umbrella;
   if (device.category === "ROLLTOR") return Blinds;
+  if (device.category === "TASTER") return CircleDot;
   return DoorOpen;
 }
 
@@ -150,10 +153,11 @@ function categoryMeta(cat: string | null, type: string | null) {
     case "TUER":        return { label: "Türen",        accent: "sky",     order: 0 };
     case "DREHKREUZ":   return { label: "Drehkreuze",   accent: "indigo",  order: 2 };
     case "SCHALTER":    return { label: "Schalter",     accent: "amber",   order: 3 };
-    case "BELEUCHTUNG": return { label: "Beleuchtung",  accent: "yellow",  order: 4 };
-    case "MARKISE":     return { label: "Markisen",     accent: "teal",    order: 5 };
-    case "ROLLTOR":     return { label: "Rolltore",     accent: "slate",   order: 6 };
-    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 7 };
+    case "TASTER":      return { label: "Taster",       accent: "rose",    order: 4 };
+    case "BELEUCHTUNG": return { label: "Beleuchtung",  accent: "yellow",  order: 5 };
+    case "MARKISE":     return { label: "Markisen",     accent: "teal",    order: 6 };
+    case "ROLLTOR":     return { label: "Rolltore",     accent: "slate",   order: 7 };
+    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 8 };
     default:            return { label: "Sonstige",     accent: "slate",   order: 9 };
   }
 }

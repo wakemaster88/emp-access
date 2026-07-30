@@ -127,9 +127,10 @@ export async function loadEmployeeByMobileToken(
     DREHKREUZ: 1,
     BELEUCHTUNG: 2,
     SCHALTER: 3,
-    MARKISE: 4,
-    ROLLTOR: 5,
-    SENSOR: 6,
+    TASTER: 4,
+    MARKISE: 5,
+    ROLLTOR: 6,
+    SENSOR: 7,
   };
   const devices = [...directDevices, ...areaDevices].sort((a, b) => {
     const ra = a.category ? (categoryRank[a.category] ?? 9) : 9;

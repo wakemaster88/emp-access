@@ -36,6 +36,7 @@ import {
   WifiOff,
   Zap,
   Blinds,
+  CircleDot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { coverMotionLabel, type CoverMotion } from "@/lib/cover-constants";
@@ -151,6 +152,7 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ElementType; co
   BELEUCHTUNG: { label: "Beleuchtung", icon: Lightbulb,   color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
   MARKISE:     { label: "Markise",     icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
   ROLLTOR:     { label: "Rolltor",     icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+  TASTER:      { label: "Taster",      icon: CircleDot,   color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
 };
 
 const TASK_LABEL: Record<number, { label: string; color: string }> = {

@@ -36,6 +36,9 @@ enum DeviceCategory {
   MARKISE
   /// Rolltor, Rollladen oder Sektionaltor – gleiche Steuerlogik wie MARKISE.
   ROLLTOR
+  /// Taster – schaltet auf Knopfdruck fuer eine feste Dauer ein und faellt
+  /// danach von selbst wieder ab (Aussendusche, Wasserhahn, Torimpuls).
+  TASTER
 }
 
 enum TicketStatus {
@@ -218,6 +221,11 @@ model Device {
   /// Volle Fahrzeit in Sekunden. Wird als Shelly-eigener Auto-Off-Timer
   /// mitgesendet, damit das Relais auch bei Netzwerkausfall wieder abfaellt.
   coverRuntimeSec  Int?
+  /// Taster (TASTER): Wie lange das Relais nach einem Druck eingeschaltet
+  /// bleibt. Geht als Shelly-eigener Auto-Off-Timer mit, damit es auch dann
+  /// wieder abfaellt, wenn die Verbindung danach abreisst. NULL = Standardwert
+  /// aus `src/lib/pulse-constants.ts`.
+  pulseSeconds     Int?
   /// Nuki Smart Lock ID (numerische ID aus der Nuki Web API).
   /// Wird beim Sync aus `GET /smartlock` befuellt; identifiziert das Geraet
   /// fuer `POST /smartlock/{id}/action` und Webhook-Events.

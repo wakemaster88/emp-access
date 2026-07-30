@@ -14,6 +14,7 @@ import {
   Wifi, WifiOff, Cpu, QrCode, CreditCard, ArrowLeft,
   Ticket, ScanLine, CheckCircle2, XCircle, AlertTriangle,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb, Cctv, Umbrella, Blinds,
+  CircleDot,
 } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
@@ -109,6 +110,7 @@ export default async function DeviceDetailPage({ params }: Props) {
     BELEUCHTUNG: { label: "Beleuchtung",icon: Lightbulb,   color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
     MARKISE:     { label: "Markise",    icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
     ROLLTOR:     { label: "Rolltor",    icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+    TASTER:      { label: "Taster",     icon: CircleDot,   color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
   };
 
   const taskLabel: Record<number, string> = {

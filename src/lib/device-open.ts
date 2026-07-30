@@ -6,10 +6,18 @@ import { logIrrigationRun } from "./irrigation-run-log";
 import { shellySetRelay } from "./shelly-relay";
 import { shellyBaseId, shellySwitchIndex } from "./shelly-cloud";
 import { isCoverDevice, runCoverAction, type CoverAction } from "./shelly-cover";
+import { isPulseCategory, pulseSeconds } from "./pulse-constants";
 
 // Standard-Bewässerungsdauer (Sekunden), falls beim Öffnen keine Dauer
 // mitgegeben wird (z. B. Auslösung über den Public-Checkin-Monitor).
 const GARDENA_DEFAULT_SECONDS = 1800;
+
+// Türöffner-Impuls eines Shelly-Zugangsgeräts: kurz genug, dass die Tür hinter
+// einem wieder ins Schloss fällt.
+const DOOR_PULSE_SEC = 3;
+
+// Kategorien, die eingeschaltet bleiben, bis jemand ausschaltet.
+const LATCHING_CATEGORIES = new Set(["SCHALTER", "BELEUCHTUNG"]);
 
 // Task codes für Raspberry Pi:
 // 0 = idle, 1 = open once, 2 = emergency open (NOT-AUF), 3 = deactivate
@@ -90,6 +98,8 @@ interface DeviceForAction {
   coverUpChannel?: number | null;
   coverDownChannel?: number | null;
   coverRuntimeSec?: number | null;
+  /// Einschaltdauer eines Tasters – siehe `src/lib/pulse-constants.ts`.
+  pulseSeconds?: number | null;
   nukiSmartlockId?: string | null;
   /// Kennung des Schlosses in der LOQED Integrations-API.
   loqedLockId?: string | null;
@@ -194,6 +204,32 @@ async function syncPumpForValve(
   }
 
   await gardenaControlValve(creds.key, creds.secret, pump.gardenaServiceId, "close");
+}
+
+/**
+ * Wie lange ein Shelly nach dem Einschalten von selbst wieder abfallen soll,
+ * in Sekunden. `undefined` heisst: eingeschaltet lassen.
+ *
+ * Der Timer laeuft im Geraet, nicht im Server – das Relais faellt deshalb auch
+ * dann wieder ab, wenn die Verbindung direkt nach dem Befehl abreisst.
+ *
+ *  - Taster:               die am Geraet eingestellte Einschaltdauer
+ *  - Schalter/Beleuchtung: kein Timer, die bleiben an bis zum Ausschalten
+ *  - Zugang (Tuer u. a.):  kurzer Tueroeffner-Impuls
+ *
+ * NOT-AUF haelt bewusst dauerhaft offen und bekommt nie einen Timer.
+ *
+ * Exportiert, damit `scripts/device-controls-check.ts` die Unterscheidung
+ * zwischen Taster und Schalter festhalten kann.
+ */
+export function shellyAutoOffSec(
+  device: { category?: string | null; pulseSeconds?: number | null },
+  action: DeviceAction,
+): number | undefined {
+  if (action !== "open") return undefined;
+  if (isPulseCategory(device.category ?? null)) return pulseSeconds(device.pulseSeconds);
+  if (LATCHING_CATEGORIES.has(device.category ?? "")) return undefined;
+  return DOOR_PULSE_SEC;
 }
 
 /**
@@ -331,7 +367,7 @@ export async function triggerDeviceAction(
   }
 
   const turnOn = action === "open" || action === "emergency";
-  const timerSec = action === "open" ? 3 : undefined;
+  const timerSec = shellyAutoOffSec(device, action);
   const switchIdx = shellySwitchIndex(device.shellyId);
   const baseId = shellyBaseId(device.shellyId);
 

@@ -15,13 +15,17 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, Trash2, Save, GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv, Umbrella, Blinds,
+  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv, Umbrella, Blinds, CircleDot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isCoverCategory, DEFAULT_COVER_RUNTIME_SEC } from "@/lib/cover-constants";
+import { isPulseCategory, DEFAULT_PULSE_SECONDS } from "@/lib/pulse-constants";
 import {
   CoverFields, coverPayload, validateCoverValues, type CoverFormValues,
 } from "./cover-fields";
+import {
+  PulseFields, pulsePayload, validatePulseValues, type PulseFormValues,
+} from "./pulse-fields";
 
 export interface AreaOption {
   id: number;
@@ -44,6 +48,7 @@ export interface DeviceData {
   coverUpChannel?: number | null;
   coverDownChannel?: number | null;
   coverRuntimeSec?: number | null;
+  pulseSeconds?: number | null;
   gardenaServiceId?: string | null;
   isActive: boolean;
   accessIn: number | null;
@@ -66,6 +71,7 @@ const DEVICE_CATEGORIES = [
   { value: "BELEUCHTUNG", label: "Beleuchtung",  icon: Lightbulb },
   { value: "MARKISE",     label: "Markise",      icon: Umbrella },
   { value: "ROLLTOR",     label: "Rolltor",      icon: Blinds },
+  { value: "TASTER",      label: "Taster",       icon: CircleDot },
 ];
 
 type Direction = "in" | "out" | "bidir";
@@ -112,6 +118,9 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
     coverDownChannel: "1",
     coverRuntimeSec: String(DEFAULT_COVER_RUNTIME_SEC),
   });
+  const [pulse, setPulse] = useState<PulseFormValues>({
+    pulseSeconds: String(DEFAULT_PULSE_SECONDS),
+  });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -138,6 +147,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
         coverDownChannel: String(device.coverDownChannel ?? 1),
         coverRuntimeSec: String(device.coverRuntimeSec ?? DEFAULT_COVER_RUNTIME_SEC),
       });
+      setPulse({ pulseSeconds: String(device.pulseSeconds ?? DEFAULT_PULSE_SECONDS) });
       setError("");
     }
   }, [device]);
@@ -154,6 +164,14 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
       const coverError = validateCoverValues(cover);
       if (coverError) {
         setError(coverError);
+        return;
+      }
+    }
+    const isPulse = isPulseCategory(form.category);
+    if (isPulse) {
+      const pulseError = validatePulseValues(pulse);
+      if (pulseError) {
+        setError(pulseError);
         return;
       }
     }
@@ -197,6 +215,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
           ...(isCover
             ? coverPayload(cover)
             : { coverUpChannel: null, coverDownChannel: null, coverRuntimeSec: null }),
+          ...(isPulse ? pulsePayload(pulse) : { pulseSeconds: null }),
         }),
       });
       if (!res.ok) {
@@ -294,6 +313,14 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
               category={form.category}
               values={cover}
               onChange={(patch) => setCover((p) => ({ ...p, ...patch }))}
+            />
+          )}
+
+          {/* Taster – Einschaltdauer */}
+          {isShelly && isPulseCategory(form.category) && (
+            <PulseFields
+              values={pulse}
+              onChange={(patch) => setPulse((p) => ({ ...p, ...patch }))}
             />
           )}
 
