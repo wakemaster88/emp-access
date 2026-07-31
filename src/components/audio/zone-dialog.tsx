@@ -21,6 +21,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sliderFill } from "./ui";
 import type { AudioDeviceOption, AudioSourceKind, PlaylistRow, ZoneRow } from "./types";
 
 const NONE = "__none__";
@@ -116,7 +117,7 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Zone bearbeiten" : "Neue Zone"}</DialogTitle>
         </DialogHeader>
@@ -218,7 +219,9 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
             </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {/* Am Telefon untereinander: nebeneinander blieben je 90 px, in denen
+              die Beschriftung „Durchsage · 85 %" umbrach. */}
+          <div className="grid gap-1 sm:grid-cols-3 sm:gap-3">
             <VolumeField label="Musik" value={volume} onChange={setVolume} />
             <VolumeField
               label="Durchsage"
@@ -252,7 +255,7 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
             In der Ruhezeit läuft keine Musik. Durchsagen werden trotzdem abgespielt.
           </p>
 
-          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
             <Switch checked={isActive} onCheckedChange={setIsActive} />
             Zone aktiv
           </label>
@@ -298,7 +301,10 @@ function VolumeField({
         max={100}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-indigo-600 mt-2"
+        aria-label={label}
+        aria-valuetext={`${value} Prozent`}
+        style={sliderFill(value)}
+        className="touch-slider w-full"
       />
     </div>
   );

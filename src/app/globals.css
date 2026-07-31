@@ -251,3 +251,103 @@
 .light-scrollbar::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * Lautstärkeregler für den Finger.
+ *
+ * Der native Regler ist auf iOS eine 4 px dünne Linie mit einem kleinen Daumen –
+ * am Telefon trifft man ihn kaum, und ein Fehlgriff verstellt die Beschallung
+ * eines ganzen Bereichs. Darum ein sichtbar dickerer Daumen und eine 44 px hohe
+ * Greiffläche, während die Schiene selbst schlank bleibt.
+ *
+ * Die Breite bleibt bewusst ausgespart: diese Regel steht außerhalb der
+ * Tailwind-Ebenen und würde ein `sm:w-24` am Einsatzort sonst überstimmen.
+ */
+.touch-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 2.75rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Mit Maus oder Trackpad braucht niemand die 44 px – da wird die Zeile wieder
+   so flach wie vorher. */
+@media (pointer: fine) {
+  .touch-slider {
+    height: 1.75rem;
+  }
+}
+
+.touch-slider:focus-visible {
+  outline: 2px solid var(--color-indigo-500, #6366f1);
+  outline-offset: 2px;
+  border-radius: 9999px;
+}
+
+/*
+ * Der gefüllte Teil links vom Daumen. Ohne eigenes Aussehen faellt die
+ * Fuellfarbe von `accent-color` weg, und damit der Blick, mit dem man mehrere
+ * Zonen auf einmal vergleicht. Den Stand liefert die Komponente als
+ * --slider-fill in Prozent.
+ */
+.touch-slider::-webkit-slider-runnable-track {
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-indigo-600, #4f46e5) var(--slider-fill, 0%),
+    var(--color-slate-200, #e2e8f0) var(--slider-fill, 0%)
+  );
+}
+
+.touch-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 1.375rem;
+  width: 1.375rem;
+  /* Der Daumen sitzt oben am Track, muss also um die halbe Differenz hoch. */
+  margin-top: -0.5rem;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  background: var(--color-indigo-600, #4f46e5);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+}
+
+.touch-slider::-moz-range-track {
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-indigo-600, #4f46e5) var(--slider-fill, 0%),
+    var(--color-slate-200, #e2e8f0) var(--slider-fill, 0%)
+  );
+}
+
+.touch-slider::-moz-range-thumb {
+  height: 1.375rem;
+  width: 1.375rem;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  background: var(--color-indigo-600, #4f46e5);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+}
+
+.dark .touch-slider::-webkit-slider-runnable-track,
+.dark .touch-slider::-moz-range-track {
+  background: linear-gradient(
+    to right,
+    var(--color-indigo-500, #6366f1) var(--slider-fill, 0%),
+    var(--color-slate-700, #334155) var(--slider-fill, 0%)
+  );
+}
+
+.dark .touch-slider::-webkit-slider-thumb,
+.dark .touch-slider::-moz-range-thumb {
+  border-color: var(--color-slate-900, #0f172a);
+}
+
+.touch-slider:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

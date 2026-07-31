@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Chip, sliderFill } from "./ui";
 import type {
   AnnouncementRow,
   AudioScheduleAction,
@@ -130,7 +131,7 @@ export function ScheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Zeitplan bearbeiten" : "Neuer Zeitplan"}</DialogTitle>
         </DialogHeader>
@@ -222,7 +223,10 @@ export function ScheduleDialog({
                 max={100}
                 value={volume}
                 onChange={(e) => setVolume(Number(e.target.value))}
-                className="w-full accent-indigo-600 mt-2"
+                aria-label="Lautstärke"
+                aria-valuetext={`${volume} Prozent`}
+                style={sliderFill(volume)}
+                className="touch-slider w-full"
               />
             </div>
           )}
@@ -240,7 +244,9 @@ export function ScheduleDialog({
 
           <div>
             <Label className="mb-2 block">Wochentage</Label>
-            <div className="flex gap-1.5">
+            {/* Sieben feste Breiten liefen auf schmalen Geräten aus dem Dialog
+                heraus; als Raster teilen sie sich die vorhandene Breite. */}
+            <div className="grid grid-cols-7 gap-1.5">
               {DAY_NAMES.map((day, index) => {
                 const active = ((daysOfWeek >> index) & 1) === 1;
                 return (
@@ -248,8 +254,9 @@ export function ScheduleDialog({
                     key={day}
                     type="button"
                     onClick={() => toggleDay(index)}
+                    aria-pressed={active}
                     className={cn(
-                      "h-9 w-10 rounded-lg text-xs font-medium border transition-colors",
+                      "h-11 rounded-lg border text-xs font-medium transition-colors sm:h-9",
                       active
                         ? "bg-indigo-600 text-white border-indigo-600"
                         : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -268,19 +275,13 @@ export function ScheduleDialog({
             </Label>
             <div className="flex flex-wrap gap-1.5">
               {zones.map((zone) => (
-                <button
+                <Chip
                   key={zone.id}
-                  type="button"
+                  active={zoneIds.includes(zone.id)}
                   onClick={() => toggleZone(zone.id)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                    zoneIds.includes(zone.id)
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  )}
                 >
                   {zone.name}
-                </button>
+                </Chip>
               ))}
             </div>
           </div>

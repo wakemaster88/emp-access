@@ -14,8 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Music, Pause, Play, Search, Trash2, Upload } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { TRACK_KIND_LABELS as KIND_LABELS, formatDuration } from "./labels";
+import { Chip } from "./ui";
 import type { AudioTrackKind, TrackRow } from "./types";
 
 /** Ab dieser Anzahl lohnt sich die Suche – darunter nur unnötiges Bedienelement. */
@@ -155,11 +155,11 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
     <div className="space-y-3">
       <Card className="border-slate-200 dark:border-slate-800">
         <CardContent className="p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[160px]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="sm:min-w-[160px]">
               <Label className="mb-1.5 block">Art</Label>
               <Select value={kind} onValueChange={(v) => setKind(v as AudioTrackKind)}>
-                <SelectTrigger className="h-9">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -175,9 +175,13 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
             <Button
               onClick={() => inputRef.current?.click()}
               disabled={uploading}
-              className="gap-1.5"
+              className="h-11 gap-1.5 sm:h-9"
             >
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
               {progress ? `Lädt ${progress.done}/${progress.total}` : "Dateien hochladen"}
             </Button>
 
@@ -219,30 +223,29 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
       ) : (
         <>
           {tracks.length >= SEARCH_THRESHOLD && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[200px] flex-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative sm:min-w-[200px] sm:flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Titel oder Interpret suchen"
                   aria-label="Mediathek durchsuchen"
-                  className="h-9 pl-8"
+                  className="pl-8"
                 />
               </div>
               <div className="flex flex-wrap gap-1.5">
-                <FilterChip
-                  active={filterKind === "ALL"}
-                  onClick={() => setFilterKind("ALL")}
-                  label="Alle"
-                />
+                <Chip active={filterKind === "ALL"} onClick={() => setFilterKind("ALL")}>
+                  Alle
+                </Chip>
                 {(Object.keys(KIND_LABELS) as AudioTrackKind[]).map((k) => (
-                  <FilterChip
+                  <Chip
                     key={k}
                     active={filterKind === k}
                     onClick={() => setFilterKind(k)}
-                    label={KIND_LABELS[k]}
-                  />
+                  >
+                    {KIND_LABELS[k]}
+                  </Chip>
                 ))}
               </div>
             </div>
@@ -286,32 +289,6 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
   );
 }
 
-function FilterChip({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-        active
-          ? "border-indigo-600 bg-indigo-600 text-white"
-          : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-      )}
-    >
-      {label}
-    </button>
-  );
-}
-
 /**
  * Ein Titel in der Liste.
  *
@@ -331,13 +308,14 @@ function TrackItem({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 p-3">
+    <div className="flex items-center gap-2 p-3 sm:gap-3">
       <Button
         variant="ghost"
-        size="sm"
+        size="icon"
         onClick={onTogglePlay}
         aria-label={playing ? `${track.title} anhalten` : `${track.title} anhören`}
-        className="h-8 w-8 shrink-0 p-0"
+        aria-pressed={playing}
+        className="h-10 w-10 shrink-0 sm:h-8 sm:w-8"
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </Button>
@@ -358,13 +336,13 @@ function TrackItem({
 
       <Button
         variant="ghost"
-        size="sm"
+        size="icon"
         onClick={onRemove}
         aria-label={`${track.title} löschen`}
         title="Löschen"
-        className="h-8 shrink-0 px-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+        className="h-10 w-10 shrink-0 text-red-600 hover:bg-red-50 sm:h-8 sm:w-8 dark:hover:bg-red-950"
       >
-        <Trash2 className="h-3.5 w-3.5" />
+        <Trash2 className="h-4 w-4" />
       </Button>
     </div>
   );

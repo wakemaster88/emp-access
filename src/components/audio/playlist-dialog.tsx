@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { GripVertical, Loader2, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PlaylistRow, TrackRow } from "./types";
 
@@ -83,7 +83,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Playlist bearbeiten" : "Neue Playlist"}</DialogTitle>
         </DialogHeader>
@@ -108,8 +108,8 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-5">
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
               <Switch checked={shuffle} onCheckedChange={setShuffle} />
               Zufällige Reihenfolge
             </label>
@@ -124,7 +124,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                 max={12}
                 value={crossfadeSec}
                 onChange={(e) => setCrossfadeSec(Math.min(12, Math.max(0, Number(e.target.value))))}
-                className="h-8 w-20"
+                className="w-20"
               />
               <span className="text-sm text-slate-500">s</span>
             </div>
@@ -146,33 +146,33 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                       key={id}
                       className="flex items-center gap-1.5 p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50"
                     >
-                      <div className="flex flex-col shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => move(index, -1)}
+                      {/* Vorher zwei gedrehte Griff-Symbole mit 16 px
+                          Trefferfläche – am Telefon Glückssache. Pfeile sagen
+                          außerdem klarer, was der Knopf tut. */}
+                      <div className="flex shrink-0 flex-col">
+                        <MoveButton
+                          icon={ChevronUp}
+                          label={`${track.title} nach oben`}
                           disabled={index === 0}
-                          className="text-slate-400 hover:text-slate-600 disabled:opacity-30 p-0.5"
-                        >
-                          <GripVertical className="h-3 w-3 rotate-180" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => move(index, 1)}
+                          onClick={() => move(index, -1)}
+                        />
+                        <MoveButton
+                          icon={ChevronDown}
+                          label={`${track.title} nach unten`}
                           disabled={index === trackIds.length - 1}
-                          className="text-slate-400 hover:text-slate-600 disabled:opacity-30 p-0.5"
-                        >
-                          <GripVertical className="h-3 w-3" />
-                        </button>
+                          onClick={() => move(index, 1)}
+                        />
                       </div>
-                      <span className="text-sm truncate flex-1 min-w-0">{track.title}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm">{track.title}</span>
                       <Button
                         type="button"
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => setTrackIds((prev) => prev.filter((t) => t !== id))}
-                        className="h-7 px-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950 shrink-0"
+                        aria-label={`${track.title} aus der Playlist entfernen`}
+                        className="h-10 w-10 shrink-0 text-red-600 hover:bg-red-50 sm:h-8 sm:w-8 dark:hover:bg-red-950"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   );
@@ -184,15 +184,18 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
           {available.length > 0 && (
             <div>
               <Label className="mb-2 block">Aus der Mediathek hinzufügen</Label>
-              <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+              {/* overscroll-contain, damit ein Wischen in dieser Liste am Ende
+                  nicht das ganze Blatt weiterschiebt – iOS zieht sonst den
+                  Dialog mit. */}
+              <div className="max-h-40 space-y-1 overflow-y-auto overscroll-contain pr-1">
                 {available.map((track) => (
                   <button
                     key={track.id}
                     type="button"
                     onClick={() => setTrackIds((prev) => [...prev, track.id])}
-                    className="w-full flex items-center gap-2 p-2 rounded-lg text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="flex min-h-10 w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-100 sm:min-h-0 dark:hover:bg-slate-800"
                   >
-                    <Plus className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <Plus className="h-4 w-4 shrink-0 text-slate-400" />
                     <span className="truncate">{track.title}</span>
                   </button>
                 ))}
@@ -218,5 +221,29 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function MoveButton({
+  icon: Icon,
+  label,
+  disabled,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="flex h-7 w-9 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent sm:h-6 sm:w-8 dark:hover:bg-slate-800"
+    >
+      <Icon className="h-4 w-4" />
+    </button>
   );
 }

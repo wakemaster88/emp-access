@@ -45,6 +45,7 @@ import {
 } from "@/lib/audio-constants";
 import { scheduleWarnings } from "./schedule-warnings";
 import { AnnouncePanel } from "./announce-panel";
+import { Chip, sliderFill } from "./ui";
 import { AnnouncementDialog } from "./announcement-dialog";
 import { LibraryPanel } from "./library-panel";
 import {
@@ -208,47 +209,44 @@ export function AudioClient({
       <ZoneStatusBar zones={zones} status={liveZones} onSelect={showZone} />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="mb-4 flex-wrap h-auto">
-          <TabsTrigger value="announce" className="gap-1.5">
+        {/*
+          Sieben Tabs passen auf kein Telefon. Gewickelt ergaben sie drei
+          ungleich breite Reihen, weil sich die Auslöser die Breite teilen –
+          darum eine Reihe zum Schieben, wie in der Netzwerkansicht. Die Zähler
+          bleiben dem Zeigergerät vorbehalten, sonst sieht man am Telefon kaum
+          zwei Tabs.
+        */}
+        <TabsList className="mb-4 w-full justify-start overflow-x-auto sm:w-auto">
+          <TabsTrigger value="announce" className="flex-none gap-1.5">
             <Megaphone className="h-4 w-4" />
             Durchsage
           </TabsTrigger>
-          <TabsTrigger value="zones" className="gap-1.5">
+          <TabsTrigger value="zones" className="flex-none gap-1.5">
             <Speaker className="h-4 w-4" />
             Zonen
-            <Badge variant="secondary" className="ml-1.5 text-xs">
-              {zones.length}
-            </Badge>
+            <TabCount value={zones.length} />
           </TabsTrigger>
-          <TabsTrigger value="library" className="gap-1.5">
+          <TabsTrigger value="library" className="flex-none gap-1.5">
             <Music className="h-4 w-4" />
             Mediathek
-            <Badge variant="secondary" className="ml-1.5 text-xs">
-              {tracks.length}
-            </Badge>
+            <TabCount value={tracks.length} />
           </TabsTrigger>
-          <TabsTrigger value="playlists" className="gap-1.5">
+          <TabsTrigger value="playlists" className="flex-none gap-1.5">
             <ListMusic className="h-4 w-4" />
             Playlists
-            <Badge variant="secondary" className="ml-1.5 text-xs">
-              {playlists.length}
-            </Badge>
+            <TabCount value={playlists.length} />
           </TabsTrigger>
-          <TabsTrigger value="templates" className="gap-1.5">
+          <TabsTrigger value="templates" className="flex-none gap-1.5">
             <Megaphone className="h-4 w-4" />
             Vorlagen
-            <Badge variant="secondary" className="ml-1.5 text-xs">
-              {templates.length}
-            </Badge>
+            <TabCount value={templates.length} />
           </TabsTrigger>
-          <TabsTrigger value="schedules" className="gap-1.5">
+          <TabsTrigger value="schedules" className="flex-none gap-1.5">
             <CalendarClock className="h-4 w-4" />
             Zeitpläne
-            <Badge variant="secondary" className="ml-1.5 text-xs">
-              {schedules.length}
-            </Badge>
+            <TabCount value={schedules.length} />
           </TabsTrigger>
-          <TabsTrigger value="history" className="gap-1.5">
+          <TabsTrigger value="history" className="flex-none gap-1.5">
             <History className="h-4 w-4" />
             Verlauf
           </TabsTrigger>
@@ -266,18 +264,11 @@ export function AudioClient({
 
         {/* ── ZONEN ────────────────────────────────────────────────────────── */}
         <TabsContent value="zones" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Jede Zone ist ein Abspieler mit eigenem Verstärker.
-            </p>
-            <Button
-              size="sm"
-              onClick={() => setZoneDialog({ open: true, zone: null })}
-              className="gap-1.5"
-            >
-              <Plus className="h-4 w-4" /> Neue Zone
-            </Button>
-          </div>
+          <SectionHeader
+            text="Jede Zone ist ein Abspieler mit eigenem Verstärker."
+            actionLabel="Neue Zone"
+            onAction={() => setZoneDialog({ open: true, zone: null })}
+          />
 
           {zones.length === 0 ? (
             <EmptyState
@@ -334,18 +325,11 @@ export function AudioClient({
 
         {/* ── PLAYLISTS ────────────────────────────────────────────────────── */}
         <TabsContent value="playlists" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Playlists laufen als Hintergrundmusik in den Zonen.
-            </p>
-            <Button
-              size="sm"
-              onClick={() => setPlaylistDialog({ open: true, playlist: null })}
-              className="gap-1.5"
-            >
-              <Plus className="h-4 w-4" /> Neue Playlist
-            </Button>
-          </div>
+          <SectionHeader
+            text="Playlists laufen als Hintergrundmusik in den Zonen."
+            actionLabel="Neue Playlist"
+            onAction={() => setPlaylistDialog({ open: true, playlist: null })}
+          />
 
           {playlists.length === 0 ? (
             <EmptyState
@@ -378,19 +362,18 @@ export function AudioClient({
                         {playlist.crossfadeSec > 0 && ` · ${playlist.crossfadeSec}s Überblendung`}
                       </p>
                     </div>
-                    <div className="flex gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPlaylistDialog({ open: true, playlist })}
-                        aria-label={`Playlist ${playlist.name} bearbeiten`}
+                    <div className="flex shrink-0 gap-1">
+                      <IconAction
+                        icon={Pencil}
+                        label={`Playlist ${playlist.name} bearbeiten`}
                         title="Bearbeiten"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                        onClick={() => setPlaylistDialog({ open: true, playlist })}
+                      />
+                      <IconAction
+                        icon={Trash2}
+                        label={`Playlist ${playlist.name} löschen`}
+                        title="Löschen"
+                        tone="danger"
                         onClick={() =>
                           setDeleteConfirm({
                             kind: "playlist",
@@ -398,12 +381,7 @@ export function AudioClient({
                             name: playlist.name,
                           })
                         }
-                        aria-label={`Playlist ${playlist.name} löschen`}
-                        title="Löschen"
-                        className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -414,18 +392,11 @@ export function AudioClient({
 
         {/* ── VORLAGEN ─────────────────────────────────────────────────────── */}
         <TabsContent value="templates" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Gespeicherte Durchsagen stehen als Schnellwahl und in Zeitplänen zur Verfügung.
-            </p>
-            <Button
-              size="sm"
-              onClick={() => setAnnouncementDialog({ open: true, announcement: null })}
-              className="gap-1.5"
-            >
-              <Plus className="h-4 w-4" /> Neue Durchsage
-            </Button>
-          </div>
+          <SectionHeader
+            text="Gespeicherte Durchsagen stehen als Schnellwahl und in Zeitplänen zur Verfügung."
+            actionLabel="Neue Durchsage"
+            onAction={() => setAnnouncementDialog({ open: true, announcement: null })}
+          />
 
           {templates.length === 0 ? (
             <EmptyState
@@ -471,19 +442,18 @@ export function AudioClient({
                           })}`}
                       </p>
                     </div>
-                    <div className="flex gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setAnnouncementDialog({ open: true, announcement: template })}
-                        aria-label={`Durchsage ${template.name} bearbeiten`}
+                    <div className="flex shrink-0 gap-1">
+                      <IconAction
+                        icon={Pencil}
+                        label={`Durchsage ${template.name} bearbeiten`}
                         title="Bearbeiten"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                        onClick={() => setAnnouncementDialog({ open: true, announcement: template })}
+                      />
+                      <IconAction
+                        icon={Trash2}
+                        label={`Durchsage ${template.name} löschen`}
+                        title="Löschen"
+                        tone="danger"
                         onClick={() =>
                           setDeleteConfirm({
                             kind: "announcement",
@@ -491,12 +461,7 @@ export function AudioClient({
                             name: template.name,
                           })
                         }
-                        aria-label={`Durchsage ${template.name} löschen`}
-                        title="Löschen"
-                        className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -507,18 +472,11 @@ export function AudioClient({
 
         {/* ── ZEITPLÄNE ────────────────────────────────────────────────────── */}
         <TabsContent value="schedules" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              Zeitpläne werden jede Minute geprüft.
-            </p>
-            <Button
-              size="sm"
-              onClick={() => setScheduleDialog({ open: true, schedule: null })}
-              className="gap-1.5"
-            >
-              <Plus className="h-4 w-4" /> Neuer Zeitplan
-            </Button>
-          </div>
+          <SectionHeader
+            text="Zeitpläne werden jede Minute geprüft."
+            actionLabel="Neuer Zeitplan"
+            onAction={() => setScheduleDialog({ open: true, schedule: null })}
+          />
 
           {schedules.length === 0 ? (
             <EmptyState
@@ -583,32 +541,28 @@ export function AudioClient({
                           )
                         )}
                     </div>
-                    <div className="flex gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleSchedule(schedule)}
-                        aria-label={`Zeitplan ${schedule.name} ${schedule.isActive ? "deaktivieren" : "aktivieren"}`}
+                    <div className="flex shrink-0 gap-1">
+                      <IconAction
+                        icon={schedule.isActive ? CheckCircle2 : XCircle}
+                        iconClassName={
+                          schedule.isActive ? "text-emerald-500" : "text-slate-400"
+                        }
+                        label={`Zeitplan ${schedule.name} ${schedule.isActive ? "deaktivieren" : "aktivieren"}`}
                         title={schedule.isActive ? "Deaktivieren" : "Aktivieren"}
-                      >
-                        {schedule.isActive ? (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                        ) : (
-                          <XCircle className="h-3.5 w-3.5 text-slate-400" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setScheduleDialog({ open: true, schedule })}
-                        aria-label={`Zeitplan ${schedule.name} bearbeiten`}
+                        pressed={schedule.isActive}
+                        onClick={() => toggleSchedule(schedule)}
+                      />
+                      <IconAction
+                        icon={Pencil}
+                        label={`Zeitplan ${schedule.name} bearbeiten`}
                         title="Bearbeiten"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                        onClick={() => setScheduleDialog({ open: true, schedule })}
+                      />
+                      <IconAction
+                        icon={Trash2}
+                        label={`Zeitplan ${schedule.name} löschen`}
+                        title="Löschen"
+                        tone="danger"
                         onClick={() =>
                           setDeleteConfirm({
                             kind: "schedule",
@@ -616,12 +570,7 @@ export function AudioClient({
                             name: schedule.name,
                           })
                         }
-                        aria-label={`Zeitplan ${schedule.name} löschen`}
-                        title="Löschen"
-                        className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -727,6 +676,87 @@ export function AudioClient({
   );
 }
 
+/**
+ * Kopfzeile eines Tabs: Erklärung links, Anlegen-Knopf rechts.
+ *
+ * Nebeneinander wurde der Knopf am Telefon vom Erklärtext zusammengequetscht.
+ * Untereinander nimmt er die ganze Breite und ist mit dem Daumen zu treffen.
+ */
+function SectionHeader({
+  text,
+  actionLabel,
+  onAction,
+}: {
+  text: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-slate-500">{text}</p>
+      <Button onClick={onAction} className="w-full gap-1.5 sm:w-auto sm:shrink-0">
+        <Plus className="h-4 w-4" /> {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+function TabCount({ value }: { value: number }) {
+  return (
+    <Badge variant="secondary" className="ml-1.5 hidden text-xs sm:inline-flex">
+      {value}
+    </Badge>
+  );
+}
+
+/**
+ * Icon-Knopf am Rand einer Karte.
+ *
+ * Mit `size="sm"` waren das 32 px – am Telefon zu wenig, erst recht bei vier
+ * Knöpfen in einer Reihe an einer Zonenkarte. Am Zeigergerät bleibt es kompakt,
+ * dort ist die Trefferfläche kein Thema.
+ */
+function IconAction({
+  icon: Icon,
+  label,
+  title,
+  onClick,
+  disabled,
+  pressed,
+  tone,
+  className,
+  iconClassName,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  title?: string;
+  onClick: () => void;
+  disabled?: boolean;
+  pressed?: boolean;
+  tone?: "danger";
+  className?: string;
+  iconClassName?: string;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      aria-pressed={pressed}
+      title={title ?? label}
+      className={cn(
+        "h-10 w-10 sm:h-8 sm:w-8",
+        tone === "danger" && "text-red-600 hover:bg-red-50 dark:hover:bg-red-950",
+        className
+      )}
+    >
+      <Icon className={cn("h-4 w-4", iconClassName)} />
+    </Button>
+  );
+}
+
 function ZoneCard({
   zone,
   live,
@@ -793,7 +823,11 @@ function ZoneCard({
       )}
     >
       <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
+        {/*
+          Am Telefon stehen die Knöpfe unter dem Namen: nebeneinander blieben
+          für den Zonennamen neben vier Knöpfen nur wenige Zeichen.
+        */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-semibold text-slate-900 dark:text-slate-100">{zone.name}</h3>
@@ -846,72 +880,78 @@ function ZoneCard({
             </p>
           </div>
 
-          <div className="flex gap-1 shrink-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={monitor.toggle}
-              disabled={!monitor.available}
-              aria-label={
+          <div className="-mr-1 flex shrink-0 justify-end gap-1 sm:mr-0">
+            <IconAction
+              icon={Headphones}
+              label={
                 monitor.active
                   ? `Mithören von ${zone.name} beenden`
                   : `Zone ${zone.name} auf diesem Gerät mithören`
               }
-              aria-pressed={monitor.active}
               title={
                 monitor.available
                   ? `Mithören – ${monitorHint}`
                   : "Keine Quelle zum Mithören hinterlegt"
               }
+              disabled={!monitor.available}
+              pressed={monitor.active}
+              onClick={monitor.toggle}
               className={cn(
                 monitor.active &&
                   "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-950/40"
               )}
-            >
-              <Headphones className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onSync}
-              aria-label={`Dateicache von ${zone.name} abgleichen`}
+            />
+            <IconAction
+              icon={RefreshCw}
+              label={`Dateicache von ${zone.name} abgleichen`}
               title="Dateicache abgleichen"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onEdit}
-              aria-label={`Zone ${zone.name} bearbeiten`}
+              onClick={onSync}
+            />
+            <IconAction
+              icon={Pencil}
+              label={`Zone ${zone.name} bearbeiten`}
               title="Bearbeiten"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onDelete}
-              aria-label={`Zone ${zone.name} löschen`}
+              onClick={onEdit}
+            />
+            <IconAction
+              icon={Trash2}
+              label={`Zone ${zone.name} löschen`}
               title="Löschen"
-              className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+              tone="danger"
+              onClick={onDelete}
+            />
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button size="sm" onClick={onPlay} disabled={busy} className="gap-1.5">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            Start
-          </Button>
-          <Button size="sm" variant="outline" onClick={onStop} disabled={busy} className="gap-1.5">
-            <Square className="h-3.5 w-3.5" />
-            Stopp
-          </Button>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {/* Start und Stopp teilen sich am Telefon die Breite, der Regler
+              bekommt darunter eine eigene Zeile – gequetscht daneben war er
+              nicht zu bedienen. */}
+          <div className="flex w-full gap-2 sm:w-auto">
+            <Button
+              onClick={onPlay}
+              disabled={busy}
+              className="h-10 flex-1 gap-1.5 sm:h-8 sm:flex-none"
+            >
+              {busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
+              Start
+            </Button>
+            <Button
+              variant="outline"
+              onClick={onStop}
+              disabled={busy}
+              className="h-10 flex-1 gap-1.5 sm:h-8 sm:flex-none"
+            >
+              <Square className="h-3.5 w-3.5" />
+              Stopp
+            </Button>
+          </div>
 
-          <div className="flex min-w-[180px] flex-1 items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto sm:min-w-[180px] sm:flex-1">
             <Volume2 className="h-4 w-4 shrink-0 text-slate-400" />
             <input
               type="range"
@@ -921,7 +961,8 @@ function ZoneCard({
               onChange={(e) => volume.change(Number(e.target.value))}
               aria-label={`Lautstärke ${zone.name}`}
               aria-valuetext={`${volume.value} Prozent`}
-              className="flex-1 accent-indigo-600"
+              style={sliderFill(volume.value)}
+              className="touch-slider flex-1"
             />
             <span className="w-9 text-right text-xs tabular-nums text-slate-500">
               {volume.value}%
@@ -930,7 +971,7 @@ function ZoneCard({
         </div>
 
         {monitor.active && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+          <div className="mt-2 flex flex-col gap-1 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 sm:flex-row sm:items-center sm:gap-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
             <span className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">
               <Headphones className="h-3.5 w-3.5" />
               Mithören
@@ -939,19 +980,26 @@ function ZoneCard({
               {monitor.title ? `${monitor.title} · ` : ""}
               {monitorHint}
             </span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={monitor.volume}
-              onChange={(e) => monitor.setVolume(Number(e.target.value))}
-              aria-label={`Mithör-Lautstärke ${zone.name}`}
-              aria-valuetext={`${monitor.volume} Prozent`}
-              className="w-24 accent-indigo-600"
-            />
-            <Button variant="ghost" size="sm" onClick={monitor.toggle} className="text-xs">
-              Beenden
-            </Button>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={monitor.volume}
+                onChange={(e) => monitor.setVolume(Number(e.target.value))}
+                aria-label={`Mithör-Lautstärke ${zone.name}`}
+                aria-valuetext={`${monitor.volume} Prozent`}
+                style={sliderFill(monitor.volume)}
+                className="touch-slider flex-1 sm:w-24 sm:flex-none"
+              />
+              <Button
+                variant="ghost"
+                onClick={monitor.toggle}
+                className="h-10 shrink-0 text-xs sm:h-8"
+              >
+                Beenden
+              </Button>
+            </div>
           </div>
         )}
 
@@ -1039,21 +1087,14 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-1.5">
           {HISTORY_FILTERS.map((option) => (
-            <button
+            <Chip
               key={option.value}
-              type="button"
+              active={filter === option.value}
               onClick={() => setFilter(option.value)}
-              aria-pressed={filter === option.value}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                filter === option.value
-                  ? "border-indigo-600 bg-indigo-600 text-white"
-                  : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-              )}
             >
               {option.label}
               {option.value === "problems" && problems.length > 0 && ` (${problems.length})`}
-            </button>
+            </Chip>
           ))}
         </div>
         <p className="text-xs text-slate-500">Aktualisiert sich automatisch</p>
@@ -1086,9 +1127,9 @@ function JobItem({ job }: { job: JobRow }) {
   const waiting = (job.status === "PENDING" || job.status === "SENT") && !stuck;
 
   return (
-    <div className="flex items-center gap-3 p-3">
+    <div className="flex items-start gap-3 p-3">
       <div
-        className="shrink-0"
+        className="mt-0.5 shrink-0"
         title={stuck ? "Kein Abspieler hat den Befehl geholt" : JOB_STATUS_LABELS[job.status]}
       >
         {failed ? (
@@ -1104,7 +1145,7 @@ function JobItem({ job }: { job: JobRow }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="truncate text-sm font-medium">
             {job.announcementName ?? JOB_KIND_LABELS[job.kind]}
           </span>
@@ -1117,16 +1158,19 @@ function JobItem({ job }: { job: JobRow }) {
           {(waiting || running) && (
             <span className="text-xs text-slate-500">{JOB_STATUS_LABELS[job.status]}</span>
           )}
-          {stuck && (
-            <span className="text-xs text-amber-700 dark:text-amber-400">
-              Hängt seit {formatRelativeTime(job.createdAt)?.replace("vor ", "") ?? "?"} – kein
-              Abspieler hat ihn geholt
-            </span>
-          )}
-          {job.errorMessage && (
-            <span className="truncate text-xs text-red-600">{job.errorMessage}</span>
-          )}
         </div>
+        {/* Hänger und Fehlertext auf eigenen Zeilen: in der Kopfzeile mit den
+            Abzeichen zusammen war am Telefon nur ein abgeschnittener Rest zu
+            sehen – und genau dort steht, was fehlt. */}
+        {stuck && (
+          <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+            Hängt seit {formatRelativeTime(job.createdAt)?.replace("vor ", "") ?? "?"} – kein
+            Abspieler hat ihn geholt
+          </p>
+        )}
+        {job.errorMessage && (
+          <p className="mt-0.5 text-xs break-words text-red-600">{job.errorMessage}</p>
+        )}
         <p className="text-xs text-slate-500">
           {new Date(job.createdAt).toLocaleString("de-DE", {
             dateStyle: "short",

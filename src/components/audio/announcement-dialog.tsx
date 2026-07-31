@@ -27,6 +27,7 @@ import {
   normalizeTtsVoice,
   type TtsVoice,
 } from "@/lib/audio-constants";
+import { Chip, TEXTAREA_CLASS } from "./ui";
 import type { AnnouncementRow, TrackRow, ZoneRow } from "./types";
 
 interface Props {
@@ -124,7 +125,7 @@ export function AnnouncementDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Durchsage bearbeiten" : "Neue Durchsage"}</DialogTitle>
         </DialogHeader>
@@ -173,7 +174,7 @@ export function AnnouncementDialog({
                   onChange={(e) => setText(e.target.value)}
                   rows={3}
                   placeholder="Liebe Gäste, der Badebetrieb endet in fünfzehn Minuten."
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  className={TEXTAREA_CLASS}
                 />
               </div>
 
@@ -216,8 +217,8 @@ export function AnnouncementDialog({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-5">
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
               <Switch checked={chime} onCheckedChange={setChime} />
               Gong voranstellen
             </label>
@@ -232,12 +233,12 @@ export function AnnouncementDialog({
                 max={5}
                 value={repeatCount}
                 onChange={(e) => setRepeatCount(Math.min(5, Math.max(1, Number(e.target.value))))}
-                className="h-8 w-16"
+                className="w-16"
               />
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
             <Switch checked={emergency} onCheckedChange={setEmergency} />
             Notfall – unterbricht laufende Durchsagen
           </label>
@@ -249,19 +250,13 @@ export function AnnouncementDialog({
             </Label>
             <div className="flex flex-wrap gap-1.5">
               {zones.map((zone) => (
-                <button
+                <Chip
                   key={zone.id}
-                  type="button"
+                  active={zoneIds.includes(zone.id)}
                   onClick={() => toggleZone(zone.id)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                    zoneIds.includes(zone.id)
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  )}
                 >
                   {zone.name}
-                </button>
+                </Chip>
               ))}
             </div>
           </div>

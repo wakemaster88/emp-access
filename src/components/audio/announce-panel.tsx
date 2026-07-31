@@ -21,6 +21,7 @@ import {
   TTS_FALLBACK_VOICES,
   type TtsVoice,
 } from "@/lib/audio-constants";
+import { Chip, TEXTAREA_CLASS } from "./ui";
 import type { AnnouncementRow, ZoneRow } from "./types";
 
 interface Props {
@@ -216,32 +217,17 @@ export function AnnouncePanel({
           <div>
             <Label className="mb-2 block">Zielzonen · {targetLabel}</Label>
             <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelectedZones([])}
-                className={cn(
-                  "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                  selectedZones.length === 0
-                    ? "bg-indigo-600 text-white border-indigo-600"
-                    : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                )}
-              >
+              <Chip active={selectedZones.length === 0} onClick={() => setSelectedZones([])}>
                 Alle Zonen
-              </button>
+              </Chip>
               {activeZones.map((zone) => (
-                <button
+                <Chip
                   key={zone.id}
-                  type="button"
+                  active={selectedZones.includes(zone.id)}
                   onClick={() => toggleZone(zone.id)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                    selectedZones.includes(zone.id)
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  )}
                 >
                   {zone.name}
-                </button>
+                </Chip>
               ))}
             </div>
           </div>
@@ -260,15 +246,15 @@ export function AnnouncePanel({
               onChange={(e) => setText(e.target.value)}
               rows={3}
               placeholder="z. B. Der Anfängerkurs beginnt in fünf Minuten an Seilbahn A."
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className={TEXTAREA_CLASS}
             />
           </div>
 
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="min-w-[180px]">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
               <Label className="mb-1.5 block">Stimme</Label>
               <Select value={voice} onValueChange={setVoice}>
-                <SelectTrigger className="h-9">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -281,30 +267,48 @@ export function AnnouncePanel({
               </Select>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 pb-2">
-              <Switch checked={chime} onCheckedChange={setChime} />
-              Gong voranstellen
-            </label>
+            {/* Der Schalter selbst ist 18 px hoch; die Zeile drumherum macht
+                daraus am Telefon eine greifbare Fläche. */}
+            <div className="flex flex-col justify-end gap-1">
+              <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+                <Switch checked={chime} onCheckedChange={setChime} />
+                Gong voranstellen
+              </label>
 
-            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 pb-2">
-              <Switch checked={emergency} onCheckedChange={setEmergency} />
-              <span className="flex items-center gap-1">
-                <TriangleAlert
-                  className={cn("h-3.5 w-3.5", emergency ? "text-red-600" : "text-slate-400")}
-                />
-                Notfall (unterbricht alles)
-              </span>
-            </label>
+              <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+                <Switch checked={emergency} onCheckedChange={setEmergency} />
+                <span className="flex items-center gap-1">
+                  <TriangleAlert
+                    className={cn("h-3.5 w-3.5", emergency ? "text-red-600" : "text-slate-400")}
+                  />
+                  Notfall (unterbricht alles)
+                </span>
+              </label>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button onClick={sendText} disabled={sending || recording} className="gap-1.5">
-              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Megaphone className="h-4 w-4" />}
+          {/* Am Telefon volle Breite: die Durchsage ist die Hauptaktion dieser
+              Seite und wird oft im Vorbeigehen ausgelöst. */}
+          <div className="grid gap-2 pt-1 sm:flex sm:flex-wrap">
+            <Button
+              onClick={sendText}
+              disabled={sending || recording}
+              className="h-11 gap-1.5 sm:h-9"
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Megaphone className="h-4 w-4" />
+              )}
               Durchsage abspielen
             </Button>
 
             {recording ? (
-              <Button onClick={stopRecording} variant="outline" className="gap-1.5 border-red-500 text-red-600">
+              <Button
+                onClick={stopRecording}
+                variant="outline"
+                className="h-11 gap-1.5 border-red-500 text-red-600 sm:h-9"
+              >
                 <Square className="h-4 w-4 fill-current" />
                 Aufnahme beenden ({recordSeconds}s)
               </Button>
@@ -313,7 +317,7 @@ export function AnnouncePanel({
                 onClick={startRecording}
                 variant="outline"
                 disabled={sending}
-                className="gap-1.5"
+                className="h-11 gap-1.5 sm:h-9"
               >
                 <Mic className="h-4 w-4" />
                 Live sprechen
@@ -342,11 +346,10 @@ export function AnnouncePanel({
               {templates.map((template) => (
                 <Button
                   key={template.id}
-                  size="sm"
                   variant="outline"
                   disabled={sending}
                   onClick={() => playTemplate(template)}
-                  className="gap-1.5"
+                  className="h-10 gap-1.5 sm:h-8"
                 >
                   <Megaphone className="h-3.5 w-3.5" />
                   {template.name}
