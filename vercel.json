@@ -81,7 +81,7 @@
     },
     {
       "path": "/api/cron/audio-schedules",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }

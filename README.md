@@ -89,7 +89,7 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
   Gleicher Text mit gleicher Stimme wird gecacht, es fällt also nur beim ersten
   Mal ein Aufruf an. Die Stimmenauswahl im Dialog kommt aus
   `GET /v1/tts/voices`, damit dort nichts steht, was die API ablehnt.
-- `CRON_SECRET` – wird von `/api/cron/audio-schedules` mitgenutzt (alle 5 Min).
+- `CRON_SECRET` – wird von `/api/cron/audio-schedules` mitgenutzt (minütlich).
 
 **Zone einrichten:**
 
@@ -121,6 +121,30 @@ Das ist kein Abhören des Verstärkerausgangs: ob am Lautsprecher wirklich Ton
 ankommt, sagt das Mithören nicht. Durchsagen sind nicht dabei, die laufen als
 eigener Job auf dem Pi. Bei Playlists ist es außerdem nicht taktgleich, weil der
 Pi keine Wiedergabeposition meldet, sondern nur alle 60 Sekunden einen Titel.
+
+**Durchsagen zu festen Zeiten** (Tab **Zeitpläne**): Ein Zeitplan besteht aus
+Aktion, Uhrzeit und Wochentagen. Für *Durchsage abspielen* muss die Ansage
+vorher unter **Vorlagen** gespeichert sein – nur Vorlagen stehen in der Auswahl.
+Mehrere Zeiten am Tag sind mehrere Zeitpläne; eine Zeitplanzeile ist ein Termin.
+Neben `ANNOUNCE` gibt es `PLAY` (Playlist starten, z. B. zur Öffnung), `STOP`
+(Betriebsschluss) und `VOLUME`.
+
+Ausgewertet wird minütlich per Cron, und zwar in der Zeitzone des Accounts
+(`Account.timezone`, ohne Eintrag Europe/Berlin) – Sommerzeit wird also
+mitgenommen. Verzögerte oder ausgefallene Cron-Ticks holt ein Fenster von fünf
+Minuten nach, `lastRunAt` verhindert dabei die Wiederholung: pro Tag löst ein
+Termin genau einmal aus. Kommt der Tick über fünf Minuten hinaus nicht, fällt der
+Termin bewusst aus, statt deutlich zu spät zu kommen. Prüfen lässt sich die
+Zeitrechnung mit `npx tsx scripts/audio-schedule-check.ts`.
+
+Auf jeder Zeitplankarte steht, wann sie zuletzt ausgeführt wurde. Steht dort nach
+dem ersten Termin noch „Noch nie ausgeführt", liegt es am Cron oder an
+`CRON_SECRET`; der Rest der Kette hinterlässt Spuren im Tab **Verlauf**.
+
+Zonen ohne zugeordnetes Gerät bekommen ihren Job trotzdem, und der bleibt dann
+für immer auf *wartend* stehen – niemand holt ihn ab. Ein Zeitplan auf „alle
+Zonen" sieht deshalb im Verlauf halb fehlgeschlagen aus, solange nicht jede Zone
+einen Abspieler hat. Bis dahin die Zielzonen im Zeitplan ausdrücklich auswählen.
 
 **Geräte-Schnittstelle** (Auth wie bei den Scanner-Pis über das Account-Token):
 

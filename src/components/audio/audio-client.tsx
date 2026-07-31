@@ -500,7 +500,7 @@ export function AudioClient({
         <TabsContent value="schedules" className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-500">
-              Zeitpläne werden alle fünf Minuten geprüft.
+              Zeitpläne werden jede Minute geprüft.
             </p>
             <Button
               size="sm"
@@ -550,6 +550,11 @@ export function AudioClient({
                         {schedule.zoneIds.length === 0
                           ? "alle Zonen"
                           : `${schedule.zoneIds.length} Zone${schedule.zoneIds.length === 1 ? "" : "n"}`}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {schedule.lastRunAt
+                          ? `Zuletzt ausgeführt ${formatRelativeTime(schedule.lastRunAt) ?? "–"}`
+                          : "Noch nie ausgeführt"}
                       </p>
                     </div>
                     <div className="flex gap-1 shrink-0">

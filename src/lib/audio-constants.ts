@@ -90,6 +90,67 @@ export function matchesDayOfWeek(bitmask: number, date: Date, timeZone: string):
   return ((bitmask >> index) & 1) === 1;
 }
 
+/**
+ * Nachholfenster der Zeitplan-Auswertung in Minuten. Vercel startet Cron-Jobs
+ * nicht sekundengenau und lässt einen Tick unter Last auch aus. Ohne Fenster
+ * fiele eine Durchsage dann still für den ganzen Tag aus, weil ihre Minute
+ * vorbei ist.
+ */
+export const SCHEDULE_WINDOW_MINUTES = 5;
+
+/** Tagesdatum und Minute des Tages in einer Zeitzone. */
+function localParts(date: Date, timeZone: string): { day: string; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "0";
+  // Mitternacht liefert je nach Umgebung "24" statt "00".
+  const hour = Number(value("hour")) % 24;
+  return {
+    day: `${value("year")}-${value("month")}-${value("day")}`,
+    minutes: hour * 60 + Number(value("minute")),
+  };
+}
+
+export type ScheduleTiming = {
+  timeOfDay: string;
+  daysOfWeek: number;
+  lastRunAt: Date | null;
+};
+
+/**
+ * Ist ein Zeitplan jetzt auszuführen? Ohne Datenbankzugriff, damit sich die
+ * Zeitlogik prüfen lässt: npx tsx scripts/audio-schedule-check.ts
+ */
+export function isScheduleDue(
+  schedule: ScheduleTiming,
+  now: Date,
+  timeZone: string
+): boolean {
+  if (!matchesDayOfWeek(schedule.daysOfWeek, now, timeZone)) return false;
+
+  const [hour, minute] = schedule.timeOfDay.split(":").map(Number);
+  const due = hour * 60 + minute;
+  const current = localParts(now, timeZone);
+  if (current.minutes < due || current.minutes >= due + SCHEDULE_WINDOW_MINUTES) return false;
+
+  if (schedule.lastRunAt) {
+    const last = localParts(schedule.lastRunAt, timeZone);
+    // Heute schon für diese Uhrzeit gelaufen. Ohne diese Prüfung würde jeder
+    // weitere Tick im Nachholfenster die Durchsage wiederholen.
+    if (last.day === current.day && last.minutes >= due) return false;
+  }
+
+  return true;
+}
+
 /** Bitmaske als lesbare Wochentagsliste. */
 export function formatDaysOfWeek(bitmask: number): string {
   if (bitmask === 127) return "Täglich";
