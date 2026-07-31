@@ -113,10 +113,18 @@ mpv --audio-device=help       # exakte Gerätenamen für audio_device
 ```
 
 Der Dienst läuft als `root` und erreicht PipeWire deshalb nicht – das läuft in
-der Sitzung des angemeldeten Benutzers. Gemischt wird darum in ALSA selbst: das
-Installationsskript legt in `/etc/asound.conf` ein `dmix`-Gerät auf der
-gewählten Karte als Standardausgabe an. Das braucht keine Sitzung und erlaubt
-beiden mpv-Prozessen (Musik und Durchsage) gleichzeitig auf die Karte.
+der Sitzung des angemeldeten Benutzers. Gemischt wird darum in ALSA selbst, und
+das Installationsskript legt die passende Standardausgabe in `/etc/asound.conf`
+an. Wie sie aussieht, hängt an der Karte:
+
+* Die Klinke des Pi (`bcm2835 Headphones`) hat acht Subdevices und mischt im
+  Treiber. Dort genügt `plug` auf die Karte; ein `dmix` davor scheitert sogar
+  („unable to open slave").
+* Eine USB-Karte nimmt meist nur einen Strom an. Davor kommt ein `dmix`, sonst
+  bekäme die Durchsage die Karte nicht mehr auf, solange Musik läuft.
+
+Wie viele Ströme eine Karte annimmt, sagt `aplay -l` in der Zeile `Subdevices`
+oder `cat /proc/asound/<karte>/pcm0p/info`.
 
 Der Abspieler gibt mpv immer ein Gerät vor (ohne Eintrag `alsa/default`). Ohne
 Vorgabe würde mpv seine Treiberliste durchprobieren und am Ende bei Jack oder
@@ -204,9 +212,19 @@ journalctl -u emp-audio -n 60 --no-pager | grep -i mpv
 Endet das mit `Could not open/initialize audio device -> no sound`, hat mpv kein
 Ausgabegerät bekommen. Steht davor `[ao/jack]` oder `[ao/sndio]`, fehlt die
 `/etc/asound.conf` – dann `install-audio.sh` laufen lassen. Steht dort
-`[ao/alsa]` mit `Device or resource busy` oder `unable to open slave`, hält ein
-anderer Prozess die Karte: meist PipeWire, direkt nach einem Neustart des
-Dienstes kurz auch die vorige mpv-Instanz.
+`[ao/alsa]` mit `Device or resource busy`, hält ein anderer Prozess die Karte,
+meist PipeWire.
+
+Bei `unable to open slave` passt das `dmix` nicht zur Karte. Der Weg des Dienstes
+lässt sich unabhängig davon prüfen, und der Vergleich sagt alles:
+
+```bash
+speaker-test -c2 -twav -l1 -D plughw:CARD=Headphones,DEV=0   # Karte direkt
+speaker-test -c2 -twav -l1 -D default                        # Weg des Dienstes
+```
+
+Läuft der erste und scheitert der zweite, gehört die `/etc/asound.conf`
+korrigiert – auf der Klinke ohne `dmix` (siehe oben).
 
 Diesen Fall versucht der Abspieler drei Mal von selbst neu (nach 5, 10 und
 15 Sekunden) – sonst bliebe die Zone nach jedem Auto-Update stumm, bis jemand im

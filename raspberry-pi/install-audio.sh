@@ -174,11 +174,33 @@ else
             echo "  Bisherige /etc/asound.conf gesichert als /etc/asound.conf.bak"
         fi
 
-        # ipc_perm, damit auch ein Test als normaler Benutzer mitmischen darf.
-        cat > /etc/asound.conf << ASOUNDCONF
-# emp-audio: Mischgeraet, damit Musik und Durchsage gleichzeitig laufen.
+        # Karten mit mehreren Subdevices – die Klinke des Pi hat acht – mischen
+        # im Treiber. dmix waere dort nicht nur unnoetig, es scheitert an den
+        # Pufferparametern des bcm2835 ("unable to open slave").
+        SUBDEVS="$(sed -nE 's/^subdevices_count: *([0-9]+).*/\1/p' \
+            "/proc/asound/$AUDIO_CARD/pcm0p/info" 2>/dev/null | head -1)"
+        SUBDEVS="${SUBDEVS:-1}"
+
+        cat > /etc/asound.conf << ASOUNDHEAD
+# emp-audio: Standardausgabe fuer Musik und Durchsagen.
 # Von install-audio.sh erzeugt – Aenderungen gehen bei einer Neuinstallation verloren.
 
+ASOUNDHEAD
+
+        if [ "$SUBDEVS" -gt 1 ]; then
+            cat >> /etc/asound.conf << ASOUNDCONF
+# Karte $AUDIO_CARD bietet $SUBDEVS Subdevices und mischt selbst – plug sorgt nur
+# noch fuer die Umrechnung von Rate und Format.
+pcm.!default {
+    type plug
+    slave.pcm "hw:CARD=$AUDIO_CARD,DEV=0"
+}
+ASOUNDCONF
+            echo "  Ausgabe auf Karte $AUDIO_CARD eingerichtet – sie mischt selbst ($SUBDEVS Subdevices)"
+        else
+            cat >> /etc/asound.conf << ASOUNDCONF
+# Karte $AUDIO_CARD nimmt nur einen Strom an, deshalb mischt dmix davor.
+# ipc_perm, damit auch ein Test als normaler Benutzer mitmischen darf.
 pcm.!default {
     type plug
     slave.pcm "emp_mix"
@@ -190,17 +212,23 @@ pcm.emp_mix {
     ipc_perm 0666
     slave {
         pcm "hw:CARD=$AUDIO_CARD,DEV=0"
+        period_size 1024
+        buffer_size 8192
         rate 48000
         channels 2
     }
 }
+ASOUNDCONF
+            echo "  Mischgerät auf Karte $AUDIO_CARD eingerichtet (dmix, ein Subdevice)"
+        fi
+
+        cat >> /etc/asound.conf << ASOUNDCTL
 
 ctl.!default {
     type hw
     card $AUDIO_CARD
 }
-ASOUNDCONF
-        echo "  Mischgerät auf Karte $AUDIO_CARD eingerichtet (/etc/asound.conf)"
+ASOUNDCTL
 
         # Frisch aufgesetzte Pis haben den Ausgang oft stumm oder auf null.
         for CTL in Headphone PCM Master Speaker Digital; do
