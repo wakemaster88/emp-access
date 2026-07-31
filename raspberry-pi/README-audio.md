@@ -96,7 +96,7 @@ sudo systemctl restart emp-audio
 | `job_poll_interval` | `5` | Sekunden bis eine Durchsage startet (min. 3) |
 | `heartbeat_interval` | `60` | Zustandsmeldung an den Server |
 | `update_check_interval` | `300` | Update-Prüfung |
-| `audio_device` | `""` | mpv-Ausgabegerät; der Installer setzt `alsa/default` |
+| `audio_device` | `""` | mpv-Ausgabegerät; leer bedeutet `alsa/default` |
 | `snapserver_host` | `""` | Snapserver für synchrone Zonen; leer = eigenständig |
 | `snapclient_soundcard` | `""` | Soundkarte des Snapclients (aus `snapclient -l`) |
 | `cache_max_mb` | `2048` | Obergrenze des lokalen Dateicaches |
@@ -115,9 +115,12 @@ mpv --audio-device=help       # exakte Gerätenamen für audio_device
 Der Dienst läuft als `root` und erreicht PipeWire deshalb nicht – das läuft in
 der Sitzung des angemeldeten Benutzers. Gemischt wird darum in ALSA selbst: das
 Installationsskript legt in `/etc/asound.conf` ein `dmix`-Gerät auf der
-gewählten Karte als Standardausgabe an und trägt `alsa/default` als
-`audio_device` ein. Das braucht keine Sitzung und erlaubt beiden mpv-Prozessen
-(Musik und Durchsage) gleichzeitig auf die Karte.
+gewählten Karte als Standardausgabe an. Das braucht keine Sitzung und erlaubt
+beiden mpv-Prozessen (Musik und Durchsage) gleichzeitig auf die Karte.
+
+Der Abspieler gibt mpv immer ein Gerät vor (ohne Eintrag `alsa/default`). Ohne
+Vorgabe würde mpv seine Treiberliste durchprobieren und am Ende bei Jack oder
+sndio landen – beides gibt es auf einem Pi nicht, es kommt einfach kein Ton.
 
 Eine andere Karte wählt man am einfachsten, indem man `install-audio.sh` erneut
 ausführt; die bisherige `asound.conf` wird dabei als `.bak` gesichert.
@@ -197,6 +200,12 @@ Meldungen des Abspielers:
 ```bash
 journalctl -u emp-audio -n 60 --no-pager | grep -i mpv
 ```
+
+Endet das mit `Could not open/initialize audio device -> no sound`, hat mpv kein
+Ausgabegerät bekommen. Steht davor `[ao/jack]` oder `[ao/sndio]`, fehlt die
+`/etc/asound.conf` – dann `install-audio.sh` laufen lassen. Steht dort
+`[ao/alsa]` mit `Device or resource busy`, hält ein anderer Prozess die Karte,
+meist PipeWire.
 
 Die drei häufigsten Ursachen, in dieser Reihenfolge prüfen:
 

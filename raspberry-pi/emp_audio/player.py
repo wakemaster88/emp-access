@@ -30,6 +30,17 @@ logger = logging.getLogger("emp.audio.player")
 MUSIC_SOCKET = "/tmp/emp-audio-music.sock"
 IPC_TIMEOUT = 3
 
+# Ohne Vorgabe arbeitet mpv seine ganze Treiberliste ab und landet als
+# root-Dienst am Ende bei Jack und sndio – die gibt es hier nicht, das Ergebnis
+# ist Stille. ALSA ist auf dem Pi die richtige Ebene: dort haengt das
+# Mischgeraet aus /etc/asound.conf am Standardgeraet.
+DEFAULT_AUDIO_DEVICE = "alsa/default"
+
+# Meldungen der Ausgabeschicht ausdruecklich mitnehmen. Sie nennen die Karte und
+# den Grund, wenn sie sich nicht oeffnen laesst – ohne das bleibt nur ein
+# nutzloses "no sound".
+MSG_LEVEL = "all=warn,ao=v"
+
 
 class PlaybackError(Exception):
     """Wiedergabe fehlgeschlagen – wird im Dashboard am Job sichtbar."""
@@ -53,7 +64,7 @@ class MusicPlayer:
     """Dauerhaft laufende mpv-Instanz für Hintergrundmusik und Webradio."""
 
     def __init__(self, audio_device: str = "", socket_path: str = MUSIC_SOCKET):
-        self.audio_device = audio_device
+        self.audio_device = audio_device or DEFAULT_AUDIO_DEVICE
         self.socket_path = socket_path
         self._process: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
@@ -82,14 +93,13 @@ class MusicPlayer:
             # Kein --no-terminal: das verschluckt auch die Fehlermeldungen.
             # Tastatureingaben braucht ein Dienst nicht, Meldungen sehr wohl.
             "--no-input-terminal",
-            "--msg-level=all=warn",
+            f"--msg-level={MSG_LEVEL}",
             "--gapless-audio=yes",
             "--loop-playlist=inf",
             f"--input-ipc-server={self.socket_path}",
             f"--volume={self._volume}",
+            f"--audio-device={self.audio_device}",
         ]
-        if self.audio_device:
-            cmd.append(f"--audio-device={self.audio_device}")
 
         try:
             self._process = subprocess.Popen(
@@ -239,7 +249,7 @@ class SpeechPlayer:
 
     def __init__(self, music: MusicPlayer, audio_device: str = ""):
         self.music = music
-        self.audio_device = audio_device
+        self.audio_device = audio_device or DEFAULT_AUDIO_DEVICE
         self._process: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._interrupted = False
@@ -249,12 +259,11 @@ class SpeechPlayer:
             "mpv",
             "--no-video",
             "--no-input-terminal",
-            "--msg-level=all=warn",
+            f"--msg-level={MSG_LEVEL}",
             f"--volume={volume}",
+            f"--audio-device={self.audio_device}",
             path,
         ]
-        if self.audio_device:
-            cmd.append(f"--audio-device={self.audio_device}")
         try:
             with self._lock:
                 self._process = subprocess.Popen(

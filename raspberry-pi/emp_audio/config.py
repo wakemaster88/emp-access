@@ -25,10 +25,10 @@ DEFAULT = {
     # wertet bis ~5 Minuten ohne Heartbeat als online.
     "heartbeat_interval": 60,
     "update_check_interval": 300,
-    # Ausgabegeraet fuer mpv. "alsa/default" nutzt das Mischgeraet aus
-    # /etc/asound.conf, das install-audio.sh anlegt – das setzt der Installer
-    # auch ein. Leer = mpv entscheidet selbst und landet als root notfalls auf
-    # der falschen Karte.
+    # Ausgabegeraet fuer mpv. Leer bedeutet "alsa/default" und damit das
+    # Mischgeraet aus /etc/asound.conf, das install-audio.sh anlegt. Nur
+    # aendern, wenn mpv bewusst woanders ausgeben soll (siehe
+    # `mpv --audio-device=help`).
     "audio_device": "",
     # Snapcast-Server fuer synchrone Wiedergabe mehrerer Zonen. Leer = aus;
     # die Zone spielt dann eigenstaendig ab.
