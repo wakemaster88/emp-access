@@ -42,16 +42,13 @@ SSH-Zugang, geht es direkt beim nächsten Abschnitt weiter.
    sudo apt update && sudo apt full-upgrade -y
    ```
 
-4. **Ton vorbereiten:** USB-Soundkarte anstecken und den Mixer nachinstallieren.
-   In der Lite-Variante fehlt er, und ohne Mixer bleibt eine Durchsage stumm,
-   solange Musik läuft (siehe Fehlerbehebung):
+4. **Ton vorbereiten:** Eine USB-Soundkarte anstecken, wenn die Klinke des Pi
+   nicht genügt (oder gar keine da ist – der Pi 5 hat keine mehr). Um das
+   Mischen kümmert sich das Installationsskript, dazu ist vorher nichts nötig:
 
    ```bash
-   sudo apt install -y pipewire pipewire-alsa alsa-utils
-   sudo reboot
-
-   aplay -l                 # USB-Karte muss als eigene Karte erscheinen
-   speaker-test -c2 -twav   # kommt Ton? Dann weiter mit der Installation
+   aplay -l                    # Karte muss als eigene Karte erscheinen
+   speaker-test -c2 -twav -l1  # kommt Ton? Dann weiter mit der Installation
    ```
 
 ## Installation
@@ -67,6 +64,10 @@ Das Skript installiert `mpv`, legt ein venv unter `/opt/emp-audio` an, fragt die
 Zugangsdaten ab und richtet die Dienste `emp-audio` sowie den Update-Timer ein.
 Scanner und Abspieler können parallel auf demselben Pi laufen – sie nutzen
 getrennte Installationsverzeichnisse und Konfigurationsdateien.
+
+Beim Audioausgang fragt es, welche Soundkarte die Zone bespielen soll, und legt
+dafür ein Mischgerät in `/etc/asound.conf` an (siehe unten). Läuft auf dem Pi
+ein Desktop, bietet es außerdem an, PipeWire in dessen Sitzung abzuschalten.
 
 ## Ersteinrichtung
 
@@ -95,7 +96,7 @@ sudo systemctl restart emp-audio
 | `job_poll_interval` | `5` | Sekunden bis eine Durchsage startet (min. 3) |
 | `heartbeat_interval` | `60` | Zustandsmeldung an den Server |
 | `update_check_interval` | `300` | Update-Prüfung |
-| `audio_device` | `""` | mpv-Ausgabegerät, z. B. `alsa/hw:1,0` |
+| `audio_device` | `""` | mpv-Ausgabegerät; der Installer setzt `alsa/default` |
 | `snapserver_host` | `""` | Snapserver für synchrone Zonen; leer = eigenständig |
 | `snapclient_soundcard` | `""` | Soundkarte des Snapclients (aus `snapclient -l`) |
 | `cache_max_mb` | `2048` | Obergrenze des lokalen Dateicaches |
@@ -103,13 +104,23 @@ sudo systemctl restart emp-audio
 Lautstärke, Ansagelautstärke, Ducking-Pegel und Ruhezeiten kommen aus der Zone
 im Dashboard und müssen hier nicht gepflegt werden.
 
-### Ausgabegerät finden
+### Ausgabegerät und Mischgerät
 
 ```bash
 aplay -l                      # verfügbare Karten auflisten
-speaker-test -c2 -twav        # Standardausgang testen
+speaker-test -c2 -twav -l1    # Standardausgang testen
 mpv --audio-device=help       # exakte Gerätenamen für audio_device
 ```
+
+Der Dienst läuft als `root` und erreicht PipeWire deshalb nicht – das läuft in
+der Sitzung des angemeldeten Benutzers. Gemischt wird darum in ALSA selbst: das
+Installationsskript legt in `/etc/asound.conf` ein `dmix`-Gerät auf der
+gewählten Karte als Standardausgabe an und trägt `alsa/default` als
+`audio_device` ein. Das braucht keine Sitzung und erlaubt beiden mpv-Prozessen
+(Musik und Durchsage) gleichzeitig auf die Karte.
+
+Eine andere Karte wählt man am einfachsten, indem man `install-audio.sh` erneut
+ausführt; die bisherige `asound.conf` wird dabei als `.bak` gesichert.
 
 ### API-Häufigkeit
 
@@ -177,19 +188,53 @@ sudo apt install mpv
 sudo systemctl restart emp-audio
 ```
 
-### Durchsage stumm, während Musik läuft
+### Gar kein Ton, obwohl das Dashboard Wiedergabe zeigt
 
-Zwei mpv-Prozesse greifen gleichzeitig auf die Soundkarte zu. Das braucht einen
-Mixer: In den Desktop-Ausgaben von Raspberry Pi OS ist PipeWire vorinstalliert,
-in der Lite-Variante und auf älteren Systemen fehlt er:
+`isPlaying` heißt nur: der Befehl wurde abgeschickt. Ob mpv die Soundkarte
+aufbekommt, steht seit Version 1.0.1 im Journal – Zeilen mit `mpv:` sind
+Meldungen des Abspielers:
 
 ```bash
-sudo apt install pipewire pipewire-alsa
-sudo reboot
+journalctl -u emp-audio -n 60 --no-pager | grep -i mpv
 ```
 
-Alternativ in `/etc/asound.conf` ein `dmix`-Gerät einrichten und dieses als
-`audio_device` eintragen.
+Die drei häufigsten Ursachen, in dieser Reihenfolge prüfen:
+
+```bash
+aplay -l                                                # ist die Karte überhaupt da?
+amixer -c Headphones sset Headphone 90% unmute          # Klinke ist oft stumm oder auf null
+speaker-test -c2 -twav -l1 -D plughw:CARD=Headphones,DEV=0
+```
+
+Fehlt eine Karte `Headphones`, ist das Onboard-Audio aus: `dtparam=audio=on` in
+`/boot/firmware/config.txt` eintragen und neu starten. Meldet `speaker-test`
+„Device or resource busy", hält die Desktop-Sitzung die Karte über PipeWire fest
+(siehe nächster Abschnitt). Kommt Rauschen, aber der Dienst bleibt stumm, spielt
+mpv auf der falschen Karte – dann `install-audio.sh` erneut ausführen und die
+richtige wählen.
+
+### PipeWire der Desktop-Sitzung belegt die Karte
+
+Auf Desktop-Images läuft PipeWire in der Sitzung des angemeldeten Benutzers. Der
+Dienst läuft als `root` und kommt dort nicht heran; belegt PipeWire die Karte,
+bleibt es still. Auf einem reinen Beschallungs-Pi wird PipeWire nicht gebraucht:
+
+```bash
+sudo runuser -u pi -- env XDG_RUNTIME_DIR=/run/user/1000 \
+  systemctl --user mask --now pipewire.socket pipewire.service \
+  pipewire-pulse.socket pipewire-pulse.service wireplumber.service
+sudo systemctl restart emp-audio
+```
+
+Rückgängig geht das mit `systemctl --user unmask` auf denselben Units.
+
+### Durchsage stumm, während Musik läuft
+
+Zwei mpv-Prozesse greifen gleichzeitig auf die Soundkarte zu, und ohne
+Mischgerät bekommt nur der erste sie auf. `install-audio.sh` legt dafür ein
+`dmix`-Gerät in `/etc/asound.conf` an – fehlt die Datei oder steht dort eine
+Karte mit exklusivem Zugriff (`plughw:` oder `hw:` direkt als `audio_device`),
+das Skript erneut ausführen.
 
 ### „Keine Zone für Gerät #x hinterlegt"
 

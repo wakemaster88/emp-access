@@ -9,7 +9,10 @@ Zwei getrennte Wege, damit eine Durchsage die Musik nicht abwürgt:
   Musik abgesenkt (Ducking) und danach wieder hochgefahren.
 
 Damit beide gleichzeitig auf die Soundkarte kommen, braucht das System einen
-Mixer – auf Raspberry Pi OS Bookworm ist PipeWire dafür vorinstalliert.
+Mixer. Der Dienst läuft als root und erreicht PipeWire deshalb nicht – das
+läuft in der Sitzung des angemeldeten Benutzers. Das Installationsskript legt
+darum ein ALSA-Mischgerät (dmix) als Standardausgabe an, das ohne Sitzung
+funktioniert.
 """
 from __future__ import annotations
 
@@ -30,6 +33,20 @@ IPC_TIMEOUT = 3
 
 class PlaybackError(Exception):
     """Wiedergabe fehlgeschlagen – wird im Dashboard am Job sichtbar."""
+
+
+def _log_mpv(text: str) -> None:
+    """
+    mpv-Meldungen ins Journal spiegeln.
+
+    Ohne das bleibt der haeufigste Fehler unsichtbar: bekommt mpv die
+    Soundkarte nicht auf, laeuft der Dienst munter weiter und meldet sogar
+    Wiedergabe, es kommt nur kein Ton.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            logger.warning("mpv: %s", stripped)
 
 
 class MusicPlayer:
@@ -62,7 +79,10 @@ class MusicPlayer:
             "mpv",
             "--idle=yes",
             "--no-video",
-            "--no-terminal",
+            # Kein --no-terminal: das verschluckt auch die Fehlermeldungen.
+            # Tastatureingaben braucht ein Dienst nicht, Meldungen sehr wohl.
+            "--no-input-terminal",
+            "--msg-level=all=warn",
             "--gapless-audio=yes",
             "--loop-playlist=inf",
             f"--input-ipc-server={self.socket_path}",
@@ -73,11 +93,21 @@ class MusicPlayer:
 
         try:
             self._process = subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
             )
         except FileNotFoundError:
             logger.error("mpv ist nicht installiert – keine Wiedergabe möglich")
             return False
+
+        # Die Pipe muss gelesen werden, sonst blockiert mpv, sobald der Puffer
+        # voll ist. Der Thread endet von selbst, wenn mpv sich beendet.
+        threading.Thread(
+            target=self._pump_messages, args=(self._process.stdout,), daemon=True
+        ).start()
 
         # mpv legt den Socket erst kurz nach dem Start an.
         for _ in range(50):
@@ -88,6 +118,13 @@ class MusicPlayer:
 
         logger.error("mpv-IPC-Socket wurde nicht angelegt")
         return False
+
+    def _pump_messages(self, stream) -> None:
+        try:
+            for line in stream:
+                _log_mpv(line)
+        except Exception as e:
+            logger.debug("mpv-Meldungen nicht mehr lesbar: %s", e)
 
     def _command(self, command: list) -> Optional[dict]:
         with self._lock:
@@ -208,26 +245,50 @@ class SpeechPlayer:
         self._interrupted = False
 
     def _play_file(self, path: str, volume: int) -> None:
-        cmd = ["mpv", "--no-video", "--no-terminal", f"--volume={volume}", path]
+        cmd = [
+            "mpv",
+            "--no-video",
+            "--no-input-terminal",
+            "--msg-level=all=warn",
+            f"--volume={volume}",
+            path,
+        ]
         if self.audio_device:
             cmd.append(f"--audio-device={self.audio_device}")
         try:
             with self._lock:
                 self._process = subprocess.Popen(
-                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
                 )
                 process = self._process
-            returncode = process.wait()
+            # communicate() leert die Pipe und wartet – ein blosses wait() wuerde
+            # haengen, sobald mpv genug Meldungen für den Puffer schreibt.
+            output, _ = process.communicate()
+            returncode = process.returncode
         except FileNotFoundError:
             raise PlaybackError("mpv ist nicht installiert")
         finally:
             with self._lock:
                 self._process = None
 
+        if output:
+            _log_mpv(output)
+
         # Negative Codes stammen vom Abbruch durch interrupt() – das ist kein
         # Fehler der Wiedergabe und wird von play() gesondert behandelt.
         if returncode > 0:
-            raise PlaybackError(f"mpv beendete sich mit Code {returncode}")
+            # Die letzte Meldung von mpv sagt meist genau, was fehlt, und landet
+            # so auch am Job im Dashboard.
+            detail = next(
+                (line.strip() for line in reversed((output or "").splitlines()) if line.strip()),
+                "",
+            )
+            raise PlaybackError(
+                f"mpv beendete sich mit Code {returncode}" + (f": {detail[:150]}" if detail else "")
+            )
 
     def play(
         self,
