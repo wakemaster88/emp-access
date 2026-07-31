@@ -37,6 +37,7 @@ import {
   Zap,
   Blinds,
   CircleDot,
+  Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { coverMotionLabel, type CoverMotion } from "@/lib/cover-constants";
@@ -153,6 +154,7 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ElementType; co
   MARKISE:     { label: "Markise",     icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
   ROLLTOR:     { label: "Rolltor",     icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
   TASTER:      { label: "Taster",      icon: CircleDot,   color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
+  AUDIO:       { label: "Audio-Zone",  icon: Volume2,     color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
 };
 
 const TASK_LABEL: Record<number, { label: string; color: string }> = {
@@ -267,6 +269,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           const isNuki   = device.type === "NUKI_SMARTLOCK";
           const isLoqed  = device.type === "LOQED_SMARTLOCK";
           const isGardena = device.type === "GARDENA_VALVE";
+          const isAudio  = device.type === "AUDIO_PLAYER";
           const isSensor = device.category === "SENSOR";
           const cat      = device.category ? CATEGORY_META[device.category] : null;
           const lastUpd  = device.lastUpdate ? new Date(device.lastUpdate) : null;
@@ -520,9 +523,11 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                         ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
                         : isGardena
                           ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                          : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                          : isAudio
+                            ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                            : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                   )}>
-                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : isGardena ? <Sprout className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
+                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : isGardena ? <Sprout className="h-4 w-4" /> : isAudio ? <Volume2 className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
                   </div>
                   <div className="min-w-0">
                     <p className="font-medium text-sm text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">

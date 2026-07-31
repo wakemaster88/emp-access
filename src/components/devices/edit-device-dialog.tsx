@@ -248,6 +248,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
 
   const isShelly = device?.type === "SHELLY";
   const isGardena = device?.type === "GARDENA_VALVE";
+  const isAudio = device?.type === "AUDIO_PLAYER";
 
   return (
     <Dialog open={!!device} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -262,6 +263,8 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
             <Input id="d-name" value={form.name} onChange={(e) => set("name", e.target.value)} required autoFocus />
           </div>
 
+          {/* Ein Abspieler bedient immer eine Beschallungszone – nichts zu wählen. */}
+          {!isAudio && (
           <div className="space-y-2">
             <Label>Funktion</Label>
             <div className="grid grid-cols-4 gap-2">
@@ -287,6 +290,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
               })}
             </div>
           </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="d-ip">IP-Adresse</Label>

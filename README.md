@@ -91,7 +91,9 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
 
 **Zone einrichten:**
 
-1. Unter **Geräte** einen Abspieler vom Typ `AUDIO_PLAYER` anlegen.
+1. Unter **Geräte → Gerät hinzufügen** die Hardware **Audio-Player** wählen
+   (Typ `AUDIO_PLAYER`). Die Gerätedetails zeigen danach das Konfigurations-JSON
+   für den Pi.
 2. Unter **Audio → Zonen** eine Zone anlegen und das Gerät zuordnen.
 3. Lautstärken setzen: *Musik* (Grundpegel), *Durchsage* und *Ducking*
    (Musikpegel während einer Ansage).

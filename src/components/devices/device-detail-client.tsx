@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle, DoorOpen, ToggleRight, RotateCcw, Loader2, Pencil,
   Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock, LockOpen,
   Droplets, Square, Battery, BatteryLow, ArrowUpFromLine, ArrowDownToLine,
-  Settings2, CircleDot,
+  Settings2, CircleDot, Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -147,6 +148,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
   const isNuki = device.type === "NUKI_SMARTLOCK";
   const isLoqed = device.type === "LOQED_SMARTLOCK";
   const isGardena = device.type === "GARDENA_VALVE";
+  const isAudio = device.type === "AUDIO_PLAYER";
   const isSwitch = device.category === "SCHALTER" || device.category === "BELEUCHTUNG";
   const isSensor = device.category === "SENSOR";
   const isDrehkreuz = device.category === "DREHKREUZ";
@@ -390,6 +392,18 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
         <span className="flex items-center gap-1.5 text-xs text-slate-400 px-1 italic">
           <Activity className="h-3.5 w-3.5" /> Sensor – nur Anzeige
         </span>
+      );
+    }
+
+    // Abspieler: bedient wird die Zone im Audio-Modul, nicht das Gerät selbst.
+    if (isAudio) {
+      return (
+        <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Link href="/audio">
+            <Volume2 className="h-4 w-4" />
+            Zur Beschallung
+          </Link>
+        </Button>
       );
     }
 

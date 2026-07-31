@@ -17,7 +17,7 @@ import {
 import {
   Plus, Loader2, Cpu, Wifi, AlertCircle,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight, Umbrella, Blinds, CircleDot,
+  LogIn, LogOut, ArrowLeftRight, Umbrella, Blinds, CircleDot, Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WeekScheduleEditor, emptySchedule } from "@/components/devices/week-schedule-editor";
@@ -58,6 +58,14 @@ const DEVICE_TYPES = [
     icon: Wifi,
     color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800",
     activeColor: "border-amber-500 bg-amber-50 dark:bg-amber-950/40",
+  },
+  {
+    value: "AUDIO_PLAYER",
+    label: "Audio-Player",
+    description: "Beschallungszone",
+    icon: Volume2,
+    color: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800",
+    activeColor: "border-violet-500 bg-violet-50 dark:bg-violet-950/40",
   },
 ];
 
@@ -204,6 +212,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
   }
 
   const isShelly = form.type === "SHELLY";
+  const isAudio = form.type === "AUDIO_PLAYER";
   const cat = form.category;
   const availableCategories = DEVICE_CATEGORIES.filter(
     (c) => isShelly || !CAT_SHELLY_ONLY.has(c.value),
@@ -228,7 +237,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
           {/* 1. Hardware-Typ */}
           <div className="space-y-2">
             <Label>Hardware <span className="text-rose-500">*</span></Label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {DEVICE_TYPES.map((t) => {
                 const Icon = t.icon;
                 const selected = form.type === t.value;
@@ -237,16 +246,21 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                     key={t.value}
                     type="button"
                     onClick={() => {
-                      // Antriebe gibt es nur bei Shelly – beim Wechsel auf
-                      // Raspberry Pi darf keine unpassende Auswahl stehen bleiben.
-                      setForm((p) => ({
-                        ...p,
-                        type: t.value,
-                        category:
-                          t.value !== "SHELLY" && CAT_SHELLY_ONLY.has(p.category)
-                            ? ""
-                            : p.category,
-                      }));
+                      setForm((p) => {
+                        // Antriebe gibt es nur bei Shelly, AUDIO nur beim
+                        // Abspieler – beim Wechsel darf keine unpassende
+                        // Auswahl stehen bleiben.
+                        const keepsCategory =
+                          p.category !== "AUDIO"
+                          && (t.value === "SHELLY" || !CAT_SHELLY_ONLY.has(p.category));
+                        return {
+                          ...p,
+                          type: t.value,
+                          category: t.value === "AUDIO_PLAYER"
+                            ? "AUDIO"
+                            : keepsCategory ? p.category : "",
+                        };
+                      });
                     }}
                     className={cn(
                       "flex flex-col items-center gap-2 rounded-xl border-2 p-4 text-center transition-all",
@@ -271,8 +285,8 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
             </div>
           </div>
 
-          {/* 2. Funktion/Kategorie */}
-          {form.type && (
+          {/* 2. Funktion/Kategorie – ein Abspieler bedient immer eine Zone */}
+          {form.type && !isAudio && (
             <div className="space-y-2">
               <Label>Funktion <span className="text-rose-500">*</span></Label>
               <div className="grid grid-cols-4 gap-2">
@@ -318,6 +332,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                     cat === "MARKISE"   ? "z.B. Markise Terrasse" :
                     cat === "ROLLTOR"   ? "z.B. Rolltor Verleih" :
                     cat === "TASTER"    ? "z.B. Außendusche" :
+                    cat === "AUDIO"     ? "z.B. Abspieler Liegewiese" :
                                           "z.B. Flutlicht Feld 1"
                   }
                   required
@@ -339,6 +354,21 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                   className="font-mono"
                 />
               </div>
+
+              {/* Abspieler: der Rest der Einrichtung passiert am Pi */}
+              {isAudio && (
+                <div className="rounded-xl border border-violet-200 dark:border-violet-900/30 bg-violet-50 dark:bg-violet-950/20 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                    <p className="text-sm font-medium text-violet-800 dark:text-violet-300">Nächste Schritte</p>
+                  </div>
+                  <p className="text-xs text-violet-700 dark:text-violet-400">
+                    In den Gerätedetails steht danach das Konfigurations-JSON für{" "}
+                    <span className="font-mono">install-audio.sh</span> auf dem Raspberry Pi.
+                    Die Zone selbst wird unter <span className="font-medium">Audio → Zonen</span> zugewiesen.
+                  </p>
+                </div>
+              )}
 
               {/* Shelly Cloud */}
               {isShelly && (

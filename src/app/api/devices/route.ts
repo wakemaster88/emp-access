@@ -59,12 +59,16 @@ export async function POST(request: NextRequest) {
   if (!body.name?.trim()) {
     return NextResponse.json({ error: "Name ist erforderlich" }, { status: 400 });
   }
-  if (!["RASPBERRY_PI", "SHELLY", "NUKI_SMARTLOCK", "LOQED_SMARTLOCK"].includes(body.type)) {
+  if (!["RASPBERRY_PI", "SHELLY", "NUKI_SMARTLOCK", "LOQED_SMARTLOCK", "AUDIO_PLAYER"].includes(body.type)) {
     return NextResponse.json({ error: "Ungültiger Gerätetyp" }, { status: 400 });
   }
 
-  const category =
-    body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null;
+  // Ein Abspieler bedient immer genau eine Beschallungszone – seine Funktion
+  // steht damit fest. Umgekehrt bleibt AUDIO den Abspielern vorbehalten, denn
+  // ohne Abspieler-Client gibt es an der Kategorie nichts zu steuern.
+  const category = body.type === "AUDIO_PLAYER"
+    ? "AUDIO"
+    : body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null;
 
   // Antriebe brauchen zwei schaltbare Relais – das gibt es nur beim Shelly.
   if (isCoverCategory(category) && body.type !== "SHELLY") {

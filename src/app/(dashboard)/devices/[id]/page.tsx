@@ -9,12 +9,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { DeviceActions } from "@/components/devices/device-actions";
 import { DeviceQr } from "@/components/devices/device-qr";
+import { AudioSetupCard } from "@/components/devices/audio-setup-card";
 import { EditDeviceDialog } from "@/components/devices/edit-device-dialog";
 import {
   Wifi, WifiOff, Cpu, QrCode, CreditCard, ArrowLeft,
   Ticket, ScanLine, CheckCircle2, XCircle, AlertTriangle,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb, Cctv, Umbrella, Blinds,
-  CircleDot,
+  CircleDot, Volume2,
 } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
@@ -47,6 +48,7 @@ export default async function DeviceDetailPage({ params }: Props) {
       include: {
         _count: { select: { scans: true } },
         camera: { select: { id: true, name: true, snapshotAt: true, lastSeenAt: true } },
+        audioZone: { select: { name: true } },
       },
     }),
     db.scan.groupBy({
@@ -111,6 +113,7 @@ export default async function DeviceDetailPage({ params }: Props) {
     MARKISE:     { label: "Markise",    icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
     ROLLTOR:     { label: "Rolltor",    icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
     TASTER:      { label: "Taster",     icon: CircleDot,   color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
+    AUDIO:       { label: "Audio-Zone", icon: Volume2,     color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
   };
 
   const taskLabel: Record<number, string> = {
@@ -158,7 +161,9 @@ export default async function DeviceDetailPage({ params }: Props) {
                             ? "LOQED – Türschloss"
                             : device.type === "GARDENA_VALVE"
                               ? "GARDENA smart – Ventil/Pumpe"
-                              : "Shelly – Relais"}
+                              : device.type === "AUDIO_PLAYER"
+                                ? "Raspberry Pi – Audio-Abspieler"
+                                : "Shelly – Relais"}
                     </p>
                     {device.ipAddress && (
                       <p className="text-xs text-slate-400 font-mono mt-1">{device.ipAddress}</p>
@@ -252,6 +257,12 @@ export default async function DeviceDetailPage({ params }: Props) {
           </CardContent>
         </Card>
 
+        {/* Abspieler: Installation und Konfigurations-JSON. Ein Audio-Pi hat
+            keinen Scanner, deshalb Text zum Kopieren statt QR-Code. */}
+        {device.type === "AUDIO_PLAYER" && (
+          <AudioSetupCard configJson={configUrl} zoneName={device.audioZone?.name ?? null} />
+        )}
+
         {/* Verknüpfte Kamera – zeigt den Zugang (z. B. Drehkreuz "Eingang A") */}
         {device.camera && (
           <Card className="border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -316,12 +327,14 @@ export default async function DeviceDetailPage({ params }: Props) {
           <ScheduleCard deviceId={device.id} initialSchedule={device.schedule} />
         )}
 
-        {/* Raspberry Pi System-Info */}
-        {device.type === "RASPBERRY_PI" && device.systemInfo && typeof device.systemInfo === "object" && (
+        {/* Raspberry Pi System-Info – Scanner und Abspieler melden dieselben Werte,
+            die Versionsprüfung gilt nur für den Scanner. */}
+        {(device.type === "RASPBERRY_PI" || device.type === "AUDIO_PLAYER")
+          && device.systemInfo && typeof device.systemInfo === "object" && (
           <SystemInfoCard
             systemInfo={device.systemInfo as Record<string, unknown>}
             lastUpdate={device.lastUpdate?.toISOString() ?? null}
-            latestVersion={LATEST_PI_VERSION}
+            latestVersion={device.type === "RASPBERRY_PI" ? LATEST_PI_VERSION : undefined}
           />
         )}
 
@@ -364,7 +377,7 @@ export default async function DeviceDetailPage({ params }: Props) {
         })()}
 
         {/* Last update – nur wenn keine SystemInfo-Card angezeigt wird */}
-        {device.lastUpdate && !(device.type === "RASPBERRY_PI" && device.systemInfo) && (
+        {device.lastUpdate && !(["RASPBERRY_PI", "AUDIO_PLAYER"].includes(device.type) && device.systemInfo) && (
           <p className="text-xs text-slate-400 text-right">
             Letztes Update: {fmtDateTime(device.lastUpdate)}
           </p>

@@ -64,9 +64,13 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  const category = body.category !== undefined
-    ? (body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null)
-    : existing.category;
+  // Die Funktion eines Abspielers steht fest (Beschallungszone) und darf auch
+  // dann nicht wegfallen, wenn das Formular sie nicht mitschickt.
+  const category = existing.type === "AUDIO_PLAYER"
+    ? "AUDIO"
+    : body.category !== undefined
+      ? (body.category && VALID_CATEGORIES.includes(body.category) ? body.category : null)
+      : existing.category;
 
   if (isCoverCategory(category) && existing.type !== "SHELLY") {
     return NextResponse.json(

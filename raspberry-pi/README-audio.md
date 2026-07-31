@@ -23,6 +23,37 @@ zurück.
 Der Onboard-Ausgang funktioniert für erste Tests, für den Dauerbetrieb ist eine
 USB-Soundkarte die deutlich bessere Wahl.
 
+## Raspberry Pi vorbereiten
+
+Nur bei einem frisch ausgepackten Pi nötig. Läuft schon ein Raspberry Pi OS mit
+SSH-Zugang, geht es direkt beim nächsten Abschnitt weiter.
+
+1. **System schreiben:** Mit dem [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+   **Raspberry Pi OS Lite (64-bit)** auf die SD-Karte schreiben – aktuell Debian 13
+   („Trixie“). Einen Desktop braucht der Abspieler nicht.
+2. **Headless einrichten:** Im Imager unter *Einstellungen bearbeiten* Hostname
+   (z. B. `audio-liegewiese`), Benutzer, WLAN und **SSH aktivieren** hinterlegen.
+   Ohne das braucht der erste Start Tastatur und Bildschirm. Eine
+   DHCP-Reservierung im Router erspart später das Suchen der IP-Adresse.
+3. **Erster Start:** Karte einlegen, booten, einloggen und aktualisieren:
+
+   ```bash
+   ssh benutzer@audio-liegewiese.local
+   sudo apt update && sudo apt full-upgrade -y
+   ```
+
+4. **Ton vorbereiten:** USB-Soundkarte anstecken und den Mixer nachinstallieren.
+   In der Lite-Variante fehlt er, und ohne Mixer bleibt eine Durchsage stumm,
+   solange Musik läuft (siehe Fehlerbehebung):
+
+   ```bash
+   sudo apt install -y pipewire pipewire-alsa alsa-utils
+   sudo reboot
+
+   aplay -l                 # USB-Karte muss als eigene Karte erscheinen
+   speaker-test -c2 -twav   # kommt Ton? Dann weiter mit der Installation
+   ```
+
 ## Installation
 
 ```bash
@@ -39,10 +70,12 @@ getrennte Installationsverzeichnisse und Konfigurationsdateien.
 
 ## Ersteinrichtung
 
-1. Im Dashboard unter **Geräte** ein Gerät vom Typ `AUDIO_PLAYER` anlegen.
+1. Im Dashboard unter **Geräte → Gerät hinzufügen** die Hardware
+   **Audio-Player** wählen (Gerätetyp `AUDIO_PLAYER`, Funktion `AUDIO`).
 2. Unter **Audio → Zonen** eine Zone anlegen und dieses Gerät zuweisen.
-3. Das Konfigurations-JSON aus den Gerätedetails (derselbe Inhalt wie beim
-   Scanner-QR-Code) beim Installieren einfügen – oder später nachtragen:
+3. In den Gerätedetails steht unter **Abspieler einrichten** das
+   Konfigurations-JSON zum Kopieren (derselbe Inhalt wie beim Scanner-QR-Code).
+   Es beim Installieren einfügen – oder später nachtragen:
 
 ```bash
 cd /opt/emp-audio/raspberry-pi
@@ -147,8 +180,8 @@ sudo systemctl restart emp-audio
 ### Durchsage stumm, während Musik läuft
 
 Zwei mpv-Prozesse greifen gleichzeitig auf die Soundkarte zu. Das braucht einen
-Mixer – auf Raspberry Pi OS Bookworm ist PipeWire vorinstalliert, auf älteren
-Systemen fehlt er:
+Mixer: In den Desktop-Ausgaben von Raspberry Pi OS ist PipeWire vorinstalliert,
+in der Lite-Variante und auf älteren Systemen fehlt er:
 
 ```bash
 sudo apt install pipewire pipewire-alsa
@@ -160,8 +193,9 @@ Alternativ in `/etc/asound.conf` ein `dmix`-Gerät einrichten und dieses als
 
 ### „Keine Zone für Gerät #x hinterlegt"
 
-Dem Gerät ist im Dashboard keine Zone zugewiesen, oder der Gerätetyp ist nicht
-`AUDIO_PLAYER`. Beides unter **Audio → Zonen** korrigieren.
+Dem Gerät ist im Dashboard keine Zone zugewiesen. Unter **Audio → Zonen** die
+Zone öffnen und den Abspieler auswählen; die Gerätedetails zeigen oben an,
+welcher Zone das Gerät zugeordnet ist.
 
 ### Zone bleibt im Dashboard offline
 
