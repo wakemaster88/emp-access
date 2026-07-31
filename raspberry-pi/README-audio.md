@@ -204,8 +204,17 @@ journalctl -u emp-audio -n 60 --no-pager | grep -i mpv
 Endet das mit `Could not open/initialize audio device -> no sound`, hat mpv kein
 Ausgabegerät bekommen. Steht davor `[ao/jack]` oder `[ao/sndio]`, fehlt die
 `/etc/asound.conf` – dann `install-audio.sh` laufen lassen. Steht dort
-`[ao/alsa]` mit `Device or resource busy`, hält ein anderer Prozess die Karte,
-meist PipeWire.
+`[ao/alsa]` mit `Device or resource busy` oder `unable to open slave`, hält ein
+anderer Prozess die Karte: meist PipeWire, direkt nach einem Neustart des
+Dienstes kurz auch die vorige mpv-Instanz.
+
+Diesen Fall versucht der Abspieler drei Mal von selbst neu (nach 5, 10 und
+15 Sekunden) – sonst bliebe die Zone nach jedem Auto-Update stumm, bis jemand im
+Dashboard auf Start drückt. Läuft es beim dritten Mal noch nicht, hält etwas die
+Karte dauerhaft belegt.
+
+Nur die Probleme zeigt `journalctl -u emp-audio -p warning`; die übrigen
+mpv-Zeilen (welche Karte, welches Format) liegen auf INFO.
 
 Die drei häufigsten Ursachen, in dieser Reihenfolge prüfen:
 

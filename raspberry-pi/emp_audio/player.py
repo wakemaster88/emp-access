@@ -41,6 +41,16 @@ DEFAULT_AUDIO_DEVICE = "alsa/default"
 # nutzloses "no sound".
 MSG_LEVEL = "all=warn,ao=v"
 
+# Diese Meldung heisst: mpv hat die Soundkarte nicht aufbekommen und gibt fuer
+# diese Datei endgueltig auf. Ohne neuen Ladebefehl bleibt die Zone stumm.
+AO_FAILED = "Could not open/initialize audio device"
+AO_RETRIES = 3
+AO_RETRY_DELAY = 5
+
+# Wortmarken, an denen sich eine mpv-Meldung als Problem zu erkennen gibt. Der
+# Rest ist Betriebsfunk und gehoert nicht auf WARNING.
+MPV_PROBLEM_WORDS = ("error", "failed", "could not", "unable", "cannot", "no sound")
+
 
 class PlaybackError(Exception):
     """Wiedergabe fehlgeschlagen – wird im Dashboard am Job sichtbar."""
@@ -56,8 +66,18 @@ def _log_mpv(text: str) -> None:
     """
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped:
+        if not stripped:
+            continue
+        # Die ipc-Meldungen entstehen daran, dass wir den Steuersocket nach jeder
+        # Antwort schliessen. Ueber die Wiedergabe sagen sie nichts.
+        if stripped.startswith("[ipc"):
+            logger.debug("mpv: %s", stripped)
+            continue
+        lowered = stripped.lower()
+        if any(word in lowered for word in MPV_PROBLEM_WORDS):
             logger.warning("mpv: %s", stripped)
+        else:
+            logger.info("mpv: %s", stripped)
 
 
 class MusicPlayer:
@@ -75,6 +95,10 @@ class MusicPlayer:
         self._duck_volume = 20
         self._ducked = False
         self._playing = False
+        # Was gerade abgespielt werden soll, um es nach einem Fehler an der
+        # Soundkarte erneut anstossen zu koennen.
+        self._source: Optional[tuple] = None
+        self._ao_retries = 0
 
     def start(self) -> bool:
         if self._process and self._process.poll() is None:
@@ -133,8 +157,52 @@ class MusicPlayer:
         try:
             for line in stream:
                 _log_mpv(line)
+                if AO_FAILED in line:
+                    self._retry_source()
         except Exception as e:
             logger.debug("mpv-Meldungen nicht mehr lesbar: %s", e)
+
+    def _retry_source(self) -> None:
+        """
+        Nach einem Dienstneustart ist die Soundkarte manchmal noch belegt, etwa
+        von der vorigen mpv-Instanz. mpv gibt dann fuer diese Datei endgueltig
+        auf – ein neuer Ladebefehl bringt es dazu, die Karte erneut zu oeffnen.
+        """
+        if self._source is None or self._ao_retries >= AO_RETRIES:
+            return
+        self._ao_retries += 1
+        delay = AO_RETRY_DELAY * self._ao_retries
+        logger.warning(
+            "Soundkarte nicht verfügbar – neuer Versuch %d von %d in %d s",
+            self._ao_retries,
+            AO_RETRIES,
+            delay,
+        )
+        threading.Timer(delay, self._replay).start()
+
+    def _replay(self) -> None:
+        source = self._source
+        # Ein Stopp in der Zwischenzeit setzt die Quelle zurueck; dann bleibt es
+        # dabei, sonst wuerde die Musik gegen den Willen des Bedieners angehen.
+        if source is None or not self.start():
+            return
+        logger.info("Wiedergabe nach Fehler an der Soundkarte erneut angestoßen")
+        self._load(source)
+
+    def _load(self, source: tuple) -> None:
+        kind = source[0]
+        self._command(["playlist-clear"])
+        if kind == "stream":
+            self._command(["loadfile", source[1], "replace"])
+        else:
+            paths, shuffle = source[1], source[2]
+            self._command(["loadfile", paths[0], "replace"])
+            for path in paths[1:]:
+                self._command(["loadfile", path, "append"])
+            if shuffle:
+                self._command(["playlist-shuffle"])
+        self._command(["set_property", "pause", False])
+        self._playing = True
 
     def _command(self, command: list) -> Optional[dict]:
         with self._lock:
@@ -195,28 +263,23 @@ class MusicPlayer:
         if not self.start():
             return False
 
-        self._command(["playlist-clear"])
-        self._command(["loadfile", paths[0], "replace"])
-        for path in paths[1:]:
-            self._command(["loadfile", path, "append"])
-        if shuffle:
-            self._command(["playlist-shuffle"])
-        self._command(["set_property", "pause", False])
-        self._playing = True
+        self._source = ("files", paths, shuffle)
+        self._ao_retries = 0
+        self._load(self._source)
         logger.info("Playlist gestartet (%d Titel)", len(paths))
         return True
 
     def play_stream(self, url: str) -> bool:
         if not self.start():
             return False
-        self._command(["playlist-clear"])
-        self._command(["loadfile", url, "replace"])
-        self._command(["set_property", "pause", False])
-        self._playing = True
+        self._source = ("stream", url)
+        self._ao_retries = 0
+        self._load(self._source)
         logger.info("Stream gestartet: %s", url)
         return True
 
     def stop(self) -> None:
+        self._source = None
         self._command(["stop"])
         self._playing = False
         logger.info("Wiedergabe gestoppt")
