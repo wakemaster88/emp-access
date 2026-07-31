@@ -213,8 +213,14 @@ Diesen Fall versucht der Abspieler drei Mal von selbst neu (nach 5, 10 und
 Dashboard auf Start drückt. Läuft es beim dritten Mal noch nicht, hält etwas die
 Karte dauerhaft belegt.
 
-Nur die Probleme zeigt `journalctl -u emp-audio -p warning`; die übrigen
-mpv-Zeilen (welche Karte, welches Format) liegen auf INFO.
+Seit Version 1.0.4 trägt jede Zeile ihre Priorität ins Journal, deshalb zeigt
+`journalctl -u emp-audio -p warning` nur die Probleme – der Betriebsfunk der
+Ausgabeschicht (welche Karte, welches Format) liegt auf INFO. Auf älteren
+Versionen filtert das nichts, dort hilft nur:
+
+```bash
+journalctl -u emp-audio -n 100 --no-pager | grep -E "WARNING|ERROR"
+```
 
 Die drei häufigsten Ursachen, in dieser Reihenfolge prüfen:
 

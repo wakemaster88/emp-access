@@ -31,11 +31,35 @@ from emp_audio.player import MusicPlayer, SpeechPlayer
 from emp_audio.snapcast import SnapcastMusic
 from emp_audio.updater import check_and_update, restart_service
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
+LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+
+# systemd nimmt alles, was der Dienst ausgibt, mit derselben Prioritaet ins
+# Journal – die Ebene aus Python sieht es nicht. Ein Praefix <N> je Zeile setzt
+# sie richtig, damit `journalctl -p warning` wirklich nur Probleme zeigt.
+JOURNAL_PRIORITY = {
+    logging.CRITICAL: 2,
+    logging.ERROR: 3,
+    logging.WARNING: 4,
+    logging.INFO: 6,
+    logging.DEBUG: 7,
+}
+
+
+class JournalFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return f"<{JOURNAL_PRIORITY.get(record.levelno, 6)}>{super().format(record)}"
+
+
+def _setup_logging() -> None:
+    # JOURNAL_STREAM setzt systemd; von Hand gestartet wuerde das Praefix nur
+    # die Ausgabe verschandeln.
+    formatter = JournalFormatter if os.environ.get("JOURNAL_STREAM") else logging.Formatter
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter(LOG_FORMAT, datefmt="%H:%M:%S"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
+
+_setup_logging()
 logger = logging.getLogger("emp.audio.main")
 
 # Ab dieser Priorität unterbricht eine Durchsage eine bereits laufende Ansage.
