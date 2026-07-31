@@ -184,13 +184,20 @@ export async function listTtsVoices(): Promise<TtsVoice[]> {
     if (!response.ok) return TTS_FALLBACK_VOICES;
 
     const data = (await response.json()) as {
-      voices?: { voice_id?: unknown; name?: unknown }[];
+      voices?: { voice_id?: unknown; name?: unknown; gender?: unknown }[];
     };
     const voices = (data.voices ?? [])
       .map((entry) => {
         const value = typeof entry.voice_id === "string" ? entry.voice_id : "";
         const name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : value;
-        return { value, label: value === DEFAULT_TTS_VOICE ? `${name} (Standard)` : name };
+        // 26 Namen wie "Altair" oder "Zagan" sagen nichts darüber, wie die
+        // Ansage klingt. Das Geschlecht ist der einzige Hinweis, den die API
+        // mitliefert, und für die Auswahl der brauchbarste.
+        const hints = [
+          entry.gender === "female" ? "weiblich" : entry.gender === "male" ? "männlich" : null,
+          value === DEFAULT_TTS_VOICE ? "Standard" : null,
+        ].filter(Boolean);
+        return { value, label: hints.length > 0 ? `${name} (${hints.join(", ")})` : name };
       })
       .filter((voice) => voice.value);
 

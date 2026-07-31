@@ -23,10 +23,10 @@ export interface TtsVoice {
  * genügen, solange die Abfrage nicht durchkommt.
  */
 export const TTS_FALLBACK_VOICES: TtsVoice[] = [
-  { value: "eve", label: "Eve (Standard)" },
-  { value: "ara", label: "Ara" },
-  { value: "leo", label: "Leo" },
-  { value: "rex", label: "Rex" },
+  { value: "eve", label: "Eve (weiblich, Standard)" },
+  { value: "ara", label: "Ara (weiblich)" },
+  { value: "leo", label: "Leo (männlich)" },
+  { value: "rex", label: "Rex (männlich)" },
 ];
 
 /** Stimmen des früheren Anbieters, die noch an alten Durchsagen hängen. */
