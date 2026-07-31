@@ -15,8 +15,9 @@ export default async function AudioPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [zones, tracks, playlists, announcements, schedules, jobs, audioDevices, ttsVoices] =
+  const [account, zones, tracks, playlists, announcements, schedules, jobs, audioDevices, ttsVoices] =
     await Promise.all([
+      db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
       db.audioZone.findMany({
         where: { accountId },
         include: {
@@ -158,6 +159,7 @@ export default async function AudioPage() {
           taken: !!d.audioZone,
         }))}
         ttsVoices={ttsVoices}
+        timeZone={account?.timezone || "Europe/Berlin"}
       />
     </>
   );

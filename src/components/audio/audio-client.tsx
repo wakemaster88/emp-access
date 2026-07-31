@@ -38,7 +38,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDaysOfWeek, type TtsVoice } from "@/lib/audio-constants";
+import {
+  formatDaysOfWeek,
+  nextScheduleRunLabel,
+  type TtsVoice,
+} from "@/lib/audio-constants";
+import { scheduleWarnings } from "./schedule-warnings";
 import { AnnouncePanel } from "./announce-panel";
 import { AnnouncementDialog } from "./announcement-dialog";
 import { LibraryPanel } from "./library-panel";
@@ -47,6 +52,7 @@ import {
   JOB_STATUS_LABELS,
   formatDuration,
   formatRelativeTime,
+  isJobStuck,
   triggerLabel,
 } from "./labels";
 import { PlaylistDialog } from "./playlist-dialog";
@@ -75,6 +81,8 @@ interface Props {
   jobs: JobRow[];
   audioDevices: AudioDeviceOption[];
   ttsVoices: TtsVoice[];
+  /** Zeitzone des Accounts – Zeitpläne gelten in ihr, nicht in der des Browsers. */
+  timeZone: string;
 }
 
 export function AudioClient({
@@ -86,6 +94,7 @@ export function AudioClient({
   jobs,
   audioDevices,
   ttsVoices,
+  timeZone,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -552,10 +561,27 @@ export function AudioClient({
                           : `${schedule.zoneIds.length} Zone${schedule.zoneIds.length === 1 ? "" : "n"}`}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">
+                        {schedule.isActive
+                          ? nextScheduleRunLabel(schedule, new Date(), timeZone) ??
+                            "Kein Wochentag gewählt"
+                          : "Abgeschaltet"}
+                        {" · "}
                         {schedule.lastRunAt
-                          ? `Zuletzt ausgeführt ${formatRelativeTime(schedule.lastRunAt) ?? "–"}`
-                          : "Noch nie ausgeführt"}
+                          ? `zuletzt ${formatRelativeTime(schedule.lastRunAt) ?? "–"}`
+                          : "noch nie ausgeführt"}
                       </p>
+                      {schedule.isActive &&
+                        scheduleWarnings(schedule, zones, playlists, announcements).map(
+                          (warning) => (
+                            <p
+                              key={warning}
+                              className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400"
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
+                              <span>{warning}</span>
+                            </p>
+                          )
+                        )}
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <Button
@@ -986,13 +1012,17 @@ const HISTORY_FILTERS: { value: HistoryFilter; label: string }[] = [
 function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
   const [filter, setFilter] = useState<HistoryFilter>("all");
 
+  // Ein Hänger ist so gut wie ein Fehler: der Befehl kommt nicht mehr an.
+  const problems = useMemo(
+    () => jobs.filter((job) => job.status === "FAILED" || isJobStuck(job)),
+    [jobs]
+  );
+
   const visible = useMemo(() => {
     if (filter === "announcements") return jobs.filter((job) => job.kind === "ANNOUNCE");
-    if (filter === "problems") return jobs.filter((job) => job.status === "FAILED");
+    if (filter === "problems") return problems;
     return jobs;
-  }, [jobs, filter]);
-
-  const failures = jobs.filter((job) => job.status === "FAILED").length;
+  }, [jobs, filter, problems]);
 
   if (jobs.length === 0) {
     return (
@@ -1022,7 +1052,7 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
               )}
             >
               {option.label}
-              {option.value === "problems" && failures > 0 && ` (${failures})`}
+              {option.value === "problems" && problems.length > 0 && ` (${problems.length})`}
             </button>
           ))}
         </div>
@@ -1052,17 +1082,23 @@ function JobItem({ job }: { job: JobRow }) {
   const failed = job.status === "FAILED";
   const done = job.status === "DONE";
   const running = job.status === "PLAYING";
-  const waiting = job.status === "PENDING" || job.status === "SENT";
+  const stuck = isJobStuck(job);
+  const waiting = (job.status === "PENDING" || job.status === "SENT") && !stuck;
 
   return (
     <div className="flex items-center gap-3 p-3">
-      <div className="shrink-0" title={JOB_STATUS_LABELS[job.status]}>
+      <div
+        className="shrink-0"
+        title={stuck ? "Kein Abspieler hat den Befehl geholt" : JOB_STATUS_LABELS[job.status]}
+      >
         {failed ? (
           <XCircle className="h-4 w-4 text-red-500" />
         ) : done ? (
           <CheckCircle2 className="h-4 w-4 text-emerald-500" />
         ) : running ? (
           <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+        ) : stuck ? (
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
         ) : (
           <Clock className="h-4 w-4 text-amber-500" />
         )}
@@ -1080,6 +1116,12 @@ function JobItem({ job }: { job: JobRow }) {
           </Badge>
           {(waiting || running) && (
             <span className="text-xs text-slate-500">{JOB_STATUS_LABELS[job.status]}</span>
+          )}
+          {stuck && (
+            <span className="text-xs text-amber-700 dark:text-amber-400">
+              Hängt seit {formatRelativeTime(job.createdAt)?.replace("vor ", "") ?? "?"} – kein
+              Abspieler hat ihn geholt
+            </span>
           )}
           {job.errorMessage && (
             <span className="truncate text-xs text-red-600">{job.errorMessage}</span>

@@ -137,14 +137,17 @@ Termin genau einmal aus. Kommt der Tick über fünf Minuten hinaus nicht, fällt
 Termin bewusst aus, statt deutlich zu spät zu kommen. Prüfen lässt sich die
 Zeitrechnung mit `npx tsx scripts/audio-schedule-check.ts`.
 
-Auf jeder Zeitplankarte steht, wann sie zuletzt ausgeführt wurde. Steht dort nach
-dem ersten Termin noch „Noch nie ausgeführt", liegt es am Cron oder an
-`CRON_SECRET`; der Rest der Kette hinterlässt Spuren im Tab **Verlauf**.
+Jede Zeitplankarte zeigt den nächsten Termin („heute 18:30") und den letzten Lauf.
+Dazu warnt sie, wenn der Termin nichts bewirken wird: Zielzone ohne Abspieler,
+Abspieler offline, gelöschte oder leere Playlist, oder ein `PLAY` mitten in der
+Ruhezeit der Zone. Diese Fälle fallen sonst erst zur Uhrzeit auf – und dann
+merkt sie niemand, weil ja gerade nichts passiert.
 
-Zonen ohne zugeordnetes Gerät bekommen ihren Job trotzdem, und der bleibt dann
-für immer auf *wartend* stehen – niemand holt ihn ab. Ein Zeitplan auf „alle
-Zonen" sieht deshalb im Verlauf halb fehlgeschlagen aus, solange nicht jede Zone
-einen Abspieler hat. Bis dahin die Zielzonen im Zeitplan ausdrücklich auswählen.
+Steht nach dem ersten Termin noch „noch nie ausgeführt", liegt es am Cron oder an
+`CRON_SECRET`. Lief er, hinterlässt er einen Eintrag im Tab **Verlauf**, dort mit
+dem Etikett *Zeitplan*. Befehle an Zonen ohne Abspieler holt niemand ab; sie
+werden nach fünf Minuten als *hängt* markiert und zählen zum Filter „Nur
+Probleme".
 
 **Geräte-Schnittstelle** (Auth wie bei den Scanner-Pis über das Account-Token):
 

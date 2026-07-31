@@ -5,6 +5,7 @@
  * einzige Stelle, an der sie in Klartext übersetzt werden.
  */
 import type { AudioJobKind, AudioJobStatus, AudioTrackKind } from "@prisma/client";
+import { AUDIO_PLAYER_OFFLINE_AFTER_MS } from "@/lib/audio-constants";
 
 export const JOB_KIND_LABELS: Record<AudioJobKind, string> = {
   ANNOUNCE: "Durchsage",
@@ -47,6 +48,18 @@ export function formatDuration(seconds: number | null): string {
   const s = seconds % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * Ein Befehl, den kein Abspieler abholt, bleibt für immer auf „wartet“ stehen –
+ * etwa weil die Zone kein Gerät hat oder der Pi aus ist. Ab derselben Grenze,
+ * ab der ein Abspieler als offline gilt, ist das kein Warten mehr, sondern ein
+ * Hänger: der Pi fragt alle fünf Sekunden nach offenen Jobs.
+ */
+export function isJobStuck(job: { status: AudioJobStatus; createdAt: string }): boolean {
+  if (job.status !== "PENDING" && job.status !== "SENT") return false;
+  const age = Date.now() - new Date(job.createdAt).getTime();
+  return Number.isFinite(age) && age > AUDIO_PLAYER_OFFLINE_AFTER_MS;
 }
 
 /** Kurzform wie „vor 3 Min." für Zustandsmeldungen der Abspieler. */

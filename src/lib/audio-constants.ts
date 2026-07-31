@@ -82,10 +82,17 @@ export function parseZoneIds(value: unknown): number[] {
   return [...new Set(ids)];
 }
 
+const WEEKDAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+/** Wochentag in einer Zeitzone als Index, bit0 = Montag. -1 = unbekannt. */
+function localWeekdayIndex(date: Date, timeZone: string): number {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date);
+  return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(weekday);
+}
+
 /** Wochentag-Bitmaske gegen ein Datum prüfen (bit0 = Montag). */
 export function matchesDayOfWeek(bitmask: number, date: Date, timeZone: string): boolean {
-  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date);
-  const index = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(weekday);
+  const index = localWeekdayIndex(date, timeZone);
   if (index < 0) return false;
   return ((bitmask >> index) & 1) === 1;
 }
@@ -151,13 +158,47 @@ export function isScheduleDue(
   return true;
 }
 
+/**
+ * Nächster Termin als Klartext („heute 18:30“, „morgen 09:00“, „Sa 09:00“).
+ * null, wenn kein Wochentag gewählt ist – dann kommt der Termin nie.
+ *
+ * Bewusst nur eine Beschriftung und kein Zeitpunkt: gebraucht wird die Angabe
+ * ausschließlich zur Anzeige, und so bleibt die Rechnung ohne Umkehrung der
+ * Zeitzone (Ortszeit → UTC), die an den Umstellungstagen mehrdeutig wäre.
+ */
+export function nextScheduleRunLabel(
+  schedule: { timeOfDay: string; daysOfWeek: number },
+  now: Date,
+  timeZone: string
+): string | null {
+  const today = localWeekdayIndex(now, timeZone);
+  if (today < 0) return null;
+
+  const [hour, minute] = schedule.timeOfDay.split(":").map(Number);
+  const due = hour * 60 + minute;
+  const nowMinutes = localParts(now, timeZone).minutes;
+
+  // Bis 7 Tage weiter: ist nur der heutige Wochentag gewählt und die Uhrzeit
+  // vorbei, ist der nächste Termin derselbe Tag nächste Woche.
+  for (let offset = 0; offset <= 7; offset++) {
+    const weekday = (today + offset) % 7;
+    if (((schedule.daysOfWeek >> weekday) & 1) === 0) continue;
+    // Solange das Nachholfenster läuft, bleibt der Termin von heute stehen –
+    // sonst springt die Anzeige auf morgen, während die Durchsage noch ansteht.
+    if (offset === 0 && nowMinutes >= due + SCHEDULE_WINDOW_MINUTES) continue;
+    if (offset === 0) return `heute ${schedule.timeOfDay}`;
+    if (offset === 1) return `morgen ${schedule.timeOfDay}`;
+    return `${WEEKDAY_NAMES[weekday]} ${schedule.timeOfDay}`;
+  }
+  return null;
+}
+
 /** Bitmaske als lesbare Wochentagsliste. */
 export function formatDaysOfWeek(bitmask: number): string {
   if (bitmask === 127) return "Täglich";
   if (bitmask === 31) return "Mo–Fr";
   if (bitmask === 96) return "Sa+So";
-  const names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-  const selected = names.filter((_, i) => ((bitmask >> i) & 1) === 1);
+  const selected = WEEKDAY_NAMES.filter((_, i) => ((bitmask >> i) & 1) === 1);
   return selected.length === 0 ? "Nie" : selected.join(", ");
 }
 

@@ -12,16 +12,22 @@
  * Ausfuehren: npx tsx scripts/audio-schedule-check.ts
  */
 
-import { SCHEDULE_WINDOW_MINUTES, isScheduleDue } from "../src/lib/audio-constants";
+import {
+  SCHEDULE_WINDOW_MINUTES,
+  isScheduleDue,
+  nextScheduleRunLabel,
+} from "../src/lib/audio-constants";
 
 const TZ = "Europe/Berlin";
 const DAILY = 127;
 const MONDAY = 1;
+const FRIDAY = 16;
+const WORKDAYS = 31;
 const WEEKEND = 96;
 
 let failed = 0;
 
-function check(label: string, actual: boolean, expected: boolean) {
+function check(label: string, actual: unknown, expected: unknown) {
   const ok = actual === expected;
   if (!ok) failed++;
   console.log(`${ok ? "  ok  " : " FEHL "} ${label}`);
@@ -128,6 +134,38 @@ for (const [label, dropRate, seed] of scenarios) {
 // Bei einem Ausfall von 4 aufeinanderfolgenden Ticks ist das Fenster zu. Das
 // ist die bewusste Grenze: eine Durchsage soll nicht beliebig spaet kommen.
 console.log(`\nNachholfenster: ${SCHEDULE_WINDOW_MINUTES} Minuten`);
+
+// 4) Beschriftung des naechsten Termins auf der Zeitplankarte. Der 31.07.2026
+//    ist ein Freitag; 08:00 Uhr UTC ist 10:00 Uhr in Berlin.
+console.log("");
+const FRIDAY_10 = new Date("2026-07-31T08:00:00Z");
+const labels: Array<[string, string, number, Date, string | null]> = [
+  ["taeglich, Termin kommt noch", "18:30", DAILY, FRIDAY_10, "heute 18:30"],
+  ["taeglich, Termin vorbei", "09:00", DAILY, FRIDAY_10, "morgen 09:00"],
+  [
+    "im Nachholfenster bleibt heute stehen",
+    "18:30",
+    DAILY,
+    new Date("2026-07-31T16:32:00Z"),
+    "heute 18:30",
+  ],
+  [
+    "nach dem Fenster erst morgen",
+    "18:30",
+    DAILY,
+    new Date("2026-07-31T16:36:00Z"),
+    "morgen 18:30",
+  ],
+  ["nur Montag", "09:00", MONDAY, FRIDAY_10, "Mo 09:00"],
+  ["nur Freitag, heute schon vorbei", "09:00", FRIDAY, FRIDAY_10, "Fr 09:00"],
+  ["Mo-Fr am Freitagvormittag", "09:00", WORKDAYS, FRIDAY_10, "Mo 09:00"],
+  ["Wochenende, Samstag ist morgen", "09:00", WEEKEND, FRIDAY_10, "morgen 09:00"],
+  ["kein Wochentag gewaehlt", "09:00", 0, FRIDAY_10, null],
+];
+
+for (const [label, timeOfDay, daysOfWeek, now, expected] of labels) {
+  check(label, nextScheduleRunLabel({ timeOfDay, daysOfWeek }, now, TZ), expected);
+}
 
 console.log(failed === 0 ? "\nAlle Pruefungen bestanden." : `\n${failed} Pruefung(en) fehlgeschlagen.`);
 process.exit(failed === 0 ? 0 : 1);
