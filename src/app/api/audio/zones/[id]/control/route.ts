@@ -48,11 +48,24 @@ export async function POST(
   }
 
   if (action === "PLAY") {
-    // Ohne explizite Angabe die hinterlegte Quelle der Zone starten.
-    const wantsStream =
-      body.streamUrl != null || (body.playlistId == null && zone.sourceKind === "STREAM");
+    // Ohne ausdrückliche Angabe entscheidet die eingestellte Quelle der Zone.
+    // Der Ist-Zustand (sourceKind) zählt hier bewusst nicht, sonst würde eine
+    // umgestellte Quelle erst nach dem nächsten Stopp greifen.
+    const source =
+      body.streamUrl != null
+        ? "STREAM"
+        : body.playlistId != null
+          ? "PLAYLIST"
+          : zone.defaultSource;
 
-    if (wantsStream) {
+    if (source === "SILENCE") {
+      return NextResponse.json(
+        { error: "Für diese Zone ist keine Quelle eingestellt" },
+        { status: 400 },
+      );
+    }
+
+    if (source === "STREAM") {
       const streamUrl =
         typeof body.streamUrl === "string" && body.streamUrl.trim()
           ? body.streamUrl.trim()

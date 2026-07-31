@@ -21,9 +21,16 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AudioDeviceOption, PlaylistRow, ZoneRow } from "./types";
+import type { AudioDeviceOption, AudioSourceKind, PlaylistRow, ZoneRow } from "./types";
 
 const NONE = "__none__";
+
+/** Was „Start“ in dieser Zone abspielt. */
+const SOURCES: { value: AudioSourceKind; label: string; hint: string }[] = [
+  { value: "PLAYLIST", label: "Playlist", hint: "Spielt die Standard-Playlist der Zone." },
+  { value: "STREAM", label: "Webradio", hint: "Spielt den hinterlegten Stream." },
+  { value: "SILENCE", label: "Keine Musik", hint: "Zone macht nur Durchsagen." },
+];
 
 interface Props {
   open: boolean;
@@ -42,6 +49,11 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
     zone?.playlistId ? String(zone.playlistId) : NONE
   );
   const [streamUrl, setStreamUrl] = useState(zone?.streamUrl ?? "");
+  // Eine neue Zone ohne Playlist-Auswahl startet als reine Durchsagen-Zone,
+  // sonst müsste man erst eine Quelle bestücken, um speichern zu können.
+  const [defaultSource, setDefaultSource] = useState<AudioSourceKind>(
+    zone?.defaultSource ?? (playlists.length > 0 ? "PLAYLIST" : "SILENCE")
+  );
   const [syncGroup, setSyncGroup] = useState(zone?.syncGroup ?? "");
   const [volume, setVolume] = useState(zone?.volume ?? 50);
   const [announcementVolume, setAnnouncementVolume] = useState(zone?.announcementVolume ?? 85);
@@ -61,12 +73,22 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
       setError("Name ist erforderlich");
       return;
     }
+    // Eine Quelle ohne Inhalt liesse sich später nicht starten.
+    if (defaultSource === "PLAYLIST" && playlistId === NONE) {
+      setError("Für die Quelle „Playlist“ eine Standard-Playlist auswählen");
+      return;
+    }
+    if (defaultSource === "STREAM" && !streamUrl.trim()) {
+      setError("Für die Quelle „Webradio“ eine Stream-URL eintragen");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
         name: name.trim(),
         deviceId: deviceId === NONE ? null : Number(deviceId),
         playlistId: playlistId === NONE ? null : Number(playlistId),
+        defaultSource,
         streamUrl: streamUrl.trim() || null,
         syncGroup: syncGroup.trim() || null,
         volume,
@@ -131,6 +153,28 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
                 AUDIO_PLAYER anlegen.
               </p>
             )}
+          </div>
+
+          <div>
+            <Label>Quelle</Label>
+            <Select
+              value={defaultSource}
+              onValueChange={(v) => setDefaultSource(v as AudioSourceKind)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SOURCES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500 mt-1">
+              {SOURCES.find((s) => s.value === defaultSource)?.hint}
+            </p>
           </div>
 
           <div>

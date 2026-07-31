@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  AlertTriangle,
   CalendarClock,
   CheckCircle2,
   Clock,
@@ -107,6 +108,9 @@ export function AudioClient({
   }>({ open: false, schedule: null });
 
   const [busyZone, setBusyZone] = useState<number | null>(null);
+  const [controlError, setControlError] = useState<{ zoneId: number; message: string } | null>(
+    null
+  );
   const [deleteConfirm, setDeleteConfirm] = useState<{
     kind: "zone" | "playlist" | "announcement" | "schedule";
     id: number;
@@ -138,12 +142,21 @@ export function AudioClient({
 
   async function control(zoneId: number, body: object) {
     setBusyZone(zoneId);
+    setControlError(null);
     try {
-      await fetch(`/api/audio/zones/${zoneId}/control`, {
+      const res = await fetch(`/api/audio/zones/${zoneId}/control`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      // Ein abgelehnter Befehl blieb sonst unsichtbar – die Zone tat einfach nichts.
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setControlError({
+          zoneId,
+          message: typeof data.error === "string" ? data.error : "Befehl fehlgeschlagen",
+        });
+      }
       refresh();
     } finally {
       setBusyZone(null);
@@ -260,6 +273,7 @@ export function AudioClient({
                   live={liveZones.get(zone.id)}
                   highlight={highlightZone === zone.id}
                   busy={busyZone === zone.id}
+                  error={controlError?.zoneId === zone.id ? controlError.message : null}
                   onPlay={() => control(zone.id, { action: "PLAY" })}
                   onStop={() => control(zone.id, { action: "STOP" })}
                   onVolume={(volume) => control(zone.id, { action: "VOLUME", volume })}
@@ -648,6 +662,7 @@ function ZoneCard({
   live,
   highlight,
   busy,
+  error,
   onPlay,
   onStop,
   onVolume,
@@ -659,6 +674,7 @@ function ZoneCard({
   live: ZoneStatus | undefined;
   highlight: boolean;
   busy: boolean;
+  error: string | null;
   onPlay: () => void;
   onStop: () => void;
   onVolume: (volume: number) => void;
@@ -803,6 +819,16 @@ function ZoneCard({
             </span>
           </div>
         </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-400"
+          >
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            {error}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

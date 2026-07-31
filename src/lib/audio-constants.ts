@@ -32,6 +32,11 @@ export function clampVolume(value: unknown, fallback: number): number {
   return Math.min(100, Math.max(0, Math.round(n)));
 }
 
+/** Quellenart aus einer Eingabe, oder undefined = unveraendert lassen. */
+export function parseSourceKind(value: unknown): "SILENCE" | "PLAYLIST" | "STREAM" | undefined {
+  return value === "SILENCE" || value === "PLAYLIST" || value === "STREAM" ? value : undefined;
+}
+
 /** "HH:mm" oder null. */
 export function parseTimeOfDay(value: unknown): string | null {
   if (typeof value !== "string") return null;

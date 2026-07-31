@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { clampVolume, parseTimeOfDay } from "@/lib/audio";
+import { clampVolume, parseSourceKind, parseTimeOfDay } from "@/lib/audio";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -57,6 +57,20 @@ export async function POST(request: NextRequest) {
     deviceId = candidate;
   }
 
+  // Playlist ist optional; sie muss aber demselben Mandanten gehoeren.
+  let playlistId: number | null = null;
+  if (body.playlistId != null && body.playlistId !== "") {
+    const candidate = Number(body.playlistId);
+    const playlist = await db.audioPlaylist.findFirst({
+      where: { id: candidate, accountId: accountId! },
+      select: { id: true },
+    });
+    if (!playlist) {
+      return NextResponse.json({ error: "Playlist nicht gefunden" }, { status: 404 });
+    }
+    playlistId = candidate;
+  }
+
   const last = await db.audioZone.findFirst({
     where: { accountId: accountId! },
     orderBy: { sortOrder: "desc" },
@@ -68,6 +82,12 @@ export async function POST(request: NextRequest) {
       accountId: accountId!,
       name,
       deviceId,
+      playlistId,
+      defaultSource: parseSourceKind(body.defaultSource) ?? "PLAYLIST",
+      streamUrl:
+        typeof body.streamUrl === "string" && body.streamUrl.trim()
+          ? body.streamUrl.trim()
+          : null,
       sortOrder: (last?.sortOrder ?? -1) + 1,
       syncGroup:
         typeof body.syncGroup === "string" && body.syncGroup.trim()

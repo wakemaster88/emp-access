@@ -83,6 +83,7 @@ export default async function AudioPage() {
           announcementVolume: z.announcementVolume,
           duckVolume: z.duckVolume,
           sourceKind: z.sourceKind,
+          defaultSource: z.defaultSource,
           playlistId: z.playlistId,
           playlistName: z.playlist?.name ?? null,
           streamUrl: z.streamUrl,

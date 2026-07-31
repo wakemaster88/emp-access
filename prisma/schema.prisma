@@ -1893,7 +1893,14 @@ model AudioZone {
   announcementVolume Int             @default(85)
   /// Musiklautstaerke waehrend einer Durchsage (Ducking, 0–100).
   duckVolume         Int             @default(15)
+  /// Ist-Zustand: was gerade laeuft. Ein Stopp setzt das Feld auf SILENCE; der
+  /// Abspieler nimmt es nach Neustart oder Durchsage als Vorgabe, um die Musik
+  /// wieder aufzunehmen.
   sourceKind         AudioSourceKind @default(SILENCE)
+  /// Quelle, die "Start" ohne weitere Angabe abspielt. Anders als sourceKind
+  /// eine Einstellung der Zone – sie ueberlebt einen Stopp. SILENCE heisst:
+  /// Diese Zone macht nur Durchsagen.
+  defaultSource      AudioSourceKind @default(PLAYLIST)
   playlistId         Int?
   playlist           AudioPlaylist?  @relation(fields: [playlistId], references: [id], onDelete: SetNull)
   /// Webradio-/Stream-URL fuer sourceKind = STREAM.

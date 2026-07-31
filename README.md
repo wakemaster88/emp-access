@@ -95,10 +95,21 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
    (Typ `AUDIO_PLAYER`). Die Gerätedetails zeigen danach das Konfigurations-JSON
    für den Pi.
 2. Unter **Audio → Zonen** eine Zone anlegen und das Gerät zuordnen.
-3. Lautstärken setzen: *Musik* (Grundpegel), *Durchsage* und *Ducking*
+3. **Quelle** wählen – das ist, was der Start-Knopf abspielt:
+   - *Playlist* → die eingestellte Standard-Playlist
+   - *Webradio* → die eingetragene Stream-URL, z. B.
+     `https://stream.bigfm.de/sunsetlounge/mp3-128/homepage/`. Immer die
+     Sender-URL eintragen, nicht die Adresse, auf die sie weiterleitet – die
+     enthält einen Sitzungsschlüssel und läuft ab.
+   - *Keine Musik* → Zone macht ausschließlich Durchsagen
+4. Lautstärken setzen: *Musik* (Grundpegel), *Durchsage* und *Ducking*
    (Musikpegel während einer Ansage).
-4. Überlappen sich Zonen akustisch, bei allen dieselbe **Sync-Gruppe**
+5. Überlappen sich Zonen akustisch, bei allen dieselbe **Sync-Gruppe**
    eintragen – die Abspieler laufen dann über Snapcast synchron.
+
+Die Quelle bleibt beim Stoppen erhalten; `sourceKind` in der Datenbank ist
+dagegen der Ist-Zustand, den der Pi nach Neustart oder Durchsage wieder
+aufnimmt.
 
 **Geräte-Schnittstelle** (Auth wie bei den Scanner-Pis über das Account-Token):
 

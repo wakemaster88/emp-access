@@ -19,7 +19,10 @@ export interface ZoneRow {
   volume: number;
   announcementVolume: number;
   duckVolume: number;
+  /** Was gerade läuft. */
   sourceKind: AudioSourceKind;
+  /** Was „Start“ abspielt – Einstellung der Zone, überlebt einen Stopp. */
+  defaultSource: AudioSourceKind;
   playlistId: number | null;
   playlistName: string | null;
   streamUrl: string | null;

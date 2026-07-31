@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { clampVolume, parseTimeOfDay } from "@/lib/audio";
+import { clampVolume, parseSourceKind, parseTimeOfDay } from "@/lib/audio";
 
 export async function PUT(
   request: NextRequest,
@@ -67,10 +67,8 @@ export async function PUT(
     }
   }
 
-  const sourceKind =
-    body.sourceKind === "PLAYLIST" || body.sourceKind === "STREAM" || body.sourceKind === "SILENCE"
-      ? body.sourceKind
-      : undefined;
+  const sourceKind = parseSourceKind(body.sourceKind);
+  const defaultSource = parseSourceKind(body.defaultSource);
 
   const zone = await db.audioZone.update({
     where: { id: zoneId },
@@ -79,6 +77,7 @@ export async function PUT(
       ...(deviceId !== undefined ? { deviceId } : {}),
       ...(playlistId !== undefined ? { playlistId } : {}),
       ...(sourceKind ? { sourceKind } : {}),
+      ...(defaultSource ? { defaultSource } : {}),
       isActive: typeof body.isActive === "boolean" ? body.isActive : undefined,
       syncGroup:
         body.syncGroup === undefined
