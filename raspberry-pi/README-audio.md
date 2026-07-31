@@ -100,9 +100,23 @@ sudo systemctl restart emp-audio
 | `snapserver_host` | `""` | Snapserver für synchrone Zonen; leer = eigenständig |
 | `snapclient_soundcard` | `""` | Soundkarte des Snapclients (aus `snapclient -l`) |
 | `cache_max_mb` | `2048` | Obergrenze des lokalen Dateicaches |
+| `speech_normalize` | `true` | Hebt leise Durchsagen auf einen einheitlichen Pegel |
 
 Lautstärke, Ansagelautstärke, Ducking-Pegel und Ruhezeiten kommen aus der Zone
 im Dashboard und müssen hier nicht gepflegt werden.
+
+### Sprachanhebung
+
+Musiktitel sind auf Vollpegel gemastert, eine Sprachdatei aus der
+Text-zu-Sprache nicht – sie hat reichlich Luft nach oben. Ohne Ausgleich geht
+die Ansage gegen die Musik unter, und mit dem Regler ist bei 100 Schluss. Der
+Abspieler zieht die Ansage darum vor der Wiedergabe auf einen einheitlichen
+Pegel hoch (ffmpeg-Filter `speechnorm`, ersatzweise `dynaudnorm` auf älteren
+Systemen). Der Gong bleibt unangetastet: sein Pegel steht fest, und ein
+ausklingender Ton würde von der Anhebung künstlich gehalten.
+
+Kennt das ffmpeg des Systems keinen der Filter, läuft die Ansage unverändert
+weiter – im Journal steht dann „mpv nimmt die Sprachanhebung nicht an".
 
 ### Ausgabegerät und Mischgerät
 
@@ -184,7 +198,8 @@ sudo rm -rf /var/lib/emp-audio/cache/*
 1. Dashboard erzeugt einen Job vom Typ `ANNOUNCE` für alle Zielzonen.
 2. Der Pi holt ihn beim nächsten Poll ab und meldet `PLAYING`.
 3. Musik wird auf den Ducking-Pegel abgesenkt, optional ertönt der Gong.
-4. Die Ansage läuft – bei `repeat > 1` mehrfach mit kurzer Pause.
+4. Die Ansage läuft, auf einheitlichen Pegel angehoben – bei `repeat > 1`
+   mehrfach mit kurzer Pause.
 5. Musik wird wieder hochgefahren, der Pi meldet `DONE`.
 
 Der Gong wird beim ersten Start als `/var/lib/emp-audio/chime.wav` erzeugt.
@@ -277,6 +292,20 @@ Mischgerät bekommt nur der erste sie auf. `install-audio.sh` legt dafür ein
 `dmix`-Gerät in `/etc/asound.conf` an – fehlt die Datei oder steht dort eine
 Karte mit exklusivem Zugriff (`plughw:` oder `hw:` direkt als `audio_device`),
 das Skript erneut ausführen.
+
+### Durchsage zu leise im Verhältnis zur Musik
+
+Erst prüfen, ob der Pi mindestens Version 1.0.5 fährt – vorher gab es keine
+Sprachanhebung, und über die Ansagelautstärke von 100 kommt man nicht hinaus:
+
+```bash
+journalctl -u emp-audio | grep "EMP Access Audio v" | tail -1
+```
+
+Bleibt es danach dabei, ist meist die Musik zu laut eingestellt: In der Zone den
+Ducking-Pegel senken (Standard 15) statt die Ansage weiter hochzudrehen. Wer
+eigene Ansagen hochlädt, sollte sie ausgesteuert exportieren; die Anhebung
+rettet leise Aufnahmen, kann aber kein Rauschen wegzaubern.
 
 ### „Keine Zone für Gerät #x hinterlegt"
 

@@ -38,6 +38,10 @@ DEFAULT = {
     "snapclient_soundcard": "",
     # Obergrenze des lokalen Dateicaches in MB.
     "cache_max_mb": 2048,
+    # Hebt leise Durchsagen vor der Wiedergabe auf einen einheitlichen Pegel an.
+    # Nur abschalten, wenn die Ansagen bereits ausgesteuert geliefert werden –
+    # ohne das gehen TTS-Ansagen gegen gemasterte Musik hörbar unter.
+    "speech_normalize": True,
 }
 
 

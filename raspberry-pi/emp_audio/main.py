@@ -155,7 +155,11 @@ class EmpAudio:
             self.music = MusicPlayer(audio_device=self.config.audio_device)
 
         self.music.start()
-        self.speech = SpeechPlayer(self.music, audio_device=self.config.audio_device)
+        self.speech = SpeechPlayer(
+            self.music,
+            audio_device=self.config.audio_device,
+            normalize=bool(self.config.speech_normalize),
+        )
 
         _sd_notify("READY=1")
 

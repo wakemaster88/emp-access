@@ -105,7 +105,10 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
      enthält einen Sitzungsschlüssel und läuft ab.
    - *Keine Musik* → Zone macht ausschließlich Durchsagen
 4. Lautstärken setzen: *Musik* (Grundpegel), *Durchsage* und *Ducking*
-   (Musikpegel während einer Ansage).
+   (Musikpegel während einer Ansage). Der Pi hebt Ansagen vor der Wiedergabe auf
+   einen einheitlichen Pegel an, weil Sprachdateien von Natur aus leiser sind als
+   gemasterte Musik. Setzt sich eine Ansage trotzdem nicht durch, gehört der
+   Ducking-Pegel weiter herunter – nicht die Durchsage weiter hoch.
 5. Überlappen sich Zonen akustisch, bei allen dieselbe **Sync-Gruppe**
    eintragen – die Abspieler laufen dann über Snapcast synchron.
 

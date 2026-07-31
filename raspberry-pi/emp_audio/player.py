@@ -51,6 +51,28 @@ AO_RETRY_DELAY = 5
 # Rest ist Betriebsfunk und gehoert nicht auf WARNING.
 MPV_PROBLEM_WORDS = ("error", "failed", "could not", "unable", "cannot", "no sound")
 
+# Eine Sprachdatei ist von Natur aus leiser als Musik: Musiktitel sind auf
+# Vollpegel gemastert, eine Ansage aus der Sprachausgabe hat reichlich Luft nach
+# oben. Beim selben mpv-Pegel setzt sie sich deshalb nicht gegen die Musik durch,
+# und mit dem Regler ist da nichts zu retten – bei 100 ist Schluss. Diese Filter
+# ziehen die Ansage vor der Wiedergabe auf einen einheitlichen Pegel hoch.
+#
+# Zwei Kandidaten, weil `speechnorm` erst ab ffmpeg 4.4 dabei ist (Bookworm ja,
+# Bullseye und Buster nein). Faellt es aus, kommt `dynaudnorm` zum Zug, das es
+# in jeder in Frage kommenden Version gibt.
+SPEECH_FILTERS = (
+    # p: Zielpegel knapp unter Vollaussteuerung, mehr laesst der Filter nicht zu
+    # (deshalb braucht es keinen Limiter dahinter). e: bis zu 12,5-fache
+    # Verstaerkung fuer leise Passagen. l: beide Kanaele auf demselben Gain,
+    # sonst wandert das Stereobild mitten in der Ansage.
+    "lavfi=[speechnorm=p=0.95:e=12.5:r=0.0005:l=1]",
+    "lavfi=[dynaudnorm=f=150:g=15:p=0.9:m=20]",
+)
+
+# Woran eine mpv-Meldung zu erkennen gibt, dass der Filter das Problem ist und
+# nicht die Audiodatei. Nur dann lohnt der naechste Kandidat.
+FILTER_PROBLEM_WORDS = ("no such filter", "lavfi", "--af", "filter graph")
+
 
 class PlaybackError(Exception):
     """Wiedergabe fehlgeschlagen – wird im Dashboard am Job sichtbar."""
@@ -310,23 +332,30 @@ class MusicPlayer:
 class SpeechPlayer:
     """Spielt eine Durchsage ab und senkt dabei die Musik ab."""
 
-    def __init__(self, music: MusicPlayer, audio_device: str = ""):
+    def __init__(self, music: MusicPlayer, audio_device: str = "", normalize: bool = True):
         self.music = music
         self.audio_device = audio_device or DEFAULT_AUDIO_DEVICE
         self._process: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._interrupted = False
+        # Welcher Filter aus SPEECH_FILTERS gerade gilt. Lehnt mpv einen ab,
+        # ruecken wir dauerhaft eine Stelle weiter, statt es bei jeder Ansage
+        # erneut zu probieren. normalize=False heisst: gar kein Filter.
+        self._filter_index = 0 if normalize else len(SPEECH_FILTERS)
 
-    def _play_file(self, path: str, volume: int) -> None:
-        cmd = [
-            "mpv",
-            "--no-video",
-            "--no-input-terminal",
-            f"--msg-level={MSG_LEVEL}",
+    def _mpv_command(self, path: str, volume: int, filter_index: int) -> list[str]:
+        cmd = ["mpv", "--no-video", "--no-input-terminal", f"--msg-level={MSG_LEVEL}"]
+        if filter_index < len(SPEECH_FILTERS):
+            cmd.append(f"--af={SPEECH_FILTERS[filter_index]}")
+        cmd += [
             f"--volume={volume}",
             f"--audio-device={self.audio_device}",
             path,
         ]
+        return cmd
+
+    def _run(self, cmd: list[str]) -> tuple[int, str]:
+        """Startet mpv, wartet das Ende ab und gibt Rückgabecode und Ausgabe zurück."""
         try:
             with self._lock:
                 self._process = subprocess.Popen(
@@ -348,6 +377,30 @@ class SpeechPlayer:
 
         if output:
             _log_mpv(output)
+        return returncode, output or ""
+
+    def _play_file(self, path: str, volume: int, normalize: bool = False) -> None:
+        # Ohne Anhebung (Gong) oder wenn schon alle Filter durchgefallen sind,
+        # bleibt es beim unveraenderten Pegel der Datei.
+        index = self._filter_index if normalize else len(SPEECH_FILTERS)
+        returncode, output = self._run(self._mpv_command(path, volume, index))
+
+        # Kennt das ffmpeg des Systems den Filter nicht, kommt kein Ton – je nach
+        # Version mit oder ohne Fehlercode. Der zweite Versuch haengt darum an
+        # der Meldung, nicht am Rueckgabewert. Eine leise Ansage ist besser als
+        # keine: naechster Filter, notfalls ganz ohne.
+        while (
+            index < len(SPEECH_FILTERS)
+            and not self._interrupted
+            and any(word in output.lower() for word in FILTER_PROBLEM_WORDS)
+        ):
+            index += 1
+            self._filter_index = index
+            logger.warning(
+                "mpv nimmt die Sprachanhebung nicht an – %s",
+                "nächster Filter" if index < len(SPEECH_FILTERS) else "Ansage läuft unverändert",
+            )
+            returncode, output = self._run(self._mpv_command(path, volume, index))
 
         # Negative Codes stammen vom Abbruch durch interrupt() – das ist kein
         # Fehler der Wiedergabe und wird von play() gesondert behandelt.
@@ -387,6 +440,9 @@ class SpeechPlayer:
                 # Kurz warten, damit die Absenkung hörbar vor der Ansage liegt.
                 time.sleep(0.3)
 
+            # Der Gong läuft ohne Anhebung: sein Pegel steht fest, und ein
+            # ausklingender Ton würde von der Sprachanhebung künstlich
+            # gehalten statt auszuklingen.
             if chime_path and os.path.exists(chime_path) and not self._interrupted:
                 self._play_file(chime_path, volume)
 
@@ -395,7 +451,7 @@ class SpeechPlayer:
                     return False
                 if index > 0:
                     time.sleep(0.6)
-                self._play_file(path, volume)
+                self._play_file(path, volume, normalize=True)
 
             return not self._interrupted
         finally:
