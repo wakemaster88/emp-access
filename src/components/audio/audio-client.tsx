@@ -21,6 +21,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  Headphones,
   History,
   ListMusic,
   Loader2,
@@ -51,6 +52,7 @@ import {
 import { PlaylistDialog } from "./playlist-dialog";
 import { ScheduleDialog, ACTION_LABELS } from "./schedule-dialog";
 import { useAudioStatus } from "./use-audio-status";
+import { useZoneMonitor, zoneSource } from "./use-zone-monitor";
 import { ZoneDialog } from "./zone-dialog";
 import { ZoneStatusBar } from "./zone-status-bar";
 import type {
@@ -89,6 +91,7 @@ export function AudioClient({
   const [highlightZone, setHighlightZone] = useState<number | null>(null);
 
   const { zones: liveZones, jobs: liveJobs, refresh: refreshStatus } = useAudioStatus(true);
+  const monitor = useZoneMonitor({ tracks, playlists });
 
   const [zoneDialog, setZoneDialog] = useState<{ open: boolean; zone: ZoneRow | null }>({
     open: false,
@@ -183,6 +186,8 @@ export function AudioClient({
     await fetch(`/api/audio/${paths[deleteConfirm.kind]}/${deleteConfirm.id}`, {
       method: "DELETE",
     });
+    // Eine gelöschte Zone soll nicht weiter im Ohr bleiben.
+    if (deleteConfirm.kind === "zone" && monitor.zoneId === deleteConfirm.id) monitor.stop();
     setDeleteConfirm(null);
     refresh();
   }
@@ -273,7 +278,25 @@ export function AudioClient({
                   live={liveZones.get(zone.id)}
                   highlight={highlightZone === zone.id}
                   busy={busyZone === zone.id}
-                  error={controlError?.zoneId === zone.id ? controlError.message : null}
+                  error={
+                    controlError?.zoneId === zone.id
+                      ? controlError.message
+                      : monitor.error?.zoneId === zone.id
+                        ? monitor.error.message
+                        : null
+                  }
+                  monitor={{
+                    active: monitor.zoneId === zone.id,
+                    available: monitor.canMonitor(zone),
+                    title: monitor.title,
+                    volume: monitor.volume,
+                    toggle: () =>
+                      monitor.toggle(
+                        zone,
+                        liveZones.get(zone.id)?.currentTitle ?? zone.currentTitle
+                      ),
+                    setVolume: monitor.setVolume,
+                  }}
                   onPlay={() => control(zone.id, { action: "PLAY" })}
                   onStop={() => control(zone.id, { action: "STOP" })}
                   onVolume={(volume) => control(zone.id, { action: "VOLUME", volume })}
@@ -575,6 +598,14 @@ export function AudioClient({
         </TabsContent>
       </Tabs>
 
+      {/* Ein Element für alle Zonen – so überlagern sich zwei Zonen nie. */}
+      <audio
+        ref={monitor.audioRef}
+        onEnded={monitor.onEnded}
+        onError={monitor.onError}
+        className="hidden"
+      />
+
       {zoneDialog.open && (
         <ZoneDialog
           open
@@ -663,6 +694,7 @@ function ZoneCard({
   highlight,
   busy,
   error,
+  monitor,
   onPlay,
   onStop,
   onVolume,
@@ -675,6 +707,14 @@ function ZoneCard({
   highlight: boolean;
   busy: boolean;
   error: string | null;
+  monitor: {
+    active: boolean;
+    available: boolean;
+    title: string | null;
+    volume: number;
+    toggle: () => void;
+    setVolume: (volume: number) => void;
+  };
   onPlay: () => void;
   onStop: () => void;
   onVolume: (volume: number) => void;
@@ -690,6 +730,13 @@ function ZoneCard({
 
   const cardRef = useRef<HTMLDivElement>(null);
   const volume = useCommittedVolume(serverVolume, onVolume);
+
+  // Beim Webradio hört man dasselbe Programm; eine Playlist beginnt dagegen
+  // beim gemeldeten Titel von vorn, weil der Pi keine Position meldet.
+  const monitorHint =
+    zoneSource(zone) === "STREAM"
+      ? "derselbe Stream auf diesem Gerät"
+      : "dieselbe Playlist auf diesem Gerät, nicht taktgleich";
 
   useEffect(() => {
     if (highlight) cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -764,6 +811,29 @@ function ZoneCard({
             <Button
               variant="ghost"
               size="sm"
+              onClick={monitor.toggle}
+              disabled={!monitor.available}
+              aria-label={
+                monitor.active
+                  ? `Mithören von ${zone.name} beenden`
+                  : `Zone ${zone.name} auf diesem Gerät mithören`
+              }
+              aria-pressed={monitor.active}
+              title={
+                monitor.available
+                  ? `Mithören – ${monitorHint}`
+                  : "Keine Quelle zum Mithören hinterlegt"
+              }
+              className={cn(
+                monitor.active &&
+                  "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-950/40"
+              )}
+            >
+              <Headphones className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onSync}
               aria-label={`Dateicache von ${zone.name} abgleichen`}
               title="Dateicache abgleichen"
@@ -819,6 +889,32 @@ function ZoneCard({
             </span>
           </div>
         </div>
+
+        {monitor.active && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+              <Headphones className="h-3.5 w-3.5" />
+              Mithören
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-600 dark:text-slate-400">
+              {monitor.title ? `${monitor.title} · ` : ""}
+              {monitorHint}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={monitor.volume}
+              onChange={(e) => monitor.setVolume(Number(e.target.value))}
+              aria-label={`Mithör-Lautstärke ${zone.name}`}
+              aria-valuetext={`${monitor.volume} Prozent`}
+              className="w-24 accent-indigo-600"
+            />
+            <Button variant="ghost" size="sm" onClick={monitor.toggle} className="text-xs">
+              Beenden
+            </Button>
+          </div>
+        )}
 
         {error && (
           <p

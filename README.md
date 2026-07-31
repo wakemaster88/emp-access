@@ -111,6 +111,15 @@ Die Quelle bleibt beim Stoppen erhalten; `sourceKind` in der Datenbank ist
 dagegen der Ist-Zustand, den der Pi nach Neustart oder Durchsage wieder
 aufnimmt.
 
+**Mithören:** Der Kopfhörer-Knopf auf einer Zonenkarte spielt deren Quelle auf
+dem eigenen Gerät – bei Webradio denselben Stream, bei einer Playlist deren
+Titel, beginnend beim zuletzt gemeldeten. Es läuft immer nur eine Zone.
+
+Das ist kein Abhören des Verstärkerausgangs: ob am Lautsprecher wirklich Ton
+ankommt, sagt das Mithören nicht. Durchsagen sind nicht dabei, die laufen als
+eigener Job auf dem Pi. Bei Playlists ist es außerdem nicht taktgleich, weil der
+Pi keine Wiedergabeposition meldet, sondern nur alle 60 Sekunden einen Titel.
+
 **Geräte-Schnittstelle** (Auth wie bei den Scanner-Pis über das Account-Token):
 
 - `GET /api/devices/audio?id=<deviceId>` – Zonenkonfiguration und offene Jobs
