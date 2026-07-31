@@ -85,8 +85,10 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
 
 - `BLOB_READ_WRITE_TOKEN` – Vercel Blob. Ohne den Token schlagen Uploads und
   das Rendern von Sprachansagen fehl (die API antwortet dann mit 501).
-- `OPENAI_API_KEY` – Text-zu-Sprache für Durchsagen. Gleicher Text mit gleicher
-  Stimme wird gecacht, es fällt also nur beim ersten Mal ein Aufruf an.
+- `XAI_API_KEY` – Text-zu-Sprache für Durchsagen (xAI, `POST /v1/tts`, deutsch).
+  Gleicher Text mit gleicher Stimme wird gecacht, es fällt also nur beim ersten
+  Mal ein Aufruf an. Die Stimmenauswahl im Dialog kommt aus
+  `GET /v1/tts/voices`, damit dort nichts steht, was die API ablehnt.
 - `CRON_SECRET` – wird von `/api/cron/audio-schedules` mitgenutzt (alle 5 Min).
 
 **Zone einrichten:**

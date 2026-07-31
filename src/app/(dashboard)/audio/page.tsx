@@ -3,7 +3,7 @@ import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { AudioClient } from "@/components/audio/audio-client";
-import { isPlayerOnline, parseZoneIds } from "@/lib/audio";
+import { isPlayerOnline, listTtsVoices, parseZoneIds } from "@/lib/audio";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export default async function AudioPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [zones, tracks, playlists, announcements, schedules, jobs, audioDevices] =
+  const [zones, tracks, playlists, announcements, schedules, jobs, audioDevices, ttsVoices] =
     await Promise.all([
       db.audioZone.findMany({
         where: { accountId },
@@ -65,6 +65,7 @@ export default async function AudioPage() {
         select: { id: true, name: true, audioZone: { select: { id: true } } },
         orderBy: { name: "asc" },
       }),
+      listTtsVoices(),
     ]);
 
   return (
@@ -156,6 +157,7 @@ export default async function AudioPage() {
           name: d.name,
           taken: !!d.audioZone,
         }))}
+        ttsVoices={ttsVoices}
       />
     </>
   );

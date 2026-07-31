@@ -22,9 +22,10 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  DEFAULT_TTS_VOICE,
   MAX_ANNOUNCEMENT_CHARS,
-  TTS_VOICES,
+  TTS_FALLBACK_VOICES,
+  normalizeTtsVoice,
+  type TtsVoice,
 } from "@/lib/audio-constants";
 import type { AnnouncementRow, TrackRow, ZoneRow } from "./types";
 
@@ -35,6 +36,8 @@ interface Props {
   announcement: AnnouncementRow | null;
   zones: ZoneRow[];
   tracks: TrackRow[];
+  /** Von der API gemeldete Stimmen; leer nur, wenn die Abfrage nicht durchkam. */
+  voices?: TtsVoice[];
 }
 
 export function AnnouncementDialog({
@@ -44,6 +47,7 @@ export function AnnouncementDialog({
   announcement,
   zones,
   tracks,
+  voices = TTS_FALLBACK_VOICES,
 }: Props) {
   const isEdit = !!announcement;
   const fileTracks = tracks.filter((t) => t.kind !== "MUSIC");
@@ -53,7 +57,9 @@ export function AnnouncementDialog({
     announcement?.source === "FILE" ? "FILE" : "TTS"
   );
   const [text, setText] = useState(announcement?.text ?? "");
-  const [voice, setVoice] = useState(announcement?.voice ?? DEFAULT_TTS_VOICE);
+  // Alte Durchsagen tragen noch Stimmen des früheren Anbieters – die stehen in
+  // der Auswahl nicht mehr und würden das Feld leer zeigen.
+  const [voice, setVoice] = useState(() => normalizeTtsVoice(announcement?.voice));
   const [trackId, setTrackId] = useState<string>(
     announcement?.trackId ? String(announcement.trackId) : String(fileTracks[0]?.id ?? "")
   );
@@ -178,7 +184,7 @@ export function AnnouncementDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {TTS_VOICES.map((v) => (
+                    {voices.map((v) => (
                       <SelectItem key={v.value} value={v.value}>
                         {v.label}
                       </SelectItem>

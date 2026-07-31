@@ -38,7 +38,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDaysOfWeek } from "@/lib/audio-constants";
+import { formatDaysOfWeek, type TtsVoice } from "@/lib/audio-constants";
 import { AnnouncePanel } from "./announce-panel";
 import { AnnouncementDialog } from "./announcement-dialog";
 import { LibraryPanel } from "./library-panel";
@@ -74,6 +74,7 @@ interface Props {
   schedules: ScheduleRow[];
   jobs: JobRow[];
   audioDevices: AudioDeviceOption[];
+  ttsVoices: TtsVoice[];
 }
 
 export function AudioClient({
@@ -84,6 +85,7 @@ export function AudioClient({
   schedules,
   jobs,
   audioDevices,
+  ttsVoices,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -245,7 +247,12 @@ export function AudioClient({
 
         {/* ── DURCHSAGE ────────────────────────────────────────────────────── */}
         <TabsContent value="announce">
-          <AnnouncePanel zones={zones} templates={templates} onDone={refresh} />
+          <AnnouncePanel
+            zones={zones}
+            templates={templates}
+            onDone={refresh}
+            voices={ttsVoices}
+          />
         </TabsContent>
 
         {/* ── ZONEN ────────────────────────────────────────────────────────── */}
@@ -639,6 +646,7 @@ export function AudioClient({
           announcement={announcementDialog.announcement}
           zones={zones}
           tracks={tracks}
+          voices={ttsVoices}
           onClose={() => setAnnouncementDialog({ open: false, announcement: null })}
           onSaved={() => {
             setAnnouncementDialog({ open: false, announcement: null });

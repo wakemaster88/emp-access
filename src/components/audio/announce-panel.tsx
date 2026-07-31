@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
 import {
   DEFAULT_TTS_VOICE,
   MAX_ANNOUNCEMENT_CHARS,
-  TTS_VOICES,
+  TTS_FALLBACK_VOICES,
+  type TtsVoice,
 } from "@/lib/audio-constants";
 import type { AnnouncementRow, ZoneRow } from "./types";
 
@@ -26,9 +27,16 @@ interface Props {
   zones: ZoneRow[];
   templates: AnnouncementRow[];
   onDone: () => void;
+  /** Von der API gemeldete Stimmen; leer nur, wenn die Abfrage nicht durchkam. */
+  voices?: TtsVoice[];
 }
 
-export function AnnouncePanel({ zones, templates, onDone }: Props) {
+export function AnnouncePanel({
+  zones,
+  templates,
+  onDone,
+  voices = TTS_FALLBACK_VOICES,
+}: Props) {
   const activeZones = zones.filter((z) => z.isActive);
   const [selectedZones, setSelectedZones] = useState<number[]>([]);
   const [text, setText] = useState("");
@@ -264,7 +272,7 @@ export function AnnouncePanel({ zones, templates, onDone }: Props) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TTS_VOICES.map((v) => (
+                  {voices.map((v) => (
                     <SelectItem key={v.value} value={v.value}>
                       {v.label}
                     </SelectItem>

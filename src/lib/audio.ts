@@ -9,7 +9,14 @@
 import { createHash } from "crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_TTS_VOICE, MAX_ANNOUNCEMENT_CHARS } from "@/lib/audio-constants";
+import {
+  DEFAULT_TTS_VOICE,
+  MAX_ANNOUNCEMENT_CHARS,
+  TTS_FALLBACK_VOICES,
+  TTS_LANGUAGE,
+  normalizeTtsVoice,
+  type TtsVoice,
+} from "@/lib/audio-constants";
 
 type Db = PrismaClient | ReturnType<typeof import("@/lib/prisma").tenantClient>;
 
@@ -150,9 +157,65 @@ export function ttsCacheKey(text: string, voice: string): string {
 
 export class TtsNotConfiguredError extends Error {
   constructor() {
-    super("Sprachausgabe ist nicht konfiguriert (OPENAI_API_KEY fehlt)");
+    super("Sprachausgabe ist nicht konfiguriert (XAI_API_KEY fehlt)");
     this.name = "TtsNotConfiguredError";
   }
+}
+
+const TTS_ENDPOINT = "https://api.x.ai/v1/tts";
+const TTS_VOICES_ENDPOINT = `${TTS_ENDPOINT}/voices`;
+
+/**
+ * Fragt die verfügbaren Stimmen bei xAI ab. Eine feste Liste im Code würde mit
+ * jeder Änderung des Anbieters schief gehen – und eine Stimme, die es nicht
+ * gibt, lehnt die API beim Rendern ab. Kommt die Abfrage nicht durch, bleibt es
+ * bei den belegten Stimmen.
+ */
+export async function listTtsVoices(): Promise<TtsVoice[]> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) return TTS_FALLBACK_VOICES;
+
+  try {
+    const response = await fetch(TTS_VOICES_ENDPOINT, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      // Der Bestand ändert sich selten, die Seite soll nicht darauf warten.
+      next: { revalidate: 86400 },
+    });
+    if (!response.ok) return TTS_FALLBACK_VOICES;
+
+    const data = (await response.json()) as {
+      voices?: { voice_id?: unknown; name?: unknown }[];
+    };
+    const voices = (data.voices ?? [])
+      .map((entry) => {
+        const value = typeof entry.voice_id === "string" ? entry.voice_id : "";
+        const name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : value;
+        return { value, label: value === DEFAULT_TTS_VOICE ? `${name} (Standard)` : name };
+      })
+      .filter((voice) => voice.value);
+
+    return voices.length > 0 ? voices : TTS_FALLBACK_VOICES;
+  } catch {
+    return TTS_FALLBACK_VOICES;
+  }
+}
+
+/**
+ * Holt die Audiodaten aus der Antwort. xAI liefert die MP3 normalerweise als
+ * Rohdaten, kann sie aber auch in einen JSON-Umschlag mit base64 packen – beides
+ * kommt vor, deshalb entscheidet der Content-Type.
+ */
+async function readTtsAudio(response: Response): Promise<Buffer> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  const data = (await response.json()) as { audio?: unknown };
+  if (typeof data.audio !== "string" || !data.audio) {
+    throw new Error("TTS-Antwort enthielt keine Audiodaten");
+  }
+  return Buffer.from(data.audio, "base64");
 }
 
 /**
@@ -167,7 +230,7 @@ export async function renderTtsTrack(
   voice: string | null
 ): Promise<{ id: number; url: string; durationSec: number | null }> {
   const cleanText = text.trim().slice(0, MAX_ANNOUNCEMENT_CHARS);
-  const usedVoice = voice?.trim() || DEFAULT_TTS_VOICE;
+  const usedVoice = normalizeTtsVoice(voice);
   const hash = ttsCacheKey(cleanText, usedVoice);
 
   const cached = await db.audioTrack.findFirst({
@@ -176,20 +239,20 @@ export async function renderTtsTrack(
   });
   if (cached) return cached;
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) throw new TtsNotConfiguredError();
 
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+  const response = await fetch(TTS_ENDPOINT, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini-tts",
-      voice: usedVoice,
-      input: cleanText,
-      response_format: "mp3",
+      text: cleanText,
+      voice_id: usedVoice,
+      language: TTS_LANGUAGE,
+      output_format: { codec: "mp3", sample_rate: 24000, bit_rate: 128000 },
     }),
   });
 
@@ -198,7 +261,7 @@ export async function renderTtsTrack(
     throw new Error(`TTS fehlgeschlagen (${response.status}): ${detail.slice(0, 200)}`);
   }
 
-  const audio = Buffer.from(await response.arrayBuffer());
+  const audio = await readTtsAudio(response);
   const { put } = await import("@vercel/blob");
   const blob = await put(`audio/tts/${hash}.mp3`, audio, {
     access: "public",

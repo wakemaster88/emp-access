@@ -7,16 +7,41 @@
 export const MAX_ANNOUNCEMENT_CHARS = 600;
 
 /** Standardstimme, wenn die Durchsage keine eigene setzt. */
-export const DEFAULT_TTS_VOICE = "alloy";
+export const DEFAULT_TTS_VOICE = "eve";
 
-export const TTS_VOICES = [
-  { value: "alloy", label: "Alloy (neutral)" },
-  { value: "echo", label: "Echo (männlich)" },
-  { value: "fable", label: "Fable (warm)" },
-  { value: "nova", label: "Nova (weiblich)" },
-  { value: "onyx", label: "Onyx (tief)" },
-  { value: "shimmer", label: "Shimmer (hell)" },
-] as const;
+/** Ansagen sind deutsch; eine feste Sprache klingt gleichmäßiger als `auto`. */
+export const TTS_LANGUAGE = "de";
+
+export interface TtsVoice {
+  value: string;
+  label: string;
+}
+
+/**
+ * Notnagel für den Stimmenauswahl-Dialog: Welche Stimmen es wirklich gibt,
+ * beantwortet die API selbst (siehe listTtsVoices). Diese hier sind belegt und
+ * genügen, solange die Abfrage nicht durchkommt.
+ */
+export const TTS_FALLBACK_VOICES: TtsVoice[] = [
+  { value: "eve", label: "Eve (Standard)" },
+  { value: "ara", label: "Ara" },
+  { value: "leo", label: "Leo" },
+  { value: "rex", label: "Rex" },
+];
+
+/** Stimmen des früheren Anbieters, die noch an alten Durchsagen hängen. */
+const LEGACY_VOICES = new Set(["alloy", "echo", "fable", "nova", "onyx", "shimmer"]);
+
+/**
+ * Eine Durchsage von früher trägt eine Stimme, die es bei xAI nicht gibt – ein
+ * erneutes Rendern würde daran scheitern. Solche Namen fallen auf die
+ * Standardstimme zurück.
+ */
+export function normalizeTtsVoice(voice: string | null | undefined): string {
+  const trimmed = voice?.trim();
+  if (!trimmed || LEGACY_VOICES.has(trimmed.toLowerCase())) return DEFAULT_TTS_VOICE;
+  return trimmed;
+}
 
 /** Ohne Heartbeat in diesem Zeitraum gilt ein Abspieler als offline. */
 export const AUDIO_PLAYER_OFFLINE_AFTER_MS = 5 * 60 * 1000;
