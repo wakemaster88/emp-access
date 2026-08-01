@@ -3,6 +3,7 @@ import { loadConfig } from "@/lib/config";
 import { fetchRecentCrossings } from "@/lib/people-tracker";
 import { fetchScanRows, type ScanRow } from "@/lib/emp-access-scans";
 import { archiveScans, archiveStart, readScansSince } from "@/lib/scan-archive";
+import { pairCrossings } from "@/lib/tailgate-pairing";
 
 export const dynamic = "force-dynamic";
 
@@ -12,16 +13,10 @@ export const dynamic = "force-dynamic";
  *
  * Der Zähler allein sagt nur „drei ungedeckt". Erst die Paarung zeigt, ob
  * das echte Mitläufer waren oder ob die Kamera schlicht danebenlag.
+ *
+ * Die Zuordnung selbst steckt in `lib/tailgate-pairing.ts` — dieselbe
+ * Rechnung entscheidet live, ob ein Alarm losgeht.
  */
-
-/**
- * Wie lange nach einem Scan der zugehörige Durchgang erwartet wird.
- * Gemessen liegen zwischen Piepton und Fußpunkt über der Linie zwei bis
- * fünf Sekunden; bei Andrang staut es sich etwas.
- */
-const MAX_LAG_MS = 30_000;
-/** Kleiner Vorlauf gegen Uhren-Versatz zwischen Cloud und Sidecar. */
-const MAX_LEAD_MS = 3_000;
 
 type Entry =
   | {
@@ -102,32 +97,14 @@ export async function GET(req: Request) {
   const from = Math.max(since, scanStart, oldestCrossing);
 
   const granted = scans.filter((s) => s.result === "GRANTED");
-  const used = new Set<number>();
+  const { results, usedScanIds: used } = pairCrossings(
+    crossings.filter((c) => c.ts >= from),
+    granted,
+  );
   const entries: Entry[] = [];
 
-  for (const c of crossings) {
-    if (c.ts < from) continue;
-    // Der jüngste noch freie Scan davor gewinnt — bei einer Schlange gehen
-    // die Leute in der Reihenfolge durch, in der sie gescannt haben.
-    // Ein Scan nach dem Durchgang kommt nur zum Zug, wenn davor keiner frei
-    // ist; sonst zöge ein Nachzügler die Zuordnung an sich, obwohl er die
-    // Person, die man durchgehen sah, gar nicht sein kann.
-    let match: (typeof granted)[number] | null = null;
-    let best = Infinity;
-    for (const s of granted) {
-      if (used.has(s.id)) continue;
-      if (s.ts > c.ts + MAX_LEAD_MS) break;
-      const lag = c.ts - s.ts;
-      if (lag > MAX_LAG_MS) continue;
-      // Versatz nach hinten wird bestraft, damit er nur als Notnagel greift.
-      const score = lag >= 0 ? lag : MAX_LAG_MS + Math.abs(lag);
-      if (score < best) {
-        best = score;
-        match = s;
-      }
-    }
+  for (const { crossing: c, scan: match } of results) {
     if (match) {
-      used.add(match.id);
       entries.push({
         kind: "paired",
         ts: c.ts,

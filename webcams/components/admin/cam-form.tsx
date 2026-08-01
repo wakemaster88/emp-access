@@ -66,6 +66,8 @@ const EMPTY: Cam = {
     tolerance: 3,
     cooldownSec: 900,
     contextCamIds: [],
+    instantAlert: true,
+    notifyShopMonitor: true,
   },
 };
 
@@ -501,6 +503,35 @@ export function CamForm({
                   })
                 }
               />
+            </Field>
+            <Field
+              label="Sofortmeldung"
+              hint="Ton im Kontrollzentrum, sobald ein einzelner Durchgang keinen passenden Scan hat. Reagiert nach wenigen Sekunden und ist dafür fehleranfälliger als der Fenster-Abgleich oben."
+              className="sm:col-span-2"
+            >
+              <div className="flex flex-wrap items-center gap-6">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    checked={data.tailgate.instantAlert}
+                    onChange={(v) =>
+                      update("tailgate", { ...data.tailgate, instantAlert: v })
+                    }
+                  />
+                  Ton im Kontrollzentrum
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    checked={data.tailgate.notifyShopMonitor}
+                    onChange={(v) =>
+                      update("tailgate", {
+                        ...data.tailgate,
+                        notifyShopMonitor: v,
+                      })
+                    }
+                  />
+                  Popup auf dem Kassen-Monitor
+                </label>
+              </div>
             </Field>
             <Field
               label="Zusätzliche Blickwinkel"

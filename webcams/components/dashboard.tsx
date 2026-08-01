@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Tile } from "./tiles";
 import { CamControlPanel } from "./cam-control-panel";
 import { DoorbirdListener } from "./doorbird-listener";
+import { TailgateAlertListener } from "./tailgate-alert-listener";
 import { WakeLock } from "./wake-lock";
 import { resolveLayout, findActiveLayout, type ResolvedLayout } from "@/lib/layout";
 import type { Config } from "@/lib/types";
@@ -227,6 +228,9 @@ function DashboardInner({ initialConfig }: DashboardProps) {
 
       {/* Doorbird ring overlay */}
       <DoorbirdListener doorbird={config.doorbird} go2rtcUrl={go2rtcUrl} />
+
+      {/* Ton und Hinweis bei einem Durchgang ohne gültigen Scan */}
+      <TailgateAlertListener />
 
       {/* Halte den Bildschirm wach */}
       <WakeLock />

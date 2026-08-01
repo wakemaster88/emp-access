@@ -51,6 +51,40 @@ export async function empAccessGetJson(
   }
 }
 
+export async function empAccessPostJson(
+  baseUrl: string,
+  apiToken: string,
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const url = joinUrl(baseUrl, path);
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal: signal ?? AbortSignal.timeout(15_000),
+  });
+  const text = await r.text();
+  if (!r.ok) {
+    throw new EmpAccessHttpError(
+      `emp-access HTTP ${r.status}`,
+      r.status,
+      text.slice(0, 400),
+    );
+  }
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return text;
+  }
+}
+
 /** Extrahiert eine Geräteliste aus typischen API-Antwortformen. */
 export function extractDevicesArray(json: unknown): Record<string, unknown>[] {
   if (Array.isArray(json)) {

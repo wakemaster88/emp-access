@@ -279,6 +279,17 @@ export const TailgateSchema = z.object({
    * macht aus dem Zählwert einen brauchbaren Beleg.
    */
   contextCamIds: z.array(z.string()).default([]),
+  /**
+   * Sofortmeldung bei einem einzelnen Durchgang ohne passenden Scan.
+   *
+   * Der Fenster-Alarm oben schlägt erst bei anhaltender Differenz an — gut
+   * gegen Fehlalarme, aber zu träge, um jemanden noch anzusprechen. Diese
+   * Meldung kommt nach wenigen Sekunden und ist dafür naturgemäß
+   * fehleranfälliger; wenn es am Abend zu oft piept, hier abschalten.
+   */
+  instantAlert: z.boolean().default(true),
+  /** Zusätzlich ein Popup auf dem Kassen-Monitor in emp-access. */
+  notifyShopMonitor: z.boolean().default(true),
 });
 
 export type TailgateConfig = z.infer<typeof TailgateSchema>;

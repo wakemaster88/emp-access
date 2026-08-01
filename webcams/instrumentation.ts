@@ -10,6 +10,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { ensureTailgateStarted } = await import("./lib/tailgate");
   ensureTailgateStarted();
+  const { ensureTailgateLiveStarted } = await import("./lib/tailgate-live");
+  ensureTailgateLiveStarted();
   void backfillScanArchive();
 }
 
