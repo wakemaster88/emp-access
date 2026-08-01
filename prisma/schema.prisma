@@ -141,6 +141,7 @@ model Account {
   emailRules      EmailRule[]
   emailSends      EmailSend[]
   announcements   MonitorAnnouncement[]
+  monitorAlerts   MonitorAlert[]
   slotBlocks      SlotBlock[]
   lostItems       LostItem[]
   irrigationSchedules IrrigationSchedule[]
@@ -767,6 +768,32 @@ model MonitorAnnouncement {
   dismissedAt DateTime?
 
   @@index([accountId, dismissedAt])
+}
+
+/// Warnung von aussen an den Kassen-/Check-in-Monitor, aktuell vom lokalen
+/// Kamera-Server: an der Drehkreuz-Kamera ist jemand durchgegangen, ohne dass
+/// ein gueltiger Scan dazu passt. Wird im Check-in als Popup angezeigt, bis
+/// ein Mitarbeiter es quittiert -> `acknowledgedAt`.
+///
+/// Bewusst getrennt von MonitorAnnouncement: Das sind Kurznachrichten von
+/// Mensch zu Mensch, die als Banner auf allen Public-Monitoren stehen. Ein
+/// Alarm hat einen Ausloeser, eine Dringlichkeit und einen anderen Adressaten.
+model MonitorAlert {
+  id             Int       @id @default(autoincrement())
+  accountId      Int
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Art des Alarms, damit die Anzeige sie unterscheiden kann (z. B. TAILGATE).
+  kind           String
+  message        String
+  /// Woher der Alarm kam, rein informativ (z. B. Kameraname).
+  source         String?
+  /// Wann der Vorfall war — kann vor `createdAt` liegen, weil die Erkennung
+  /// dem Ereignis ein paar Sekunden hinterherlaeuft.
+  occurredAt     DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([accountId, acknowledgedAt])
 }
 
 // ── Email-Automationen ───────────────────────────────────────────────────────

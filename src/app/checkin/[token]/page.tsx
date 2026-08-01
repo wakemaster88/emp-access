@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, useMemo, createContext, useCo
 import { use } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TailgateAlertPopup } from "@/components/checkin/tailgate-alert-popup";
 import {
   CheckCircle2,
   XCircle,
@@ -2261,6 +2262,9 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           inputRef={scanInputRef}
         />
       )}
+
+      {/* Warnung vom Drehkreuz: jemand ohne gueltigen Scan durchgegangen */}
+      <TailgateAlertPopup token={token} />
     </div>
   );
 }
