@@ -5,6 +5,10 @@ set -euo pipefail
 FACE_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV="$FACE_DIR/.venv"
 
+# Der Warmup importiert server.py ueber den Modulpfad, das klappt nur mit
+# face/ als Arbeitsverzeichnis (install/install.sh ruft uns aus hub/ auf).
+cd "$FACE_DIR"
+
 echo "1/3  Python-venv …"
 python3 -m venv "$VENV"
 source "$VENV/bin/activate"
