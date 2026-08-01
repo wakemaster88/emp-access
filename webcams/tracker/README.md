@@ -54,6 +54,8 @@ WEBCAMS_TRACKER_DEVICE=cpu uvicorn main:app --host 127.0.0.1 --port 8088
 | `WEBCAMS_TRACKER_CONF`         | `0.4`                | Confidence-Schwelle für Personen            |
 | `WEBCAMS_TRACKER_RTSP_BASE`    | (aus)                | Streams von hier statt direkt von der Cam   |
 | `WEBCAMS_TRACKER_LINE_MARGIN`  | `0.08`               | Totzone um die Zähllinie (Anteil Bildhöhe)  |
+| `WEBCAMS_TRACKER_CROSSING_SNAPSHOTS` | `1`            | Bild je Durchgang mitschreiben (`0` = aus)  |
+| `WEBCAMS_TRACKER_SNAPSHOT_RETENTION_DAYS` | `30`      | Aufbewahrung dieser Bilder in Tagen         |
 
 ### Streams über go2rtc beziehen
 
@@ -77,6 +79,19 @@ wenn der Fußpunkt weiter als `WEBCAMS_TRACKER_LINE_MARGIN × Bildhöhe` von ihr
 entfernt ist. Ohne das erzeugt eine einzelne wartende Person — an einem
 Drehkreuz der Normalfall — im Sekundentakt Wechsel zwischen „rein" und
 „raus". Zu große Werte verschlucken dagegen kurze Durchgänge.
+
+### Bild je Durchgang
+
+Zu jedem erkannten Durchgang wird der annotierte Frame nach
+`logs/people/<cam>/snaps/<Tag>/<Zeitstempel>.jpg` geschrieben, samt
+eingebranntem Zeitstempel. Ob ein Durchgang durch einen Scan gedeckt war,
+stellt sich erst Minuten später im Dashboard heraus — dann zeigt die Kamera
+längst eine andere Szene. Deshalb wird im Moment des Durchgangs gespeichert
+und erst hinterher entschieden, welches Bild man braucht.
+
+Gehen mehrere Personen im selben Frame über die Linie, teilen sich die
+Ereignisse ein Bild. Bei rund 50 kB pro Bild und einigen hundert Durchgängen
+am Tag reichen 30 Tage Aufbewahrung für weniger als ein Gigabyte.
 
 ## Endpunkte
 

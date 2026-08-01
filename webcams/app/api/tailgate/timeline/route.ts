@@ -32,7 +32,7 @@ type Entry =
       ticket: string | null;
       lagSec: number;
     }
-  | { kind: "crossing-only"; ts: number }
+  | { kind: "crossing-only"; ts: number; snap: boolean }
   | { kind: "scan-only"; ts: number; device: string; ticket: string | null }
   | {
       kind: "denied";
@@ -137,7 +137,7 @@ export async function GET(req: Request) {
         lagSec: Math.round(((c.ts - match.ts) / 1000) * 10) / 10,
       });
     } else {
-      entries.push({ kind: "crossing-only", ts: c.ts });
+      entries.push({ kind: "crossing-only", ts: c.ts, snap: c.snap });
     }
   }
 

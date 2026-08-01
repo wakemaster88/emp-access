@@ -71,6 +71,8 @@ export interface CrossingEvent {
   /** Unix-Zeit in Millisekunden. */
   ts: number;
   dir: "in" | "out";
+  /** Ob zu diesem Durchgang ein Bild vorliegt. Bilder halten kürzer. */
+  snap: boolean;
 }
 
 /**
@@ -96,7 +98,39 @@ export async function fetchRecentCrossings(
     return list
       .map((e) => e as Record<string, unknown>)
       .filter((e) => typeof e.ts === "number" && (e.dir === "in" || e.dir === "out"))
-      .map((e) => ({ ts: e.ts as number, dir: e.dir as "in" | "out" }));
+      .map((e) => ({
+        ts: e.ts as number,
+        dir: e.dir as "in" | "out",
+        snap: e.snap === true,
+      }));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Holt das Bild, in dem ein Durchgang erkannt wurde.
+ *
+ * Der Sidecar hält die Bilder, weil nur er den Frame im richtigen Moment
+ * hat — ein später gezogener Kamera-Schnappschuss zeigt eine andere Szene.
+ */
+export async function fetchCrossingSnapshot(
+  camId: string,
+  ts: number,
+): Promise<Buffer | null> {
+  const url = `${await getSidecarUrl()}/counters/${encodeURIComponent(camId)}/snapshot/${ts}.jpg`;
+  const ctl = new AbortController();
+  const timeout = setTimeout(() => ctl.abort(), 5000);
+  try {
+    const r = await fetch(url, {
+      signal: ctl.signal,
+      cache: "no-store",
+      headers: await sidecarAuthHeaders(),
+    });
+    if (!r.ok) return null;
+    return Buffer.from(await r.arrayBuffer());
+  } catch {
+    return null;
   } finally {
     clearTimeout(timeout);
   }

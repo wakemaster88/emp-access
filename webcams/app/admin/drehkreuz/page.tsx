@@ -26,7 +26,7 @@ type Entry =
       ticket: string | null;
       lagSec: number;
     }
-  | { kind: "crossing-only"; ts: number }
+  | { kind: "crossing-only"; ts: number; snap: boolean }
   | { kind: "scan-only"; ts: number; device: string; ticket: string | null }
   | {
       kind: "denied";
@@ -37,6 +37,7 @@ type Entry =
     };
 
 interface Timeline {
+  camId: string;
   camName: string;
   minutes: number;
   from: number;
@@ -67,6 +68,7 @@ export default function DrehkreuzPage() {
   const [minutes, setMinutes] = useState(60);
   const [data, setData] = useState<Timeline | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lightbox, setLightbox] = useState<{ url: string; ts: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -187,7 +189,14 @@ export default function DrehkreuzPage() {
                 In diesem Zeitraum ist nichts passiert.
               </p>
             ) : (
-              data.entries.map((e, i) => <Zeile key={`${e.kind}-${e.ts}-${i}`} e={e} />)
+              data.entries.map((e, i) => (
+                <Zeile
+                  key={`${e.kind}-${e.ts}-${i}`}
+                  e={e}
+                  camId={data.camId}
+                  onOpen={setLightbox}
+                />
+              ))
             )}
           </Card>
         </>
@@ -195,6 +204,26 @@ export default function DrehkreuzPage() {
 
       {!data && !loading && (
         <p className="text-sm text-foreground/55">Keine Daten abrufbar.</p>
+      )}
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-8"
+          onClick={() => setLightbox(null)}
+        >
+          <figure className="max-h-full max-w-4xl">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lightbox.url}
+              alt="Durchgang ohne Scan"
+              className="max-h-[80vh] rounded-lg"
+            />
+            <figcaption className="mt-2 text-center text-sm text-white/70">
+              Durchgang ohne Scan ·{" "}
+              {new Date(lightbox.ts).toLocaleString("de-DE")}
+            </figcaption>
+          </figure>
+        </div>
       )}
     </div>
   );
@@ -229,7 +258,15 @@ function Kennzahl({
   );
 }
 
-function Zeile({ e }: { e: Entry }) {
+function Zeile({
+  e,
+  camId,
+  onOpen,
+}: {
+  e: Entry;
+  camId: string;
+  onOpen: (v: { url: string; ts: number }) => void;
+}) {
   if (e.kind === "paired") {
     return (
       <div className="flex items-center gap-3 px-4 py-2 text-sm">
@@ -252,11 +289,24 @@ function Zeile({ e }: { e: Entry }) {
   }
 
   if (e.kind === "crossing-only") {
+    const url = `/api/tailgate/snapshot?camId=${encodeURIComponent(camId)}&ts=${e.ts}`;
     return (
       <div className="flex items-center gap-3 bg-amber-500/5 px-4 py-2 text-sm">
-        <span className="w-20 shrink-0 font-mono tabular-nums text-foreground/30">
-          —
-        </span>
+        {e.snap ? (
+          <button
+            type="button"
+            onClick={() => onOpen({ url, ts: e.ts })}
+            className="w-20 shrink-0 cursor-zoom-in overflow-hidden rounded border border-amber-500/30 transition-opacity hover:opacity-80"
+            title="Bild aus dem Moment des Durchgangs"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt="" className="h-11 w-full object-cover" />
+          </button>
+        ) : (
+          <span className="w-20 shrink-0 font-mono tabular-nums text-foreground/30">
+            —
+          </span>
+        )}
         <span className="min-w-0 flex-1 truncate text-amber-200">
           Durchgang ohne Scan
         </span>

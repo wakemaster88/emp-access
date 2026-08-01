@@ -61,10 +61,13 @@ from ptz import (  # type: ignore
 from people_history import (  # type: ignore
     aggregate_days,
     cleanup_all_in_root,
+    cleanup_snapshots,
     list_recent_events,
     load_today_counts,
     record_crossing,
     reset_today,
+    save_crossing_snapshot,
+    snapshot_file,
 )
 
 logging.basicConfig(
@@ -184,6 +187,12 @@ INFER_MAX_DET = int(os.environ.get("WEBCAMS_TRACKER_MAX_DET", "20"))
 # Wie lange Crossing-Events auf Disk bleiben. 0 = unbegrenzt.
 PEOPLE_HISTORY_RETENTION_DAYS = int(
     os.environ.get("WEBCAMS_PEOPLE_HISTORY_RETENTION_DAYS", "180")
+)
+# Bild je Durchgang mitschreiben — Beleg für Durchgänge ohne Scan.
+CROSSING_SNAPSHOTS = os.environ.get("WEBCAMS_TRACKER_CROSSING_SNAPSHOTS", "1") != "0"
+# Deutlich kürzer als die Ereigniszeilen: Die sind winzig, die Bilder nicht.
+CROSSING_SNAPSHOT_RETENTION_DAYS = int(
+    os.environ.get("WEBCAMS_TRACKER_SNAPSHOT_RETENTION_DAYS", "30")
 )
 
 log.info("inference: device=%s imgsz=%d max_det=%d", DEVICE, INFER_IMGSZ, INFER_MAX_DET)
@@ -343,6 +352,92 @@ class HysteresisLineCounter:
         return crossings
 
 
+def annotate_frame(
+    frame: Any,
+    detections: Any,
+    start_pt: sv.Point,
+    end_pt: sv.Point,
+    margin_px: float,
+    in_count: int,
+    out_count: int,
+    box_annotator: Any,
+    label_annotator: Any,
+    stamp: str | None = None,
+) -> Any:
+    """Zeichnet Zähllinie, Totzone, Boxen und Zählerstand ins Bild.
+
+    Wird sowohl für den /debug-Endpoint benutzt als auch für den Schnappschuss
+    beim Durchgang — der ist als Beleg nur brauchbar, wenn man sieht, wer wo
+    über die Linie ging.
+    """
+    annotated = frame.copy()
+    # Totzone als Band um die Linie — beim Justieren muss man sehen, wo
+    # nicht gezählt wird.
+    ldx = end_pt.x - start_pt.x
+    ldy = end_pt.y - start_pt.y
+    llen = math.hypot(ldx, ldy) or 1.0
+    ox = int(round(-ldy / llen * margin_px))
+    oy = int(round(ldx / llen * margin_px))
+    for sign in (1, -1):
+        cv2.line(
+            annotated,
+            (start_pt.x + sign * ox, start_pt.y + sign * oy),
+            (end_pt.x + sign * ox, end_pt.y + sign * oy),
+            (120, 120, 120),
+            1,
+        )
+    cv2.line(
+        annotated,
+        (start_pt.x, start_pt.y),
+        (end_pt.x, end_pt.y),
+        (255, 220, 60),
+        2,
+    )
+    # Pfeilspitze in der Mitte: zeigt Richtung „rein"
+    mx = (start_pt.x + end_pt.x) // 2
+    my = (start_pt.y + end_pt.y) // 2
+    cv2.arrowedLine(
+        annotated,
+        (start_pt.x, start_pt.y),
+        (mx, my),
+        (255, 220, 60),
+        2,
+        tipLength=0.3,
+    )
+    annotated = box_annotator.annotate(scene=annotated, detections=detections)
+    if detections.tracker_id is not None and len(detections) > 0:
+        labels = [f"#{tid}" for tid in detections.tracker_id]
+        annotated = label_annotator.annotate(
+            scene=annotated, detections=detections, labels=labels
+        )
+    cv2.putText(
+        annotated,
+        f"in {in_count}  out {out_count}  delta {in_count - out_count}",
+        (10, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    if stamp:
+        # Zeitstempel unten mit Balken dahinter: Ein Beleg, den jemand
+        # weiterreicht, muss ohne die Dateiablage lesbar bleiben.
+        h, w = annotated.shape[:2]
+        cv2.rectangle(annotated, (0, h - 26), (w, h), (0, 0, 0), -1)
+        cv2.putText(
+            annotated,
+            stamp,
+            (8, h - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+    return annotated
+
+
 def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
     """Endlosschleife: liest Stream, trackt, zählt. Reconnect bei Fehlern.
 
@@ -460,6 +555,51 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                         counter.in_count += new_in
                         counter.out_count += new_out
 
+                        # Beleg für den Moment festhalten. Ob der Durchgang
+                        # gedeckt war, weiß erst das Dashboard, und dann ist
+                        # die Szene längst eine andere.
+                        if CROSSING_SNAPSHOTS:
+                            frame = result.orig_img
+                            if frame is not None:
+                                try:
+                                    richtung = ", ".join(
+                                        sorted(
+                                            {
+                                                "rein" if d == "in" else "raus"
+                                                for _, d in crossed
+                                            }
+                                        )
+                                    )
+                                    shot = annotate_frame(
+                                        frame,
+                                        detections,
+                                        start_pt,
+                                        end_pt,
+                                        margin_px,
+                                        counter.in_count,
+                                        counter.out_count,
+                                        box_annotator,
+                                        label_annotator,
+                                        stamp=(
+                                            time.strftime(
+                                                "%d.%m.%Y %H:%M:%S",
+                                                time.localtime(ts_now),
+                                            )
+                                            + f"  {cam_id}  {richtung}"
+                                        ),
+                                    )
+                                    ok, buf = cv2.imencode(
+                                        ".jpg", shot, [cv2.IMWRITE_JPEG_QUALITY, 80]
+                                    )
+                                    if ok:
+                                        save_crossing_snapshot(
+                                            cam_id, ts_now, buf.tobytes()
+                                        )
+                                except Exception as exc:
+                                    log.warning(
+                                        "snapshot[%s] failed: %s", cam_id, exc
+                                    )
+
                 counter.last_person_count = len(detections)
                 counter.last_update = time.time()
 
@@ -485,62 +625,16 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                 if frame_idx % 15 == 0:
                     frame = result.orig_img
                     if frame is not None:
-                        annotated = frame.copy()
-                        # Totzone als Band um die Linie — beim Justieren muss
-                        # man sehen, wo nicht gezählt wird.
-                        ldx = end_pt.x - start_pt.x
-                        ldy = end_pt.y - start_pt.y
-                        llen = math.hypot(ldx, ldy) or 1.0
-                        ox = int(round(-ldy / llen * margin_px))
-                        oy = int(round(ldx / llen * margin_px))
-                        for sign in (1, -1):
-                            cv2.line(
-                                annotated,
-                                (start_pt.x + sign * ox, start_pt.y + sign * oy),
-                                (end_pt.x + sign * ox, end_pt.y + sign * oy),
-                                (120, 120, 120),
-                                1,
-                            )
-                        # Linie + Counts
-                        cv2.line(
-                            annotated,
-                            (start_pt.x, start_pt.y),
-                            (end_pt.x, end_pt.y),
-                            (255, 220, 60),
-                            2,
-                        )
-                        # Pfeilspitze in der Mitte: zeigt Richtung „rein"
-                        mx = (start_pt.x + end_pt.x) // 2
-                        my = (start_pt.y + end_pt.y) // 2
-                        cv2.arrowedLine(
-                            annotated,
-                            (start_pt.x, start_pt.y),
-                            (mx, my),
-                            (255, 220, 60),
-                            2,
-                            tipLength=0.3,
-                        )
-                        # Boxes + Track-IDs
-                        annotated = box_annotator.annotate(
-                            scene=annotated, detections=detections
-                        )
-                        if detections.tracker_id is not None and len(detections) > 0:
-                            labels = [f"#{tid}" for tid in detections.tracker_id]
-                            annotated = label_annotator.annotate(
-                                scene=annotated,
-                                detections=detections,
-                                labels=labels,
-                            )
-                        # Counter-Overlay
-                        cv2.putText(
-                            annotated,
-                            f"in {counter.in_count}  out {counter.out_count}  delta {counter.in_count - counter.out_count}",
-                            (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.7,
-                            (255, 255, 255),
-                            2,
-                            cv2.LINE_AA,
+                        annotated = annotate_frame(
+                            frame,
+                            detections,
+                            start_pt,
+                            end_pt,
+                            margin_px,
+                            counter.in_count,
+                            counter.out_count,
+                            box_annotator,
+                            label_annotator,
                         )
                         ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
                         if ok:
@@ -795,6 +889,14 @@ class TrackerManager:
                     cleanup_all_in_root(PEOPLE_HISTORY_RETENTION_DAYS)
                 except Exception as exc:
                     log.warning("people history cleanup error: %s", exc)
+                try:
+                    # Eigene Frist: Die Bilder wiegen deutlich mehr als die
+                    # Ereigniszeilen und dürfen früher weg.
+                    gone = cleanup_snapshots([], CROSSING_SNAPSHOT_RETENTION_DAYS)
+                    if gone:
+                        log.info("removed %d snapshot day folders", gone)
+                except Exception as exc:
+                    log.warning("snapshot cleanup error: %s", exc)
                 time.sleep(3600.0)
 
         t = threading.Thread(
@@ -1019,11 +1121,27 @@ def counter_history(cam_id: str, days: int = 7) -> dict[str, Any]:
 @app.get("/counters/{cam_id}/recent")
 def counter_recent(cam_id: str, limit: int = 50) -> dict[str, Any]:
     """Letzte N Crossing-Events (für Debug/Live-Tail im UI)."""
-    limit = max(1, min(500, limit))
+    limit = max(1, min(2000, limit))
     return {
         "camId": cam_id,
-        "events": list_recent_events(cam_id, limit=limit),
+        "events": list_recent_events(
+            cam_id, limit=limit, snapshot_days=max(1, CROSSING_SNAPSHOT_RETENTION_DAYS)
+        ),
     }
+
+
+@app.get("/counters/{cam_id}/snapshot/{ts}.jpg")
+def crossing_snapshot(cam_id: str, ts: int) -> Response:
+    """Das Bild, in dem der Durchgang zum Zeitstempel erkannt wurde."""
+    path = snapshot_file(cam_id, ts)
+    if path is None:
+        raise HTTPException(status_code=404, detail="no snapshot")
+    return Response(
+        content=path.read_bytes(),
+        media_type="image/jpeg",
+        # Der Zeitstempel ist eindeutig, das Bild ändert sich nie mehr.
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @app.post("/reload")

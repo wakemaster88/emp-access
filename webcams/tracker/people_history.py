@@ -87,6 +87,85 @@ def record_crossing(cam_id: str, direction: str, ts: float | None = None) -> Non
             f.write(line + "\n")
 
 
+def _snap_dir(cam_id: str, ts_ms: int) -> Path:
+    day = datetime.fromtimestamp(ts_ms / 1000).strftime("%Y-%m-%d")
+    return _cam_dir(cam_id) / "snaps" / day
+
+
+def save_crossing_snapshot(cam_id: str, ts: float, jpeg: bytes) -> None:
+    """Legt das Bild ab, in dem ein Durchgang erkannt wurde.
+
+    Ob ein Durchgang gedeckt war, stellt sich erst Minuten später heraus —
+    dann ist die Szene längst eine andere. Deshalb wird zum Zeitpunkt des
+    Durchgangs gespeichert und erst hinterher entschieden, welches Bild man
+    braucht.
+
+    Der Dateiname ist der Zeitstempel des Events, damit sich Bild und Zeile
+    in der JSONL ohne Zusatzindex zuordnen lassen. Gehen mehrere Personen im
+    selben Frame über die Linie, teilen sie sich das Bild — es ist ja dasselbe.
+    """
+    if not cam_id or not jpeg:
+        return
+    ts_ms = int(ts * 1000)
+    path = _snap_dir(cam_id, ts_ms) / f"{ts_ms}.jpg"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_bytes(jpeg)
+    except Exception as exc:
+        log.warning("snapshot %s failed: %s", path, exc)
+
+
+def snapshot_file(cam_id: str, ts_ms: int) -> Path | None:
+    path = _snap_dir(cam_id, ts_ms) / f"{ts_ms}.jpg"
+    return path if path.is_file() else None
+
+
+def _snapshot_stamps(cam_id: str, days: int) -> set[int]:
+    """Vorhandene Bild-Zeitstempel der letzten Tage.
+
+    Ein Verzeichnis-Listing pro Tag statt einer Existenzprüfung pro Event —
+    bei mehreren hundert Durchgängen macht das den Unterschied.
+    """
+    out: set[int] = set()
+    today = datetime.now().date()
+    for offset in range(max(1, days)):
+        day = (today - timedelta(days=offset)).isoformat()
+        d = _cam_dir(cam_id) / "snaps" / day
+        if not d.is_dir():
+            continue
+        for f in d.iterdir():
+            if f.suffix == ".jpg" and f.stem.isdigit():
+                out.add(int(f.stem))
+    return out
+
+
+def cleanup_snapshots(cam_ids: list[str], retention_days: int) -> int:
+    """Löscht Bild-Tagesordner älter als `retention_days`.
+
+    Getrennt von der Aufbewahrung der Ereigniszeilen: Die JSONL sind winzig
+    und dürfen lange liegen, die Bilder sind es nicht.
+    """
+    if retention_days <= 0:
+        return 0
+    cutoff = (datetime.now().date() - timedelta(days=retention_days)).isoformat()
+    removed = 0
+    roots = [_cam_dir(c) / "snaps" for c in cam_ids] if cam_ids else []
+    if not roots and HISTORY_ROOT.exists():
+        roots = [d / "snaps" for d in HISTORY_ROOT.iterdir() if d.is_dir()]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for d in root.iterdir():
+            if d.is_dir() and d.name < cutoff:
+                try:
+                    shutil.rmtree(d)
+                    removed += 1
+                except Exception as exc:
+                    log.warning("cleanup %s failed: %s", d, exc)
+    return removed
+
+
 def _read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
     if not path.exists():
         return
@@ -209,11 +288,14 @@ def cleanup_history(cam_ids: list[str], retention_days: int) -> int:
     return removed
 
 
-def list_recent_events(cam_id: str, limit: int = 100) -> list[dict[str, Any]]:
+def list_recent_events(
+    cam_id: str, limit: int = 100, snapshot_days: int = 30
+) -> list[dict[str, Any]]:
     """Letzte N Events (heute zuerst, dann gestern, …) — für Debug/UI.
 
-    Erzeugt `[{ts, dir}, ...]`. Bricht ab sobald `limit` erreicht ist;
-    durchwühlt also nicht das ganze Archiv.
+    Erzeugt `[{ts, dir, snap}, ...]`. `snap` sagt, ob zu dem Event ein Bild
+    vorliegt; die Bilder werden kürzer aufbewahrt als die Zeilen. Bricht ab
+    sobald `limit` erreicht ist; durchwühlt also nicht das ganze Archiv.
     """
     cam_dir = _cam_dir(cam_id)
     if not cam_dir.exists():
@@ -222,11 +304,13 @@ def list_recent_events(cam_id: str, limit: int = 100) -> list[dict[str, Any]]:
         (f for f in cam_dir.iterdir() if f.is_file() and f.name.endswith(".jsonl")),
         reverse=True,
     )
+    stamps = _snapshot_stamps(cam_id, snapshot_days)
     out: list[dict[str, Any]] = []
     for f in files:
         events = list(_read_jsonl(f))
         for ev in reversed(events):
-            out.append({"ts": ev.get("t", 0), "dir": ev.get("d", "")})
+            ts = ev.get("t", 0)
+            out.append({"ts": ts, "dir": ev.get("d", ""), "snap": ts in stamps})
             if len(out) >= limit:
                 return out
     return out
