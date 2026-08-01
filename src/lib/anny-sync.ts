@@ -5,6 +5,7 @@ import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
 import { fmtTimeBerlin } from "@/lib/anny-availability";
 import { berlinYmd } from "@/lib/berlin-day";
+import { findPredecessorTicket } from "@/lib/ticket-predecessor";
 
 /**
  * Slot-Uhrzeit (HH:mm) aus der tatsaechlichen Buchungszeit ableiten – fuer
@@ -1657,6 +1658,38 @@ export async function syncAnnyForAccount(
         const inherited: Record<string, unknown> = {};
         if (subCustData?.rfidCode) inherited.rfidCode = subCustData.rfidCode;
         if (subCustData?.profileImage) inherited.profileImage = subCustData.profileImage;
+
+        // Die customerDataMap kennt nur Buchungstickets (`anny:<customerId>:`)
+        // derselben ANNY-Kundennummer. Sie greift nicht, wenn ANNY beim
+        // Neuabschluss eine neue Kundennummer vergibt oder die Karte noch an
+        // einem Alt-Ticket (Reepay-Import) haengt. Dann ueber Person suchen,
+        // sonst startet das neue Abo ohne Karte und der Scan trifft weiter das
+        // abgelaufene Vorgaenger-Ticket.
+        if (!inherited.rfidCode || !inherited.profileImage) {
+          try {
+            const predecessor = await findPredecessorTicket(prisma.ticket, accountId, {
+              firstName: ticketData.firstName,
+              lastName: ticketData.lastName,
+              email: ticketData.email,
+            });
+            if (predecessor) {
+              if (!inherited.rfidCode && predecessor.rfidCode) {
+                inherited.rfidCode = predecessor.rfidCode;
+              }
+              if (!inherited.profileImage && predecessor.profileImage) {
+                inherited.profileImage = predecessor.profileImage;
+              }
+              console.log(
+                `[anny sync] account=${accountId} Abo ${uuid}: Karte/Foto von Ticket ${predecessor.ticketId} uebernommen (match=${predecessor.matchedBy})`,
+              );
+            }
+          } catch (e) {
+            console.error(
+              `[anny sync] account=${accountId} Vorgaenger-Suche fuer ${uuid} fehlgeschlagen:`,
+              e instanceof Error ? e.message : String(e),
+            );
+          }
+        }
         if (paymentBlock) {
           (ticketData as Record<string, unknown>).extras = {
             paymentPause: {

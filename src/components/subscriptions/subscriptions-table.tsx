@@ -77,6 +77,7 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
     id: s.id,
     name: s.name,
     areaIds: s.areas.map((a) => a.id),
+    requiresRfid: s.requiresRfid ?? false,
   }));
 
   function toggleExpand(id: number) {

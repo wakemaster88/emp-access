@@ -110,6 +110,7 @@ export default async function TicketsPage({ searchParams }: Props) {
         defaultSlotStart: true,
         defaultSlotEnd: true,
         defaultValidityDurationMinutes: true,
+        requiresRfid: true,
         areas: { select: { id: true } },
       },
     }),
@@ -127,6 +128,7 @@ export default async function TicketsPage({ searchParams }: Props) {
         defaultSlotEnd: true,
         defaultValidityDurationMinutes: true,
         requiresPhoto: true,
+        requiresRfid: true,
         serviceAreas: {
           orderBy: { id: "asc" },
           select: { accessAreaId: true },

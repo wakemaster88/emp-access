@@ -120,12 +120,14 @@ interface Sub {
   id: number;
   name: string;
   areaIds?: number[];
+  requiresRfid?: boolean;
 }
 
 interface Svc {
   id: number;
   name: string;
   requiresPhoto?: boolean;
+  requiresRfid?: boolean;
   areaIds?: number[];
 }
 
@@ -195,6 +197,14 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
 
   const selectedService = services.find((s) => String(s.id) === form.serviceId);
   const needsPhoto = !!selectedService?.requiresPhoto && !profileImage;
+
+  // Abo/Service verlangt eine Karte, es ist aber keine hinterlegt. Dann ist
+  // dieses Ticket nicht scanbar: Der Scanner findet ueber die Karte nur das
+  // alte Ticket der Person und weist ab, sobald das abgelaufen ist.
+  const selectedSub = subscriptions.find((s) => String(s.id) === form.subscriptionId);
+  const needsCard =
+    (!!selectedSub?.requiresRfid || !!selectedService?.requiresRfid)
+    && !form.code.trim();
 
   useEffect(() => {
     if (ticket) {
@@ -428,6 +438,11 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                     Foto fehlt
                   </Badge>
                 )}
+                {needsCard && (
+                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    Karte fehlt
+                  </Badge>
+                )}
               </div>
               {ticket?.ticketTypeName && (
                 <p className="text-xs text-slate-400 mt-0.5 truncate">{ticket.ticketTypeName}</p>
@@ -492,6 +507,13 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                 <ScanLine className="h-3.5 w-3.5 text-indigo-500" />Code
               </Label>
               <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-sm h-10" placeholder="Scannen oder eingeben …" autoComplete="off" autoFocus={autoFocusCode} />
+              {needsCard && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-500">
+                  Dieser Tarif verlangt eine Karte. Ohne Code ist das Ticket nicht
+                  scanbar – hängt die Karte noch am alten Ticket, hier einscannen
+                  und „Bändchen umhängen“ bestätigen.
+                </p>
+              )}
             </div>
 
             {/* 2. Name */}

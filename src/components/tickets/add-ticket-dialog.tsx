@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Loader2, ScanLine, Users } from "lucide-react";
+import { Plus, Loader2, ScanLine, Users, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Area {
@@ -36,6 +36,7 @@ interface Sub extends DefaultValidity {
   id: number;
   name: string;
   areaIds?: number[];
+  requiresRfid?: boolean;
 }
 
 interface Svc extends DefaultValidity {
@@ -44,6 +45,7 @@ interface Svc extends DefaultValidity {
   areaIds?: number[];
   /** Hauptressource des Service - bevorzugt vor `areaIds[0]`. */
   mainAccessAreaId?: number | null;
+  requiresRfid?: boolean;
 }
 
 function toDateInput(val: string | Date | null | undefined): string {
@@ -87,6 +89,12 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
     ...subscriptions.map((s) => ({ id: String(s.id), name: s.name, type: "subscription" as const, data: s })),
   ];
 
+  const selectedOption = allOptions.find((o) => o.id === selectedId && o.type === selectedType);
+  // Ohne Code ist ein Abo-Ticket nicht scanbar. Haengt die Karte noch am
+  // Vorgaenger-Ticket, findet der Scanner nur dieses und weist ab, sobald es
+  // abgelaufen ist.
+  const missingCard = !!selectedOption?.data.requiresRfid && !code.trim();
+
   function reset() {
     setFirstName("");
     setLastName("");
@@ -124,7 +132,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
       payload.vereinId = Number(vereinId);
     }
 
-    const selected = allOptions.find((o) => o.id === selectedId && o.type === selectedType);
+    const selected = selectedOption;
     if (selected) {
       if (selected.type === "service") {
         payload.serviceId = Number(selected.id);
@@ -287,6 +295,16 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
               placeholder="RFID / Barcode / QR"
               autoComplete="off"
             />
+            {missingCard && (
+              <p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-500">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>
+                  „{selectedOption?.name}“ verlangt eine Karte. Ohne Code ist das
+                  Ticket nicht scanbar – hat die Person schon eine Karte, hier
+                  einscannen und beim Hinweis „Bändchen umhängen“ bestätigen.
+                </span>
+              </p>
+            )}
           </div>
 
           {allOptions.length > 0 && (

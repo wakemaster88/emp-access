@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { PrismaClient } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
+import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
 
 export async function GET(
   request: NextRequest,
@@ -137,7 +139,15 @@ export async function PUT(
     },
   });
 
-  return NextResponse.json(ticket);
+  // Siehe POST /api/tickets: Abo ohne Karte ist nicht scanbar - der Scan
+  // trifft dann weiter das alte Ticket der Person.
+  const warning = await buildMissingCardWarning(
+    db as unknown as PrismaClient,
+    accountId!,
+    ticket,
+  );
+
+  return NextResponse.json(warning ? { ...ticket, warning } : ticket);
 }
 
 export async function DELETE(

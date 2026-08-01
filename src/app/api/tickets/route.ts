@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { validateApiToken } from "@/lib/api-auth";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { ticketCreateSchema } from "@/lib/validators";
+import { buildMissingCardWarning } from "@/lib/ticket-card-warning";
 
 // Backoffice: gleiche Schema-Erweiterung wie im Public-Endpoint, damit
 // auch hier ein "Baendchen umhaengen" moeglich ist (transferCode=true).
@@ -138,7 +140,19 @@ export async function POST(request: NextRequest) {
       data: buildTicketData(),
     });
 
-    return NextResponse.json(ticket, { status: 201 });
+    // Abo/Service verlangt eine Karte, es wurde aber keine hinterlegt: Das
+    // Ticket ist dann nicht scanbar und der Scan trifft weiter das (ggf.
+    // abgelaufene) Vorgaenger-Ticket. Als Warnung mitgeben, nicht blockieren.
+    const warning = await buildMissingCardWarning(
+      db as unknown as PrismaClient,
+      accountId!,
+      ticket,
+    );
+
+    return NextResponse.json(
+      warning ? { ...ticket, warning } : ticket,
+      { status: 201 },
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // Prisma P2002: unique constraint - i.d.R. barcode bereits vergeben
