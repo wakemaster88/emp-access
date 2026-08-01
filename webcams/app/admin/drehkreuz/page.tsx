@@ -26,7 +26,7 @@ type Entry =
       ticket: string | null;
       lagSec: number;
     }
-  | { kind: "crossing-only"; ts: number; snap: boolean }
+  | { kind: "crossing-only"; ts: number; snap: boolean; ctx: string[] }
   | { kind: "scan-only"; ts: number; device: string; ticket: string | null }
   | {
       kind: "denied";
@@ -39,6 +39,7 @@ type Entry =
 interface Timeline {
   camId: string;
   camName: string;
+  camNames: Record<string, string>;
   minutes: number;
   from: number;
   truncated: boolean;
@@ -56,6 +57,17 @@ interface Timeline {
 
 const ZEITRAEUME = [15, 30, 60, 180, 480];
 
+/** Ein Blickwinkel auf denselben Moment. */
+interface Ansicht {
+  url: string;
+  label: string;
+}
+
+interface Lightbox {
+  ts: number;
+  ansichten: Ansicht[];
+}
+
 function uhr(ts: number) {
   return new Date(ts).toLocaleTimeString("de-DE", {
     hour: "2-digit",
@@ -68,7 +80,7 @@ export default function DrehkreuzPage() {
   const [minutes, setMinutes] = useState(60);
   const [data, setData] = useState<Timeline | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lightbox, setLightbox] = useState<{ url: string; ts: number } | null>(null);
+  const [lightbox, setLightbox] = useState<Lightbox | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -194,6 +206,7 @@ export default function DrehkreuzPage() {
                   key={`${e.kind}-${e.ts}-${i}`}
                   e={e}
                   camId={data.camId}
+                  camNames={data.camNames}
                   onOpen={setLightbox}
                 />
               ))
@@ -208,21 +221,27 @@ export default function DrehkreuzPage() {
 
       {lightbox && (
         <div
-          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-8"
+          className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/85 p-8"
           onClick={() => setLightbox(null)}
         >
-          <figure className="max-h-full max-w-4xl">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lightbox.url}
-              alt="Durchgang ohne Scan"
-              className="max-h-[80vh] rounded-lg"
-            />
-            <figcaption className="mt-2 text-center text-sm text-white/70">
-              Durchgang ohne Scan ·{" "}
-              {new Date(lightbox.ts).toLocaleString("de-DE")}
-            </figcaption>
-          </figure>
+          <p className="text-sm text-white/80">
+            Durchgang ohne Scan · {new Date(lightbox.ts).toLocaleString("de-DE")}
+          </p>
+          <div className="flex max-w-full flex-wrap items-start justify-center gap-4">
+            {lightbox.ansichten.map((a) => (
+              <figure key={a.url} className="max-w-xl">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={a.url}
+                  alt={a.label}
+                  className="max-h-[70vh] rounded-lg"
+                />
+                <figcaption className="mt-1 text-center text-xs text-white/60">
+                  {a.label}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -261,11 +280,13 @@ function Kennzahl({
 function Zeile({
   e,
   camId,
+  camNames,
   onOpen,
 }: {
   e: Entry;
   camId: string;
-  onOpen: (v: { url: string; ts: number }) => void;
+  camNames: Record<string, string>;
+  onOpen: (v: Lightbox) => void;
 }) {
   if (e.kind === "paired") {
     return (
@@ -289,26 +310,51 @@ function Zeile({
   }
 
   if (e.kind === "crossing-only") {
-    const url = `/api/tailgate/snapshot?camId=${encodeURIComponent(camId)}&ts=${e.ts}`;
+    const bild = (src?: string) =>
+      `/api/tailgate/snapshot?camId=${encodeURIComponent(camId)}&ts=${e.ts}` +
+      (src ? `&src=${encodeURIComponent(src)}` : "");
+    const ansichten: Ansicht[] = [
+      ...(e.snap
+        ? [{ url: bild(), label: camNames[camId] ?? camId }]
+        : []),
+      ...e.ctx.map((src) => ({ url: bild(src), label: camNames[src] ?? src })),
+    ];
+    const oeffnen = () => onOpen({ ts: e.ts, ansichten });
     return (
       <div className="flex items-center gap-3 bg-amber-500/5 px-4 py-2 text-sm">
-        {e.snap ? (
+        {ansichten.length > 0 ? (
           <button
             type="button"
-            onClick={() => onOpen({ url, ts: e.ts })}
+            onClick={oeffnen}
             className="w-20 shrink-0 cursor-zoom-in overflow-hidden rounded border border-amber-500/30 transition-opacity hover:opacity-80"
-            title="Bild aus dem Moment des Durchgangs"
+            title={`Bild aus dem Moment des Durchgangs · ${ansichten[0].label}`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt="" className="h-11 w-full object-cover" />
+            <img
+              src={ansichten[0].url}
+              alt=""
+              className="h-11 w-full object-cover"
+            />
           </button>
         ) : (
           <span className="w-20 shrink-0 font-mono tabular-nums text-foreground/30">
             —
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-amber-200">
-          Durchgang ohne Scan
+        <span className="flex min-w-0 flex-1 items-center gap-2 text-amber-200">
+          <span className="truncate">Durchgang ohne Scan</span>
+          {ansichten.slice(1).map((a) => (
+            <button
+              key={a.url}
+              type="button"
+              onClick={oeffnen}
+              className="w-20 shrink-0 cursor-zoom-in overflow-hidden rounded border border-white/15 transition-opacity hover:opacity-80"
+              title={`Zweiter Blickwinkel · ${a.label}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={a.url} alt="" className="h-11 w-full object-cover" />
+            </button>
+          ))}
         </span>
         <ArrowRight className="size-3.5 shrink-0 text-foreground/40" />
         <span className="w-20 shrink-0 font-mono tabular-nums text-amber-200">

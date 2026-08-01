@@ -271,6 +271,14 @@ export const TailgateSchema = z.object({
   tolerance: z.number().int().min(1).max(50).default(3),
   /** Sperrfrist nach einem Alarm, damit eine Störung nicht dauerfeuert. */
   cooldownSec: z.number().int().min(60).max(7200).default(900),
+  /**
+   * Weitere Kameras, von denen bei jedem Durchgang ein Bild mitgezogen wird.
+   *
+   * Die Zählkamera steht meist so, dass man die Linie gut sieht — aber nicht
+   * unbedingt das Gesicht. Ein zweiter Blickwinkel aus derselben Sekunde
+   * macht aus dem Zählwert einen brauchbaren Beleg.
+   */
+  contextCamIds: z.array(z.string()).default([]),
 });
 
 export type TailgateConfig = z.infer<typeof TailgateSchema>;

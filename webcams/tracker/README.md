@@ -57,6 +57,20 @@ WEBCAMS_TRACKER_DEVICE=cpu uvicorn main:app --host 127.0.0.1 --port 8088
 | `WEBCAMS_TRACKER_CROSSING_SNAPSHOTS` | `1`            | Bild je Durchgang mitschreiben (`0` = aus)  |
 | `WEBCAMS_TRACKER_SNAPSHOT_RETENTION_DAYS` | `30`      | Aufbewahrung dieser Bilder in Tagen         |
 
+### Zweiter Blickwinkel
+
+Die Zählkamera steht so, dass man die Linie gut sieht — Gesichter meist
+nicht. Über `tailgate.contextCamIds` (Admin → Kameras → Drehkreuz-Kontrolle)
+lassen sich weitere Kameras benennen, von denen bei jedem Durchgang ein Bild
+mitgespeichert wird, abgelegt als `<ts>-<camId>.jpg` neben dem eigenen Bild.
+
+Geholt wird über die Next-App (`/api/cams/<id>/snapshot`), nicht direkt von
+der Kamera: Ein per launchd gestarteter Prozess kommt unter macOS nicht ohne
+Weiteres ins lokale Netz, die App hat die Freigabe bereits. Der Abruf dauert
+rund eine Viertelsekunde und läuft in einem eigenen Thread, damit die
+Inferenz nicht bei jedem Durchgang stockt. Die Liste wird pro Durchgang neu
+gelesen — eine Änderung im Admin greift sofort, ohne Stream-Neustart.
+
 ### Streams über go2rtc beziehen
 
 Auf macOS verweigert die Sperre „Lokales Netzwerk" einem per launchd

@@ -12,6 +12,8 @@ import { PeopleHistoryCard } from "@/components/admin/people-history-card";
 
 interface CamFormProps {
   initial?: Cam;
+  /** Alle Kameras — für die Auswahl zusätzlicher Blickwinkel. */
+  allCams?: Cam[];
   onSaved: (cam: Cam) => void;
   onCancel: () => void;
 }
@@ -63,6 +65,7 @@ const EMPTY: Cam = {
     windowSec: 600,
     tolerance: 3,
     cooldownSec: 900,
+    contextCamIds: [],
   },
 };
 
@@ -88,7 +91,12 @@ function parseEmpDeviceIds(text: string): number[] {
   return out;
 }
 
-export function CamForm({ initial, onSaved, onCancel }: CamFormProps) {
+export function CamForm({
+  initial,
+  allCams = [],
+  onSaved,
+  onCancel,
+}: CamFormProps) {
   const editing = !!initial;
   const [data, setData] = useState<Cam>(initial ?? EMPTY);
   const [empIdsText, setEmpIdsText] = useState(
@@ -493,6 +501,42 @@ export function CamForm({ initial, onSaved, onCancel }: CamFormProps) {
                   })
                 }
               />
+            </Field>
+            <Field
+              label="Zusätzliche Blickwinkel"
+              hint="Von diesen Kameras wird bei jedem Durchgang ein Bild mitgespeichert — hilfreich, wenn die Zählkamera keine Gesichter zeigt."
+              className="sm:col-span-2"
+            >
+              <div className="flex flex-wrap gap-2">
+                {allCams
+                  .filter((c) => c.id !== data.id)
+                  .map((c) => {
+                    const on = data.tailgate.contextCamIds.includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() =>
+                          update("tailgate", {
+                            ...data.tailgate,
+                            contextCamIds: on
+                              ? data.tailgate.contextCamIds.filter(
+                                  (x) => x !== c.id,
+                                )
+                              : [...data.tailgate.contextCamIds, c.id],
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                          on
+                            ? "border-sky-400/50 bg-sky-500/15 text-sky-200"
+                            : "border-white/10 text-foreground/60 hover:border-white/25"
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    );
+                  })}
+              </div>
             </Field>
           </div>
         )}

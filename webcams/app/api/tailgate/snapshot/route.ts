@@ -13,16 +13,19 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const camId = url.searchParams.get("camId") ?? "";
   const ts = Number(url.searchParams.get("ts"));
+  // Ohne `src` das Bild der Zählkamera, sonst der zweite Blickwinkel.
+  const src = url.searchParams.get("src") ?? "";
   if (!camId || !Number.isFinite(ts) || ts <= 0) {
     return new Response("camId und ts erforderlich", { status: 400 });
   }
 
   const cfg = await loadConfig();
-  if (!cfg.cams.some((c) => c.id === camId)) {
+  const known = (id: string) => cfg.cams.some((c) => c.id === id);
+  if (!known(camId) || (src && !known(src))) {
     return new Response("unbekannte Kamera", { status: 404 });
   }
 
-  const jpeg = await fetchCrossingSnapshot(camId, Math.round(ts));
+  const jpeg = await fetchCrossingSnapshot(camId, Math.round(ts), src || undefined);
   if (!jpeg) return new Response("kein Bild", { status: 404 });
 
   return new Response(new Uint8Array(jpeg), {

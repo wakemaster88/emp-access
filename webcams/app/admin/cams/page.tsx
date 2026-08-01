@@ -302,6 +302,7 @@ export default function CamsPage() {
         size="lg"
       >
         <CamForm
+          allCams={cams}
           onSaved={() => {
             setCreating(false);
             refresh();
@@ -319,6 +320,7 @@ export default function CamsPage() {
         {editing && (
           <CamForm
             initial={editing}
+            allCams={cams}
             onSaved={() => {
               setEditing(null);
               refresh();

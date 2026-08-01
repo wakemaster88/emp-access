@@ -73,6 +73,8 @@ export interface CrossingEvent {
   dir: "in" | "out";
   /** Ob zu diesem Durchgang ein Bild vorliegt. Bilder halten kürzer. */
   snap: boolean;
+  /** Weitere Kameras mit einem Bild aus demselben Moment. */
+  ctx: string[];
 }
 
 /**
@@ -102,6 +104,7 @@ export async function fetchRecentCrossings(
         ts: e.ts as number,
         dir: e.dir as "in" | "out",
         snap: e.snap === true,
+        ctx: Array.isArray(e.ctx) ? (e.ctx as string[]) : [],
       }));
   } finally {
     clearTimeout(timeout);
@@ -117,8 +120,10 @@ export async function fetchRecentCrossings(
 export async function fetchCrossingSnapshot(
   camId: string,
   ts: number,
+  src?: string,
 ): Promise<Buffer | null> {
-  const url = `${await getSidecarUrl()}/counters/${encodeURIComponent(camId)}/snapshot/${ts}.jpg`;
+  const q = src ? `?src=${encodeURIComponent(src)}` : "";
+  const url = `${await getSidecarUrl()}/counters/${encodeURIComponent(camId)}/snapshot/${ts}.jpg${q}`;
   const ctl = new AbortController();
   const timeout = setTimeout(() => ctl.abort(), 5000);
   try {

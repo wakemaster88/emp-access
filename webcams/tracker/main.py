@@ -66,6 +66,7 @@ from people_history import (  # type: ignore
     load_today_counts,
     record_crossing,
     reset_today,
+    save_context_snapshot,
     save_crossing_snapshot,
     snapshot_file,
 )
@@ -438,6 +439,62 @@ def annotate_frame(
     return annotated
 
 
+def app_base_url() -> str:
+    cfg = read_config()
+    settings = (cfg.get("settings") or {}) if cfg else {}
+    tracker_settings = settings.get("tracker") or {}
+    return str(tracker_settings.get("appUrl") or "http://127.0.0.1:3000").rstrip("/")
+
+
+def context_cam_ids(cam_id: str) -> list[str]:
+    """Weitere Blickwinkel laut Config.
+
+    Wird bei jedem Durchgang frisch gelesen (die Config hängt an einem
+    mtime-Cache, kostet also praktisch nur ein `stat`). So greift eine
+    Änderung im Admin sofort, statt einen Stream-Neustart zu erzwingen —
+    für eine Kameraliste wären ein paar Sekunden Blindheit ein schlechter
+    Tausch.
+    """
+    for cam in read_config().get("cams") or []:
+        if cam.get("id") == cam_id:
+            ids = (cam.get("tailgate") or {}).get("contextCamIds") or []
+            return [str(c) for c in ids if c and c != cam_id]
+    return []
+
+
+def grab_context_snapshots(cam_id: str, ts: float, src_cam_ids: list[str]) -> None:
+    """Zieht Bilder weiterer Kameras zum Zeitpunkt eines Durchgangs.
+
+    Läuft in einem eigenen Thread: Der Abruf dauert rund eine Viertelsekunde
+    und würde die Inferenz sonst bei jedem Durchgang ausbremsen — bei einer
+    Gruppe am Drehkreuz mehrfach hintereinander.
+
+    Geholt wird über die App, nicht direkt von der Kamera: Ein per launchd
+    gestarteter Prozess kommt unter macOS nicht ohne Weiteres ins lokale
+    Netz, die App hat die Freigabe bereits.
+    """
+    import requests
+
+    base = app_base_url()
+    for src in src_cam_ids:
+        if not src or src == cam_id:
+            continue
+        try:
+            r = requests.get(
+                f"{base}/api/cams/{src}/snapshot",
+                headers=app_auth_headers(),
+                timeout=6.0,
+            )
+            if r.ok and r.content:
+                save_context_snapshot(cam_id, ts, src, r.content)
+            else:
+                log.warning(
+                    "context snapshot %s: HTTP %s", src, getattr(r, "status_code", "?")
+                )
+        except Exception as exc:
+            log.warning("context snapshot %s failed: %s", src, exc)
+
+
 def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
     """Endlosschleife: liest Stream, trackt, zählt. Reconnect bei Fehlern.
 
@@ -599,6 +656,14 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                                     log.warning(
                                         "snapshot[%s] failed: %s", cam_id, exc
                                     )
+                            ctx_cams = context_cam_ids(cam_id)
+                            if ctx_cams:
+                                threading.Thread(
+                                    target=grab_context_snapshots,
+                                    args=(cam_id, ts_now, ctx_cams),
+                                    name=f"ctx-snap-{cam_id}",
+                                    daemon=True,
+                                ).start()
 
                 counter.last_person_count = len(detections)
                 counter.last_update = time.time()
@@ -1131,9 +1196,10 @@ def counter_recent(cam_id: str, limit: int = 50) -> dict[str, Any]:
 
 
 @app.get("/counters/{cam_id}/snapshot/{ts}.jpg")
-def crossing_snapshot(cam_id: str, ts: int) -> Response:
-    """Das Bild, in dem der Durchgang zum Zeitstempel erkannt wurde."""
-    path = snapshot_file(cam_id, ts)
+def crossing_snapshot(cam_id: str, ts: int, src: str | None = None) -> Response:
+    """Das Bild zum Durchgang — ohne `src` das der Zählkamera, sonst das
+    einer weiteren Kamera aus demselben Moment."""
+    path = snapshot_file(cam_id, ts, src)
     if path is None:
         raise HTTPException(status_code=404, detail="no snapshot")
     return Response(

@@ -116,18 +116,43 @@ def save_crossing_snapshot(cam_id: str, ts: float, jpeg: bytes) -> None:
         log.warning("snapshot %s failed: %s", path, exc)
 
 
-def snapshot_file(cam_id: str, ts_ms: int) -> Path | None:
-    path = _snap_dir(cam_id, ts_ms) / f"{ts_ms}.jpg"
+def save_context_snapshot(cam_id: str, ts: float, src_cam_id: str, jpeg: bytes) -> None:
+    """Legt das Bild einer weiteren Kamera zum selben Durchgang ab.
+
+    Die Zählkamera sieht die Linie, aber oft nicht das Gesicht. Das Bild
+    hängt am Zeitstempel des Durchgangs, damit beide Blickwinkel zusammen
+    gefunden werden.
+    """
+    if not cam_id or not src_cam_id or not jpeg:
+        return
+    ts_ms = int(ts * 1000)
+    safe = "".join(c for c in src_cam_id if c.isalnum() or c in "-_")
+    path = _snap_dir(cam_id, ts_ms) / f"{ts_ms}-{safe}.jpg"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_bytes(jpeg)
+    except Exception as exc:
+        log.warning("context snapshot %s failed: %s", path, exc)
+
+
+def snapshot_file(cam_id: str, ts_ms: int, src_cam_id: str | None = None) -> Path | None:
+    name = f"{ts_ms}.jpg"
+    if src_cam_id:
+        safe = "".join(c for c in src_cam_id if c.isalnum() or c in "-_")
+        name = f"{ts_ms}-{safe}.jpg"
+    path = _snap_dir(cam_id, ts_ms) / name
     return path if path.is_file() else None
 
 
-def _snapshot_stamps(cam_id: str, days: int) -> set[int]:
-    """Vorhandene Bild-Zeitstempel der letzten Tage.
+def _snapshot_stamps(cam_id: str, days: int) -> tuple[set[int], dict[int, list[str]]]:
+    """Vorhandene Bilder der letzten Tage: eigene und die weiterer Kameras.
 
     Ein Verzeichnis-Listing pro Tag statt einer Existenzprüfung pro Event —
     bei mehreren hundert Durchgängen macht das den Unterschied.
     """
-    out: set[int] = set()
+    own: set[int] = set()
+    ctx: dict[int, list[str]] = {}
     today = datetime.now().date()
     for offset in range(max(1, days)):
         day = (today - timedelta(days=offset)).isoformat()
@@ -135,9 +160,16 @@ def _snapshot_stamps(cam_id: str, days: int) -> set[int]:
         if not d.is_dir():
             continue
         for f in d.iterdir():
-            if f.suffix == ".jpg" and f.stem.isdigit():
-                out.add(int(f.stem))
-    return out
+            if f.suffix != ".jpg":
+                continue
+            stem = f.stem
+            if stem.isdigit():
+                own.add(int(stem))
+            elif "-" in stem:
+                head, _, src = stem.partition("-")
+                if head.isdigit() and src:
+                    ctx.setdefault(int(head), []).append(src)
+    return own, ctx
 
 
 def cleanup_snapshots(cam_ids: list[str], retention_days: int) -> int:
@@ -293,8 +325,9 @@ def list_recent_events(
 ) -> list[dict[str, Any]]:
     """Letzte N Events (heute zuerst, dann gestern, …) — für Debug/UI.
 
-    Erzeugt `[{ts, dir, snap}, ...]`. `snap` sagt, ob zu dem Event ein Bild
-    vorliegt; die Bilder werden kürzer aufbewahrt als die Zeilen. Bricht ab
+    Erzeugt `[{ts, dir, snap, ctx}, ...]`. `snap` sagt, ob zu dem Event ein
+    Bild der Zählkamera vorliegt, `ctx` nennt weitere Kameras mit Bild zum
+    selben Moment. Bilder werden kürzer aufbewahrt als die Zeilen. Bricht ab
     sobald `limit` erreicht ist; durchwühlt also nicht das ganze Archiv.
     """
     cam_dir = _cam_dir(cam_id)
@@ -304,13 +337,20 @@ def list_recent_events(
         (f for f in cam_dir.iterdir() if f.is_file() and f.name.endswith(".jsonl")),
         reverse=True,
     )
-    stamps = _snapshot_stamps(cam_id, snapshot_days)
+    stamps, ctx = _snapshot_stamps(cam_id, snapshot_days)
     out: list[dict[str, Any]] = []
     for f in files:
         events = list(_read_jsonl(f))
         for ev in reversed(events):
             ts = ev.get("t", 0)
-            out.append({"ts": ts, "dir": ev.get("d", ""), "snap": ts in stamps})
+            out.append(
+                {
+                    "ts": ts,
+                    "dir": ev.get("d", ""),
+                    "snap": ts in stamps,
+                    "ctx": sorted(ctx.get(ts, [])),
+                }
+            )
             if len(out) >= limit:
                 return out
     return out

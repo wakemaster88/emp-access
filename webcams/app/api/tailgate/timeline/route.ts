@@ -32,7 +32,7 @@ type Entry =
       ticket: string | null;
       lagSec: number;
     }
-  | { kind: "crossing-only"; ts: number; snap: boolean }
+  | { kind: "crossing-only"; ts: number; snap: boolean; ctx: string[] }
   | { kind: "scan-only"; ts: number; device: string; ticket: string | null }
   | {
       kind: "denied";
@@ -137,7 +137,12 @@ export async function GET(req: Request) {
         lagSec: Math.round(((c.ts - match.ts) / 1000) * 10) / 10,
       });
     } else {
-      entries.push({ kind: "crossing-only", ts: c.ts, snap: c.snap });
+      entries.push({
+        kind: "crossing-only",
+        ts: c.ts,
+        snap: c.snap,
+        ctx: c.ctx,
+      });
     }
   }
 
@@ -170,6 +175,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     camId: cam.id,
     camName: cam.name,
+    /** Klarnamen der Kameras, damit das UI die Blickwinkel benennen kann. */
+    camNames: Object.fromEntries(cfg.cams.map((c) => [c.id, c.name])),
     from,
     minutes,
     /** Reicht eine der beiden Quellen nicht über den ganzen Zeitraum? */
