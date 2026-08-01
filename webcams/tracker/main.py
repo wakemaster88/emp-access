@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -79,6 +80,21 @@ CONFIG_PATH = Path(
     )
 )
 YOLO_MODEL = os.environ.get("WEBCAMS_TRACKER_MODEL", "yolov8n.pt")
+
+# Streams optional über go2rtc statt direkt von der Kamera beziehen.
+#
+# Auf macOS verweigert die „Lokales Netzwerk"-Sperre einem per launchd
+# gestarteten Prozess den Zugriff auf die Kameras — RTSP scheitert dann mit
+# „No route to host", obwohl dieselbe URL aus einer Shell funktioniert.
+# go2rtc hat die Freigabe bereits und veröffentlicht jeden Stream unter
+# ``<camId>_sub`` auf Loopback, das von der Sperre ausgenommen ist.
+# Nebeneffekt: die Kamera muss den Substream nur einmal ausliefern.
+RTSP_BASE = os.environ.get("WEBCAMS_TRACKER_RTSP_BASE", "").rstrip("/")
+
+# Breite der Totzone beidseits der Zähllinie, als Anteil der Bildhöhe.
+# Siehe ``HysteresisLineCounter``: zu klein und Wartende erzeugen Zittern,
+# zu groß und ein kurzer Durchgang wird nicht mehr registriert.
+LINE_MARGIN_RATIO = float(os.environ.get("WEBCAMS_TRACKER_LINE_MARGIN", "0.08"))
 
 # ---------------------------------------------------------------------------
 # Config-Reader mit mtime-Cache — analog zu `lib/config.ts` der Next-App.
@@ -216,6 +232,8 @@ def _hash_config(cam: dict[str, Any]) -> str:
 
 def build_rtsp_url(cam: dict[str, Any]) -> str:
     """Baut die RTSP-URL für den Substream."""
+    if RTSP_BASE:
+        return f"{RTSP_BASE}/{cam['id']}_sub"
     user = cam["username"]
     pw = cam["password"]
     ip = cam["ip"]
@@ -243,6 +261,86 @@ def _resolve_line(
     if direction == "ba":
         x1, y1, x2, y2 = x2, y2, x1, y1
     return sv.Point(x1, y1), sv.Point(x2, y2)
+
+
+class HysteresisLineCounter:
+    """Zählt Linienüberquerungen mit Totzone.
+
+    ``supervision.LineZone`` schaltet exakt an der Linie um. An einem
+    Drehkreuz warten die Leute aber genau dort, und dann reicht ein Pixel
+    Rauschen im Fußpunkt, damit dieselbe Person im Sekundentakt zwischen
+    „rein" und „raus" springt — ein einzelner Wartender hat hier schon
+    zweistellige Zählerstände erzeugt.
+
+    Deshalb gilt eine Seite erst als eingenommen, wenn der Fußpunkt weiter
+    als ``margin`` Pixel von der Linie entfernt ist. Innerhalb des Bandes
+    bleibt der zuletzt eingenommene Stand stehen, gezählt wird allein der
+    Wechsel von einer eingenommenen Seite auf die andere. Wer davor auf und
+    ab geht, ohne wirklich durchzugehen, zählt damit gar nicht.
+    """
+
+    def __init__(
+        self,
+        start: sv.Point,
+        end: sv.Point,
+        margin: float,
+        ttl: float = 60.0,
+    ) -> None:
+        self.start = start
+        self.end = end
+        self.margin = margin
+        self.ttl = ttl
+        self.in_count = 0
+        self.out_count = 0
+        self._side: dict[int, int] = {}
+        self._seen: dict[int, float] = {}
+
+    def _signed_distance(self, x: float, y: float) -> float:
+        dx = self.end.x - self.start.x
+        dy = self.end.y - self.start.y
+        length = math.hypot(dx, dy)
+        if length == 0:
+            return 0.0
+        return ((x - self.start.x) * dy - (y - self.start.y) * dx) / length
+
+    def trigger(self, detections: sv.Detections) -> list[tuple[int, str]]:
+        """Verarbeitet einen Frame, gibt die neuen Überquerungen zurück."""
+        ids = detections.tracker_id
+        if ids is None or len(detections) == 0:
+            return []
+
+        now = time.time()
+        crossings: list[tuple[int, str]] = []
+        for i, raw_id in enumerate(ids):
+            tid = int(raw_id)
+            self._seen[tid] = now
+
+            x1, _y1, x2, y2 = detections.xyxy[i]
+            # Fußpunkt statt Boxmitte: die Füße stehen auf der Bodenebene,
+            # in der auch die Linie gemeint ist.
+            dist = self._signed_distance((float(x1) + float(x2)) / 2.0, float(y2))
+            if abs(dist) < self.margin:
+                continue
+
+            side = 1 if dist > 0 else -1
+            prev = self._side.get(tid)
+            self._side[tid] = side
+            if prev is None or prev == side:
+                continue
+
+            if side > 0:
+                self.in_count += 1
+                crossings.append((tid, "in"))
+            else:
+                self.out_count += 1
+                crossings.append((tid, "out"))
+
+        for tid, last in list(self._seen.items()):
+            if now - last > self.ttl:
+                self._seen.pop(tid, None)
+                self._side.pop(tid, None)
+
+        return crossings
 
 
 def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
@@ -292,15 +390,10 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
             cap.release()
 
             start_pt, end_pt = _resolve_line(line_norm, direction, w, h)
-            # `triggering_anchors`: zählen anhand der Fußposition statt der
-            # ganzen Bounding-Box. Sonst zählt eine Person erst, wenn ihre
-            # komplette Box die Linie überquert hat — das passiert bei
-            # diagonalen oder schräg liegenden Linien praktisch nie.
-            line_zone = sv.LineZone(
-                start=start_pt,
-                end=end_pt,
-                triggering_anchors=(sv.Position.BOTTOM_CENTER,),
-            )
+            # Totzone relativ zur Bildhöhe, damit sie bei anderen
+            # Substream-Auflösungen gleich breit bleibt.
+            margin_px = max(6.0, LINE_MARGIN_RATIO * h)
+            line_zone = HysteresisLineCounter(start_pt, end_pt, margin_px)
 
             track_kwargs: dict[str, Any] = {
                 "source": rtsp,
@@ -326,13 +419,6 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
             counter.last_error = None
             backoff = 2.0  # nach erfolgreichem (Re-)Start zurücksetzen
 
-            # Diff-Modell: `LineZone` hat einen eigenen Lebenszeit-Zähler,
-            # der per Stream-Reconnect bei 0 startet. Wir merken uns daher
-            # nur die Veränderung relativ zum letzten Frame und schreiben
-            # die in unsere persistierte Tagessumme.
-            prev_line_in = 0
-            prev_line_out = 0
-
             for result in results:
                 if counter.stop_event.is_set():
                     break
@@ -346,21 +432,16 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                 # nur getrackte Personen ans LineZone — alles andere
                 # erzeugt sonst keine sinnvollen Crossings
                 if detections.tracker_id is not None and len(detections) > 0:
-                    line_zone.trigger(detections)
-                    cur_line_in = int(line_zone.in_count)
-                    cur_line_out = int(line_zone.out_count)
-                    new_in = cur_line_in - prev_line_in
-                    new_out = cur_line_out - prev_line_out
+                    crossed = line_zone.trigger(detections)
+                    new_in = sum(1 for _, d in crossed if d == "in")
+                    new_out = len(crossed) - new_in
 
-                    if new_in or new_out:
+                    if crossed:
                         ts_now = time.time()
-                        ids = list(detections.tracker_id)
                         log.info(
-                            "worker[%s] CROSSING +in=%d +out=%d (track ids on screen: %s) total in=%d out=%d",
+                            "worker[%s] CROSSING %s total in=%d out=%d",
                             cam_id,
-                            new_in,
-                            new_out,
-                            ids,
+                            ", ".join(f"#{tid} {d}" for tid, d in crossed),
                             counter.in_count + new_in,
                             counter.out_count + new_out,
                         )
@@ -376,11 +457,8 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                                 record_crossing(cam_id, "out", ts_now)
                             except Exception as exc:
                                 log.warning("persist out[%s] failed: %s", cam_id, exc)
-                        counter.in_count += max(0, new_in)
-                        counter.out_count += max(0, new_out)
-
-                    prev_line_in = cur_line_in
-                    prev_line_out = cur_line_out
+                        counter.in_count += new_in
+                        counter.out_count += new_out
 
                 counter.last_person_count = len(detections)
                 counter.last_update = time.time()
@@ -408,6 +486,21 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                     frame = result.orig_img
                     if frame is not None:
                         annotated = frame.copy()
+                        # Totzone als Band um die Linie — beim Justieren muss
+                        # man sehen, wo nicht gezählt wird.
+                        ldx = end_pt.x - start_pt.x
+                        ldy = end_pt.y - start_pt.y
+                        llen = math.hypot(ldx, ldy) or 1.0
+                        ox = int(round(-ldy / llen * margin_px))
+                        oy = int(round(ldx / llen * margin_px))
+                        for sign in (1, -1):
+                            cv2.line(
+                                annotated,
+                                (start_pt.x + sign * ox, start_pt.y + sign * oy),
+                                (end_pt.x + sign * ox, end_pt.y + sign * oy),
+                                (120, 120, 120),
+                                1,
+                            )
                         # Linie + Counts
                         cv2.line(
                             annotated,

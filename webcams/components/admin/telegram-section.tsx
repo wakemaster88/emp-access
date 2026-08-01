@@ -58,6 +58,11 @@ const EVENTS: EventTile[] = [
     title: "Plate im Cooldown",
     hint: "Whitelist-Treffer, aber zu kurz nach letzter Öffnung",
   },
+  {
+    key: "tailgate",
+    title: "Drehkreuz ohne Scan",
+    hint: "Mehr Durchgänge gezählt als gültige Scans vorliegen",
+  },
 ];
 
 export function TelegramSection({

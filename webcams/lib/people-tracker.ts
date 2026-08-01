@@ -67,6 +67,41 @@ export async function fetchCrossingCounters(): Promise<Record<string, CrossingCo
   return data;
 }
 
+export interface CrossingEvent {
+  /** Unix-Zeit in Millisekunden. */
+  ts: number;
+  dir: "in" | "out";
+}
+
+/**
+ * Einzelne Durchgänge einer Cam, neueste zuerst. Der Sidecar liest sie aus
+ * seiner JSONL-Historie, sie überleben also einen Neustart.
+ */
+export async function fetchRecentCrossings(
+  camId: string,
+  limit: number,
+): Promise<CrossingEvent[]> {
+  const url = `${await getSidecarUrl()}/counters/${encodeURIComponent(camId)}/recent?limit=${limit}`;
+  const ctl = new AbortController();
+  const timeout = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const r = await fetch(url, {
+      signal: ctl.signal,
+      cache: "no-store",
+      headers: await sidecarAuthHeaders(),
+    });
+    if (!r.ok) throw new Error(`Sidecar HTTP ${r.status}`);
+    const json = (await r.json()) as { events?: unknown };
+    const list = Array.isArray(json.events) ? json.events : [];
+    return list
+      .map((e) => e as Record<string, unknown>)
+      .filter((e) => typeof e.ts === "number" && (e.dir === "in" || e.dir === "out"))
+      .map((e) => ({ ts: e.ts as number, dir: e.dir as "in" | "out" }));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function notifySidecarConfigChanged(): Promise<void> {
   // Cache invalidieren, damit der nächste GET frisch zieht
   cache = null;

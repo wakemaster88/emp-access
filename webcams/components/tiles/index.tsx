@@ -5,6 +5,8 @@ import { IframeTile } from "./iframe-tile";
 import { ImageRefreshTile } from "./image-refresh-tile";
 import { ClockTile } from "./clock-tile";
 import { DoorbirdTile } from "./doorbird-tile";
+import { ScansTile } from "./scans-tile";
+import { TailgateTile } from "./tailgate-tile";
 import type { Cam, DoorbirdConfig, Widget } from "@/lib/types";
 
 interface TileProps {
@@ -57,6 +59,10 @@ export function Tile({
           onFocus={onFocus}
         />
       );
+    case "scans":
+      return <ScansTile widget={widget} />;
+    case "tailgate":
+      return <TailgateTile widget={widget} />;
     default:
       return null;
   }

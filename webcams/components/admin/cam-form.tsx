@@ -56,6 +56,14 @@ const EMPTY: Cam = {
     },
   },
   empAccess: { enabled: false, deviceIds: [] },
+  tailgate: {
+    enabled: false,
+    deviceIds: [],
+    countDirection: "in",
+    windowSec: 600,
+    tolerance: 3,
+    cooldownSec: 900,
+  },
 };
 
 function slugify(s: string) {
@@ -86,6 +94,9 @@ export function CamForm({ initial, onSaved, onCancel }: CamFormProps) {
   const [empIdsText, setEmpIdsText] = useState(
     () => (initial ?? EMPTY).empAccess.deviceIds.join(", "),
   );
+  const [tailgateIdsText, setTailgateIdsText] = useState(
+    () => (initial ?? EMPTY).tailgate.deviceIds.join(", "),
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [autoId, setAutoId] = useState(!editing);
@@ -94,6 +105,7 @@ export function CamForm({ initial, onSaved, onCancel }: CamFormProps) {
   useEffect(() => {
     if (initial) {
       setEmpIdsText(initial.empAccess.deviceIds.join(", "));
+      setTailgateIdsText(initial.tailgate.deviceIds.join(", "));
     }
   }, [initial?.id]);
 
@@ -382,6 +394,107 @@ export function CamForm({ initial, onSaved, onCancel }: CamFormProps) {
               placeholder="1, 2"
             />
           </Field>
+        )}
+      </div>
+
+      <div className="sm:col-span-2 mt-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium">Drehkreuz-Kontrolle</div>
+            <div className="text-xs text-foreground/60">
+              Vergleicht die gezählten Durchgänge mit den gültigen Scans dieser
+              Geräte. Braucht den Personenzähler im Modus „Linie überqueren".
+            </div>
+          </div>
+          <Switch
+            checked={data.tailgate.enabled}
+            onChange={(v) => update("tailgate", { ...data.tailgate, enabled: v })}
+          />
+        </div>
+        {data.tailgate.enabled && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="Geräte-IDs"
+              hint="Alle Drehkreuze, die diese Kamera sieht"
+              error={errors["tailgate.deviceIds"]}
+              className="sm:col-span-2"
+            >
+              <Input
+                value={tailgateIdsText}
+                onChange={(e) => setTailgateIdsText(e.target.value)}
+                onBlur={() => {
+                  const ids = parseEmpDeviceIds(tailgateIdsText);
+                  setTailgateIdsText(ids.join(", "));
+                  setData((d) => ({
+                    ...d,
+                    tailgate: { ...d.tailgate, deviceIds: ids },
+                  }));
+                }}
+                placeholder="49, 51, 53"
+              />
+            </Field>
+            <Field label="Geprüfte Richtung">
+              <Select
+                value={data.tailgate.countDirection}
+                onChange={(e) =>
+                  update("tailgate", {
+                    ...data.tailgate,
+                    countDirection: e.target.value as "in" | "out",
+                  })
+                }
+              >
+                <option value="in">Rein</option>
+                <option value="out">Raus</option>
+              </Select>
+            </Field>
+            <Field label="Zeitfenster (Sekunden)" hint="60 bis 3600">
+              <Input
+                type="number"
+                min={60}
+                max={3600}
+                step={60}
+                value={data.tailgate.windowSec}
+                onChange={(e) =>
+                  update("tailgate", {
+                    ...data.tailgate,
+                    windowSec: Number(e.target.value),
+                  })
+                }
+              />
+            </Field>
+            <Field
+              label="Alarm ab"
+              hint="Ungedeckte Durchgänge im Fenster. Zu klein = Fehlalarme."
+            >
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={data.tailgate.tolerance}
+                onChange={(e) =>
+                  update("tailgate", {
+                    ...data.tailgate,
+                    tolerance: Number(e.target.value),
+                  })
+                }
+              />
+            </Field>
+            <Field label="Sperrfrist (Sekunden)" hint="Pause nach einem Alarm">
+              <Input
+                type="number"
+                min={60}
+                max={7200}
+                step={60}
+                value={data.tailgate.cooldownSec}
+                onChange={(e) =>
+                  update("tailgate", {
+                    ...data.tailgate,
+                    cooldownSec: Number(e.target.value),
+                  })
+                }
+              />
+            </Field>
+          </div>
         )}
       </div>
 

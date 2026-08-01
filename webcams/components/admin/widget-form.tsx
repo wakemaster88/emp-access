@@ -24,6 +24,8 @@ const TYPES = [
   { value: "iframe", label: "iFrame (URL)" },
   { value: "image-refresh", label: "Bild mit Auto-Refresh" },
   { value: "clock", label: "Uhr / Datum" },
+  { value: "scans", label: "Scan-Monitor (emp-access)" },
+  { value: "tailgate", label: "Drehkreuz-Kontrolle" },
 ] as const;
 
 function slugify(s: string) {
@@ -71,7 +73,33 @@ function defaultsForType(type: Widget["type"], cams: Cam[]): Widget {
         type,
         snapshotIntervalMs: 3000,
       } as Widget;
+    case "scans":
+      return {
+        ...base,
+        type,
+        limit: 12,
+        deviceIds: [],
+        intervalMs: 3000,
+        deniedOnly: false,
+      } as Widget;
+    case "tailgate":
+      return {
+        ...base,
+        type,
+        camId: cams.find((c) => c.tailgate.enabled)?.id ?? "",
+        intervalMs: 10000,
+      } as Widget;
   }
+}
+
+/** „49, 51 53" → [49, 51, 53]. Tippfehler fliegen still raus. */
+function parseIds(text: string): number[] {
+  const out: number[] = [];
+  for (const part of text.split(/[,\s]+/)) {
+    const n = Number.parseInt(part, 10);
+    if (Number.isInteger(n) && n > 0 && !out.includes(n)) out.push(n);
+  }
+  return out;
 }
 
 export function WidgetForm({ initial, cams, onSaved, onCancel }: WidgetFormProps) {
@@ -280,6 +308,84 @@ export function WidgetForm({ initial, cams, onSaved, onCancel }: WidgetFormProps
             onChange={(e) => update("snapshotIntervalMs", Number(e.target.value))}
           />
         </Field>
+      )}
+
+      {data.type === "scans" && (
+        <>
+          <Field label="Anzahl Scans" hint="3 bis 50">
+            <Input
+              type="number"
+              min={3}
+              max={50}
+              value={data.limit}
+              onChange={(e) => update("limit", Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Aktualisierung (ms)">
+            <Input
+              type="number"
+              min={1000}
+              max={60000}
+              step={500}
+              value={data.intervalMs}
+              onChange={(e) => update("intervalMs", Number(e.target.value))}
+            />
+          </Field>
+          <Field
+            label="Geräte-IDs"
+            hint="Leer = alle Geräte. Mehrere durch Komma trennen."
+            className="sm:col-span-2"
+          >
+            <Input
+              value={data.deviceIds.join(", ")}
+              onChange={(e) => update("deviceIds", parseIds(e.target.value))}
+              placeholder="z. B. 49, 51, 53"
+            />
+          </Field>
+          <Field label="Nur Abgelehnte" className="sm:col-span-2">
+            <div className="flex h-10 items-center gap-3">
+              <Switch
+                checked={data.deniedOnly}
+                onChange={(v) => update("deniedOnly", v)}
+              />
+              <span className="text-sm text-foreground/60">
+                {data.deniedOnly
+                  ? "Zeigt nur abgelehnte und geschützte Scans"
+                  : "Zeigt alle Scans"}
+              </span>
+            </div>
+          </Field>
+        </>
+      )}
+
+      {data.type === "tailgate" && (
+        <>
+          <Field
+            label="Kamera"
+            hint="Nur Kameras mit eingeschalteter Drehkreuz-Kontrolle liefern Werte."
+            className="sm:col-span-2"
+          >
+            <Select value={data.camId} onChange={(e) => update("camId", e.target.value)}>
+              <option value="">– erste Kamera mit Kontrolle –</option>
+              {cams.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.tailgate.enabled ? "" : " (Kontrolle aus)"}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Aktualisierung (ms)" className="sm:col-span-2">
+            <Input
+              type="number"
+              min={2000}
+              max={60000}
+              step={1000}
+              value={data.intervalMs}
+              onChange={(e) => update("intervalMs", Number(e.target.value))}
+            />
+          </Field>
+        </>
       )}
 
       <div className="sm:col-span-2 flex justify-end gap-2 pt-2">

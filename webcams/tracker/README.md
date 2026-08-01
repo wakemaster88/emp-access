@@ -52,6 +52,31 @@ WEBCAMS_TRACKER_DEVICE=cpu uvicorn main:app --host 127.0.0.1 --port 8088
 | `WEBCAMS_TRACKER_DEVICE`       | (auto)               | `mps`, `cpu`, `0`, …                        |
 | `WEBCAMS_TRACKER_FRAME_STRIDE` | `2`                  | Jede N-te Frame verarbeiten (entlastet GPU) |
 | `WEBCAMS_TRACKER_CONF`         | `0.4`                | Confidence-Schwelle für Personen            |
+| `WEBCAMS_TRACKER_RTSP_BASE`    | (aus)                | Streams von hier statt direkt von der Cam   |
+| `WEBCAMS_TRACKER_LINE_MARGIN`  | `0.08`               | Totzone um die Zähllinie (Anteil Bildhöhe)  |
+
+### Streams über go2rtc beziehen
+
+Auf macOS verweigert die Sperre „Lokales Netzwerk" einem per launchd
+gestarteten Prozess den Zugriff auf die Kameras — RTSP scheitert mit
+„No route to host", obwohl dieselbe URL aus einer Shell funktioniert.
+go2rtc hat die Freigabe und veröffentlicht jeden Stream unter `<camId>_sub`
+auf Loopback, das von der Sperre ausgenommen ist:
+
+```bash
+WEBCAMS_TRACKER_RTSP_BASE=rtsp://127.0.0.1:8554
+```
+
+Nebeneffekt: Die Kamera muss den Substream nur einmal ausliefern, egal wie
+viele Verbraucher es gibt.
+
+### Totzone um die Zähllinie
+
+Gezählt wird mit Hysterese: Eine Seite der Linie gilt erst als eingenommen,
+wenn der Fußpunkt weiter als `WEBCAMS_TRACKER_LINE_MARGIN × Bildhöhe` von ihr
+entfernt ist. Ohne das erzeugt eine einzelne wartende Person — an einem
+Drehkreuz der Normalfall — im Sekundentakt Wechsel zwischen „rein" und
+„raus". Zu große Werte verschlucken dagegen kurze Durchgänge.
 
 ## Endpunkte
 

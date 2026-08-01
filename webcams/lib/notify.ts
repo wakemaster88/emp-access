@@ -25,7 +25,8 @@ type NotifyType =
   | "door-ring"
   | "alpr-matched"
   | "alpr-unauthorized"
-  | "alpr-cooldown";
+  | "alpr-cooldown"
+  | "tailgate";
 
 interface DoorOpenPayload {
   source: "ui" | "alpr" | string;
@@ -51,12 +52,22 @@ interface AlprPayload {
   snapshot?: Buffer | null;
 }
 
+interface TailgatePayload {
+  camName: string;
+  crossings: number;
+  scans: number;
+  diff: number;
+  windowSec: number;
+  snapshot?: Buffer | null;
+}
+
 type Payload =
   | { type: "door-open"; data: DoorOpenPayload }
   | { type: "door-ring"; data: DoorRingPayload }
   | { type: "alpr-matched"; data: AlprPayload }
   | { type: "alpr-unauthorized"; data: AlprPayload }
-  | { type: "alpr-cooldown"; data: AlprPayload };
+  | { type: "alpr-cooldown"; data: AlprPayload }
+  | { type: "tailgate"; data: TailgatePayload };
 
 function eventEnabled(
   events: TelegramEventToggles,
@@ -73,6 +84,8 @@ function eventEnabled(
       return events.alprUnauthorized;
     case "alpr-cooldown":
       return events.alprCooldown;
+    case "tailgate":
+      return events.tailgate;
     default:
       return false;
   }
@@ -131,6 +144,16 @@ function buildMessage(p: Payload): string {
       return `⏳ <b>Plate erkannt, Cooldown aktiv</b>\n<code>${escapeHtml(
         p.data.plate,
       )}</code>${owner}\n${ts}`;
+    }
+    case "tailgate": {
+      const min = Math.round(p.data.windowSec / 60);
+      const zeitraum = min >= 1 ? `${min} min` : `${p.data.windowSec} s`;
+      return (
+        `🚨 <b>Drehkreuz: ungedeckte Durchgänge</b>\n` +
+        `${escapeHtml(p.data.camName)}\n` +
+        `${p.data.crossings} Durchgänge, aber nur ${p.data.scans} gültige Scans ` +
+        `in ${escapeHtml(zeitraum)} — <b>${p.data.diff} ohne Berechtigung</b>\n${ts}`
+      );
     }
   }
 }
@@ -209,11 +232,9 @@ export async function notify(p: Payload): Promise<void> {
             : (p.data as DoorRingPayload).snapshot;
         if (preload !== undefined) jpeg = preload;
         else jpeg = await fetchDoorbirdSnapshotSafe();
-      } else if (
-        p.type === "alpr-matched" ||
-        p.type === "alpr-unauthorized" ||
-        p.type === "alpr-cooldown"
-      ) {
+      } else {
+        // ALPR und Drehkreuz liefern das Bild vom Aufrufer mit — neu laden
+        // hieße, den Moment zu verpassen, um den es geht.
         jpeg = p.data.snapshot ?? null;
       }
     }

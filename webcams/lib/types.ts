@@ -178,12 +178,33 @@ export const DoorbirdWidgetSchema = BaseWidget.extend({
   snapshotIntervalMs: z.number().int().min(500).max(60000).default(3000),
 });
 
+export const ScansWidgetSchema = BaseWidget.extend({
+  type: z.literal("scans"),
+  /** Wie viele Scans die Kachel maximal listet. */
+  limit: z.number().int().min(3).max(50).default(12),
+  /** Nur diese emp-access-Geräte-IDs zeigen. Leer = alle Geräte. */
+  deviceIds: z.array(z.number().int().positive()).default([]),
+  intervalMs: z.number().int().min(1000).max(60000).default(3000),
+  /** Nur abgelehnte/geschützte Scans zeigen — für eine Störungs-Kachel. */
+  deniedOnly: z.boolean().default(false),
+});
+
+/** Zählerstand und Alarme der Drehkreuz-Kontrolle, siehe `lib/tailgate.ts`. */
+export const TailgateWidgetSchema = BaseWidget.extend({
+  type: z.literal("tailgate"),
+  /** Auf diese Kamera schauen. Leer = erste Kamera mit aktiver Kontrolle. */
+  camId: z.string().default(""),
+  intervalMs: z.number().int().min(2000).max(60000).default(10000),
+});
+
 export const WidgetSchema = z.discriminatedUnion("type", [
   ReolinkWidgetSchema,
   IframeWidgetSchema,
   ImageRefreshWidgetSchema,
   ClockWidgetSchema,
   DoorbirdWidgetSchema,
+  ScansWidgetSchema,
+  TailgateWidgetSchema,
 ]);
 
 export type Widget = z.infer<typeof WidgetSchema>;
@@ -192,6 +213,8 @@ export type IframeWidget = z.infer<typeof IframeWidgetSchema>;
 export type ImageRefreshWidget = z.infer<typeof ImageRefreshWidgetSchema>;
 export type ClockWidget = z.infer<typeof ClockWidgetSchema>;
 export type DoorbirdWidget = z.infer<typeof DoorbirdWidgetSchema>;
+export type ScansWidget = z.infer<typeof ScansWidgetSchema>;
+export type TailgateWidget = z.infer<typeof TailgateWidgetSchema>;
 
 /**
  * Normalisierte 2D-Koordinate, 0..1, Origin oben-links.
@@ -223,6 +246,34 @@ export const PeopleCounterSchema = z.object({
 });
 
 export type PeopleCounterConfig = z.infer<typeof PeopleCounterSchema>;
+
+/**
+ * Drehkreuz-Kontrolle: gleicht gezählte Durchgänge gegen gültige Scans in
+ * emp-access ab und schlägt an, wenn mehr Leute durchgehen als berechtigt.
+ *
+ * Setzt `peopleCounter.mode == "crossing"` voraus — ohne Zähllinie gibt es
+ * nichts abzugleichen.
+ *
+ * Verglichen wird bewusst über ein gleitendes Fenster statt Person für
+ * Person: eine Kamerazählung liegt in der Praxis ein paar Prozent daneben,
+ * und zwischen Scan und Durchgang vergehen je nach Andrang mal zwei, mal
+ * zwanzig Sekunden. Erst eine anhaltende Differenz ist ein echtes Signal.
+ */
+export const TailgateSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Geräte, deren gültige Scans einen Durchgang an dieser Kamera decken. */
+  deviceIds: z.array(z.number().int().positive()).default([]),
+  /** Welche Zählrichtung geprüft wird — an einem Eingang üblicherweise „rein". */
+  countDirection: z.enum(["in", "out"]).default("in"),
+  /** Länge des gleitenden Vergleichsfensters in Sekunden. */
+  windowSec: z.number().int().min(60).max(3600).default(600),
+  /** Alarm erst ab so vielen ungedeckten Durchgängen im Fenster. */
+  tolerance: z.number().int().min(1).max(50).default(3),
+  /** Sperrfrist nach einem Alarm, damit eine Störung nicht dauerfeuert. */
+  cooldownSec: z.number().int().min(60).max(7200).default(900),
+});
+
+export type TailgateConfig = z.infer<typeof TailgateSchema>;
 
 /**
  * PTZ-Auto-Pilot pro Cam. Drei Modi (plus Off):
@@ -367,6 +418,8 @@ export const CamSchema = z
         deviceIds: z.array(z.number().int().positive()).default([]),
       })
       .default({ enabled: false, deviceIds: [] }),
+    /** Abgleich Durchgänge ↔ gültige Scans, siehe `TailgateSchema`. */
+    tailgate: TailgateSchema.default({} as TailgateConfig),
   })
   .superRefine((cam, ctx) => {
     // Crossing-Counting verträgt sich nicht mit PTZ-Auto: die Linie ist in
@@ -380,6 +433,21 @@ export const CamSchema = z
         path: ["ptzAuto", "mode"],
         message:
           "PTZ-Auto und Crossing-Counter schließen sich aus. Ein Pan ändert die Linie.",
+      });
+    }
+    if (cam.tailgate.enabled && !crossing) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tailgate", "enabled"],
+        message:
+          "Drehkreuz-Kontrolle braucht den Crossing-Counter mit gesetzter Zähllinie.",
+      });
+    }
+    if (cam.tailgate.enabled && cam.tailgate.deviceIds.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tailgate", "deviceIds"],
+        message: "Mindestens ein emp-access-Gerät angeben, sonst gilt jeder Durchgang als ungedeckt.",
       });
     }
   });
@@ -487,6 +555,8 @@ export const TelegramEventTogglesSchema = z.object({
   alprUnauthorized: z.boolean().default(false),
   /** ALPR: Plate auf Whitelist, aber Cooldown verhindert Öffnen. */
   alprCooldown: z.boolean().default(false),
+  /** Drehkreuz: mehr Durchgänge gezählt als gültige Scans vorliegen. */
+  tailgate: z.boolean().default(true),
 });
 
 export type TelegramEventToggles = z.infer<typeof TelegramEventTogglesSchema>;
@@ -512,6 +582,7 @@ export const TelegramConfigSchema = z.object({
     alprMatched: false,
     alprUnauthorized: false,
     alprCooldown: false,
+    tailgate: true,
   }),
   /** Bilder mitschicken (Doorbird-Snapshot bzw. ALPR-Snapshot). */
   includeSnapshot: z.boolean().default(true),
@@ -557,6 +628,7 @@ export const SettingsSchema = z.object({
       alprMatched: false,
       alprUnauthorized: false,
       alprCooldown: false,
+      tailgate: true,
     },
     includeSnapshot: true,
   }),

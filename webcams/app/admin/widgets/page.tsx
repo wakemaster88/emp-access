@@ -18,6 +18,8 @@ const TYPE_LABELS: Record<Widget["type"], string> = {
   "image-refresh": "Bild",
   clock: "Uhr",
   doorbird: "Doorbird",
+  scans: "Scan-Monitor",
+  tailgate: "Drehkreuz-Kontrolle",
 };
 
 export default function WidgetsPage() {
@@ -68,6 +70,17 @@ export default function WidgetsPage() {
         return `${w.url} (${w.intervalMs} ms)`;
       case "clock":
         return `${w.format}${w.showSeconds ? " mit Sek." : ""}${w.showDate ? " + Datum" : ""}`;
+      case "doorbird":
+        return `Türstation · Snapshot alle ${w.snapshotIntervalMs} ms`;
+      case "scans": {
+        const scope =
+          w.deviceIds.length > 0 ? `Geräte ${w.deviceIds.join(", ")}` : "alle Geräte";
+        return `${w.limit} Scans · ${scope}${w.deniedOnly ? " · nur abgelehnte" : ""}`;
+      }
+      case "tailgate": {
+        const cam = cams.find((c) => c.id === w.camId);
+        return cam ? `${cam.name} · Durchgänge gegen Scans` : "erste Kamera mit Kontrolle";
+      }
     }
   }
 
