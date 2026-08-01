@@ -47,16 +47,20 @@ function toRow(raw: Record<string, unknown>): ScanRow | null {
   };
 }
 
+/**
+ * Die Cloud gibt pro Anfrage höchstens so viele Zeilen heraus, egal welches
+ * Limit man schickt. Datumsfilter ignoriert sie, `offset` wertet sie aus.
+ */
+const CLOUD_PAGE_SIZE = 200;
+
 export async function fetchScanRows(
   baseUrl: string,
   apiToken: string,
   limit: number,
+  offset = 0,
 ): Promise<ScanRow[]> {
-  const json = await empAccessGetJson(
-    baseUrl,
-    apiToken,
-    `/api/scans?limit=${limit}`,
-  );
+  const q = `/api/scans?limit=${limit}${offset > 0 ? `&offset=${offset}` : ""}`;
+  const json = await empAccessGetJson(baseUrl, apiToken, q);
   const list = Array.isArray(json)
     ? json
     : Array.isArray((json as { data?: unknown })?.data)
@@ -66,4 +70,41 @@ export async function fetchScanRows(
     .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
     .map(toRow)
     .filter((r): r is ScanRow => r !== null);
+}
+
+/**
+ * Holt so viele Scans, bis der gewünschte Zeitraum abgedeckt ist — über
+ * mehrere Seiten hinweg, weil eine Anfrage nur bis zu {@link CLOUD_PAGE_SIZE}
+ * Zeilen liefert und die über alle Geräte des Standorts gemeinsam zählen.
+ *
+ * `maxPages` begrenzt die Last auf der Cloud: Beim Nachtragen alter Tage
+ * würde man sonst im Zweifel das ganze Archiv durchblättern.
+ */
+export async function fetchScanRowsSince(
+  baseUrl: string,
+  apiToken: string,
+  since: number,
+  maxPages = 10,
+): Promise<ScanRow[]> {
+  const all: ScanRow[] = [];
+  const seen = new Set<number>();
+  for (let page = 0; page < maxPages; page++) {
+    const rows = await fetchScanRows(
+      baseUrl,
+      apiToken,
+      CLOUD_PAGE_SIZE,
+      page * CLOUD_PAGE_SIZE,
+    );
+    if (rows.length === 0) break;
+    let oldest = Infinity;
+    for (const r of rows) {
+      if (r.ts < oldest) oldest = r.ts;
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      all.push(r);
+    }
+    // Weit genug zurück, oder die Cloud hat nichts mehr.
+    if (oldest <= since || rows.length < CLOUD_PAGE_SIZE) break;
+  }
+  return all.sort((a, b) => b.ts - a.ts);
 }

@@ -18,7 +18,15 @@ const ACTION_LABELS: Record<string, string> = {
   "preset-save": "Preset gespeichert",
   "doorbird-ring": "Klingel",
   "doorbird-open": "Tür geöffnet",
+  "tailgate-alarm": "Drehkreuz: Durchgänge ohne Scan",
 };
+
+/**
+ * Ein Drehkreuz-Alarm wird mit `ok: false` protokolliert, damit er im Log
+ * heraussticht. „Fehler" wäre dafür aber das falsche Wort — die Kontrolle hat
+ * ja funktioniert.
+ */
+const ALARM_ACTIONS = new Set(["tailgate-alarm"]);
 
 function relTime(iso: string) {
   const d = new Date(iso);
@@ -91,7 +99,9 @@ export default function EventsPage() {
                   <td className="px-4 py-2 font-mono text-xs text-foreground/70">{ev.target ?? "—"}</td>
                   <td className="px-4 py-2">
                     {ev.ok === false ? (
-                      <Badge variant="danger">Fehler</Badge>
+                      <Badge variant="danger">
+                        {ALARM_ACTIONS.has(ev.action) ? "Alarm" : "Fehler"}
+                      </Badge>
                     ) : (
                       <Badge variant="success">ok</Badge>
                     )}

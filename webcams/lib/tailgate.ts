@@ -1,8 +1,9 @@
 import { loadConfig } from "./config";
 import { fetchRecentCrossings } from "./people-tracker";
 import { fetchScanRows, type ScanRow } from "./emp-access-scans";
+import { archiveScans } from "./scan-archive";
 import { getSnapshot } from "./reolink-control";
-import { logEvent } from "./audit";
+import { logEvent, readEvents } from "./audit";
 import { notify } from "./notify";
 import type { Cam } from "./types";
 
@@ -231,6 +232,9 @@ async function tick() {
     let scans: ScanRow[];
     try {
       scans = await fetchScanRows(emp.baseUrl, token, SCAN_FETCH_LIMIT);
+      // Läuft auch, wenn niemand das Dashboard offen hat — sonst klaffte
+      // nachts eine Lücke im Archiv.
+      void archiveScans(scans);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Scan-Abruf fehlgeschlagen";
       for (const cam of cams) {
@@ -286,10 +290,48 @@ async function tick() {
   }
 }
 
+/**
+ * Holt vergangene Alarme aus dem Ereignisprotokoll zurück in den Speicher.
+ *
+ * Die Kachel zeigt die letzten Alarme aus dem Arbeitsspeicher. Nach einem
+ * Neustart des Dashboards stand sie sonst leer da, obwohl abends noch ein
+ * Alarm aufgelaufen war — auf der Platte liegt er ja.
+ */
+async function restoreAlarms() {
+  const state = getState();
+  if (state.alarms.length > 0) return;
+  try {
+    const events = await readEvents(300);
+    const restored: TailgateAlarm[] = [];
+    for (const ev of events) {
+      if (ev.action !== "tailgate-alarm" || !ev.target) continue;
+      const meta = (ev.meta ?? {}) as Record<string, unknown>;
+      const num = (k: string) => (typeof meta[k] === "number" ? meta[k] : 0);
+      const ts = Date.parse(ev.ts);
+      restored.push({
+        id: `${ts}-wiederhergestellt`,
+        ts: Number.isFinite(ts) ? ts : Date.now(),
+        camId: ev.target,
+        camName: ev.target,
+        crossings: num("crossings"),
+        scans: num("scans"),
+        diff: num("diff"),
+        windowSec: num("windowSec"),
+      });
+      if (restored.length >= MAX_ALARMS) break;
+    }
+    // Nichts überschreiben, was inzwischen frisch aufgelaufen ist.
+    if (state.alarms.length === 0) state.alarms = restored;
+  } catch (e) {
+    console.warn("[tailgate] Alarme laden fehlgeschlagen", (e as Error).message);
+  }
+}
+
 export function ensureTailgateStarted() {
   const state = getState();
   if (state.timer) return;
   state.timer = setInterval(() => void tick(), EVAL_INTERVAL_MS);
+  void restoreAlarms();
   void tick();
 }
 

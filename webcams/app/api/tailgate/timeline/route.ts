@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/config";
 import { fetchRecentCrossings } from "@/lib/people-tracker";
-import { fetchScanRows } from "@/lib/emp-access-scans";
+import { fetchScanRows, type ScanRow } from "@/lib/emp-access-scans";
+import { archiveScans, archiveStart, readScansSince } from "@/lib/scan-archive";
 
 export const dynamic = "force-dynamic";
 
@@ -64,10 +65,21 @@ export async function GET(req: Request) {
   }
 
   const devices = new Set(cam.tailgate.deviceIds);
-  const [crossingsRaw, scansRaw] = await Promise.all([
+
+  // Die Scans kommen aus dem lokalen Archiv, nicht direkt aus der Cloud —
+  // die gibt nur die letzten 200 über alle Geräte heraus. Ergänzt wird der
+  // Abruf um die jüngsten Zeilen, damit die Liste bis zur Sekunde stimmt.
+  const [crossingsRaw, archived, live] = await Promise.all([
     fetchRecentCrossings(cam.id, 800),
-    fetchScanRows(emp.baseUrl, token, 300),
+    readScansSince(since),
+    fetchScanRows(emp.baseUrl, token, 50).catch(() => [] as ScanRow[]),
   ]);
+  void archiveScans(live);
+
+  const byId = new Map<number, ScanRow>();
+  for (const s of archived) byId.set(s.id, s);
+  for (const s of live) if (s.ts >= since) byId.set(s.id, s);
+  const scansRaw = [...byId.values()];
 
   const crossings = crossingsRaw
     .filter((c) => c.dir === cam.tailgate.countDirection && c.ts >= since)
@@ -79,15 +91,15 @@ export async function GET(req: Request) {
 
   // Beide Quellen reichen unterschiedlich weit zurück, und beide Lücken
   // würden die Bilanz verfälschen:
-  //   – Die Cloud liefert nur die letzten N Scans über alle Geräte. Davor
-  //     stünden Durchgänge scheinbar ohne Berechtigung da.
+  //   – Das Scan-Archiv beginnt, seit der Server mitschreibt. Davor stünden
+  //     Durchgänge scheinbar ohne Berechtigung da.
   //   – Die Durchgänge beginnen beim letzten Zurücksetzen des Zählers. Davor
   //     stünden Scans scheinbar ohne Durchgang da.
   // Ausgewertet wird deshalb erst ab dem Zeitpunkt, ab dem beides vorliegt.
-  const oldestScan = scansRaw.length > 0 ? Math.min(...scansRaw.map((s) => s.ts)) : since;
+  const scanStart = (await archiveStart()) ?? since;
   const oldestCrossing =
     crossingsRaw.length > 0 ? Math.min(...crossingsRaw.map((c) => c.ts)) : since;
-  const from = Math.max(since, oldestScan, oldestCrossing);
+  const from = Math.max(since, scanStart, oldestCrossing);
 
   const granted = scans.filter((s) => s.result === "GRANTED");
   const used = new Set<number>();
@@ -160,8 +172,15 @@ export async function GET(req: Request) {
     camName: cam.name,
     from,
     minutes,
-    /** Reicht die Cloud-Antwort nicht über den ganzen Zeitraum? */
-    truncated: oldestScan > since,
+    /** Reicht eine der beiden Quellen nicht über den ganzen Zeitraum? */
+    truncated: from > since + 60_000,
+    /** Welche Quelle den Zeitraum beschneidet — für einen ehrlichen Hinweis. */
+    limitedBy:
+      from <= since + 60_000
+        ? null
+        : oldestCrossing >= scanStart
+          ? "crossings"
+          : "scans",
     summary: {
       paired,
       crossingOnly,

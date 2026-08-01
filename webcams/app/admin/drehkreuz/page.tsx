@@ -39,7 +39,9 @@ type Entry =
 interface Timeline {
   camName: string;
   minutes: number;
+  from: number;
   truncated: boolean;
+  limitedBy: "crossings" | "scans" | null;
   summary: {
     paired: number;
     crossingOnly: number;
@@ -166,9 +168,16 @@ export default function DrehkreuzPage() {
 
           {data.truncated && (
             <p className="mb-4 text-xs text-foreground/50">
-              Die Cloud liefert nur die letzten Scans. Für den gewählten Zeitraum
-              reicht das nicht ganz zurück — die Liste beginnt beim ältesten
-              bekannten Scan.
+              Ausgewertet ab{" "}
+              {new Date(data.from).toLocaleString("de-DE", {
+                day: "2-digit",
+                month: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              {data.limitedBy === "crossings"
+                ? " — davor liegen keine gezählten Durchgänge vor, etwa weil der Zähler zurückgesetzt wurde oder die Kamera stand."
+                : " — so weit reicht das Scan-Archiv zurück. Es füllt sich weiter, solange der Server läuft."}
             </p>
           )}
 

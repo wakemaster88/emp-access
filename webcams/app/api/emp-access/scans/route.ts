@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/config";
 import { fetchScanRows, type ScanRow } from "@/lib/emp-access-scans";
+import { archiveScans } from "@/lib/scan-archive";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,9 @@ export async function GET(req: Request) {
     });
     const rows = await inflight;
     cache.set(limit, { at: Date.now(), rows });
+    // Das Dashboard fragt im Dauerbetrieb alle paar Sekunden — damit füllt
+    // sich das Archiv nebenbei, ohne die Cloud zusätzlich zu belasten.
+    void archiveScans(rows);
     return NextResponse.json({
       configured: true,
       scans: rows,
