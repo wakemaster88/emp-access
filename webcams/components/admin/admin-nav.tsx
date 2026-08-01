@@ -12,6 +12,7 @@ import {
   Bell,
   ListChecks,
   ScrollText,
+  ShieldCheck,
 } from "lucide-react";
 
 const items = [
@@ -20,6 +21,7 @@ const items = [
   { href: "/admin/widgets", label: "Widgets", icon: LayoutGrid },
   { href: "/admin/layouts", label: "Layouts", icon: ListChecks },
   { href: "/admin/doorbird", label: "Doorbird", icon: Bell },
+  { href: "/admin/drehkreuz", label: "Drehkreuz", icon: ShieldCheck },
   { href: "/admin/events", label: "Ereignisse", icon: ScrollText },
   { href: "/admin/settings", label: "Einstellungen", icon: SettingsIcon },
 ];

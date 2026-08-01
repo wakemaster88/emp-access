@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { usePeopleCount } from "@/components/use-people-counters";
 import { useEmpAccessForCam } from "@/components/use-emp-access";
+import { useScanFlash } from "@/components/use-scan-flash";
 
 interface ReolinkTileProps {
   widget: ReolinkWidget;
@@ -63,6 +64,17 @@ export function ReolinkTile({
     cam?.empAccess.enabled &&
     cam.empAccess.deviceIds.length > 0 &&
     empEvents.length > 0;
+
+  // Die Drehkreuze dieser Kamera: bevorzugt die der Kontrolle, sonst die
+  // allgemein zugeordneten Geräte.
+  const scanDevices = cam?.tailgate.deviceIds.length
+    ? cam.tailgate.deviceIds
+    : (cam?.empAccess.deviceIds ?? []);
+  const { flash: scanFlash, visible: scanVisible } = useScanFlash(
+    scanDevices,
+    !!cam?.enabled,
+  );
+  const scanDenied = !!scanFlash && scanFlash.result !== "GRANTED";
 
   if (!cam) {
     return (
@@ -196,6 +208,38 @@ export function ReolinkTile({
           <Users className="size-3 opacity-60" />
           <span className="tabular-nums">…</span>
         </div>
+      )}
+      {/* Scan-Aufleuchten: liegt über dem Bild, fängt aber keine Klicks ab.
+          Dauerhaft im DOM, damit das Ausblenden weich läuft. */}
+      {scanDevices.length > 0 && (
+        <>
+          <div
+            className={
+              "pointer-events-none absolute inset-0 rounded-[inherit] ring-inset transition-all duration-500 " +
+              (!scanVisible
+                ? "opacity-0 ring-0"
+                : scanDenied
+                  ? "opacity-100 ring-4 ring-rose-500 shadow-[inset_0_0_45px_rgba(244,63,94,0.4)]"
+                  : "opacity-100 ring-2 ring-emerald-400/80")
+            }
+          />
+          {scanFlash && (
+            <div
+              className={
+                "pointer-events-none absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium leading-tight shadow-sm backdrop-blur-sm transition-opacity duration-500 " +
+                (scanVisible ? "opacity-100 " : "opacity-0 ") +
+                (scanDenied
+                  ? "border-rose-500/60 bg-black/75 text-rose-100"
+                  : "border-emerald-400/40 bg-black/70 text-emerald-100")
+              }
+            >
+              <KeyRound className="size-3 shrink-0 opacity-80" />
+              <span>
+                {scanFlash.device} · {scanDenied ? "abgelehnt" : "frei"}
+              </span>
+            </div>
+          )}
+        </>
       )}
       {empOverlay && (
         <div className="absolute bottom-2 right-2 max-w-[min(92%,220px)] space-y-1">
