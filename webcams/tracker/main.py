@@ -287,6 +287,11 @@ class HysteresisLineCounter:
     bleibt der zuletzt eingenommene Stand stehen, gezählt wird allein der
     Wechsel von einer eingenommenen Seite auf die andere. Wer davor auf und
     ab geht, ohne wirklich durchzugehen, zählt damit gar nicht.
+
+    Gezählt wird nur zwischen den beiden Endpunkten. Neben der Linie
+    vorbeizugehen ist sonst dasselbe wie hindurchzugehen — am Drehkreuz
+    liegt direkt daneben das Tor für den Tageseingang, und jeder, der es
+    benutzt, landete als ungedeckter Durchgang im Alarm.
     """
 
     def __init__(
@@ -305,22 +310,36 @@ class HysteresisLineCounter:
         self._side: dict[int, int] = {}
         self._seen: dict[int, float] = {}
 
-    def _signed_distance(self, x: float, y: float) -> float:
+    def _project(self, x: float, y: float) -> tuple[float, float]:
+        """Abstand zur Linie (mit Vorzeichen) und Lage entlang der Linie.
+
+        Die Lage ist 0 am Startpunkt und 1 am Endpunkt; alles ausserhalb
+        liegt neben der Linie, nicht davor oder dahinter.
+        """
         dx = self.end.x - self.start.x
         dy = self.end.y - self.start.y
-        length = math.hypot(dx, dy)
-        if length == 0:
-            return 0.0
-        return ((x - self.start.x) * dy - (y - self.start.y) * dx) / length
+        length_sq = dx * dx + dy * dy
+        if length_sq == 0:
+            return 0.0, 0.0
+        px = x - self.start.x
+        py = y - self.start.y
+        dist = (px * dy - py * dx) / math.sqrt(length_sq)
+        along = (px * dx + py * dy) / length_sq
+        return dist, along
 
-    def trigger(self, detections: sv.Detections) -> list[tuple[int, str]]:
-        """Verarbeitet einen Frame, gibt die neuen Überquerungen zurück."""
+    def trigger(self, detections: sv.Detections) -> list[tuple[int, str, float]]:
+        """Verarbeitet einen Frame, gibt die neuen Überquerungen zurück.
+
+        Je Überquerung ``(Track-Id, Richtung, Lage entlang der Linie)``. Die
+        Lage steht im Protokoll, damit sich beim Nachziehen der Linie ablesen
+        laesst, an welcher Stelle gezaehlt wurde.
+        """
         ids = detections.tracker_id
         if ids is None or len(detections) == 0:
             return []
 
         now = time.time()
-        crossings: list[tuple[int, str]] = []
+        crossings: list[tuple[int, str, float]] = []
         for i, raw_id in enumerate(ids):
             tid = int(raw_id)
             self._seen[tid] = now
@@ -328,7 +347,11 @@ class HysteresisLineCounter:
             x1, _y1, x2, y2 = detections.xyxy[i]
             # Fußpunkt statt Boxmitte: die Füße stehen auf der Bodenebene,
             # in der auch die Linie gemeint ist.
-            dist = self._signed_distance((float(x1) + float(x2)) / 2.0, float(y2))
+            dist, along = self._project((float(x1) + float(x2)) / 2.0, float(y2))
+            # Neben der Linie: Seite gar nicht erst merken. Sonst zaehlt der
+            # erste Schritt zurueck in den Bereich als Wechsel.
+            if along < 0.0 or along > 1.0:
+                continue
             if abs(dist) < self.margin:
                 continue
 
@@ -340,10 +363,10 @@ class HysteresisLineCounter:
 
             if side > 0:
                 self.in_count += 1
-                crossings.append((tid, "in"))
+                crossings.append((tid, "in", along))
             else:
                 self.out_count += 1
-                crossings.append((tid, "out"))
+                crossings.append((tid, "out", along))
 
         for tid, last in list(self._seen.items()):
             if now - last > self.ttl:
@@ -394,6 +417,16 @@ def annotate_frame(
         (255, 220, 60),
         2,
     )
+    # Endkappen quer zur Linie: Ausserhalb wird nicht gezählt, und beim
+    # Justieren muss man sehen, wo genau Schluss ist.
+    for pt in (start_pt, end_pt):
+        cv2.line(
+            annotated,
+            (pt.x - ox, pt.y - oy),
+            (pt.x + ox, pt.y + oy),
+            (255, 220, 60),
+            2,
+        )
     # Pfeilspitze in der Mitte: zeigt Richtung „rein"
     mx = (start_pt.x + end_pt.x) // 2
     my = (start_pt.y + end_pt.y) // 2
@@ -620,7 +653,7 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                 # erzeugt sonst keine sinnvollen Crossings
                 if detections.tracker_id is not None and len(detections) > 0:
                     crossed = line_zone.trigger(detections)
-                    new_in = sum(1 for _, d in crossed if d == "in")
+                    new_in = sum(1 for _, d, _a in crossed if d == "in")
                     new_out = len(crossed) - new_in
 
                     if crossed:
@@ -628,7 +661,9 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                         log.info(
                             "worker[%s] CROSSING %s total in=%d out=%d",
                             cam_id,
-                            ", ".join(f"#{tid} {d}" for tid, d in crossed),
+                            ", ".join(
+                                f"#{tid} {d} bei {a:.2f}" for tid, d, a in crossed
+                            ),
                             counter.in_count + new_in,
                             counter.out_count + new_out,
                         )
@@ -658,7 +693,7 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                                         sorted(
                                             {
                                                 "rein" if d == "in" else "raus"
-                                                for _, d in crossed
+                                                for _, d, _a in crossed
                                             }
                                         )
                                     )

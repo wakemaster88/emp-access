@@ -105,6 +105,18 @@ entfernt ist. Ohne das erzeugt eine einzelne wartende Person — an einem
 Drehkreuz der Normalfall — im Sekundentakt Wechsel zwischen „rein" und
 „raus". Zu große Werte verschlucken dagegen kurze Durchgänge.
 
+### Wo die Linie aufhört
+
+Gezählt wird nur zwischen den beiden Endpunkten, nicht auf ihrer gedachten
+Verlängerung. Am Drehkreuz liegt direkt neben der Reihe das Tor für den
+Tageseingang; ohne diese Begrenzung zählte jeder, der es benutzt, als
+ungedeckter Durchgang. Im Debug-Bild markieren zwei Querstriche das Ende.
+
+Die Linie sollte deshalb knapp über die äußeren Spuren hinausreichen, aber
+nicht bis in einen Nachbardurchgang. Bei jedem gezählten Durchgang steht im
+Protokoll, an welcher Stelle der Linie er lag (`bei 0.42`, 0 = Startpunkt,
+1 = Endpunkt) — damit laesst sich ablesen, wo nachjustiert werden muss.
+
 ### Bild je Durchgang
 
 Zu jedem erkannten Durchgang wird der annotierte Frame nach
