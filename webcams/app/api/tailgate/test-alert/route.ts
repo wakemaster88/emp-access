@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/config";
 import { publishTailgatePass } from "@/lib/event-bus";
 import { postShopAlert } from "@/lib/emp-access-alert";
+import { collectAlertImages } from "@/lib/tailgate-live";
+import { fetchRecentCrossings } from "@/lib/people-tracker";
 import { logEvent } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -42,13 +44,34 @@ export async function POST(req: Request) {
   });
 
   let shop: string | null = null;
+  let bilder = 0;
   if (withShop) {
     try {
-      await postShopAlert({ camName: `${cam.name} (Test)`, count: 1, crossedAt });
+      // Bilder vom letzten echten Durchgang mitschicken — sonst prüft der
+      // Test die halbe Strecke und die Anzeige bleibt ungesehen.
+      const namen = new Map(cfg.cams.map((c) => [c.id, c.name]));
+      const letzter = (await fetchRecentCrossings(cam.id, 50))
+        .filter((c) => c.snap || c.ctx.length > 0)
+        .sort((a, b) => b.ts - a.ts)[0];
+      const images = letzter
+        ? await collectAlertImages(cam, letzter, (id) => namen.get(id) ?? id)
+        : [];
+      bilder = images.length;
+      await postShopAlert({
+        camName: `${cam.name} (Test)`,
+        count: 1,
+        crossedAt,
+        images,
+      });
     } catch (e) {
       shop = (e as Error).message;
     }
   }
 
-  return NextResponse.json({ ok: true, camName: cam.name, shopError: shop });
+  return NextResponse.json({
+    ok: true,
+    camName: cam.name,
+    images: bilder,
+    shopError: shop,
+  });
 }

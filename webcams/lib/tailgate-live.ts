@@ -1,10 +1,14 @@
 import { loadConfig } from "./config";
-import { fetchRecentCrossings } from "./people-tracker";
+import {
+  fetchCrossingSnapshot,
+  fetchRecentCrossings,
+  type CrossingEvent,
+} from "./people-tracker";
 import { fetchScanRows, type ScanRow } from "./emp-access-scans";
 import { archiveScans } from "./scan-archive";
 import { pairCrossings, MAX_LAG_MS } from "./tailgate-pairing";
 import { publishTailgatePass } from "./event-bus";
-import { postShopAlert } from "./emp-access-alert";
+import { postShopAlert, type ShopAlertImage } from "./emp-access-alert";
 import { logEvent } from "./audit";
 import type { Cam } from "./types";
 
@@ -46,6 +50,34 @@ const CROSSING_FETCH_LIMIT = 200;
  */
 const POPUP_COOLDOWN_MS = 60_000;
 
+/** Mehr Blickwinkel passen auf dem Kassen-Monitor nicht nebeneinander. */
+const MAX_ALERT_IMAGES = 2;
+
+/**
+ * Holt die Bilder zum Vorfall beim Tracker.
+ *
+ * An der Kasse nützt „jemand ist durchgegangen" wenig — die Frage ist, wer.
+ * Der eigene Blick zeigt den Durchgang selbst, die Zusatzkamera meist das
+ * Gesicht. Fehlt ein Bild, geht die Meldung trotzdem raus.
+ */
+export async function collectAlertImages(
+  cam: Cam,
+  crossing: CrossingEvent,
+  camName: (id: string) => string,
+): Promise<ShopAlertImage[]> {
+  const images: ShopAlertImage[] = [];
+  if (crossing.snap) {
+    const own = await fetchCrossingSnapshot(cam.id, crossing.ts);
+    if (own) images.push({ label: cam.name, jpeg: own });
+  }
+  for (const src of crossing.ctx) {
+    if (images.length >= MAX_ALERT_IMAGES) break;
+    const img = await fetchCrossingSnapshot(cam.id, crossing.ts, src);
+    if (img) images.push({ label: camName(src), jpeg: img });
+  }
+  return images;
+}
+
 interface State {
   timer: ReturnType<typeof setInterval> | null;
   running: boolean;
@@ -76,7 +108,11 @@ function getState(): State {
   return globalThis.__webcams_tailgate_live;
 }
 
-async function checkCam(cam: Cam, scans: ScanRow[]): Promise<void> {
+async function checkCam(
+  cam: Cam,
+  scans: ScanRow[],
+  camName: (id: string) => string,
+): Promise<void> {
   const state = getState();
   const now = Date.now();
   const horizon = now - LOOKBACK_MS;
@@ -123,7 +159,8 @@ async function checkCam(cam: Cam, scans: ScanRow[]): Promise<void> {
   if (fresh.length === 0) return;
   for (const c of fresh) reported.add(c.ts);
 
-  const newest = Math.max(...fresh.map((c) => c.ts));
+  const newestCrossing = fresh.reduce((a, b) => (b.ts > a.ts ? b : a));
+  const newest = newestCrossing.ts;
   publishTailgatePass({
     source: cam.id,
     camId: cam.id,
@@ -151,6 +188,7 @@ async function checkCam(cam: Cam, scans: ScanRow[]): Promise<void> {
       camName: cam.name,
       count: pending,
       crossedAt: newest,
+      images: await collectAlertImages(cam, newestCrossing, camName),
     });
   } catch (e) {
     console.warn("[tailgate-live] Popup fehlgeschlagen", (e as Error).message);
@@ -184,9 +222,12 @@ async function tick(): Promise<void> {
     const scans = await fetchScanRows(emp.baseUrl, token, SCAN_FETCH_LIMIT);
     void archiveScans(scans);
 
+    const namen = new Map(cfg.cams.map((c) => [c.id, c.name]));
+    const camName = (id: string) => namen.get(id) ?? id;
+
     for (const cam of cams) {
       try {
-        await checkCam(cam, scans);
+        await checkCam(cam, scans, camName);
       } catch (e) {
         console.warn(
           `[tailgate-live] ${cam.id} fehlgeschlagen`,

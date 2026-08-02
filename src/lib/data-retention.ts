@@ -16,6 +16,7 @@ export const RETENTION_KEYS = [
   "hubTasks",
   "discoveredDevices",
   "audioJobs",
+  "monitorAlerts",
 ] as const;
 
 export type RetentionKey = (typeof RETENTION_KEYS)[number];
@@ -36,6 +37,7 @@ export const DEFAULT_DATA_RETENTION: DataRetentionConfig = {
   hubTasks: 14,
   discoveredDevices: 60,
   audioJobs: 30,
+  monitorAlerts: 30,
 };
 
 export const RETENTION_LABELS: Record<
@@ -81,6 +83,10 @@ export const RETENTION_LABELS: Record<
   audioJobs: {
     label: "Audio",
     description: "Protokoll abgespielter Durchsagen und Steuerbefehle",
+  },
+  monitorAlerts: {
+    label: "Monitor-Warnungen",
+    description: "Warnungen am Kassen-Monitor inkl. Schnappschüssen",
   },
 };
 
@@ -206,6 +212,14 @@ export async function purgeAccountRetention(
         createdAt: { lt: cutoff },
         status: { in: ["DONE", "FAILED"] },
       },
+    });
+    return r.count;
+  });
+
+  // Bilder haengen per Cascade an der Warnung und gehen mit.
+  await del("monitorAlerts", async (cutoff) => {
+    const r = await prisma.monitorAlert.deleteMany({
+      where: { accountId, createdAt: { lt: cutoff } },
     });
     return r.count;
   });

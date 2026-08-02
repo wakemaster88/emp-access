@@ -10,11 +10,19 @@ import { empAccessPostJson } from "./emp-access-client";
  * müssten wir sonst kennen, erreichen und am Leben halten.
  */
 
+export interface ShopAlertImage {
+  /** Woher das Bild stammt, erscheint als Unterschrift. */
+  label: string;
+  jpeg: Buffer;
+}
+
 export interface ShopAlert {
   camName: string;
   /** Wie viele ungedeckte Durchgänge gemeldet werden. */
   count: number;
   crossedAt: number;
+  /** Blickwinkel zum Vorfall — ohne Bild ist die Meldung an der Kasse wenig wert. */
+  images?: ShopAlertImage[];
 }
 
 function buildMessage(a: ShopAlert): string {
@@ -41,5 +49,9 @@ export async function postShopAlert(alert: ShopAlert): Promise<void> {
     message: buildMessage(alert),
     source: alert.camName,
     occurredAt: new Date(alert.crossedAt).toISOString(),
+    images: (alert.images ?? []).map((i) => ({
+      label: i.label,
+      data: i.jpeg.toString("base64"),
+    })),
   });
 }

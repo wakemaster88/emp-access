@@ -41,6 +41,12 @@ export async function GET(
       message: true,
       source: true,
       occurredAt: true,
+      // Nur die Kennung, nicht die Bytes — die holt der Monitor als Bild-URL
+      // nach und darf sie dann auch cachen.
+      images: {
+        select: { position: true, label: true },
+        orderBy: { position: "asc" },
+      },
     },
   });
 

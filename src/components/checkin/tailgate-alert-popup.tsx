@@ -15,12 +15,18 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 
 const POLL_MS = 4000;
 
+interface AlertImage {
+  position: number;
+  label: string | null;
+}
+
 interface Alert {
   id: number;
   kind: string;
   message: string;
   source: string | null;
   occurredAt: string;
+  images?: AlertImage[];
 }
 
 export function TailgateAlertPopup({ token }: { token: string }) {
@@ -77,10 +83,15 @@ export function TailgateAlertPopup({ token }: { token: string }) {
     second: "2-digit",
   });
   const weitere = alerts.length - 1;
+  const bilder = current.images ?? [];
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6">
-      <div className="w-full max-w-lg rounded-2xl border-2 border-red-500/70 bg-slate-900 p-6 shadow-2xl shadow-red-950/50">
+      <div
+        className={`w-full rounded-2xl border-2 border-red-500/70 bg-slate-900 p-6 shadow-2xl shadow-red-950/50 ${
+          bilder.length > 1 ? "max-w-3xl" : "max-w-lg"
+        }`}
+      >
         <div className="flex items-start gap-4">
           <div className="rounded-xl bg-red-500/15 p-3">
             <AlertTriangle className="h-8 w-8 animate-pulse text-red-400" />
@@ -101,6 +112,31 @@ export function TailgateAlertPopup({ token }: { token: string }) {
             </p>
           </div>
         </div>
+        {bilder.length > 0 && (
+          <div
+            className={`mt-5 grid gap-3 ${bilder.length > 1 ? "sm:grid-cols-2" : ""}`}
+          >
+            {bilder.map((bild) => (
+              <figure
+                key={bild.position}
+                className="overflow-hidden rounded-xl border border-slate-700 bg-black"
+              >
+                {/* object-contain statt cover: lieber Rand als ein
+                    abgeschnittener Kopf — genau darauf schaut man hier. */}
+                <img
+                  src={`/api/checkin/public/${token}/alerts/${current.id}/image?i=${bild.position}`}
+                  alt=""
+                  className="max-h-64 w-full object-contain"
+                />
+                {bild.label && (
+                  <figcaption className="border-t border-slate-800 px-3 py-1.5 text-xs text-slate-400">
+                    {bild.label}
+                  </figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           onClick={() => void acknowledge()}

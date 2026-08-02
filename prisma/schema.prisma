@@ -793,7 +793,27 @@ model MonitorAlert {
   createdAt      DateTime  @default(now())
   acknowledgedAt DateTime?
 
+  images MonitorAlertImage[]
+
   @@index([accountId, acknowledgedAt])
+}
+
+/// Bild zum Vorfall, damit am Kassen-Monitor erkennbar ist, um wen es geht.
+/// Eigene Tabelle, damit das Polling des Monitors die Bilddaten nicht bei
+/// jedem Durchlauf mitlaedt.
+model MonitorAlertImage {
+  id      Int          @id @default(autoincrement())
+  alertId Int
+  alert   MonitorAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  /// Anzeigereihenfolge; 0 ist der Blick, in dem der Vorfall erkannt wurde.
+  position Int         @default(0)
+  /// Woher das Bild stammt, z. B. der Kameraname.
+  label    String?
+  /// JPEG-Bilddaten.
+  image     Bytes
+  createdAt DateTime   @default(now())
+
+  @@unique([alertId, position])
 }
 
 // ── Email-Automationen ───────────────────────────────────────────────────────

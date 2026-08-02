@@ -27,6 +27,7 @@ const retentionPatchSchema = z
     hubTasks: dayOrNull.optional(),
     discoveredDevices: dayOrNull.optional(),
     audioJobs: dayOrNull.optional(),
+    monitorAlerts: dayOrNull.optional(),
   })
   .strict();
 
