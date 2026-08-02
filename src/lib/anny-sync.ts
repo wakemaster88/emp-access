@@ -3,41 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
 import { normalizeAnnyBookingsResponse } from "@/lib/anny-jsonapi";
 import type { AnnyBooking } from "@/lib/anny-types";
-import { fmtTimeBerlin } from "@/lib/anny-availability";
-import { berlinYmd } from "@/lib/berlin-day";
+import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 import { findPredecessorTicket } from "@/lib/ticket-predecessor";
-
-/**
- * Slot-Uhrzeit (HH:mm) aus der tatsaechlichen Buchungszeit ableiten – fuer
- * TIME_SLOT-Tickets ohne hinterlegten Service-/Abo-Default. Ganztaegige
- * Buchungen (00:00–23:59 o.ae.) gelten NICHT als Slot und liefern null.
- */
-function slotTimesFromBooking(
-  start: Date | null,
-  end: Date | null,
-): { slotStart: string; slotEnd: string } | null {
-  if (!start || !end) return null;
-  if (spansMultipleBerlinDays(start, end)) return null;
-  const s = fmtTimeBerlin(start.toISOString());
-  const e = fmtTimeBerlin(end.toISOString());
-  if (!s || !e || s === e) return null;
-  if (s === "00:00" && (e === "23:59" || e === "00:00")) return null;
-  return { slotStart: s, slotEnd: e };
-}
-
-/**
- * Buchung ueber mehrere Berliner Kalendertage - typisch fuer die
- * Sammelbuchung einer Kursserie ("Ferienkurs 27.–31.07."), die ANNY neben den
- * einzelnen Kurstagen mitliefert. Solche Buchungen bekommen KEINE Slot-Zeit
- * aus dem Service-Default: sie beschreiben den ganzen Kurszeitraum, nicht
- * einen Termin. Mit Slot-Zeit wuerden sie in der Shop-Slot-Uebersicht an
- * jedem Kurstag zusaetzlich zum echten Tagestermin mitgezaehlt und den Slot
- * faelschlich als voll ausweisen.
- */
-function spansMultipleBerlinDays(start: Date | null, end: Date | null): boolean {
-  if (!start || !end) return false;
-  return berlinYmd(start) !== berlinYmd(end);
-}
 
 const DEFAULT_BASE_URL = "https://b.anny.co";
 const SYNC_WINDOW_DAYS = 60;
@@ -338,6 +305,12 @@ function ticketChanged(
   const eEnd = existing.endDate ? new Date(existing.endDate).getTime() : null;
   const iEnd = incoming.endDate ? new Date(incoming.endDate).getTime() : null;
   if (eEnd !== iEnd) return true;
+  // Slot-Zeit nur vergleichen, wenn dieser Lauf ueberhaupt eine mitbringt -
+  // sonst gaelte jedes Ticket mit Slot-Zeit als geaendert, obwohl das Update
+  // die Felder gar nicht anfasst, und wir schrieben es bei jedem Sync neu.
+  for (const k of ["slotStart", "slotEnd"]) {
+    if (k in incoming && (incoming[k] ?? null) !== (existing[k] ?? null)) return true;
+  }
   // Zusatzartikel koennen nachtraeglich dazukommen (Rechnung wird erst wenige
   // Minuten nach der Buchung ausgestellt), muessen also ein Update ausloesen.
   // Prisma.DbNull/JsonNull und DB-null bedeuten alle "keine Artikel" - ohne
@@ -1100,6 +1073,7 @@ export async function syncAnnyForAccount(
     validityDurationMinutes?: number | null;
     slotStart?: string | null;
     slotEnd?: string | null;
+    slotManaged?: boolean;
   }
 
   const dbSubscriptions = await prisma.subscription.findMany({
@@ -1127,7 +1101,7 @@ export async function syncAnnyForAccount(
 
   const servicesList = await prisma.service.findMany({
     where: { accountId },
-    select: { id: true, annyNames: true, mainAccessAreaId: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
+    select: { id: true, annyNames: true, mainAccessAreaId: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true, slotCapacity: true },
   });
   const svcNameMap = new Map<string, number>();
   // Explizit konfigurierte Hauptressource je Service. Hat beim Setzen von
@@ -1148,6 +1122,7 @@ export async function syncAnnyForAccount(
       validityDurationMinutes: svc.defaultValidityDurationMinutes,
       slotStart: svc.defaultSlotStart,
       slotEnd: svc.defaultSlotEnd,
+      slotManaged: svc.slotCapacity != null && svc.slotCapacity > 0,
     });
     svcMainArea.set(svc.id, svc.mainAccessAreaId ?? null);
     if (svc.annyNames) {
@@ -1187,6 +1162,7 @@ export async function syncAnnyForAccount(
           barcode: true, accessAreaId: true, annyResourceId: true,
           subscriptionId: true, serviceId: true,
           qrCode: true, email: true, addOns: true, annyOrderId: true,
+          slotStart: true, slotEnd: true,
         },
       })
     : [];
@@ -1223,6 +1199,7 @@ export async function syncAnnyForAccount(
         barcode: true, accessAreaId: true, annyResourceId: true,
         subscriptionId: true, serviceId: true,
         qrCode: true, email: true, addOns: true, annyOrderId: true,
+        slotStart: true, slotEnd: true,
       },
       orderBy: { id: "asc" },
     });
@@ -1418,18 +1395,10 @@ export async function syncAnnyForAccount(
       serviceId,
       ...(defaults.validityType ? { validityType: defaults.validityType as "DATE_RANGE" | "DURATION" | "TIME_SLOT" } : {}),
       ...(defaults.validityDurationMinutes != null ? { validityDurationMinutes: defaults.validityDurationMinutes } : {}),
-      // Slot-Zeit: bevorzugt Service-/Abo-Default, sonst – bei TIME_SLOT – die
-      // echte Buchungszeit (damit z.B. Anfaengerkurs-Slots 13:00/15:00/17:00
-      // am Ticket stehen und im Monitor nach Slot gruppiert werden koennen).
-      ...((defaults.slotStart && defaults.slotEnd
-        && !spansMultipleBerlinDays(group.startDate, group.endDate))
-        ? { slotStart: defaults.slotStart, slotEnd: defaults.slotEnd }
-        : (defaults.validityType === "TIME_SLOT"
-            ? (() => {
-                const st = slotTimesFromBooking(group.startDate, group.endDate);
-                return st ? { slotStart: st.slotStart, slotEnd: st.slotEnd } : {};
-              })()
-            : {})),
+      // Slot-Zeit: bevorzugt Service-/Abo-Default, sonst die echte Buchungszeit
+      // (damit z.B. Anfaengerkurs-Slots 13:00/15:00/17:00 am Ticket stehen und
+      // im Monitor nach Slot gruppiert werden koennen).
+      ...annyTicketSlotTimes(defaults, group.startDate, group.endDate),
     };
 
     try {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { annyBarcodeForTicket, extractAnnyBookingScanCode } from "@/lib/anny-booking-scan-code";
+import { annyTicketSlotTimes } from "@/lib/anny-slot-time";
 
 interface AnnyLineItem {
   id?: string | number;
@@ -183,6 +184,9 @@ export async function POST(request: NextRequest) {
         conditions.push({ uuid: `anny:${customerId}:${svcId}:${booking.id}`, accountId });
         conditions.push({ uuid: `anny:${customerId}:${svcId}`, accountId });
       }
+      if (booking.id != null) {
+        conditions.push({ uuid: { endsWith: `:${booking.id}` }, accountId, source: "ANNY" });
+      }
       if (booking.number) {
         conditions.push({ barcode: booking.number, accountId, source: "ANNY" });
       }
@@ -228,6 +232,7 @@ export async function POST(request: NextRequest) {
     validityDurationMinutes?: number | null;
     slotStart?: string | null;
     slotEnd?: string | null;
+    slotManaged?: boolean;
   }
 
   const subscriptions = await db.subscription.findMany({
@@ -248,12 +253,12 @@ export async function POST(request: NextRequest) {
 
   const servicesList = await db.service.findMany({
     where: { accountId },
-    select: { id: true, annyNames: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true },
+    select: { id: true, annyNames: true, defaultValidityType: true, defaultValidityDurationMinutes: true, defaultSlotStart: true, defaultSlotEnd: true, slotCapacity: true },
   });
   const svcNameMap = new Map<string, number>();
   const svcDefaults = new Map<number, ValidityDefaults>();
   for (const svc of servicesList) {
-    svcDefaults.set(svc.id, { validityType: svc.defaultValidityType, validityDurationMinutes: svc.defaultValidityDurationMinutes, slotStart: svc.defaultSlotStart, slotEnd: svc.defaultSlotEnd });
+    svcDefaults.set(svc.id, { validityType: svc.defaultValidityType, validityDurationMinutes: svc.defaultValidityDurationMinutes, slotStart: svc.defaultSlotStart, slotEnd: svc.defaultSlotEnd, slotManaged: svc.slotCapacity != null && svc.slotCapacity > 0 });
     if (svc.annyNames) {
       try {
         const names: string[] = JSON.parse(svc.annyNames);
@@ -381,14 +386,26 @@ export async function POST(request: NextRequest) {
       serviceId: serviceIdNum,
       ...(defaults.validityType ? { validityType: defaults.validityType as "DATE_RANGE" | "DURATION" | "TIME_SLOT" } : {}),
       ...(defaults.validityDurationMinutes != null ? { validityDurationMinutes: defaults.validityDurationMinutes } : {}),
-      ...(defaults.slotStart ? { slotStart: defaults.slotStart } : {}),
-      ...(defaults.slotEnd ? { slotEnd: defaults.slotEnd } : {}),
+      // Slot-Zeit: Service-/Abo-Default, sonst die gebuchte Uhrzeit - dieselbe
+      // Regel wie im Sync, damit ein Ticket nicht je nach Weg mal mit und mal
+      // ohne Kurszeit im Monitor landet.
+      ...annyTicketSlotTimes(defaults, startDate, endDate),
     };
 
     try {
       const exactMatch = await db.ticket.findFirst({
         where: { uuid, accountId },
       });
+      // Ticket derselben Buchung unter abweichender UUID (siehe unten). Der
+      // Doppelpunkt verankert das Suffix, damit "…:144736985" nicht als
+      // Buchung 44736985 durchgeht.
+      const sameBooking = exactMatch || booking.id == null
+        ? null
+        : await db.ticket.findFirst({
+            where: { accountId, source: "ANNY", uuid: { endsWith: `:${booking.id}` } },
+            select: { id: true },
+            orderBy: { id: "asc" },
+          });
       if (exactMatch) {
         await db.ticket.update({
           where: { id: exactMatch.id },
@@ -401,6 +418,15 @@ export async function POST(request: NextRequest) {
           data: { ...ticketData, uuid },
         });
         if (claimed.count > 0) {
+          updated++;
+        } else if (sameBooking) {
+          // Dieselbe Buchung liegt schon unter anderer UUID vor. ANNY schickt
+          // im Webhook die Kunden-UUID, GET /bookings dagegen die numerische
+          // Kundennummer - ohne diesen Abgleich entstuende zu jeder Buchung ein
+          // zweites Ticket, das der Sync spaeter als Waise auf INVALID setzt.
+          // Die UUID bleibt stehen: sie gehoert dem Sync, der sie in jedem Lauf
+          // aus der numerischen Kundennummer neu bildet.
+          await db.ticket.update({ where: { id: sameBooking.id }, data: ticketData });
           updated++;
         } else {
           const siblingTicket = await db.ticket.findFirst({
