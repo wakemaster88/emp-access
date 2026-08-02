@@ -322,6 +322,14 @@ async function restoreAlarms() {
     }
     // Nichts überschreiben, was inzwischen frisch aufgelaufen ist.
     if (state.alarms.length === 0) state.alarms = restored;
+
+    // Auch die Sperrfrist mitnehmen. Sonst löst jeder Neustart des Servers
+    // sofort wieder Alarm aus, obwohl gerade eben schon einer lief — bei
+    // mehreren Neustarts hintereinander stand das Protokoll voll.
+    for (const a of restored) {
+      const prev = state.lastAlarmAt.get(a.camId) ?? 0;
+      if (a.ts > prev) state.lastAlarmAt.set(a.camId, a.ts);
+    }
   } catch (e) {
     console.warn("[tailgate] Alarme laden fehlgeschlagen", (e as Error).message);
   }
