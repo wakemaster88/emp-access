@@ -57,6 +57,17 @@ WEBCAMS_TRACKER_DEVICE=cpu uvicorn main:app --host 127.0.0.1 --port 8088
 | `WEBCAMS_TRACKER_CROSSING_SNAPSHOTS` | `1`            | Bild je Durchgang mitschreiben (`0` = aus)  |
 | `WEBCAMS_TRACKER_SNAPSHOT_RETENTION_DAYS` | `30`      | Aufbewahrung dieser Bilder in Tagen         |
 
+### Tagessumme und Tageswechsel
+
+Jeder Durchgang landet sofort als Zeile in einer JSONL-Datei pro Kamera und
+Tag (`logs/people/<camId>/<datum>.jsonl`, Aufbewahrung
+`WEBCAMS_PEOPLE_HISTORY_RETENTION_DAYS`, Standard 180 Tage). Die angezeigten
+Zähler sind immer die Summe des laufenden Tages: Beim Start liest der Worker
+die heutige Datei ein, damit ein Neustart die Anzeige nicht auf 0 wirft, und
+um Mitternacht liest er sie erneut — dann ist sie leer und der Zähler beginnt
+bei 0. Die Vortage bleiben erhalten und sind über
+`/counters/<camId>/history` abrufbar.
+
 ### Zweiter Blickwinkel
 
 Die Zählkamera steht so, dass man die Linie gut sieht — Gesichter meist

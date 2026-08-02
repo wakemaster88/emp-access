@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import cv2
 import numpy as np
@@ -495,6 +495,20 @@ def grab_context_snapshots(cam_id: str, ts: float, src_cam_ids: list[str]) -> No
             log.warning("context snapshot %s failed: %s", src, exc)
 
 
+def next_local_midnight(now: float) -> float:
+    """Zeitstempel des nächsten lokalen Mitternachtswechsels.
+
+    ``mktime`` mit ``tm_isdst=-1`` lässt die Zeitzone selbst entscheiden,
+    damit die Umstellung auf Sommer-/Winterzeit den Tageswechsel nicht um
+    eine Stunde verschiebt.
+    """
+    lt = time.localtime(now)
+    tomorrow = datetime(lt.tm_year, lt.tm_mon, lt.tm_mday) + timedelta(days=1)
+    return time.mktime(
+        (tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0, 0, 0, -1)
+    )
+
+
 def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
     """Endlosschleife: liest Stream, trackt, zählt. Reconnect bei Fehlern.
 
@@ -502,7 +516,9 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
     pro Cam pro Tag geschrieben (siehe ``people_history.py``). Die
     angezeigten Zähler entsprechen der heutigen Tagessumme — beim
     Sidecar-Start lesen wir die heutige Datei und seeden den Zähler,
-    damit Restarts den User-View nicht auf 0 werfen.
+    damit Restarts den User-View nicht auf 0 werfen. Läuft der Worker über
+    Mitternacht durch, wird zum Tageswechsel neu aus der (dann frischen)
+    Tagesdatei geseedet, sonst schleppt die Anzeige den Vortag mit.
     """
     cam_id = cam["id"]
     rtsp = build_rtsp_url(cam)
@@ -523,6 +539,8 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
             seeded["in"],
             seeded["out"],
         )
+
+    day_ends_at = next_local_midnight(time.time())
 
     backoff = 2.0
     # Eigenes Modell pro Cam (ByteTrack-State bleibt isoliert), aber EINMAL
@@ -578,6 +596,23 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
                 frame_idx += 1
                 if FRAME_STRIDE > 1 and frame_idx % FRAME_STRIDE != 0:
                     continue
+
+                # Tageswechsel: Anzeige auf den neuen Tag stellen. Neu aus
+                # der Datei lesen statt hart auf 0 zu setzen — hat der Rechner
+                # über Mitternacht geschlafen, sind womöglich schon Durchgänge
+                # des neuen Tages verbucht.
+                now = time.time()
+                if now >= day_ends_at:
+                    fresh = load_today_counts(cam_id)
+                    counter.in_count = fresh["in"]
+                    counter.out_count = fresh["out"]
+                    day_ends_at = next_local_midnight(now)
+                    log.info(
+                        "worker[%s] Tageswechsel: Zähler auf in=%d out=%d gesetzt",
+                        cam_id,
+                        fresh["in"],
+                        fresh["out"],
+                    )
 
                 detections = sv.Detections.from_ultralytics(result)
 
