@@ -6,7 +6,8 @@ Ablauf:
 2. Musikquelle starten – mpv lokal oder Snapclient bei synchronen Zonen
 3. Zonenzustand vom Server holen und Wiedergabe wiederherstellen
 4. Jobs pollen und der Reihe nach abarbeiten (Durchsagen mit Vorrang)
-5. Hintergrund: Heartbeat, Auto-Update, systemd-Watchdog
+5. AirPlay/Bluetooth beobachten: ein Sender darf die Zone übernehmen
+6. Hintergrund: Heartbeat, Auto-Update, systemd-Watchdog
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from emp_audio.api_client import ApiClient
 from emp_audio.cache import FileCache
 from emp_audio.chime import ensure_chime
 from emp_audio.config import Config
+from emp_audio.external import ExternalSource, available_backends
 from emp_audio.player import MusicPlayer, SpeechPlayer
 from emp_audio.snapcast import SnapcastMusic
 from emp_audio.updater import check_and_update, restart_service
@@ -97,8 +99,10 @@ class EmpAudio:
         self.api: Optional[ApiClient] = None
         self.cache: Optional[FileCache] = None
         self.music = None
+        self.external: Optional[ExternalSource] = None
         self.speech: Optional[SpeechPlayer] = None
         self.chime_path: Optional[str] = None
+        self._backends: list[str] = []
 
         self._running = False
         self._jobs: queue.PriorityQueue = queue.PriorityQueue()
@@ -108,6 +112,9 @@ class EmpAudio:
         self._zone: dict = {}
         self._zone_lock = threading.Lock()
         self._restored = False
+        # True, solange die Ruhezeit die eigene Musik unterdrückt. Beim Verlassen
+        # des Fensters wird die hinterlegte Quelle wieder gestartet.
+        self._in_quiet = False
 
     # ── Start ────────────────────────────────────────────────────────────────
 
@@ -155,8 +162,23 @@ class EmpAudio:
             self.music = MusicPlayer(audio_device=self.config.audio_device)
 
         self.music.start()
+
+        self.external = ExternalSource(
+            pcm=self.config.external_pcm,
+            mixer=self.config.external_mixer,
+            ctl=self.config.external_ctl,
+        )
+        self.external.start()
+        self._backends = available_backends(self.config.external_pcm)
+        if self._backends:
+            logger.info("Empfänger verfügbar: %s", ", ".join(self._backends))
+        else:
+            logger.info("Kein AirPlay-/Bluetooth-Empfang eingerichtet")
+
+        # Eine Durchsage muss sich gegen beides durchsetzen: gegen die eigene
+        # Musik und gegen einen Sender, der die Zone gerade übernommen hat.
         self.speech = SpeechPlayer(
-            self.music,
+            [self.music, self.external],
             audio_device=self.config.audio_device,
             normalize=bool(self.config.speech_normalize),
         )
@@ -165,6 +187,7 @@ class EmpAudio:
 
         threading.Thread(target=self._job_worker, daemon=True).start()
         threading.Thread(target=self._poll_loop, daemon=True).start()
+        threading.Thread(target=self._external_loop, daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         threading.Thread(target=self._update_loop, daemon=True).start()
         threading.Thread(target=self._watchdog_loop, daemon=True).start()
@@ -212,17 +235,60 @@ class EmpAudio:
             if self.music and self.music.is_playing:
                 logger.info("Zone deaktiviert – Wiedergabe wird beendet")
                 self.music.stop()
+            # Eine abgeschaltete Zone darf auch kein Sendeziel mehr sein.
+            if self.external:
+                self.external.apply(None, None)
             return
 
         volume = zone.get("volume")
-        if isinstance(volume, int) and self.music and volume != self.music.volume:
-            self.music.set_volume(volume)
+        if isinstance(volume, int):
+            if self.music and volume != self.music.volume:
+                self.music.set_volume(volume)
+            # Der Zonenregler ist auch für einen externen Sender der Hauptpegel;
+            # dessen eigener Regler wirkt zusätzlich.
+            if self.external and volume != self.external.volume:
+                self.external.set_volume(volume)
+
+        if self.external:
+            self.external.apply(zone.get("airplay"), zone.get("bluetooth"))
+
+        self._enforce_quiet(zone)
+
+        if self._in_quiet:
+            return
 
         if not self._restored:
             self._restored = True
             self._restore_source(zone)
         elif previous.get("id") != zone.get("id"):
             self._restore_source(zone)
+
+    def _enforce_quiet(self, zone: dict):
+        """
+        Ruhezeit durchsetzen: eigene Musik stoppen, wenn das Fenster beginnt,
+        und die hinterlegte Quelle wieder starten, wenn es endet.
+
+        AirPlay/Bluetooth bleiben bewusst unberührt – wer abends bewusst
+        etwas aufspielt, wird nicht ausgebremst.
+        """
+        quiet = _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo"))
+
+        if quiet:
+            if self.music and self.music.is_playing:
+                logger.info("Ruhezeit aktiv – Musik wird beendet")
+                self.music.stop()
+            if not self._in_quiet:
+                logger.info("Ruhezeit beginnt")
+            self._in_quiet = True
+            self._restored = True
+            return
+
+        if self._in_quiet:
+            self._in_quiet = False
+            source = zone.get("sourceKind")
+            if source in ("STREAM", "PLAYLIST"):
+                logger.info("Ruhezeit beendet – Quelle wird fortgesetzt")
+                self._restore_source(zone)
 
     def _restore_source(self, zone: dict):
         """
@@ -236,13 +302,15 @@ class EmpAudio:
         threading.Thread(target=self._restore_source_blocking, args=(zone,), daemon=True).start()
 
     def _restore_source_blocking(self, zone: dict):
+        if _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo")):
+            logger.info("Ruhezeit aktiv – Musik startet nicht")
+            self._in_quiet = True
+            return
+
         source = zone.get("sourceKind")
         if source == "STREAM" and zone.get("streamUrl"):
             self.music.play_stream(zone["streamUrl"])
         elif source == "PLAYLIST" and zone.get("playlist"):
-            if _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo")):
-                logger.info("Ruhezeit aktiv – Musik startet nicht")
-                return
             tracks = zone["playlist"].get("tracks") or []
             paths = self.cache.ensure_many(t["url"] for t in tracks if t.get("url"))
             if paths:
@@ -319,6 +387,8 @@ class EmpAudio:
             if not isinstance(volume, int):
                 raise ValueError("Lautstärke fehlt")
             self.music.set_volume(volume)
+            if self.external:
+                self.external.set_volume(volume)
             logger.info("Lautstärke: %d%%", volume)
         elif kind == "SYNC_LIBRARY":
             self._do_sync_library(zone)
@@ -352,15 +422,16 @@ class EmpAudio:
         if isinstance(volume, int):
             self.music.set_volume(volume)
 
+        if _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo")):
+            logger.info("Ruhezeit aktiv – Musik wird nicht gestartet")
+            self._in_quiet = True
+            return
+
         if payload.get("kind") == "STREAM":
             url = payload.get("url")
             if not url:
                 raise ValueError("Stream ohne URL")
             self.music.play_stream(url)
-            return
-
-        if _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo")):
-            logger.info("Ruhezeit aktiv – Musik wird nicht gestartet")
             return
 
         tracks = payload.get("tracks") or []
@@ -376,18 +447,47 @@ class EmpAudio:
         paths = self.cache.ensure_many(urls)
         logger.info("Bibliothek abgeglichen: %d von %d Titeln lokal", len(paths), len(urls))
 
+    # ── Externe Sender ───────────────────────────────────────────────────────
+
+    def _external_loop(self):
+        """
+        Übernahme durch AirPlay oder Bluetooth beobachten.
+
+        Getrennt vom Server-Poll, weil ein Sender sofort Ton machen darf und
+        nicht auf die nächste Runde beim Server warten soll. Solange er spielt,
+        steht die eigene Musik – die eingestellte Quelle bleibt aber erhalten und
+        läuft nach der Freigabe von selbst weiter.
+        """
+        interval = max(1, int(self.config.external_poll_interval))
+        previous: Optional[str] = None
+
+        while self._running:
+            try:
+                state = self.external.poll() if self.external else None
+                kind = state[0] if state else None
+                if kind != previous:
+                    if kind:
+                        self.music.pause()
+                    else:
+                        self.music.resume()
+                    previous = kind
+                    # Ohne sofortige Meldung stünde im Dashboard bis zum nächsten
+                    # Heartbeat noch der alte Zustand.
+                    self._send_heartbeat(system_info=False)
+            except Exception as e:
+                logger.debug("Empfänger-Poll: %s", e)
+
+            for _ in range(interval):
+                if not self._running:
+                    return
+                time.sleep(1)
+
     # ── Hintergrund ──────────────────────────────────────────────────────────
 
     def _heartbeat_loop(self):
         while self._running:
             try:
-                if self.api and self.music:
-                    self.api.send_heartbeat(
-                        is_playing=self.music.is_playing,
-                        current_title=self.music.current_title(),
-                        volume=self.music.volume,
-                        system_info=self._system_info(),
-                    )
+                self._send_heartbeat()
             except Exception as e:
                 logger.warning("Heartbeat-Fehler: %s", e)
 
@@ -395,6 +495,31 @@ class EmpAudio:
                 if not self._running:
                     return
                 time.sleep(1)
+
+    def _send_heartbeat(self, system_info: bool = True) -> None:
+        if not (self.api and self.music):
+            return
+        active = self.external.active_kind if self.external else None
+        self.api.send_heartbeat(
+            # Übernommen heißt: aus der Zone kommt Ton, auch wenn die eigene
+            # Musik dafür angehalten ist.
+            is_playing=self.music.is_playing or (self.external.is_playing if self.external else False),
+            current_title=self._current_title(),
+            volume=self.music.volume,
+            system_info=self._system_info() if system_info else None,
+            external_source=(
+                {"kind": active, "sender": self.external.sender} if active else None
+            ),
+        )
+
+    def _current_title(self) -> Optional[str]:
+        """Was in der Zone zu hören ist: bei Übernahme der Sender, sonst der Titel."""
+        active = self.external.active_kind if self.external else None
+        if active:
+            label = "AirPlay" if active == "AIRPLAY" else "Bluetooth"
+            sender = self.external.sender
+            return f"{label}: {sender}" if sender else label
+        return self.music.current_title() if self.music else None
 
     def _system_info(self) -> dict:
         try:
@@ -405,6 +530,9 @@ class EmpAudio:
         except Exception:
             info = {}
         info["audio_version"] = VERSION
+        # Das Dashboard gibt die Schalter für AirPlay und Bluetooth erst frei,
+        # wenn hier steht, dass dieser Pi sie bedienen kann.
+        info["audio_backends"] = self._backends
         if self.cache:
             free = self.cache.free_mb()
             if free is not None:
@@ -442,6 +570,8 @@ class EmpAudio:
         logger.info("Aufräumen...")
         if self.speech:
             self.speech.interrupt()
+        if self.external:
+            self.external.cleanup()
         if self.music:
             self.music.cleanup()
         logger.info("Beendet")

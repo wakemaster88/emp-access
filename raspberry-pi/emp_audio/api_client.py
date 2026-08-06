@@ -60,12 +60,16 @@ class ApiClient:
         volume: Optional[int],
         system_info: Optional[dict] = None,
         job_reports: Optional[list] = None,
+        external_source: Optional[dict] = None,
     ) -> bool:
         """Meldet Ist-Zustand und – falls vorhanden – erledigte Jobs."""
         body: dict = {
             "deviceId": self.device_id,
             "isPlaying": is_playing,
             "currentTitle": current_title,
+            # Immer mitsenden, auch als null: der Server unterscheidet daran
+            # "kein Sender mehr" von "ein älterer Abspieler meldet das nicht".
+            "externalSource": external_source,
         }
         if volume is not None:
             body["volume"] = volume

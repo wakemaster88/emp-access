@@ -117,6 +117,11 @@ class MusicPlayer:
         self._duck_volume = 20
         self._ducked = False
         self._playing = False
+        # Angehalten, weil ein externer Sender (AirPlay/Bluetooth) die Zone
+        # uebernommen hat. Anders als ein Stopp ein Dauerzustand: auch eine
+        # waehrend der Uebernahme geladene Playlist bleibt stehen, bis der
+        # Sender wieder freigibt.
+        self._paused = False
         # Was gerade abgespielt werden soll, um es nach einem Fehler an der
         # Soundkarte erneut anstossen zu koennen.
         self._source: Optional[tuple] = None
@@ -223,7 +228,9 @@ class MusicPlayer:
                 self._command(["loadfile", path, "append"])
             if shuffle:
                 self._command(["playlist-shuffle"])
-        self._command(["set_property", "pause", False])
+        # Nicht blind auf "läuft": hat gerade ein externer Sender die Zone, muss
+        # auch eine neu geladene Playlist stehen bleiben.
+        self._command(["set_property", "pause", self._paused])
         self._playing = True
 
     def _command(self, command: list) -> Optional[dict]:
@@ -304,14 +311,31 @@ class MusicPlayer:
         self._source = None
         self._command(["stop"])
         self._playing = False
+        # Ein Stopp hebt die Übernahme-Pause auf, sonst würde die Musik nach der
+        # Freigabe gegen den Willen des Bedieners wieder anlaufen.
+        self._paused = False
         logger.info("Wiedergabe gestoppt")
+
+    def pause(self) -> None:
+        """Musik anhalten, ohne die Quelle zu verlieren."""
+        self._paused = True
+        self._apply_pause()
+
+    def resume(self) -> None:
+        self._paused = False
+        self._apply_pause()
+
+    def _apply_pause(self) -> None:
+        if self._source is None:
+            return
+        self._command(["set_property", "pause", self._paused])
 
     @property
     def is_playing(self) -> bool:
-        return self._playing
+        return self._playing and not self._paused
 
     def current_title(self) -> Optional[str]:
-        if not self._playing:
+        if not self.is_playing:
             return None
         result = self._command(["get_property", "media-title"])
         if result and result.get("error") == "success":
@@ -330,10 +354,16 @@ class MusicPlayer:
 
 
 class SpeechPlayer:
-    """Spielt eine Durchsage ab und senkt dabei die Musik ab."""
+    """
+    Spielt eine Durchsage ab und senkt dabei ab, was gerade läuft.
 
-    def __init__(self, music: MusicPlayer, audio_device: str = "", normalize: bool = True):
-        self.music = music
+    Mehrere Ziele, weil die Musik nicht die einzige Quelle ist: übernimmt ein
+    AirPlay- oder Bluetooth-Sender die Zone, muss die Ansage auch gegen den
+    durchkommen. Jedes Ziel bringt `is_playing`, `duck` und `unduck` mit.
+    """
+
+    def __init__(self, targets: list, audio_device: str = "", normalize: bool = True):
+        self.targets = targets
         self.audio_device = audio_device or DEFAULT_AUDIO_DEVICE
         self._process: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
@@ -428,15 +458,19 @@ class SpeechPlayer:
         False bedeutet: durch eine höher priorisierte Ansage abgebrochen.
         Bei echten Wiedergabefehlern wird PlaybackError geworfen.
 
-        Die Musik wird vorher abgesenkt und danach zuverlässig wieder
+        Was läuft, wird vorher abgesenkt und danach zuverlässig wieder
         hochgefahren – auch im Fehlerfall.
         """
         self._interrupted = False
-        ducked = False
+        # Alle Ziele absenken, auch stille: verbindet sich mitten in der Ansage
+        # ein AirPlay- oder Bluetooth-Sender, kommt er dann schon abgesenkt
+        # herein. Bei einer Auswahl nach `is_playing` hätte er die Ansage
+        # übertönt, weil die Auswahl zu ihrem Beginn feststeht.
+        was_playing = any(target.is_playing for target in self.targets)
         try:
-            if self.music.is_playing:
-                self.music.duck(duck_volume)
-                ducked = True
+            for target in self.targets:
+                target.duck(duck_volume)
+            if was_playing:
                 # Kurz warten, damit die Absenkung hörbar vor der Ansage liegt.
                 time.sleep(0.3)
 
@@ -455,8 +489,8 @@ class SpeechPlayer:
 
             return not self._interrupted
         finally:
-            if ducked:
-                self.music.unduck()
+            for target in self.targets:
+                target.unduck()
 
     def interrupt(self) -> None:
         """Bricht eine laufende Durchsage ab (Notfalldurchsage hat Vorrang)."""

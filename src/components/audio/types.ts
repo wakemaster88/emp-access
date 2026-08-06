@@ -1,5 +1,6 @@
 import type {
   AudioAnnouncementSource,
+  AudioExternalKind,
   AudioJobKind,
   AudioJobStatus,
   AudioScheduleAction,
@@ -28,8 +29,18 @@ export interface ZoneRow {
   streamUrl: string | null;
   quietFrom: string | null;
   quietTo: string | null;
+  /** Empfänger, über die ein Sender die Zone übernehmen darf. */
+  airplayEnabled: boolean;
+  bluetoothEnabled: boolean;
+  /** Name als AirPlay-/Bluetooth-Ziel. null = Zonenname. */
+  externalName: string | null;
   isPlaying: boolean;
   currentTitle: string | null;
+  /** Sender, der die Zone gerade übernommen hat. null = niemand. */
+  externalActive: AudioExternalKind | null;
+  externalSender: string | null;
+  /** Restlaufzeit des Bluetooth-Kopplungsfensters in Sekunden, 0 = geschlossen. */
+  pairableFor: number;
   lastStateAt: string | null;
 }
 
@@ -104,6 +115,9 @@ export interface ZoneStatus {
   currentTitle: string | null;
   volume: number;
   reportedVolume: number | null;
+  externalActive: AudioExternalKind | null;
+  externalSender: string | null;
+  pairableFor: number;
   deviceOnline: boolean;
   lastStateAt: string | null;
   /** Befehle, die der Abspieler noch nicht bestätigt hat. */
@@ -115,6 +129,18 @@ export interface AudioDeviceOption {
   name: string;
   /** true, wenn das Gerät bereits einer anderen Zone zugeordnet ist. */
   taken: boolean;
+  /**
+   * Empfangsdienste, die der Abspieler im Heartbeat gemeldet hat. Fehlt einer,
+   * bleibt der zugehörige Schalter gesperrt – der Pi würde die Einstellung
+   * sonst still übergehen.
+   */
+  backends: string[];
 }
 
-export type { AudioSourceKind, AudioScheduleAction, AudioTrackKind, AudioAnnouncementSource };
+export type {
+  AudioSourceKind,
+  AudioScheduleAction,
+  AudioTrackKind,
+  AudioAnnouncementSource,
+  AudioExternalKind,
+};

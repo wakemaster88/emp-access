@@ -105,72 +105,72 @@ enum ApiProvider {
 }
 
 model Account {
-  id              Int                   @id @default(autoincrement())
-  subdomain       String                @unique
-  name            String
-  apiToken        String                @unique @default(cuid())
-  isActive        Boolean               @default(true)
+  id                   Int                   @id @default(autoincrement())
+  subdomain            String                @unique
+  name                 String
+  apiToken             String                @unique @default(cuid())
+  isActive             Boolean               @default(true)
   // Standort für Sonnenauf-/-untergangs-Automationen (Default: Berlin).
-  latitude        Float?
-  longitude       Float?
-  timezone        String? // IANA TZ, z.B. "Europe/Berlin"; null = Europe/Berlin
+  latitude             Float?
+  longitude            Float?
+  timezone             String? // IANA TZ, z.B. "Europe/Berlin"; null = Europe/Berlin
   /// JSON: Löschfristen in Tagen pro Bereich, null = unbegrenzt.
   /// Keys: vehicleSightings, personSightings, cameraEvents, scans,
   /// irrigationRuns, automationRuns, emailSends, hubTasks, discoveredDevices
-  dataRetention   Json?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  admins          Admin[]
-  devices         Device[]
-  tickets         Ticket[]
-  scans           Scan[]
-  scanSnapshots   ScanSnapshot[]
-  areas           AccessArea[]
-  apiConfigs      ApiConfig[]
-  monitors        MonitorConfig[]
-  subscriptions   Subscription[]
-  services        Service[]
-  vouchers        Voucher[]
-  telegramConfigs TelegramConfig[]
-  shellyGroups    ShellyGroup[]
-  automations     ShellyAutomation[]
-  automationRuns  ShellyAutomationRun[]
-  vereine         Verein[]
-  lockers         Locker[]
-  emailConfig     EmailConfig?
-  emailRules      EmailRule[]
-  emailSends      EmailSend[]
-  announcements   MonitorAnnouncement[]
-  monitorAlerts   MonitorAlert[]
-  slotBlocks      SlotBlock[]
-  lostItems       LostItem[]
-  irrigationSchedules IrrigationSchedule[]
-  irrigationRuns  IrrigationRun[]
-  pushSubscriptions PushSubscription[]
-  infoFormTemplates InfoFormTemplate[]
-  infoRequests    InfoRequest[]
-  networkVlans    NetworkVlan[]
-  networkDevices  NetworkDevice[]
-  networkOutlets  NetworkOutlet[]
-  networkClients  NetworkClient[]
-  networkAreas    NetworkArea[]
-  hubAgents       HubAgent[]
-  hubTasks        HubTask[]
-  discoveredDevices DiscoveredDevice[]
-  cameras         Camera[]
-  cameraEvents    CameraEvent[]
-  allowedVehicles AllowedVehicle[]
-  vehicleSightings VehicleSighting[]
-  listedPersons   ListedPerson[]
-  personSightings PersonSighting[]
+  dataRetention        Json?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  admins               Admin[]
+  devices              Device[]
+  tickets              Ticket[]
+  scans                Scan[]
+  scanSnapshots        ScanSnapshot[]
+  areas                AccessArea[]
+  apiConfigs           ApiConfig[]
+  monitors             MonitorConfig[]
+  subscriptions        Subscription[]
+  services             Service[]
+  vouchers             Voucher[]
+  telegramConfigs      TelegramConfig[]
+  shellyGroups         ShellyGroup[]
+  automations          ShellyAutomation[]
+  automationRuns       ShellyAutomationRun[]
+  vereine              Verein[]
+  lockers              Locker[]
+  emailConfig          EmailConfig?
+  emailRules           EmailRule[]
+  emailSends           EmailSend[]
+  announcements        MonitorAnnouncement[]
+  monitorAlerts        MonitorAlert[]
+  slotBlocks           SlotBlock[]
+  lostItems            LostItem[]
+  irrigationSchedules  IrrigationSchedule[]
+  irrigationRuns       IrrigationRun[]
+  pushSubscriptions    PushSubscription[]
+  infoFormTemplates    InfoFormTemplate[]
+  infoRequests         InfoRequest[]
+  networkVlans         NetworkVlan[]
+  networkDevices       NetworkDevice[]
+  networkOutlets       NetworkOutlet[]
+  networkClients       NetworkClient[]
+  networkAreas         NetworkArea[]
+  hubAgents            HubAgent[]
+  hubTasks             HubTask[]
+  discoveredDevices    DiscoveredDevice[]
+  cameras              Camera[]
+  cameraEvents         CameraEvent[]
+  allowedVehicles      AllowedVehicle[]
+  vehicleSightings     VehicleSighting[]
+  listedPersons        ListedPerson[]
+  personSightings      PersonSighting[]
   personFaceEmbeddings PersonFaceEmbedding[]
-  surveillanceConfig SurveillanceConfig?
-  audioZones      AudioZone[]
-  audioTracks     AudioTrack[]
-  audioPlaylists  AudioPlaylist[]
-  audioAnnouncements AudioAnnouncement[]
-  audioSchedules  AudioSchedule[]
-  audioJobs       AudioJob[]
+  surveillanceConfig   SurveillanceConfig?
+  audioZones           AudioZone[]
+  audioTracks          AudioTrack[]
+  audioPlaylists       AudioPlaylist[]
+  audioAnnouncements   AudioAnnouncement[]
+  audioSchedules       AudioSchedule[]
+  audioJobs            AudioJob[]
 }
 
 model Admin {
@@ -204,103 +204,103 @@ model Admin {
 }
 
 model Device {
-  id              Int                 @id @default(autoincrement())
-  name            String
-  type            DeviceType
-  category        DeviceCategory?
-  ipAddress       String?
-  shellyId        String?
-  shellyAuthKey   String?
+  id                   Int                  @id @default(autoincrement())
+  name                 String
+  type                 DeviceType
+  category             DeviceCategory?
+  ipAddress            String?
+  shellyId             String?
+  shellyAuthKey        String?
   /// Antriebe (MARKISE/ROLLTOR) mit zwei getrennten Relais: Shelly-Kanal, der
   /// die Fahrtrichtung "Auf" schaltet (0-basiert). NULL = Gerät ist kein
   /// Antrieb bzw. noch nicht eingerichtet.
-  coverUpChannel   Int?
+  coverUpChannel       Int?
   /// Shelly-Kanal fuer "Zu". Muss sich von coverUpChannel unterscheiden – beide
   /// Relais duerfen nie gleichzeitig anziehen (Motor faehrt sonst gegen sich
   /// selbst). Die Verriegelung erzwingt das in `src/lib/shelly-cover.ts`.
-  coverDownChannel Int?
+  coverDownChannel     Int?
   /// Volle Fahrzeit in Sekunden. Wird als Shelly-eigener Auto-Off-Timer
   /// mitgesendet, damit das Relais auch bei Netzwerkausfall wieder abfaellt.
-  coverRuntimeSec  Int?
+  coverRuntimeSec      Int?
   /// Taster (TASTER): Wie lange das Relais nach einem Druck eingeschaltet
   /// bleibt. Geht als Shelly-eigener Auto-Off-Timer mit, damit es auch dann
   /// wieder abfaellt, wenn die Verbindung danach abreisst. NULL = Standardwert
   /// aus `src/lib/pulse-constants.ts`.
-  pulseSeconds     Int?
+  pulseSeconds         Int?
   /// Nuki Smart Lock ID (numerische ID aus der Nuki Web API).
   /// Wird beim Sync aus `GET /smartlock` befuellt; identifiziert das Geraet
   /// fuer `POST /smartlock/{id}/action` und Webhook-Events.
-  nukiSmartlockId String?
+  nukiSmartlockId      String?
   /// LOQED Lock-ID (20-stellige Zeichenfolge, z. B. "QnZk1ldDbpR82jVA47oL").
   /// Wird beim Sync aus `GET /api/locks/` befuellt; identifiziert das Schloss
   /// fuer `GET /api/locks/{id}/bolt_state/{zustand}` und Webhook-Events.
   ///
   /// Achtung: Steht dasselbe Schloss auch in der Shelly Cloud, tragt es dort
   /// eine eigene, laengere ID mit Praefix – die beiden sind nicht dasselbe.
-  loqedLockId     String?
+  loqedLockId          String?
   /// GARDENA smart system Service-ID des VALVE-Service (z. B.
   /// "ee5b3996-defe-4903-934a-a33822e85b0c:2"). Identifiziert Ventil bzw.
   /// Pumpe fuer `PUT /v1/command/{serviceId}` und den Status-Abgleich ueber
   /// die Location-Details. Wird beim Import aus der GARDENA Cloud befuellt.
-  gardenaServiceId String?
+  gardenaServiceId     String?
   /// Verweist auf die GARDENA-Verbindung (ApiConfig, provider = GARDENA), mit
   /// der dieses Ventil/diese Pumpe gesteuert und abgefragt wird. Ermoeglicht
   /// mehrere GARDENA-Konten (Application Key/Secret) pro Mandant.
-  gardenaConfigId Int?
-  gardenaConfig   ApiConfig?          @relation("GardenaConfigDevices", fields: [gardenaConfigId], references: [id], onDelete: SetNull)
+  gardenaConfigId      Int?
+  gardenaConfig        ApiConfig?           @relation("GardenaConfigDevices", fields: [gardenaConfigId], references: [id], onDelete: SetNull)
   /// Durchflussrate der Zone in Liter/Stunde (Bewaesserung) – so wie die
   /// GARDENA-Pumpe den Wert anzeigt. Grundlage fuer Verbrauchsstatistik und
   /// die exakte Wasserbilanz-Dauer.
-  flowLph         Float?
+  flowLph              Float?
   /// Bewaesserte Flaeche der Zone in m². Zusammen mit flowLph kann die Dauer
   /// aus dem Wasserdefizit (mm) exakt berechnet werden.
-  areaSqm         Float?
+  areaSqm              Float?
   /// Optionale Zuordnung Ventil → Pumpe (beide sind GARDENA_VALVE-Geraete):
   /// wird das Ventil aktiviert, schaltet die zugeordnete Pumpe automatisch mit
   /// an. Self-Relation innerhalb der Device-Tabelle.
-  pumpDeviceId    Int?
-  pump            Device?             @relation("ValvePump", fields: [pumpDeviceId], references: [id], onDelete: SetNull)
-  valves          Device[]            @relation("ValvePump")
-  isActive        Boolean             @default(true)
-  task            Int                 @default(0)
-  accessIn        Int?
-  accessOut       Int?
-  allowReentry    Boolean             @default(false)
+  pumpDeviceId         Int?
+  pump                 Device?              @relation("ValvePump", fields: [pumpDeviceId], references: [id], onDelete: SetNull)
+  valves               Device[]             @relation("ValvePump")
+  isActive             Boolean              @default(true)
+  task                 Int                  @default(0)
+  accessIn             Int?
+  accessOut            Int?
+  allowReentry         Boolean              @default(false)
   /// Optionale Kamera-Zuordnung: Kamera, die diesen Zugang im Blick hat
   /// (z. B. Drehkreuz "Eingang A" → Kamera Eingang). Scans dieses Geraets
   /// werden in der UI mit der Kamera verknuepft (Live-Bild/Schnappschuss).
-  cameraId        Int?
-  camera          Camera?             @relation("DeviceCamera", fields: [cameraId], references: [id], onDelete: SetNull)
-  firmware        String?
-  schedule        Json?
-  systemInfo      Json?
-  lastUpdate      DateTime?
+  cameraId             Int?
+  camera               Camera?              @relation("DeviceCamera", fields: [cameraId], references: [id], onDelete: SetNull)
+  firmware             String?
+  schedule             Json?
+  systemInfo           Json?
+  lastUpdate           DateTime?
   /// Offline-Push-Tracking: Zeitpunkt, zu dem fuer die AKTUELLE Offline-
   /// Episode eine Push-Benachrichtigung gesendet wurde. NULL = Geraet gilt
   /// als online bzw. Episode beendet. Wird ausschliesslich vom Cron
   /// `/api/cron/device-offline-check` gesetzt und geloescht.
-  offlineNotifiedAt DateTime?
+  offlineNotifiedAt    DateTime?
   /// Opt-in pro Geraet: nur wenn true, prueft der Offline-Cron dieses Geraet
   /// und sendet Push-Benachrichtigungen bei offline/wieder-online.
-  offlineAlertsEnabled Boolean @default(false)
-  accountId       Int
-  account         Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  scans           Scan[]
-  groupMembers    ShellyGroupMember[]
-  irrigationSchedules IrrigationSchedule[]
-  irrigationRuns      IrrigationRun[]
+  offlineAlertsEnabled Boolean              @default(false)
+  accountId            Int
+  account              Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  scans                Scan[]
+  groupMembers         ShellyGroupMember[]
+  irrigationSchedules  IrrigationSchedule[]
+  irrigationRuns       IrrigationRun[]
   /// Tickets, die diesem Geraet direkt zugewiesen sind (additiv zu Bereichen).
   /// Wird vor allem fuer Mitarbeiter verwendet, die ohne Bereich-Zugehoerigkeit
   /// nur ein einzelnes Geraet bedienen sollen.
-  ticketDevices   TicketDevice[]
+  ticketDevices        TicketDevice[]
   /// Optionale Netzwerk-Zuordnung (Switch-Port/VLAN) dieses IoT-Geraets.
-  networkClient   NetworkClient?
-  allowedVehicles AllowedVehicle[]
-  listedPersons   ListedPerson[]
+  networkClient        NetworkClient?
+  allowedVehicles      AllowedVehicle[]
+  listedPersons        ListedPerson[]
   /// Beschallungszone, die dieser Abspieler (type = AUDIO_PLAYER) bedient.
-  audioZone       AudioZone?          @relation("AudioZoneDevice")
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  audioZone            AudioZone?           @relation("AudioZoneDevice")
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   @@index([accountId])
   @@index([accessIn])
@@ -425,20 +425,20 @@ model Ticket {
 }
 
 model Scan {
-  id        Int        @id @default(autoincrement())
+  id        Int           @id @default(autoincrement())
   code      String
   note      String?
   deviceId  Int?
-  scanTime  DateTime   @default(now())
+  scanTime  DateTime      @default(now())
   result    ScanResult
   ticketId  Int?
   accountId Int
-  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  device    Device?    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  ticket    Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  account   Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  device    Device?       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  ticket    Ticket?       @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   /// Kamera-Schnappschuss zum Scan-Zeitpunkt (vom Hub aufgenommen).
   snapshot  ScanSnapshot?
-  createdAt DateTime   @default(now())
+  createdAt DateTime      @default(now())
 
   @@index([accountId])
   @@index([deviceId])
@@ -515,11 +515,11 @@ model TicketArea {
 /// einzelnes Geraet (z. B. Nebeneingang) bedienen sollen, ohne dass dafuer ein
 /// eigener Bereich angelegt werden muss.
 model TicketDevice {
-  id        Int    @id @default(autoincrement())
-  ticketId  Int
-  deviceId  Int
-  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  device    Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  ticketId Int
+  deviceId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, deviceId])
   @@index([ticketId])
@@ -802,16 +802,16 @@ model MonitorAlert {
 /// Eigene Tabelle, damit das Polling des Monitors die Bilddaten nicht bei
 /// jedem Durchlauf mitlaedt.
 model MonitorAlertImage {
-  id      Int          @id @default(autoincrement())
-  alertId Int
-  alert   MonitorAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  id        Int          @id @default(autoincrement())
+  alertId   Int
+  alert     MonitorAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
   /// Anzeigereihenfolge; 0 ist der Blick, in dem der Vorfall erkannt wurde.
-  position Int         @default(0)
+  position  Int          @default(0)
   /// Woher das Bild stammt, z. B. der Kameraname.
-  label    String?
+  label     String?
   /// JPEG-Bilddaten.
   image     Bytes
-  createdAt DateTime   @default(now())
+  createdAt DateTime     @default(now())
 
   @@unique([alertId, position])
 }
@@ -938,19 +938,19 @@ model EmailSend {
 /// `showIfKey` blendet das Feld nur ein, wenn das referenzierte
 /// boolean-Feld mit "Ja" beantwortet wurde (z. B. Neopren-Groesse).
 model InfoFormTemplate {
-  id           Int           @id @default(autoincrement())
-  accountId    Int
-  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name         String
+  id                 Int           @id @default(autoincrement())
+  accountId          Int
+  account            Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name               String
   /// Einleitungstext, der im oeffentlichen Formular ueber den Feldern steht.
-  introText    String?       @db.Text
-  fields       Json
+  introText          String?       @db.Text
+  fields             Json
   /// Wenn true, wird pro Platz zusaetzlich der Teilnehmername abgefragt
   /// (Ticket-Name ist oft der buchende Elternteil, nicht das Kind).
-  askParticipantName Boolean @default(true)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  infoRequests InfoRequest[]
+  askParticipantName Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  infoRequests       InfoRequest[]
 
   @@index([accountId])
 }
@@ -960,22 +960,22 @@ model InfoFormTemplate {
 /// das Formular pro Ticket, die Antworten landen in `Ticket.guestInfo`.
 /// `token` ist das Zugriffsgeheimnis der oeffentlichen /info/<token>-Seite.
 model InfoRequest {
-  id           Int              @id @default(autoincrement())
-  accountId    Int
-  account      Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  templateId   Int
-  template     InfoFormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  token        String           @unique
+  id          Int              @id @default(autoincrement())
+  accountId   Int
+  account     Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  templateId  Int
+  template    InfoFormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  token       String           @unique
   /// Empfaenger-Adresse (Snapshot).
-  email        String
+  email       String
   /// JSON-Array der Ticket-IDs, die diese Anfrage abdeckt.
-  ticketIds    Json
+  ticketIds   Json
   /// "SENT" | "COMPLETED" | "FAILED"
-  status       String           @default("SENT")
-  sentAt       DateTime         @default(now())
-  completedAt  DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  status      String           @default("SENT")
+  sentAt      DateTime         @default(now())
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   @@index([accountId])
   @@index([accountId, status])
@@ -1156,36 +1156,36 @@ model ShellyGroupMember {
 /// Eine Automation triggert eine Gruppe (Szene) nach einem Zeitplan,
 /// relativ zu Sonnenauf-/Sonnenuntergang oder bei einem Kamera-Ereignis.
 model ShellyAutomation {
-  id            Int                   @id @default(autoincrement())
-  accountId     Int
-  account       Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  groupId       Int
-  group         ShellyGroup           @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  name          String
-  isActive      Boolean               @default(true)
-  trigger       AutomationTrigger
+  id              Int                   @id @default(autoincrement())
+  accountId       Int
+  account         Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  groupId         Int
+  group           ShellyGroup           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name            String
+  isActive        Boolean               @default(true)
+  trigger         AutomationTrigger
   /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
-  daysOfWeek    Int                   @default(127)
+  daysOfWeek      Int                   @default(127)
   /// "HH:mm" (nur relevant für trigger=SCHEDULE).
-  timeOfDay     String?
+  timeOfDay       String?
   /// Offset in Minuten zum Sonnenauf/-untergang (nur SUNRISE/SUNSET).
   /// Negativ = vor dem Ereignis, positiv = danach.
-  offsetMinutes Int                   @default(0)
+  offsetMinutes   Int                   @default(0)
   /// Kamera fuer trigger=CAMERA_EVENT.
-  cameraId      Int?
-  camera        Camera?               @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  cameraId        Int?
+  camera          Camera?               @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   /// Ereignistyp: "MOTION" | "PERSON" | "VEHICLE" | "ANIMAL" | "OTHER".
-  eventType     String?
+  eventType       String?
   /// Aktives Zeitfenster "HH:mm"–"HH:mm" (Account-TZ). end < start = ueber Mitternacht.
-  windowStart   String?
-  windowEnd     String?
+  windowStart     String?
+  windowEnd       String?
   /// Mindestabstand zwischen zwei Ausloesungen (Kamera-Events flackern oft).
-  cooldownMinutes Int                 @default(5)
+  cooldownMinutes Int                   @default(5)
   /// Letzter Lauf – dient als Idempotenz-Guard im Cron (verhindert Doppel-Ausführung).
-  lastRunAt     DateTime?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  runs          ShellyAutomationRun[]
+  lastRunAt       DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  runs            ShellyAutomationRun[]
 
   @@index([accountId, isActive])
   @@index([groupId])
@@ -1236,20 +1236,20 @@ enum LostItemKind {
 /// verwaltet. Bild als Base64-Data-URL (gleiches Muster wie Ticket.profileImage).
 /// LOST_REPORT = jemand meldet einen verlorenen Gegenstand (Name + Rückrufnummer).
 model LostItem {
-  id            Int           @id @default(autoincrement())
-  kind          LostItemKind  @default(FOUND)
+  id            Int          @id @default(autoincrement())
+  kind          LostItemKind @default(FOUND)
   description   String
   foundDate     DateTime
-  image         String?       @db.Text
+  image         String?      @db.Text
   contact       String?
   reporterName  String?
   callbackPhone String?
-  pickedUp      Boolean       @default(false)
+  pickedUp      Boolean      @default(false)
   pickedUpAt    DateTime?
   accountId     Int
-  account       Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  account       Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   @@index([accountId, kind, pickedUp])
 }
@@ -1260,40 +1260,40 @@ model LostItem {
 /// wird nicht wegen Regen ausgesetzt, startet der Cron die Bewässerung fuer
 /// `durationMinutes`. `lastRunAt` dient als Idempotenz-Guard.
 model IrrigationSchedule {
-  id              Int      @id @default(autoincrement())
-  accountId       Int
-  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  deviceId        Int
-  device          Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  id                   Int             @id @default(autoincrement())
+  accountId            Int
+  account              Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceId             Int
+  device               Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
-  daysOfWeek      Int      @default(127)
+  daysOfWeek           Int             @default(127)
   /// "HH:mm" Startzeit in Berliner Zeit.
-  startTime       String
+  startTime            String
   /// Bewässerungsdauer in Minuten.
-  durationMinutes Int      @default(15)
-  isActive        Boolean  @default(true)
+  durationMinutes      Int             @default(15)
+  isActive             Boolean         @default(true)
   /// Bei erwartetem Regen (Wetter-Check) aussetzen.
-  skipOnRain      Boolean  @default(true)
+  skipOnRain           Boolean         @default(true)
   /// Smart-Regen: Dauer anhand der Wetterlage skalieren (heiss → laenger,
   /// Regenrisiko → kuerzer). Unabhaengig vom harten skipOnRain-Aussetzer.
-  smartRain       Boolean  @default(false)
+  smartRain            Boolean         @default(false)
   /// GARDENA SENSOR-Service-ID (Bodenfeuchte-Sensor). Wenn gesetzt, prueft der
   /// Cron vor dem Lauf die Bodenfeuchte und passt die Bewässerung smart an.
-  sensorServiceId String?
+  sensorServiceId      String?
   /// Boden ist "feucht genug" ab dieser Bodenfeuchte in Prozent – der Lauf wird
   /// dann uebersprungen. Bei trockenerem Boden wird die Dauer skaliert.
   moistureThresholdPct Int?
   /// Geordnete Ventil-Sequenz (Device-IDs). Wenn gesetzt, ist deviceId die
   /// Pumpe und die Ventile laufen nacheinander je durationMinutes.
-  valveSequence   Json?
+  valveSequence        Json?
   /// Laufender Sequenz-Plan (vom Cron abgearbeitet):
   /// { startedAt, steps: [{ deviceId, minutes, offsetMin, startedAt? }] }
-  runState        Json?
+  runState             Json?
   /// Letzter erfolgreicher Lauf – verhindert Doppel-Ausführung im 5-Min-Cron.
-  lastRunAt       DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  runs            IrrigationRun[]
+  lastRunAt            DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  runs                 IrrigationRun[]
 
   @@index([accountId, isActive])
   @@index([deviceId])
@@ -1348,7 +1348,7 @@ model ShellyAutomationRun {
 
 /// VLAN (Netz-Segment), z. B. Management, IoT, Gaeste-WLAN.
 model NetworkVlan {
-  id          Int             @id @default(autoincrement())
+  id          Int               @id @default(autoincrement())
   /// IEEE 802.1Q VLAN-ID (1-4094).
   vlanId      Int
   name        String
@@ -1357,15 +1357,15 @@ model NetworkVlan {
   gateway     String?
   description String?
   accountId   Int
-  account     Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   /// Ports mit diesem VLAN als untagged/PVID.
   ports       NetworkPort[]
   /// Ports, auf denen dieses VLAN tagged anliegt (Trunk).
   taggedPorts NetworkPortVlan[]
   clients     NetworkClient[]
   areas       NetworkArea[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   @@unique([accountId, vlanId])
   @@index([accountId])
@@ -1530,7 +1530,7 @@ model NetworkClient {
 /// Netzwerk-Scans, spaeter Kameras/lokale KI. Online-Status ergibt sich aus
 /// `lastSeenAt` (gleiches 5-Minuten-Muster wie bei den Pi-Geraeten).
 model HubAgent {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   /// Eindeutiger Name des Agents pro Account (z. B. "imac-technikraum").
   name       String
   hostname   String?
@@ -1540,9 +1540,9 @@ model HubAgent {
   modules    Json?
   lastSeenAt DateTime?
   accountId  Int
-  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -1552,16 +1552,16 @@ model HubAgent {
 /// sie per Polling ab (PENDING -> RUNNING) und meldet das Ergebnis zurueck
 /// (DONE/FAILED). `type` z. B. "PING", "NETWORK_SCAN", "WAKE_ON_LAN".
 model HubTask {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   type       String
   payload    Json?
   /// "PENDING" | "RUNNING" | "DONE" | "FAILED"
-  status     String   @default("PENDING")
+  status     String    @default("PENDING")
   result     Json?
   error      String?
   accountId  Int
-  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
   startedAt  DateTime?
   finishedAt DateTime?
 
@@ -1573,45 +1573,45 @@ model HubTask {
 /// CGI-HTTP-API an: Event-Polling (Bewegung/KI) und Schnappschuesse.
 /// Zugangsdaten werden nur vom Hub verwendet.
 model Camera {
-  id         Int           @id @default(autoincrement())
-  name       String
+  id                  Int                  @id @default(autoincrement())
+  name                String
   /// Geraetetyp: "REOLINK" (CGI-Polling) | "DOORBIRD" (LAN-API, Klingel + Tueroeffner).
-  kind       String        @default("REOLINK")
+  kind                String               @default("REOLINK")
   /// IP oder Hostname im lokalen Netz.
-  host       String
+  host                String
   /// MAC-Adresse (vom Hub automatisch gelernt). Erlaubt IP-Re-Mapping bei
   /// DHCP-Wechsel: Hub sucht die MAC im ARP-Scan und aktualisiert `host`.
-  macAddress String?
-  httpPort   Int           @default(80)
-  https      Boolean       @default(false)
-  username   String
-  password   String
+  macAddress          String?
+  httpPort            Int                  @default(80)
+  https               Boolean              @default(false)
+  username            String
+  password            String
   /// Kanal: 0 bei Einzelkameras, 0..n hinter einem NVR/Home Hub.
-  channel    Int           @default(0)
-  enabled    Boolean       @default(true)
+  channel             Int                  @default(0)
+  enabled             Boolean              @default(true)
   /// Fahrzeug-Erkennung (Burst + Plate-OCR + Sichtungen) auf dieser Kamera.
-  vehicleDetection Boolean @default(true)
-  notes      String?
+  vehicleDetection    Boolean              @default(true)
+  notes               String?
   /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
-  snapshot   Bytes?
-  snapshotAt DateTime?
+  snapshot            Bytes?
+  snapshotAt          DateTime?
   /// Zuletzt vom Hub erfolgreich erreicht (Basis fuer Online-Status).
-  lastSeenAt DateTime?
-  accountId  Int
-  account    Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  events     CameraEvent[]
-  automations ShellyAutomation[]
-  vehicleSightings VehicleSighting[]
-  allowedVehicles AllowedVehicle[] @relation("VehicleTriggerCamera")
-  doorbirdVehicles AllowedVehicle[] @relation("VehicleDoorbird")
-  listedPersons   ListedPerson[]
-  personSightings PersonSighting[]
+  lastSeenAt          DateTime?
+  accountId           Int
+  account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  events              CameraEvent[]
+  automations         ShellyAutomation[]
+  vehicleSightings    VehicleSighting[]
+  allowedVehicles     AllowedVehicle[]     @relation("VehicleTriggerCamera")
+  doorbirdVehicles    AllowedVehicle[]     @relation("VehicleDoorbird")
+  listedPersons       ListedPerson[]
+  personSightings     PersonSighting[]
   surveillanceCameras SurveillanceCamera[]
   /// Zugangsgeraete (Drehkreuze/Tueren), denen diese Kamera zugeordnet ist.
-  devices         Device[]      @relation("DeviceCamera")
-  scanSnapshots   ScanSnapshot[]
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  devices             Device[]             @relation("DeviceCamera")
+  scanSnapshots       ScanSnapshot[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -1620,27 +1620,27 @@ model Camera {
 /// Account-weiter Überwachungsmodus: manuell und/oder per Zeitplan scharf,
 /// Push bei PERSON/VEHICLE auf ausgewählten Kameras.
 model SurveillanceConfig {
-  id              Int      @id @default(autoincrement())
-  accountId       Int      @unique
-  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id              Int                  @id @default(autoincrement())
+  accountId       Int                  @unique
+  account         Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   /// Manueller Schalter (AN = scharf, unabhängig vom Zeitplan).
-  manualArmed     Boolean  @default(false)
+  manualArmed     Boolean              @default(false)
   /// Zeitplan aktiv: in Fenster + Wochentag ebenfalls scharf.
-  scheduleEnabled Boolean  @default(false)
+  scheduleEnabled Boolean              @default(false)
   /// Bitmaske: Bit0=Mo … Bit6=So.
-  daysOfWeek      Int      @default(127)
+  daysOfWeek      Int                  @default(127)
   windowStart     String?
   windowEnd       String?
-  cooldownMinutes Int      @default(5)
-  alertOnPerson   Boolean  @default(true)
-  alertOnVehicle  Boolean  @default(true)
+  cooldownMinutes Int                  @default(5)
+  alertOnPerson   Boolean              @default(true)
+  alertOnVehicle  Boolean              @default(true)
   /// Bei Sighting mit Snapshot per Telegram (Foto + Caption) benachrichtigen.
-  alertTelegram   Boolean  @default(true)
+  alertTelegram   Boolean              @default(true)
   /// JSON-Map letzter Pushes: { "10:PERSON": "ISO8601", ... }
   lastPushByKey   Json?
   cameras         SurveillanceCamera[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 }
 
 model SurveillanceCamera {
@@ -1656,37 +1656,37 @@ model SurveillanceCamera {
 /// Erlaubtes Fahrzeug (Kennzeichen-Whitelist). Bei Erkennung kann ein
 /// Shelly geschaltet werden (z. B. Tor oeffnen).
 model AllowedVehicle {
-  id              Int       @id @default(autoincrement())
-  accountId       Int
-  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id                Int               @id @default(autoincrement())
+  accountId         Int
+  account           Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   /// Anzeige-Kennzeichen, z. B. "BOR-AB 123".
-  plate           String
+  plate             String
   /// Normalisiert fuer Abgleich (ohne Leerzeichen/Bindestriche, Grossbuchstaben).
-  plateNormalized String
-  name            String
-  isActive        Boolean   @default(true)
-  notes           String?
+  plateNormalized   String
+  name              String
+  isActive          Boolean           @default(true)
+  notes             String?
   /// Nur diese Kamera darf den Shelly ausloesen. null = alle Kameras.
-  cameraId        Int?
-  camera          Camera?   @relation("VehicleTriggerCamera", fields: [cameraId], references: [id], onDelete: SetNull)
+  cameraId          Int?
+  camera            Camera?           @relation("VehicleTriggerCamera", fields: [cameraId], references: [id], onDelete: SetNull)
   /// DoorBird, deren Tueroeffner bei Erkennung geschaltet wird (Hub-Task).
-  doorbirdCameraId Int?
-  doorbird        Camera?   @relation("VehicleDoorbird", fields: [doorbirdCameraId], references: [id], onDelete: SetNull)
+  doorbirdCameraId  Int?
+  doorbird          Camera?           @relation("VehicleDoorbird", fields: [doorbirdCameraId], references: [id], onDelete: SetNull)
   /// Shelly, der bei Erkennung geschaltet wird.
-  shellyDeviceId  Int?
-  shellyDevice    Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
+  shellyDeviceId    Int?
+  shellyDevice      Device?           @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
   /// ON | OFF | TOGGLE
-  shellyAction    String    @default("ON")
+  shellyAction      String            @default("ON")
   /// Optionaler Auto-Off-Timer in Sekunden (sinnvoll fuer Tore/Impulse).
-  timerSeconds    Int?
+  timerSeconds      Int?
   /// Mindestabstand zwischen zwei Ausloesungen (Minuten).
-  cooldownMinutes Int       @default(2)
-  lastTriggeredAt DateTime?
+  cooldownMinutes   Int               @default(2)
+  lastTriggeredAt   DateTime?
   /// Bei Kennzeichen-Match Web-Push an Account-Geraete senden.
-  notifyOnDetection Boolean @default(false)
-  sightings       VehicleSighting[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  notifyOnDetection Boolean           @default(false)
+  sightings         VehicleSighting[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   @@unique([accountId, plateNormalized])
   @@index([accountId, isActive])
@@ -1726,33 +1726,33 @@ model VehicleSighting {
 /// Ohne Gesichtserkennung: Automatik nur "jede Person an Kamera X";
 /// namentliche Zuordnung erfolgt manuell oder spaeter per Face-ID.
 model ListedPerson {
-  id                 Int       @id @default(autoincrement())
+  id                 Int                   @id @default(autoincrement())
   accountId          Int
-  account            Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account            Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
   name               String
   /// WHITELIST | BLACKLIST
   listType           String
-  isActive           Boolean   @default(true)
+  isActive           Boolean               @default(true)
   notes              String?
   /// Optionale bevorzugte/Heim-Kamera (Face-Match gilt immer account-weit).
   cameraId           Int?
-  camera             Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  camera             Camera?               @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   /// PERSON-Ereignisse in die Historie schreiben (alle Kameras).
-  trackHistory       Boolean   @default(true)
+  trackHistory       Boolean               @default(true)
   /// Bei Face-Match dieser Person Shelly ausloesen.
-  triggerOnDetection Boolean   @default(false)
+  triggerOnDetection Boolean               @default(false)
   /// Bei Face-Match Web-Push an Account-Geraete senden.
-  notifyOnDetection  Boolean   @default(false)
+  notifyOnDetection  Boolean               @default(false)
   shellyDeviceId     Int?
-  shellyDevice       Device?   @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
-  shellyAction       String    @default("ON")
+  shellyDevice       Device?               @relation(fields: [shellyDeviceId], references: [id], onDelete: SetNull)
+  shellyAction       String                @default("ON")
   timerSeconds       Int?
-  cooldownMinutes    Int       @default(5)
+  cooldownMinutes    Int                   @default(5)
   lastTriggeredAt    DateTime?
   sightings          PersonSighting[]
   faceEmbeddings     PersonFaceEmbedding[]
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
   @@index([accountId, listType, isActive])
   @@index([cameraId])
@@ -1829,7 +1829,7 @@ model CameraEvent {
 /// Wird per (accountId, macAddress) upserted; `lastSeenAt` zeigt, wann das
 /// Geraet zuletzt in einem Scan auftauchte.
 model DiscoveredDevice {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   macAddress  String
   ipAddress   String?
   /// Netzwerk-Interface des Hubs, auf dem das Geraet gesehen wurde (z. B. "en0").
@@ -1845,22 +1845,22 @@ model DiscoveredDevice {
   /// Antwortzeit des letzten Pings in Millisekunden.
   responseMs  Int?
   /// true, wenn das Geraet im letzten Scan auf Ping/Port geantwortet hat.
-  reachable   Boolean   @default(true)
+  reachable   Boolean  @default(true)
   /// Wie oft das Geraet in Folge beim Hub-Scan gefehlt hat (bei Treffer = 0).
   /// Unzugeordnete Eintraege werden ab 2 entfernt.
-  absentScans Int       @default(0)
+  absentScans Int      @default(0)
   /// Fruehere IP-Adressen (neueste zuerst): [{ ip, seenUntil }]. Wird beim
   /// IP-Wechsel gefuellt; eine IP "gehoert" immer nur dem zuletzt gesehenen
   /// Geraet, aeltere Eintraege geben sie hierhin ab.
   ipHistory   Json?
   /// Name des Hubs, der das Geraet zuletzt gemeldet hat.
   hubName     String?
-  firstSeenAt DateTime  @default(now())
-  lastSeenAt  DateTime  @default(now())
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
   accountId   Int
-  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([accountId, macAddress])
   @@index([accountId, lastSeenAt])
@@ -1873,6 +1873,14 @@ enum AudioSourceKind {
   SILENCE
   PLAYLIST
   STREAM
+}
+
+/// Empfaenger, der eine Zone vom Sender aus uebernehmen kann. Bewusst kein
+/// Wert von AudioSourceKind: die eingestellte Quelle bleibt bestehen, ein
+/// Sender legt sich nur voruebergehend darueber und gibt danach wieder frei.
+enum AudioExternalKind {
+  AIRPLAY
+  BLUETOOTH
 }
 
 enum AudioTrackKind {
@@ -1921,49 +1929,65 @@ enum AudioScheduleAction {
 /// Verstaerker. Haelt Soll-Zustand (Quelle, Lautstaerken) und den vom Pi
 /// gemeldeten Ist-Zustand.
 model AudioZone {
-  id                 Int             @id @default(autoincrement())
+  id                 Int                @id @default(autoincrement())
   accountId          Int
-  account            Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account            Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   name               String
   /// Abspieler-Geraet (Device.type = AUDIO_PLAYER). Zonen koennen auch ohne
   /// Hardware angelegt werden (Planung) – sie spielen dann nichts ab.
-  deviceId           Int?            @unique
-  device             Device?         @relation("AudioZoneDevice", fields: [deviceId], references: [id], onDelete: SetNull)
-  sortOrder          Int             @default(0)
-  isActive           Boolean         @default(true)
+  deviceId           Int?               @unique
+  device             Device?            @relation("AudioZoneDevice", fields: [deviceId], references: [id], onDelete: SetNull)
+  sortOrder          Int                @default(0)
+  isActive           Boolean            @default(true)
   /// Snapcast-Gruppe: Zonen mit demselben Namen spielen synchron. Noetig, wenn
   /// sich Bereiche akustisch ueberlappen (Aussengelaende). null = eigenstaendig.
   syncGroup          String?
   /// Grundlautstaerke der Musik (0–100).
-  volume             Int             @default(50)
+  volume             Int                @default(50)
   /// Lautstaerke der Durchsage selbst (0–100).
-  announcementVolume Int             @default(85)
+  announcementVolume Int                @default(85)
   /// Musiklautstaerke waehrend einer Durchsage (Ducking, 0–100).
-  duckVolume         Int             @default(15)
+  duckVolume         Int                @default(15)
   /// Ist-Zustand: was gerade laeuft. Ein Stopp setzt das Feld auf SILENCE; der
   /// Abspieler nimmt es nach Neustart oder Durchsage als Vorgabe, um die Musik
   /// wieder aufzunehmen.
-  sourceKind         AudioSourceKind @default(SILENCE)
+  sourceKind         AudioSourceKind    @default(SILENCE)
   /// Quelle, die "Start" ohne weitere Angabe abspielt. Anders als sourceKind
   /// eine Einstellung der Zone – sie ueberlebt einen Stopp. SILENCE heisst:
   /// Diese Zone macht nur Durchsagen.
-  defaultSource      AudioSourceKind @default(PLAYLIST)
+  defaultSource      AudioSourceKind    @default(PLAYLIST)
   playlistId         Int?
-  playlist           AudioPlaylist?  @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  playlist           AudioPlaylist?     @relation(fields: [playlistId], references: [id], onDelete: SetNull)
   /// Webradio-/Stream-URL fuer sourceKind = STREAM.
   streamUrl          String?
   /// Ruhezeit "HH:mm"–"HH:mm" (Account-TZ): in diesem Fenster laeuft keine
   /// Musik, Durchsagen aber weiterhin. end < start = ueber Mitternacht.
   quietFrom          String?
   quietTo            String?
+  /// AirPlay-Empfaenger aktiv: ein Sender im WLAN darf die Zone uebernehmen.
+  airplayEnabled     Boolean            @default(false)
+  /// Bluetooth-Empfaenger (A2DP-Sink) aktiv.
+  bluetoothEnabled   Boolean            @default(false)
+  /// Name, unter dem die Zone als AirPlay-/Bluetooth-Ziel erscheint.
+  /// null = Zonenname.
+  externalName       String?
+  /// Bis wann die Zone neue Bluetooth-Kopplungen annimmt. Ausserhalb dieses
+  /// Fensters ist sie nicht sichtbar und nur bereits gekoppelte Geraete
+  /// koennen sich verbinden.
+  pairableUntil      DateTime?
   /// Ist-Zustand, vom Pi im Heartbeat gemeldet.
-  isPlaying          Boolean         @default(false)
+  isPlaying          Boolean            @default(false)
   currentTitle       String?
   reportedVolume     Int?
+  /// Empfaenger, der die Zone gerade uebernommen hat – null = niemand.
+  /// Solange gesetzt, ist die eigene Musik pausiert.
+  externalActive     AudioExternalKind?
+  /// Name des Senders, der uebernommen hat (z. B. "iPhone von Anna").
+  externalSender     String?
   lastStateAt        DateTime?
   jobs               AudioJob[]
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([accountId, sortOrder])
   @@index([playlistId])

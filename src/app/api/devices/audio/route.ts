@@ -8,7 +8,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
-import { clampVolume } from "@/lib/audio";
+import { clampVolume, pairableSeconds, parseExternalKind } from "@/lib/audio";
 
 const JOB_BATCH_SIZE = 20;
 
@@ -66,6 +66,16 @@ export async function GET(request: NextRequest) {
       streamUrl: zone.streamUrl,
       quietFrom: zone.quietFrom,
       quietTo: zone.quietTo,
+      // Empfänger, die diese Zone übernehmen dürfen. null = abgeschaltet, der
+      // Abspieler hält den Dienst dann gestoppt. Ältere Abspieler kennen die
+      // Felder nicht und übergehen sie.
+      airplay: zone.airplayEnabled ? { name: zone.externalName || zone.name } : null,
+      bluetooth: zone.bluetoothEnabled
+        ? {
+            name: zone.externalName || zone.name,
+            pairableFor: pairableSeconds(zone.pairableUntil),
+          }
+        : null,
       playlist: zone.playlist
         ? {
             id: zone.playlist.id,
@@ -112,6 +122,23 @@ export async function POST(request: NextRequest) {
 
   const now = new Date();
 
+  // Übernahme durch AirPlay/Bluetooth. `null` heißt: der Sender hat wieder
+  // freigegeben. Fehlt das Feld ganz, stammt der Heartbeat von einem älteren
+  // Abspieler – dann bleibt der Zustand unverändert, statt eine laufende
+  // Übernahme wegzuräumen.
+  const external =
+    body.externalSource === undefined
+      ? undefined
+      : (parseExternalKind(body.externalSource?.kind) ?? null);
+  const externalSender =
+    external === undefined
+      ? undefined
+      : external === null
+        ? null
+        : typeof body.externalSource.sender === "string" && body.externalSource.sender.trim()
+          ? body.externalSource.sender.trim().slice(0, 120)
+          : null;
+
   await db.device.updateMany({
     where: { id: deviceId, type: "AUDIO_PLAYER" },
     data: {
@@ -134,6 +161,8 @@ export async function POST(request: NextRequest) {
             : null,
       reportedVolume:
         body.volume === undefined ? undefined : clampVolume(body.volume, zone.volume),
+      externalActive: external,
+      externalSender,
       lastStateAt: now,
     },
   });

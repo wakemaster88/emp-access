@@ -62,6 +62,50 @@ export function parseSourceKind(value: unknown): "SILENCE" | "PLAYLIST" | "STREA
   return value === "SILENCE" || value === "PLAYLIST" || value === "STREAM" ? value : undefined;
 }
 
+// ── AirPlay/Bluetooth: Empfänger, die eine Zone übernehmen können ────────────
+
+export type AudioExternal = "AIRPLAY" | "BLUETOOTH";
+
+/**
+ * Programme, die den Empfang leisten. Der Abspieler meldet im Heartbeat, welche
+ * davon auf ihm installiert sind (`systemInfo.audio_backends`) – ohne das würde
+ * das Dashboard eine Einstellung anbieten, die der Pi still ignoriert.
+ */
+export const AUDIO_BACKENDS: Record<AudioExternal, string> = {
+  AIRPLAY: "shairport",
+  BLUETOOTH: "bluealsa",
+};
+
+/** Dauer des Bluetooth-Kopplungsfensters in Sekunden. */
+export const PAIRING_WINDOW_SEC = 300;
+
+export function parseExternalKind(value: unknown): AudioExternal | undefined {
+  return value === "AIRPLAY" || value === "BLUETOOTH" ? value : undefined;
+}
+
+/**
+ * Restlaufzeit des Kopplungsfensters. Der Abspieler bekommt bewusst Sekunden
+ * und keinen Zeitstempel: ein Pi ohne funkende Uhr wuerde ein Fenster sonst
+ * falsch berechnen.
+ */
+export function pairableSeconds(pairableUntil: Date | null | undefined): number {
+  if (!pairableUntil) return 0;
+  const remaining = Math.ceil((pairableUntil.getTime() - Date.now()) / 1000);
+  return remaining > 0 ? Math.min(remaining, PAIRING_WINDOW_SEC) : 0;
+}
+
+/** Backends, die der Abspieler im Heartbeat gemeldet hat. */
+export function audioBackends(systemInfo: unknown): string[] {
+  if (!systemInfo || typeof systemInfo !== "object") return [];
+  const value = (systemInfo as { audio_backends?: unknown }).audio_backends;
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+export function hasAudioBackend(backends: string[], kind: AudioExternal): boolean {
+  return backends.includes(AUDIO_BACKENDS[kind]);
+}
+
 /** "HH:mm" oder null. */
 export function parseTimeOfDay(value: unknown): string | null {
   if (typeof value !== "string") return null;

@@ -21,6 +21,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hasAudioBackend } from "@/lib/audio-constants";
 import { sliderFill } from "./ui";
 import type { AudioDeviceOption, AudioSourceKind, PlaylistRow, ZoneRow } from "./types";
 
@@ -61,12 +62,24 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
   const [duckVolume, setDuckVolume] = useState(zone?.duckVolume ?? 15);
   const [quietFrom, setQuietFrom] = useState(zone?.quietFrom ?? "");
   const [quietTo, setQuietTo] = useState(zone?.quietTo ?? "");
+  const [airplayEnabled, setAirplayEnabled] = useState(zone?.airplayEnabled ?? false);
+  const [bluetoothEnabled, setBluetoothEnabled] = useState(zone?.bluetoothEnabled ?? false);
+  const [externalName, setExternalName] = useState(zone?.externalName ?? "");
   const [isActive, setIsActive] = useState(zone?.isActive ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Bereits belegte Abspieler ausblenden – außer dem eigenen.
   const availableDevices = devices.filter((d) => !d.taken || d.id === zone?.deviceId);
+
+  // Welcher Empfang möglich ist, entscheidet der Abspieler: er meldet im
+  // Heartbeat, welche Dienste auf ihm eingerichtet sind. Ohne Meldung bleibt der
+  // Schalter gesperrt, sonst stünde im Dashboard eine Einstellung, die der Pi
+  // nicht umsetzt.
+  const selected = devices.find((d) => String(d.id) === deviceId);
+  const backends = selected?.backends ?? [];
+  const canAirplay = hasAudioBackend(backends, "AIRPLAY");
+  const canBluetooth = hasAudioBackend(backends, "BLUETOOTH");
 
   async function save() {
     setError(null);
@@ -83,6 +96,16 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
       setError("Für die Quelle „Webradio“ eine Stream-URL eintragen");
       return;
     }
+    // Bei einem Wechsel auf einen anderen Abspieler kann ein Empfänger übrig
+    // bleiben, den der neue nicht bedient.
+    if (airplayEnabled && !canAirplay) {
+      setError("Der gewählte Abspieler hat den AirPlay-Empfang nicht eingerichtet");
+      return;
+    }
+    if (bluetoothEnabled && !canBluetooth) {
+      setError("Der gewählte Abspieler hat den Bluetooth-Empfang nicht eingerichtet");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -97,6 +120,9 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
         duckVolume,
         quietFrom: quietFrom || null,
         quietTo: quietTo || null,
+        airplayEnabled,
+        bluetoothEnabled,
+        externalName: externalName.trim() || null,
         isActive,
       };
       const res = await fetch(isEdit ? `/api/audio/zones/${zone!.id}` : "/api/audio/zones", {
@@ -255,6 +281,52 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
             In der Ruhezeit läuft keine Musik. Durchsagen werden trotzdem abgespielt.
           </p>
 
+          <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <div>
+              <Label>Senden vom Handy</Label>
+              <p className="text-xs text-slate-500">
+                Ein Sender übernimmt die Zone, sobald er sich verbindet. Die eingestellte
+                Quelle läuft danach von selbst weiter. Durchsagen haben weiter Vorrang.
+              </p>
+            </div>
+
+            <ReceiverSwitch
+              label="AirPlay"
+              hint="iPhone, iPad oder Mac im selben Netz."
+              checked={airplayEnabled}
+              onCheckedChange={setAirplayEnabled}
+              available={canAirplay}
+            />
+            <ReceiverSwitch
+              label="Bluetooth"
+              hint="Kopplung wird auf der Zonenkarte freigegeben."
+              checked={bluetoothEnabled}
+              onCheckedChange={setBluetoothEnabled}
+              available={canBluetooth}
+            />
+
+            {(airplayEnabled || bluetoothEnabled) && (
+              <div>
+                <Label htmlFor="az-extname">Angezeigter Name (optional)</Label>
+                <Input
+                  id="az-extname"
+                  value={externalName}
+                  onChange={(e) => setExternalName(e.target.value)}
+                  placeholder={name.trim() || "Name der Zone"}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  So erscheint die Zone auf dem Handy. Leer heißt: der Name der Zone.
+                </p>
+              </div>
+            )}
+
+            {deviceId === NONE && (
+              <p className="text-xs text-slate-500">
+                Erst mit einem zugeordneten Abspieler möglich.
+              </p>
+            )}
+          </div>
+
           <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
             <Switch checked={isActive} onCheckedChange={setIsActive} />
             Zone aktiv
@@ -278,6 +350,49 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Ein Empfänger mit Schalter. Nicht eingerichtet heißt gesperrt und nicht
+ * versteckt: sonst sucht man im Dashboard nach einer Einstellung, die auf dem
+ * Pi zu holen ist.
+ */
+function ReceiverSwitch({
+  label,
+  hint,
+  checked,
+  onCheckedChange,
+  available,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  available: boolean;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex min-h-10 items-start gap-2.5 text-sm sm:min-h-0",
+        available ? "text-slate-600 dark:text-slate-300" : "text-slate-400"
+      )}
+    >
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={!available}
+        className="mt-0.5 shrink-0"
+      />
+      <span className="min-w-0">
+        {label}
+        <span className="block text-xs text-slate-500">
+          {available
+            ? hint
+            : "Auf dem Abspieler nicht eingerichtet – install-audio.sh erneut ausführen"}
+        </span>
+      </span>
+    </label>
   );
 }
 

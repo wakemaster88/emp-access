@@ -14,6 +14,8 @@ import {
   MAX_ANNOUNCEMENT_CHARS,
   TTS_FALLBACK_VOICES,
   TTS_LANGUAGE,
+  audioBackends,
+  hasAudioBackend,
   normalizeTtsVoice,
   type TtsVoice,
 } from "@/lib/audio-constants";
@@ -41,6 +43,50 @@ export async function resolveTargetZones(
     select: { id: true, name: true, deviceId: true },
     orderBy: { sortOrder: "asc" },
   });
+}
+
+/**
+ * Empfangs-Backends, die der Abspieler einer Zone gemeldet hat. Ein Pi, auf dem
+ * shairport-sync oder bluealsa fehlt, taucht hier leer auf – das Dashboard darf
+ * den zugehoerigen Schalter dann nicht anbieten.
+ */
+export async function playerAudioBackends(
+  db: Db,
+  deviceId: number | null | undefined
+): Promise<string[]> {
+  if (!deviceId) return [];
+  const device = await db.device.findUnique({
+    where: { id: deviceId },
+    select: { systemInfo: true },
+  });
+  return audioBackends(device?.systemInfo);
+}
+
+/**
+ * Prueft, ob der Abspieler die gewuenschten Empfaenger ueberhaupt bedienen
+ * kann. Gibt eine Fehlermeldung zurueck oder null, wenn es passt. Nur
+ * neu einzuschaltende Empfaenger uebergeben – ein unveraenderter Schalter darf
+ * ein Speichern nicht blockieren, etwa waehrend der Pi offline ist.
+ */
+export async function checkExternalReceivers(
+  db: Db,
+  deviceId: number | null | undefined,
+  wanted: { airplay?: boolean; bluetooth?: boolean }
+): Promise<string | null> {
+  if (!wanted.airplay && !wanted.bluetooth) return null;
+  if (!deviceId) {
+    return "AirPlay und Bluetooth brauchen einen zugeordneten Abspieler";
+  }
+
+  const backends = await playerAudioBackends(db, deviceId);
+  const missing = "ist auf diesem Abspieler nicht eingerichtet – install-audio.sh erneut ausführen";
+  if (wanted.airplay && !hasAudioBackend(backends, "AIRPLAY")) {
+    return `AirPlay-Empfang ${missing}`;
+  }
+  if (wanted.bluetooth && !hasAudioBackend(backends, "BLUETOOTH")) {
+    return `Bluetooth-Empfang ${missing}`;
+  }
+  return null;
 }
 
 export type AnnouncementForQueue = {

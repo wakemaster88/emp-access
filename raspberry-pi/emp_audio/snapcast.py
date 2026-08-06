@@ -38,6 +38,8 @@ class SnapcastMusic:
         self._duck_volume = 20
         self._ducked = False
         self._playing = False
+        # Angehalten, weil ein externer Sender die Zone uebernommen hat.
+        self._paused = False
         self._request_id = 0
 
     def start(self) -> bool:
@@ -134,11 +136,26 @@ class SnapcastMusic:
     def stop(self) -> None:
         self._set_muted(True)
         self._playing = False
+        self._paused = False
         logger.info("Snapcast-Wiedergabe stummgeschaltet")
+
+    def pause(self) -> None:
+        """Uebernahme durch einen externen Sender: Client stumm, aber verbunden."""
+        if self._paused:
+            return
+        self._paused = True
+        self._set_muted(True)
+
+    def resume(self) -> None:
+        if not self._paused:
+            return
+        self._paused = False
+        if self._playing:
+            self._set_muted(False)
 
     @property
     def is_playing(self) -> bool:
-        return self._playing
+        return self._playing and not self._paused
 
     def current_title(self) -> Optional[str]:
         return None

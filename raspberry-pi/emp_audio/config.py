@@ -36,6 +36,16 @@ DEFAULT = {
     # Soundkarte fuer den Snapclient (Name oder Index aus `snapclient -l`).
     # Eigenes Feld, weil snapclient eine andere Schreibweise als mpv nutzt.
     "snapclient_soundcard": "",
+    # Ausgabegeraet fuer AirPlay und Bluetooth. Eigener Zweig mit softvol-Regler
+    # davor, denn ein fremder Prozess laesst sich nur ueber ALSA absenken, wenn
+    # eine Durchsage kommt. Legt install-audio.sh in /etc/asound.conf an.
+    "external_pcm": "emp_external",
+    # Name des softvol-Reglers und Steuergeraet, ueber das amixer ihn erreicht.
+    "external_mixer": "EmpExternal",
+    "external_ctl": "default",
+    # Wie schnell eine Uebernahme durch einen Sender auffaellt. Kostet nichts,
+    # weil rein lokal geprueft wird.
+    "external_poll_interval": 2,
     # Obergrenze des lokalen Dateicaches in MB.
     "cache_max_mb": 2048,
     # Hebt leise Durchsagen vor der Wiedergabe auf einen einheitlichen Pegel an.

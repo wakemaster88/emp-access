@@ -17,7 +17,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Airplay,
   AlertTriangle,
+  Bluetooth,
+  BluetoothSearching,
   CalendarClock,
   CheckCircle2,
   Clock,
@@ -49,8 +52,10 @@ import { Chip, sliderFill } from "./ui";
 import { AnnouncementDialog } from "./announcement-dialog";
 import { LibraryPanel } from "./library-panel";
 import {
+  EXTERNAL_LABELS,
   JOB_KIND_LABELS,
   JOB_STATUS_LABELS,
+  formatCountdown,
   formatDuration,
   formatRelativeTime,
   isJobStuck,
@@ -142,6 +147,21 @@ export function AudioClient({
 
   const templates = announcements.filter((a) => a.isTemplate);
 
+  /** Wer die Zone gerade übernommen hat – der Livewert schlägt den der Seite. */
+  function takeoverOf(zone: ZoneRow) {
+    const live = liveZones.get(zone.id);
+    return live ? live.externalActive : zone.externalActive;
+  }
+
+  // Beim Mithören liefe die eigene Quelle im Browser weiter, während sie in der
+  // Zone pausiert ist – man hörte etwas, das dort gar nicht läuft.
+  const monitoredTakenOver =
+    monitor.zoneId !== null && !!liveZones.get(monitor.zoneId)?.externalActive;
+  const stopMonitor = monitor.stop;
+  useEffect(() => {
+    if (monitoredTakenOver) stopMonitor();
+  }, [monitoredTakenOver, stopMonitor]);
+
   // Der Verlauf kommt live nach, sobald die erste Statusabfrage durch ist.
   const historyJobs = liveJobs ?? jobs;
 
@@ -170,6 +190,31 @@ export function AudioClient({
         setControlError({
           zoneId,
           message: typeof data.error === "string" ? data.error : "Befehl fehlgeschlagen",
+        });
+      }
+      refresh();
+    } finally {
+      setBusyZone(null);
+    }
+  }
+
+  /**
+   * Bluetooth-Kopplung für fünf Minuten freigeben oder vorzeitig schließen.
+   * Außerhalb des Fensters ist die Zone nicht sichtbar; bereits gekoppelte
+   * Geräte kommen weiterhin durch.
+   */
+  async function togglePairing(zoneId: number, open: boolean) {
+    setBusyZone(zoneId);
+    setControlError(null);
+    try {
+      const res = await fetch(`/api/audio/zones/${zoneId}/pairing`, {
+        method: open ? "POST" : "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setControlError({
+          zoneId,
+          message: typeof data.error === "string" ? data.error : "Kopplung fehlgeschlagen",
         });
       }
       refresh();
@@ -294,13 +339,14 @@ export function AudioClient({
                   }
                   monitor={{
                     active: monitor.zoneId === zone.id,
-                    available: monitor.canMonitor(zone),
+                    available: monitor.canMonitor(zone, takeoverOf(zone)),
                     title: monitor.title,
                     volume: monitor.volume,
                     toggle: () =>
                       monitor.toggle(
                         zone,
-                        liveZones.get(zone.id)?.currentTitle ?? zone.currentTitle
+                        liveZones.get(zone.id)?.currentTitle ?? zone.currentTitle,
+                        takeoverOf(zone)
                       ),
                     setVolume: monitor.setVolume,
                   }}
@@ -308,6 +354,7 @@ export function AudioClient({
                   onStop={() => control(zone.id, { action: "STOP" })}
                   onVolume={(volume) => control(zone.id, { action: "VOLUME", volume })}
                   onSync={() => control(zone.id, { action: "SYNC_LIBRARY" })}
+                  onPairing={(open) => togglePairing(zone.id, open)}
                   onEdit={() => setZoneDialog({ open: true, zone })}
                   onDelete={() =>
                     setDeleteConfirm({ kind: "zone", id: zone.id, name: zone.name })
@@ -768,6 +815,7 @@ function ZoneCard({
   onStop,
   onVolume,
   onSync,
+  onPairing,
   onEdit,
   onDelete,
 }: {
@@ -788,6 +836,7 @@ function ZoneCard({
   onStop: () => void;
   onVolume: (volume: number) => void;
   onSync: () => void;
+  onPairing: (open: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -796,9 +845,15 @@ function ZoneCard({
   const deviceOnline = live?.deviceOnline ?? zone.deviceOnline;
   const currentTitle = live?.currentTitle ?? zone.currentTitle;
   const pendingJobs = live?.pendingJobs ?? 0;
+  // Der Livewert ist auch dann maßgeblich, wenn er null ist: eine gerade
+  // beendete Übernahme darf nicht als laufend stehen bleiben.
+  const externalActive = live ? live.externalActive : zone.externalActive;
+  const externalSender = live ? live.externalSender : zone.externalSender;
+  const pairableFor = live?.pairableFor ?? zone.pairableFor;
 
   const cardRef = useRef<HTMLDivElement>(null);
   const volume = useCommittedVolume(serverVolume, onVolume);
+  const pairable = usePairingCountdown(pairableFor);
 
   // Beim Webradio hört man dasselbe Programm; eine Playlist beginnt dagegen
   // beim gemeldeten Titel von vorn, weil der Pi keine Position meldet.
@@ -857,6 +912,17 @@ function ZoneCard({
                   <Volume2 className="h-3 w-3" /> läuft
                 </Badge>
               )}
+              {externalActive && (
+                <Badge className="gap-1 bg-sky-100 text-xs text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">
+                  {externalActive === "AIRPLAY" ? (
+                    <Airplay className="h-3 w-3" />
+                  ) : (
+                    <Bluetooth className="h-3 w-3" />
+                  )}
+                  {EXTERNAL_LABELS[externalActive]}
+                  {externalSender && ` · ${externalSender}`}
+                </Badge>
+              )}
               {pendingJobs > 0 && (
                 <Badge
                   variant="outline"
@@ -889,9 +955,11 @@ function ZoneCard({
                   : `Zone ${zone.name} auf diesem Gerät mithören`
               }
               title={
-                monitor.available
-                  ? `Mithören – ${monitorHint}`
-                  : "Keine Quelle zum Mithören hinterlegt"
+                externalActive
+                  ? "Während einer Übernahme nicht möglich"
+                  : monitor.available
+                    ? `Mithören – ${monitorHint}`
+                    : "Keine Quelle zum Mithören hinterlegt"
               }
               disabled={!monitor.available}
               pressed={monitor.active}
@@ -970,6 +1038,44 @@ function ZoneCard({
           </div>
         </div>
 
+        {externalActive && (
+          <p className="mt-2 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/40 dark:bg-sky-950/20 dark:text-sky-300">
+            {externalActive === "AIRPLAY" ? (
+              <Airplay className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Bluetooth className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            )}
+            <span>
+              {externalSender
+                ? `„${externalSender}“ sendet per ${EXTERNAL_LABELS[externalActive]}`
+                : `Ein Gerät sendet per ${EXTERNAL_LABELS[externalActive]}`}
+              . Die eigene Quelle läuft weiter, sobald die Verbindung endet – Durchsagen
+              kommen auch währenddessen durch.
+            </span>
+          </p>
+        )}
+
+        {zone.bluetoothEnabled && (
+          <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+            <Button
+              variant="outline"
+              onClick={() => onPairing(pairable === 0)}
+              disabled={busy}
+              className="h-10 shrink-0 gap-1.5 text-xs sm:h-8"
+            >
+              <BluetoothSearching className="h-3.5 w-3.5" />
+              {pairable > 0
+                ? `Kopplung offen – ${formatCountdown(pairable)}`
+                : "Bluetooth-Kopplung freigeben"}
+            </Button>
+            <span className="text-xs text-slate-500">
+              {pairable > 0
+                ? "Zone ist am Handy sichtbar. Nochmal drücken beendet die Freigabe vorzeitig."
+                : "Bekannte Geräte verbinden sich jederzeit, neue nur im Fenster (5 Min)."}
+            </span>
+          </div>
+        )}
+
         {monitor.active && (
           <div className="mt-2 flex flex-col gap-1 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 sm:flex-row sm:items-center sm:gap-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
             <span className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">
@@ -1015,6 +1121,34 @@ function ZoneCard({
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * Restlaufzeit des Kopplungsfensters, sekündlich herunterzählend.
+ *
+ * Der Serverwert kommt nur mit der Statusabfrage alle acht Sekunden – ohne
+ * eigenen Takt sprang die Anzeige in Achtersprüngen und sah kaputt aus.
+ */
+function usePairingCountdown(seconds: number): number {
+  // `from` merkt sich, auf welchem Serverwert der Rest beruht: kommt ein neuer,
+  // beginnt das Zählen dort von vorn. Eine Abweichung durch einen gebremsten
+  // Timer im Hintergrund korrigiert sich damit von selbst.
+  const [state, setState] = useState({ from: seconds, remaining: seconds });
+  if (state.from !== seconds) setState({ from: seconds, remaining: seconds });
+
+  useEffect(() => {
+    if (seconds <= 0) return;
+    const timer = setInterval(
+      () =>
+        setState((prev) =>
+          prev.remaining <= 0 ? prev : { ...prev, remaining: prev.remaining - 1 }
+        ),
+      1000
+    );
+    return () => clearInterval(timer);
+  }, [seconds]);
+
+  return state.remaining;
 }
 
 /** Verzögerung, bis eine Reglerbewegung als abgeschlossen gilt. */

@@ -37,6 +37,34 @@ if [[ "$USE_SNAPCAST" =~ ^[jJyY]$ ]]; then
     read -r -p "  Hostname oder IP des Snapservers: " SNAPSERVER_HOST
 fi
 
+# AirPlay und Bluetooth: Empfänger, über die ein Handy die Zone übernehmen darf.
+# Die Wiedergabe schaltet das Dashboard erst frei, wenn der Abspieler die hier
+# installierten Dienste im Heartbeat gemeldet hat.
+USE_AIRPLAY=""
+read -r -p "AirPlay-Empfang einrichten (Senden vom iPhone/Mac)? [j/N] " USE_AIRPLAY
+if [[ "$USE_AIRPLAY" =~ ^[jJyY]$ ]]; then
+    if apt-get install -y -qq shairport-sync; then
+        # Der Dienst des Pakets brächte seine eigene Konfiguration mit und würde
+        # sich die Soundkarte greifen. Gesteuert wird ausschließlich emp-airplay.
+        systemctl disable --now shairport-sync 2>/dev/null || true
+        USE_AIRPLAY="j"
+    else
+        echo "  Warnung: shairport-sync nicht verfügbar – AirPlay bleibt aus"
+        USE_AIRPLAY=""
+    fi
+fi
+
+USE_BLUETOOTH=""
+read -r -p "Bluetooth-Empfang einrichten (Kopplung per Dashboard)? [j/N] " USE_BLUETOOTH
+if [[ "$USE_BLUETOOTH" =~ ^[jJyY]$ ]]; then
+    if apt-get install -y -qq bluez bluez-alsa-utils bluez-tools; then
+        USE_BLUETOOTH="j"
+    else
+        echo "  Warnung: bluez-alsa-utils nicht verfügbar – Bluetooth bleibt aus"
+        USE_BLUETOOTH=""
+    fi
+fi
+
 # ─── Detect repo URL from parent git ─────────────────────────────────────────
 
 REPO_URL=""
@@ -184,6 +212,11 @@ else
         cat > /etc/asound.conf << ASOUNDHEAD
 # emp-audio: Standardausgabe fuer Musik und Durchsagen.
 # Von install-audio.sh erzeugt – Aenderungen gehen bei einer Neuinstallation verloren.
+#
+# Aufbau:
+#   emp_out      – gemeinsamer Ausgang, auf dem alles zusammenlaeuft
+#   !default     – Musik und Durchsagen (mpv)
+#   emp_external – AirPlay und Bluetooth, mit regelbarem Pegel davor
 
 ASOUNDHEAD
 
@@ -191,9 +224,10 @@ ASOUNDHEAD
             cat >> /etc/asound.conf << ASOUNDCONF
 # Karte $AUDIO_CARD bietet $SUBDEVS Subdevices und mischt selbst – plug sorgt nur
 # noch fuer die Umrechnung von Rate und Format.
-pcm.!default {
-    type plug
-    slave.pcm "hw:CARD=$AUDIO_CARD,DEV=0"
+pcm.emp_out {
+    type hw
+    card "$AUDIO_CARD"
+    device 0
 }
 ASOUNDCONF
             echo "  Ausgabe auf Karte $AUDIO_CARD eingerichtet – sie mischt selbst ($SUBDEVS Subdevices)"
@@ -201,12 +235,7 @@ ASOUNDCONF
             cat >> /etc/asound.conf << ASOUNDCONF
 # Karte $AUDIO_CARD nimmt nur einen Strom an, deshalb mischt dmix davor.
 # ipc_perm, damit auch ein Test als normaler Benutzer mitmischen darf.
-pcm.!default {
-    type plug
-    slave.pcm "emp_mix"
-}
-
-pcm.emp_mix {
+pcm.emp_out {
     type dmix
     ipc_key 2748
     ipc_perm 0666
@@ -222,13 +251,48 @@ ASOUNDCONF
             echo "  Mischgerät auf Karte $AUDIO_CARD eingerichtet (dmix, ein Subdevice)"
         fi
 
-        cat >> /etc/asound.conf << ASOUNDCTL
+        cat >> /etc/asound.conf << ASOUNDEXT
+
+pcm.!default {
+    type plug
+    slave.pcm "emp_out"
+}
+
+# AirPlay und Bluetooth geben hier aus. Der softvol-Regler ist der einzige
+# Griff, mit dem sich ein fremder Prozess absenken laesst: einen Steuersocket
+# wie mpv hat er nicht. Ohne ihn wuerde eine Durchsage im Sender untergehen.
+#
+# Der Regler entsteht erst, wenn das Geraet einmal geoeffnet wurde – vorher
+# findet amixer ihn nicht. Darum die Stille weiter unten.
+pcm.emp_external {
+    type plug
+    slave.pcm {
+        type softvol
+        slave.pcm "emp_out"
+        control {
+            name "EmpExternal"
+            card "$AUDIO_CARD"
+        }
+        max_dB 0.0
+    }
+}
 
 ctl.!default {
     type hw
     card $AUDIO_CARD
 }
-ASOUNDCTL
+ASOUNDEXT
+
+        # Regler anlegen und aufdrehen: ein Bruchteil Stille genuegt, um das
+        # Geraet einmal zu oeffnen.
+        head -c 8192 /dev/zero \
+            | aplay -D emp_external -q -t raw -f S16_LE -r 48000 -c 2 > /dev/null 2>&1 || true
+        if amixer -q sset EmpExternal 100% > /dev/null 2>&1; then
+            echo "  Regelbarer Zweig emp_external eingerichtet (Ducking für AirPlay/Bluetooth)"
+        else
+            echo "  Warnung: Regler EmpExternal ließ sich nicht anlegen – Durchsagen"
+            echo "           würden gegen AirPlay/Bluetooth untergehen (siehe README-audio.md)"
+        fi
 
         # Frisch aufgesetzte Pis haben den Ausgang oft stumm oder auf null.
         for CTL in Headphone PCM Master Speaker Digital; do
@@ -277,6 +341,134 @@ if [ -n "$DESKTOP_USER" ] && pgrep -u "$DESKTOP_USER" -x pipewire > /dev/null 2>
     fi
 fi
 
+# ─── AirPlay-Empfang ──────────────────────────────────────────────────────────
+#
+# Bewusst ein eigener Dienst mit eigener Konfiguration statt dem des Pakets: der
+# Name muss der Zone folgen, und die Sitzungs-Hooks brauchen wir, um eine
+# Uebernahme zu bemerken – ueber die Kommandozeile sind sie nicht setzbar.
+# /etc/emp-airplay.conf schreibt der Abspieler selbst, sobald eine Zone AirPlay
+# einschaltet. Darum wird der Dienst hier nicht aktiviert.
+
+if [ "$USE_AIRPLAY" = "j" ]; then
+    echo ""
+    echo "→ AirPlay-Empfang einrichten..."
+
+    cat > /usr/local/bin/emp-airplay-state << 'AIRSTATE'
+#!/bin/sh
+# Von install-audio.sh erzeugt. shairport-sync ruft das Skript bei Beginn und
+# Ende einer Sitzung auf; der Abspieler erkennt daran, dass ein Sender die Zone
+# uebernommen hat.
+STATE_FILE=/run/emp-audio/airplay.active
+mkdir -p /run/emp-audio
+case "$1" in
+    active) : > "$STATE_FILE" ;;
+    *)      rm -f "$STATE_FILE" ;;
+esac
+AIRSTATE
+    chmod 755 /usr/local/bin/emp-airplay-state
+
+    cat > /etc/systemd/system/emp-airplay.service << 'AIRUNIT'
+[Unit]
+Description=EMP Access AirPlay-Empfang
+# Ohne Avahi ist der Empfaenger im Netz nicht zu sehen.
+After=network-online.target sound.target avahi-daemon.service
+Wants=network-online.target avahi-daemon.service
+
+[Service]
+ExecStart=/usr/bin/shairport-sync -c /etc/emp-airplay.conf
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+AIRUNIT
+    echo "  Dienst emp-airplay eingerichtet – startet, sobald eine Zone AirPlay einschaltet"
+fi
+
+# ─── Bluetooth-Empfang ────────────────────────────────────────────────────────
+
+if [ "$USE_BLUETOOTH" = "j" ]; then
+    echo ""
+    echo "→ Bluetooth-Empfang einrichten..."
+
+    # Der Dienstname wechselte zwischen den Fassungen von bluez-alsa.
+    BLUEALSA_BIN="$(command -v bluealsad || command -v bluealsa || true)"
+    if [ -z "$BLUEALSA_BIN" ]; then
+        echo "  Warnung: bluealsa nicht gefunden – Bluetooth-Empfang bleibt aus"
+    else
+        cat > /etc/systemd/system/emp-bluealsa.service << BLUEUNIT
+[Unit]
+Description=EMP Access Bluetooth-Audio (A2DP-Senke)
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+ExecStart=$BLUEALSA_BIN -p a2dp-sink
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+BLUEUNIT
+
+        # Zweiter Dienst, weil die Verbindung allein keinen Ton macht: dieser
+        # schiebt ihn auf den regelbaren Zweig, damit Durchsagen durchkommen.
+        cat > /etc/systemd/system/emp-bluealsa-aplay.service << 'BLUEAPLAY'
+[Unit]
+Description=EMP Access Bluetooth-Audio auf die Soundkarte
+After=emp-bluealsa.service
+Requires=emp-bluealsa.service
+
+[Service]
+ExecStart=/usr/bin/bluealsa-aplay -D emp_external
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+BLUEAPLAY
+
+        # Nimmt die Kopplung ohne PIN an. Ungefaehrlich, weil die Zone nur
+        # waehrend des Kopplungsfensters aus dem Dashboard sichtbar ist.
+        cat > /etc/systemd/system/emp-bt-agent.service << 'BTAGENT'
+[Unit]
+Description=EMP Access Bluetooth-Kopplung annehmen
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+ExecStart=/usr/bin/bt-agent -c NoInputNoOutput
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+BTAGENT
+
+        BT_CONF="/etc/bluetooth/main.conf"
+        if [ -f "$BT_CONF" ]; then
+            # Ohne Geraeteklasse zeigen Handys die Zone als "Sonstiges" statt als
+            # Lautsprecher an und bieten sie fuer Musik nicht an.
+            if ! grep -qE '^[[:space:]]*Class[[:space:]]*=' "$BT_CONF"; then
+                sed -i 's/^\[General\]/[General]\nClass = 0x200414/' "$BT_CONF"
+                echo "  Geräteklasse Lautsprecher in $BT_CONF eingetragen"
+            fi
+            # Die Voreinstellung von BlueZ beendet die Sichtbarkeit nach 180 s –
+            # das Fenster aus dem Dashboard laeuft laenger. Wann Schluss ist,
+            # entscheidet der Abspieler.
+            if ! grep -qE '^[[:space:]]*DiscoverableTimeout[[:space:]]*=' "$BT_CONF"; then
+                sed -i 's/^\[General\]/[General]\nDiscoverableTimeout = 0\nPairableTimeout = 0/' "$BT_CONF"
+            fi
+            systemctl restart bluetooth 2>/dev/null || true
+        fi
+
+        systemctl daemon-reload
+        systemctl enable --now emp-bt-agent.service 2>/dev/null \
+            || echo "  Warnung: bt-agent ließ sich nicht starten (Paket bluez-tools?)"
+        echo "  Dienste eingerichtet – Kopplung wird im Dashboard freigegeben"
+    fi
+fi
+
 # ─── Systemd services ────────────────────────────────────────────────────────
 
 echo "→ Systemd-Services installieren..."
@@ -311,4 +503,10 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 echo "  Ton testen:      speaker-test -c2 -twav -l1"
 echo "  Ausgang ändern:  Skript erneut ausführen (richtet /etc/asound.conf neu ein)"
+if [ "$USE_AIRPLAY" = "j" ] || [ "$USE_BLUETOOTH" = "j" ]; then
+    echo ""
+    echo "  AirPlay/Bluetooth noch im Dashboard einschalten:"
+    echo "    Audio → Zonen → Zone bearbeiten"
+    echo "  Die Schalter erscheinen, sobald der erste Heartbeat durch ist (bis 60 s)."
+fi
 echo ""

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { clampVolume, parseSourceKind, parseTimeOfDay } from "@/lib/audio";
+import {
+  checkExternalReceivers,
+  clampVolume,
+  parseSourceKind,
+  parseTimeOfDay,
+} from "@/lib/audio";
 
 export async function PUT(
   request: NextRequest,
@@ -70,6 +75,27 @@ export async function PUT(
   const sourceKind = parseSourceKind(body.sourceKind);
   const defaultSource = parseSourceKind(body.defaultSource);
 
+  const airplayEnabled =
+    body.airplayEnabled === undefined ? undefined : body.airplayEnabled === true;
+  const bluetoothEnabled =
+    body.bluetoothEnabled === undefined ? undefined : body.bluetoothEnabled === true;
+  const wantsAirplay = airplayEnabled ?? existing.airplayEnabled;
+  const wantsBluetooth = bluetoothEnabled ?? existing.bluetoothEnabled;
+  const effectiveDeviceId = deviceId !== undefined ? deviceId : existing.deviceId;
+  const deviceChanged = deviceId !== undefined && deviceId !== existing.deviceId;
+
+  // Nur neu eingeschaltete Empfänger prüfen, oder solche, die auf einen anderen
+  // Abspieler umziehen. Ein unveränderter Schalter darf das Speichern nicht
+  // blockieren – sonst ließe sich eine Zone nicht mehr bearbeiten, solange ihr
+  // Pi offline ist und keine Backends gemeldet hat.
+  const receiverError = await checkExternalReceivers(db, effectiveDeviceId, {
+    airplay: wantsAirplay && (!existing.airplayEnabled || deviceChanged),
+    bluetooth: wantsBluetooth && (!existing.bluetoothEnabled || deviceChanged),
+  });
+  if (receiverError) {
+    return NextResponse.json({ error: receiverError }, { status: 400 });
+  }
+
   const zone = await db.audioZone.update({
     where: { id: zoneId },
     data: {
@@ -102,6 +128,18 @@ export async function PUT(
           : clampVolume(body.duckVolume, existing.duckVolume),
       quietFrom: body.quietFrom === undefined ? undefined : parseTimeOfDay(body.quietFrom),
       quietTo: body.quietTo === undefined ? undefined : parseTimeOfDay(body.quietTo),
+      airplayEnabled,
+      bluetoothEnabled,
+      externalName:
+        body.externalName === undefined
+          ? undefined
+          : typeof body.externalName === "string" && body.externalName.trim()
+            ? body.externalName.trim().slice(0, 60)
+            : null,
+      // Ein abgeschalteter Empfänger darf keinen Übernahme-Hinweis und kein
+      // offenes Kopplungsfenster hinterlassen.
+      ...(wantsAirplay || wantsBluetooth ? {} : { externalActive: null, externalSender: null }),
+      ...(wantsBluetooth ? {} : { pairableUntil: null }),
       sortOrder: Number.isInteger(Number(body.sortOrder)) ? Number(body.sortOrder) : undefined,
     },
     include: {

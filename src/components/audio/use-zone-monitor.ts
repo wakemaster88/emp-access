@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import type { AudioSourceKind, PlaylistRow, TrackRow, ZoneRow } from "./types";
+import type {
+  AudioExternalKind,
+  AudioSourceKind,
+  PlaylistRow,
+  TrackRow,
+  ZoneRow,
+} from "./types";
 
 /**
  * Mithören einer Zone auf dem eigenen Gerät.
@@ -39,9 +45,16 @@ export interface ZoneMonitor {
   volume: number;
   error: { zoneId: number; message: string } | null;
   audioRef: RefObject<HTMLAudioElement | null>;
-  /** false, wenn die Zone keine Quelle hat, die der Browser abspielen könnte. */
-  canMonitor: (zone: ZoneRow) => boolean;
-  toggle: (zone: ZoneRow, currentTitle: string | null) => void;
+  /**
+   * false, wenn die Zone keine Quelle hat, die der Browser abspielen könnte –
+   * oder wenn ein externer Sender sie gerade übernommen hat.
+   */
+  canMonitor: (zone: ZoneRow, externalActive: AudioExternalKind | null) => boolean;
+  toggle: (
+    zone: ZoneRow,
+    currentTitle: string | null,
+    externalActive: AudioExternalKind | null
+  ) => void;
   stop: () => void;
   setVolume: (volume: number) => void;
   onEnded: () => void;
@@ -135,12 +148,22 @@ export function useZoneMonitor({
   );
 
   const toggle = useCallback(
-    (zone: ZoneRow, currentTitle: string | null) => {
+    (zone: ZoneRow, currentTitle: string | null, externalActive: AudioExternalKind | null) => {
       const audio = audioRef.current;
       if (!audio) return;
 
       if (queue.current?.zoneId === zone.id) {
         stop();
+        return;
+      }
+
+      // Solange ein Sender die Zone hat, ist die eigene Quelle angehalten – man
+      // würde hier etwas hören, was in der Zone gar nicht läuft.
+      if (externalActive) {
+        setError({
+          zoneId: zone.id,
+          message: "Während einer Übernahme lässt sich die Zone nicht mithören",
+        });
         return;
       }
 
@@ -192,7 +215,8 @@ export function useZoneMonitor({
   }, [stop]);
 
   const canMonitor = useCallback(
-    (zone: ZoneRow) => resolveQueue(zone, null, tracks, playlists) !== null,
+    (zone: ZoneRow, externalActive: AudioExternalKind | null) =>
+      !externalActive && resolveQueue(zone, null, tracks, playlists) !== null,
     [playlists, tracks]
   );
 

@@ -3,7 +3,13 @@ import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { AudioClient } from "@/components/audio/audio-client";
-import { isPlayerOnline, listTtsVoices, parseZoneIds } from "@/lib/audio";
+import {
+  audioBackends,
+  isPlayerOnline,
+  listTtsVoices,
+  pairableSeconds,
+  parseZoneIds,
+} from "@/lib/audio";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +69,12 @@ export default async function AudioPage() {
       }),
       db.device.findMany({
         where: { accountId, type: "AUDIO_PLAYER" },
-        select: { id: true, name: true, audioZone: { select: { id: true } } },
+        select: {
+          id: true,
+          name: true,
+          systemInfo: true,
+          audioZone: { select: { id: true } },
+        },
         orderBy: { name: "asc" },
       }),
       listTtsVoices(),
@@ -92,8 +103,14 @@ export default async function AudioPage() {
             streamUrl: z.streamUrl,
             quietFrom: z.quietFrom,
             quietTo: z.quietTo,
+            airplayEnabled: z.airplayEnabled,
+            bluetoothEnabled: z.bluetoothEnabled,
+            externalName: z.externalName,
             isPlaying: z.isPlaying,
             currentTitle: z.currentTitle,
+            externalActive: z.externalActive,
+            externalSender: z.externalSender,
+            pairableFor: pairableSeconds(z.pairableUntil),
             lastStateAt: z.lastStateAt?.toISOString() ?? null,
           }))}
           tracks={tracks.map((t) => ({
@@ -158,6 +175,7 @@ export default async function AudioPage() {
             id: d.id,
             name: d.name,
             taken: !!d.audioZone,
+            backends: audioBackends(d.systemInfo),
           }))}
           ttsVoices={ttsVoices}
           timeZone={account?.timezone || "Europe/Berlin"}

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { clampVolume, parseSourceKind, parseTimeOfDay } from "@/lib/audio";
+import {
+  checkExternalReceivers,
+  clampVolume,
+  parseSourceKind,
+  parseTimeOfDay,
+} from "@/lib/audio";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -71,6 +76,18 @@ export async function POST(request: NextRequest) {
     playlistId = candidate;
   }
 
+  // AirPlay/Bluetooth nur zulassen, wenn der Abspieler die Dienste gemeldet
+  // hat – sonst speichert man eine Einstellung, die der Pi still ignoriert.
+  const airplayEnabled = body.airplayEnabled === true;
+  const bluetoothEnabled = body.bluetoothEnabled === true;
+  const receiverError = await checkExternalReceivers(db, deviceId, {
+    airplay: airplayEnabled,
+    bluetooth: bluetoothEnabled,
+  });
+  if (receiverError) {
+    return NextResponse.json({ error: receiverError }, { status: 400 });
+  }
+
   const last = await db.audioZone.findFirst({
     where: { accountId: accountId! },
     orderBy: { sortOrder: "desc" },
@@ -98,6 +115,12 @@ export async function POST(request: NextRequest) {
       duckVolume: clampVolume(body.duckVolume, 15),
       quietFrom: parseTimeOfDay(body.quietFrom),
       quietTo: parseTimeOfDay(body.quietTo),
+      airplayEnabled,
+      bluetoothEnabled,
+      externalName:
+        typeof body.externalName === "string" && body.externalName.trim()
+          ? body.externalName.trim().slice(0, 60)
+          : null,
     },
     include: {
       device: { select: { id: true, name: true, lastUpdate: true } },
