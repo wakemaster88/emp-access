@@ -169,8 +169,6 @@ export default function PublicMonitorPage({ params }: Props) {
   const [mobileTab, setMobileTab] = useState<"tickets" | "scans">("tickets");
   const [devicesOpen, setDevicesOpen] = useState(false);
   const devicesRef = useRef<HTMLDivElement | null>(null);
-  const [controlOpen, setControlOpen] = useState(false);
-  const controlsRef = useRef<HTMLDivElement | null>(null);
   const [controlBusy, setControlBusy] = useState<string | null>(null);
   const [controlFlash, setControlFlash] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
@@ -488,15 +486,6 @@ export default function PublicMonitorPage({ params }: Props) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [devicesOpen]);
-
-  useEffect(() => {
-    if (!controlOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (!controlsRef.current?.contains(e.target as Node)) setControlOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [controlOpen]);
 
   /** Nach Check-in: hasPhoto-Flag aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen.
    *  Das eigentliche Bild wird vom Overlay selbst via /photo-Endpoint nachgeladen. */
@@ -821,87 +810,48 @@ export default function PublicMonitorPage({ params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {controlDevices.length > 0 && (
-            <div className="relative" ref={controlsRef}>
-              <button
-                type="button"
-                onClick={() => setControlOpen((v) => !v)}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg font-medium text-[10px] sm:text-xs transition-colors",
-                  controlFlash
-                    ? "bg-emerald-600 text-white"
-                    : controlError
-                      ? "bg-rose-600 text-white"
-                      : styles.modeBtnBg,
-                )}
-                aria-haspopup="menu"
-                aria-expanded={controlOpen}
-                title={controlDevices.length === 1 ? `${controlDevices[0].name} steuern` : "Geräte steuern"}
-              >
-                {controlBusy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : controlFlash ? (
-                  <Check className="h-3.5 w-3.5" />
-                ) : (
-                  <Power className="h-3.5 w-3.5" />
-                )}
-                <span className="hidden sm:inline max-w-[8rem] truncate">
-                  {controlDevices.length === 1 ? controlDevices[0].name : "Geräte"}
-                </span>
-                <ChevronDown className={cn("h-3 w-3 transition-transform", controlOpen && "rotate-180")} />
-              </button>
-              {controlOpen && (
-                <div
-                  role="menu"
+          {controlDevices.flatMap((device) =>
+            device.controls.map((ctrl) => {
+              const key = `${device.id}:${ctrl.action}`;
+              const busy = controlBusy === key;
+              const flashed = controlFlash === key;
+              const showDeviceName = controlDevices.length > 1;
+              const Icon = ctrl.role === "danger"
+                ? AlertTriangle
+                : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
+                  ? PowerOff
+                  : Power;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={controlBusy !== null}
+                  onClick={() => void handleControlAction(device.id, ctrl.action)}
+                  title={showDeviceName ? `${device.name}: ${ctrl.label}` : `${device.name} ${ctrl.label}`}
                   className={cn(
-                    "absolute right-0 top-full mt-1.5 min-w-[220px] rounded-xl border shadow-xl z-30 py-1.5",
-                    dark ? "bg-slate-900 border-slate-700" : "bg-white border-slate-300",
+                    "flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-semibold text-xs sm:text-sm transition-colors active:scale-95 disabled:opacity-50 whitespace-nowrap",
+                    flashed
+                      ? "bg-emerald-600 text-white"
+                      : controlError && controlBusy === null
+                        ? "bg-rose-600 text-white"
+                        : ctrl.role === "danger"
+                          ? "bg-rose-600 hover:bg-rose-500 text-white"
+                          : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
+                            ? dark ? "bg-slate-700 hover:bg-slate-600 text-white" : "bg-slate-600 hover:bg-slate-500 text-white"
+                            : "bg-sky-600 hover:bg-sky-500 text-white",
                   )}
                 >
-                  {controlDevices.map((device, idx) => (
-                    <div key={device.id} className={cn(idx > 0 && (dark ? "border-t border-slate-800" : "border-t border-slate-200"))}>
-                      {controlDevices.length > 1 && (
-                        <p className={cn("px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide", styles.sectionLabel)}>
-                          {device.name}
-                        </p>
-                      )}
-                      {device.controls.map((ctrl) => {
-                        const key = `${device.id}:${ctrl.action}`;
-                        const busy = controlBusy === key;
-                        const flashed = controlFlash === key;
-                        const Icon = ctrl.role === "danger"
-                          ? AlertTriangle
-                          : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
-                            ? PowerOff
-                            : Power;
-                        return (
-                          <button
-                            key={ctrl.action}
-                            type="button"
-                            disabled={controlBusy !== null}
-                            onClick={() => void handleControlAction(device.id, ctrl.action)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium transition-colors disabled:opacity-50",
-                              flashed
-                                ? "bg-emerald-600 text-white"
-                                : ctrl.role === "danger"
-                                  ? dark ? "text-rose-300 hover:bg-rose-950/60" : "text-rose-700 hover:bg-rose-50"
-                                  : dark ? "text-slate-200 hover:bg-slate-800" : "text-slate-800 hover:bg-slate-100",
-                            )}
-                          >
-                            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" /> : <Icon className="h-3.5 w-3.5 shrink-0" />}
-                            {ctrl.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                  {controlError && (
-                    <p className="px-3 py-2 text-[11px] text-rose-400">{controlError}</p>
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                  ) : flashed ? (
+                    <Check className="h-4 w-4 shrink-0" />
+                  ) : (
+                    <Icon className="h-4 w-4 shrink-0" />
                   )}
-                </div>
-              )}
-            </div>
+                  <span>{showDeviceName ? `${device.name} · ${ctrl.label}` : ctrl.label}</span>
+                </button>
+              );
+            }),
           )}
           {devices.length > 0 && (() => {
             const onlineCount = devices.filter((d) => d.lastUpdate && new Date(d.lastUpdate) > fiveMinAgo).length;
