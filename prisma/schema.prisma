@@ -738,6 +738,10 @@ model MonitorConfig {
   // laesst sich ein Monitor auch fuer Bereiche OHNE eigenes Scan-Geraet
   // erstellen (z.B. Seilbahn B / Uebungslift). Enthaelt AccessArea-IDs.
   areaIds   Json     @default("[]")
+  /// Geraete, die vom oeffentlichen Scan-Monitor aus geschaltet werden
+  /// duerfen – unabhaengig von `deviceIds` (Scan-Quellen). Beispiel:
+  /// Monitor Seilbahn A steuert einen Shelly, der das Drehkreuz stromlos schaltet.
+  controlDeviceIds Json @default("[]")
   isActive  Boolean  @default(true)
   accountId Int
   account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)

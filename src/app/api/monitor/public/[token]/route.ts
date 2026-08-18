@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { runPublicMonitorPoll } from "@/lib/monitor-public-poll";
+import { runPublicMonitorPoll, parseMonitorIdList } from "@/lib/monitor-public-poll";
 
 /** Kurze Requests – kein Dauer-SSE mehr (Vercel 10s-Limit + Neon-Reconnect-Sturm) */
 export const maxDuration = 25;
@@ -16,8 +16,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return new Response("Monitor nicht gefunden oder inaktiv", { status: 404 });
   }
 
-  const deviceIds = (monitor.deviceIds as number[]) ?? [];
-  const areaIds = (monitor.areaIds as number[] | null) ?? [];
+  const deviceIds = parseMonitorIdList(monitor.deviceIds);
+  const areaIds = parseMonitorIdList(monitor.areaIds);
+  const controlDeviceIds = parseMonitorIdList(monitor.controlDeviceIds);
   const accountId = monitor.accountId;
 
   const isPoll = request.nextUrl.searchParams.get("poll") === "1";
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       accountId,
       deviceIds,
       areaIds,
+      controlDeviceIds,
       monitorName: monitor.name,
       sinceScanId,
       includeTickets,

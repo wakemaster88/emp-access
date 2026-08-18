@@ -14,10 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
-  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine,
+  Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine, Power,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DeviceCategory } from "@prisma/client";
+import { deviceControls } from "@/lib/device-controls";
 
 interface Device {
   id: number;
@@ -34,6 +35,7 @@ interface MonitorConfigData {
   type: string;
   deviceIds: number[];
   areaIds: number[];
+  controlDeviceIds: number[];
   isActive: boolean;
   createdAt: string;
 }
@@ -69,6 +71,7 @@ function MonitorDialog({
   const [type, setType] = useState(monitor?.type ?? "MONITOR");
   const [selectedDevices, setSelectedDevices] = useState<number[]>(monitor?.deviceIds ?? []);
   const [selectedAreas, setSelectedAreas] = useState<number[]>(monitor?.areaIds ?? []);
+  const [selectedControlDevices, setSelectedControlDevices] = useState<number[]>(monitor?.controlDeviceIds ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -81,6 +84,12 @@ function MonitorDialog({
   function toggleArea(id: number) {
     setSelectedAreas((prev) =>
       prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
+    );
+  }
+
+  function toggleControlDevice(id: number) {
+    setSelectedControlDevices((prev) =>
+      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]
     );
   }
 
@@ -100,6 +109,7 @@ function MonitorDialog({
           type,
           deviceIds: selectedDevices,
           areaIds: type === "MONITOR" ? selectedAreas : [],
+          controlDeviceIds: type === "MONITOR" ? selectedControlDevices : [],
         }),
       });
       if (!res.ok) {
@@ -305,6 +315,55 @@ function MonitorDialog({
           </div>
           {selectedDevices.length > 0 && (
             <p className="text-xs text-slate-500">{selectedDevices.length} Gerät(e) ausgewählt</p>
+          )}
+        </div>}
+
+        {type === "MONITOR" && <div className="space-y-2">
+          <Label>Geräte steuern</Label>
+          <p className="text-xs text-slate-400">
+            Ausgewählte Geräte erscheinen als Schalter auf dem Scan-Monitor – z.&nbsp;B. ein Shelly, der das Drehkreuz aus- und einschaltet.
+          </p>
+          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+            {devices.filter((d) => deviceControls(d).length > 0).length === 0 && (
+              <p className="text-sm text-slate-500">Keine schaltbaren Geräte vorhanden.</p>
+            )}
+            {devices
+              .filter((d) => deviceControls(d).length > 0)
+              .map((device) => {
+                const selected = selectedControlDevices.includes(device.id);
+                const actions = deviceControls(device).map((c) => c.label).join(" · ");
+                return (
+                  <button
+                    key={device.id}
+                    type="button"
+                    onClick={() => toggleControlDevice(device.id)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
+                      selected
+                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                    )}
+                  >
+                    <div className={cn(
+                      "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                      selected ? "bg-indigo-600 border-indigo-600" : "border-slate-300 dark:border-slate-600"
+                    )}>
+                      {selected && <Check className="h-3 w-3 text-white" />}
+                    </div>
+                    <Power className={cn("h-3.5 w-3.5 shrink-0", selected ? "text-indigo-600" : "text-slate-400")} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{device.name}</p>
+                      <p className="text-xs text-slate-400 truncate">{actions}</p>
+                    </div>
+                    {device.isActive
+                      ? <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
+                      : <WifiOff className="h-4 w-4 text-slate-400 shrink-0" />}
+                  </button>
+                );
+              })}
+          </div>
+          {selectedControlDevices.length > 0 && (
+            <p className="text-xs text-slate-500">{selectedControlDevices.length} Steuergerät(e)</p>
           )}
         </div>}
 
@@ -553,6 +612,9 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
                 .filter((a) => (monitor.areaIds as number[] | undefined)?.includes(a.id))
                 .map((a) => a.name),
             ];
+        const controlNames = devices
+          .filter((d) => (monitor.controlDeviceIds ?? []).includes(d.id))
+          .map((d) => d.name);
         const TypeIcon = isCheckin
           ? ClipboardCheck
           : isResource
@@ -604,6 +666,15 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
                     <div className="flex flex-wrap gap-1">
                       {deviceNames.map((n) => (
                         <Badge key={n} variant="secondary" className="text-xs font-normal">{n}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  {controlNames.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {controlNames.map((n) => (
+                        <Badge key={`ctrl-${n}`} className="text-xs font-normal bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                          Steuert {n}
+                        </Badge>
                       ))}
                     </div>
                   )}

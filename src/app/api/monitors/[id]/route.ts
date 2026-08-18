@@ -36,6 +36,9 @@ export async function PUT(
                 : existing.type,
       deviceIds: body.deviceIds ?? existing.deviceIds,
       areaIds: Array.isArray(body.areaIds) ? body.areaIds : existing.areaIds,
+      controlDeviceIds: Array.isArray(body.controlDeviceIds)
+        ? body.controlDeviceIds
+        : existing.controlDeviceIds,
       isActive: body.isActive ?? existing.isActive,
     },
   });

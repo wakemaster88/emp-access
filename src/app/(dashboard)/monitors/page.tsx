@@ -51,6 +51,7 @@ export default async function MonitorsPage() {
             ...m,
             deviceIds: m.deviceIds as number[],
             areaIds: (m.areaIds as number[] | null) ?? [],
+            controlDeviceIds: (m.controlDeviceIds as number[] | null) ?? [],
             createdAt: m.createdAt.toISOString(),
           }))}
           devices={devices}

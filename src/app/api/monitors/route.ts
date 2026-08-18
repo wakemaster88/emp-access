@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
       type,
       deviceIds: body.deviceIds ?? [],
       areaIds: Array.isArray(body.areaIds) ? body.areaIds : [],
+      controlDeviceIds: type === "MONITOR" && Array.isArray(body.controlDeviceIds) ? body.controlDeviceIds : [],
       isActive: body.isActive ?? true,
       accountId: accountId!,
     },

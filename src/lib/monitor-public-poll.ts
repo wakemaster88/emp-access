@@ -1,5 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
 import { berlinDayStart, berlinYmd } from "@/lib/berlin-day";
+import { deviceControls, type DeviceControl } from "@/lib/device-controls";
+
+export function parseMonitorIdList(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+}
 
 const MAX_TICKETS = 2500;
 
@@ -31,9 +37,19 @@ function isDayAppointmentToday(t: SeriesCandidate, todayYmd: string): boolean {
   return durationMs > 0 && durationMs <= DAY_APPOINTMENT_MAX_MS;
 }
 
+export type MonitorControlDevice = {
+  id: number;
+  name: string;
+  type: string;
+  category: string | null;
+  isActive: boolean;
+  controls: DeviceControl[];
+};
+
 export type PublicMonitorPollResult = {
   name: string;
   devices: Awaited<ReturnType<typeof loadDevices>>;
+  controlDevices: MonitorControlDevice[];
   scans: Awaited<ReturnType<typeof loadScans>>;
   tickets: Awaited<ReturnType<typeof loadTickets>> | null;
   /** Höchste Scan-ID in dieser Antwort (für sinceScanId beim nächsten Poll) */
@@ -45,6 +61,24 @@ export type PublicMonitorPollResult = {
    */
   announcements: Awaited<ReturnType<typeof loadAnnouncements>> | null;
 };
+
+async function loadControlDevices(
+  prisma: PrismaClient,
+  accountId: number,
+  controlDeviceIds: number[],
+): Promise<MonitorControlDevice[]> {
+  if (controlDeviceIds.length === 0) return [];
+  const rows = await prisma.device.findMany({
+    where: { accountId, id: { in: controlDeviceIds } },
+    select: { id: true, name: true, type: true, category: true, isActive: true },
+  });
+  const byId = new Map(rows.map((d) => [d.id, d]));
+  return controlDeviceIds
+    .map((id) => byId.get(id))
+    .filter((d): d is NonNullable<typeof d> => d != null)
+    .map((d) => ({ ...d, controls: deviceControls(d) }))
+    .filter((d) => d.controls.length > 0);
+}
 
 async function loadAnnouncements(prisma: PrismaClient, accountId: number) {
   return prisma.monitorAnnouncement.findMany({
@@ -303,6 +337,7 @@ export async function runPublicMonitorPoll(
     accountId: number;
     deviceIds: number[];
     areaIds?: number[];
+    controlDeviceIds?: number[];
     monitorName: string;
     sinceScanId: number;
     includeTickets: boolean;
@@ -310,6 +345,7 @@ export async function runPublicMonitorPoll(
   }
 ): Promise<PublicMonitorPollResult> {
   const { accountId, deviceIds, monitorName, sinceScanId, includeTickets, scansOnly } = opts;
+  const controlDeviceIds = opts.controlDeviceIds ?? [];
   const areaIds = opts.areaIds ?? [];
   const areaScoped = areaIds.length > 0;
 
@@ -345,6 +381,7 @@ export async function runPublicMonitorPoll(
     return {
       name: monitorName,
       devices: [],
+      controlDevices: [],
       scans,
       tickets: null,
       lastScanId,
@@ -352,8 +389,9 @@ export async function runPublicMonitorPoll(
     };
   }
 
-  const [devices, announcements] = await Promise.all([
+  const [devices, controlDevices, announcements] = await Promise.all([
     loadDevices(prisma, accountId, deviceFilter),
+    loadControlDevices(prisma, accountId, controlDeviceIds),
     loadAnnouncements(prisma, accountId),
   ]);
   const tickets = includeTickets
@@ -363,6 +401,7 @@ export async function runPublicMonitorPoll(
   return {
     name: monitorName,
     devices,
+    controlDevices,
     scans,
     tickets,
     lastScanId,

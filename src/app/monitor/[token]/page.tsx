@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X, Power, PowerOff, AlertTriangle, Check, Volume2, VolumeX } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes } from "@/lib/monitor-ticket-subtitle";
@@ -20,6 +20,15 @@ interface Device {
   isActive: boolean;
   lastUpdate: string | null;
   task: number;
+}
+
+interface ControlDevice {
+  id: number;
+  name: string;
+  type: string;
+  category: string | null;
+  isActive: boolean;
+  controls: { action: string; label: string; role: "primary" | "secondary" | "danger" }[];
 }
 
 interface Scan {
@@ -135,6 +144,7 @@ export default function PublicMonitorPage({ params }: Props) {
   const { token } = use(params);
   const [monitorName, setMonitorName] = useState<string>("");
   const [devices, setDevices] = useState<Device[]>([]);
+  const [controlDevices, setControlDevices] = useState<ControlDevice[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
   const [tickets, setTickets] = useState<TicketInfo[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -159,29 +169,51 @@ export default function PublicMonitorPage({ params }: Props) {
   const [mobileTab, setMobileTab] = useState<"tickets" | "scans">("tickets");
   const [devicesOpen, setDevicesOpen] = useState(false);
   const devicesRef = useRef<HTMLDivElement | null>(null);
+  const [controlOpen, setControlOpen] = useState(false);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const [controlBusy, setControlBusy] = useState<string | null>(null);
+  const [controlFlash, setControlFlash] = useState<string | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastScanIdRef = useRef(0);
   const pollTickRef = useRef(0);
   const isFirstLoad = useRef(true);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const soundEnabledRef = useRef(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
-  const playDenyTone = useCallback(() => {
+  const unlockAudio = useCallback(() => {
     try {
-      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
-      const ctx = audioCtxRef.current;
-      const t = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(440, t);
-      osc.frequency.linearRampToValueAtTime(300, t + 0.18);
-      gain.gain.setValueAtTime(0.12, t);
-      gain.gain.linearRampToValueAtTime(0, t + 0.2);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.2);
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!audioCtxRef.current) audioCtxRef.current = new AC();
+      if (audioCtxRef.current.state === "suspended") void audioCtxRef.current.resume();
     } catch { /* audio not available */ }
   }, []);
+
+  const playDenyTone = useCallback(() => {
+    if (!soundEnabledRef.current) return;
+    try {
+      unlockAudio();
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      const beep = (start: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "square";
+        osc.frequency.setValueAtTime(880, start);
+        osc.frequency.setValueAtTime(420, start + 0.14);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.32, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.26);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.28);
+      };
+      const t = ctx.currentTime;
+      beep(t);
+      beep(t + 0.32);
+    } catch { /* audio not available */ }
+  }, [unlockAudio]);
 
   async function handleTicketScan(ticketId: number) {
     if (scanningId) return;
@@ -214,6 +246,39 @@ export default function PublicMonitorPage({ params }: Props) {
       return next;
     });
   }
+
+  async function handleControlAction(deviceId: number, action: string) {
+    const key = `${deviceId}:${action}`;
+    if (controlBusy) return;
+    setControlBusy(key);
+    setControlError(null);
+    try {
+      const res = await fetch(`/api/monitor/public/${token}/devices/${deviceId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setControlFlash(key);
+        setTimeout(() => setControlFlash((cur) => (cur === key ? null : cur)), 1800);
+      } else {
+        setControlError(typeof data.error === "string" ? data.error : "Steuerung fehlgeschlagen");
+        setTimeout(() => setControlError(null), 3500);
+      }
+    } catch {
+      setControlError("Netzwerkfehler");
+      setTimeout(() => setControlError(null), 3500);
+    } finally {
+      setControlBusy(null);
+    }
+  }
+
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    document.addEventListener("pointerdown", unlock);
+    return () => document.removeEventListener("pointerdown", unlock);
+  }, [unlockAudio]);
 
   async function handlePauseAll() {
     if (pauseToggling || pausePreviewLoading || pauseConfirm) return;
@@ -319,6 +384,7 @@ export default function PublicMonitorPage({ params }: Props) {
         const data = (await res.json()) as {
           name: string;
           devices: Device[];
+          controlDevices?: ControlDevice[];
           scans: Scan[];
           tickets: TicketInfo[] | null;
           lastScanId: number;
@@ -328,24 +394,32 @@ export default function PublicMonitorPage({ params }: Props) {
         if (!scansOnly) {
           setMonitorName(data.name);
           setDevices(data.devices);
+          if (Array.isArray(data.controlDevices)) setControlDevices(data.controlDevices);
         }
         if (data.announcements !== null && data.announcements !== undefined) {
           setAnnouncements(data.announcements);
         }
         if (data.scans?.length) {
           const incoming = data.scans.filter((s) => isSameBerlinDay(s.scanTime));
+          let shouldBeep = false;
           setScans((prev) => {
             const todayPrev = prev.filter((s) => isSameBerlinDay(s.scanTime));
             const existing = new Set(todayPrev.map((s) => s.id));
             const fresh = incoming.filter((s) => !existing.has(s.id));
-            if (!isFirstLoad.current && fresh.length > 0) {
+            const skipSound = isFirstLoad.current;
+            if (!skipSound && fresh.length > 0) {
               setNewIds(new Set(fresh.map((s) => s.id)));
               setTimeout(() => setNewIds(new Set()), 1500);
-              if (fresh.some((s) => s.result === "DENIED")) playDenyTone();
+              if (fresh.some((s) => s.result === "DENIED" || s.result === "PROTECTED")) {
+                shouldBeep = true;
+              }
             }
             isFirstLoad.current = false;
             return [...fresh, ...todayPrev].slice(0, 50);
           });
+          if (shouldBeep) playDenyTone();
+        } else {
+          isFirstLoad.current = false;
         }
         if (typeof data.lastScanId === "number") {
           lastScanIdRef.current = data.lastScanId;
@@ -414,6 +488,15 @@ export default function PublicMonitorPage({ params }: Props) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [devicesOpen]);
+
+  useEffect(() => {
+    if (!controlOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!controlsRef.current?.contains(e.target as Node)) setControlOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [controlOpen]);
 
   /** Nach Check-in: hasPhoto-Flag aus nächstem Ticket-Poll ins geöffnete Overlay übernehmen.
    *  Das eigentliche Bild wird vom Overlay selbst via /photo-Endpoint nachgeladen. */
@@ -738,6 +821,88 @@ export default function PublicMonitorPage({ params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          {controlDevices.length > 0 && (
+            <div className="relative" ref={controlsRef}>
+              <button
+                type="button"
+                onClick={() => setControlOpen((v) => !v)}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg font-medium text-[10px] sm:text-xs transition-colors",
+                  controlFlash
+                    ? "bg-emerald-600 text-white"
+                    : controlError
+                      ? "bg-rose-600 text-white"
+                      : styles.modeBtnBg,
+                )}
+                aria-haspopup="menu"
+                aria-expanded={controlOpen}
+                title={controlDevices.length === 1 ? `${controlDevices[0].name} steuern` : "Geräte steuern"}
+              >
+                {controlBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : controlFlash ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <Power className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline max-w-[8rem] truncate">
+                  {controlDevices.length === 1 ? controlDevices[0].name : "Geräte"}
+                </span>
+                <ChevronDown className={cn("h-3 w-3 transition-transform", controlOpen && "rotate-180")} />
+              </button>
+              {controlOpen && (
+                <div
+                  role="menu"
+                  className={cn(
+                    "absolute right-0 top-full mt-1.5 min-w-[220px] rounded-xl border shadow-xl z-30 py-1.5",
+                    dark ? "bg-slate-900 border-slate-700" : "bg-white border-slate-300",
+                  )}
+                >
+                  {controlDevices.map((device, idx) => (
+                    <div key={device.id} className={cn(idx > 0 && (dark ? "border-t border-slate-800" : "border-t border-slate-200"))}>
+                      {controlDevices.length > 1 && (
+                        <p className={cn("px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide", styles.sectionLabel)}>
+                          {device.name}
+                        </p>
+                      )}
+                      {device.controls.map((ctrl) => {
+                        const key = `${device.id}:${ctrl.action}`;
+                        const busy = controlBusy === key;
+                        const flashed = controlFlash === key;
+                        const Icon = ctrl.role === "danger"
+                          ? AlertTriangle
+                          : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
+                            ? PowerOff
+                            : Power;
+                        return (
+                          <button
+                            key={ctrl.action}
+                            type="button"
+                            disabled={controlBusy !== null}
+                            onClick={() => void handleControlAction(device.id, ctrl.action)}
+                            className={cn(
+                              "w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium transition-colors disabled:opacity-50",
+                              flashed
+                                ? "bg-emerald-600 text-white"
+                                : ctrl.role === "danger"
+                                  ? dark ? "text-rose-300 hover:bg-rose-950/60" : "text-rose-700 hover:bg-rose-50"
+                                  : dark ? "text-slate-200 hover:bg-slate-800" : "text-slate-800 hover:bg-slate-100",
+                            )}
+                          >
+                            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" /> : <Icon className="h-3.5 w-3.5 shrink-0" />}
+                            {ctrl.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                  {controlError && (
+                    <p className="px-3 py-2 text-[11px] text-rose-400">{controlError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {devices.length > 0 && (() => {
             const onlineCount = devices.filter((d) => d.lastUpdate && new Date(d.lastUpdate) > fiveMinAgo).length;
             const summaryDot = onlineCount === devices.length
@@ -811,6 +976,21 @@ export default function PublicMonitorPage({ params }: Props) {
               Tickets
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !soundEnabledRef.current;
+              soundEnabledRef.current = next;
+              setSoundEnabled(next);
+              if (next) unlockAudio();
+            }}
+            className={cn("p-1.5 sm:p-2 rounded-lg transition-colors", styles.modeBtnBg)}
+            title={soundEnabled ? "Warnton bei ungültigem Scan an" : "Warnton aus"}
+          >
+            {soundEnabled
+              ? <Volume2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              : <VolumeX className="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-60" />}
+          </button>
           <button
             onClick={() => setDark((d) => !d)}
             className={cn("p-1.5 sm:p-2 rounded-lg transition-colors", styles.modeBtnBg)}
