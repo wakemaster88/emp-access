@@ -2,10 +2,10 @@
  * Hauptressource ("wo laeuft die Zeit?") fuer Zeit-Tickets.
  *
  * Ein Kombi-Ticket wie "Öffentlicher Betrieb - 1 Stunde" gilt fuer mehrere
- * Bereiche: Seilbahn A (die gebuchte Stunde) UND Strandbad (Zutritt aufs
- * Gelaende). Nur die Seilbahn ist die Hauptressource - dort startet der
- * DURATION-Timer und dort wird das Ticket eingeloest. Das Strandbad ist
- * Transit: Zutritt ja, aber ohne den Timer anzustossen.
+ * Bereiche: Seilbahn A (die gebuchte Stunde) UND Strandbad/Insel (Zutritt).
+ * Nur die Seilbahn ist die Hauptressource - dort startet der DURATION-Timer
+ * und dort wird das Ticket eingeloest. Strandbad und Insel sind Transit:
+ * Zutritt ja, aber ohne den Timer anzustossen.
  *
  * Ohne diese Unterscheidung laeuft die gebuchte Stunde schon ab dem
  * Strandbad-Drehkreuz - der Gast verliert Zeit, die er nie genutzt hat.

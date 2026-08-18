@@ -341,7 +341,40 @@ export async function performScanCheck({
     }
   }
 
-  if (vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
+  // Standort des Scans: bevorzugt der im Scanner gewaehlte Bereich, sonst die
+  // Bereiche des hinterlegten Geraets. Wird hier vorgezogen, weil Slot-Fenster
+  // und DURATION-Ablauf nur an der Hauptressource greifen duerfen - analog
+  // zum Pi-Scanner. Transit an Nebenressourcen (Strandbad, Insel) darf
+  // Wake-/SUP-Tickets nicht wegen Kurszeit oder abgelaufener Stunde abweisen.
+  const mainAreaId = resolveMainAreaId(ticket);
+  let scanAreaIds: number[] | null = accessAreaId != null ? [accessAreaId] : null;
+  if (scanAreaIds == null && deviceId != null) {
+    const scanDevice = await db.device.findFirst({
+      where: { id: deviceId, accountId },
+      select: { accessIn: true, accessOut: true },
+    });
+    const deviceAreas = [scanDevice?.accessIn, scanDevice?.accessOut].filter(
+      (a): a is number => a != null,
+    );
+    if (deviceAreas.length > 0) scanAreaIds = deviceAreas;
+  }
+
+  // Steht weder Bereich noch Geraet zur Verfuegung (Scanner auf "Alle
+  // Bereiche" ohne hinterlegtes Geraet), ist der Ort unbekannt. Dann werden
+  // gezielt nur Zeit-Tickets geschont: deren Timer darf nicht blind starten,
+  // weil der Handscanner typischerweise am Eingang steht und nicht an der
+  // Seilbahn. Wer die Zeit bewusst per Handscanner starten will, waehlt im
+  // Scanner den Bereich der Hauptressource.
+  //
+  // Alle anderen Ticketarten werden bei unbekanntem Ort weiterhin eingeloest -
+  // sonst blieben Einmal-Tickets nach einem Handscan VALID und waeren beliebig
+  // oft wiederverwendbar.
+  const scanHitsMainResource =
+    scanAreaIds != null
+      ? isMainResourceScan(mainAreaId, scanAreaIds)
+      : mainAreaId == null || vType !== "DURATION";
+
+  if (scanHitsMainResource && vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
     const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
     const currentMinutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
     const [sh, sm] = ticket.slotStart.split(":").map(Number);
@@ -360,7 +393,7 @@ export async function performScanCheck({
     }
   }
 
-  if (vType === "DURATION" && ticket.validityDurationMinutes) {
+  if (scanHitsMainResource && vType === "DURATION" && ticket.validityDurationMinutes) {
     if (ticket.firstScanAt) {
       const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
       if (now > expiresAt) {
@@ -424,40 +457,9 @@ export async function performScanCheck({
   }
 
   // Nur ein Scan an der Hauptressource darf den DURATION-Timer starten und das
-  // Ticket einloesen. Scans an Nebenressourcen (z.B. Strandbad-Scanner fuer ein
-  // "Seilbahn A"-Ticket) sind Transit: Zutritt wird gewaehrt, aber
-  // Status/firstScanAt bleiben unveraendert, damit die Zeit erst an der
-  // Seilbahn laeuft.
-  //
-  // Standort des Scans: bevorzugt der im Scanner gewaehlte Bereich, sonst die
-  // Bereiche des hinterlegten Geraets.
-  const mainAreaId = resolveMainAreaId(ticket);
-  let scanAreaIds: number[] | null = accessAreaId != null ? [accessAreaId] : null;
-  if (scanAreaIds == null && deviceId != null) {
-    const scanDevice = await db.device.findFirst({
-      where: { id: deviceId, accountId },
-      select: { accessIn: true, accessOut: true },
-    });
-    const deviceAreas = [scanDevice?.accessIn, scanDevice?.accessOut].filter(
-      (a): a is number => a != null,
-    );
-    if (deviceAreas.length > 0) scanAreaIds = deviceAreas;
-  }
-
-  // Steht weder Bereich noch Geraet zur Verfuegung (Scanner auf "Alle
-  // Bereiche" ohne hinterlegtes Geraet), ist der Ort unbekannt. Dann werden
-  // gezielt nur Zeit-Tickets geschont: deren Timer darf nicht blind starten,
-  // weil der Handscanner typischerweise am Eingang steht und nicht an der
-  // Seilbahn. Wer die Zeit bewusst per Handscanner starten will, waehlt im
-  // Scanner den Bereich der Hauptressource.
-  //
-  // Alle anderen Ticketarten werden bei unbekanntem Ort weiterhin eingeloest -
-  // sonst blieben Einmal-Tickets nach einem Handscan VALID und waeren beliebig
-  // oft wiederverwendbar.
-  const scanHitsMainResource =
-    scanAreaIds != null
-      ? isMainResourceScan(mainAreaId, scanAreaIds)
-      : mainAreaId == null || vType !== "DURATION";
+  // Ticket einloesen. Scans an Nebenressourcen (z.B. Strandbad/Insel fuer ein
+  // "Seilbahn A"- oder SUP-Ticket) sind Transit: Zutritt wird gewaehrt, aber
+  // Status/firstScanAt bleiben unveraendert.
 
   // Atomar: Scan + optionale Statusaenderung in einer Transaktion mit version-Check.
   // Vereinsmitglieder (vereinId) sind Jahres-Mitgliedschaften und werden – wie
