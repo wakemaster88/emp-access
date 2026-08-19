@@ -6,7 +6,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { api, log } from "./config.js";
+import { CONFIG, api, log } from "./config.js";
 import { STATE } from "./state.js";
 import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
 import { scorePlateFromJpeg, type PlateScore } from "./plate.js";
@@ -97,12 +97,12 @@ function vehicleVisionMode(): "always" | "never" | "auto" {
   return "auto";
 }
 
-/** Lokaler Burst-Dump; Default /tmp/veh-burst, aus mit HUB_VEHICLE_DUMP=0. */
+/** Lokaler Burst-Dump unter hub/.cache – nicht /tmp (fremder Owner → EACCES). */
 function vehicleDumpDir(): string | null {
   if (process.env.HUB_VEHICLE_DUMP === "0" || process.env.HUB_VEHICLE_DUMP === "never") {
     return null;
   }
-  return process.env.HUB_VEHICLE_DUMP_DIR || "/tmp/veh-burst";
+  return process.env.HUB_VEHICLE_DUMP_DIR || path.join(CONFIG.hubDir, ".cache", "veh-burst");
 }
 
 function burstFolderName(camName: string): string {
@@ -111,7 +111,7 @@ function burstFolderName(camName: string): string {
   return `${ts}_${safe}`;
 }
 
-/** Alte Burst-Ordner löschen (Alter + Anzahl), damit /tmp nicht vollläuft. */
+/** Alte Burst-Ordner löschen (Alter + Anzahl). */
 async function pruneVehicleDumps(root: string): Promise<void> {
   try {
     const entries = await fs.readdir(root, { withFileTypes: true });
