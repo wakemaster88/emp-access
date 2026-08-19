@@ -422,6 +422,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                                   <img
                                     src={`/api/person-sightings/${s.id}/snapshot`}
                                     alt=""
+                                    loading="lazy"
+                                    decoding="async"
                                     className="h-full w-full object-cover"
                                   />
                                 </a>
@@ -544,6 +546,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                               <img
                                 src={`/api/person-sightings/${s.id}/snapshot`}
                                 alt=""
+                                loading="lazy"
+                                decoding="async"
                                 className="h-full w-full object-cover"
                               />
                             </button>
@@ -786,6 +790,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                   <img
                     src={`/api/person-sightings/${assignSighting.id}/snapshot`}
                     alt="Sichtung"
+                    decoding="async"
                     className="max-h-64 w-full object-contain bg-black/5"
                   />
                 </div>

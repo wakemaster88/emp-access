@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { isUniqueConstraintError, withDbRetry } from "@/lib/db-errors";
 import { controlShelly } from "@/lib/shelly";
 import { maybeSurveillanceTelegramAlert } from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
@@ -235,19 +236,37 @@ export async function assignVehicleToSighting(opts: {
     const plate = formatPlateDisplay(opts.createVehicle.plate);
     const plateNormalized = normalizePlate(plate);
     if (plateNormalized.length < 2) throw new Error("Ungültiges Kennzeichen");
-    const created = await prisma.allowedVehicle.create({
-      data: {
-        accountId: opts.accountId,
-        name: opts.createVehicle.name.trim() || plate,
-        plate,
-        plateNormalized,
-        cameraId: null,
-        notifyOnDetection: false,
-      },
-      select: { id: true, plate: true },
-    });
-    vehicleId = created.id;
-    plateRaw = created.plate;
+    try {
+      const created = await withDbRetry(() =>
+        prisma.allowedVehicle.create({
+          data: {
+            accountId: opts.accountId,
+            name: opts.createVehicle!.name.trim() || plate,
+            plate,
+            plateNormalized,
+            cameraId: null,
+            notifyOnDetection: false,
+          },
+          select: { id: true, plate: true },
+        })
+      );
+      vehicleId = created.id;
+      plateRaw = created.plate;
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+      const existing = await prisma.allowedVehicle.findUnique({
+        where: {
+          accountId_plateNormalized: {
+            accountId: opts.accountId,
+            plateNormalized,
+          },
+        },
+        select: { id: true, plate: true },
+      });
+      if (!existing) throw err;
+      vehicleId = existing.id;
+      plateRaw = existing.plate;
+    }
   } else if (vehicleId) {
     const v = await prisma.allowedVehicle.findFirst({
       where: { id: vehicleId, accountId: opts.accountId },
@@ -273,22 +292,24 @@ export async function assignVehicleToSighting(opts: {
     if (match) vehicleId = match.id;
   }
 
-  const updated = await prisma.vehicleSighting.update({
-    where: { id: sighting.id },
-    data: {
-      plate: plateRaw,
-      plateNormalized,
-      allowedVehicleId: vehicleId,
-      matched: !!vehicleId,
-      source: plateNormalized ? "MANUAL" : "CAMERA_VEHICLE",
-    },
-    select: {
-      id: true,
-      allowedVehicleId: true,
-      plate: true,
-      matched: true,
-    },
-  });
+  const updated = await withDbRetry(() =>
+    prisma.vehicleSighting.update({
+      where: { id: sighting.id },
+      data: {
+        plate: plateRaw,
+        plateNormalized,
+        allowedVehicleId: vehicleId,
+        matched: !!vehicleId,
+        source: plateNormalized ? "MANUAL" : "CAMERA_VEHICLE",
+      },
+      select: {
+        id: true,
+        allowedVehicleId: true,
+        plate: true,
+        matched: true,
+      },
+    })
+  );
 
   return updated;
 }

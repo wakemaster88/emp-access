@@ -389,7 +389,7 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
                               <div key={s.id} className="shrink-0 w-28 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-50 dark:bg-slate-900">
                                 {s.hasSnapshot ? (
                                   <a href={`/api/vehicle-sightings/${s.id}/snapshot`} target="_blank" rel="noreferrer" className="block aspect-square bg-slate-100 dark:bg-slate-950">
-                                    <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" className="h-full w-full object-cover" />
+                                    <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                                   </a>
                                 ) : (
                                   <div className="aspect-square flex items-center justify-center text-slate-300">
@@ -475,7 +475,7 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
                         <TableCell>
                           {s.hasSnapshot ? (
                             <button type="button" onClick={() => openAssign(s)} className="block h-12 w-12 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
-                              <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" className="h-full w-full object-cover" />
+                              <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                             </button>
                           ) : (
                             <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
@@ -650,7 +650,7 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
             <div className="space-y-4">
               {assignSighting.hasSnapshot && (
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700">
-                  <img src={`/api/vehicle-sightings/${assignSighting.id}/snapshot`} alt="" className="max-h-64 w-full object-contain" />
+                  <img src={`/api/vehicle-sightings/${assignSighting.id}/snapshot`} alt="" decoding="async" className="max-h-64 w-full object-contain" />
                 </div>
               )}
               <p className="text-sm text-slate-500">

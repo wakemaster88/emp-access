@@ -1,5 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
+import { neonConfig } from "@neondatabase/serverless";
+
+// HTTP statt WebSocket fuer Pool.query: auf Vercel sonst haeufig
+// "server login has been failing, cached error: connect failed (server_login_retry)",
+// sobald viele parallele Snapshot-Requests den WS-Pool belasten.
+neonConfig.poolQueryViaFetch = true;
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;

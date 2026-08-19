@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { isTransientDbError, userFacingDbError } from "@/lib/db-errors";
 import { vehicleSightingAssignSchema } from "@/lib/validators";
 import { assignVehicleToSighting } from "@/lib/vehicles";
 
@@ -32,8 +33,8 @@ export async function PATCH(
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Fehler" },
-      { status: 400 }
+      { error: userFacingDbError(e) },
+      { status: isTransientDbError(e) ? 503 : 400 }
     );
   }
 }

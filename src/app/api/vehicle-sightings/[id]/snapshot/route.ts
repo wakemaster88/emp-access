@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { prisma } from "@/lib/prisma";
 
 /** GET (Session): Schnappschuss einer Fahrzeugsichtung als JPEG. */
 export async function GET(
@@ -8,12 +9,13 @@ export async function GET(
 ) {
   const session = await getSessionWithDb();
   if ("error" in session) return session.error;
-  const { db, accountId } = session;
+  const { accountId } = session;
 
   const id = Number((await params).id);
   if (isNaN(id)) return NextResponse.json({ error: "Ungültige ID" }, { status: 400 });
 
-  const sighting = await db.vehicleSighting.findFirst({
+  // Ohne tenantClient: BYTEA (~1 MB) nicht in eine WS-Transaktion packen.
+  const sighting = await prisma.vehicleSighting.findFirst({
     where: { id, accountId: accountId! },
     select: { snapshot: true, seenAt: true },
   });
