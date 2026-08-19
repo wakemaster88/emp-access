@@ -32,6 +32,14 @@ export async function processVehicleSighting(opts: {
   source?: "CAMERA_VEHICLE" | "CAMERA_PLATE" | "MANUAL";
   seenAt?: Date;
   snapshot?: Buffer | null;
+  /**
+   * Hub hat Tür/Shelly schon lokal geschaltet. Cloud legt dann nur die
+   * Historie an und sendet Push — keinen zweiten DOORBIRD_OPEN-Task.
+   */
+  skipActuators?: boolean;
+  localDoorOpened?: boolean;
+  localShellyTriggered?: boolean;
+  localShellyOk?: boolean | null;
 }): Promise<{
   sightingId: number;
   matched: boolean;
@@ -74,55 +82,61 @@ export async function processVehicleSighting(opts: {
   let shellyOk: boolean | null = null;
   let doorbirdTriggered = false;
 
-  // Gemeinsamer Cooldown fuer Shelly- und DoorBird-Ausloesung.
-  const cooldownMs = vehicle ? Math.max(1, vehicle.cooldownMinutes) * 60_000 : 0;
-  const cooledDown =
-    !!vehicle &&
-    (!vehicle.lastTriggeredAt ||
-      seenAt.getTime() - vehicle.lastTriggeredAt.getTime() >= cooldownMs);
+  if (opts.skipActuators) {
+    doorbirdTriggered = !!opts.localDoorOpened;
+    shellyTriggered = !!opts.localShellyTriggered;
+    shellyOk = opts.localShellyOk ?? null;
+  } else {
+    // Gemeinsamer Cooldown fuer Shelly- und DoorBird-Ausloesung.
+    const cooldownMs = vehicle ? Math.max(1, vehicle.cooldownMinutes) * 60_000 : 0;
+    const cooledDown =
+      !!vehicle &&
+      (!vehicle.lastTriggeredAt ||
+        seenAt.getTime() - vehicle.lastTriggeredAt.getTime() >= cooldownMs);
 
-  if (vehicle?.shellyDeviceId && vehicle.shellyDevice && cameraAllowed) {
-    if (cooledDown) {
-      const action = (SHELLY_ACTIONS.includes(vehicle.shellyAction as (typeof SHELLY_ACTIONS)[number])
-        ? vehicle.shellyAction
-        : "ON"
-      ).toLowerCase() as "on" | "off" | "toggle";
+    if (vehicle?.shellyDeviceId && vehicle.shellyDevice && cameraAllowed) {
+      if (cooledDown) {
+        const action = (SHELLY_ACTIONS.includes(vehicle.shellyAction as (typeof SHELLY_ACTIONS)[number])
+          ? vehicle.shellyAction
+          : "ON"
+        ).toLowerCase() as "on" | "off" | "toggle";
 
-      const cloud = await prisma.apiConfig.findFirst({
-        where: { accountId: opts.accountId, provider: "SHELLY" },
-        select: { baseUrl: true },
-      });
+        const cloud = await prisma.apiConfig.findFirst({
+          where: { accountId: opts.accountId, provider: "SHELLY" },
+          select: { baseUrl: true },
+        });
 
-      shellyTriggered = true;
-      shellyOk = await controlShelly(
-        {
-          ipAddress: vehicle.shellyDevice.ipAddress,
-          shellyId: vehicle.shellyDevice.shellyId,
-          shellyAuthKey: vehicle.shellyDevice.shellyAuthKey,
-          cloudServer: cloud?.baseUrl ?? undefined,
-        },
-        action,
-        vehicle.timerSeconds ?? undefined
-      );
+        shellyTriggered = true;
+        shellyOk = await controlShelly(
+          {
+            ipAddress: vehicle.shellyDevice.ipAddress,
+            shellyId: vehicle.shellyDevice.shellyId,
+            shellyAuthKey: vehicle.shellyDevice.shellyAuthKey,
+            cloudServer: cloud?.baseUrl ?? undefined,
+          },
+          action,
+          vehicle.timerSeconds ?? undefined
+        );
+      }
     }
-  }
 
-  // DoorBird-Türöffner: Hub-Task anlegen, der Hub führt open-door.cgi lokal aus.
-  if (vehicle?.doorbirdCameraId && cameraAllowed && cooledDown) {
-    try {
-      await prisma.hubTask.create({
-        data: {
-          type: "DOORBIRD_OPEN",
-          payload: { cameraId: vehicle.doorbirdCameraId },
-          accountId: opts.accountId,
-        },
-      });
-      doorbirdTriggered = true;
-      console.log(
-        `[vehicles] DoorBird-Türöffner ausgelöst: ${vehicle.name} (${plateRaw}) → Kamera ${vehicle.doorbirdCameraId}`
-      );
-    } catch (err) {
-      console.error("[vehicles] DoorBird-Task fehlgeschlagen:", err);
+    // DoorBird: Hub-Task nur als Fallback, wenn der Hub nicht schon lokal geöffnet hat.
+    if (vehicle?.doorbirdCameraId && cameraAllowed && cooledDown) {
+      try {
+        await prisma.hubTask.create({
+          data: {
+            type: "DOORBIRD_OPEN",
+            payload: { cameraId: vehicle.doorbirdCameraId },
+            accountId: opts.accountId,
+          },
+        });
+        doorbirdTriggered = true;
+        console.log(
+          `[vehicles] DoorBird-Türöffner ausgelöst: ${vehicle.name} (${plateRaw}) → Kamera ${vehicle.doorbirdCameraId}`
+        );
+      } catch (err) {
+        console.error("[vehicles] DoorBird-Task fehlgeschlagen:", err);
+      }
     }
   }
 

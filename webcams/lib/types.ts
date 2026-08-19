@@ -438,7 +438,18 @@ export const CamSchema = z
       })
       .default({ enabled: false, deviceIds: [] }),
     /** Abgleich Durchgänge ↔ gültige Scans, siehe `TailgateSchema`. */
-    tailgate: TailgateSchema.default({} as TailgateConfig),
+    tailgate: TailgateSchema.default(TailgateSchema.parse({})),
+    /**
+     * Kennzeichenerkennung auf dieser Cam. Whitelist, Intervall und Cooldown
+     * kommen von Doorbird → ALPR; bei Treffer kann die Doorbird-Tür aufgehen.
+     */
+    alpr: z
+      .object({
+        enabled: z.boolean().default(false),
+        /** Ausführung liegt beim Hub; Kiosk-ALPR öffnet die Tür nicht mehr standardmäßig. */
+        openDoorbird: z.boolean().default(false),
+      })
+      .default({ enabled: false, openDoorbird: false }),
   })
   .superRefine((cam, ctx) => {
     // Crossing-Counting verträgt sich nicht mit PTZ-Auto: die Linie ist in
@@ -514,6 +525,8 @@ export const AlprConfigSchema = z.object({
    * automatisch aufgeräumt. 0 = unbegrenzt.
    */
   retentionDays: z.number().int().min(0).max(3650).default(60),
+  /** Türöffnung durch den Kiosk-Tracker. Standard aus: Ausführung liegt beim Hub. */
+  openDoorbird: z.boolean().default(false),
   whitelist: z.array(AlprWhitelistEntrySchema).default([]),
 });
 
@@ -552,6 +565,7 @@ export const DoorbirdSchema = z.object({
     confirmFrames: 3,
     cooldownSec: 300,
     retentionDays: 60,
+    openDoorbird: false,
     whitelist: [],
   }),
 });

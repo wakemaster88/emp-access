@@ -12,6 +12,7 @@ import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
 import { scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { syncDoorbirds } from "./doorbird.js";
+import { actuateIfAllowed } from "./vehicle-actuate.js";
 import { readArp } from "./scanner.js";
 import { updateLocalStreams } from "./streams.js";
 
@@ -143,30 +144,36 @@ async function dumpVehicleBurst(
   chosen: number | null,
   camName: string
 ): Promise<void> {
-  await pruneVehicleDumps(path.dirname(dir));
-  await fs.mkdir(dir, { recursive: true });
-  for (let i = 0; i < snaps.length; i++) {
-    const tag = chosen === i ? "BEST" : String(i).padStart(2, "0");
-    await fs.writeFile(path.join(dir, `${tag}.jpg`), snaps[i]);
-  }
-  const meta = {
-    camera: camName,
-    savedAt: new Date().toISOString(),
-    frameCount: snaps.length,
-    chosen,
-    frames: scores.map(({ index, score }) => ({
-      index,
-      plate: score.plate,
-      confidence: score.confidence,
-      viaWhitelist: score.viaWhitelist,
-      topCandidates: score.candidates.slice(0, 5).map((c) => ({
-        plate: c.plate,
-        confidence: c.confidence,
+  try {
+    await pruneVehicleDumps(path.dirname(dir));
+    await fs.mkdir(dir, { recursive: true });
+    for (let i = 0; i < snaps.length; i++) {
+      const tag = chosen === i ? "BEST" : String(i).padStart(2, "0");
+      await fs.writeFile(path.join(dir, `${tag}.jpg`), snaps[i]);
+    }
+    const meta = {
+      camera: camName,
+      savedAt: new Date().toISOString(),
+      frameCount: snaps.length,
+      chosen,
+      frames: scores.map(({ index, score }) => ({
+        index,
+        plate: score.plate,
+        confidence: score.confidence,
+        viaWhitelist: score.viaWhitelist,
+        topCandidates: score.candidates.slice(0, 5).map((c) => ({
+          plate: c.plate,
+          confidence: c.confidence,
+        })),
       })),
-    })),
-  };
-  await fs.writeFile(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
-  log(`Fahrzeug-Burst Dump: ${dir} (${snaps.length} Frames, chosen=${chosen ?? "—"})`);
+    };
+    await fs.writeFile(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+    log(`Fahrzeug-Burst Dump: ${dir} (${snaps.length} Frames, chosen=${chosen ?? "—"})`);
+  } catch (e) {
+    log(
+      `Fahrzeug-Burst Dump fehlgeschlagen (ignoriert): ${e instanceof Error ? e.message : e}`
+    );
+  }
 }
 
 function baseUrl(c: CameraConfig): string {
@@ -563,19 +570,38 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     log(`Fahrzeug-Snapshot ${cam.config.name}: kein Kennzeichen – manuelles Mapping`);
   }
 
-  const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
-    method: "POST",
-    headers: { "Content-Type": "image/jpeg" },
-    body: new Uint8Array(buf),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!upload.ok) {
-    const errText = await upload.text().catch(() => "");
-    throw new Error(
-      `Fahrzeug-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
-    );
+  const local = plate ? await actuateIfAllowed({ cameraId, plate }) : null;
+  if (local?.skipCloud) {
+    qs.set("localActed", "1");
+    if (local.doorOpened) qs.set("localDoor", "1");
+    if (local.shellyTriggered) qs.set("localShelly", local.shellyOk ? "1" : "0");
   }
-  log(`Fahrzeug-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
+
+  try {
+    const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg" },
+      body: new Uint8Array(buf),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!upload.ok) {
+      const errText = await upload.text().catch(() => "");
+      throw new Error(
+        `Fahrzeug-Snapshot fehlgeschlagen: HTTP ${upload.status} ${errText.slice(0, 120)}`
+      );
+    }
+    log(`Fahrzeug-Snapshot ${cam.config.name}: Upload OK (${buf.length} bytes)`);
+  } catch (e) {
+    if (local?.doorOpened || local?.shellyOk) {
+      log(
+        `Fahrzeug-Snapshot ${cam.config.name}: Upload fehlgeschlagen, Aktoren bereits lokal: ${
+          e instanceof Error ? e.message : e
+        }`
+      );
+    } else {
+      throw e;
+    }
+  }
   cam.lastSnapshotAt = Date.now();
   return { bytes: buf.length };
 }

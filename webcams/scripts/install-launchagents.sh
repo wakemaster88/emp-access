@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Installiert LaunchAgents auf macOS, sodass Next.js, go2rtc und Safari beim Login automatisch starten.
+# Installiert LaunchAgents auf macOS, sodass Next.js, go2rtc, Tracker-Sidecar
+# und Safari beim Login automatisch starten.
 # Idempotent: bestehende Agents werden ersetzt.
 
 set -euo pipefail
@@ -147,19 +148,80 @@ cat > "$SAFARI_PLIST" <<EOF
 </plist>
 EOF
 
-# 5) Reload all agents
-for label in com.local.webcams com.local.go2rtc com.local.webcams-safari; do
+# 5) Tracker-Sidecar (Personen zählen + ALPR)
+PYTHON_BIN="$REPO_DIR/tracker/.venv/bin/python"
+TRACKER_PLIST=""
+if [[ -x "$PYTHON_BIN" ]]; then
+  TRACKER_PLIST="$LAUNCH_DIR/com.local.webcams-tracker.plist"
+  cat > "$TRACKER_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.local.webcams-tracker</string>
+  <key>WorkingDirectory</key>
+  <string>$REPO_DIR/tracker</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>$REPO_DIR/tracker/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+    <key>HOME</key>
+    <string>$HOME</string>
+    <key>YOLO_CONFIG_DIR</key>
+    <string>$LOG_DIR/ultralytics</string>
+    <key>WEBCAMS_CONFIG_PATH</key>
+    <string>$REPO_DIR/config.json</string>
+    <key>WEBCAMS_TRACKER_RTSP_BASE</key>
+    <string>rtsp://127.0.0.1:8554</string>
+  </dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$PYTHON_BIN</string>
+    <string>-m</string>
+    <string>uvicorn</string>
+    <string>main:app</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8088</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>15</integer>
+  <key>StandardOutPath</key>
+  <string>$LOG_DIR/tracker.log</string>
+  <key>StandardErrorPath</key>
+  <string>$LOG_DIR/tracker.err</string>
+</dict>
+</plist>
+EOF
+else
+  echo "⚠️  Tracker-venv fehlt ($PYTHON_BIN)."
+  echo "   ALPR und Crossing-Counter bleiben aus, bis:"
+  echo "   cd $REPO_DIR/tracker && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+fi
+
+# 6) Reload all agents
+for label in com.local.webcams com.local.go2rtc com.local.webcams-safari com.local.webcams-tracker; do
   launchctl bootout "gui/$UID/$label" 2>/dev/null || true
 done
 launchctl bootstrap "gui/$UID" "$WEBCAMS_PLIST"
 [[ -n "$GO2RTC_BIN" ]] && launchctl bootstrap "gui/$UID" "$LAUNCH_DIR/com.local.go2rtc.plist"
 launchctl bootstrap "gui/$UID" "$SAFARI_PLIST"
+[[ -n "$TRACKER_PLIST" ]] && launchctl bootstrap "gui/$UID" "$TRACKER_PLIST"
 
 echo ""
 echo "✅ LaunchAgents installiert:"
 echo "   - $WEBCAMS_PLIST"
 [[ -n "$GO2RTC_BIN" ]] && echo "   - $LAUNCH_DIR/com.local.go2rtc.plist"
 echo "   - $SAFARI_PLIST"
+[[ -n "$TRACKER_PLIST" ]] && echo "   - $TRACKER_PLIST"
 echo ""
 echo "Logs: $LOG_DIR"
 echo ""

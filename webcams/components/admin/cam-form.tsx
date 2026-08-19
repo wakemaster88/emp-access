@@ -69,6 +69,7 @@ const EMPTY: Cam = {
     instantAlert: true,
     notifyShopMonitor: true,
   },
+  alpr: { enabled: false, openDoorbird: false },
 };
 
 function slugify(s: string) {
@@ -367,6 +368,35 @@ export function CamForm({
               </>
             )}
           </div>
+        )}
+      </div>
+
+      <div className="sm:col-span-2 mt-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium">Kennzeichenerkennung</div>
+            <div className="text-xs text-foreground/60">
+              Optional im Kontrollzentrum. Kennzeichen und Türöffnung laufen
+              am Hub (Fahrzeuge auf emp-access.de). Hier nur Anzeige, die Tür
+              öffnet der Kiosk standardmäßig nicht.
+            </div>
+          </div>
+          <Switch
+            checked={data.alpr.enabled}
+            onChange={(v) => update("alpr", { ...data.alpr, enabled: v })}
+          />
+        </div>
+        {data.alpr.enabled && (
+          <Field label="Bei Treffer Tür öffnen">
+            <div className="flex h-10 items-center">
+              <Switch
+                checked={data.alpr.openDoorbird}
+                onChange={(v) =>
+                  update("alpr", { ...data.alpr, openDoorbird: v })
+                }
+              />
+            </div>
+          </Field>
         )}
       </div>
 

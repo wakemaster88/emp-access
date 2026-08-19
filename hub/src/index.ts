@@ -85,7 +85,7 @@ setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 // das Intervall dient nur als Auffangnetz (statt frueher 60 s Dauer-Polling).
 setInterval(() => refreshGallery(true).catch(() => {}), 900_000);
 refreshVehicleWhitelist().catch(() => {});
-setInterval(() => refreshVehicleWhitelist().catch(() => {}), 900_000);
+setInterval(() => refreshVehicleWhitelist().catch(() => {}), 300_000);
 alprWarmup();
 
 process.on("SIGTERM", () => { log("SIGTERM – Hub beendet sich."); process.exit(0); });

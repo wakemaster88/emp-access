@@ -38,16 +38,52 @@ interface OcrResult {
   raw: string[];
 }
 
-interface WhitelistEntry {
+export interface CachedVehicle {
   id: number;
   name: string;
   plate: string;
   plateNormalized: string;
+  cameraId: number | null;
+  doorbirdCameraId: number | null;
+  cooldownMinutes: number;
+  lastTriggeredAt: number | null;
+  shellyAction: string;
+  timerSeconds: number | null;
+  shellyIp: string | null;
 }
+
+type WhitelistEntry = CachedVehicle;
 
 let whitelist: WhitelistEntry[] = [];
 let whitelistLoadedAt = 0;
+let localActuators = false;
 let building: Promise<boolean> | null = null;
+
+const CACHE_FILE = path.join(CONFIG.hubDir, ".cache", "allowed-vehicles.json");
+
+function parseTriggeredAt(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (v == null || v === "") return null;
+  const n = Date.parse(String(v));
+  return Number.isFinite(n) ? n : null;
+}
+
+function hydrateVehicle(v: Partial<CachedVehicle> | Record<string, unknown>): CachedVehicle {
+  const r = v as Record<string, unknown>;
+  return {
+    id: Number(r.id),
+    name: String(r.name ?? ""),
+    plate: String(r.plate ?? ""),
+    plateNormalized: String(r.plateNormalized ?? ""),
+    cameraId: r.cameraId == null ? null : Number(r.cameraId),
+    doorbirdCameraId: r.doorbirdCameraId == null ? null : Number(r.doorbirdCameraId),
+    cooldownMinutes: Number(r.cooldownMinutes) > 0 ? Number(r.cooldownMinutes) : 2,
+    lastTriggeredAt: parseTriggeredAt(r.lastTriggeredAt),
+    shellyAction: String(r.shellyAction ?? "ON"),
+    timerSeconds: r.timerSeconds == null ? null : Number(r.timerSeconds),
+    shellyIp: r.shellyIp ? String(r.shellyIp) : null,
+  };
+}
 
 function normalizePlate(plate: string): string {
   return plate
@@ -86,29 +122,92 @@ async function ensureBinary(): Promise<boolean> {
   return building;
 }
 
+function persistWhitelist(): void {
+  fs.mkdir(path.dirname(CACHE_FILE), { recursive: true })
+    .then(() =>
+      fs.writeFile(
+        CACHE_FILE,
+        JSON.stringify({ at: Date.now(), localActuators, vehicles: whitelist })
+      )
+    )
+    .catch(() => undefined);
+}
+
+async function loadWhitelistFromDisk(): Promise<boolean> {
+  try {
+    const raw = JSON.parse(await fs.readFile(CACHE_FILE, "utf8")) as {
+      vehicles?: CachedVehicle[];
+      localActuators?: boolean;
+    };
+    if (!Array.isArray(raw.vehicles) || raw.vehicles.length === 0) return false;
+    whitelist = raw.vehicles.map((v) => hydrateVehicle(v as CachedVehicle));
+    localActuators = raw.localActuators === true;
+    whitelistLoadedAt = Date.now();
+    log(
+      `Fahrzeuge: ${whitelist.length} Einträge aus Cache (offline${
+        localActuators ? ", lokale Aktoren" : ""
+      })`
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function refreshVehicleWhitelist(): Promise<void> {
   try {
     const res = await api("/api/hub/allowed-vehicles");
-    if (!res.ok) return;
-    const json = (await res.json()) as { vehicles?: WhitelistEntry[] };
-    whitelist = json.vehicles ?? [];
+    if (!res.ok) {
+      if (whitelist.length === 0) await loadWhitelistFromDisk();
+      return;
+    }
+    const json = (await res.json()) as {
+      vehicles?: CachedVehicle[];
+      localActuators?: boolean;
+    };
+    whitelist = (json.vehicles ?? []).map((v) => hydrateVehicle(v));
+    localActuators = json.localActuators === true;
     whitelistLoadedAt = Date.now();
+    persistWhitelist();
+    log(
+      `Fahrzeuge: ${whitelist.length} Whitelist-Einträge vom Server${
+        localActuators ? " (lokale Aktoren)" : ""
+      }`
+    );
   } catch {
-    // OCR funktioniert auch ohne Whitelist.
+    if (whitelist.length === 0) await loadWhitelistFromDisk();
   }
 }
 
 /** Für Offline-Backfill: Whitelist ohne Cloud-API setzen. */
 export function setVehicleWhitelist(entries: WhitelistEntry[]): void {
-  whitelist = entries;
+  whitelist = entries.map((v) => hydrateVehicle(v));
   whitelistLoadedAt = Date.now();
 }
 
 async function ensureWhitelist(): Promise<WhitelistEntry[]> {
+  if (whitelist.length === 0) await loadWhitelistFromDisk();
   if (Date.now() - whitelistLoadedAt > WHITELIST_TTL_MS) {
     await refreshVehicleWhitelist();
   }
   return whitelist;
+}
+
+export function findAllowedVehicle(plate: string): CachedVehicle | null {
+  const n = normalizePlate(plate);
+  if (n.length < 4) return null;
+  return whitelist.find((v) => v.plateNormalized === n) ?? null;
+}
+
+/** True, wenn die Cloud-API Aktoren mitliefert und skipActuators versteht. */
+export function vehicleLocalActuatorsEnabled(): boolean {
+  return localActuators;
+}
+
+export function markVehicleTriggered(id: number): void {
+  const v = whitelist.find((x) => x.id === id);
+  if (v) v.lastTriggeredAt = Date.now();
+  persistWhitelist();
 }
 
 function runOcr(imagePath: string): Promise<OcrResult> {

@@ -177,6 +177,8 @@ class AlprEvent:
     door_opened: bool
     door_open_error: str | None
     snapshot_id: str  # SHA-1 der JPEG-Bytes, für /alpr/snapshot/{id}
+    source_id: str = "doorbird"
+    source_name: str = "Doorbird"
 
 
 @dataclass
@@ -185,6 +187,9 @@ class AlprState:
     last_seen_plate: str = ""
     last_seen_at: float = 0.0
     confirm_buffer: deque = field(default_factory=lambda: deque(maxlen=10))
+    confirm_buffers: dict[str, deque] = field(default_factory=dict)
+    source_index: int = 0
+    active_sources: list[dict[str, Any]] = field(default_factory=list)
     cooldown_until: dict[str, float] = field(default_factory=dict)
     events: deque = field(default_factory=lambda: deque(maxlen=200))
     snapshots: dict[str, bytes] = field(default_factory=dict)
@@ -244,6 +249,8 @@ def _event_to_dict(ev: AlprEvent) -> dict[str, Any]:
         "doorOpened": ev.door_opened,
         "doorOpenError": ev.door_open_error,
         "snapshotId": ev.snapshot_id,
+        "cameraId": ev.source_id,
+        "cameraName": ev.source_name,
     }
 
 
@@ -504,18 +511,22 @@ def alpr_worker_loop(
     get_config_snapshot: "callable",
     open_door_callback: "callable",
     notify_callback: "callable | None" = None,
+    fetch_jpeg_callback: "callable | None" = None,
 ) -> None:
     """`get_config_snapshot` liefert bei jedem Tick einen frischen
-    `(doorbird_dict, alpr_dict, app_url, config_hash)` — der Worker selbst
-    bleibt also stehen, holt sich aktuelle Konfiguration aber jeden Tick.
+    `{alpr, doorbird, sources}` — der Worker selbst bleibt stehen und holt
+    sich die Konfiguration jeden Tick neu.
+
+    `sources` ist eine Liste von `{id, name, path, openDoorbird}`. Doorbird
+    plus optional weitere Reolink-Cams. Snapshots kommen über die Next-App
+    (Loopback), damit launchd die macOS-Netzsperre umgeht.
 
     `open_door_callback(plate, owner)` ruft die Tür-Öffnen-Aktion auf.
 
+    `fetch_jpeg_callback(source)` holt das JPEG für eine Quelle.
+
     `notify_callback(kind, ev)` — optional. Wird nach dem Persist eines
     Events aufgerufen, mit `kind` aus {"matched", "unauthorized", "cooldown"}.
-    Damit kann die Next-App per HTTP über Telegram-Toggles entscheiden,
-    ob ein Push verschickt wird. Nicht-blockierend gehalten — Fehler
-    werden geschluckt damit der Worker nicht stehen bleibt.
     """
     backoff = 1.0
     tick_count = 0
@@ -540,6 +551,8 @@ def alpr_worker_loop(
                 door_opened=bool(ev_dict.get("doorOpened", False)),
                 door_open_error=ev_dict.get("doorOpenError"),
                 snapshot_id=ev_dict.get("snapshotId", ""),
+                source_id=ev_dict.get("cameraId") or "doorbird",
+                source_name=ev_dict.get("cameraName") or "Doorbird",
             )
             with state._lock:
                 state.events.appendleft(ev)
@@ -559,14 +572,10 @@ def alpr_worker_loop(
 
         # Defensiv lesen — Bestand-configs haben das alpr-Feld evtl. gar nicht.
         alpr_cfg = (cfg or {}).get("alpr") or {}
-        doorbird_cfg = (cfg or {}).get("doorbird") or {}
+        sources = list((cfg or {}).get("sources") or [])
+        state.active_sources = sources
 
-        if (
-            cfg is None
-            or not alpr_cfg.get("enabled", False)
-            or not doorbird_cfg.get("enabled", False)
-        ):
-            # ALPR oder Doorbird deaktiviert → schlafen, Worker nicht killen
+        if cfg is None or not alpr_cfg.get("enabled", False) or not sources:
             state.enabled = False
             if state.stop_event.wait(1.0):
                 break
@@ -582,7 +591,7 @@ def alpr_worker_loop(
         # Adaptives Polling: Wenn länger nichts erkannt wurde, vergrößern
         # wir den Intervall stufenweise bis 5s. Sobald wieder was kommt,
         # zurück auf den konfigurierten Wert. Spart bei "leerer Einfahrt"
-        # ~70% der Doorbird-Snapshots + ALPR-Inference.
+        # ~70% der Snapshots + ALPR-Inference.
         idle_for = (time.time() - state.last_seen_at) if state.last_seen_at else 9999
         if idle_for < 60:
             interval_s = base_interval_s
@@ -605,15 +614,25 @@ def alpr_worker_loop(
         ]
         whitelist_norm = {w.plate_norm: w for w in whitelist}
 
+        source = sources[state.source_index % len(sources)]
+        state.source_index += 1
+        source_id = str(source.get("id") or "doorbird")
+        source_name = str(source.get("name") or source_id)
+        buf = state.confirm_buffers.setdefault(source_id, deque(maxlen=10))
+
         try:
-            jpeg = fetch_doorbird_snapshot(
-                doorbird_cfg.get("ip", ""),
-                doorbird_cfg.get("username", ""),
-                doorbird_cfg.get("password", ""),
-            )
+            if fetch_jpeg_callback is not None:
+                jpeg = fetch_jpeg_callback(source)
+            else:
+                doorbird_cfg = (cfg or {}).get("doorbird") or {}
+                jpeg = fetch_doorbird_snapshot(
+                    doorbird_cfg.get("ip", ""),
+                    doorbird_cfg.get("username", ""),
+                    doorbird_cfg.get("password", ""),
+                )
         except Exception as exc:
-            state.last_error = f"doorbird: {exc}"
-            log.warning("doorbird snapshot failed: %s — backoff %.1fs", exc, backoff)
+            state.last_error = f"{source_name}: {exc}"
+            log.warning("alpr snapshot %s failed: %s — backoff %.1fs", source_id, exc, backoff)
             if state.stop_event.wait(backoff):
                 break
             backoff = min(backoff * 1.5, 15.0)
@@ -636,7 +655,7 @@ def alpr_worker_loop(
         if not results:
             # Kein Plate → Confirmation-Buffer leeren, sonst zählt ein
             # Frame-Lücken-loser Plate-Wechsel als Confirmation.
-            state.confirm_buffer.append("")
+            buf.append("")
         else:
             # Bester Plate dieses Frames (höchste Confidence)
             best = max(results, key=lambda r: r[1])
@@ -644,14 +663,14 @@ def alpr_worker_loop(
             text_norm = _normalize_plate(text)
 
             if conf < min_conf or not text_norm:
-                state.confirm_buffer.append("")
+                buf.append("")
             else:
                 state.last_seen_plate = text
                 state.last_seen_at = time.time()
-                state.confirm_buffer.append(text_norm)
+                buf.append(text_norm)
 
                 # 2-aus-3 / N-aus-N: letzte N Frames müssen denselben Plate haben
-                recent = list(state.confirm_buffer)[-confirm_n:]
+                recent = list(buf)[-confirm_n:]
                 confirmed = (
                     len(recent) == confirm_n
                     and len(set(recent)) == 1
@@ -668,24 +687,28 @@ def alpr_worker_loop(
                     )
                     door_opened = False
                     door_open_error: str | None = None
+                    want_open = bool(source.get("openDoorbird", False))
 
-                    if matched and not cooldown_active:
+                    if matched and not cooldown_active and want_open:
                         try:
                             open_door_callback(text, entry.owner if entry else "")
                             door_opened = True
                             state.cooldown_until[text_norm] = time.time() + cooldown_s
                             log.info(
-                                "ALPR OPEN plate=%s owner=%s conf=%.2f cooldown=%ds",
+                                "ALPR OPEN src=%s plate=%s owner=%s conf=%.2f cooldown=%ds",
+                                source_name,
                                 text,
                                 entry.owner if entry else "",
                                 conf,
                                 cooldown_s,
                             )
-                            # Confirm-Buffer leeren, sonst triggert's gleich nochmal
-                            state.confirm_buffer.clear()
+                            buf.clear()
                         except Exception as exc:
                             door_open_error = str(exc)
                             log.error("door-open failed: %s", exc)
+                    elif matched and not cooldown_active and not want_open:
+                        state.cooldown_until[text_norm] = time.time() + cooldown_s
+                        buf.clear()
 
                     snapshot_id = _now_hash(jpeg)
                     ev = AlprEvent(
@@ -699,6 +722,8 @@ def alpr_worker_loop(
                         door_opened=door_opened,
                         door_open_error=door_open_error,
                         snapshot_id=snapshot_id,
+                        source_id=source_id,
+                        source_name=source_name,
                     )
                     state.add_event(ev, jpeg)
 
@@ -707,9 +732,6 @@ def alpr_worker_loop(
                     #   matched + door_opened  → "matched"
                     #   matched + cooldown     → "cooldown"
                     #   nicht matched          → "unauthorized"
-                    # Door-Open-Notify selbst läuft schon über die Next-Route
-                    # `/api/doorbird/open` — daher müssen wir „matched" nur
-                    # senden, wenn der User explizit den Toggle dafür hat.
                     if notify_callback is not None:
                         if matched and door_opened:
                             kind = "matched"

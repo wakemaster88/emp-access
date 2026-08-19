@@ -1059,11 +1059,45 @@ class TrackerManager:
                 lambda: self._alpr_snapshot_config(),
                 lambda plate, owner: self._alpr_open_door(plate, owner),
                 lambda kind, ev: self._alpr_notify(kind, ev),
+                lambda source: self._alpr_fetch_jpeg(source),
             ),
             name="alpr",
             daemon=True,
         )
         self.alpr.thread.start()
+
+    def _alpr_sources(self, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+        """Doorbird plus alle Cams mit `alpr.enabled`."""
+        sources: list[dict[str, Any]] = []
+        doorbird = cfg.get("doorbird") or {}
+        alpr = doorbird.get("alpr") or {}
+        if doorbird.get("enabled") and alpr.get("enabled"):
+            sources.append(
+                {
+                    "id": "doorbird",
+                    "name": "Doorbird",
+                    "path": "/api/doorbird/snapshot",
+                    "openDoorbird": bool(alpr.get("openDoorbird", False)),
+                }
+            )
+        for cam in cfg.get("cams") or []:
+            if not cam.get("enabled"):
+                continue
+            cam_alpr = cam.get("alpr") or {}
+            if not cam_alpr.get("enabled"):
+                continue
+            cam_id = str(cam.get("id") or "")
+            if not cam_id:
+                continue
+            sources.append(
+                {
+                    "id": cam_id,
+                    "name": cam.get("name") or cam_id,
+                    "path": f"/api/cams/{cam_id}/snapshot",
+                    "openDoorbird": bool(cam_alpr.get("openDoorbird", False)),
+                }
+            )
+        return sources
 
     def _alpr_snapshot_config(self) -> dict[str, Any] | None:
         cfg = read_config()
@@ -1073,9 +1107,28 @@ class TrackerManager:
         alpr = doorbird.get("alpr") or {}
         settings = cfg.get("settings") or {}
         tracker_settings = settings.get("tracker") or {}
-        # AppUrl pro Tick aktualisieren — User kann's umstellen ohne Restart
         self._app_url = tracker_settings.get("appUrl") or self._app_url
-        return {"doorbird": doorbird, "alpr": alpr}
+        return {
+            "doorbird": doorbird,
+            "alpr": alpr,
+            "sources": self._alpr_sources(cfg),
+        }
+
+    def _alpr_fetch_jpeg(self, source: dict[str, Any]) -> bytes:
+        """Snapshot über die Next-App (Loopback) — launchd kommt sonst
+        nicht an Kameras im LAN."""
+        import requests
+
+        path = str(source.get("path") or "")
+        if not path:
+            raise RuntimeError("alpr source without path")
+        url = f"{self._app_url.rstrip('/')}{path}"
+        r = requests.get(url, headers=app_auth_headers(), timeout=8.0)
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code}: {r.text[:160]}")
+        if not r.content:
+            raise RuntimeError("empty snapshot")
+        return r.content
 
     def _alpr_open_door(self, plate: str, owner: str) -> None:
         """Ruft die Next-Route auf — Tür geht physisch über die existierende
@@ -1317,6 +1370,10 @@ def alpr_status() -> dict[str, Any]:
             for plate_norm, until in a.cooldown_until.items()
             if until > time.time()
         },
+        "sources": [
+            {"id": s.get("id"), "name": s.get("name")}
+            for s in (a.active_sources or [])
+        ],
     }
 
 
@@ -1415,31 +1472,40 @@ def ptz_auto_manual_override(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/alpr/test")
-def alpr_test() -> dict[str, Any]:
-    """Holt sofort einen Doorbird-Snapshot und schickt ihn durch die
-    Pipeline. Antwort: erkannte Plates + ob sie auf der Whitelist stünden.
-    Öffnet die Tür **nicht** — pure Diagnose."""
+def alpr_test(cam_id: str | None = None) -> dict[str, Any]:
+    """Holt sofort einen Snapshot (Doorbird oder eine Cam) und schickt ihn
+    durch die Pipeline. Antwort: erkannte Plates + ob sie auf der Whitelist
+    stünden. Öffnet die Tür **nicht** — pure Diagnose."""
     cfg = manager._alpr_snapshot_config()
     if cfg is None:
         raise HTTPException(status_code=400, detail="no config")
-    if not cfg["doorbird"].get("enabled"):
-        raise HTTPException(status_code=400, detail="doorbird disabled")
+    if not cfg["alpr"].get("enabled"):
+        raise HTTPException(status_code=400, detail="alpr disabled")
+
+    sources = cfg.get("sources") or []
+    if cam_id:
+        source = next((s for s in sources if s.get("id") == cam_id), None)
+        if source is None:
+            source = {
+                "id": cam_id,
+                "name": cam_id,
+                "path": f"/api/cams/{cam_id}/snapshot",
+            }
+    else:
+        source = next((s for s in sources if s.get("id") == "doorbird"), None)
+        if source is None:
+            raise HTTPException(status_code=400, detail="doorbird not in sources")
 
     from alpr import (  # type: ignore
         WhitelistEntry,
         _normalize_plate,
         detect_and_recognize,
-        fetch_doorbird_snapshot,
     )
 
     try:
-        jpeg = fetch_doorbird_snapshot(
-            cfg["doorbird"]["ip"],
-            cfg["doorbird"]["username"],
-            cfg["doorbird"]["password"],
-        )
+        jpeg = manager._alpr_fetch_jpeg(source)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"doorbird: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"{source.get('name')}: {exc}") from exc
 
     try:
         results = detect_and_recognize(jpeg)

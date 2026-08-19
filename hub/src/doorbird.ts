@@ -90,6 +90,11 @@ export function isDoorbird(cameraId: number): boolean {
   return doorbirds.has(cameraId);
 }
 
+/** IDs der lokal verbundenen DoorBirds (für Fahrzeug-Aktoren). */
+export function listDoorbirdIds(): number[] {
+  return [...doorbirds.keys()];
+}
+
 /** JPEG von der DoorBird holen (ohne Upload) – z. B. fuer Scan-Schnappschuesse. */
 export async function captureDoorbirdSnapshot(cameraId: number): Promise<Buffer> {
   const rt = doorbirds.get(cameraId);

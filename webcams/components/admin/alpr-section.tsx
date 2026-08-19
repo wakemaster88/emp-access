@@ -45,6 +45,8 @@ interface AlprEvent {
   doorOpened: boolean;
   doorOpenError: string | null;
   snapshotId: string;
+  cameraId?: string;
+  cameraName?: string;
 }
 
 interface AlprStatus {
@@ -55,6 +57,7 @@ interface AlprStatus {
   lastError: string | null;
   fps: number;
   cooldowns: Record<string, number>;
+  sources?: Array<{ id: string; name: string }>;
 }
 
 const WEEKDAY_LABELS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
@@ -187,8 +190,9 @@ export function AlprSection({ value, onChange }: AlprSectionProps) {
               Kennzeichenerkennung (ALPR)
             </CardTitle>
             <CardDescription>
-              Erkennt Kennzeichen auf dem Doorbird-Bild und öffnet die Tür für
-              Schilder aus der Whitelist. Tracker-Sidecar muss laufen.
+              Optional Anzeige im Kontrollzentrum. Erkennung und Türöffnung
+              laufen am Hub (Fahrzeuge auf emp-access.de). Tracker-Sidecar
+              muss nur laufen, wenn hier noch erkannt werden soll.
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -266,6 +270,23 @@ export function AlprSection({ value, onChange }: AlprSectionProps) {
             </Field>
           </div>
 
+          {status?.sources && status.sources.length > 0 && (
+            <p className="text-xs text-foreground/60">
+              Quellen: {status.sources.map((s) => s.name).join(" · ")}. Weitere
+              Kameras unter Kameras → Kennzeichenerkennung.
+            </p>
+          )}
+          <Field label="Bei Treffer Tür öffnen">
+            <div className="flex h-10 items-center gap-3">
+              <Switch
+                checked={value.openDoorbird}
+                onChange={(v) => update("openDoorbird", v)}
+              />
+              <span className="text-xs text-foreground/60">
+                Aus lassen: der Hub öffnet lokal. Nur als Notfall-Fallback.
+              </span>
+            </div>
+          </Field>
           {status?.lastError && (
             <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200 ring-1 ring-amber-500/30">
               Letzter Fehler: {status.lastError}
@@ -842,7 +863,11 @@ function EventRow({ ev }: { ev: AlprEvent }) {
             {(ev.confidence * 100).toFixed(0)}%
           </span>
         </div>
-        <div className="text-xs text-foreground/60">{t}{ev.owner ? ` · ${ev.owner}` : ""}</div>
+        <div className="text-xs text-foreground/60">
+          {t}
+          {ev.cameraName ? ` · ${ev.cameraName}` : ""}
+          {ev.owner ? ` · ${ev.owner}` : ""}
+        </div>
       </div>
       <div>
         {ev.doorOpened ? (

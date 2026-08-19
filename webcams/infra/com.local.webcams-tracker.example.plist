@@ -5,23 +5,29 @@
   <key>Label</key>
   <string>com.local.webcams-tracker</string>
   <key>WorkingDirectory</key>
-  <string>/Users/aaronarmnborst/repos/webcams/tracker</string>
+  <string>/Users/aaronarmnborst/repos/emp-access/webcams/tracker</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/Users/aaronarmnborst/repos/webcams/tracker/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/Users/aaronarmnborst/repos/emp-access/webcams/tracker/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+    <key>HOME</key>
+    <string>/Users/aaronarmnborst</string>
+    <key>YOLO_CONFIG_DIR</key>
+    <string>/Users/aaronarmnborst/Library/Logs/webcams/ultralytics</string>
     <key>WEBCAMS_CONFIG_PATH</key>
-    <string>/Users/aaronarmnborst/repos/webcams/config.json</string>
+    <string>/Users/aaronarmnborst/repos/emp-access/webcams/config.json</string>
     <!-- Streams über go2rtc auf Loopback: launchd-Dienste kommen wegen der
          macOS-Sperre „Lokales Netzwerk" nicht direkt an die Kameras. -->
     <key>WEBCAMS_TRACKER_RTSP_BASE</key>
     <string>rtsp://127.0.0.1:8554</string>
-    <!-- Falls MPS unrund läuft: auf "cpu" setzen -->
-    <!-- <key>WEBCAMS_TRACKER_DEVICE</key><string>cpu</string> -->
   </dict>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/aaronarmnborst/repos/webcams/tracker/.venv/bin/uvicorn</string>
+    <string>/Users/aaronarmnborst/repos/emp-access/webcams/tracker/.venv/bin/python</string>
+    <string>-m</string>
+    <string>uvicorn</string>
     <string>main:app</string>
     <string>--host</string>
     <string>127.0.0.1</string>

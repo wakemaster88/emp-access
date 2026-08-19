@@ -20,6 +20,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "cameraId fehlt" }, { status: 400 });
   }
   const plate = q.get("plate");
+  const skipActuators = q.get("localActed") === "1";
+  const localDoorOpened = q.get("localDoor") === "1";
+  const localShelly = q.get("localShelly");
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: account.id },
@@ -50,6 +53,10 @@ export async function POST(request: NextRequest) {
     source: plate?.trim() ? "CAMERA_PLATE" : "CAMERA_VEHICLE",
     seenAt: now,
     snapshot: buf,
+    skipActuators,
+    localDoorOpened,
+    localShellyTriggered: localShelly === "1" || localShelly === "0",
+    localShellyOk: localShelly === "1" ? true : localShelly === "0" ? false : null,
   });
 
   return NextResponse.json({
