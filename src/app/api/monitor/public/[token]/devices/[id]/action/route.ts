@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseMonitorIdList } from "@/lib/monitor-public-poll";
-import { deviceControls } from "@/lib/device-controls";
+import { deviceControls, isAudioDevice } from "@/lib/device-controls";
 import {
   triggerDeviceAction,
   isValidDeviceAction,
   isActionAllowedForDevice,
   deviceSendsRemoteCommand,
 } from "@/lib/device-open";
+import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
 
 /**
  * Steuer-Endpoint fuer den oeffentlichen Scan-Monitor. Nur Geraete aus
@@ -72,6 +73,18 @@ export async function POST(
   const allowedActions = deviceControls(device).map((c) => c.action);
   if (!allowedActions.includes(action) || !isActionAllowedForDevice(action, device)) {
     return NextResponse.json({ error: "Aktion ist für dieses Gerät nicht vorgesehen" }, { status: 400 });
+  }
+
+  if (isAudioDevice(device)) {
+    const input = audioInputFromDeviceAction(action);
+    if (!input) {
+      return NextResponse.json({ error: "Aktion ist für dieses Gerät nicht vorgesehen" }, { status: 400 });
+    }
+    const result = await controlAudioDevice(prisma, monitor.accountId, device, input);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({ ok: true, sent: true });
   }
 
   const { task, sent, error } = await triggerDeviceAction(

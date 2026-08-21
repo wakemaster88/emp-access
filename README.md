@@ -242,7 +242,8 @@ Gerät aus `GET /api/devices` und `GET /api/devices/[id]` seine Bedienung mit:
 - **`controls`** sind die Knöpfe in Anzeigereihenfolge – der Hauptbefehl steht
   vorn (`role: "primary"`), `role: "danger"` markiert Eingriffe wie NOT-AUF.
   Eine leere Liste heißt: Das Gerät wird nicht über Aktionen gesteuert
-  (Sensor, Audio-Zone).
+  (Sensor). Audio-Zonen haben Start/Stopp; Lautstärke und Quelle kommen über
+  `POST /api/devices/[id]/audio`.
 - **`actions`** ist die weiter gefasste Liste der Befehle, die der Endpunkt
   annimmt. Ein Schalter versteht z. B. auch `emergency`, ein Antrieb nimmt
   `reset` als Synonym für `stop`. Für eine Oberfläche ist `controls` richtig.
@@ -260,7 +261,13 @@ Ein Auszug, wie sich die Gerätetypen unterscheiden:
 | Markise | `COVER` | Ausfahren, Stopp, Einfahren |
 | Rolltor | `COVER` | Öffnen, Stopp, Schließen |
 | GARDENA-Ventil | `VALVE` | Bewässern, Stopp |
-| Sensor / Audio-Zone | `SENSOR` / `AUDIO` | keine |
+| Sensor | `SENSOR` | keine |
+| Audio-Zone | `AUDIO` | Start, Stopp |
+
+Abspieler (`AUDIO_PLAYER`) liefern zusätzlich `audio` (Zone, Titel, Lautstärke,
+aktuelle Quelle). Lautstärke, Playlist, einzelner Titel oder Stream-URL gehen
+über `POST /api/devices/[id]/audio` mit `{ "action": "PLAY"|"STOP"|"VOLUME", ... }`.
+Die Mediathek steht unter `GET /api/audio/library` (Playlists und Musiktitel).
 
 Die Zuordnung liegt in `src/lib/device-controls.ts` und wird von der
 Mitarbeiter-PWA und der API gemeinsam genutzt – die App zeigt also genau die

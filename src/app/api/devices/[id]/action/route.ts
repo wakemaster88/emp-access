@@ -6,6 +6,8 @@ import {
   isActionAllowedForDevice,
   deviceSendsRemoteCommand,
 } from "@/lib/device-open";
+import { isAudioDevice } from "@/lib/device-controls";
+import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -52,6 +54,21 @@ export async function POST(
       { error: "Aktion ist für dieses Gerät nicht vorgesehen" },
       { status: 400 },
     );
+  }
+
+  if (isAudioDevice(existing)) {
+    const input = audioInputFromDeviceAction(action);
+    if (!input) {
+      return NextResponse.json(
+        { error: "Aktion ist für dieses Gerät nicht vorgesehen" },
+        { status: 400 },
+      );
+    }
+    const result = await controlAudioDevice(db, accountId!, existing, input);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({ ok: true, sent: true });
   }
 
   const { task, sent, error } = await triggerDeviceAction(

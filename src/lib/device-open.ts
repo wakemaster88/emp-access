@@ -7,6 +7,7 @@ import { shellySetRelay } from "./shelly-relay";
 import { shellyBaseId, shellySwitchIndex } from "./shelly-cloud";
 import { isCoverDevice, runCoverAction, type CoverAction } from "./shelly-cover";
 import { isPulseCategory, pulseSeconds } from "./pulse-constants";
+import { isAudioDevice } from "./device-controls";
 
 // Standard-Bewässerungsdauer (Sekunden), falls beim Öffnen keine Dauer
 // mitgegeben wird (z. B. Auslösung über den Public-Checkin-Monitor).
@@ -82,6 +83,7 @@ export function isActionAllowedForDevice(
   action: DeviceAction,
   device: { type: string; category: string | null },
 ): boolean {
+  if (isAudioDevice(device)) return action === "open" || action === "stop";
   if (isCoverDevice(device)) return action in COVER_ALLOWED;
   return action in TASK_MAP;
 }

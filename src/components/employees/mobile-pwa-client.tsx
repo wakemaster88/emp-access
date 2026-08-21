@@ -5,7 +5,7 @@ import {
   DoorOpen, Lock, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock,
   Power, PowerOff, Lightbulb, ToggleRight, GitMerge, Activity, KeyRound,
   RefreshCw, ChevronDown, Building2, Umbrella, Blinds, Square,
-  ArrowUpFromLine, ArrowDownToLine, Droplets, CircleDot,
+  ArrowUpFromLine, ArrowDownToLine, Droplets, CircleDot, Volume2,
 } from "lucide-react";
 import {
   deviceControlModel,
@@ -91,6 +91,7 @@ function controlIcon(
   if (model === "PULSE") return action === "open" ? CircleDot : PowerOff;
   if (model === "LOCK") return action === "open" ? DoorOpen : Lock;
   if (model === "VALVE") return action === "open" ? Droplets : Square;
+  if (model === "AUDIO") return action === "open" ? Volume2 : Square;
   if (action === "emergency") return AlertTriangle;
   return DoorOpen;
 }
@@ -100,6 +101,7 @@ const PRIMARY_GRADIENT: Partial<Record<DeviceControlModel, string>> = {
   LIGHT: "from-amber-400 to-amber-600",
   VALVE: "from-sky-400 to-sky-600",
   PULSE: "from-rose-400 to-rose-600",
+  AUDIO: "from-violet-400 to-violet-600",
 };
 
 /**
@@ -142,6 +144,7 @@ function deviceIcon(device: MobileDevice) {
   if (device.category === "MARKISE") return Umbrella;
   if (device.category === "ROLLTOR") return Blinds;
   if (device.category === "TASTER") return CircleDot;
+  if (device.category === "AUDIO" || device.type === "AUDIO_PLAYER") return Volume2;
   return DoorOpen;
 }
 
@@ -157,8 +160,9 @@ function categoryMeta(cat: string | null, type: string | null) {
     case "BELEUCHTUNG": return { label: "Beleuchtung",  accent: "yellow",  order: 5 };
     case "MARKISE":     return { label: "Markisen",     accent: "teal",    order: 6 };
     case "ROLLTOR":     return { label: "Rolltore",     accent: "slate",   order: 7 };
-    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 8 };
-    default:            return { label: "Sonstige",     accent: "slate",   order: 9 };
+    case "AUDIO":       return { label: "Audio",        accent: "violet",  order: 8 };
+    case "SENSOR":      return { label: "Sensoren",     accent: "emerald", order: 9 };
+    default:            return { label: "Sonstige",     accent: "slate",   order: 10 };
   }
 }
 
@@ -170,6 +174,7 @@ const ACCENT_CLS: Record<string, { bg: string; text: string; ring: string }> = {
   yellow:  { bg: "bg-yellow-500/10",  text: "text-yellow-600 dark:text-yellow-400",   ring: "ring-yellow-200/50 dark:ring-yellow-900/40" },
   emerald: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", ring: "ring-emerald-200/50 dark:ring-emerald-900/40" },
   teal:    { bg: "bg-teal-500/10",    text: "text-teal-600 dark:text-teal-400",       ring: "ring-teal-200/50 dark:ring-teal-900/40" },
+  violet:  { bg: "bg-violet-500/10",  text: "text-violet-600 dark:text-violet-400",   ring: "ring-violet-200/50 dark:ring-violet-900/40" },
   slate:   { bg: "bg-slate-500/10",   text: "text-slate-600 dark:text-slate-400",     ring: "ring-slate-200/50 dark:ring-slate-700" },
 };
 

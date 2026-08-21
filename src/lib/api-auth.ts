@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, tenantClient } from "./prisma";
 import { auth } from "./auth";
 
+export function hasApiToken(request: NextRequest) {
+  return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
+}
+
 type CachedAccount = { id: number; isActive: boolean };
 type CacheEntry = { account: CachedAccount | null; expiresAt: number };
 
@@ -86,4 +90,30 @@ export async function getSessionWithDb() {
   const db = isSuperAdmin ? prisma : tenantClient(accountId!);
 
   return { session, db, isSuperAdmin, accountId };
+}
+
+/**
+ * Session oder Account-API-Token. Für Integrations-Endpunkte, die das Dashboard
+ * und fremde Systeme (emp-control) gleichermaßen nutzen.
+ */
+export async function getAccountFromRequest(request: NextRequest): Promise<
+  | { error: NextResponse }
+  | { db: ReturnType<typeof tenantClient> | typeof prisma; accountId: number }
+> {
+  if (hasApiToken(request)) {
+    const tokenAuth = await validateApiToken(request);
+    if ("error" in tokenAuth) {
+      return { error: tokenAuth.error ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+    }
+    return { db: tokenAuth.db, accountId: tokenAuth.account.id };
+  }
+
+  const session = await getSessionWithDb();
+  if ("error" in session) {
+    return { error: session.error ?? NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
+  }
+  if (session.accountId == null) {
+    return { error: NextResponse.json({ error: "No account assigned" }, { status: 403 }) };
+  }
+  return { db: session.db, accountId: session.accountId };
 }

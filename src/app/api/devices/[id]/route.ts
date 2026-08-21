@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
 import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
-import { withDeviceControlInfo } from "@/lib/device-controls";
+import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -38,11 +38,12 @@ export async function GET(
     where: { id: deviceId, accountId },
     include: {
       _count: { select: { scans: true } },
+      audioZone: { select: AUDIO_ZONE_SELECT },
     },
   });
   if (!device) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
-  return NextResponse.json(withDeviceControlInfo(device));
+  return NextResponse.json(withAudioDeviceInfo(device));
 }
 
 export async function PUT(
@@ -174,7 +175,7 @@ export async function PUT(
     },
   });
 
-  return NextResponse.json(withDeviceControlInfo(device));
+  return NextResponse.json(withAudioDeviceInfo(device));
 }
 
 export async function DELETE(

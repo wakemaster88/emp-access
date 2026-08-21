@@ -94,7 +94,7 @@ const cases: Array<[string, { type: string; category: string | null }, string[]]
   ["LOQED", { type: "LOQED_SMARTLOCK", category: "TUER" }, ["open", "reset", "deactivate"]],
   ["Ventil", { type: "GARDENA_VALVE", category: null }, ["open", "reset"]],
   ["Sensor", { type: "SHELLY", category: "SENSOR" }, []],
-  ["Audio-Zone", { type: "AUDIO_PLAYER", category: "AUDIO" }, []],
+  ["Audio-Zone", { type: "AUDIO_PLAYER", category: "AUDIO" }, ["open", "stop"]],
 ];
 
 console.log("");

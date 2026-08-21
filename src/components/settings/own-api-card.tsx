@@ -35,7 +35,17 @@ const ENDPOINTS = [
   {
     method: "POST",
     path: "/api/devices/[id]/action",
-    desc: "Gerät steuern – Zutritt und Schalter: open, emergency, reset, deactivate; Markise/Rolltor: open, stop, close",
+    desc: "Gerät steuern – Zutritt und Schalter: open, emergency, reset, deactivate; Markise/Rolltor: open, stop, close; Audio-Zone: open (Start), stop",
+  },
+  {
+    method: "POST",
+    path: "/api/devices/[id]/audio",
+    desc: 'Audio-Zone: {"action":"PLAY"} (optional playlistId, trackId, streamUrl), {"action":"STOP"}, {"action":"VOLUME","volume":0-100}',
+  },
+  {
+    method: "GET",
+    path: "/api/audio/library",
+    desc: "Playlists und Musiktitel für die Quellenwahl an Audio-Zonen",
   },
   {
     method: "GET",

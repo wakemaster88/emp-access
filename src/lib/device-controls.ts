@@ -39,7 +39,8 @@ export type DeviceControlModel =
   | "VALVE"
   /// Nur Messwerte, nichts zu schalten.
   | "SENSOR"
-  /// Audio-Zone – wird ueber das Audio-Modul gesteuert, nicht ueber Aktionen.
+  /// Audio-Zone: Start/Stopp. Lautstaerke und Quelle laufen ueber
+  /// `POST /api/devices/[id]/audio`, nicht als weitere Aktions-Knoepfe.
   | "AUDIO";
 
 export type DeviceControlAction =
@@ -69,10 +70,14 @@ export interface ControllableDevice {
   category: string | null;
 }
 
+export function isAudioDevice(device: ControllableDevice): boolean {
+  return device.type === "AUDIO_PLAYER" || device.category === "AUDIO";
+}
+
 /** Bedienmodell eines Geraets aus Typ und Kategorie ableiten. */
 export function deviceControlModel(device: ControllableDevice): DeviceControlModel {
   if (device.category === "SENSOR") return "SENSOR";
-  if (device.type === "AUDIO_PLAYER" || device.category === "AUDIO") return "AUDIO";
+  if (isAudioDevice(device)) return "AUDIO";
   if (isCoverDevice(device)) return "COVER";
   if (device.type === "NUKI_SMARTLOCK" || device.type === "LOQED_SMARTLOCK") return "LOCK";
   if (device.type === "GARDENA_VALVE") return "VALVE";
@@ -86,7 +91,8 @@ export function deviceControlModel(device: ControllableDevice): DeviceControlMod
 /**
  * Die Bedienelemente eines Geraets in Anzeigereihenfolge – der Hauptbefehl
  * steht immer vorn. Eine leere Liste heisst: Dieses Geraet wird nicht ueber
- * Aktionen gesteuert (Sensor, Audio-Zone).
+ * Aktionen gesteuert (Sensor). Audio-Zonen haben Start/Stopp; Lautstaerke und
+ * Quelle kommen zusaetzlich ueber den Audio-Endpunkt.
  *
  * Alle hier genannten Aktionen nimmt `POST /api/devices/[id]/action` fuer das
  * Geraet auch an. Umgekehrt gilt das nicht: Aus Kompatibilitaetsgruenden
@@ -96,8 +102,13 @@ export function deviceControlModel(device: ControllableDevice): DeviceControlMod
 export function deviceControls(device: ControllableDevice): DeviceControl[] {
   switch (deviceControlModel(device)) {
     case "SENSOR":
-    case "AUDIO":
       return [];
+
+    case "AUDIO":
+      return [
+        { action: "open", label: "Start", role: "primary" },
+        { action: "stop", label: "Stopp", role: "secondary" },
+      ];
 
     case "COVER": {
       // Bei einer Markise heisst "auf" ausfahren, bei einem Rolltor oeffnen.
@@ -170,6 +181,7 @@ export function deviceControls(device: ControllableDevice): DeviceControl[] {
  * angenommen?" diese hier.
  */
 export function availableDeviceActions(device: ControllableDevice): DeviceControlAction[] {
+  if (isAudioDevice(device)) return ["open", "stop"];
   if (isCoverDevice(device)) return ["open", "stop", "close"];
   return ["open", "emergency", "deactivate", "reset"];
 }

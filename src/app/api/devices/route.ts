@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
 import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
-import { withDeviceControlInfo } from "@/lib/device-controls";
+import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -45,10 +45,11 @@ export async function GET(request: NextRequest) {
       coverRuntimeSec: true,
       // Taster: Einschaltdauer.
       pulseSeconds: true,
+      audioZone: { select: AUDIO_ZONE_SELECT },
     },
   });
 
-  return NextResponse.json(devices.map(withDeviceControlInfo));
+  return NextResponse.json(devices.map(withAudioDeviceInfo));
 }
 
 export async function POST(request: NextRequest) {
@@ -116,5 +117,5 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return NextResponse.json(withDeviceControlInfo(device), { status: 201 });
+  return NextResponse.json(withAudioDeviceInfo(device), { status: 201 });
 }
