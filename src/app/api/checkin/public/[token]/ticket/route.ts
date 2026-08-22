@@ -59,6 +59,23 @@ export async function POST(
 
   let serviceAreaIds: number[] = [];
   if (data.serviceId) {
+    const svcRow = await prisma.service.findFirst({
+      where: { id: data.serviceId, accountId: monitor.accountId },
+      select: {
+        defaultValidityType: true,
+        defaultValidityDurationMinutes: true,
+      },
+    });
+    // Service-Default sticht das Frontend: eine Stundenkarte darf nicht als
+    // Zeitslot landen, sonst startet der Timer nie.
+    if (svcRow?.defaultValidityType === "DURATION") {
+      data.validityType = "DURATION";
+      if (svcRow.defaultValidityDurationMinutes != null) {
+        data.validityDurationMinutes = svcRow.defaultValidityDurationMinutes;
+      }
+      data.slotStart = undefined;
+      data.slotEnd = undefined;
+    }
     const svcAreas = await prisma.serviceArea.findMany({
       where: { serviceId: data.serviceId },
       select: { accessAreaId: true },

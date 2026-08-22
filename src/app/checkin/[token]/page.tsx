@@ -6015,24 +6015,21 @@ function AddTicketOverlay({
   const [slotServiceType, setSlotServiceType] = useState<"slot" | "day" | null>(null);
 
   // Effektiver Datums-Modus fuer die UI:
-  //   * Service mit TIME_SLOT oder ANNY-Verknuepfung -> "datetime" (Kurs)
-  //   * sonst (Ticket/DURATION)                      -> "single" (nur Datum)
-  // Abos werden in diesem Dialog gar nicht angeboten - reine Abo-Vergabe
-  // laeuft ueber das Backoffice.
-  //
-  // Der `hasAnnyLink`-Pfad ist wichtig, weil manche Kurse im Backoffice als
-  // DATE_RANGE/NULL konfiguriert sind, obwohl sie de-facto Slot-Buchungen
-  // sind. Sobald eine ANNY-Resource haengt, behandeln wir den Service als
-  // Slot-Service und ziehen Slots aus ANNY.
+  //   * DURATION (Stundenkarte) immer nur Datum – nie Slot-Maske
+  //   * TIME_SLOT oder von ANNY als Kurs bestaetigt -> "datetime"
+  //   * sonst -> "single"
   const dateMode: "single" | "datetime" = useMemo(() => {
     if (serviceId !== "none") {
       const svc = services.find((s) => String(s.id) === serviceId);
+      // Stundenkarten nie in den Slot-Modus – auch nicht, solange ANNY
+      // noch nicht geantwortet hat (sonst wird aus „1 Stunde“ ein Zeitslot).
+      if (svc?.defaultValidityType === "DURATION") return "single";
       if (svc?.defaultValidityType === "TIME_SLOT") return "datetime";
-      // hasAnnyLink ist nur ein Indikator - der echte Service-Typ kommt
-      // vom /slots-Endpoint zurueck (slotServiceType). Wenn das schon
-      // "day" gemeldet hat, bleiben wir bei "single" (Tagespass).
-      if (svc?.hasAnnyLink && slotServiceType !== "day") return "datetime";
+      // Slot-Picker erst, wenn ANNY den Service als Kurs bestätigt hat.
+      // `null` heisst „noch unbekannt“ → Datum, nicht Zeitslot.
+      if (svc?.hasAnnyLink && slotServiceType === "slot") return "datetime";
     }
+    if (voucher?.validityType === "DURATION") return "single";
     if (voucher?.validityType === "TIME_SLOT") return "datetime";
     return "single";
   }, [serviceId, services, voucher, slotServiceType]);
@@ -6054,7 +6051,8 @@ function AddTicketOverlay({
     // nicht erst beim /slots-Endpoint nachfragen.
     const svc = services.find((s) => String(s.id) === serviceId);
     const wantsSlots =
-      svc?.defaultValidityType === "TIME_SLOT" || svc?.hasAnnyLink === true;
+      svc?.defaultValidityType === "TIME_SLOT"
+      || (svc?.hasAnnyLink === true && svc?.defaultValidityType !== "DURATION");
     if (!wantsSlots) {
       setSlots([]);
       setSlotsLoaded(false);
@@ -6507,7 +6505,8 @@ function AddTicketOverlay({
                   // User sieht, was beim Submit auto-gesetzt werden wuerde
                   // - und es bei Bedarf umstellen kann.
                   const isSlotService =
-                    svc.defaultValidityType === "TIME_SLOT" || !!svc.hasAnnyLink;
+                    svc.defaultValidityType === "TIME_SLOT"
+                    || (!!svc.hasAnnyLink && svc.defaultValidityType !== "DURATION");
                   if (isSlotService) {
                     const day = svc.defaultStartDate
                       ? toDateInput(svc.defaultStartDate)

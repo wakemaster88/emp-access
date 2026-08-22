@@ -5,6 +5,7 @@ import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 import { evaluateScanLock } from "@/lib/scan-lock";
+import { isDurationTicket } from "@/lib/duration-ticket";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -85,7 +86,7 @@ function isAccessTicketCurrentlyValid(
     const [eh, em] = t.slotEnd.split(":").map(Number);
     if (minutes < sh * 60 + sm || minutes > eh * 60 + em) return false;
   }
-  if (vType === "DURATION" && t.validityDurationMinutes && t.firstScanAt) {
+  if (isDurationTicket(t) && t.validityDurationMinutes && t.firstScanAt) {
     const expiresAt = new Date(t.firstScanAt.getTime() + t.validityDurationMinutes * 60_000);
     if (now > expiresAt) return false;
   }
@@ -411,7 +412,7 @@ export async function performScanCheck({
   const scanHitsMainResource =
     scanAreaIds != null
       ? isMainResourceScan(mainAreaId, scanAreaIds)
-      : mainAreaId == null || vType !== "DURATION";
+      : mainAreaId == null || !isDurationTicket(ticket);
 
   if (scanHitsMainResource && vType === "TIME_SLOT" && ticket.slotStart && ticket.slotEnd) {
     const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
@@ -432,7 +433,7 @@ export async function performScanCheck({
     }
   }
 
-  if (scanHitsMainResource && vType === "DURATION" && ticket.validityDurationMinutes) {
+  if (scanHitsMainResource && isDurationTicket(ticket) && ticket.validityDurationMinutes) {
     if (ticket.firstScanAt) {
       const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
       if (now > expiresAt) {
@@ -521,7 +522,7 @@ export async function performScanCheck({
         status: "REDEEMED",
         version: { increment: 1 },
       };
-      if (vType === "DURATION" && !ticket.firstScanAt) {
+      if (isDurationTicket(ticket) && !ticket.firstScanAt) {
         data.firstScanAt = now;
       }
       const res = await tx.ticket.updateMany({

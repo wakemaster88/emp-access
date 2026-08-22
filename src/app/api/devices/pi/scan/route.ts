@@ -7,6 +7,7 @@ import { isWithinSchedule } from "@/lib/schedule";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { evaluateScanLock, scanLockMessage } from "@/lib/scan-lock";
+import { isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -534,6 +535,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Stundenkarten, die fälschlich als Zeitslot gespeichert wurden, haben
+  // oft kein firstScanAt. Timer vom ersten GRANTED-Scan nachziehen, bevor
+  // Ablauf- und Reentry-Pruefung laufen.
+  if (isDurationTicket(ticket) && !ticket.firstScanAt && ticket.status === "REDEEMED") {
+    const firstGranted = await db.scan.findFirst({
+      where: {
+        ticketId: ticket.id,
+        result: "GRANTED",
+        ...(mainAreaId != null
+          ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
+          : {}),
+      },
+      orderBy: { scanTime: "asc" },
+      select: { scanTime: true },
+    });
+    if (firstGranted) {
+      await db.ticket.update({
+        where: { id: ticket.id },
+        data: { firstScanAt: firstGranted.scanTime },
+      });
+      ticket.firstScanAt = firstGranted.scanTime;
+    }
+  }
+
   // DURATION-Ablauf greift nur bei Eintritten an der HAUPTRESSOURCE. Wer
   // drin ist, darf raus, auch wenn die gebuchte Stunde inzwischen abgelaufen
   // ist. Transit-Scans an Nebenressourcen (z.B. Strandbad-Drehkreuz fuer
@@ -541,7 +566,7 @@ export async function POST(request: NextRequest) {
   // werden hier ignoriert: Nach Ablauf der 2 Stunden Wasserski darf der
   // Tagesgast trotzdem weiter im Strandbad bleiben - die Hauptressource
   // (Seilbahn A) wird oben durch `isMainResourceScan` blockiert.
-  if (!isExitScan && isMainResourceScan && vType === "DURATION" && ticket.validityDurationMinutes) {
+  if (!isExitScan && isMainResourceScan && isDurationTicket(ticket) && ticket.validityDurationMinutes) {
     if (ticket.firstScanAt) {
       const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
       if (now > expiresAt) {
@@ -606,16 +631,7 @@ export async function POST(request: NextRequest) {
   //    behandeln den Scan dann defensiv als Eintritt.
   const serviceAllowsReentry = ticket.service?.allowReentry === true;
 
-  // DURATION-Tickets: Solange der Timer (firstScanAt + duration) noch
-  // laeuft, ist Reentry implizit Teil des Konzepts ("60 Minuten Seilbahn")
-  // und braucht weder `service.allowReentry` noch `device.allowReentry`.
-  // Erst nach Ablauf der Zeit greift die DURATION-Ablauf-Pruefung weiter
-  // oben und blockt zuverlaessig.
-  const durationStillRunning =
-    vType === "DURATION"
-    && !!ticket.validityDurationMinutes
-    && !!ticket.firstScanAt
-    && now.getTime() <= ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000;
+  const durationStillRunning = isDurationStillRunning(ticket, now);
 
   // Reentry-Check: GLOBAL pro Ticket, nicht pro Device. Greift fuer
   // JEDEN Nicht-Exit-Scan (Eingang + bidirektionale/mehrdeutige
@@ -766,7 +782,7 @@ export async function POST(request: NextRequest) {
         status: "REDEEMED",
         version: { increment: 1 },
       };
-      if (vType === "DURATION" && !ticket.firstScanAt) {
+      if (isDurationTicket(ticket) && !ticket.firstScanAt) {
         data.firstScanAt = now;
       }
       const res = await tx.ticket.updateMany({
@@ -781,7 +797,7 @@ export async function POST(request: NextRequest) {
         status: "VALID",
         version: { increment: 1 },
       };
-      if (vType === "DURATION") {
+      if (isDurationTicket(ticket)) {
         data.firstScanAt = null;
       }
       const res = await tx.ticket.updateMany({
