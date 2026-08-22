@@ -5,6 +5,13 @@ import {
   fmtTimeBerlin as fmtTime,
   type AvailabilityPeriod,
 } from "@/lib/anny-availability";
+import {
+  addCalendarDays,
+  berlinDayRange,
+  berlinHour,
+  berlinYmd,
+  isBerlinYmd,
+} from "@/lib/berlin-day";
 
 function getBookingTimeForDate(qrCode: string | null, dateStr: string): { start: string; end: string } | null {
   if (!qrCode) return null;
@@ -31,25 +38,16 @@ export async function GET(request: NextRequest) {
   const where = isSuperAdmin ? {} : { accountId: accountId! };
 
   const dateParam = request.nextUrl.searchParams.get("date");
-  const selectedDate = dateParam ? new Date(dateParam + "T12:00:00") : new Date();
-  if (isNaN(selectedDate.getTime())) {
+  const dateStr = dateParam && isBerlinYmd(dateParam) ? dateParam : berlinYmd(new Date());
+  if (dateParam && !isBerlinYmd(dateParam)) {
     return NextResponse.json({ error: "Ungültiges Datum" }, { status: 400 });
   }
 
-  const dayStart = new Date(selectedDate);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(selectedDate);
-  dayEnd.setHours(23, 59, 59, 999);
-
-  const y = dayStart.getFullYear();
-  const m = String(dayStart.getMonth() + 1).padStart(2, "0");
-  const d = String(dayStart.getDate()).padStart(2, "0");
-  const dateStr = `${y}-${m}-${d}`;
-
-  // 7-Tage-Trend: dayStart - 6 Tage bis dayEnd
-  const weekStart = new Date(dayStart);
-  weekStart.setDate(weekStart.getDate() - 6);
-  weekStart.setHours(0, 0, 0, 0);
+  // Halboffen [start, endExclusive): auf Vercel ist die Runtime UTC, darum
+  // nicht setHours(0) auf einem lokalen Date.
+  const { start: dayStart, endExclusive } = berlinDayRange(dateStr);
+  const dayEnd = new Date(endExclusive.getTime() - 1);
+  const weekStart = berlinDayRange(addCalendarDays(dateStr, -6)).start;
 
   const dayActiveFilter = {
     status: { in: ["VALID", "REDEEMED"] as ("VALID" | "REDEEMED")[] },
@@ -105,7 +103,7 @@ export async function GET(request: NextRequest) {
       orderBy: { name: "asc" },
     }),
     db.scan.findMany({
-      where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
+      where: { ...where, scanTime: { gte: dayStart, lt: endExclusive } },
       select: { scanTime: true, result: true, deviceId: true },
     }),
     db.ticket.findMany({
@@ -134,7 +132,7 @@ export async function GET(request: NextRequest) {
       select: { token: true, baseUrl: true, extraConfig: true, lastUpdate: true },
     }),
     db.scan.findMany({
-      where: { ...where, scanTime: { gte: dayStart, lte: dayEnd } },
+      where: { ...where, scanTime: { gte: dayStart, lt: endExclusive } },
       select: {
         id: true,
         code: true,
@@ -147,12 +145,12 @@ export async function GET(request: NextRequest) {
       take: 15,
     }),
     db.scan.findMany({
-      where: { ...where, scanTime: { gte: dayStart, lte: dayEnd }, result: "GRANTED", ticketId: { not: null } },
+      where: { ...where, scanTime: { gte: dayStart, lt: endExclusive }, result: "GRANTED", ticketId: { not: null } },
       select: { ticketId: true },
       distinct: ["ticketId"],
     }),
     db.ticket.findMany({
-      where: { ...where, createdAt: { gte: dayStart, lte: dayEnd } },
+      where: { ...where, createdAt: { gte: dayStart, lt: endExclusive } },
       select: {
         id: true,
         name: true,
@@ -172,11 +170,11 @@ export async function GET(request: NextRequest) {
       where: { ...where, isActive: true, lastUpdate: { gte: new Date(Date.now() - 5 * 60_000) } },
     }),
     db.scan.findMany({
-      where: { ...where, scanTime: { gte: weekStart, lte: dayEnd } },
+      where: { ...where, scanTime: { gte: weekStart, lt: endExclusive } },
       select: { scanTime: true, result: true },
     }),
     db.ticket.findMany({
-      where: { ...where, createdAt: { gte: weekStart, lte: dayEnd } },
+      where: { ...where, createdAt: { gte: weekStart, lt: endExclusive } },
       select: { createdAt: true },
     }),
     db.device.findMany({
@@ -242,6 +240,9 @@ export async function GET(request: NextRequest) {
     const areaResources = areaResourceMap[area.id] || [];
     const directTickets = area.tickets.filter(isDayTicket).map(enrichTicket);
     const totalCount = directTickets.length;
+    // Transit-Zonen wie Insel haben weder Limit noch ANNY-Slots – die
+    // Belegungslaisten wuerden sie dauerhaft als "ruhig" zeigen.
+    const occupancyRelevant = area.personLimit != null || (areaAllNames[area.id] || []).length > 0;
 
     if (areaResources.length === 0) {
       let computedHours = area.openingHours;
@@ -268,6 +269,7 @@ export async function GET(request: NextRequest) {
         openingHours: computedHours,
         resources: [],
         otherTickets: directTickets,
+        occupancyRelevant,
         _count: { tickets: totalCount },
       };
     }
@@ -339,6 +341,7 @@ export async function GET(request: NextRequest) {
         openingHours: inlineHours,
         resources: [],
         otherTickets: [...r.tickets, ...otherTickets],
+        occupancyRelevant,
         _count: { tickets: totalCount },
       };
     }
@@ -360,6 +363,7 @@ export async function GET(request: NextRequest) {
         openingHours: inlineHours,
         resources: rest,
         otherTickets: [...primary.tickets, ...otherTickets],
+        occupancyRelevant,
         _count: { tickets: totalCount },
       };
     }
@@ -372,6 +376,7 @@ export async function GET(request: NextRequest) {
       openingHours: area.openingHours,
       resources,
       otherTickets,
+      occupancyRelevant,
       _count: { tickets: totalCount },
     };
   });
@@ -392,8 +397,9 @@ export async function GET(request: NextRequest) {
   let scanProtected = 0;
   const deviceCounts = new Map<number, { granted: number; denied: number; total: number }>();
   for (const s of dayScans) {
-    const h = new Date(s.scanTime).getHours();
+    const h = berlinHour(s.scanTime);
     const bucket = hourly[h];
+    if (!bucket) continue;
     bucket.total++;
     if (s.result === "GRANTED") {
       bucket.granted++;
@@ -425,17 +431,14 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => b.total - a.total)
     .slice(0, 5);
 
-  // 7-Tage-Trend: Scans + neue Tickets pro Tag
-  function dayKey(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
+  // 7-Tage-Trend: Scans + neue Tickets pro Tag (Berlin-Kalender, nicht UTC)
   const weekTrend: { date: string; dayName: string; scans: number; granted: number; denied: number; tickets: number }[] = [];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + i);
+    const ymd = addCalendarDays(dateStr, i - 6);
+    const noon = berlinDayRange(ymd).start;
     weekTrend.push({
-      date: dayKey(d),
-      dayName: d.toLocaleDateString("de-DE", { weekday: "short" }),
+      date: ymd,
+      dayName: noon.toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", weekday: "short" }),
       scans: 0,
       granted: 0,
       denied: 0,
@@ -444,14 +447,14 @@ export async function GET(request: NextRequest) {
   }
   const weekIdxByDate = new Map(weekTrend.map((t, i) => [t.date, i]));
   for (const s of weekScans) {
-    const idx = weekIdxByDate.get(dayKey(new Date(s.scanTime)));
+    const idx = weekIdxByDate.get(berlinYmd(s.scanTime));
     if (idx == null) continue;
     weekTrend[idx].scans++;
     if (s.result === "GRANTED") weekTrend[idx].granted++;
     else if (s.result === "DENIED") weekTrend[idx].denied++;
   }
   for (const t of weekTickets) {
-    const idx = weekIdxByDate.get(dayKey(new Date(t.createdAt)));
+    const idx = weekIdxByDate.get(berlinYmd(t.createdAt));
     if (idx == null) continue;
     weekTrend[idx].tickets++;
   }
@@ -513,6 +516,7 @@ export async function GET(request: NextRequest) {
       openingHours: null,
       resources: [],
       otherTickets: filteredUnassigned,
+      occupancyRelevant: filteredUnassigned.length > 0,
       _count: { tickets: filteredUnassigned.length },
     },
     subscriptions: enrichedSubscriptions,

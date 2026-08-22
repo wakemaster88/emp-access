@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -43,6 +43,7 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
+import { OpsStrip, type DashboardOps } from "@/components/dashboard/ops-strip";
 
 interface TicketEntry {
   id: number;
@@ -80,6 +81,7 @@ interface AreaData {
   openingHours: string | null;
   resources: ResourceBlock[];
   otherTickets: TicketEntry[];
+  occupancyRelevant?: boolean;
   _count: { tickets: number };
 }
 
@@ -772,6 +774,7 @@ function QuietAreasCard({ areas }: { areas: AreaData[] }) {
 export function DashboardClient() {
   const [date, setDate] = useState(toLocaleDateStr(new Date()));
   const [data, setData] = useState<DashboardData | null>(null);
+  const [ops, setOps] = useState<DashboardOps | null>(null);
   const [loading, setLoading] = useState(true);
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [subs, setSubs] = useState<{ id: number; name: string }[]>([]);
@@ -780,12 +783,16 @@ export function DashboardClient() {
   const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
   const [ticketLoading, setTicketLoading] = useState(false);
   const [syncErrorsOpen, setSyncErrorsOpen] = useState(false);
+  const hasLoaded = useRef(false);
 
-  const fetchData = useCallback(async (d: string) => {
-    setLoading(true);
+  const fetchData = useCallback(async (d: string, opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet && !hasLoaded.current) setLoading(true);
     try {
       const res = await fetch(`/api/dashboard?date=${d}`);
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        setData(await res.json());
+        hasLoaded.current = true;
+      }
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
@@ -793,6 +800,26 @@ export function DashboardClient() {
   useEffect(() => { fetchData(date); }, [date, fetchData]);
 
   useEffect(() => {
+    let cancelled = false;
+    async function loadOps() {
+      try {
+        const res = await fetch("/api/dashboard/ops");
+        if (!cancelled && res.ok) setOps(await res.json());
+      } catch { /* ignore */ }
+    }
+    loadOps();
+    const t = setInterval(loadOps, 15_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  useEffect(() => {
+    if (!isToday(date)) return;
+    const t = setInterval(() => { fetchData(date, { quiet: true }); }, 60_000);
+    return () => clearInterval(t);
+  }, [date, fetchData]);
+
+  function ensureTicketOptions() {
+    if (areas.length > 0 || subs.length > 0 || svcs.length > 0 || vereine.length > 0) return;
     fetch("/api/areas")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setAreas(d); })
@@ -809,9 +836,10 @@ export function DashboardClient() {
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setVereine(d); })
       .catch(() => {});
-  }, []);
+  }
 
   async function openTicket(ticketId: number) {
+    ensureTicketOptions();
     setTicketLoading(true);
     try {
       const res = await fetch(`/api/tickets/${ticketId}`);
@@ -929,8 +957,8 @@ export function DashboardClient() {
         </div>
       </div>
 
-      {/* Stat cards */}
-      {!loading && data && (() => {
+      <OpsStrip ops={ops} />
+      {data && (() => {
         const noShowCount = Math.max(0, totalTickets - data.checkedInCount);
         const checkInRate = totalTickets > 0 ? Math.round((data.checkedInCount / totalTickets) * 100) : 0;
         return (
@@ -988,7 +1016,7 @@ export function DashboardClient() {
       })()}
 
       {/* ANNY Sync Status */}
-      {!loading && data?.annySyncStatus && (() => {
+      {data?.annySyncStatus && (() => {
         const s = data.annySyncStatus!;
         const syncAge = s.lastSync ? Date.now() - new Date(s.lastSync).getTime() : Infinity;
         const isStale = syncAge > 2 * 60 * 60_000;
@@ -1057,8 +1085,40 @@ export function DashboardClient() {
         );
       })()}
 
+      {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
+      {data && allAreas.length === 0 && (
+        <div className="text-center py-12 text-slate-400">
+          <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          <p className="text-xs">Keine Resourcen für dieses Datum</p>
+        </div>
+      )}
+
+      {loading && !data && (
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+        </div>
+      )}
+
+      {data && allAreas.length > 0 && (() => {
+        const activeAreas = allAreas.filter((a) => a._count.tickets > 0);
+        const quietAreas = allAreas.filter((a) => a._count.tickets === 0 && a.occupancyRelevant !== false);
+        if (activeAreas.length === 0 && quietAreas.length === 0) return null;
+        return (
+          <div className="space-y-3">
+            {activeAreas.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {activeAreas.map((area) => (
+                  <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
+                ))}
+              </div>
+            )}
+            <QuietAreasCard areas={quietAreas} />
+          </div>
+        );
+      })()}
+
       {/* Charts: Stundenverlauf + Scan-Ergebnisse */}
-      {!loading && data && (
+      {data && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="lg:col-span-2">
             <HourlyChart data={data.hourly} peakHour={data.peakHour} />
@@ -1068,7 +1128,7 @@ export function DashboardClient() {
       )}
 
       {/* 7-Tage-Trend + Top-Geräte */}
-      {!loading && data && (
+      {data && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="lg:col-span-2">
             <WeekTrendChart data={data.weekTrend} selectedDate={data.date} />
@@ -1078,7 +1138,7 @@ export function DashboardClient() {
       )}
 
       {/* Abos & Services: separate Bereiche, unabhängig von Tages-Areas */}
-      {!loading && data && (data.subscriptions.length > 0 || data.services.length > 0) && (
+      {data && (data.subscriptions.length > 0 || data.services.length > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {data.subscriptions.length > 0 && (
             <MembershipsCard
@@ -1102,7 +1162,7 @@ export function DashboardClient() {
       )}
 
       {/* Live feeds: Recent scans + New bookings (immer sichtbar; Inhalt für gewähltes Datum) */}
-      {!loading && data && (
+      {data && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Card className="py-0 gap-0 overflow-hidden">
             <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
@@ -1216,31 +1276,6 @@ export function DashboardClient() {
           </Card>
         </div>
       )}
-
-      {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
-      {!loading && allAreas.length === 0 && (
-        <div className="text-center py-12 text-slate-400">
-          <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p className="text-xs">Keine Resourcen für dieses Datum</p>
-        </div>
-      )}
-
-      {!loading && allAreas.length > 0 && (() => {
-        const activeAreas = allAreas.filter((a) => a._count.tickets > 0);
-        const quietAreas = allAreas.filter((a) => a._count.tickets === 0);
-        return (
-          <div className="space-y-3">
-            {activeAreas.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                {activeAreas.map((area) => (
-                  <AreaCard key={area.id ?? "unassigned"} area={area} openTicket={openTicket} />
-                ))}
-              </div>
-            )}
-            <QuietAreasCard areas={quietAreas} />
-          </div>
-        );
-      })()}
 
       <EditTicketDialog
         ticket={selectedTicket}
