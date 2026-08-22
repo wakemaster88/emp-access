@@ -38,8 +38,8 @@ export async function POST(req: Request) {
   }
 
   // Ring-Fenster wird serverseitig erzwungen (konfigurierbar über
-  // `doorbird.enforceRingWindow`). ALPR-Auto-Open ist ausgenommen — dessen
-  // Schutz sind Whitelist + Confirm-Frames + Cooldown im Sidecar.
+  // `doorbird.enforceRingWindow`). ALPR- und Ausfahrt-Auto-Open sind
+  // ausgenommen — deren Schutz sitzt im Sidecar (Whitelist bzw. Zone + Cooldown).
   const decision = evaluateDoorOpen({
     enforceRingWindow: config.doorbird.enforceRingWindow,
     source,

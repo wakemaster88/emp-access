@@ -23,14 +23,14 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasAudioBackend } from "@/lib/audio-constants";
 import { sliderFill } from "./ui";
-import type { AudioDeviceOption, AudioSourceKind, PlaylistRow, ZoneRow } from "./types";
+import type { AudioDeviceOption, AudioSourceKind, PlaylistRow, StreamRow, ZoneRow } from "./types";
 
 const NONE = "__none__";
 
 /** Was „Start“ in dieser Zone abspielt. */
 const SOURCES: { value: AudioSourceKind; label: string; hint: string }[] = [
   { value: "PLAYLIST", label: "Playlist", hint: "Spielt die Standard-Playlist der Zone." },
-  { value: "STREAM", label: "Webradio", hint: "Spielt den hinterlegten Stream." },
+  { value: "STREAM", label: "Webradio", hint: "Spielt den gewählten Sender." },
   { value: "SILENCE", label: "Keine Musik", hint: "Zone macht nur Durchsagen." },
 ];
 
@@ -41,16 +41,23 @@ interface Props {
   zone: ZoneRow | null;
   devices: AudioDeviceOption[];
   playlists: PlaylistRow[];
+  streams: StreamRow[];
 }
 
-export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }: Props) {
+export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists, streams }: Props) {
   const isEdit = !!zone;
   const [name, setName] = useState(zone?.name ?? "");
   const [deviceId, setDeviceId] = useState<string>(zone?.deviceId ? String(zone.deviceId) : NONE);
   const [playlistId, setPlaylistId] = useState<string>(
     zone?.playlistId ? String(zone.playlistId) : NONE
   );
-  const [streamUrl, setStreamUrl] = useState(zone?.streamUrl ?? "");
+  const [streamId, setStreamId] = useState<string>(
+    zone?.streamId
+      ? String(zone.streamId)
+      : zone?.streamUrl
+        ? (streams.find((s) => s.url === zone.streamUrl)?.id.toString() ?? NONE)
+        : NONE
+  );
   // Eine neue Zone ohne Playlist-Auswahl startet als reine Durchsagen-Zone,
   // sonst müsste man erst eine Quelle bestücken, um speichern zu können.
   const [defaultSource, setDefaultSource] = useState<AudioSourceKind>(
@@ -92,8 +99,12 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
       setError("Für die Quelle „Playlist“ eine Standard-Playlist auswählen");
       return;
     }
-    if (defaultSource === "STREAM" && !streamUrl.trim()) {
-      setError("Für die Quelle „Webradio“ eine Stream-URL eintragen");
+    if (defaultSource === "STREAM" && streamId === NONE) {
+      setError(
+        streams.length === 0
+          ? "Zuerst unter „Webradio“ einen Sender anlegen"
+          : "Für die Quelle „Webradio“ einen Sender auswählen"
+      );
       return;
     }
     // Bei einem Wechsel auf einen anderen Abspieler kann ein Empfänger übrig
@@ -112,8 +123,8 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
         name: name.trim(),
         deviceId: deviceId === NONE ? null : Number(deviceId),
         playlistId: playlistId === NONE ? null : Number(playlistId),
+        streamId: streamId === NONE ? null : Number(streamId),
         defaultSource,
-        streamUrl: streamUrl.trim() || null,
         syncGroup: syncGroup.trim() || null,
         volume,
         announcementVolume,
@@ -222,13 +233,26 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists }:
           </div>
 
           <div>
-            <Label htmlFor="az-stream">Webradio-Stream (optional)</Label>
-            <Input
-              id="az-stream"
-              value={streamUrl}
-              onChange={(e) => setStreamUrl(e.target.value)}
-              placeholder="https://stream.example.com/live.mp3"
-            />
+            <Label>Webradio</Label>
+            <Select value={streamId} onValueChange={setStreamId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Kein Sender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Kein Sender</SelectItem>
+                {streams.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {streams.length === 0 && (
+              <p className="mt-1 text-xs text-slate-500">
+                Noch kein Sender. Unter dem Reiter „Webradio“ anlegen, dann hier
+                auswählen.
+              </p>
+            )}
           </div>
 
           <div>

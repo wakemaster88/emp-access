@@ -26,6 +26,8 @@ export interface ZoneRow {
   defaultSource: AudioSourceKind;
   playlistId: number | null;
   playlistName: string | null;
+  streamId: number | null;
+  streamName: string | null;
   streamUrl: string | null;
   quietFrom: string | null;
   quietTo: string | null;
@@ -63,6 +65,12 @@ export interface PlaylistRow {
   crossfadeSec: number;
   trackIds: number[];
   totalSec: number;
+}
+
+export interface StreamRow {
+  id: number;
+  name: string;
+  url: string;
 }
 
 export interface AnnouncementRow {

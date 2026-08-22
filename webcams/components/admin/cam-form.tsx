@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { LineEditor } from "@/components/admin/line-editor";
+import { ZoneEditor } from "@/components/admin/zone-editor";
 import { PtzAutoSection } from "@/components/admin/ptz-auto-section";
 import { PeopleHistoryCard } from "@/components/admin/people-history-card";
 
@@ -36,6 +37,7 @@ const EMPTY: Cam = {
     intervalSec: 60,
     mode: "presence",
     line: null,
+    zone: null,
     direction: "ab",
   },
   ptzAuto: {
@@ -69,8 +71,15 @@ const EMPTY: Cam = {
     instantAlert: true,
     notifyShopMonitor: true,
   },
-  alpr: { enabled: false, openDoorbird: false },
-};
+    alpr: { enabled: false, openDoorbird: false },
+    vehicleGate: {
+      enabled: false,
+      zone: null,
+      openDoorbird: true,
+      deviceIds: [],
+      cooldownSec: 45,
+    },
+  };
 
 function slugify(s: string) {
   return s
@@ -108,6 +117,9 @@ export function CamForm({
   const [tailgateIdsText, setTailgateIdsText] = useState(
     () => (initial ?? EMPTY).tailgate.deviceIds.join(", "),
   );
+  const [gateIdsText, setGateIdsText] = useState(
+    () => (initial ?? EMPTY).vehicleGate.deviceIds.join(", "),
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [autoId, setAutoId] = useState(!editing);
@@ -117,6 +129,7 @@ export function CamForm({
     if (initial) {
       setEmpIdsText(initial.empAccess.deviceIds.join(", "));
       setTailgateIdsText(initial.tailgate.deviceIds.join(", "));
+      setGateIdsText(initial.vehicleGate.deviceIds.join(", "));
     }
   }, [initial?.id]);
 
@@ -131,9 +144,37 @@ export function CamForm({
     setData((d) => ({ ...d, [key]: value }));
   }
 
+  function payloadForSave(): Cam {
+    const tailgateOn = data.tailgate.enabled;
+    const peopleCounter = tailgateOn
+      ? {
+          ...data.peopleCounter,
+          enabled: true,
+          mode: "crossing" as const,
+          line: data.peopleCounter.line ?? initial?.peopleCounter.line ?? null,
+        }
+      : data.peopleCounter;
+    return {
+      ...data,
+      empAccess: {
+        ...data.empAccess,
+        deviceIds: parseEmpDeviceIds(empIdsText),
+      },
+      tailgate: {
+        ...data.tailgate,
+        deviceIds: parseEmpDeviceIds(tailgateIdsText),
+      },
+      peopleCounter,
+      vehicleGate: {
+        ...data.vehicleGate,
+        deviceIds: parseEmpDeviceIds(gateIdsText),
+      },
+    };
+  }
+
   async function handleSave() {
     setErrors({});
-    const parsed = CamSchema.safeParse(data);
+    const parsed = CamSchema.safeParse(payloadForSave());
     if (!parsed.success) {
       const errs: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -158,7 +199,7 @@ export function CamForm({
         toast(json.error ?? "Speichern fehlgeschlagen", "error");
         return;
       }
-      toast(editing ? "Kamera aktualisiert" : "Kamera angelegt", "success");
+      toast(editing ? "Lokal gespeichert" : "Kamera angelegt", "success");
       onSaved(json.cam ?? parsed.data);
     } finally {
       setSaving(false);
@@ -290,8 +331,8 @@ export function CamForm({
           <div>
             <div className="text-sm font-medium">Personen zählen (KI)</div>
             <div className="text-xs text-foreground/60">
-              Anwesenheit per Snapshot (Ollama) oder gerichtetes Zählen (rein/raus)
-              über den Tracker-Sidecar.
+              Anwesenheit per Snapshot (Ollama), gerichtetes Zählen (rein/raus)
+              oder Belegung einer Fläche (z. B. Aquapark).
             </div>
           </div>
           <Switch
@@ -304,7 +345,7 @@ export function CamForm({
         {data.peopleCounter.enabled && (
           <div className="grid gap-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Modus" hint="Anwesenheit zählt sichtbare Personen pro Snapshot; Crossing zählt rein/raus über eine Linie">
+              <Field label="Modus" hint="Anwesenheit zählt das ganze Bild; Crossing zählt rein/raus; Zone zählt nur Personen in einer Fläche">
                 <Select
                   value={data.peopleCounter.mode}
                   onChange={(e) =>
@@ -316,6 +357,7 @@ export function CamForm({
                 >
                   <option value="presence">Anwesenheit (Ollama)</option>
                   <option value="crossing">Crossing rein/raus (Sidecar)</option>
+                  <option value="zone">Zone / Belegung (Sidecar)</option>
                 </Select>
               </Field>
               {data.peopleCounter.mode === "presence" && (
@@ -339,6 +381,35 @@ export function CamForm({
                 </Field>
               )}
             </div>
+            {data.peopleCounter.mode === "zone" && (
+              <>
+                {editing ? (
+                  <div>
+                    <ZoneEditor
+                      camId={data.id}
+                      value={data.peopleCounter.zone}
+                      onChange={(zone) =>
+                        update("peopleCounter", { ...data.peopleCounter, zone })
+                      }
+                    />
+                    {errors["peopleCounter.zone"] && (
+                      <p className="mt-1 text-xs text-red-400">
+                        {errors["peopleCounter.zone"]}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-foreground/60">
+                    Erst speichern, dann kann die Fläche auf einem Live-Snapshot
+                    gesetzt werden.
+                  </p>
+                )}
+                <p className="text-[11px] leading-snug text-foreground/50">
+                  Nur Personen innerhalb der Fläche zählen — Ufer und Steg
+                  bleiben außen. Der Tracker-Sidecar muss laufen.
+                </p>
+              </>
+            )}
             {data.peopleCounter.mode === "crossing" && (
               <>
                 {editing ? (
@@ -440,17 +511,135 @@ export function CamForm({
       <div className="sm:col-span-2 mt-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
+            <div className="text-sm font-medium">Ausfahrt / Tor öffnen</div>
+            <div className="text-xs text-foreground/60">
+              Erkennt ein Fahrzeug in einer Fläche (z. B. rechts vor dem Tor)
+              und öffnet die DoorBird. Parkende Autos außerhalb der Fläche
+              zählen nicht.
+            </div>
+          </div>
+          <Switch
+            checked={data.vehicleGate.enabled}
+            onChange={(v) =>
+              update("vehicleGate", { ...data.vehicleGate, enabled: v })
+            }
+          />
+        </div>
+        {errors["vehicleGate.enabled"] && (
+          <p className="mb-2 text-xs text-red-400">{errors["vehicleGate.enabled"]}</p>
+        )}
+        {data.vehicleGate.enabled && (
+          <div className="grid gap-3">
+            {editing ? (
+              <div>
+                <ZoneEditor
+                  camId={data.id}
+                  value={data.vehicleGate.zone}
+                  onChange={(zone) =>
+                    update("vehicleGate", { ...data.vehicleGate, zone })
+                  }
+                />
+                {errors["vehicleGate.zone"] && (
+                  <p className="mt-1 text-xs text-red-400">
+                    {errors["vehicleGate.zone"]}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-foreground/60">
+                Erst speichern, dann die Fläche auf dem Live-Snapshot zeichnen.
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="DoorBird öffnen">
+                <div className="flex h-10 items-center">
+                  <Switch
+                    checked={data.vehicleGate.openDoorbird}
+                    onChange={(v) =>
+                      update("vehicleGate", {
+                        ...data.vehicleGate,
+                        openDoorbird: v,
+                      })
+                    }
+                  />
+                </div>
+              </Field>
+              <Field
+                label="Cooldown (Sekunden)"
+                hint="Mindestabstand zwischen zwei Öffnungen"
+                error={errors["vehicleGate.cooldownSec"]}
+              >
+                <Input
+                  type="number"
+                  min={10}
+                  max={600}
+                  value={data.vehicleGate.cooldownSec}
+                  onChange={(e) =>
+                    update("vehicleGate", {
+                      ...data.vehicleGate,
+                      cooldownSec: Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="Zusätzliche Geräte-IDs"
+                hint="Optional, emp-access Shelly/Rolltor"
+                error={errors["vehicleGate.deviceIds"]}
+                className="sm:col-span-2"
+              >
+                <Input
+                  value={gateIdsText}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setGateIdsText(v);
+                    setData((d) => ({
+                      ...d,
+                      vehicleGate: {
+                        ...d.vehicleGate,
+                        deviceIds: parseEmpDeviceIds(v),
+                      },
+                    }));
+                  }}
+                  placeholder="leer = nur DoorBird"
+                />
+              </Field>
+            </div>
+            {errors["vehicleGate.openDoorbird"] && (
+              <p className="text-xs text-red-400">
+                {errors["vehicleGate.openDoorbird"]}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="sm:col-span-2 mt-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
             <div className="text-sm font-medium">Drehkreuz-Kontrolle</div>
             <div className="text-xs text-foreground/60">
               Vergleicht die gezählten Durchgänge mit den gültigen Scans dieser
-              Geräte. Braucht den Personenzähler im Modus „Linie überqueren".
+              Geräte. Braucht den Personenzähler im Modus „Crossing rein/raus"
+              und eine Zähllinie.
             </div>
           </div>
           <Switch
             checked={data.tailgate.enabled}
-            onChange={(v) => update("tailgate", { ...data.tailgate, enabled: v })}
+            onChange={(v) =>
+              setData((d) => ({
+                ...d,
+                tailgate: { ...d.tailgate, enabled: v },
+                peopleCounter: v
+                  ? { ...d.peopleCounter, enabled: true, mode: "crossing" }
+                  : d.peopleCounter,
+              }))
+            }
           />
         </div>
+        {errors["tailgate.enabled"] && (
+          <p className="mb-2 text-xs text-red-400">{errors["tailgate.enabled"]}</p>
+        )}
         {data.tailgate.enabled && (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field

@@ -5,6 +5,7 @@ import {
   clampVolume,
   parseSourceKind,
   parseTimeOfDay,
+  resolveOwnedStream,
 } from "@/lib/audio";
 
 export async function GET() {
@@ -17,6 +18,7 @@ export async function GET() {
     include: {
       device: { select: { id: true, name: true, lastUpdate: true } },
       playlist: { select: { id: true, name: true } },
+      stream: { select: { id: true, name: true } },
     },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
@@ -76,6 +78,21 @@ export async function POST(request: NextRequest) {
     playlistId = candidate;
   }
 
+  let streamId: number | null = null;
+  let streamUrl: string | null = null;
+  if (body.streamId != null && body.streamId !== "") {
+    const stream = await resolveOwnedStream(db, accountId!, body.streamId);
+    if (stream && "error" in stream) {
+      return NextResponse.json({ error: stream.error }, { status: 400 });
+    }
+    if (stream) {
+      streamId = stream.id;
+      streamUrl = stream.url;
+    }
+  } else if (typeof body.streamUrl === "string" && body.streamUrl.trim()) {
+    streamUrl = body.streamUrl.trim();
+  }
+
   // AirPlay/Bluetooth nur zulassen, wenn der Abspieler die Dienste gemeldet
   // hat – sonst speichert man eine Einstellung, die der Pi still ignoriert.
   const airplayEnabled = body.airplayEnabled === true;
@@ -100,11 +117,9 @@ export async function POST(request: NextRequest) {
       name,
       deviceId,
       playlistId,
+      streamId,
       defaultSource: parseSourceKind(body.defaultSource) ?? "PLAYLIST",
-      streamUrl:
-        typeof body.streamUrl === "string" && body.streamUrl.trim()
-          ? body.streamUrl.trim()
-          : null,
+      streamUrl,
       sortOrder: (last?.sortOrder ?? -1) + 1,
       syncGroup:
         typeof body.syncGroup === "string" && body.syncGroup.trim()
@@ -125,6 +140,7 @@ export async function POST(request: NextRequest) {
     include: {
       device: { select: { id: true, name: true, lastUpdate: true } },
       playlist: { select: { id: true, name: true } },
+      stream: { select: { id: true, name: true } },
     },
   });
 

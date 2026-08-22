@@ -60,6 +60,7 @@ export type AudioSnapshot = {
 export type AudioLibrary = {
   playlists: { id: number; name: string; trackCount: number }[];
   tracks: { id: number; title: string; artist: string | null; durationSec: number | null }[];
+  streams: { id: number; name: string; url: string }[];
 };
 
 export type AudioControlInput = {
@@ -84,6 +85,7 @@ type ZoneForControl = {
   id: number;
   volume: number;
   defaultSource: "SILENCE" | "PLAYLIST" | "STREAM";
+  streamId: number | null;
   streamUrl: string | null;
   playlistId: number | null;
 };
@@ -131,6 +133,21 @@ export function parseStreamUrl(value: unknown): { url: string } | { error: strin
   return { url };
 }
 
+async function resolveZoneStreamUrl(
+  db: Db,
+  zone: ZoneForControl
+): Promise<{ url: string } | { error: string }> {
+  if (zone.streamId) {
+    const stream = await db.audioStream.findFirst({
+      where: { id: zone.streamId },
+      select: { url: true },
+    });
+    if (stream?.url) return { url: stream.url };
+  }
+  if (zone.streamUrl) return { url: zone.streamUrl };
+  return { error: "Kein Webradio ausgewählt" };
+}
+
 /**
  * Gerät-Aktion aus `POST /api/devices/[id]/action` auf ein Audio-Kommando.
  * `open` startet die Zonen-Vorgabe; Quelle und Lautstärke gehören an den
@@ -157,7 +174,7 @@ export function audioCommandLabel(input: AudioControlInput): string {
 }
 
 export async function fetchAudioLibrary(db: Db, accountId: number): Promise<AudioLibrary> {
-  const [playlists, tracks] = await Promise.all([
+  const [playlists, tracks, streams] = await Promise.all([
     db.audioPlaylist.findMany({
       where: { accountId },
       select: { id: true, name: true, _count: { select: { items: true } } },
@@ -168,6 +185,11 @@ export async function fetchAudioLibrary(db: Db, accountId: number): Promise<Audi
       select: { id: true, title: true, artist: true, durationSec: true },
       orderBy: { title: "asc" },
     }),
+    db.audioStream.findMany({
+      where: { accountId },
+      select: { id: true, name: true, url: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return {
@@ -177,6 +199,7 @@ export async function fetchAudioLibrary(db: Db, accountId: number): Promise<Audi
       trackCount: playlist._count.items,
     })),
     tracks,
+    streams,
   };
 }
 
@@ -221,9 +244,9 @@ export async function controlAudioZone(
   }
 
   if (source === "STREAM") {
-    const parsed = streamGiven ? parseStreamUrl(input.streamUrl) : zone.streamUrl
-      ? { url: zone.streamUrl }
-      : { error: "Keine Stream-URL hinterlegt" };
+    const parsed = streamGiven
+      ? parseStreamUrl(input.streamUrl)
+      : await resolveZoneStreamUrl(db, zone);
     if ("error" in parsed) return { ok: false, error: parsed.error, status: 400 };
 
     await queueZoneCommand(
@@ -318,6 +341,7 @@ export async function controlAudioDevice(
       id: true,
       volume: true,
       defaultSource: true,
+      streamId: true,
       streamUrl: true,
       playlistId: true,
     },

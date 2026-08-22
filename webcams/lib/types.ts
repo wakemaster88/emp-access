@@ -233,10 +233,19 @@ export const PeopleCounterSchema = z.object({
    * "presence" – Vision-LLM (Ollama), zählt sichtbare Personen pro Snapshot.
    * "crossing" – YOLO + ByteTrack im Python-Sidecar; Personen die eine
    * Linie überqueren werden je nach Richtung als „rein" oder „raus" gezählt.
+   * "zone" – YOLO + ByteTrack; Personen deren Fußpunkt in einem Polygon
+   * liegt, zählen als aktuell anwesend (z. B. Aquapark-Belegung).
    */
-  mode: z.enum(["presence", "crossing"]).default("presence"),
+  mode: z.enum(["presence", "crossing", "zone"]).default("presence"),
   /** Linie für `mode: "crossing"`, zwei Punkte in normierten Koordinaten. */
   line: z.tuple([NormPointSchema, NormPointSchema]).nullable().default(null),
+  /**
+   * Fläche für `mode: "zone"`, mindestens drei Punkte, normiert 0..1.
+   * Nur Personen innerhalb der Fläche zählen.
+   */
+  zone: z
+    .union([z.array(NormPointSchema).min(3).max(24), z.null()])
+    .default(null),
   /**
    * Pfeilrichtung: definiert welche Seite der Linie als „rein" zählt.
    * "ab" = Bewegung von Punkt A nach B = +1 (rein), B→A = −1 (raus).
@@ -293,6 +302,27 @@ export const TailgateSchema = z.object({
 });
 
 export type TailgateConfig = z.infer<typeof TailgateSchema>;
+
+/**
+ * Ausfahrt-Assist: YOLO erkennt Fahrzeuge in einer Fläche (z. B. direkt vor
+ * dem Schiebetor). Beim Übergang 0 → ≥1 öffnet die DoorBird und/oder ein
+ * emp-access-Gerät. Parkende Autos außerhalb der Fläche zählen nicht.
+ */
+export const VehicleGateSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Fläche vor dem Tor, mindestens drei Punkte, normiert 0..1. */
+  zone: z
+    .union([z.array(NormPointSchema).min(3).max(24), z.null()])
+    .default(null),
+  /** Physisches Tor über die DoorBird (gleicher Relais wie Einfahrt-ALPR). */
+  openDoorbird: z.boolean().default(true),
+  /** Zusätzliche emp-access-Geräte (Shelly/Rolltor), optional. */
+  deviceIds: z.array(z.number().int().positive()).default([]),
+  /** Mindestabstand zwischen zwei Öffnungen, während das Auto in der Fläche steht. */
+  cooldownSec: z.number().int().min(10).max(600).default(45),
+});
+
+export type VehicleGateConfig = z.infer<typeof VehicleGateSchema>;
 
 /**
  * PTZ-Auto-Pilot pro Cam. Drei Modi (plus Off):
@@ -410,7 +440,14 @@ export const CamSchema = z
     streamMain: z.string().default("h264Preview_01_main"),
     streamSub: z.string().default("h264Preview_01_sub"),
     enabled: z.boolean().default(true),
-    peopleCounter: PeopleCounterSchema.default({} as PeopleCounterConfig),
+    peopleCounter: PeopleCounterSchema.default({
+      enabled: false,
+      intervalSec: 60,
+      mode: "presence",
+      line: null,
+      zone: null,
+      direction: "ab",
+    }),
     ptzAuto: PtzAutoSchema.default({
       mode: "off",
       patrol: { presetIds: [], dwellSec: 20 },
@@ -450,12 +487,16 @@ export const CamSchema = z
         openDoorbird: z.boolean().default(false),
       })
       .default({ enabled: false, openDoorbird: false }),
+    /** Fahrzeug in Fläche vor dem Tor → Tor öffnen (Ausfahrt). */
+    vehicleGate: VehicleGateSchema.default(VehicleGateSchema.parse({})),
   })
   .superRefine((cam, ctx) => {
-    // Crossing-Counting verträgt sich nicht mit PTZ-Auto: die Linie ist in
-    // Frame-Koordinaten gespeichert, sobald die Cam pannt zeigt sie woanders hin.
+    // Crossing/Zone vertragen sich nicht mit PTZ-Auto: Linie und Fläche
+    // sind in Frame-Koordinaten gespeichert.
     const crossing =
       cam.peopleCounter.enabled && cam.peopleCounter.mode === "crossing";
+    const zone =
+      cam.peopleCounter.enabled && cam.peopleCounter.mode === "zone";
     const ptzActive = cam.ptzAuto.mode !== "off";
     if (crossing && ptzActive) {
       ctx.addIssue({
@@ -463,6 +504,21 @@ export const CamSchema = z
         path: ["ptzAuto", "mode"],
         message:
           "PTZ-Auto und Crossing-Counter schließen sich aus. Ein Pan ändert die Linie.",
+      });
+    }
+    if (zone && ptzActive) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ptzAuto", "mode"],
+        message:
+          "PTZ-Auto und Zonen-Zähler schließen sich aus. Ein Pan ändert die Fläche.",
+      });
+    }
+    if (zone && (!cam.peopleCounter.zone || cam.peopleCounter.zone.length < 3)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["peopleCounter", "zone"],
+        message: "Mindestens drei Punkte für die Zählfläche setzen.",
       });
     }
     if (cam.tailgate.enabled && !crossing) {
@@ -478,6 +534,41 @@ export const CamSchema = z
         code: z.ZodIssueCode.custom,
         path: ["tailgate", "deviceIds"],
         message: "Mindestens ein emp-access-Gerät angeben, sonst gilt jeder Durchgang als ungedeckt.",
+      });
+    }
+    const vehicleGate = cam.vehicleGate.enabled;
+    if (vehicleGate && ptzActive) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ptzAuto", "mode"],
+        message:
+          "PTZ-Auto und Ausfahrt-Zone schließen sich aus. Ein Pan ändert die Fläche.",
+      });
+    }
+    if (vehicleGate && zone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vehicleGate", "enabled"],
+        message:
+          "Personen-Zone und Ausfahrt-Zone brauchen denselben Stream. Nur eines aktivieren.",
+      });
+    }
+    if (vehicleGate && (!cam.vehicleGate.zone || cam.vehicleGate.zone.length < 3)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vehicleGate", "zone"],
+        message: "Mindestens drei Punkte für die Fläche vor dem Tor setzen.",
+      });
+    }
+    if (
+      vehicleGate &&
+      !cam.vehicleGate.openDoorbird &&
+      cam.vehicleGate.deviceIds.length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vehicleGate", "openDoorbird"],
+        message: "DoorBird oder mindestens ein emp-access-Gerät zum Öffnen angeben.",
       });
     }
   });

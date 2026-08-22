@@ -4,7 +4,7 @@
  */
 
 /** Quellen, die das Ring-Fenster umgehen dürfen (eigene Schutzlogik). */
-const TRUSTED_AUTO_SOURCES = new Set(["alpr"]);
+const TRUSTED_AUTO_SOURCES = new Set(["alpr", "vehicle-gate"]);
 
 export interface DoorOpenDecision {
   allowed: boolean;

@@ -5,6 +5,7 @@ import {
   clampVolume,
   parseSourceKind,
   parseTimeOfDay,
+  resolveOwnedStream,
 } from "@/lib/audio";
 
 export async function PUT(
@@ -72,6 +73,17 @@ export async function PUT(
     }
   }
 
+  let streamId: number | null | undefined = undefined;
+  let streamUrlFromStream: string | null | undefined = undefined;
+  if (body.streamId !== undefined) {
+    const stream = await resolveOwnedStream(db, accountId!, body.streamId);
+    if (stream && "error" in stream) {
+      return NextResponse.json({ error: stream.error }, { status: 400 });
+    }
+    streamId = stream?.id ?? null;
+    streamUrlFromStream = stream?.url ?? null;
+  }
+
   const sourceKind = parseSourceKind(body.sourceKind);
   const defaultSource = parseSourceKind(body.defaultSource);
 
@@ -102,21 +114,16 @@ export async function PUT(
       name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined,
       ...(deviceId !== undefined ? { deviceId } : {}),
       ...(playlistId !== undefined ? { playlistId } : {}),
-      ...(sourceKind ? { sourceKind } : {}),
-      ...(defaultSource ? { defaultSource } : {}),
-      isActive: typeof body.isActive === "boolean" ? body.isActive : undefined,
-      syncGroup:
-        body.syncGroup === undefined
-          ? undefined
-          : typeof body.syncGroup === "string" && body.syncGroup.trim()
-            ? body.syncGroup.trim()
-            : null,
-      streamUrl:
-        body.streamUrl === undefined
-          ? undefined
-          : typeof body.streamUrl === "string" && body.streamUrl.trim()
-            ? body.streamUrl.trim()
-            : null,
+      ...(streamId !== undefined
+        ? { streamId, streamUrl: streamUrlFromStream }
+        : body.streamUrl === undefined
+          ? {}
+          : {
+              streamUrl:
+                typeof body.streamUrl === "string" && body.streamUrl.trim()
+                  ? body.streamUrl.trim()
+                  : null,
+            }),
       volume: body.volume === undefined ? undefined : clampVolume(body.volume, existing.volume),
       announcementVolume:
         body.announcementVolume === undefined
@@ -145,6 +152,7 @@ export async function PUT(
     include: {
       device: { select: { id: true, name: true, lastUpdate: true } },
       playlist: { select: { id: true, name: true } },
+      stream: { select: { id: true, name: true } },
     },
   });
 

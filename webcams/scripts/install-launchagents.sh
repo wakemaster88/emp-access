@@ -59,6 +59,8 @@ cat > "$WEBCAMS_PLIST" <<EOF
     <string>production</string>
     <key>PORT</key>
     <string>$PORT</string>
+    <key>WEBCAMS_CONFIG_PATH</key>
+    <string>$REPO_DIR/config.json</string>
   </dict>
   <key>ProgramArguments</key>
   <array>

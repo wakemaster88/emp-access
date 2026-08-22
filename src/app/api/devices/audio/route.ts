@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
   const zone = await db.audioZone.findFirst({
     where: { deviceId, device: { type: "AUDIO_PLAYER" } },
     include: {
+      stream: { select: { url: true } },
       playlist: {
         include: {
           items: {
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
       announcementVolume: zone.announcementVolume,
       duckVolume: zone.duckVolume,
       sourceKind: zone.sourceKind,
-      streamUrl: zone.streamUrl,
+      streamUrl: zone.stream?.url ?? zone.streamUrl,
       quietFrom: zone.quietFrom,
       quietTo: zone.quietTo,
       // Empfänger, die diese Zone übernehmen dürfen. null = abgeschaltet, der

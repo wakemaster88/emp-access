@@ -28,40 +28,65 @@ function autoLayout(widgets: Widget[], wideIds: Set<string>): ResolvedLayout {
   let cols = Math.max(1, Math.round(Math.sqrt(units * ratio)));
   // Wide-Tiles brauchen mindestens 2 Spalten.
   if (wideIds.size > 0 && cols < 2) cols = 2;
-  const rows = Math.max(1, Math.ceil(units / cols));
 
   const grid = 12;
   const cellW = Math.max(1, Math.floor(grid / cols));
   const rowGrid = 8;
-  const cellH = Math.max(1, Math.floor(rowGrid / rows));
 
-  // Flow-Packing: Zellen zeilenweise füllen; wide = 2 Zellen, bei Bedarf
-  // Zeilenumbruch, damit ein Panorama nicht über den Rand läuft.
-  const tiles: ResolvedTile[] = [];
-  let cx = 0;
-  let cy = 0;
-  for (const widget of enabled) {
-    const span = wideIds.has(widget.id) ? 2 : 1;
-    if (cx + span > cols) {
-      cx = 0;
-      cy += 1;
-    }
-    tiles.push({
-      widget,
-      x: cx * cellW,
-      y: cy * cellH,
-      w: cellW * span,
-      h: cellH,
-    });
-    cx += span;
-  }
+  // Duo-3-Kacheln (span 2) würden sonst eine Spalte leer lassen.
+  const packed = packFlow(enabled, (w) => widgetSpan(w.id, wideIds), cols);
+  const packedRows = Math.max(
+    1,
+    packed.length === 0 ? 1 : packed[packed.length - 1].row + 1,
+  );
+  const cellH = Math.max(1, Math.floor(rowGrid / packedRows));
+  const tiles: ResolvedTile[] = packed.map((p) => ({
+    widget: p.item,
+    x: p.col * cellW,
+    y: p.row * cellH,
+    w: cellW * p.span,
+    h: cellH,
+  }));
 
   return {
     cols: cols * cellW,
-    rows: (cy + 1) * cellH,
+    rows: packedRows * cellH,
     focusWidgetId: null,
     tiles,
   };
+}
+
+function widgetSpan(id: string, wideIds: Set<string>): number {
+  return wideIds.has(id) ? 2 : 1;
+}
+
+/**
+ * Zeilenweise packen. Passt das nächste Element nicht in den Rest der Zeile,
+ * wird das nächste passende nach vorn gezogen (Lücken füllen).
+ */
+export function packFlow<T>(
+  items: T[],
+  spanOf: (item: T) => number,
+  cols: number,
+): Array<{ item: T; col: number; row: number; span: number }> {
+  const queue = [...items];
+  const placed: Array<{ item: T; col: number; row: number; span: number }> = [];
+  let cx = 0;
+  let cy = 0;
+  while (queue.length > 0) {
+    const remain = cols - cx;
+    const idx = queue.findIndex((item) => spanOf(item) <= remain);
+    if (idx < 0) {
+      cx = 0;
+      cy += 1;
+      continue;
+    }
+    const item = queue.splice(idx, 1)[0];
+    const span = spanOf(item);
+    placed.push({ item, col: cx, row: cy, span });
+    cx += span;
+  }
+  return placed;
 }
 
 export function resolveLayout(config: Config, layout?: Layout | null): ResolvedLayout {

@@ -168,6 +168,7 @@ model Account {
   audioZones           AudioZone[]
   audioTracks          AudioTrack[]
   audioPlaylists       AudioPlaylist[]
+  audioStreams         AudioStream[]
   audioAnnouncements   AudioAnnouncement[]
   audioSchedules       AudioSchedule[]
   audioJobs            AudioJob[]
@@ -1962,7 +1963,11 @@ model AudioZone {
   defaultSource      AudioSourceKind    @default(PLAYLIST)
   playlistId         Int?
   playlist           AudioPlaylist?     @relation(fields: [playlistId], references: [id], onDelete: SetNull)
-  /// Webradio-/Stream-URL fuer sourceKind = STREAM.
+  /// Gewaehlter Webradio-Sender. Die URL steht zusaetzlich in streamUrl, damit
+  /// Abspieler und aeltere Jobs sie ohne Join lesen koennen.
+  streamId           Int?
+  stream             AudioStream?       @relation(fields: [streamId], references: [id], onDelete: SetNull)
+  /// Webradio-/Stream-URL fuer sourceKind = STREAM (Kopie des gewaehlten Senders).
   streamUrl          String?
   /// Ruhezeit "HH:mm"–"HH:mm" (Account-TZ): in diesem Fenster laeuft keine
   /// Musik, Durchsagen aber weiterhin. end < start = ueber Mitternacht.
@@ -1995,6 +2000,7 @@ model AudioZone {
 
   @@index([accountId, sortOrder])
   @@index([playlistId])
+  @@index([streamId])
 }
 
 /// Audiodatei in der Mediathek. Die Datei liegt im Blob-Storage; die Zonen-Pis
@@ -2039,6 +2045,21 @@ model AudioPlaylist {
   schedules    AudioSchedule[]
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
+
+  @@index([accountId])
+}
+
+/// Benannter Webradio-Sender. Zonen waehlen ihn aus einer Liste, statt die
+/// Stream-URL je Zone zu hinterlegen.
+model AudioStream {
+  id        Int         @id @default(autoincrement())
+  accountId Int
+  account   Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  url       String
+  zones     AudioZone[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@index([accountId])
 }

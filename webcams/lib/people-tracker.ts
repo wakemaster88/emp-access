@@ -5,7 +5,8 @@ import { sidecarAuthHeaders } from "./auth";
  * Client für den Python-Sidecar (siehe `tracker/main.py`).
  *
  * Der Sidecar läuft typischerweise lokal auf 127.0.0.1:8088 und liefert
- * gerichtete „in/out"-Counter pro Cam mit `peopleCounter.mode == "crossing"`.
+ * gerichtete „in/out"-Counter (`crossing`) oder die aktuelle Belegung
+ * einer Fläche (`zone`) für Cams mit aktivem Personenzähler.
  *
  * Wir cachen das Snapshot kurz, um nicht bei jedem Tile-Render neu zu fragen
  * — das Polling-Intervall im Browser (`use-people-counters.ts`) ist 5 s,
@@ -22,11 +23,41 @@ export interface CrossingCounter {
   fps: number;
 }
 
-interface SidecarSnapshot {
-  counters: Record<string, Omit<CrossingCounter, "mode">>;
+export interface ZoneCounter {
+  mode: "zone";
+  count: number;
+  lastUpdate: number;
+  lastError: string | null;
+  fps: number;
 }
 
-let cache: { ts: number; data: Record<string, CrossingCounter> } | null = null;
+export interface VehicleZoneCounter {
+  mode: "vehicle-zone";
+  count: number;
+  lastUpdate: number;
+  lastError: string | null;
+  fps: number;
+}
+
+export type SidecarCounter = CrossingCounter | ZoneCounter | VehicleZoneCounter;
+
+interface SidecarSnapshot {
+  counters: Record<
+    string,
+    {
+      mode?: string;
+      in?: number;
+      out?: number;
+      delta?: number;
+      count?: number;
+      lastUpdate?: number;
+      lastError?: string | null;
+      fps?: number;
+    }
+  >;
+}
+
+let cache: { ts: number; data: Record<string, SidecarCounter> } | null = null;
 const CACHE_MS = 1500; // Sidecar-Snapshot kurz cachen, eine Quelle der Wahrheit pro 1.5 s
 
 async function getSidecarUrl(): Promise<string> {
@@ -34,11 +65,13 @@ async function getSidecarUrl(): Promise<string> {
   return config.settings.tracker.url.replace(/\/$/, "");
 }
 
-export async function fetchCrossingCounters(): Promise<Record<string, CrossingCounter>> {
+export async function fetchCrossingCounters(): Promise<
+  Record<string, SidecarCounter>
+> {
   const now = Date.now();
   if (cache && now - cache.ts < CACHE_MS) return cache.data;
 
-  const data: Record<string, CrossingCounter> = {};
+  const data: Record<string, SidecarCounter> = {};
   try {
     const url = `${await getSidecarUrl()}/counters`;
     const ctl = new AbortController();
@@ -52,7 +85,36 @@ export async function fetchCrossingCounters(): Promise<Record<string, CrossingCo
       if (r.ok) {
         const json = (await r.json()) as SidecarSnapshot;
         for (const [camId, c] of Object.entries(json.counters ?? {})) {
-          data[camId] = { mode: "crossing", ...c };
+          const lastUpdate = c.lastUpdate ?? 0;
+          const lastError = c.lastError ?? null;
+          const fps = c.fps ?? 0;
+          if (c.mode === "vehicle-zone") {
+            data[camId] = {
+              mode: "vehicle-zone",
+              count: c.count ?? 0,
+              lastUpdate,
+              lastError,
+              fps,
+            };
+          } else if (c.mode === "zone") {
+            data[camId] = {
+              mode: "zone",
+              count: c.count ?? 0,
+              lastUpdate,
+              lastError,
+              fps,
+            };
+          } else {
+            data[camId] = {
+              mode: "crossing",
+              in: c.in ?? 0,
+              out: c.out ?? 0,
+              delta: c.delta ?? (c.in ?? 0) - (c.out ?? 0),
+              lastUpdate,
+              lastError,
+              fps,
+            };
+          }
         }
       }
     } finally {

@@ -2,10 +2,12 @@
 Webcams People-Tracker Sidecar
 ==============================
 
-Pro Cam mit ``peopleCounter.mode == "crossing"`` läuft hier ein Worker-Thread,
-der den RTSP-Substream der Kamera liest, Personen mit YOLOv8 erkennt, sie
-über ByteTrack (in Ultralytics integriert) per Track-ID stabil hält und
-zählt, wenn der Schwerpunkt (cx, cy) eine konfigurierte Linie überquert.
+Pro Cam mit ``peopleCounter.mode == "crossing"`` oder ``"zone"`` läuft hier
+ein Worker-Thread, der den RTSP-Substream der Kamera liest und Personen mit
+YOLOv8 + ByteTrack erkennt.
+
+- crossing: Schwerpunkt überquert eine Linie → rein/raus
+- zone: Fußpunkt liegt in einem Polygon → aktuelle Belegung
 
 Die Linie kommt als zwei normierte Punkte (0..1) aus ``config.json`` —
 Auflösungs-/Profil-Wechsel der Cam beeinflussen die Konfiguration nicht.
@@ -212,6 +214,9 @@ class CamCounter:
     last_update: float = 0.0
     last_error: str | None = None
     fps: float = 0.0
+    # "crossing" oder "zone"
+    kind: str = "crossing"
+    occupancy: int = 0
     # Konfig-Snapshot für Diff-Vergleich (Hot-Reload)
     config_hash: str = ""
     # Worker-Steuerung
@@ -222,9 +227,14 @@ class CamCounter:
     last_person_count: int = 0
 
 
+# COCO: car, motorcycle, bus, truck — kein Fahrrad (zu viele Fehltreffer am Zaun).
+VEHICLE_CLASSES = [2, 3, 5, 7]
+
+
 def _hash_config(cam: dict[str, Any]) -> str:
     """Stabile Repräsentation der trackerrelevanten Config-Felder."""
     pc = cam.get("peopleCounter", {})
+    vg = cam.get("vehicleGate") or {}
     return json.dumps(
         {
             "ip": cam.get("ip"),
@@ -234,7 +244,16 @@ def _hash_config(cam: dict[str, Any]) -> str:
             "streamSub": cam.get("streamSub"),
             "channel": cam.get("channel"),
             "line": pc.get("line"),
+            "zone": pc.get("zone"),
+            "mode": pc.get("mode", "crossing"),
             "direction": pc.get("direction", "ab"),
+            "vehicleGate": {
+                "enabled": vg.get("enabled"),
+                "zone": vg.get("zone"),
+                "openDoorbird": vg.get("openDoorbird"),
+                "deviceIds": vg.get("deviceIds"),
+                "cooldownSec": vg.get("cooldownSec"),
+            },
         },
         sort_keys=True,
     )
@@ -374,6 +393,135 @@ class HysteresisLineCounter:
                 self._side.pop(tid, None)
 
         return crossings
+
+
+def _polygon_px(
+    zone_norm: list[list[float]], width: int, height: int
+) -> np.ndarray:
+    """Normierte Polygon-Punkte (0..1) in Pixel-Kontur."""
+    pts: list[list[int]] = []
+    for p in zone_norm:
+        if not p or len(p) < 2:
+            continue
+        pts.append([int(float(p[0]) * width), int(float(p[1]) * height)])
+    if len(pts) < 3:
+        raise ValueError("zone braucht mindestens drei Punkte")
+    return np.array(pts, dtype=np.int32)
+
+
+def _roi_from_polygon(
+    frame: Any, poly: np.ndarray, pad_ratio: float = 0.06
+) -> tuple[Any, int, int]:
+    """Schneidet die Bounding-Box der Fläche plus Rand aus.
+
+    Auf einem Duo-3-Panorama sind Leute auf dem Aquapark sonst nur wenige
+    Pixel groß — der Crop macht sie für YOLO größer.
+    """
+    x, y, bw, bh = cv2.boundingRect(poly)
+    pad_x = max(8, int(bw * pad_ratio))
+    pad_y = max(8, int(bh * pad_ratio))
+    h, w = frame.shape[:2]
+    x1 = max(0, x - pad_x)
+    y1 = max(0, y - pad_y)
+    x2 = min(w, x + bw + pad_x)
+    y2 = min(h, y + bh + pad_y)
+    if x2 - x1 < 8 or y2 - y1 < 8:
+        raise RuntimeError("zone-crop ist leer")
+    return frame[y1:y2, x1:x2], x1, y1
+
+
+class ZoneOccupancy:
+    """Zählt eindeutige Tracks in der Fläche, mit Ein-/Austritts-Hysterese.
+
+    Ein Pixel Rauschen am Ufer soll die Zahl nicht ständig um ±1 springen:
+    jemand zählt erst nach ein paar Frames innen, und erst nach ein paar
+    Frames außen nicht mehr.
+    """
+
+    def __init__(
+        self,
+        enter_frames: int = 2,
+        leave_frames: int = 5,
+        ttl: float = 8.0,
+    ) -> None:
+        self.enter_frames = enter_frames
+        self.leave_frames = leave_frames
+        self.ttl = ttl
+        self._inside_streak: dict[int, int] = {}
+        self._outside_streak: dict[int, int] = {}
+        self._present: set[int] = set()
+        self._seen: dict[int, float] = {}
+
+    def update(self, inside_ids: set[int]) -> int:
+        now = time.time()
+        for tid in inside_ids:
+            self._seen[tid] = now
+            self._inside_streak[tid] = self._inside_streak.get(tid, 0) + 1
+            self._outside_streak[tid] = 0
+            if self._inside_streak[tid] >= self.enter_frames:
+                self._present.add(tid)
+
+        for tid in list(self._present):
+            if tid in inside_ids:
+                continue
+            self._outside_streak[tid] = self._outside_streak.get(tid, 0) + 1
+            self._inside_streak[tid] = 0
+            last = self._seen.get(tid, 0)
+            if (
+                self._outside_streak[tid] >= self.leave_frames
+                or now - last > self.ttl
+            ):
+                self._present.discard(tid)
+                self._outside_streak.pop(tid, None)
+                self._inside_streak.pop(tid, None)
+
+        for tid, last in list(self._seen.items()):
+            if now - last > self.ttl:
+                self._seen.pop(tid, None)
+                self._inside_streak.pop(tid, None)
+                self._outside_streak.pop(tid, None)
+                self._present.discard(tid)
+
+        return len(self._present)
+
+
+def annotate_zone_frame(
+    frame: Any,
+    detections: Any,
+    poly: np.ndarray,
+    occupancy: int,
+    inside_idx: set[int],
+    box_annotator: Any,
+    label_annotator: Any,
+    overlay_label: str = "zone",
+) -> Any:
+    """Zeichnet Fläche, Boxen und Belegung für den Debug-Overlay."""
+    annotated = frame.copy()
+    overlay = annotated.copy()
+    cv2.fillPoly(overlay, [poly], (40, 160, 80))
+    cv2.addWeighted(overlay, 0.18, annotated, 0.82, 0, annotated)
+    cv2.polylines(annotated, [poly], True, (60, 220, 120), 2, cv2.LINE_AA)
+
+    annotated = box_annotator.annotate(scene=annotated, detections=detections)
+    if detections.tracker_id is not None and len(detections) > 0:
+        labels = []
+        for i, tid in enumerate(detections.tracker_id):
+            mark = "in" if i in inside_idx else "out"
+            labels.append(f"#{int(tid)} {mark}")
+        annotated = label_annotator.annotate(
+            scene=annotated, detections=detections, labels=labels
+        )
+    cv2.putText(
+        annotated,
+        f"{overlay_label} {occupancy}",
+        (10, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    return annotated
 
 
 def annotate_frame(
@@ -795,6 +943,224 @@ def worker_loop(cam: dict[str, Any], counter: CamCounter) -> None:
     log.info("worker[%s] stopped", cam_id)
 
 
+def zone_worker_loop(
+    cam: dict[str, Any],
+    counter: CamCounter,
+    *,
+    zone_norm: list[list[float]] | None = None,
+    classes: list[int] | None = None,
+    enter_frames: int = 2,
+    leave_frames: int = 5,
+    overlay_label: str = "zone",
+    kind: str = "zone",
+    on_occupancy_rise: Any | None = None,
+    cooldown_sec: float = 45.0,
+) -> None:
+    """Belegung: YOLO auf dem Flächen-Ausschnitt, Tracks in der Polygonfläche.
+
+    Standard: Personen. Mit `classes=VEHICLE_CLASSES` und `on_occupancy_rise`
+    wird daraus die Ausfahrt-Erkennung vor dem Tor.
+    """
+    cam_id = cam["id"]
+    rtsp = build_rtsp_url(cam)
+    if zone_norm is None:
+        zone_norm = (cam.get("peopleCounter") or {}).get("zone")
+    if not zone_norm or len(zone_norm) < 3:
+        counter.last_error = "zone fehlt"
+        log.error("zone-worker[%s] keine Fläche", cam_id)
+        return
+    detect_classes = classes if classes is not None else [0]
+    counter.kind = kind
+
+    log.info(
+        "zone-worker[%s] start kind=%s classes=%s (rtsp=%s)",
+        cam_id,
+        kind,
+        detect_classes,
+        rtsp.replace(cam["password"], "***"),
+    )
+
+    zone_conf = max(0.15, CONF_THRESHOLD - 0.1)
+    zone_imgsz = max(INFER_IMGSZ, 640)
+    zone_max_det = max(INFER_MAX_DET, 50)
+
+    backoff = 2.0
+    model = YOLO(YOLO_MODEL)
+    while not counter.stop_event.is_set():
+        try:
+            cap = cv2.VideoCapture(rtsp, cv2.CAP_FFMPEG)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                cap.release()
+                raise RuntimeError("RTSP-Stream konnte nicht geöffnet werden")
+
+            h, w = frame.shape[:2]
+            poly = _polygon_px(zone_norm, w, h)
+            occupancy = ZoneOccupancy(
+                enter_frames=enter_frames, leave_frames=leave_frames
+            )
+            box_annotator = sv.BoxAnnotator(thickness=2)
+            label_annotator = sv.LabelAnnotator(text_scale=0.5, text_thickness=1)
+
+            track_kwargs: dict[str, Any] = {
+                "persist": True,
+                "classes": detect_classes,
+                "conf": zone_conf,
+                "imgsz": zone_imgsz,
+                "max_det": zone_max_det,
+                "verbose": False,
+                "tracker": "bytetrack.yaml",
+            }
+            if DEVICE:
+                track_kwargs["device"] = DEVICE
+
+            frame_idx = 0
+            t0 = time.time()
+            prev_occ = 0
+            last_open = 0.0
+            counter.last_error = None
+            backoff = 2.0
+
+            try:
+                while not counter.stop_event.is_set():
+                    ok, frame = cap.read()
+                    if not ok or frame is None:
+                        raise RuntimeError("RTSP-Stream abgebrochen")
+
+                    frame_idx += 1
+                    if FRAME_STRIDE > 1 and frame_idx % FRAME_STRIDE != 0:
+                        continue
+
+                    if frame.shape[0] != h or frame.shape[1] != w:
+                        h, w = frame.shape[:2]
+                        poly = _polygon_px(zone_norm, w, h)
+
+                    crop, ox, oy = _roi_from_polygon(frame, poly)
+                    results = model.track(crop, **track_kwargs)
+                    result = results[0] if results else None
+                    try:
+                        detections = (
+                            sv.Detections.from_ultralytics(result)
+                            if result is not None
+                            else sv.Detections.empty()
+                        )
+                    except Exception:
+                        detections = sv.Detections.empty()
+                    if len(detections) > 0:
+                        detections.xyxy = detections.xyxy + np.array(
+                            [ox, oy, ox, oy], dtype=detections.xyxy.dtype
+                        )
+
+                    inside_ids: set[int] = set()
+                    inside_idx: set[int] = set()
+                    ids = detections.tracker_id
+                    if ids is not None and len(detections) > 0:
+                        for i, raw_id in enumerate(ids):
+                            x1, _y1, x2, y2 = detections.xyxy[i]
+                            fx = (float(x1) + float(x2)) / 2.0
+                            fy = float(y2)
+                            if cv2.pointPolygonTest(poly, (fx, fy), False) >= 0:
+                                inside_ids.add(int(raw_id))
+                                inside_idx.add(i)
+
+                    new_occ = occupancy.update(inside_ids)
+                    if (
+                        on_occupancy_rise
+                        and prev_occ == 0
+                        and new_occ > 0
+                        and time.time() - last_open >= cooldown_sec
+                    ):
+                        try:
+                            on_occupancy_rise()
+                            last_open = time.time()
+                            log.info(
+                                "zone-worker[%s] occupancy 0→%d → open",
+                                cam_id,
+                                new_occ,
+                            )
+                        except Exception as exc:
+                            log.error(
+                                "zone-worker[%s] open failed: %s", cam_id, exc
+                            )
+                    prev_occ = new_occ
+                    counter.occupancy = new_occ
+                    counter.last_person_count = len(inside_ids)
+                    counter.last_update = time.time()
+
+                    if frame_idx % 60 == 0:
+                        log.info(
+                            "zone-worker[%s] frame=%d inside=%d occupancy=%d fps=%.1f",
+                            cam_id,
+                            frame_idx,
+                            len(inside_ids),
+                            counter.occupancy,
+                            counter.fps,
+                        )
+
+                    if frame_idx % 15 == 0:
+                        annotated = annotate_zone_frame(
+                            frame,
+                            detections,
+                            poly,
+                            counter.occupancy,
+                            inside_idx,
+                            box_annotator,
+                            label_annotator,
+                            overlay_label,
+                        )
+                        ok_jpg, buf = cv2.imencode(
+                            ".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80]
+                        )
+                        if ok_jpg:
+                            counter.last_jpeg = buf.tobytes()
+
+                    if frame_idx % 30 == 0:
+                        dt = counter.last_update - t0
+                        if dt > 0:
+                            counter.fps = round(frame_idx / dt, 2)
+            finally:
+                cap.release()
+            if counter.stop_event.is_set():
+                break
+
+        except Exception as exc:
+            counter.last_error = str(exc)
+            counter.last_update = time.time()
+            log.warning(
+                "zone-worker[%s] error: %s — reconnect in %.1fs",
+                cam_id,
+                exc,
+                backoff,
+            )
+            if counter.stop_event.wait(backoff):
+                break
+            backoff = min(backoff * 1.5, 30.0)
+
+    log.info("zone-worker[%s] stopped", cam_id)
+
+
+def vehicle_gate_worker_loop(
+    cam: dict[str, Any],
+    counter: CamCounter,
+    open_cb: Any,
+) -> None:
+    """Ausfahrt: Fahrzeuge in der Fläche vor dem Tor → DoorBird/Gerät öffnen."""
+    vg = cam.get("vehicleGate") or {}
+    zone_worker_loop(
+        cam,
+        counter,
+        zone_norm=vg.get("zone"),
+        classes=VEHICLE_CLASSES,
+        enter_frames=8,
+        leave_frames=12,
+        overlay_label="ausfahrt",
+        kind="vehicle-zone",
+        on_occupancy_rise=lambda: open_cb(cam["id"]),
+        cooldown_sec=float(vg.get("cooldownSec") or 45),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Manager
 # ---------------------------------------------------------------------------
@@ -822,18 +1188,36 @@ class TrackerManager:
             return []
         cams = cfg.get("cams", [])
         out: list[dict[str, Any]] = []
+        seen: set[str] = set()
         for cam in cams:
             if not cam.get("enabled"):
                 continue
+            cam_id = cam.get("id")
+            if not cam_id or cam_id in seen:
+                continue
+            vg = cam.get("vehicleGate") or {}
+            if vg.get("enabled"):
+                zone = vg.get("zone")
+                if zone and len(zone) >= 3:
+                    out.append(cam)
+                    seen.add(cam_id)
+                    continue
             pc = cam.get("peopleCounter") or {}
             if not pc.get("enabled"):
                 continue
-            if pc.get("mode") != "crossing":
-                continue
-            line = pc.get("line")
-            if not line or len(line) != 2:
-                continue
-            out.append(cam)
+            mode = pc.get("mode")
+            if mode == "crossing":
+                line = pc.get("line")
+                if not line or len(line) != 2:
+                    continue
+                out.append(cam)
+                seen.add(cam_id)
+            elif mode == "zone":
+                zone = pc.get("zone")
+                if not zone or len(zone) < 3:
+                    continue
+                out.append(cam)
+                seen.add(cam_id)
         return out
 
     def _wanted_ptz(self) -> list[dict[str, Any]]:
@@ -898,9 +1282,18 @@ class TrackerManager:
             for cam_id, cam in wanted.items():
                 if cam_id in self.counters:
                     continue
-                counter = CamCounter(cam_id=cam_id, config_hash=wanted_hash[cam_id])
+                vg = cam.get("vehicleGate") or {}
+                if vg.get("enabled") and vg.get("zone"):
+                    mode = "vehicle-zone"
+                    target: Any = self._vehicle_gate_thread
+                else:
+                    mode = (cam.get("peopleCounter") or {}).get("mode") or "crossing"
+                    target = zone_worker_loop if mode == "zone" else worker_loop
+                counter = CamCounter(
+                    cam_id=cam_id, config_hash=wanted_hash[cam_id], kind=mode
+                )
                 t = threading.Thread(
-                    target=worker_loop,
+                    target=target,
                     args=(cam, counter),
                     name=f"tracker-{cam_id}",
                     daemon=True,
@@ -1130,6 +1523,25 @@ class TrackerManager:
             raise RuntimeError("empty snapshot")
         return r.content
 
+    def _vehicle_gate_thread(self, cam: dict[str, Any], counter: CamCounter) -> None:
+        vehicle_gate_worker_loop(cam, counter, self._open_vehicle_gate)
+
+    def _open_vehicle_gate(self, cam_id: str) -> None:
+        """Ruft die Next-Route auf — DoorBird/Gerät öffnen inkl. Audit."""
+        import requests
+
+        url = f"{self._ptz_get_app_url().rstrip('/')}/api/vehicle-gate/open"
+        r = requests.post(
+            url,
+            json={"camId": cam_id},
+            headers=app_auth_headers(),
+            timeout=8.0,
+        )
+        if not r.ok:
+            raise RuntimeError(
+                f"vehicle-gate HTTP {r.status_code}: {r.text[:200]}"
+            )
+
     def _alpr_open_door(self, plate: str, owner: str) -> None:
         """Ruft die Next-Route auf — Tür geht physisch über die existierende
         `/api/doorbird/open`-Logik auf, inklusive Audit-Log."""
@@ -1177,9 +1589,11 @@ class TrackerManager:
         with self._lock:
             for cam_id, c in self.counters.items():
                 out[cam_id] = {
+                    "mode": c.kind,
                     "in": c.in_count,
                     "out": c.out_count,
                     "delta": c.in_count - c.out_count,
+                    "count": c.occupancy,
                     "lastUpdate": int(c.last_update * 1000) if c.last_update else 0,
                     "lastError": c.last_error,
                     "fps": c.fps,

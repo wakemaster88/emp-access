@@ -21,7 +21,7 @@ export default async function AudioPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [account, zones, tracks, playlists, announcements, schedules, jobs, audioDevices, ttsVoices] =
+  const [account, zones, tracks, playlists, streams, announcements, schedules, jobs, audioDevices, ttsVoices] =
     await Promise.all([
       db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
       db.audioZone.findMany({
@@ -29,6 +29,7 @@ export default async function AudioPage() {
         include: {
           device: { select: { id: true, name: true, lastUpdate: true } },
           playlist: { select: { id: true, name: true } },
+          stream: { select: { id: true, name: true, url: true } },
         },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
@@ -44,6 +45,10 @@ export default async function AudioPage() {
             include: { track: { select: { id: true, durationSec: true } } },
           },
         },
+        orderBy: { name: "asc" },
+      }),
+      db.audioStream.findMany({
+        where: { accountId },
         orderBy: { name: "asc" },
       }),
       db.audioAnnouncement.findMany({
@@ -100,7 +105,9 @@ export default async function AudioPage() {
             defaultSource: z.defaultSource,
             playlistId: z.playlistId,
             playlistName: z.playlist?.name ?? null,
-            streamUrl: z.streamUrl,
+            streamId: z.streamId,
+            streamName: z.stream?.name ?? null,
+            streamUrl: z.stream?.url ?? z.streamUrl,
             quietFrom: z.quietFrom,
             quietTo: z.quietTo,
             airplayEnabled: z.airplayEnabled,
@@ -131,6 +138,11 @@ export default async function AudioPage() {
             crossfadeSec: p.crossfadeSec,
             trackIds: p.items.map((i) => i.trackId),
             totalSec: p.items.reduce((sum, i) => sum + (i.track.durationSec ?? 0), 0),
+          }))}
+          streams={streams.map((s) => ({
+            id: s.id,
+            name: s.name,
+            url: s.url,
           }))}
           announcements={announcements.map((a) => ({
             id: a.id,

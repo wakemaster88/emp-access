@@ -89,6 +89,29 @@ export async function checkExternalReceivers(
   return null;
 }
 
+export type OwnedAudioStream = { id: number; name: string; url: string };
+
+/**
+ * Webradio-Sender des Mandanten. `null`/leer löst die Zuordnung.
+ */
+export async function resolveOwnedStream(
+  db: Db,
+  accountId: number,
+  streamId: unknown
+): Promise<OwnedAudioStream | { error: string } | null> {
+  if (streamId === null || streamId === "") return null;
+  const id = Number(streamId);
+  if (!Number.isInteger(id) || id <= 0) {
+    return { error: "Ungültige Stream-ID" };
+  }
+  const stream = await db.audioStream.findFirst({
+    where: { id, accountId },
+    select: { id: true, name: true, url: true },
+  });
+  if (!stream) return { error: "Webradio nicht gefunden" };
+  return stream;
+}
+
 export type AnnouncementForQueue = {
   id: number;
   source: string;

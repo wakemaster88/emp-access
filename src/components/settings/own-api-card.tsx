@@ -45,7 +45,7 @@ const ENDPOINTS = [
   {
     method: "GET",
     path: "/api/audio/library",
-    desc: "Playlists und Musiktitel für die Quellenwahl an Audio-Zonen",
+    desc: "Playlists, Webradio-Sender und Musiktitel für die Quellenwahl an Audio-Zonen",
   },
   {
     method: "GET",

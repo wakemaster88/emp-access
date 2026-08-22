@@ -15,6 +15,7 @@ import {
   KeyRound,
   Radio,
   Users,
+  Car,
 } from "lucide-react";
 import { usePeopleCount } from "@/components/use-people-counters";
 import { useEmpAccessForCam } from "@/components/use-emp-access";
@@ -58,7 +59,7 @@ export function ReolinkTile({
     }
   };
   const counter = usePeopleCount(cam?.id);
-  const counterEnabled = !!cam?.peopleCounter?.enabled;
+  const counterEnabled = !!cam?.peopleCounter?.enabled || !!cam?.vehicleGate?.enabled;
   const empEvents = useEmpAccessForCam(cam?.id);
   const empOverlay =
     cam?.empAccess.enabled &&
@@ -181,14 +182,17 @@ export function ReolinkTile({
           </span>
         </div>
       )}
-      {counterEnabled && counter?.mode === "presence" && (
+      {counterEnabled &&
+        (counter?.mode === "presence" || counter?.mode === "zone") && (
         <div
           className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white shadow-sm backdrop-blur-sm"
           title={
             counter.lastError
               ? `Fehler: ${counter.lastError}`
               : counter.lastUpdate
-                ? `zuletzt: ${new Date(counter.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                ? `zuletzt: ${new Date(counter.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}${
+                    counter.mode === "zone" ? ` · ${counter.fps} fps` : ""
+                  }`
                 : "noch keine Daten"
           }
         >
@@ -198,6 +202,21 @@ export function ReolinkTile({
               ? counter.count
               : "…"}
           </span>
+        </div>
+      )}
+      {counterEnabled && counter?.mode === "vehicle-zone" && (
+        <div
+          className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white shadow-sm backdrop-blur-sm"
+          title={
+            counter.lastError
+              ? `Fehler: ${counter.lastError}`
+              : counter.lastUpdate
+                ? `Ausfahrt-Zone · ${new Date(counter.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${counter.fps} fps`
+                : "noch keine Daten"
+          }
+        >
+          <Car className="size-3 opacity-80" />
+          <span className="font-medium tabular-nums">{counter.count}</span>
         </div>
       )}
       {counterEnabled && !counter && (

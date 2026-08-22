@@ -2,6 +2,10 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ConfigSchema, type Config } from "./types";
 
+/**
+ * Lokale Quelle der Wahrheit: `webcams/config.json` (gitignored).
+ * LaunchAgent setzt WEBCAMS_CONFIG_PATH, sonst das CWD der Next-App.
+ */
 const CONFIG_PATH =
   process.env.WEBCAMS_CONFIG_PATH ??
   path.join(/* turbopackIgnore: true */ process.cwd(), "config.json");

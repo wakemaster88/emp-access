@@ -20,7 +20,27 @@ export interface CrossingCounter {
   fps: number;
 }
 
-export type CounterValue = PresenceCounter | CrossingCounter;
+export interface ZoneCounter {
+  mode: "zone";
+  count: number;
+  lastUpdate: number;
+  lastError: string | null;
+  fps: number;
+}
+
+export interface VehicleZoneCounter {
+  mode: "vehicle-zone";
+  count: number;
+  lastUpdate: number;
+  lastError: string | null;
+  fps: number;
+}
+
+export type CounterValue =
+  | PresenceCounter
+  | CrossingCounter
+  | ZoneCounter
+  | VehicleZoneCounter;
 
 type Counters = Record<string, CounterValue>;
 

@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { controlShelly } from "@/lib/shelly";
-import { maybeSurveillanceTelegramAlert } from "@/lib/surveillance";
+import {
+  maybeSurveillanceAlert,
+  maybeSurveillanceTelegramAlert,
+} from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
@@ -81,6 +84,32 @@ async function triggerShellyForPerson(
   return { shellyTriggered: true, shellyOk };
 }
 
+/** Überwachungs-Push + Telegram für Personenerkennung (nicht für Whitelist). */
+function firePersonSurveillanceAlerts(opts: {
+  accountId: number;
+  cameraId: number;
+  snapshot: Uint8Array | null;
+  detail: string;
+  at: Date;
+}) {
+  maybeSurveillanceAlert({
+    accountId: opts.accountId,
+    cameraId: opts.cameraId,
+    type: "PERSON",
+    at: opts.at,
+  }).catch((err) => console.error("[persons] surveillance push failed:", err));
+
+  if (!opts.snapshot?.length) return;
+  maybeSurveillanceTelegramAlert({
+    accountId: opts.accountId,
+    cameraId: opts.cameraId,
+    type: "PERSON",
+    snapshot: opts.snapshot,
+    detail: opts.detail,
+    at: opts.at,
+  }).catch((err) => console.error("[persons] surveillance telegram failed:", err));
+}
+
 /**
  * PERSON-Ereignis mit optionalem Face-Match vom Hub.
  * Shelly nur bei Identity-Match + triggerOnDetection.
@@ -157,17 +186,17 @@ export async function processCameraPersonEvent(opts: {
       });
       sightings++;
 
-      if (snapshot) {
+      // Überwachung: Whitelist-Personen weder Push noch Telegram.
+      if (person.listType !== "WHITELIST") {
         const scorePct =
           opts.matchScore != null ? `${Math.round(opts.matchScore * 100)}% Match` : null;
-        maybeSurveillanceTelegramAlert({
+        firePersonSurveillanceAlerts({
           accountId: opts.accountId,
           cameraId: opts.cameraId,
-          type: "PERSON",
           snapshot,
           detail: [person.name, person.listType, scorePct].filter(Boolean).join(" · "),
           at: seenAt,
-        }).catch((err) => console.error("[persons] surveillance telegram failed:", err));
+        });
       }
 
       return { sightings, triggered };
@@ -201,16 +230,13 @@ export async function processCameraPersonEvent(opts: {
   });
   sightings++;
 
-  if (snapshot) {
-    maybeSurveillanceTelegramAlert({
-      accountId: opts.accountId,
-      cameraId: opts.cameraId,
-      type: "PERSON",
-      snapshot,
-      detail: "Unbekannte Person",
-      at: seenAt,
-    }).catch((err) => console.error("[persons] surveillance telegram failed:", err));
-  }
+  firePersonSurveillanceAlerts({
+    accountId: opts.accountId,
+    cameraId: opts.cameraId,
+    snapshot,
+    detail: "Unbekannte Person",
+    at: seenAt,
+  });
 
   return { sightings, triggered };
 }

@@ -81,7 +81,12 @@ function resolveQueue(
 
   if (source === "STREAM") {
     if (!zone.streamUrl) return null;
-    return { zoneId: zone.id, items: [{ url: zone.streamUrl, title: "Webradio" }], index: 0, loop: false };
+    return {
+      zoneId: zone.id,
+      items: [{ url: zone.streamUrl, title: zone.streamName ?? "Webradio" }],
+      index: 0,
+      loop: false,
+    };
   }
 
   if (source === "PLAYLIST") {

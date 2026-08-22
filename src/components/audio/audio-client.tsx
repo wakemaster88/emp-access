@@ -33,6 +33,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   Speaker,
   Square,
@@ -62,6 +63,7 @@ import {
   triggerLabel,
 } from "./labels";
 import { PlaylistDialog } from "./playlist-dialog";
+import { StreamDialog } from "./stream-dialog";
 import { ScheduleDialog, ACTION_LABELS } from "./schedule-dialog";
 import { useAudioStatus } from "./use-audio-status";
 import { useZoneMonitor, zoneSource } from "./use-zone-monitor";
@@ -73,6 +75,7 @@ import type {
   JobRow,
   PlaylistRow,
   ScheduleRow,
+  StreamRow,
   TrackRow,
   ZoneRow,
   ZoneStatus,
@@ -82,6 +85,7 @@ interface Props {
   zones: ZoneRow[];
   tracks: TrackRow[];
   playlists: PlaylistRow[];
+  streams: StreamRow[];
   announcements: AnnouncementRow[];
   schedules: ScheduleRow[];
   jobs: JobRow[];
@@ -95,6 +99,7 @@ export function AudioClient({
   zones,
   tracks,
   playlists,
+  streams,
   announcements,
   schedules,
   jobs,
@@ -118,6 +123,10 @@ export function AudioClient({
     open: boolean;
     playlist: PlaylistRow | null;
   }>({ open: false, playlist: null });
+  const [streamDialog, setStreamDialog] = useState<{
+    open: boolean;
+    stream: StreamRow | null;
+  }>({ open: false, stream: null });
   const [announcementDialog, setAnnouncementDialog] = useState<{
     open: boolean;
     announcement: AnnouncementRow | null;
@@ -132,7 +141,7 @@ export function AudioClient({
     null
   );
   const [deleteConfirm, setDeleteConfirm] = useState<{
-    kind: "zone" | "playlist" | "announcement" | "schedule";
+    kind: "zone" | "playlist" | "stream" | "announcement" | "schedule";
     id: number;
     name: string;
   } | null>(null);
@@ -237,6 +246,7 @@ export function AudioClient({
     const paths = {
       zone: "zones",
       playlist: "playlists",
+      stream: "streams",
       announcement: "announcements",
       schedule: "schedules",
     } as const;
@@ -255,11 +265,8 @@ export function AudioClient({
 
       <Tabs value={tab} onValueChange={setTab}>
         {/*
-          Sieben Tabs passen auf kein Telefon. Gewickelt ergaben sie drei
-          ungleich breite Reihen, weil sich die Auslöser die Breite teilen –
-          darum eine Reihe zum Schieben, wie in der Netzwerkansicht. Die Zähler
-          bleiben dem Zeigergerät vorbehalten, sonst sieht man am Telefon kaum
-          zwei Tabs.
+          Die Zähler bleiben dem Zeigergerät vorbehalten, sonst sieht man am
+          Telefon kaum zwei Tabs.
         */}
         <TabsList className="mb-4 w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="announce" className="flex-none gap-1.5">
@@ -280,6 +287,11 @@ export function AudioClient({
             <ListMusic className="h-4 w-4" />
             Playlists
             <TabCount value={playlists.length} />
+          </TabsTrigger>
+          <TabsTrigger value="streams" className="flex-none gap-1.5">
+            <Radio className="h-4 w-4" />
+            Webradio
+            <TabCount value={streams.length} />
           </TabsTrigger>
           <TabsTrigger value="templates" className="flex-none gap-1.5">
             <Megaphone className="h-4 w-4" />
@@ -437,7 +449,58 @@ export function AudioClient({
           )}
         </TabsContent>
 
-        {/* ── VORLAGEN ─────────────────────────────────────────────────────── */}
+        {/* ── WEBRADIO ─────────────────────────────────────────────────────── */}
+        <TabsContent value="streams" className="space-y-3">
+          <SectionHeader
+            text="Sender einmal anlegen und in den Zonen auswählen."
+            actionLabel="Neuer Sender"
+            onAction={() => setStreamDialog({ open: true, stream: null })}
+          />
+
+          {streams.length === 0 ? (
+            <EmptyState
+              icon={Radio}
+              title="Noch kein Webradio"
+              text="Lege Sender mit Namen und Stream-URL an. In der Zone wählst du sie dann aus der Liste."
+            />
+          ) : (
+            <div className="grid gap-3">
+              {streams.map((stream) => (
+                <Card key={stream.id} className="border-slate-200 dark:border-slate-800">
+                  <CardContent className="p-4 flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                        {stream.name}
+                      </h3>
+                      <p className="mt-1 truncate text-xs text-slate-500">{stream.url}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <IconAction
+                        icon={Pencil}
+                        label={`Sender ${stream.name} bearbeiten`}
+                        title="Bearbeiten"
+                        onClick={() => setStreamDialog({ open: true, stream })}
+                      />
+                      <IconAction
+                        icon={Trash2}
+                        label={`Sender ${stream.name} löschen`}
+                        title="Löschen"
+                        tone="danger"
+                        onClick={() =>
+                          setDeleteConfirm({
+                            kind: "stream",
+                            id: stream.id,
+                            name: stream.name,
+                          })
+                        }
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
         <TabsContent value="templates" className="space-y-3">
           <SectionHeader
             text="Gespeicherte Durchsagen stehen als Schnellwahl und in Zeitplänen zur Verfügung."
@@ -646,6 +709,7 @@ export function AudioClient({
           zone={zoneDialog.zone}
           devices={audioDevices}
           playlists={playlists}
+          streams={streams}
           onClose={() => setZoneDialog({ open: false, zone: null })}
           onSaved={() => {
             setZoneDialog({ open: false, zone: null });
@@ -662,6 +726,18 @@ export function AudioClient({
           onClose={() => setPlaylistDialog({ open: false, playlist: null })}
           onSaved={() => {
             setPlaylistDialog({ open: false, playlist: null });
+            refresh();
+          }}
+        />
+      )}
+
+      {streamDialog.open && (
+        <StreamDialog
+          open
+          stream={streamDialog.stream}
+          onClose={() => setStreamDialog({ open: false, stream: null })}
+          onSaved={() => {
+            setStreamDialog({ open: false, stream: null });
             refresh();
           }}
         />
@@ -939,7 +1015,7 @@ function ZoneCard({
                 (zone.sourceKind === "PLAYLIST"
                   ? (zone.playlistName ?? "Playlist")
                   : zone.sourceKind === "STREAM"
-                    ? "Webradio"
+                    ? (zone.streamName ?? "Webradio")
                     : "Keine Wiedergabe")}
               {zone.quietFrom && zone.quietTo && ` · Ruhe ${zone.quietFrom}–${zone.quietTo}`}
               {lastSeen && ` · gemeldet ${lastSeen}`}

@@ -51,6 +51,17 @@ describe("evaluateDoorOpen", () => {
     expect(d.allowed).toBe(true);
   });
 
+  it("erlaubt Ausfahrt-Zone auch außerhalb des Fensters", () => {
+    const d = evaluateDoorOpen({
+      enforceRingWindow: true,
+      source: "vehicle-gate",
+      lastRingAt: 0,
+      now: NOW,
+      ringWindowSec: 90,
+    });
+    expect(d.allowed).toBe(true);
+  });
+
   it("erlaubt alles, wenn Enforcement deaktiviert ist", () => {
     const d = evaluateDoorOpen({
       enforceRingWindow: false,

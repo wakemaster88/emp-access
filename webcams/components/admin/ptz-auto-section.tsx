@@ -61,8 +61,9 @@ export function PtzAutoSection({ cam, editing, value, onChange }: Props) {
   const [status, setStatus] = useState<PtzAutoStatus | null>(null);
 
   // Crossing-Counter sperrt PTZ-Auto: Linie ist in Frame-Koordinaten.
-  const crossingActive =
-    cam.peopleCounter.enabled && cam.peopleCounter.mode === "crossing";
+  const lineLocked =
+    cam.peopleCounter.enabled &&
+    (cam.peopleCounter.mode === "crossing" || cam.peopleCounter.mode === "zone");
 
   useEffect(() => {
     if (!editing || !caps.ptz) return;
@@ -129,12 +130,12 @@ export function PtzAutoSection({ cam, editing, value, onChange }: Props) {
     );
   }
 
-  if (crossingActive && value.mode !== "off") {
+  if (lineLocked && value.mode !== "off") {
     return (
       <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200 ring-1 ring-amber-500/30">
-        PTZ-Auto und Crossing-Counter schließen sich aus, weil sich beim Pannen
-        die Linie verschiebt. Erst Crossing deaktivieren, dann Auto-Pilot
-        einschalten.
+        PTZ-Auto und Zähl-Linie/Zone schließen sich aus, weil sich beim Pannen
+        die Fläche verschiebt. Erst den Personenzähler deaktivieren, dann
+        Auto-Pilot einschalten.
       </div>
     );
   }
@@ -152,7 +153,7 @@ export function PtzAutoSection({ cam, editing, value, onChange }: Props) {
           <Select
             value={value.mode}
             onChange={(e) => patch({ mode: e.target.value as PtzAutoConfig["mode"] })}
-            disabled={crossingActive}
+            disabled={lineLocked}
           >
             <option value="off">aus</option>
             <option value="patrol">Patrol (Preset-Tour)</option>

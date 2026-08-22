@@ -83,6 +83,8 @@ function parseLastPushMap(raw: unknown): Record<string, string> {
 /**
  * Sendet ggf. einen Überwachungs-Push (fire-and-forget-tauglich).
  * Cooldown pro Kamera+Typ.
+ * PERSON-Alerts kommen aus der Face-Sichtung (nicht vom KI-Event-Start),
+ * damit Whitelist-Personen still bleiben.
  */
 export async function maybeSurveillanceAlert(opts: {
   accountId: number;

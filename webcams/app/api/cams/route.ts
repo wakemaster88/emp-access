@@ -4,6 +4,7 @@ import { CamSchema } from "@/lib/types";
 import { writeGo2rtcYaml, reloadGo2rtc } from "@/lib/go2rtc";
 import { syncWorkers } from "@/lib/people-counter";
 import { notifySidecarConfigChanged } from "@/lib/people-tracker";
+import { prepareCamForSave } from "@/lib/cam-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  const parsed = CamSchema.safeParse(body);
+  const parsed = CamSchema.safeParse(prepareCamForSave(body, null));
   if (!parsed.success) {
     return NextResponse.json(
       { error: "validation failed", issues: parsed.error.issues },

@@ -5,6 +5,7 @@ import { writeGo2rtcYaml, reloadGo2rtc } from "@/lib/go2rtc";
 import { invalidateToken } from "@/lib/reolink";
 import { syncWorkers } from "@/lib/people-counter";
 import { notifySidecarConfigChanged } from "@/lib/people-tracker";
+import { prepareCamForSave } from "@/lib/cam-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -28,22 +29,19 @@ export async function PUT(req: Request, ctx: RouteCtx) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  const parsed = CamSchema.safeParse(body);
+  const config = await loadConfig();
+  const idx = config.cams.findIndex((c) => c.id === id);
+  if (idx === -1) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  const parsed = CamSchema.safeParse(prepareCamForSave(body, config.cams[idx]));
   if (!parsed.success) {
     return NextResponse.json(
       { error: "validation failed", issues: parsed.error.issues },
       { status: 400 },
     );
   }
-  const config = await loadConfig();
-  const idx = config.cams.findIndex((c) => c.id === id);
-  if (idx === -1) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const incoming = parsed.data;
-  // Restore masked password
-  if (incoming.password === "***") {
-    incoming.password = config.cams[idx].password;
-  }
   // Forbid renaming the id (use delete + create instead)
   if (incoming.id !== id) {
     return NextResponse.json({ error: "id mismatch" }, { status: 400 });

@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         console.error("[camera-events] automation failed:", err);
       });
 
-      if (type === "PERSON" || type === "VEHICLE") {
+      if (type === "VEHICLE") {
         maybeSurveillanceAlert({
           accountId: account.id,
           cameraId,
@@ -74,6 +74,8 @@ export async function POST(request: NextRequest) {
           console.error("[camera-events] surveillance failed:", err);
         });
       }
+      // PERSON: Push/Telegram erst nach Face-Match in person-sightings,
+      // damit Whitelist-Personen keine Überwachungs-Alarm auslösen.
 
       // PERSON-/VEHICLE-Sichtungen inkl. Schnappschuss laufen ueber
       // POST /api/hub/person-sightings bzw. /api/hub/vehicle-sightings.
