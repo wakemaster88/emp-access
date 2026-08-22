@@ -61,6 +61,8 @@ export type AudioLibrary = {
   playlists: { id: number; name: string; trackCount: number }[];
   tracks: { id: number; title: string; artist: string | null; durationSec: number | null }[];
   streams: { id: number; name: string; url: string }[];
+  /** Alias mit String-IDs für emp-control. */
+  webradios: { id: string; name: string; url: string }[];
 };
 
 export type AudioControlInput = {
@@ -71,8 +73,8 @@ export type AudioControlInput = {
   streamUrl?: unknown;
   /**
    * Ob eine mitgeschickte Stream-URL als neue Zonen-Vorgabe gespeichert wird.
-   * Das Dashboard speichert sie (Admin stellt den Sender ein). Eine Integration
-   * spielt sie nur ab – sonst überschriebe ein Mitarbeiter den Radiosender.
+   * Katalog-Sender aus emp-control speichern wir, damit die Zone auf dem
+   * gewählten Webradio bleibt. Freie URLs bleiben einmalig, wenn false.
    */
   persistStreamUrl?: boolean;
 };
@@ -200,6 +202,11 @@ export async function fetchAudioLibrary(db: Db, accountId: number): Promise<Audi
     })),
     tracks,
     streams,
+    webradios: streams.map((stream) => ({
+      id: String(stream.id),
+      name: stream.name,
+      url: stream.url,
+    })),
   };
 }
 
@@ -259,11 +266,21 @@ export async function controlAudioZone(
     );
 
     const persist = input.persistStreamUrl !== false || parsed.url === zone.streamUrl;
+    const matched = await db.audioStream.findFirst({
+      where: { accountId, url: parsed.url },
+      select: { id: true, name: true },
+    });
     await db.audioZone.update({
       where: { id: zone.id },
       data: {
         sourceKind: "STREAM",
-        ...(persist ? { streamUrl: parsed.url } : {}),
+        currentTitle: matched?.name ?? "Webradio",
+        ...(persist
+          ? {
+              streamUrl: parsed.url,
+              ...(matched ? { streamId: matched.id } : {}),
+            }
+          : {}),
       },
     });
     return { ok: true };
