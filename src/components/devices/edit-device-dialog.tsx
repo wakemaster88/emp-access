@@ -14,8 +14,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Loader2, Trash2, Save, GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv, Umbrella, Blinds, CircleDot,
+  Loader2, Trash2, Save,   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
+  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv, Umbrella, Blinds, CircleDot, Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isCoverCategory, DEFAULT_COVER_RUNTIME_SEC } from "@/lib/cover-constants";
@@ -55,6 +55,7 @@ export interface DeviceData {
   accessOut: number | null;
   cameraId: number | null;
   allowReentry: boolean;
+  scanLockSeconds?: number | null;
   offlineAlertsEnabled: boolean;
   firmware: string | null;
   schedule: unknown | null;
@@ -110,6 +111,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
     accessOut: "none",
     cameraId: "none",
     allowReentry: false,
+    scanLockSeconds: "0",
     offlineAlertsEnabled: false,
     firmware: "",
   });
@@ -139,6 +141,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
         accessOut: device.accessOut != null ? String(device.accessOut) : "none",
         cameraId: device.cameraId != null ? String(device.cameraId) : "none",
         allowReentry: device.allowReentry,
+        scanLockSeconds: String(device.scanLockSeconds ?? 0),
         offlineAlertsEnabled: device.offlineAlertsEnabled,
         firmware: device.firmware ?? "",
       });
@@ -208,6 +211,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
           accessOut,
           cameraId: form.cameraId !== "none" ? Number(form.cameraId) : null,
           allowReentry: form.allowReentry,
+          scanLockSeconds: CAT_HAS_ACCESS.has(form.category) ? Number(form.scanLockSeconds) || 0 : 0,
           offlineAlertsEnabled: form.offlineAlertsEnabled,
           firmware: form.firmware || null,
           // Kanalzuordnung nur bei Antrieben senden; wechselt das Gerät die
@@ -480,6 +484,13 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
             </div>
           )}
 
+          {CAT_HAS_ACCESS.has(form.category) && (
+            <ScanLockField
+              value={form.scanLockSeconds}
+              onChange={(v) => set("scanLockSeconds", v)}
+            />
+          )}
+
           {error && (
             <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
           )}
@@ -502,5 +513,58 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const SCAN_LOCK_PRESETS = [0, 15, 30, 60, 120];
+
+function formatScanLockPreset(seconds: number): string {
+  if (seconds <= 0) return "Aus";
+  if (seconds < 60) return `${seconds} Sek.`;
+  return seconds === 60 ? "1 Min." : `${seconds / 60} Min.`;
+}
+
+export function ScanLockField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const seconds = Number(value);
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+      <div>
+        <p className="text-sm font-medium flex items-center gap-1.5">
+          <Timer className="h-4 w-4" /> Sperrzeit nach gültigem Scan
+        </p>
+        <p className="text-xs text-slate-500">
+          Nächster Scan desselben Tickets erst nach dieser Zeit. Andere Tickets können sofort danach durch.
+        </p>
+      </div>
+      <Input
+        type="number"
+        min={0}
+        max={3600}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="font-mono"
+      />
+      <div className="flex flex-wrap gap-1.5">
+        {SCAN_LOCK_PRESETS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onChange(String(s))}
+            className="rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+          >
+            {formatScanLockPreset(s)}
+          </button>
+        ))}
+      </div>
+      {Number.isFinite(seconds) && seconds > 0 && (
+        <p className="text-xs text-slate-400">Sperre {formatScanLockPreset(seconds)} für dasselbe Ticket.</p>
+      )}
+    </div>
   );
 }

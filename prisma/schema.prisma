@@ -267,6 +267,11 @@ model Device {
   accessIn             Int?
   accessOut            Int?
   allowReentry         Boolean              @default(false)
+  /// Nach einem GRANTED-Scan: so viele Sekunden darf DASSELBE Ticket an
+  /// diesem Geraet nicht erneut gültig scannen (Missbrauchsschutz).
+  /// Andere Tickets bleiben frei. NULL/0 = keine Sperre.
+  /// Austritte und Dashboard-Oeffnungen sind ausgenommen.
+  scanLockSeconds      Int?
   /// Optionale Kamera-Zuordnung: Kamera, die diesen Zugang im Blick hat
   /// (z. B. Drehkreuz "Eingang A" → Kamera Eingang). Scans dieses Geraets
   /// werden in der UI mit der Kamera verknuepft (Live-Bild/Schnappschuss).

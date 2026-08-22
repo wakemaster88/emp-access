@@ -4,6 +4,7 @@ import { isWithinSchedule } from "@/lib/schedule";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
+import { evaluateScanLock } from "@/lib/scan-lock";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -103,6 +104,42 @@ export async function performScanCheck({
   const code = rawCode.replace(/\s+/g, "");
   const scanDeviceData = deviceId ? { deviceId } : {};
 
+  let lockSeconds: number | null = null;
+  let isExitDevice = false;
+  if (deviceId) {
+    const scanDevice = await db.device.findFirst({
+      where: { id: deviceId, accountId },
+      select: { scanLockSeconds: true, accessIn: true, accessOut: true },
+    });
+    lockSeconds = scanDevice?.scanLockSeconds ?? null;
+    isExitDevice = scanDevice != null && scanDevice.accessOut != null && scanDevice.accessIn == null;
+  }
+
+  async function denyIfLocked(ticketId?: number | null) {
+    const lock = await evaluateScanLock(db, {
+      accountId,
+      deviceId,
+      lockSeconds,
+      code,
+      ticketId,
+      isExit: isExitDevice,
+    });
+    if (!lock) return null;
+    if (!lock.silent) {
+      await db.scan.create({
+        data: {
+          code,
+          result: "DENIED",
+          note: "scan_lock",
+          accountId,
+          ...scanDeviceData,
+          ...(ticketId ? { ticketId } : {}),
+        },
+      });
+    }
+    return { granted: false as const, message: lock.message };
+  }
+
   if (!code) {
     return { granted: false, message: "Kein Code erkannt" };
   }
@@ -193,6 +230,8 @@ export async function performScanCheck({
     if (code.startsWith("GS-")) {
       const voucher = await db.voucher.findUnique({ where: { code, accountId } });
       if (voucher && !voucher.redeemedAt) {
+        const locked = await denyIfLocked();
+        if (locked) return locked;
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0);
         const todayEnd = new Date(today);
@@ -460,6 +499,9 @@ export async function performScanCheck({
   // Ticket einloesen. Scans an Nebenressourcen (z.B. Strandbad/Insel fuer ein
   // "Seilbahn A"- oder SUP-Ticket) sind Transit: Zutritt wird gewaehrt, aber
   // Status/firstScanAt bleiben unveraendert.
+
+  const locked = await denyIfLocked(ticket.id);
+  if (locked) return { ...locked, ticket: ticketInfo };
 
   // Atomar: Scan + optionale Statusaenderung in einer Transaktion mit version-Check.
   // Vereinsmitglieder (vereinId) sind Jahres-Mitgliedschaften und werden – wie

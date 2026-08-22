@@ -246,6 +246,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                     accessOut: device.accessOut,
                     cameraId: device.cameraId,
                     allowReentry: device.allowReentry,
+                    scanLockSeconds: device.scanLockSeconds,
                     offlineAlertsEnabled: device.offlineAlertsEnabled,
                     firmware: device.firmware,
                     schedule: device.schedule ?? null,

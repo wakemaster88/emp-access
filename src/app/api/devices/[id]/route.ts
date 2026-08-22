@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
 import { isCoverCategory, parseCoverInput } from "@/lib/cover-constants";
 import { isPulseCategory, parsePulseInput } from "@/lib/pulse-constants";
+import { parseScanLockSeconds } from "@/lib/scan-lock";
 import { withAudioDeviceInfo, AUDIO_ZONE_SELECT } from "@/lib/audio-integration";
 
 function hasApiToken(request: NextRequest) {
@@ -167,6 +168,7 @@ export async function PUT(
       accessIn: body.accessIn ?? existing.accessIn,
       accessOut: body.accessOut ?? existing.accessOut,
       allowReentry: body.allowReentry ?? existing.allowReentry,
+      scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, existing.scanLockSeconds),
       offlineAlertsEnabled: typeof body.offlineAlertsEnabled === "boolean"
         ? body.offlineAlertsEnabled
         : existing.offlineAlertsEnabled,

@@ -6,6 +6,7 @@ import { checkBinarytec } from "@/lib/binarytec";
 import { isWithinSchedule } from "@/lib/schedule";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
+import { evaluateScanLock, scanLockMessage } from "@/lib/scan-lock";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -103,6 +104,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Gerät gesperrt" });
   }
 
+  const isExitScan =
+    declaredDirection === "OUT"
+    || (
+      declaredDirection !== "IN"
+      && device.accessOut != null
+      && device.accessIn == null
+    );
+
   // Debounce: hat der gleiche Code am gleichen Geraet innerhalb des
   // letzten DEBOUNCE_WINDOW_MS bereits einen Scan-Eintrag erzeugt, geben
   // wir dessen Resultat zurueck und schreiben keinen neuen Scan. Das
@@ -121,6 +130,7 @@ export async function POST(request: NextRequest) {
       orderBy: { scanTime: "desc" },
       select: {
         result: true,
+        scanTime: true,
         ticket: {
           select: {
             name: true,
@@ -135,6 +145,18 @@ export async function POST(request: NextRequest) {
     });
     if (recent) {
       const granted = recent.result === "GRANTED";
+      const lockSeconds = device.scanLockSeconds ?? 0;
+      if (granted && lockSeconds > 0 && !isExitScan) {
+        const remainingMs = new Date(recent.scanTime).getTime() + lockSeconds * 1000 - Date.now();
+        if (remainingMs > 0) {
+          return NextResponse.json({
+            granted: false,
+            message: scanLockMessage(remainingMs),
+            locked: true,
+            debounced: true,
+          });
+        }
+      }
       return NextResponse.json({
         granted,
         message: granted ? "Zutritt gewährt" : "Bereits gerade abgewiesen",
@@ -177,10 +199,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: true, message: "Dashboard-Öffnung erfasst" });
   }
 
+  async function lockedResponse(ticketId?: number | null) {
+    const lock = await evaluateScanLock(db, {
+      accountId,
+      deviceId,
+      lockSeconds: device.scanLockSeconds,
+      code,
+      ticketId,
+      isExit: isExitScan,
+    });
+    if (!lock) return null;
+    if (!lock.silent) {
+      await db.scan.create({
+        data: {
+          code,
+          deviceId,
+          result: "DENIED",
+          note: "scan_lock",
+          accountId,
+          ...(ticketId ? { ticketId } : {}),
+        },
+      });
+    }
+    return NextResponse.json({ granted: false, message: lock.message, locked: true });
+  }
+
   // Wenn Binarytec konfiguriert: nur Binarytec für Ticketprüfung (kein Sync, kein EMP-Ticket-Lookup)
   const binarytec = await checkBinarytec(db as Parameters<typeof checkBinarytec>[0], accountId, code);
   if (binarytec !== null) {
     if (binarytec.valid) {
+      const locked = await lockedResponse();
+      if (locked) return locked;
       await db.scan.create({
         data: { code, deviceId, result: "GRANTED", accountId },
       });
@@ -337,6 +386,9 @@ export async function POST(request: NextRequest) {
       if (wakesys.age) noteData.age = wakesys.age;
       const note = Object.keys(noteData).length > 0 ? JSON.stringify(noteData) : wakesys.name || null;
 
+      const locked = await lockedResponse();
+      if (locked) return locked;
+
       await db.scan.create({
         data: {
           code: stripped || code,
@@ -397,17 +449,9 @@ export async function POST(request: NextRequest) {
   const now = new Date();
   const vType = ticket.validityType ?? "DATE_RANGE";
 
-  // Richtungsbestimmung wird hier vorgezogen, damit zeitbasierte
-  // Eintritts-Schranken (TIME_SLOT-Fenster, DURATION-Ablauf) nur fuer
-  // Eintritte greifen. Ein bereits eingelassener Gast muss durchs
-  // Drehkreuz wieder rauskommen koennen, auch wenn er zu spaet rausgeht.
-  const isExitScan =
-    declaredDirection === "OUT"
-    || (
-      declaredDirection !== "IN"
-      && device.accessOut != null
-      && device.accessIn == null
-    );
+  // isExitScan ist weiter oben bestimmt: zeitbasierte Eintritts-Schranken
+  // (TIME_SLOT, DURATION-Ablauf) gelten nur fuer Eintritte. Ein bereits
+  // eingelassener Gast muss durchs Drehkreuz wieder rauskommen koennen.
 
   // "Hauptressource" eines Tickets ist `ticket.accessAreaId`. Nur Scans an
   // Geraeten, die zu diesem Bereich gehoeren (accessIn/accessOut), zaehlen
@@ -708,6 +752,9 @@ export async function POST(request: NextRequest) {
     && isExitScan
     && !!ticket.service?.allowReentry
     && isMainResourceScan;
+
+  const locked = await lockedResponse(ticket.id);
+  if (locked) return locked;
 
   const txResult = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;

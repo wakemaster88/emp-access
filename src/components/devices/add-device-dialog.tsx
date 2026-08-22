@@ -32,6 +32,7 @@ import {
   PulseFields, EMPTY_PULSE_VALUES, pulsePayload, validatePulseValues,
   type PulseFormValues,
 } from "@/components/devices/pulse-fields";
+import { ScanLockField } from "@/components/devices/edit-device-dialog";
 
 interface Area {
   id: number;
@@ -101,6 +102,7 @@ const EMPTY = {
   accessIn: "none",
   accessOut: "none",
   allowReentry: false,
+  scanLockSeconds: "0",
   isActive: true,
 };
 
@@ -189,6 +191,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
           accessIn,
           accessOut,
           allowReentry: hasAccess ? form.allowReentry : false,
+          scanLockSeconds: hasAccess ? Number(form.scanLockSeconds) || 0 : 0,
           isActive: form.isActive,
           schedule: hasSchedule ? schedule : null,
           ...(isCover ? coverPayload(cover) : {}),
@@ -531,6 +534,13 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                     </div>
                     <Switch checked={form.allowReentry} onCheckedChange={(v) => set("allowReentry", v)} />
                   </div>
+                )}
+
+                {CAT_HAS_ACCESS.has(cat) && (
+                  <ScanLockField
+                    value={form.scanLockSeconds}
+                    onChange={(v) => set("scanLockSeconds", v)}
+                  />
                 )}
               </div>
 

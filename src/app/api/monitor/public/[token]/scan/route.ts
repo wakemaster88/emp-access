@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
+import { evaluateScanLock } from "@/lib/scan-lock";
 
 export async function POST(
   request: NextRequest,
@@ -60,6 +61,37 @@ export async function POST(
 
   const deviceIds = (monitor.deviceIds as number[]) ?? [];
   const deviceId = deviceIds.length > 0 ? deviceIds[0] : null;
+
+  if (deviceId) {
+    const scanDevice = await prisma.device.findFirst({
+      where: { id: deviceId, accountId: monitor.accountId },
+      select: { scanLockSeconds: true, accessIn: true, accessOut: true },
+    });
+    const isExitDevice = scanDevice != null && scanDevice.accessOut != null && scanDevice.accessIn == null;
+    const lock = await evaluateScanLock(prisma, {
+      accountId: monitor.accountId,
+      deviceId,
+      lockSeconds: scanDevice?.scanLockSeconds,
+      code,
+      ticketId: ticket.id,
+      isExit: isExitDevice,
+    });
+    if (lock) {
+      if (!lock.silent) {
+        await prisma.scan.create({
+          data: {
+            code,
+            result: "DENIED",
+            note: "scan_lock",
+            ticketId: ticket.id,
+            accountId: monitor.accountId,
+            deviceId,
+          },
+        });
+      }
+      return NextResponse.json({ granted: false, message: lock.message, locked: true });
+    }
+  }
 
   await prisma.scan.create({
     data: {
