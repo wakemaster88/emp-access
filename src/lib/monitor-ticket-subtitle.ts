@@ -2,6 +2,8 @@
  * Zweite Zeile in der Monitor-Liste: Produkt/Service/Typ – nicht den Personennamen wiederholen.
  */
 
+import { berlinYmd } from "@/lib/berlin-day";
+
 export type MonitorTicketSubtitleInput = {
   name: string;
   firstName: string | null;
@@ -119,4 +121,51 @@ export function monitorTicketTypeLine(ticket: MonitorTicketSubtitleInput): strin
   }
 
   return null;
+}
+
+const SLOT_LEAD_MS = 45 * 60_000;
+
+export type MonitorFocusTicket = {
+  id: number;
+  status: string;
+  validityType: string;
+  validityDurationMinutes: number | null;
+  firstScanAt: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+};
+
+/**
+ * Tickets, die am Seilbahn-Monitor ohne Suche sichtbar sein sollen:
+ * laufende/pausierte Stundenkarten, heutige Termine (noch nicht vorbei)
+ * und gerade gescannte Personen. Jahreskarten und ungenutzte Vorratstickets
+ * bleiben in der Suche erreichbar, füllen die Liste aber nicht.
+ */
+export function isMonitorFocusTicket(
+  t: MonitorFocusTicket,
+  opts: { now?: Date; grantedTicketIds?: Set<number> } = {},
+): boolean {
+  const now = opts.now ?? new Date();
+  const nowMs = now.getTime();
+  const today = berlinYmd(now);
+
+  if (opts.grantedTicketIds?.has(t.id)) return true;
+
+  if (t.validityType === "DURATION" && t.validityDurationMinutes && t.firstScanAt) {
+    if (t.status === "PAUSED") return true;
+    const expiresAt = new Date(t.firstScanAt).getTime() + t.validityDurationMinutes * 60_000;
+    if (expiresAt > nowMs) return true;
+  }
+
+  const slot = monitorSlotLabel(t);
+  const startIso = t.startDate;
+  if (startIso && berlinYmd(startIso) === today && (slot || t.validityType === "TIME_SLOT")) {
+    const startMs = new Date(startIso).getTime();
+    const endMs = t.endDate ? new Date(t.endDate).getTime() : startMs + 8 * 60 * 60_000;
+    if (nowMs + SLOT_LEAD_MS >= startMs && nowMs <= endMs) return true;
+  }
+
+  return false;
 }

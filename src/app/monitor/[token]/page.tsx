@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X, Power, PowerOff, AlertTriangle, Check, Volume2, VolumeX } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
-import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes } from "@/lib/monitor-ticket-subtitle";
+import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes, isMonitorFocusTicket } from "@/lib/monitor-ticket-subtitle";
 
 function endOfDayMs(dateStr: string): number {
   const d = new Date(dateStr);
@@ -166,6 +166,7 @@ export default function PublicMonitorPage({ params }: Props) {
   >(null);
   const [pausePreviewLoading, setPausePreviewLoading] = useState(false);
   const [ticketSearch, setTicketSearch] = useState("");
+  const [focusNow, setFocusNow] = useState(() => Date.now());
   const [mobileTab, setMobileTab] = useState<"tickets" | "scans">("tickets");
   const [devicesOpen, setDevicesOpen] = useState(false);
   const devicesRef = useRef<HTMLDivElement | null>(null);
@@ -277,6 +278,11 @@ export default function PublicMonitorPage({ params }: Props) {
     document.addEventListener("pointerdown", unlock);
     return () => document.removeEventListener("pointerdown", unlock);
   }, [unlockAudio]);
+
+  useEffect(() => {
+    const t = setInterval(() => setFocusNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   async function handlePauseAll() {
     if (pauseToggling || pausePreviewLoading || pauseConfirm) return;
@@ -508,12 +514,32 @@ export default function PublicMonitorPage({ params }: Props) {
         t.firstName ?? "",
         t.lastName ?? "",
         t.ticketTypeName ?? "",
+        t.service?.name ?? "",
+        t.subscription?.name ?? "",
       ]
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
   }, [tickets, ticketSearch]);
+
+  const grantedTicketIds = useMemo(() => {
+    const ids = new Set<number>();
+    const cutoff = focusNow - 15 * 60_000;
+    for (const s of scans) {
+      if (s.result !== "GRANTED" || s.ticket?.id == null) continue;
+      if (new Date(s.scanTime).getTime() >= cutoff) ids.add(s.ticket.id);
+    }
+    return ids;
+  }, [scans, focusNow]);
+
+  const listedTickets = useMemo(() => {
+    if (ticketSearch.trim()) return filteredTickets;
+    const now = new Date(focusNow);
+    return filteredTickets.filter((t) =>
+      isMonitorFocusTicket(t, { now, grantedTicketIds }),
+    );
+  }, [filteredTickets, ticketSearch, focusNow, grantedTicketIds]);
 
   /** Multi-Area-ANNY-Buchungen (1 Person -> N booking.ids) zu einer Karte
    *  zusammenfassen. Bedingungen alle drei muessen passen:
@@ -526,7 +552,7 @@ export default function PublicMonitorPage({ params }: Props) {
     const draftByKey = new Map<string, DraftGroup>();
     const passthrough: TicketInfo[] = [];
 
-    for (const t of filteredTickets) {
+    for (const t of listedTickets) {
       const customerId = t.uuid?.startsWith("anny:") ? t.uuid.split(":")[1] : null;
       const groupable = customerId && t.serviceId != null && t.serviceAreaCount >= 2 && t.startDate;
       if (!groupable) {
@@ -603,7 +629,7 @@ export default function PublicMonitorPage({ params }: Props) {
       if (d !== 0) return d;
       return a.representative.name.localeCompare(b.representative.name);
     });
-  }, [filteredTickets]);
+  }, [listedTickets]);
 
   /**
    * Ticketliste fuer die Anzeige: wenn mind. eine Gruppe eine feste
@@ -1195,8 +1221,7 @@ export default function PublicMonitorPage({ params }: Props) {
           <div className={cn("flex-col gap-4", mobileTab === "tickets" ? "flex" : "hidden lg:flex")}>
             <LiveClock dark={dark} styles={styles} allPaused={allPaused} pauseToggling={pauseToggling || pausePreviewLoading} onClick={handlePauseAll} />
 
-            {/* Suche nur Mobil: direkt unter Uhr/Datum */}
-            <div className="lg:hidden">
+            <div>
               <label className="sr-only" htmlFor="monitor-ticket-search">Tickets durchsuchen</label>
               <div
                 className={cn(
@@ -1211,7 +1236,7 @@ export default function PublicMonitorPage({ params }: Props) {
                   enterKeyHint="search"
                   value={ticketSearch}
                   onChange={(e) => setTicketSearch(e.target.value)}
-                  placeholder="Tickets durchsuchen…"
+                  placeholder="Name, Abo oder Bändchen…"
                   className={cn(
                     "min-w-0 flex-1 bg-transparent text-sm outline-none",
                     dark ? "text-white placeholder:text-slate-500" : "text-slate-900 placeholder:text-slate-400",
@@ -1225,19 +1250,35 @@ export default function PublicMonitorPage({ params }: Props) {
 
             <div className="flex items-center gap-2">
               <Ticket className={cn("h-5 w-5", styles.sectionLabel)} />
-              <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>Gültige Tickets</h2>
+              <h2 className={cn("text-sm font-bold uppercase tracking-widest", styles.sectionLabel)}>
+                {ticketSearch.trim() ? "Suche" : "Aktuell"}
+              </h2>
               <span className={cn("text-xs font-mono font-bold border rounded-lg px-2 py-0.5 ml-auto", styles.ticketCountBorder)}>
-                {ticketSearch.trim() ? `${filteredTickets.length}/${tickets.length}` : tickets.length}
+                {ticketSearch.trim()
+                  ? `${filteredTickets.length}/${tickets.length}`
+                  : listedTickets.length}
               </span>
             </div>
+            {!ticketSearch.trim() && tickets.length > listedTickets.length && (
+              <p className={cn("text-[11px] -mt-2", styles.sectionLabel)}>
+                {listedTickets.length === 0
+                  ? `${tickets.length} gültig – Suche nach Name oder Bändchen`
+                  : `Laufende Zeit, heutige Termine, letzte Scans · ${tickets.length} gültig insgesamt`}
+              </p>
+            )}
 
-            <div className="space-y-1.5 max-h-[calc(100vh-26rem)] lg:max-h-[calc(100vh-18rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
+            <div className="space-y-1.5 max-h-[calc(100vh-26rem)] lg:max-h-[calc(100vh-22rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
               {tickets.length === 0 && (
                 <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>Keine aktiven Tickets</p>
               )}
               {tickets.length > 0 && filteredTickets.length === 0 && (
                 <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>
                   Keine Treffer für „{ticketSearch.trim()}“
+                </p>
+              )}
+              {tickets.length > 0 && filteredTickets.length > 0 && listedTickets.length === 0 && !ticketSearch.trim() && (
+                <p className={cn("text-sm text-center py-6 px-2", styles.sectionLabel)}>
+                  Gerade niemand mit laufender Zeit oder heutigem Termin. Suche oben nach Name oder Bändchen.
                 </p>
               )}
               {ticketListItems.map((item) => {
