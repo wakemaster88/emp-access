@@ -6215,10 +6215,14 @@ function AddTicketOverlay({
     if (dateMode === "datetime") {
       // Kurs-Modus: yyyy-mm-ddTHH:mm. Datum + Uhrzeit getrennt ans Backend
       // (startDate/endDate als ISO-Datum, slotStart/slotEnd als HH:MM).
-      // Sobald wir Slots haben, ist das Ticket eindeutig ein TIME_SLOT -
-      // egal was im Service als defaultValidityType konfiguriert war. So
-      // funktioniert es auch fuer "Anfaengerkurs" mit DATE_RANGE-Default.
-      payload.validityType = "TIME_SLOT";
+      // Stundenkarten (DURATION) bleiben DURATION, auch wenn ANNY-Slots
+      // fuer die Kapazitaet gewaehlt wurden – sonst startet der Timer nie
+      // und das Drehkreuz blockt die naechste Runde mit no_exit_registered.
+      // Kurse ohne DURATION-Default werden zum TIME_SLOT (Anfaengerkurs
+      // mit DATE_RANGE/NULL im Service).
+      if (payload.validityType !== "DURATION") {
+        payload.validityType = "TIME_SLOT";
+      }
       if (startDate) {
         const sd = new Date(startDate);
         if (!isNaN(sd.getTime())) {
