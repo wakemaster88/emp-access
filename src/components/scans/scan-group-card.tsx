@@ -3,42 +3,9 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Hash, Ticket, Wifi, Cctv } from "lucide-react";
+import { scanDenyReasonLabel } from "@/lib/scan-deny-reason";
 
 const VISIBLE_INITIAL = 3;
-
-/**
- * Mapping vom Reason-Code (geschrieben in `scan.note` durch den Pi-Scan-
- * Endpoint) auf einen menschenlesbaren Hinweis fuers Personal. Unbekannte
- * Werte werden direkt durchgereicht (z. B. Wakesys-JSON-Notes).
- */
-const DENY_REASON_LABELS: Record<string, string> = {
-  ticket_not_found: "Ticket nicht gefunden",
-  status_invalid: "Ticket ungültig",
-  status_paused: "Abo pausiert",
-  status_canceled: "Ticket storniert",
-  status_protected: "Ticket gesperrt",
-  not_yet_valid: "Noch nicht gültig",
-  expired: "Abgelaufen",
-  slot_window: "Außerhalb Zeitslot",
-  duration_expired: "Zeit abgelaufen",
-  week_schedule: "Außerhalb Wochenplan",
-  wrong_resource: "Falscher Bereich",
-  ticket_already_redeemed: "Bereits eingelöst",
-  no_exit_registered: "Kein Ausgang erfasst",
-  no_reentry: "Kein Wiedereintritt",
-  race_conflict: "Konflikt (parallel)",
-  voucher_already_redeemed: "Gutschein eingelöst",
-  binarytec_denied: "Binarytec verweigert",
-};
-
-function denyReasonLabel(note: string | null | undefined): string | null {
-  if (!note) return null;
-  if (DENY_REASON_LABELS[note]) return DENY_REASON_LABELS[note];
-  // Wakesys schreibt JSON-Notes ({name, age, picture}) — die zeigen wir hier
-  // bewusst nicht an, weil sie keinen Deny-Grund tragen.
-  if (note.startsWith("{")) return null;
-  return note;
-}
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -111,7 +78,7 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
       </div>
       <ul className="divide-y divide-slate-100 dark:divide-slate-800">
         {scans.slice(0, visible).map((scan) => {
-          const reason = scan.result !== "GRANTED" ? denyReasonLabel(scan.note) : null;
+          const reason = scan.result !== "GRANTED" ? scanDenyReasonLabel(scan.note) : null;
           return (
             <li
               key={scan.id}

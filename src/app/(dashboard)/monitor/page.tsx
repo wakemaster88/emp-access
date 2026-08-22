@@ -16,6 +16,7 @@ import {
 import { Check, ChevronDown, DoorOpen, Loader2, MapPin, Maximize, Minimize, Pause, Play, Ticket, Volume2, VolumeX, Wifi } from "lucide-react";
 import { fmtTime } from "@/lib/utils";
 import { berlinYmd, isSameBerlinDay } from "@/lib/berlin-day";
+import { parseScanDisplayNote, scanDenyReasonLabel } from "@/lib/scan-deny-reason";
 
 interface MonitorScan {
   id: number;
@@ -35,22 +36,6 @@ interface MonitorScan {
     profileImage?: string | null;
     accessArea?: { name: string } | null;
   } | null;
-}
-
-/**
- * Wakesys-Scans haben kein lokales Ticket, sondern eine `note` mit JSON aus
- * `checkWakesys` (siehe src/lib/wakesys.ts): { name, picture, age }. Plain-Text-
- * Notes werden als Name interpretiert (Fallback fuer aeltere Eintraege).
- */
-function parseScanNote(note?: string | null): { name?: string; picture?: string; age?: number } {
-  if (!note) return {};
-  try {
-    const parsed = JSON.parse(note);
-    if (typeof parsed === "object" && parsed !== null) return parsed;
-  } catch {
-    return { name: note };
-  }
-  return {};
 }
 
 interface AreaCount {
@@ -373,7 +358,8 @@ export default function MonitorPage() {
               )}
               {scans.map((scan) => {
                 const isNew = newIds.has(scan.id);
-                const noteData = parseScanNote(scan.note);
+                const noteData = parseScanDisplayNote(scan.note);
+                const denyReason = scan.result !== "GRANTED" ? scanDenyReasonLabel(scan.note) : null;
                 // Wakesys-Treffer: GRANTED-Scan ohne lokales Ticket, dafuer aber
                 // angereicherte Note vom Wakesys-Fallback (siehe pi/scan/route.ts).
                 const isWakesys = !scan.ticket && scan.result === "GRANTED" && !!scan.note;
@@ -421,6 +407,11 @@ export default function MonitorPage() {
                           <span className="ml-1.5 text-xs font-normal text-slate-400">({noteData.age})</span>
                         )}
                       </p>
+                      {denyReason && (
+                        <p className="text-xs font-semibold text-rose-600 dark:text-rose-400 truncate">
+                          {denyReason}
+                        </p>
+                      )}
                       <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap">
                         {scan.ticket?.ticketTypeName && (
                           <span className="inline-flex items-center gap-1 shrink-0">

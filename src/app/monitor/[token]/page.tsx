@@ -7,6 +7,7 @@ import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes, isMonitorFocusTicket } from "@/lib/monitor-ticket-subtitle";
 import { isLatchingSwitchDevice, visibleDeviceControls } from "@/lib/device-controls";
+import { parseScanDisplayNote, scanDenyReasonLabel } from "@/lib/scan-deny-reason";
 
 function endOfDayMs(dateStr: string): number {
   const d = new Date(dateStr);
@@ -143,6 +144,7 @@ interface ScanGroup {
   subscriptionName?: string | null;
   profileImage?: string | null;
   noteAge?: number;
+  denyReason?: string | null;
 }
 
 interface Props {
@@ -700,21 +702,13 @@ export default function PublicMonitorPage({ params }: Props) {
   }, [groupedTickets]);
 
   const groupedScans = useMemo(() => {
-    function parseNote(note?: string | null): { name?: string; picture?: string; age?: number } {
-      if (!note) return {};
-      try {
-        const parsed = JSON.parse(note);
-        if (typeof parsed === "object" && parsed !== null) return parsed;
-      } catch { /* plain text note */ }
-      return { name: note };
-    }
-
     const groups: ScanGroup[] = [];
     for (const scan of scans) {
       const lastGroup = groups[groups.length - 1];
       const ticketId = scan.ticket?.id ?? null;
       const key = ticketId != null ? `t:${ticketId}` : `c:${scan.code}`;
-      const noteData = parseNote(scan.note);
+      const noteData = parseScanDisplayNote(scan.note);
+      const denyReason = scan.result !== "GRANTED" ? scanDenyReasonLabel(scan.note) : null;
 
       if (lastGroup && lastGroup.groupKey === key && lastGroup.result === scan.result) {
         lastGroup.scans.push(scan);
@@ -739,6 +733,7 @@ export default function PublicMonitorPage({ params }: Props) {
           subscriptionName: scan.ticket?.subscription?.name || null,
           profileImage: scan.ticket?.profileImage || noteData.picture || undefined,
           noteAge: noteData.age,
+          denyReason,
         });
       }
     }
@@ -1200,6 +1195,11 @@ export default function PublicMonitorPage({ params }: Props) {
                                 Abo läuft ab {daysLeft === 0 ? "heute" : daysLeft === 1 ? "morgen" : `in ${daysLeft} Tagen`}
                               </span>
                             )}
+                            {group.result !== "GRANTED" && (
+                              <p className={cn("text-base sm:text-xl font-bold mt-2 leading-snug", rc.text)}>
+                                {group.denyReason || rc.label}
+                              </p>
+                            )}
                             {group.result === "GRANTED" && (
                               <ScanLeaderBadges ticketId={group.ticketId} board={scanLeaders} dark={dark} size="lg" />
                             )}
@@ -1260,9 +1260,10 @@ export default function PublicMonitorPage({ params }: Props) {
                           {group.personName || group.ticketName}
                           {(() => { const a = calcAge(group.birthDate) ?? group.noteAge; return a != null ? <span className={cn("ml-1 text-xs font-normal", dark ? "text-slate-500" : "text-slate-400")}>({a})</span> : null; })()}
                         </p>
-                        <p className={cn("text-sm truncate mt-0.5", styles.scanSub)}>
+                        <p className={cn("text-sm truncate mt-0.5", group.result !== "GRANTED" && group.denyReason ? (dark ? "text-rose-300" : "text-rose-700") : styles.scanSub)}>
                           {(() => {
                             const parts: string[] = [];
+                            if (group.result !== "GRANTED" && group.denyReason) parts.push(group.denyReason);
                             if (group.ticketTypeName) parts.push(group.ticketTypeName);
                             if (group.subscriptionName && group.subscriptionName !== group.ticketTypeName) parts.push(group.subscriptionName);
                             if (group.subscriptionId && group.endDate) parts.push(`bis ${new Date(group.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`);
@@ -2119,7 +2120,7 @@ function TicketDetailOverlay({
                       )}
                       <div>
                         <p className={cn("text-sm font-semibold", styles.scanName)}>
-                          {isGranted ? "Erlaubt" : "Abgelehnt"}
+                          {isGranted ? "Erlaubt" : (scanDenyReasonLabel(scan.note) || "Abgelehnt")}
                         </p>
                         <p className={cn("text-xs", styles.scanSub)}>
                           {scan.device?.name ?? "Monitor"}
