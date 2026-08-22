@@ -1,5 +1,3 @@
-import type { PrismaClient } from "@prisma/client";
-
 export const MAX_SCAN_LOCK_SECONDS = 3600;
 const BOUNCE_MS = 5_000;
 
@@ -38,8 +36,18 @@ export type ScanLockDenial = {
  * seit dem letzten GRANTED dieses Tickets noch laeuft. Andere Tickets
  * bleiben frei. Ohne ticketId gilt die Sperre nur fuer denselben Code.
  */
+type ScanLockDb = {
+  scan: {
+    findFirst: (args: {
+      where: Record<string, unknown>;
+      orderBy: { scanTime: "desc" };
+      select: { scanTime: true; code: true };
+    }) => Promise<{ scanTime: Date; code: string } | null>;
+  };
+};
+
 export async function evaluateScanLock(
-  db: PrismaClient,
+  db: ScanLockDb,
   opts: {
     accountId: number;
     deviceId: number | null | undefined;

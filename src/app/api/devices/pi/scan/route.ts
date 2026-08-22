@@ -104,6 +104,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ granted: false, message: "Gerät gesperrt" });
   }
 
+  const scanLockSeconds = device.scanLockSeconds;
+
   const isExitScan =
     declaredDirection === "OUT"
     || (
@@ -203,7 +205,7 @@ export async function POST(request: NextRequest) {
     const lock = await evaluateScanLock(db, {
       accountId,
       deviceId,
-      lockSeconds: device.scanLockSeconds,
+      lockSeconds: scanLockSeconds,
       code,
       ticketId,
       isExit: isExitScan,
