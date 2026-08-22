@@ -779,6 +779,11 @@ async function refreshConfigs(): Promise<void> {
   configLoadedAt = Date.now();
 }
 
+/** Nächster Poll zieht die Kamera-Liste neu (z. B. nach Ensure einer Parkkamera). */
+export function markCameraConfigStale() {
+  configLoadedAt = 0;
+}
+
 /* ---------------------------------------------------------------------------
  * MAC-basiertes IP-Re-Mapping: Der Hub lernt die MAC-Adresse jeder erreichten
  * Kamera (ARP-Tabelle) und meldet sie an die Cloud. Ist eine Kamera spaeter

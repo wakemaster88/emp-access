@@ -25,6 +25,7 @@ export interface ParkingCamMatch {
   host: string;
   snapshotAt: string | null;
   lastSeenAt: string | null;
+  createdAt?: string | null;
 }
 
 function norm(s: string): string {
@@ -38,21 +39,33 @@ export function namesMatch(a: string, b: string): boolean {
   return na === nb || na.includes(nb) || nb.includes(na);
 }
 
+function newest(a: ParkingCamMatch, b: ParkingCamMatch): ParkingCamMatch {
+  const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+  const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+  return tb >= ta ? b : a;
+}
+
 export function matchParkingCamera(
   lot: Pick<ParkingLotReport, "name" | "ip">,
   cameras: ParkingCamMatch[],
 ): ParkingCamMatch | null {
   const ip = lot.ip.trim();
   if (ip) {
-    const byIp = cameras.find((c) => c.host === ip);
-    if (byIp) return byIp;
+    return cameras.find((c) => c.host === ip) ?? null;
   }
-  return cameras.find((c) => namesMatch(c.name, lot.name)) ?? null;
+  const exact = cameras.filter((c) => norm(c.name) === norm(lot.name));
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return exact.reduce(newest);
+  const fuzzy = cameras.filter((c) => namesMatch(c.name, lot.name));
+  if (fuzzy.length === 0) return null;
+  return fuzzy.reduce(newest);
 }
 
 /** Fallback, solange der Hub noch keine Parkzonen gemeldet hat. */
 export function fallbackParkingCameras(cameras: ParkingCamMatch[]): ParkingCamMatch[] {
-  return cameras.filter((c) => c.kind !== "DOORBIRD" && /halle/i.test(c.name));
+  const hits = cameras.filter((c) => c.kind !== "DOORBIRD" && /halle/i.test(c.name));
+  if (hits.length <= 1) return hits;
+  return [hits.reduce(newest)];
 }
 
 export function parseParkingSnapshot(raw: unknown): ParkingSnapshot | null {

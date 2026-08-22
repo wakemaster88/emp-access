@@ -64,6 +64,7 @@ export default async function FahrzeugePage() {
         host: true,
         snapshotAt: true,
         lastSeenAt: true,
+        createdAt: true,
       },
       orderBy: { name: "asc" },
     }),
@@ -127,6 +128,7 @@ export default async function FahrzeugePage() {
             host: c.host,
             snapshotAt: c.snapshotAt?.toISOString() ?? null,
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
+            createdAt: c.createdAt.toISOString(),
           }))}
           hubOnline={hubOnline}
           hubName={liveHub?.name ?? null}

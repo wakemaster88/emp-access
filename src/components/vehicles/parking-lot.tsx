@@ -187,6 +187,7 @@ export function ParkingLot({
           const occupiedNow = count > 0;
           const key = lot?.kioskId || cam?.id || "lot";
           const title = cam?.name ?? lot?.name ?? "Parkfläche";
+          const unmatched = !!lot?.ip && !cam;
           return (
             <Card
               key={key}
@@ -248,11 +249,13 @@ export function ParkingLot({
                   <p className="text-[11px] text-rose-500 truncate">{lot.lastError}</p>
                 ) : (
                   <p className="text-[11px] text-slate-400">
-                    {waitingForHub
-                      ? "Hub-Update ausstehend — Fläche liegt an dieser Kamera."
-                      : live.parking?.trackerOnline
-                        ? `Belegung der gezeichneten Fläche · ${lot?.fps ?? 0} fps`
-                        : "Tracker am Hub nicht erreichbar."}
+                    {unmatched
+                      ? `Neue Kamera ${lot?.ip} – Bild kommt nach Hub-Update.`
+                      : waitingForHub
+                        ? "Hub-Update ausstehend — Fläche liegt an dieser Kamera."
+                        : live.parking?.trackerOnline
+                          ? `Belegung der gezeichneten Fläche · ${lot?.fps ?? 0} fps`
+                          : "Tracker am Hub nicht erreichbar."}
                   </p>
                 )}
               </CardContent>

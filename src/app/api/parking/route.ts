@@ -18,6 +18,7 @@ export async function GET() {
         host: true,
         snapshotAt: true,
         lastSeenAt: true,
+        createdAt: true,
       },
       orderBy: { name: "asc" },
     }),
@@ -44,6 +45,7 @@ export async function GET() {
       host: c.host,
       snapshotAt: c.snapshotAt?.toISOString() ?? null,
       lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
+      createdAt: c.createdAt.toISOString(),
     })),
   });
 }

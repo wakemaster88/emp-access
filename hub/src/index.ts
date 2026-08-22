@@ -8,7 +8,7 @@ import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
 import { alprWarmup } from "./alpr.js";
 import { STATE, recordHeartbeat, recordTask } from "./state.js";
-import { collectParkingSnapshot } from "./parking.js";
+import { collectParkingSnapshot, ensureParkingCameras, uploadParkingTrackerFrames } from "./parking.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -16,11 +16,13 @@ let taskLoopBusy = false;
 
 async function reportParking() {
   try {
+    await ensureParkingCameras();
     const parking = await collectParkingSnapshot();
     await api("/api/hub/parking", {
       method: "POST",
       body: JSON.stringify({ name: CONFIG.name, parking }),
     });
+    await uploadParkingTrackerFrames();
   } catch (e) {
     log(`Parkplatz-Report: ${e instanceof Error ? e.message : e}`);
   }
