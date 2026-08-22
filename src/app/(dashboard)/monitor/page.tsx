@@ -487,6 +487,20 @@ export default function MonitorPage() {
   );
 }
 
+function formatExpiredSince(expiredForMs: number): string {
+  const secs = Math.max(0, Math.floor(expiredForMs / 1000));
+  if (secs < 60) return `abgelaufen seit ${secs} Sek.`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `abgelaufen seit ${mins} Min.`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) {
+    const m = mins % 60;
+    return m > 0 ? `abgelaufen seit ${hours} Std. ${m} Min.` : `abgelaufen seit ${hours} Std.`;
+  }
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "abgelaufen seit 1 Tag" : `abgelaufen seit ${days} Tagen`;
+}
+
 function InternalCountdown({ firstScanAt, durationMinutes }: { firstScanAt: string; durationMinutes: number }) {
   const [remaining, setRemaining] = useState("");
   const [expired, setExpired] = useState(false);
@@ -497,7 +511,7 @@ function InternalCountdown({ firstScanAt, durationMinutes }: { firstScanAt: stri
     const tick = () => {
       const diff = expiresAt - Date.now();
       if (diff <= 0) {
-        setRemaining("abgelaufen");
+        setRemaining(formatExpiredSince(-diff));
         setExpired(true);
         return;
       }
