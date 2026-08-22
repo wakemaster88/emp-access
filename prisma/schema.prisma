@@ -1543,6 +1543,8 @@ model HubAgent {
   version    String?
   /// Aktivierte Module, z. B. ["network-scan", "tasks"].
   modules    Json?
+  /// Live-Status vom Hub, z. B. Parkplatz-Belegung aus dem Kiosk-Tracker.
+  status     Json?
   lastSeenAt DateTime?
   accountId  Int
   account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)

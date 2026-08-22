@@ -8,13 +8,27 @@ import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
 import { alprWarmup } from "./alpr.js";
 import { STATE, recordHeartbeat, recordTask } from "./state.js";
+import { collectParkingSnapshot } from "./parking.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
 let taskLoopBusy = false;
 
+async function reportParking() {
+  try {
+    const parking = await collectParkingSnapshot();
+    await api("/api/hub/parking", {
+      method: "POST",
+      body: JSON.stringify({ name: CONFIG.name, parking }),
+    });
+  } catch (e) {
+    log(`Parkplatz-Report: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
 async function heartbeat() {
   try {
+    const parking = await collectParkingSnapshot().catch(() => undefined);
     const res = await api("/api/hub/heartbeat", {
       method: "POST",
       body: JSON.stringify({
@@ -22,6 +36,7 @@ async function heartbeat() {
         hostname: CONFIG.hostname,
         version: CONFIG.version,
         modules: CONFIG.modules,
+        ...(parking ? { parking } : {}),
       }),
     });
     if (!res.ok) {
@@ -77,6 +92,8 @@ ensureFaceSidecar()
   })
   .catch((e) => log(`Face-Sidecar: ${e instanceof Error ? e.message : e}`));
 setInterval(heartbeat, CONFIG.heartbeatIntervalMs);
+setInterval(reportParking, 8_000);
+void reportParking();
 setInterval(pollTasks, CONFIG.taskIntervalMs);
 setInterval(checkForUpdate, CONFIG.updateIntervalMs);
 setInterval(autoScan, CONFIG.scanIntervalMs);

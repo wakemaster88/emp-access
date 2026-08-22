@@ -22,7 +22,8 @@ import {
   Plus, Pencil, Trash2, Loader2, Car, History, Play, CheckCircle2, XCircle, Cctv, Link2, UserPlus, DoorOpen, ParkingSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ParkingLot, type OpenVehicleEvent, type ParkingCam } from "./parking-lot";
+import { ParkingLot } from "./parking-lot";
+import type { ParkingCamMatch, ParkingSnapshot } from "@/lib/parking";
 
 export interface SightingRow {
   id: number;
@@ -66,10 +67,10 @@ interface Props {
   sightings: SightingRow[];
   shellyDevices: ShellyOption[];
   cameras: CameraOption[];
-  parkingCameras: ParkingCam[];
+  parkingCameras: ParkingCamMatch[];
   hubOnline: boolean;
   hubName: string | null;
-  openVehicleEvents: OpenVehicleEvent[];
+  parking: ParkingSnapshot | null;
 }
 
 const EMPTY = {
@@ -94,7 +95,7 @@ export function VehiclesClient({
   parkingCameras,
   hubOnline,
   hubName,
-  openVehicleEvents,
+  parking,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -329,13 +330,13 @@ export function VehiclesClient({
 
         <TabsContent value="parking" className="space-y-3 mt-4">
           <p className="text-sm text-slate-500">
-            Live-Belegung vom Hub: Kameras mit Fahrzeugerkennung, offene Sichtungen und letztes Kennzeichen.
+            Live-Belegung der Parkflächen vom Hub (Kamera Halle). Kennzeichen kommen von der Einfahrt.
           </p>
           <ParkingLot
             cameras={parkingCameras}
             hubOnline={hubOnline}
             hubName={hubName}
-            initialOpen={openVehicleEvents}
+            parking={parking}
             sightings={sightings}
             onAssign={(s) => {
               const full = sightings.find((x) => x.id === s.id);

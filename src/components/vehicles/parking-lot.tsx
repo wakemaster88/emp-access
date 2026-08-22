@@ -1,28 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Car, Cctv, Link2, ParkingSquare, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-export interface ParkingCam {
-  id: number;
-  name: string;
-  kind: string;
-  vehicleDetection: boolean;
-  snapshotAt: string | null;
-  lastSeenAt: string | null;
-}
-
-export interface OpenVehicleEvent {
-  id: number;
-  cameraId: number;
-  startedAt: string;
-}
+import {
+  fallbackParkingCameras,
+  matchParkingCamera,
+  type ParkingCamMatch,
+  type ParkingLotReport,
+  type ParkingSnapshot,
+} from "@/lib/parking";
 
 export interface ParkingSighting {
   id: number;
@@ -34,19 +25,18 @@ export interface ParkingSighting {
   allowedVehicle: { id: number; name: string; plate: string } | null;
 }
 
-interface CameraEventPayload {
-  id: number;
-  cameraId: number;
-  type: string;
-  startedAt: string;
-  endedAt: string | null;
+interface ParkingApi {
+  hubOnline: boolean;
+  hubName: string | null;
+  parking: ParkingSnapshot | null;
+  cameras: ParkingCamMatch[];
 }
 
 interface Props {
-  cameras: ParkingCam[];
+  cameras: ParkingCamMatch[];
   hubOnline: boolean;
   hubName: string | null;
-  initialOpen: OpenVehicleEvent[];
+  parking: ParkingSnapshot | null;
   sightings: ParkingSighting[];
   onAssign: (s: ParkingSighting) => void;
 }
@@ -60,127 +50,80 @@ function ago(iso: string | null): string {
   return `vor ${Math.floor(s / 3600)} Std.`;
 }
 
-function since(iso: string): string {
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s} s`;
-  if (s < 3600) return `${Math.floor(s / 60)} Min.`;
-  return `${Math.floor(s / 3600)} Std.`;
+function agoMs(ts: number): string {
+  if (!ts) return "keine Tracker-Daten";
+  return ago(new Date(ts).toISOString());
 }
 
 export function ParkingLot({
   cameras,
   hubOnline,
   hubName,
-  initialOpen,
+  parking,
   sightings,
   onAssign,
 }: Props) {
-  const router = useRouter();
+  const [live, setLive] = useState<ParkingApi>({
+    cameras,
+    hubOnline,
+    hubName,
+    parking,
+  });
   const [, setNow] = useState(0);
-  const [open, setOpen] = useState(initialOpen);
 
   useEffect(() => {
-    setOpen(initialOpen);
-  }, [initialOpen]);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      setNow((n) => n + 1);
-      router.refresh();
-    }, 20_000);
-    return () => clearInterval(t);
-  }, [router]);
+    setLive({ cameras, hubOnline, hubName, parking });
+  }, [cameras, hubOnline, hubName, parking]);
 
   useEffect(() => {
     let cancelled = false;
     async function tick() {
       try {
-        const res = await fetch("/api/camera-events?minutes=30");
+        const res = await fetch("/api/parking");
         if (!res.ok) return;
-        const events = (await res.json()) as CameraEventPayload[];
-        if (cancelled) return;
-        setOpen(
-          events
-            .filter((e) => e.type === "VEHICLE" && e.endedAt == null)
-            .map((e) => ({ id: e.id, cameraId: e.cameraId, startedAt: e.startedAt }))
-        );
+        const data = (await res.json()) as ParkingApi;
+        if (!cancelled) setLive(data);
       } catch {
         /* ignore */
       }
     }
     void tick();
     const t = setInterval(tick, 8_000);
+    const clock = setInterval(() => setNow((n) => n + 1), 10_000);
     return () => {
       cancelled = true;
       clearInterval(t);
+      clearInterval(clock);
     };
   }, []);
 
-  const [cams, setCams] = useState(cameras);
-
-  useEffect(() => {
-    setCams(cameras);
-  }, [cameras]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function tick() {
-      try {
-        const res = await fetch("/api/cameras");
-        if (!res.ok) return;
-        const list = (await res.json()) as ParkingCam[];
-        if (cancelled) return;
-        setCams(
-          list.map((c) => ({
-            ...c,
-            snapshotAt: c.snapshotAt ? String(c.snapshotAt) : null,
-            lastSeenAt: c.lastSeenAt ? String(c.lastSeenAt) : null,
-          })),
-        );
-      } catch {
-        /* ignore */
-      }
+  const lots = live.parking?.lots ?? [];
+  const matchedLots = useMemo(() => {
+    if (lots.length > 0) {
+      return lots.map((lot) => ({
+        lot,
+        cam: matchParkingCamera(lot, live.cameras),
+      }));
     }
-    void tick();
-    const t = setInterval(tick, 15_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+    return fallbackParkingCameras(live.cameras).map((cam) => ({
+      lot: null as ParkingLotReport | null,
+      cam,
+    }));
+  }, [lots, live.cameras]);
 
-  const lots = cams.filter((c) => c.vehicleDetection);
-  const openByCam = useMemo(() => {
-    const m = new Map<number, OpenVehicleEvent>();
-    for (const e of open) m.set(e.cameraId, e);
-    return m;
-  }, [open]);
+  const occupiedCount = lots.reduce((sum, l) => sum + l.count, 0);
+  const waitingForHub = lots.length === 0 && matchedLots.length > 0;
 
-  const lastByCam = useMemo(() => {
-    const m = new Map<number, ParkingSighting>();
-    for (const s of sightings) {
-      const id = s.camera?.id;
-      if (id == null || m.has(id)) continue;
-      m.set(id, s);
-    }
-    return m;
-  }, [sightings]);
-
-  const occupied = lots.filter((c) => openByCam.has(c.id)).length;
-
-  if (lots.length === 0) {
+  if (matchedLots.length === 0) {
     return (
       <Card className="border-dashed border-slate-300 dark:border-slate-700">
         <CardContent className="py-12 text-center text-slate-500">
           <ParkingSquare className="h-10 w-10 mx-auto mb-3 text-slate-300" />
-          <p className="font-medium">Keine Parkplatz-Kamera</p>
-          <p className="text-sm mt-1">
-            Unter{" "}
-            <Link href="/cameras" className="text-indigo-600 hover:underline">
-              Kameras
-            </Link>{" "}
-            Fahrzeugerkennung einschalten — der Hub legt dann Belegung und
-            Kennzeichen hier ab.
+          <p className="font-medium">Keine Parkfläche gemeldet</p>
+          <p className="text-sm mt-1 max-w-md mx-auto">
+            Die Zonen kommen vom Hub-Kiosk (Ausfahrt-/Parkfläche an der Kamera,
+            aktuell Halle). Sobald der Hub den Tracker-Stand schickt, erscheint
+            die Belegung hier.
           </p>
         </CardContent>
       </Card>
@@ -192,29 +135,34 @@ export function ParkingLot({
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Card className="py-3 px-4 gap-0">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-slate-500">Belegt</span>
-            <ParkingSquare className={cn("h-3.5 w-3.5", occupied > 0 ? "text-amber-500" : "text-slate-400")} />
+            <span className="text-[11px] font-medium text-slate-500">Fahrzeuge in Fläche</span>
+            <ParkingSquare className={cn("h-3.5 w-3.5", occupiedCount > 0 ? "text-amber-500" : "text-slate-400")} />
           </div>
           <p className="text-2xl font-bold tabular-nums mt-1">
-            {occupied}
-            <span className="text-sm font-medium text-slate-500 ml-1">/ {lots.length}</span>
+            {waitingForHub ? "…" : occupiedCount}
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Kameras mit Fahrzeug</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            {waitingForHub
+              ? "warte auf Hub-Tracker"
+              : live.parking?.trackerOnline
+                ? "YOLO-Tracker"
+                : "Tracker offline"}
+          </p>
         </Card>
         <Card className="py-3 px-4 gap-0">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-medium text-slate-500">Hub</span>
-            {hubOnline ? (
+            {live.hubOnline ? (
               <Wifi className="h-3.5 w-3.5 text-emerald-500" />
             ) : (
               <WifiOff className="h-3.5 w-3.5 text-rose-500" />
             )}
           </div>
-          <p className={cn("text-lg font-bold mt-1", hubOnline ? "text-emerald-600" : "text-rose-600")}>
-            {hubOnline ? "online" : "offline"}
+          <p className={cn("text-lg font-bold mt-1", live.hubOnline ? "text-emerald-600" : "text-rose-600")}>
+            {live.hubOnline ? "online" : "offline"}
           </p>
           <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-            {hubName ?? "kein Agent"}
+            {live.hubName ?? "kein Agent"}
           </p>
         </Card>
         <Card className="py-3 px-4 gap-0 col-span-2 sm:col-span-1">
@@ -228,99 +176,141 @@ export function ParkingLot({
           <p className="text-[10px] text-slate-400 mt-0.5 truncate">
             {sightings[0]
               ? `${sightings[0].camera?.name ?? "Kamera"} · ${ago(sightings[0].seenAt)}`
-              : "noch keine Sichtung"}
+              : "Einfahrt / ALPR"}
           </p>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {lots.map((cam) => {
-          const ev = openByCam.get(cam.id);
-          const last = lastByCam.get(cam.id);
-          const occupiedNow = !!ev;
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {matchedLots.map(({ lot, cam }) => {
+          const count = lot?.count ?? 0;
+          const occupiedNow = count > 0;
+          const key = lot?.kioskId || cam?.id || "lot";
+          const title = cam?.name ?? lot?.name ?? "Parkfläche";
           return (
             <Card
-              key={cam.id}
+              key={key}
               className={cn(
                 "overflow-hidden py-0 gap-0",
                 occupiedNow && "border-amber-300 dark:border-amber-800",
               )}
             >
               <div className="relative aspect-video bg-slate-100 dark:bg-slate-900">
-                {cam.snapshotAt ? (
+                {cam?.snapshotAt ? (
                   <img
                     src={`/api/cameras/${cam.id}/snapshot?t=${encodeURIComponent(cam.snapshotAt)}`}
                     alt=""
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-contain bg-slate-950"
                   />
                 ) : (
                   <div className="h-full w-full flex items-center justify-center text-slate-400">
                     <Cctv className="h-8 w-8" />
                   </div>
                 )}
+                {lot?.zone && lot.zone.length >= 3 && (
+                  <svg
+                    className="absolute inset-0 h-full w-full pointer-events-none"
+                    viewBox="0 0 1 1"
+                    preserveAspectRatio="none"
+                    aria-hidden
+                  >
+                    <polygon
+                      points={lot.zone.map(([x, y]) => `${x},${y}`).join(" ")}
+                      fill={occupiedNow ? "rgba(245,158,11,0.32)" : "rgba(16,185,129,0.22)"}
+                      stroke={occupiedNow ? "rgb(245,158,11)" : "rgb(16,185,129)"}
+                      strokeWidth={0.006}
+                    />
+                  </svg>
+                )}
                 <div className="absolute top-2 left-2">
                   <Badge
                     className={cn(
                       "text-[10px] gap-1",
-                      occupiedNow
-                        ? "bg-amber-500 text-white"
-                        : "bg-slate-900/70 text-white",
+                      occupiedNow ? "bg-amber-500 text-white" : "bg-slate-900/70 text-white",
                     )}
                   >
-                    {ev ? `belegt · ${since(ev.startedAt)}` : "frei"}
+                    {waitingForHub
+                      ? "Parkfläche Halle"
+                      : occupiedNow
+                        ? `${count} Fahrzeug${count === 1 ? "" : "e"}`
+                        : "frei"}
                   </Badge>
                 </div>
               </div>
-              <CardContent className="p-3 space-y-2">
+              <CardContent className="p-3 space-y-1">
                 <div className="flex items-center justify-between gap-2 min-w-0">
-                  <p className="text-sm font-semibold truncate">{cam.name}</p>
+                  <p className="text-sm font-semibold truncate">{title}</p>
                   <span className="text-[10px] text-slate-400 shrink-0">
-                    {ago(cam.lastSeenAt)}
+                    {lot ? agoMs(lot.lastUpdate) : cam ? ago(cam.lastSeenAt) : ""}
                   </span>
                 </div>
-                {last ? (
-                  <div className="flex items-center gap-2 min-w-0">
-                    {last.hasSnapshot ? (
-                      <img
-                        src={`/api/vehicle-sightings/${last.id}/snapshot`}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        className="h-10 w-10 rounded object-cover shrink-0"
-                      />
-                    ) : (
-                      <div className="h-10 w-10 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                        <Car className="h-4 w-4 text-slate-400" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-mono font-semibold truncate">
-                        {last.plate ?? "ohne Kennzeichen"}
-                      </p>
-                      <p className="text-[10px] text-slate-400 truncate">
-                        {last.allowedVehicle?.name ?? "unbekannt"} · {ago(last.seenAt)}
-                      </p>
-                    </div>
-                    {!last.matched && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[11px] gap-1 shrink-0"
-                        onClick={() => onAssign(last)}
-                      >
-                        <Link2 className="h-3 w-3" />
-                        Zuordnen
-                      </Button>
-                    )}
-                  </div>
+                {lot?.lastError ? (
+                  <p className="text-[11px] text-rose-500 truncate">{lot.lastError}</p>
                 ) : (
-                  <p className="text-xs text-slate-400">Noch keine Sichtung an dieser Kamera.</p>
+                  <p className="text-[11px] text-slate-400">
+                    {waitingForHub
+                      ? "Hub-Update ausstehend — Fläche liegt an dieser Kamera."
+                      : live.parking?.trackerOnline
+                        ? `Belegung der gezeichneten Fläche · ${lot?.fps ?? 0} fps`
+                        : "Tracker am Hub nicht erreichbar."}
+                  </p>
                 )}
               </CardContent>
             </Card>
           );
         })}
       </div>
+
+      {sightings.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-500">Letzte Kennzeichen (Einfahrt)</p>
+          <div className="grid gap-2">
+            {sightings.slice(0, 5).map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2"
+              >
+                {s.hasSnapshot ? (
+                  <img
+                    src={`/api/vehicle-sightings/${s.id}/snapshot`}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-10 w-10 rounded object-cover shrink-0"
+                  />
+                ) : (
+                  <div className="h-10 w-10 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                    <Car className="h-4 w-4 text-slate-400" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-mono font-semibold truncate">
+                    {s.plate ?? "ohne Kennzeichen"}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    {s.allowedVehicle?.name ?? "unbekannt"}
+                    {s.camera ? ` · ${s.camera.name}` : ""}
+                    {" · "}
+                    {ago(s.seenAt)}
+                  </p>
+                </div>
+                {!s.matched && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[11px] gap-1 shrink-0"
+                    onClick={() => onAssign(s)}
+                  >
+                    <Link2 className="h-3 w-3" />
+                    Zuordnen
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400">Weitere Einträge im Tab Historie.</p>
+        </div>
+      )}
     </div>
   );
 }

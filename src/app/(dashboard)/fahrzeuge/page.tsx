@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { VehiclesClient } from "@/components/vehicles/vehicles-client";
+import { parseParkingSnapshot } from "@/lib/parking";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function FahrzeugePage() {
     allowedVehicle: { select: { id: true, name: true, plate: true } },
   } as const;
 
-  const [vehicles, sightings, shellyDevices, cameras, hubAgents, openVehicleEvents] = await Promise.all([
+  const [vehicles, sightings, shellyDevices, cameras, hubAgents] = await Promise.all([
     db.allowedVehicle.findMany({
       where: { accountId },
       include: {
@@ -60,7 +61,7 @@ export default async function FahrzeugePage() {
         id: true,
         name: true,
         kind: true,
-        vehicleDetection: true,
+        host: true,
         snapshotAt: true,
         lastSeenAt: true,
       },
@@ -68,12 +69,8 @@ export default async function FahrzeugePage() {
     }),
     db.hubAgent.findMany({
       where: { accountId },
-      select: { name: true, lastSeenAt: true },
+      select: { name: true, lastSeenAt: true, status: true },
       orderBy: { lastSeenAt: "desc" },
-    }),
-    db.cameraEvent.findMany({
-      where: { accountId, type: "VEHICLE", endedAt: null },
-      select: { id: true, cameraId: true, startedAt: true },
     }),
   ]);
 
@@ -127,17 +124,13 @@ export default async function FahrzeugePage() {
             id: c.id,
             name: c.name,
             kind: c.kind,
-            vehicleDetection: c.vehicleDetection,
+            host: c.host,
             snapshotAt: c.snapshotAt?.toISOString() ?? null,
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
           }))}
           hubOnline={hubOnline}
           hubName={liveHub?.name ?? null}
-          openVehicleEvents={openVehicleEvents.map((e) => ({
-            id: e.id,
-            cameraId: e.cameraId,
-            startedAt: e.startedAt.toISOString(),
-          }))}
+          parking={parseParkingSnapshot(liveHub?.status ?? null)}
         />
       </div>
     </>
