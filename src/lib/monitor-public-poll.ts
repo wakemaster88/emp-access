@@ -1,5 +1,5 @@
-import type { PrismaClient } from "@prisma/client";
-import { berlinDayStart, berlinYmd } from "@/lib/berlin-day";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { berlinDayStart, berlinMonthStart, berlinWeekStart, berlinYearStart, berlinYmd } from "@/lib/berlin-day";
 import { deviceControls, type DeviceControl } from "@/lib/device-controls";
 
 export function parseMonitorIdList(value: unknown): number[] {
@@ -60,6 +60,20 @@ export type PublicMonitorPollResult = {
    * X dismissed. Bei `scansOnly=true` weggelassen (sparen Round-trip).
    */
   announcements: Awaited<ReturnType<typeof loadAnnouncements>> | null;
+  /** Tickets mit den meisten GRANTED-Scans (Tag/Woche/Monat/Jahr). null bei scansOnly. */
+  scanLeaders: ScanLeaderBoard | null;
+};
+
+export type ScanLeader = {
+  ticketIds: number[];
+  count: number;
+};
+
+export type ScanLeaderBoard = {
+  day: ScanLeader | null;
+  week: ScanLeader | null;
+  month: ScanLeader | null;
+  year: ScanLeader | null;
 };
 
 async function loadControlDevices(
@@ -149,6 +163,75 @@ async function loadScans(
     take: sinceScanId === 0 ? 50 : 25,
   });
 }
+
+const MIN_LEADER_SCANS = 2;
+
+function pickScanLeader(
+  rows: Array<{ ticketId: number; count: number }>,
+): ScanLeader | null {
+  let max = 0;
+  for (const row of rows) {
+    if (row.count > max) max = row.count;
+  }
+  if (max < MIN_LEADER_SCANS) return null;
+  const ticketIds = rows.filter((r) => r.count === max).map((r) => r.ticketId);
+  return ticketIds.length > 0 ? { ticketIds, count: max } : null;
+}
+
+/** Ein Scan über das Jahr, daraus Tag/Woche/Monat/Jahr-Sieger. */
+async function loadScanLeaders(
+  prisma: PrismaClient,
+  accountId: number,
+  deviceFilter: number[] | null,
+): Promise<ScanLeaderBoard> {
+  const empty: ScanLeaderBoard = { day: null, week: null, month: null, year: null };
+  if (deviceFilter && deviceFilter.length === 0) return empty;
+
+  const now = new Date();
+  const dayStart = berlinDayStart(now);
+  const weekStart = berlinWeekStart(now);
+  const monthStart = berlinMonthStart(now);
+  const yearStart = berlinYearStart(now);
+
+  const filters = [
+    Prisma.sql`"accountId" = ${accountId}`,
+    Prisma.sql`"result" = CAST('GRANTED' AS "ScanResult")`,
+    Prisma.sql`"ticketId" IS NOT NULL`,
+    Prisma.sql`"scanTime" >= ${yearStart}`,
+  ];
+  if (deviceFilter) {
+    filters.push(Prisma.sql`"deviceId" IN (${Prisma.join(deviceFilter)})`);
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<{
+      ticketId: number;
+      dayCount: number;
+      weekCount: number;
+      monthCount: number;
+      yearCount: number;
+    }>>`
+      SELECT
+        "ticketId",
+        COUNT(*) FILTER (WHERE "scanTime" >= ${dayStart})::int AS "dayCount",
+        COUNT(*) FILTER (WHERE "scanTime" >= ${weekStart})::int AS "weekCount",
+        COUNT(*) FILTER (WHERE "scanTime" >= ${monthStart})::int AS "monthCount",
+        COUNT(*)::int AS "yearCount"
+      FROM "Scan"
+      WHERE ${Prisma.join(filters, " AND ")}
+      GROUP BY "ticketId"
+    `;
+
+    return {
+      day: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.dayCount }))),
+      week: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.weekCount }))),
+      month: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.monthCount }))),
+      year: pickScanLeader(rows.map((r) => ({ ticketId: r.ticketId, count: r.yearCount }))),
+    };
+  } catch (err) {
+    console.error("scan leaders query failed", err);
+    return empty;
+  }
 
 async function loadTickets(
   prisma: PrismaClient,
@@ -386,13 +469,15 @@ export async function runPublicMonitorPoll(
       tickets: null,
       lastScanId,
       announcements: null,
+      scanLeaders: null,
     };
   }
 
-  const [devices, controlDevices, announcements] = await Promise.all([
+  const [devices, controlDevices, announcements, scanLeaders] = await Promise.all([
     loadDevices(prisma, accountId, deviceFilter),
     loadControlDevices(prisma, accountId, controlDeviceIds),
     loadAnnouncements(prisma, accountId),
+    loadScanLeaders(prisma, accountId, deviceFilter),
   ]);
   const tickets = includeTickets
     ? await loadTickets(prisma, accountId, devices, areaIds, areaScoped)
@@ -406,5 +491,6 @@ export async function runPublicMonitorPoll(
     tickets,
     lastScanId,
     announcements,
+    scanLeaders,
   };
 }

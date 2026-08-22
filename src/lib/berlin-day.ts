@@ -75,3 +75,19 @@ export function berlinWeekdayBit(d: Date = new Date()): number {
   const map: Record<string, number> = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
   return map[weekday] ?? 0;
 }
+
+/** Montag 00:00 Europe/Berlin der aktuellen ISO-ähnlichen Woche. */
+export function berlinWeekStart(reference: Date = new Date()): Date {
+  const ymd = berlinYmd(reference);
+  return berlinDayStart(new Date(`${addCalendarDays(ymd, -berlinWeekdayBit(reference))}T12:00:00Z`));
+}
+
+/** Erster Kalendertag des Monats, 00:00 Europe/Berlin. */
+export function berlinMonthStart(reference: Date = new Date()): Date {
+  return berlinDayStart(new Date(`${berlinYmd(reference).slice(0, 7)}-01T12:00:00Z`));
+}
+
+/** 1. Januar 00:00 Europe/Berlin. */
+export function berlinYearStart(reference: Date = new Date()): Date {
+  return berlinDayStart(new Date(`${berlinYmd(reference).slice(0, 4)}-01-01T12:00:00Z`));
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X, Power, PowerOff, AlertTriangle, Check, Volume2, VolumeX } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X, Power, PowerOff, AlertTriangle, Check, Volume2, VolumeX, Trophy } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes, isMonitorFocusTicket } from "@/lib/monitor-ticket-subtitle";
@@ -116,6 +116,13 @@ interface Announcement {
   createdAt: string;
 }
 
+type ScanLeaderBoard = {
+  day: { ticketIds: number[]; count: number } | null;
+  week: { ticketIds: number[]; count: number } | null;
+  month: { ticketIds: number[]; count: number } | null;
+  year: { ticketIds: number[]; count: number } | null;
+};
+
 interface ScanGroup {
   groupKey: string;
   ticketId: number | null;
@@ -167,6 +174,7 @@ export default function PublicMonitorPage({ params }: Props) {
   const [pausePreviewLoading, setPausePreviewLoading] = useState(false);
   const [ticketSearch, setTicketSearch] = useState("");
   const [focusNow, setFocusNow] = useState(() => Date.now());
+  const [scanLeaders, setScanLeaders] = useState<ScanLeaderBoard | null>(null);
   const [mobileTab, setMobileTab] = useState<"tickets" | "scans">("tickets");
   const [devicesOpen, setDevicesOpen] = useState(false);
   const devicesRef = useRef<HTMLDivElement | null>(null);
@@ -393,6 +401,7 @@ export default function PublicMonitorPage({ params }: Props) {
           tickets: TicketInfo[] | null;
           lastScanId: number;
           announcements: Announcement[] | null;
+          scanLeaders?: ScanLeaderBoard | null;
         };
         if (cancelled) return;
         if (!scansOnly) {
@@ -430,6 +439,9 @@ export default function PublicMonitorPage({ params }: Props) {
         }
         if (data.tickets) {
           applyTickets(data.tickets);
+        }
+        if (data.scanLeaders) {
+          setScanLeaders(data.scanLeaders);
         }
         setConnected(true);
         setError("");
@@ -476,6 +488,7 @@ export default function PublicMonitorPage({ params }: Props) {
       if (nowDay !== currentDay) {
         currentDay = nowDay;
         setScans([]);
+        setScanLeaders(null);
         lastScanIdRef.current = 0;
         pollTickRef.current = 0;
         isFirstLoad.current = true;
@@ -1121,6 +1134,9 @@ export default function PublicMonitorPage({ params }: Props) {
                                 Abo läuft ab {daysLeft === 0 ? "heute" : daysLeft === 1 ? "morgen" : `in ${daysLeft} Tagen`}
                               </span>
                             )}
+                            {group.result === "GRANTED" && (
+                              <ScanLeaderBadges ticketId={group.ticketId} board={scanLeaders} dark={dark} size="lg" />
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 px-5 pb-4 pt-1 flex-wrap">
@@ -1201,6 +1217,9 @@ export default function PublicMonitorPage({ params }: Props) {
                       )}
                       {group.result === "GRANTED" && !group.ticketId && (
                         <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", dark ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-700 border border-amber-200")}>RFID Merge</span>
+                      )}
+                      {group.result === "GRANTED" && (
+                        <ScanLeaderBadges ticketId={group.ticketId} board={scanLeaders} dark={dark} />
                       )}
                       {group.validityType === "DURATION" && group.validityDurationMinutes && group.firstScanAt && (
                         <DurationCountdown firstScanAt={group.firstScanAt} durationMinutes={group.validityDurationMinutes} dark={dark} />
@@ -1560,6 +1579,52 @@ function calcAge(birthDate: string | null | undefined): number | null {
   const m = now.getMonth() - b.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
   return age;
+}
+
+const SCAN_LEADER_PERIODS = [
+  { key: "day" as const, label: "Tag", title: "Meiste Scans heute", dark: "bg-amber-500/25 text-amber-100 border-amber-400/40", light: "bg-amber-100 text-amber-900 border-amber-300" },
+  { key: "week" as const, label: "Woche", title: "Meiste Scans diese Woche", dark: "bg-sky-500/25 text-sky-100 border-sky-400/40", light: "bg-sky-100 text-sky-900 border-sky-300" },
+  { key: "month" as const, label: "Monat", title: "Meiste Scans diesen Monat", dark: "bg-violet-500/25 text-violet-100 border-violet-400/40", light: "bg-violet-100 text-violet-900 border-violet-300" },
+  { key: "year" as const, label: "Jahr", title: "Meiste Scans in diesem Jahr", dark: "bg-yellow-500/25 text-yellow-100 border-yellow-400/40", light: "bg-yellow-100 text-yellow-900 border-yellow-300" },
+];
+
+function ScanLeaderBadges({
+  ticketId,
+  board,
+  dark,
+  size,
+}: {
+  ticketId: number | null;
+  board: ScanLeaderBoard | null;
+  dark: boolean;
+  size?: "lg";
+}) {
+  if (!ticketId || !board) return null;
+  const items = SCAN_LEADER_PERIODS.flatMap((period) => {
+    const row = board[period.key];
+    if (!row?.ticketIds.includes(ticketId)) return [];
+    return [{ ...period, count: row.count }];
+  });
+  if (items.length === 0) return null;
+  return (
+    <div className={cn("flex flex-wrap gap-1.5", size === "lg" && "justify-center mt-1.5")}>
+      {items.map((period) => (
+        <span
+          key={period.key}
+          title={`${period.title} (${period.count})`}
+          className={cn(
+            "inline-flex items-center gap-1 font-bold border rounded-lg",
+            size === "lg" ? "text-xs px-2 py-1" : "text-[9px] px-1.5 py-0.5",
+            dark ? period.dark : period.light,
+          )}
+        >
+          <Trophy className={size === "lg" ? "h-3.5 w-3.5" : "h-2.5 w-2.5"} aria-hidden />
+          {period.label}
+          {size === "lg" ? <span className="tabular-nums opacity-80">{period.count}</span> : null}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function DurationCountdown({ firstScanAt, durationMinutes, dark, size }: { firstScanAt: string; durationMinutes: number; dark: boolean; size?: "lg" }) {
