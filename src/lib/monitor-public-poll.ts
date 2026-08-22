@@ -232,6 +232,7 @@ async function loadScanLeaders(
     console.error("scan leaders query failed", err);
     return empty;
   }
+}
 
 async function loadTickets(
   prisma: PrismaClient,
