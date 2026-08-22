@@ -859,13 +859,68 @@ export default function PublicMonitorPage({ params }: Props) {
         </div>
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {controlDevices.flatMap((device) => {
-            const latching = isLatchingSwitchDevice(device);
-            const isOn = device.output === true;
-            return visibleDeviceControls(device, device.output).map((ctrl) => {
-              const key = latching ? `${device.id}:latch` : `${device.id}:${ctrl.action}`;
+            const showDeviceName = controlDevices.length > 1;
+
+            if (isLatchingSwitchDevice(device)) {
+              const isOn = device.output === true;
+              const key = `${device.id}:latch`;
               const busy = controlBusy === key;
               const flashed = controlFlash === key;
-              const showDeviceName = controlDevices.length > 1;
+              const track = dark ? "bg-slate-800" : "bg-slate-200";
+              const idle = dark
+                ? "text-slate-400 hover:text-white hover:bg-slate-700"
+                : "text-slate-500 hover:text-slate-900 hover:bg-slate-300";
+              return [(
+                <div
+                  key={key}
+                  className="flex items-center gap-1.5 sm:gap-2"
+                  title={isOn ? `${device.name}: ein – klicken auf Aus zum Ausschalten` : `${device.name}: aus – klicken auf Ein zum Einschalten`}
+                >
+                  {showDeviceName && (
+                    <span className={cn("text-xs sm:text-sm font-semibold whitespace-nowrap", styles.headerTitle)}>
+                      {device.name}
+                    </span>
+                  )}
+                  <div className={cn("inline-flex rounded-xl p-0.5", track)}>
+                    <button
+                      type="button"
+                      disabled={controlBusy !== null}
+                      onClick={() => { if (isOn) void handleControlAction(device.id, "reset"); }}
+                      className={cn(
+                        "min-w-[2.75rem] px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors disabled:opacity-50",
+                        flashed && !isOn
+                          ? "bg-emerald-600 text-white"
+                          : !isOn
+                            ? dark ? "bg-slate-600 text-white shadow-sm" : "bg-white text-slate-900 shadow-sm"
+                            : idle,
+                      )}
+                    >
+                      {busy && isOn ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Aus"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={controlBusy !== null}
+                      onClick={() => { if (!isOn) void handleControlAction(device.id, "open"); }}
+                      className={cn(
+                        "min-w-[2.75rem] px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-colors disabled:opacity-50",
+                        flashed && isOn
+                          ? "bg-emerald-600 text-white"
+                          : isOn
+                            ? "bg-emerald-600 text-white shadow-sm"
+                            : idle,
+                      )}
+                    >
+                      {busy && !isOn ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Ein"}
+                    </button>
+                  </div>
+                </div>
+              )];
+            }
+
+            return visibleDeviceControls(device, device.output).map((ctrl) => {
+              const key = `${device.id}:${ctrl.action}`;
+              const busy = controlBusy === key;
+              const flashed = controlFlash === key;
               const Icon = ctrl.role === "danger"
                 ? AlertTriangle
                 : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
@@ -886,11 +941,9 @@ export default function PublicMonitorPage({ params }: Props) {
                         ? "bg-rose-600 text-white"
                         : ctrl.role === "danger"
                           ? "bg-rose-600 hover:bg-rose-500 text-white"
-                          : latching && isOn
-                            ? dark ? "bg-emerald-700 hover:bg-emerald-600 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                            : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
-                              ? dark ? "bg-slate-700 hover:bg-slate-600 text-white" : "bg-slate-600 hover:bg-slate-500 text-white"
-                              : "bg-sky-600 hover:bg-sky-500 text-white",
+                          : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
+                            ? dark ? "bg-slate-700 hover:bg-slate-600 text-white" : "bg-slate-600 hover:bg-slate-500 text-white"
+                            : "bg-sky-600 hover:bg-sky-500 text-white",
                   )}
                 >
                   {busy ? (
