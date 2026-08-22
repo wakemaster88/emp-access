@@ -19,9 +19,10 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Plus, Pencil, Trash2, Loader2, Car, History, Play, CheckCircle2, XCircle, Cctv, Link2, UserPlus, DoorOpen,
+  Plus, Pencil, Trash2, Loader2, Car, History, Play, CheckCircle2, XCircle, Cctv, Link2, UserPlus, DoorOpen, ParkingSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ParkingLot, type OpenVehicleEvent, type ParkingCam } from "./parking-lot";
 
 export interface SightingRow {
   id: number;
@@ -65,6 +66,10 @@ interface Props {
   sightings: SightingRow[];
   shellyDevices: ShellyOption[];
   cameras: CameraOption[];
+  parkingCameras: ParkingCam[];
+  hubOnline: boolean;
+  hubName: string | null;
+  openVehicleEvents: OpenVehicleEvent[];
 }
 
 const EMPTY = {
@@ -81,10 +86,19 @@ const EMPTY = {
   notifyOnDetection: false,
 };
 
-export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: Props) {
+export function VehiclesClient({
+  vehicles,
+  sightings,
+  shellyDevices,
+  cameras,
+  parkingCameras,
+  hubOnline,
+  hubName,
+  openVehicleEvents,
+}: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [tab, setTab] = useState<"vehicles" | "history">("vehicles");
+  const [tab, setTab] = useState<"parking" | "vehicles" | "history">("parking");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<VehicleRow | null>(null);
   const [form, setForm] = useState(EMPTY);
@@ -300,7 +314,10 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-6xl">
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList>
+        <TabsList className="h-auto flex-wrap">
+          <TabsTrigger value="parking" className="gap-1.5">
+            <ParkingSquare className="h-4 w-4" /> Parkplatz
+          </TabsTrigger>
           <TabsTrigger value="vehicles" className="gap-1.5">
             <Car className="h-4 w-4" /> Erlaubte Fahrzeuge
             <Badge variant="secondary" className="ml-1 text-xs">{vehicles.length}</Badge>
@@ -309,6 +326,23 @@ export function VehiclesClient({ vehicles, sightings, shellyDevices, cameras }: 
             <History className="h-4 w-4" /> Historie
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="parking" className="space-y-3 mt-4">
+          <p className="text-sm text-slate-500">
+            Live-Belegung vom Hub: Kameras mit Fahrzeugerkennung, offene Sichtungen und letztes Kennzeichen.
+          </p>
+          <ParkingLot
+            cameras={parkingCameras}
+            hubOnline={hubOnline}
+            hubName={hubName}
+            initialOpen={openVehicleEvents}
+            sightings={sightings}
+            onAssign={(s) => {
+              const full = sightings.find((x) => x.id === s.id);
+              if (full) openAssign(full);
+            }}
+          />
+        </TabsContent>
 
         <TabsContent value="vehicles" className="space-y-3 mt-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

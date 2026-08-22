@@ -27,7 +27,7 @@ export default async function FahrzeugePage() {
     allowedVehicle: { select: { id: true, name: true, plate: true } },
   } as const;
 
-  const [vehicles, sightings, shellyDevices, cameras] = await Promise.all([
+  const [vehicles, sightings, shellyDevices, cameras, hubAgents, openVehicleEvents] = await Promise.all([
     db.allowedVehicle.findMany({
       where: { accountId },
       include: {
@@ -56,8 +56,24 @@ export default async function FahrzeugePage() {
     }),
     db.camera.findMany({
       where: { accountId },
-      select: { id: true, name: true, kind: true },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        vehicleDetection: true,
+        snapshotAt: true,
+        lastSeenAt: true,
+      },
       orderBy: { name: "asc" },
+    }),
+    db.hubAgent.findMany({
+      where: { accountId },
+      select: { name: true, lastSeenAt: true },
+      orderBy: { lastSeenAt: "desc" },
+    }),
+    db.cameraEvent.findMany({
+      where: { accountId, type: "VEHICLE", endedAt: null },
+      select: { id: true, cameraId: true, startedAt: true },
     }),
   ]);
 
@@ -86,6 +102,11 @@ export default async function FahrzeugePage() {
     };
   }
 
+  const fiveMinAgo = new Date();
+  fiveMinAgo.setMinutes(fiveMinAgo.getMinutes() - 5);
+  const liveHub = hubAgents.find((h) => h.lastSeenAt && h.lastSeenAt > fiveMinAgo) ?? hubAgents[0] ?? null;
+  const hubOnline = !!(liveHub?.lastSeenAt && liveHub.lastSeenAt > fiveMinAgo);
+
   return (
     <>
       <Header title="Fahrzeuge" accountName={session.user.accountName} />
@@ -101,7 +122,22 @@ export default async function FahrzeugePage() {
           })}
           sightings={sightings.map(mapSighting)}
           shellyDevices={shellyDevices}
-          cameras={cameras}
+          cameras={cameras.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
+          parkingCameras={cameras.map((c) => ({
+            id: c.id,
+            name: c.name,
+            kind: c.kind,
+            vehicleDetection: c.vehicleDetection,
+            snapshotAt: c.snapshotAt?.toISOString() ?? null,
+            lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
+          }))}
+          hubOnline={hubOnline}
+          hubName={liveHub?.name ?? null}
+          openVehicleEvents={openVehicleEvents.map((e) => ({
+            id: e.id,
+            cameraId: e.cameraId,
+            startedAt: e.startedAt.toISOString(),
+          }))}
         />
       </div>
     </>
