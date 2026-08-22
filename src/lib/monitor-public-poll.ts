@@ -1,6 +1,12 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { berlinDayStart, berlinMonthStart, berlinWeekStart, berlinYearStart, berlinYmd } from "@/lib/berlin-day";
-import { deviceControls, type DeviceControl } from "@/lib/device-controls";
+import { deviceControls, isLatchingSwitchDevice, type DeviceControl } from "@/lib/device-controls";
+import {
+  shellyBaseId,
+  shellyCloudAllStatuses,
+  shellySwitchIndex,
+  shellySwitchState,
+} from "@/lib/shelly-cloud";
 
 export function parseMonitorIdList(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
@@ -43,6 +49,8 @@ export type MonitorControlDevice = {
   type: string;
   category: string | null;
   isActive: boolean;
+  /** Relais-Zustand bei Schalter/Licht; sonst null. */
+  output: boolean | null;
   controls: DeviceControl[];
 };
 
@@ -84,14 +92,75 @@ async function loadControlDevices(
   if (controlDeviceIds.length === 0) return [];
   const rows = await prisma.device.findMany({
     where: { accountId, id: { in: controlDeviceIds } },
-    select: { id: true, name: true, type: true, category: true, isActive: true },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      category: true,
+      isActive: true,
+      task: true,
+      shellyId: true,
+    },
   });
   const byId = new Map(rows.map((d) => [d.id, d]));
-  return controlDeviceIds
+  const mapped = controlDeviceIds
     .map((id) => byId.get(id))
     .filter((d): d is NonNullable<typeof d> => d != null)
-    .map((d) => ({ ...d, controls: deviceControls(d) }))
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      type: d.type,
+      category: d.category,
+      isActive: d.isActive,
+      task: d.task,
+      shellyId: d.shellyId,
+      controls: deviceControls(d),
+    }))
     .filter((d) => d.controls.length > 0);
+
+  const shellyLatching = mapped.filter(
+    (d) => d.type === "SHELLY" && isLatchingSwitchDevice(d),
+  );
+  let cloudStatuses: Awaited<ReturnType<typeof shellyCloudAllStatuses>> = null;
+  if (shellyLatching.length > 0) {
+    try {
+      const config = await prisma.apiConfig.findFirst({
+        where: { accountId, provider: "SHELLY" },
+        select: { token: true, baseUrl: true },
+      });
+      if (config?.token && config.baseUrl) {
+        cloudStatuses = await shellyCloudAllStatuses(config.baseUrl, config.token);
+      }
+    } catch {
+      // Ohne Cloud-Status bleibt der Toggle auf „Einschalten“.
+    }
+  }
+
+  return mapped.map((d) => {
+    let output: boolean | null = null;
+    if (isLatchingSwitchDevice(d)) {
+      if (d.type === "SHELLY" && cloudStatuses) {
+        const baseId = shellyBaseId(d.shellyId);
+        const entry = baseId
+          ? (cloudStatuses.get(baseId) ?? cloudStatuses.get(baseId.toLowerCase()) ?? null)
+          : null;
+        if (entry) {
+          output = shellySwitchState(entry.status, shellySwitchIndex(d.shellyId)).output;
+        }
+      } else if (d.type !== "SHELLY") {
+        output = d.task === 1;
+      }
+    }
+    return {
+      id: d.id,
+      name: d.name,
+      type: d.type,
+      category: d.category,
+      isActive: d.isActive,
+      output,
+      controls: d.controls,
+    };
+  });
 }
 
 async function loadAnnouncements(prisma: PrismaClient, accountId: number) {

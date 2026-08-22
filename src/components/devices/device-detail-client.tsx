@@ -547,44 +547,33 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
       );
     }
 
-    // Shelly switch / light
+    // Shelly switch / light – ein Toggle je nach aktuellem Relais-Zustand.
     if (isShelly && isSwitch) {
-      const isOn  = shellyStatus?.output === true;
-      const isOff = shellyStatus?.output === false || shellyStatus?.output === null;
-      const unknown = !shellyStatus || statusLoading;
+      const isOn = shellyStatus?.output === true;
+      const action = isOn ? "reset" : "open";
+      const label = isOn
+        ? "Ausschalten"
+        : (device.category === "BELEUCHTUNG" ? "Anschalten" : "Einschalten");
 
       return (
-        <>
-          <Button
-            size="sm"
-            onClick={() => handleAction("open")}
-            disabled={loading !== null || (isOn && !unknown)}
-            className={cn(
-              "gap-1.5 transition-all",
-              isOn
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 cursor-default opacity-60"
-                : "bg-emerald-600 hover:bg-emerald-700 text-white"
-            )}
-          >
-            {loading === "open" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
-            Einschalten
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={() => handleAction("reset")}
-            disabled={loading !== null || (isOff && !unknown)}
-            className={cn(
-              "gap-1.5 transition-all",
-              isOff && !unknown
-                ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700 cursor-default opacity-60"
-                : "bg-slate-700 hover:bg-slate-800 text-white"
-            )}
-          >
-            {loading === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <PowerOff className="h-4 w-4" />}
-            Ausschalten
-          </Button>
-        </>
+        <Button
+          size="sm"
+          onClick={() => handleAction(action)}
+          disabled={loading !== null}
+          className={cn(
+            "gap-1.5 transition-all",
+            isOn
+              ? "bg-slate-700 hover:bg-slate-800 text-white"
+              : "bg-emerald-600 hover:bg-emerald-700 text-white",
+          )}
+        >
+          {loading === action
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : isOn
+              ? <PowerOff className="h-4 w-4" />
+              : <Power className="h-4 w-4" />}
+          {label}
+        </Button>
       );
     }
 

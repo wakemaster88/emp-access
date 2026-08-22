@@ -74,6 +74,27 @@ export function isAudioDevice(device: ControllableDevice): boolean {
   return device.type === "AUDIO_PLAYER" || device.category === "AUDIO";
 }
 
+/** Schalter/Licht: bleiben an, bis jemand ausschaltet – UI zeigt einen Toggle. */
+export function isLatchingSwitchDevice(device: ControllableDevice): boolean {
+  const model = deviceControlModel(device);
+  return model === "SWITCH" || model === "LIGHT";
+}
+
+/**
+ * Bedienelemente fuer die Anzeige. Bei Schalter/Licht nur die Aktion, die
+ * zum aktuellen Relais-Zustand passt – unbekannt zaehlt als aus.
+ */
+export function visibleDeviceControls(
+  device: ControllableDevice,
+  output: boolean | null | undefined,
+): DeviceControl[] {
+  const controls = deviceControls(device);
+  if (!isLatchingSwitchDevice(device)) return controls;
+  const action = output === true ? "reset" : "open";
+  const match = controls.find((c) => c.action === action);
+  return match ? [match] : controls.slice(0, 1);
+}
+
 /** Bedienmodell eines Geraets aus Typ und Kategorie ableiten. */
 export function deviceControlModel(device: ControllableDevice): DeviceControlModel {
   if (device.category === "SENSOR") return "SENSOR";

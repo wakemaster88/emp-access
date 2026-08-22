@@ -6,6 +6,7 @@ import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, Chevr
 import { cn, fmtTime } from "@/lib/utils";
 import { isSameBerlinDay, berlinYmd } from "@/lib/berlin-day";
 import { monitorTicketTypeLine, monitorSlotLabel, slotLabelStartMinutes, isMonitorFocusTicket } from "@/lib/monitor-ticket-subtitle";
+import { isLatchingSwitchDevice, visibleDeviceControls } from "@/lib/device-controls";
 
 function endOfDayMs(dateStr: string): number {
   const d = new Date(dateStr);
@@ -28,6 +29,7 @@ interface ControlDevice {
   type: string;
   category: string | null;
   isActive: boolean;
+  output: boolean | null;
   controls: { action: string; label: string; role: "primary" | "secondary" | "danger" }[];
 }
 
@@ -255,7 +257,9 @@ export default function PublicMonitorPage({ params }: Props) {
   }
 
   async function handleControlAction(deviceId: number, action: string) {
-    const key = `${deviceId}:${action}`;
+    const device = controlDevices.find((d) => d.id === deviceId);
+    const latching = device != null && isLatchingSwitchDevice(device);
+    const key = latching ? `${deviceId}:latch` : `${deviceId}:${action}`;
     if (controlBusy) return;
     setControlBusy(key);
     setControlError(null);
@@ -267,6 +271,11 @@ export default function PublicMonitorPage({ params }: Props) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        if (latching) {
+          setControlDevices((prev) =>
+            prev.map((d) => (d.id === deviceId ? { ...d, output: action === "open" } : d)),
+          );
+        }
         setControlFlash(key);
         setTimeout(() => setControlFlash((cur) => (cur === key ? null : cur)), 1800);
       } else {
@@ -849,9 +858,11 @@ export default function PublicMonitorPage({ params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {controlDevices.flatMap((device) =>
-            device.controls.map((ctrl) => {
-              const key = `${device.id}:${ctrl.action}`;
+          {controlDevices.flatMap((device) => {
+            const latching = isLatchingSwitchDevice(device);
+            const isOn = device.output === true;
+            return visibleDeviceControls(device, device.output).map((ctrl) => {
+              const key = latching ? `${device.id}:latch` : `${device.id}:${ctrl.action}`;
               const busy = controlBusy === key;
               const flashed = controlFlash === key;
               const showDeviceName = controlDevices.length > 1;
@@ -875,9 +886,11 @@ export default function PublicMonitorPage({ params }: Props) {
                         ? "bg-rose-600 text-white"
                         : ctrl.role === "danger"
                           ? "bg-rose-600 hover:bg-rose-500 text-white"
-                          : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
-                            ? dark ? "bg-slate-700 hover:bg-slate-600 text-white" : "bg-slate-600 hover:bg-slate-500 text-white"
-                            : "bg-sky-600 hover:bg-sky-500 text-white",
+                          : latching && isOn
+                            ? dark ? "bg-emerald-700 hover:bg-emerald-600 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                            : ctrl.action === "reset" || ctrl.action === "deactivate" || ctrl.action === "close"
+                              ? dark ? "bg-slate-700 hover:bg-slate-600 text-white" : "bg-slate-600 hover:bg-slate-500 text-white"
+                              : "bg-sky-600 hover:bg-sky-500 text-white",
                   )}
                 >
                   {busy ? (
@@ -890,8 +903,8 @@ export default function PublicMonitorPage({ params }: Props) {
                   <span>{showDeviceName ? `${device.name} · ${ctrl.label}` : ctrl.label}</span>
                 </button>
               );
-            }),
-          )}
+            });
+          })}
           {devices.length > 0 && (() => {
             const onlineCount = devices.filter((d) => d.lastUpdate && new Date(d.lastUpdate) > fiveMinAgo).length;
             const summaryDot = onlineCount === devices.length

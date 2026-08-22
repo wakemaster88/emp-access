@@ -80,7 +80,24 @@ export function DeviceActions({ deviceId, deviceCategory, currentTask, onEdit }:
         <span className="flex items-center gap-1.5 text-xs text-slate-400 px-2 italic">
           <Activity className="h-3.5 w-3.5" /> Sensor – nur Anzeige
         </span>
-      ) : (
+      ) : isSwitch ? (() => {
+        const isOn = task === 1;
+        const a = isOn ? SWITCH_ACTIONS[1] : SWITCH_ACTIONS[0];
+        const Icon = a.icon;
+        return (
+          <Button
+            size="sm"
+            onClick={() => handleAction(a.key)}
+            disabled={loading !== null}
+            className={a.className}
+          >
+            {loading === a.key
+              ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+              : <Icon className="h-4 w-4 mr-1.5" />}
+            {a.label}
+          </Button>
+        );
+      })() : (
         actions.map((a) => {
           const Icon = a.icon;
           const isActiveTask = task === a.activeTask && a.key !== "reset";
