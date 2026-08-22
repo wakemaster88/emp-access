@@ -93,11 +93,10 @@ interface TicketInfo {
   hasPhoto?: boolean;
 }
 
-/** Logische Gruppe von TicketInfos, die zur selben echten Person+Buchung
- *  gehoeren. Bei Single-Tickets enthaelt members genau ein Element.
- *  Bei Multi-Area-ANNY-Buchungen (z.B. Aquapark Tageskarte = Aquapark
- *  + Strandbad) werden N Tickets desselben Customers im selben Service
- *  und am selben Tag zu einer Karte zusammengefasst. */
+/** Logische Gruppe von TicketInfos, die zur selben Buchung gehoeren.
+ *  Bei einzelnen Tickets hat members ein Element.
+ *  Bei ANNY-Truppen (7x 2 Stunden) oder Multi-Area (Aquapark+Strandbad)
+ *  werden die zusammengehoerenden Tickets zu einer Karte. */
 interface TicketGroup {
   /** Das "fuehrende" Ticket. Wird fuer Anzeige (Name, Foto, Status …)
    *  verwendet. Bevorzugt das erste VALID, sonst das erste der Gruppe. */
@@ -565,12 +564,10 @@ export default function PublicMonitorPage({ params }: Props) {
     );
   }, [filteredTickets, ticketSearch, focusNow, grantedTicketIds]);
 
-  /** Multi-Area-ANNY-Buchungen (1 Person -> N booking.ids) zu einer Karte
-   *  zusammenfassen. Bedingungen alle drei muessen passen:
-   *    - Ticket ist ANNY-Quelle (uuid startsWith "anny:")
-   *    - serviceAreaCount >= 2
-   *    - Gruppen-Mitglieder > 1 UND glatt durch serviceAreaCount teilbar
-   *  Sonst bleibt das Ticket eine Einzelgruppe (= altes Verhalten). */
+  /** ANNY-Buchungen derselben Person/Truppe zu einer Karte zusammenfassen.
+   *  - Kombi-Tickets (serviceAreaCount >= 2): N Bookings = 1 Person
+   *  - Einfache Tickets (z.B. 7x 2 Stunden eine Familie): N Tickets = N Personen
+   *  Bedingung: ANNY-uuid, gleicher Service, gleicher Tag, Anzahl glatt teilbar. */
   const groupedTickets = useMemo<TicketGroup[]>(() => {
     type DraftGroup = { members: TicketInfo[]; serviceAreaCount: number };
     const draftByKey = new Map<string, DraftGroup>();
@@ -578,7 +575,8 @@ export default function PublicMonitorPage({ params }: Props) {
 
     for (const t of listedTickets) {
       const customerId = t.uuid?.startsWith("anny:") ? t.uuid.split(":")[1] : null;
-      const groupable = customerId && t.serviceId != null && t.serviceAreaCount >= 2 && t.startDate;
+      const sa = Math.max(t.serviceAreaCount, 1);
+      const groupable = customerId && t.serviceId != null && t.startDate;
       if (!groupable) {
         passthrough.push(t);
         continue;
@@ -589,7 +587,7 @@ export default function PublicMonitorPage({ params }: Props) {
       if (existing) {
         existing.members.push(t);
       } else {
-        draftByKey.set(key, { members: [t], serviceAreaCount: t.serviceAreaCount });
+        draftByKey.set(key, { members: [t], serviceAreaCount: sa });
       }
     }
 
