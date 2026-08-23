@@ -14,6 +14,7 @@ const SCAN_DENY_REASON_LABELS: Record<string, string> = {
   expired: "Abgelaufen",
   slot_window: "Außerhalb Zeitslot",
   duration_expired: "Zeit abgelaufen",
+  calendar_day_expired: "Nur am Gültigkeitstag",
   week_schedule: "Außerhalb Wochenplan",
   wrong_resource: "Falscher Bereich",
   ticket_already_redeemed: "Bereits eingelöst",

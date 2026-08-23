@@ -1,3 +1,5 @@
+import { berlinYmd } from "@/lib/berlin-day";
+
 /**
  * Stunden-/Tageskarten: der Timer laeuft ab dem ersten Scan.
  *
@@ -13,6 +15,7 @@ export type DurationTicketFields = {
   slotStart?: string | null;
   slotEnd?: string | null;
   firstScanAt?: Date | null;
+  startDate?: Date | null;
 };
 
 export function isDurationTicket(t: DurationTicketFields): boolean {
@@ -32,4 +35,18 @@ export function isDurationStillRunning(t: DurationTicketFields, now: Date): bool
   const expiresAt = durationExpiresAt(t);
   if (!expiresAt) return false;
   return now.getTime() <= expiresAt.getTime();
+}
+
+/**
+ * Kalendertag-Deckel fuer DURATION-Tickets (1h / 2h / Tageskarte / Kurse):
+ * nach Ablauf der Liftzeit bleibt das Strandbad am SELBEN Berlin-Tag offen,
+ * ab 00:00 des Folgetags gilt das Ticket nirgends mehr.
+ *
+ * Stichtag ist `startDate` (Verkaufs-/Gueltigkeitstag), sonst der erste Scan.
+ */
+export function isDurationPastBerlinDay(t: DurationTicketFields, now: Date): boolean {
+  if (!isDurationTicket(t)) return false;
+  const daySource = t.startDate ?? t.firstScanAt;
+  if (!daySource) return false;
+  return berlinYmd(now) > berlinYmd(daySource);
 }

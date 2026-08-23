@@ -5,7 +5,7 @@ import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 import { evaluateScanLock } from "@/lib/scan-lock";
-import { isDurationTicket } from "@/lib/duration-ticket";
+import { isDurationPastBerlinDay, isDurationTicket } from "@/lib/duration-ticket";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -90,6 +90,7 @@ function isAccessTicketCurrentlyValid(
     const expiresAt = new Date(t.firstScanAt.getTime() + t.validityDurationMinutes * 60_000);
     if (now > expiresAt) return false;
   }
+  if (isDurationPastBerlinDay(t, now)) return false;
 
   return true;
 }
@@ -379,6 +380,22 @@ export async function performScanCheck({
       });
       return { granted: false, message: "Ticket abgelaufen", ticket: ticketInfo };
     }
+  }
+
+  // DURATION bleibt am Folgetag auch am Strandbad/Insel zu: Liftzeit
+  // (1h/2h) gilt nur an der Hauptressource, der Kalendertag gilt überall.
+  if (!isExitDevice && isDurationPastBerlinDay(ticket, now)) {
+    await db.scan.create({
+      data: {
+        code,
+        result: "DENIED",
+        note: "calendar_day_expired",
+        ticketId: ticket.id,
+        accountId,
+        ...scanDeviceData,
+      },
+    });
+    return { granted: false, message: "Gültig nur am Ticket-Tag", ticket: ticketInfo };
   }
 
   // Standort des Scans: bevorzugt der im Scanner gewaehlte Bereich, sonst die

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 import { evaluateScanLock } from "@/lib/scan-lock";
+import { isDurationPastBerlinDay, isDurationTicket } from "@/lib/duration-ticket";
 
 export async function POST(
   request: NextRequest,
@@ -50,17 +51,42 @@ export async function POST(
     return NextResponse.json({ granted: false, message: "Ticket noch nicht gültig" });
   }
 
-  if (ticket.validityType === "DURATION" && ticket.firstScanAt && ticket.validityDurationMinutes) {
-    const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
-    if (now > expiresAt) {
-      return NextResponse.json({ granted: false, message: "Zeitticket abgelaufen" });
-    }
+  if (isDurationPastBerlinDay(ticket, now)) {
+    return NextResponse.json({ granted: false, message: "Gültig nur am Ticket-Tag" });
   }
 
   const code = ticket.barcode || ticket.qrCode || ticket.rfidCode || `monitor:${ticket.id}`;
 
   const deviceIds = (monitor.deviceIds as number[]) ?? [];
   const deviceId = deviceIds.length > 0 ? deviceIds[0] : null;
+
+  const monitorAreaIds = (monitor.areaIds as number[] | null) ?? [];
+  const monitorDeviceAreas = deviceIds.length
+    ? await prisma.device.findMany({
+        where: { id: { in: deviceIds }, accountId: monitor.accountId },
+        select: { accessIn: true, accessOut: true, scanLockSeconds: true },
+      })
+    : [];
+  const scanAreaIds = [
+    ...monitorAreaIds,
+    ...monitorDeviceAreas.flatMap((d) =>
+      [d.accessIn, d.accessOut].filter((a): a is number => a != null),
+    ),
+  ];
+  const hitsMainResource = isMainResourceScan(resolveMainAreaId(ticket), scanAreaIds);
+
+  // Liftzeit nur an der Hauptressource; Strandbad-Monitor bleibt am selben Tag offen.
+  if (
+    hitsMainResource
+    && isDurationTicket(ticket)
+    && ticket.firstScanAt
+    && ticket.validityDurationMinutes
+  ) {
+    const expiresAt = new Date(ticket.firstScanAt.getTime() + ticket.validityDurationMinutes * 60_000);
+    if (now > expiresAt) {
+      return NextResponse.json({ granted: false, message: "Zeitticket abgelaufen" });
+    }
+  }
 
   if (deviceId) {
     const scanDevice = await prisma.device.findFirst({
@@ -103,32 +129,8 @@ export async function POST(
     },
   });
 
-  // Standort des Monitors: eigene Bereichszuordnung plus die Bereiche seiner
-  // Geraete. Der Strandbad-Monitor haengt an den Strandbad-Drehkreuzen, der
-  // Seilbahn-A-Monitor am Seilbahn-Drehkreuz. Nur wenn die Hauptressource des
-  // Tickets darunter ist, darf der Handscan die Zeit starten - sonst laeuft
-  // die gebuchte Stunde eines "Öffentlicher Betrieb - 1 Stunde"-Tickets schon
-  // los, wenn es am Strandbad-Monitor durchgewinkt wird.
-  const monitorAreaIds = (monitor.areaIds as number[] | null) ?? [];
-  const monitorDeviceAreas = deviceIds.length
-    ? await prisma.device.findMany({
-        where: { id: { in: deviceIds }, accountId: monitor.accountId },
-        select: { accessIn: true, accessOut: true },
-      })
-    : [];
-  const scanAreaIds = [
-    ...monitorAreaIds,
-    ...monitorDeviceAreas.flatMap((d) =>
-      [d.accessIn, d.accessOut].filter((a): a is number => a != null),
-    ),
-  ];
-
   const updateData: Record<string, unknown> = {};
-  if (
-    ticket.validityType === "DURATION"
-    && !ticket.firstScanAt
-    && isMainResourceScan(resolveMainAreaId(ticket), scanAreaIds)
-  ) {
+  if (ticket.validityType === "DURATION" && !ticket.firstScanAt && hitsMainResource) {
     updateData.firstScanAt = now;
   }
 

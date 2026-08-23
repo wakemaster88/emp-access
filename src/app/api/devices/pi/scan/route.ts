@@ -7,7 +7,7 @@ import { isWithinSchedule } from "@/lib/schedule";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { evaluateScanLock, scanLockMessage } from "@/lib/scan-lock";
-import { isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
+import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -503,6 +503,19 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ granted: false, message: "Ticket abgelaufen", ticket: ticketInfo });
     }
+  }
+
+  // Kalendertag-Deckel an ALLEN Eingaengen (auch Strandbad/Insel). Die
+  // Liftzeit darf am selben Tag weiter Transit erlauben, aber nicht am Folgetag.
+  if (!isExitScan && isDurationPastBerlinDay(ticket, now)) {
+    await db.scan.create({
+      data: { code, deviceId, result: "DENIED", note: "calendar_day_expired", ticketId: ticket.id, accountId },
+    });
+    return NextResponse.json({
+      granted: false,
+      message: "Gültig nur am Ticket-Tag",
+      ticket: ticketInfo,
+    });
   }
 
   // TIME_SLOT-Fenster gilt nur fuer Eintritte AN DER HAUPTRESSOURCE. Beim
