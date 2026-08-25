@@ -44,6 +44,7 @@ import {
 import { cn } from "@/lib/utils";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
 import { OpsStrip, type DashboardOps } from "@/components/dashboard/ops-strip";
+import { TurnstileCard } from "@/components/dashboard/turnstile-card";
 
 interface TicketEntry {
   id: number;
@@ -1014,6 +1015,9 @@ export function DashboardClient() {
           </div>
         );
       })()}
+
+      {/* Drehkreuz-Auswertung (Fahrten/Gäste je Bereich, Standard: Seilbahn A) */}
+      <TurnstileCard date={date} />
 
       {/* ANNY Sync Status */}
       {data?.annySyncStatus && (() => {
