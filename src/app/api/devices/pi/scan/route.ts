@@ -6,7 +6,8 @@ import { checkBinarytec } from "@/lib/binarytec";
 import { isWithinSchedule } from "@/lib/schedule";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
-import { evaluateAreaScanLock, evaluateScanLock, scanLockMessage } from "@/lib/scan-lock";
+import { evaluateAreaScanLock, evaluateScanLock } from "@/lib/scan-lock";
+import { DEBOUNCE_WINDOW_MS, resolveDebounce } from "@/lib/scan-debounce";
 import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
@@ -32,16 +33,6 @@ const MIN_CODE_LENGTH = 6;
  */
 const ANNY_BARCODE_PREFIX = "!TIX";
 const ANNY_BARCODE_LENGTH = 20;
-
-/**
- * Debounce-Fenster fuer doppelte Scans am selben Geraet mit demselben
- * Code. Hintergrund: Drehkreuz-Scanner senden den gleichen QR-/RFID-
- * Code haeufig mehrfach binnen Sekundenbruchteilen (Hardware-Bouncing
- * oder Mehrfachlesungen). Liegt der vorige Scan innerhalb des Fensters,
- * antworten wir mit seinem Ergebnis und schreiben KEINEN neuen Scan-
- * Datensatz. Spart DB-Schreibvorgaenge und entlastet Reentry-Checks.
- */
-const DEBOUNCE_WINDOW_MS = 5_000;
 
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -115,11 +106,12 @@ export async function POST(request: NextRequest) {
       && device.accessIn == null
     );
 
-  // Debounce: hat der gleiche Code am gleichen Geraet innerhalb des
-  // letzten DEBOUNCE_WINDOW_MS bereits einen Scan-Eintrag erzeugt, geben
-  // wir dessen Resultat zurueck und schreiben keinen neuen Scan. Das
-  // verhindert, dass Hardware-Bouncing (z.B. Doppellesungen binnen
-  // 0.5-2s) wiederholte DENIED-/GRANTED-Eintraege erzeugt.
+  // Debounce: hat der gleiche Code am gleichen Geraet innerhalb des letzten
+  // DEBOUNCE_WINDOW_MS bereits einen Scan-Eintrag erzeugt, antworten wir ohne
+  // neuen Scan-Datensatz. Das verhindert, dass Hardware-Bouncing (z.B.
+  // Doppellesungen binnen 0.5-2s) wiederholte Eintraege erzeugt. Ob dabei
+  // erneut geoeffnet wird, entscheidet `resolveDebounce` - bei Eintritten
+  // nie.
   // DASHBOARD_OPEN_CODE ist absichtlich ausgenommen: jeder Button-Klick
   // soll auch dann als separater Scan registriert werden, wenn er kurz
   // hintereinander erfolgt.
@@ -147,22 +139,17 @@ export async function POST(request: NextRequest) {
       },
     });
     if (recent) {
-      const granted = recent.result === "GRANTED";
-      const lockSeconds = device.scanLockSeconds ?? 0;
-      if (granted && lockSeconds > 0 && !isExitScan) {
-        const remainingMs = new Date(recent.scanTime).getTime() + lockSeconds * 1000 - Date.now();
-        if (remainingMs > 0) {
-          return NextResponse.json({
-            granted: false,
-            message: scanLockMessage(remainingMs),
-            locked: true,
-            debounced: true,
-          });
-        }
-      }
+      const decision = resolveDebounce({
+        previousResult: recent.result,
+        previousScanTime: new Date(recent.scanTime),
+        isExitScan,
+        deviceLockSeconds: device.scanLockSeconds,
+        now: new Date(),
+      });
       return NextResponse.json({
-        granted,
-        message: granted ? "Zutritt gewährt" : "Bereits gerade abgewiesen",
+        granted: decision.granted,
+        message: decision.message,
+        locked: decision.locked,
         debounced: true,
         ticket: recent.ticket
           ? {
