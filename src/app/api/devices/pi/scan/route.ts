@@ -676,17 +676,13 @@ export async function POST(request: NextRequest) {
     // ein-/ausgehen, auch wenn das Drehkreuz keinen sauberen Exit-Scan
     // gesehen hat (z.B. Ausgang offen / nicht gescannt).
     //
-    // Wenn der SERVICE Reentry explizit erlaubt (z.B. Strandbad-
-    // Tageskarte), ueberspringen wir den lastWasExit-Check ebenfalls:
-    // Strandbad-Gaeste verlassen das Gelaende typischerweise ohne
-    // Ausgangs-Drehkreuz zu nutzen (an manchen Anlagen gibt es gar
-    // keinen reinen Exit-Scanner). Ohne diese Ausnahme wuerden alle
-    // Wiedereintritte als `no_exit_registered` geblockt - exakt das
-    // Verhalten, das den Reentry-Service-Flag nutzlos macht.
-    // Bei `device.allowReentry=true` ohne service-seitige Freigabe
-    // bleibt der Exit-Check aktiv (geraetelokales Eintritt/Austritt-
-    // Tracking).
-    if (!durationStillRunning && !serviceAllowsReentry) {
+    // `service.allowReentry` erlaubt MEHRERE Eintritte, aber keine
+    // beliebig vielen HINTEREINANDER: ohne registrierten Ausgang oeffnet
+    // dasselbe Ticket sonst am Eingang so oft, wie es weitergegeben wird
+    // (Pass-back). Der Exit-Scan bleibt deshalb Pflicht - der Preis sind
+    // `no_exit_registered`-Abweisungen bei Gaesten, die den Ausgang nicht
+    // scannen.
+    if (!durationStillRunning) {
       const mainResourceDeviceFilter = mainAreaId != null
         ? { device: { OR: [{ accessIn: mainAreaId }, { accessOut: mainAreaId }] } }
         : {};
