@@ -527,20 +527,22 @@ function formatScanLockPreset(seconds: number): string {
 export function ScanLockField({
   value,
   onChange,
+  title = "Sperrzeit nach gültigem Scan",
+  description = "Nächster Scan desselben Tickets erst nach dieser Zeit. Andere Tickets können sofort danach durch.",
 }: {
   value: string;
   onChange: (value: string) => void;
+  title?: string;
+  description?: string;
 }) {
   const seconds = Number(value);
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-2">
       <div>
         <p className="text-sm font-medium flex items-center gap-1.5">
-          <Timer className="h-4 w-4" /> Sperrzeit nach gültigem Scan
+          <Timer className="h-4 w-4" /> {title}
         </p>
-        <p className="text-xs text-slate-500">
-          Nächster Scan desselben Tickets erst nach dieser Zeit. Andere Tickets können sofort danach durch.
-        </p>
+        <p className="text-xs text-slate-500">{description}</p>
       </div>
       <Input
         type="number"

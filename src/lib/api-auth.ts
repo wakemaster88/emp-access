@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, tenantClient } from "./prisma";
+import { prisma, tenantClient, type TenantDb } from "./prisma";
 import { auth } from "./auth";
 
 export function hasApiToken(request: NextRequest) {
@@ -87,7 +87,7 @@ export async function getSessionWithDb() {
     return { error: NextResponse.json({ error: "No account assigned" }, { status: 403 }) };
   }
 
-  const db = isSuperAdmin ? prisma : tenantClient(accountId!);
+  const db: TenantDb = isSuperAdmin ? prisma : tenantClient(accountId!);
 
   return { session, db, isSuperAdmin, accountId };
 }
@@ -98,7 +98,7 @@ export async function getSessionWithDb() {
  */
 export async function getAccountFromRequest(request: NextRequest): Promise<
   | { error: NextResponse }
-  | { db: ReturnType<typeof tenantClient> | typeof prisma; accountId: number }
+  | { db: TenantDb; accountId: number }
 > {
   if (hasApiToken(request)) {
     const tokenAuth = await validateApiToken(request);

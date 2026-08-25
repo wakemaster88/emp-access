@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { parseScanLockSeconds } from "@/lib/scan-lock";
 
 export async function PUT(
   request: NextRequest,
@@ -27,6 +28,7 @@ export async function PUT(
       parentId: body.parentId !== undefined ? (body.parentId ? Number(body.parentId) : null) : existing.parentId,
       allowReentry: body.allowReentry ?? existing.allowReentry,
       personLimit: body.personLimit !== undefined ? (body.personLimit ? Number(body.personLimit) : null) : existing.personLimit,
+      scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, existing.scanLockSeconds),
       showOnDashboard: body.showOnDashboard !== undefined ? body.showOnDashboard : existing.showOnDashboard,
       openingHours: body.openingHours !== undefined ? (body.openingHours || null) : existing.openingHours,
     },

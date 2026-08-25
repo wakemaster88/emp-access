@@ -15,6 +15,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Trash2, Save, Settings2, Link2, Package, Check } from "lucide-react";
+import { ScanLockField } from "@/components/devices/edit-device-dialog";
 import { cn } from "@/lib/utils";
 
 export interface AreaData {
@@ -23,6 +24,7 @@ export interface AreaData {
   parentId: number | null;
   allowReentry: boolean;
   personLimit: number | null;
+  scanLockSeconds?: number | null;
   showOnDashboard: boolean;
   openingHours: string | null;
 }
@@ -42,6 +44,7 @@ const EMPTY = {
   parentId: "none",
   allowReentry: false,
   personLimit: "",
+  scanLockSeconds: "0",
   showOnDashboard: true,
   openingHours: "",
 };
@@ -141,6 +144,7 @@ export function AreaDialog({
           parentId: area.parentId ? String(area.parentId) : "none",
           allowReentry: area.allowReentry,
           personLimit: area.personLimit != null ? String(area.personLimit) : "",
+          scanLockSeconds: String(area.scanLockSeconds ?? 0),
           showOnDashboard: area.showOnDashboard,
           openingHours: area.openingHours ?? "",
         });
@@ -180,6 +184,7 @@ export function AreaDialog({
         parentId: form.parentId && form.parentId !== "none" ? form.parentId : null,
         allowReentry: form.allowReentry,
         personLimit: form.personLimit ? Number(form.personLimit) : null,
+        scanLockSeconds: Number(form.scanLockSeconds) || 0,
         showOnDashboard: form.showOnDashboard,
         openingHours: form.openingHours.trim() || null,
       };
@@ -316,6 +321,13 @@ export function AreaDialog({
               </div>
               <Switch checked={form.allowReentry} onCheckedChange={(v) => set("allowReentry", v)} />
             </div>
+
+            <ScanLockField
+              value={form.scanLockSeconds}
+              onChange={(v) => set("scanLockSeconds", v)}
+              title="Sperrzeit für diese Resource"
+              description="Dasselbe Ticket kommt erst nach dieser Zeit wieder herein – an allen Eingängen der Resource und auch dann, wenn zwischendurch am Ausgang gescannt wurde. Mitarbeiter sind ausgenommen."
+            />
 
             <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
               <div>

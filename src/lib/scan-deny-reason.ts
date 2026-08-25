@@ -24,6 +24,7 @@ const SCAN_DENY_REASON_LABELS: Record<string, string> = {
   voucher_already_redeemed: "Gutschein eingelöst",
   binarytec_denied: "Binarytec verweigert",
   scan_lock: "Zu schnell erneut gescannt",
+  area_scan_lock: "Sperrzeit für diesen Bereich",
 };
 
 export function isScanDenyReasonCode(note: string | null | undefined): boolean {

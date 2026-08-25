@@ -8,11 +8,12 @@
  * Bewusst ohne Dashboard-only-Befehle wie Bibliothek-Sync – die bleiben am
  * Zonen-Endpunkt, den nur eine Admin-Session erreicht.
  */
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import type { TenantDb } from "@/lib/prisma";
 import { clampVolume, playlistPayload, queueZoneCommand } from "@/lib/audio";
 import { isAudioDevice, withDeviceControlInfo, type ControllableDevice } from "@/lib/device-controls";
 
-type Db = PrismaClient | ReturnType<typeof import("@/lib/prisma").tenantClient>;
+type Db = TenantDb;
 
 const MAX_STREAM_URL = 2000;
 

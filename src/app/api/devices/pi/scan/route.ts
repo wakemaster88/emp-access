@@ -6,7 +6,7 @@ import { checkBinarytec } from "@/lib/binarytec";
 import { isWithinSchedule } from "@/lib/schedule";
 import { buildScanCodeVariants } from "@/lib/scan-code-variants";
 import { pickBestScanCandidate } from "@/lib/scan-candidate";
-import { evaluateScanLock, scanLockMessage } from "@/lib/scan-lock";
+import { evaluateAreaScanLock, evaluateScanLock, scanLockMessage } from "@/lib/scan-lock";
 import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
@@ -779,6 +779,39 @@ export async function POST(request: NextRequest) {
     && isExitScan
     && !!ticket.service?.allowReentry
     && isMainResourceScan;
+
+  // Bereichsweite Sperre. Faengt das ab, was die Ausgangs-Pflicht offen laesst:
+  // ein Ausgangs-Scan macht ein Reentry-Ticket sofort wieder gueltig, ohne dass
+  // der Gast das Gelaende verlassen haben muss. Zwei Sekunden am Ausgangsleser
+  // reichen also, um eine weitergegebene Karte erneut zu benutzen.
+  //
+  // Mitarbeiter sind ausgenommen: sie passieren die Drehkreuze im Betrieb
+  // mehrfach pro Minute (Aufsicht, Materialwege) und wuerden sich sonst selbst
+  // aussperren.
+  if (!isExitScan && !isEmployee && device.accessIn != null) {
+    const area = await db.accessArea.findFirst({
+      where: { id: device.accessIn, accountId },
+      select: { scanLockSeconds: true },
+    });
+    const areaLock = await evaluateAreaScanLock(db, {
+      accountId,
+      areaId: device.accessIn,
+      lockSeconds: area?.scanLockSeconds,
+      ticketId: ticket.id,
+      now,
+    });
+    if (areaLock) {
+      await db.scan.create({
+        data: { code, deviceId, result: "DENIED", note: "area_scan_lock", ticketId: ticket.id, accountId },
+      });
+      return NextResponse.json({
+        granted: false,
+        message: areaLock.message,
+        locked: true,
+        ticket: ticketInfo,
+      });
+    }
+  }
 
   const locked = await lockedResponse(ticket.id);
   if (locked) return locked;

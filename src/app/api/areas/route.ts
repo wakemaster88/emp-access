@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb, validateApiToken } from "@/lib/api-auth";
+import { parseScanLockSeconds } from "@/lib/scan-lock";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       parentId: body.parentId ? Number(body.parentId) : null,
       allowReentry: body.allowReentry ?? false,
       personLimit: body.personLimit ? Number(body.personLimit) : null,
+      scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, null),
       showOnDashboard: body.showOnDashboard ?? true,
       openingHours: body.openingHours || null,
       accountId: accountId!,

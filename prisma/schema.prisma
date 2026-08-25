@@ -483,6 +483,19 @@ model AccessArea {
   parentId        Int?
   allowReentry    Boolean            @default(false)
   personLimit     Int?
+  /// Sperrzeit in Sekunden fuer dasselbe Ticket, bereichsweit ueber ALLE
+  /// Eingaenge dieses Bereichs. Anders als `Device.scanLockSeconds` (gilt nur
+  /// pro Leser) laesst sich diese Sperre nicht dadurch umgehen, dass man den
+  /// naechsten Eingang nimmt oder zwischendurch am Ausgang scannt.
+  ///
+  /// Notwendig, weil `Service.allowReentry` ein Ticket nach einem Ausgangs-Scan
+  /// wieder gueltig macht: der Ausgangs-Scan dauert zwei Sekunden und setzt
+  /// kein tatsaechliches Verlassen voraus. Ohne diese Sperre laesst eine
+  /// weitergegebene Strandbad-Tageskarte beliebig viele Gaeste hintereinander
+  /// durch.
+  ///
+  /// NULL oder 0 = keine bereichsweite Sperre.
+  scanLockSeconds Int?
   showOnDashboard Boolean            @default(true)
   openingHours    String?
   accountId       Int

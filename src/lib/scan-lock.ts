@@ -84,3 +84,66 @@ export async function evaluateScanLock(
     message: scanLockMessage(remainingMs),
   };
 }
+
+type AreaScanLockDb = {
+  scan: {
+    findFirst: (args: {
+      where: Record<string, unknown>;
+      orderBy: { scanTime: "desc" };
+      select: { scanTime: true };
+    }) => Promise<{ scanTime: Date } | null>;
+  };
+};
+
+/**
+ * Bereichsweite Sperre: dasselbe Ticket darf einen Bereich nur alle
+ * `lockSeconds` betreten - egal an welchem seiner Eingaenge.
+ *
+ * Unterschied zu `evaluateScanLock`: die Geraete-Sperre zaehlt nur Scans am
+ * SELBEN Leser. Bei drei Eingaengen (Strandbad A, B, Behindert) kommt dasselbe
+ * Ticket damit dreimal pro Sperrfenster durch. Diese Variante zaehlt alle
+ * Eintritts-Leser des Bereichs zusammen.
+ *
+ * Gezaehlt werden bewusst nur Eintritte (`device.accessIn == areaId`):
+ * Ausgangs-Scans sollen die Sperre nicht verlaengern, sondern sind der Weg,
+ * auf dem ein Wiedereintritt ueberhaupt erst wieder erlaubt wird. Genau
+ * deshalb greift die Sperre aber unabhaengig davon, ob zwischendurch am
+ * Ausgang gescannt wurde - sonst genuegen zwei Sekunden am Ausgangsleser, um
+ * eine weitergegebene Karte wieder freizuschalten.
+ */
+export async function evaluateAreaScanLock(
+  db: AreaScanLockDb,
+  opts: {
+    accountId: number;
+    areaId: number | null | undefined;
+    lockSeconds: number | null | undefined;
+    ticketId: number;
+    now: Date;
+  },
+): Promise<ScanLockDenial | null> {
+  const lockSeconds = opts.lockSeconds ?? 0;
+  if (lockSeconds <= 0 || opts.areaId == null) return null;
+
+  const windowStart = new Date(opts.now.getTime() - lockSeconds * 1000);
+  const last = await db.scan.findFirst({
+    where: {
+      accountId: opts.accountId,
+      ticketId: opts.ticketId,
+      result: "GRANTED",
+      scanTime: { gte: windowStart },
+      device: { accessIn: opts.areaId },
+    },
+    orderBy: { scanTime: "desc" },
+    select: { scanTime: true },
+  });
+  if (!last) return null;
+
+  const remainingMs = last.scanTime.getTime() + lockSeconds * 1000 - opts.now.getTime();
+  if (remainingMs <= 0) return null;
+
+  return {
+    remainingMs,
+    silent: false,
+    message: scanLockMessage(remainingMs),
+  };
+}

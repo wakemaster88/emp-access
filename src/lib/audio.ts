@@ -7,8 +7,8 @@
  * lückenlos und ein kurzzeitig offline gewesener Pi arbeitet nach.
  */
 import { createHash } from "crypto";
-import type { Prisma, PrismaClient } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
+import { prisma, type TenantDb } from "@/lib/prisma";
 import {
   DEFAULT_TTS_VOICE,
   MAX_ANNOUNCEMENT_CHARS,
@@ -20,7 +20,7 @@ import {
   type TtsVoice,
 } from "@/lib/audio-constants";
 
-type Db = PrismaClient | ReturnType<typeof import("@/lib/prisma").tenantClient>;
+type Db = TenantDb;
 
 export * from "@/lib/audio-constants";
 

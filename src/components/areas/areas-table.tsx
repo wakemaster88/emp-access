@@ -50,6 +50,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
     parentId: a.parentId,
     allowReentry: a.allowReentry,
     personLimit: a.personLimit,
+    scanLockSeconds: a.scanLockSeconds,
     showOnDashboard: a.showOnDashboard,
     openingHours: a.openingHours,
   }));
@@ -166,6 +167,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   parentId: area.parentId,
                   allowReentry: area.allowReentry,
                   personLimit: area.personLimit,
+                  scanLockSeconds: area.scanLockSeconds,
                   showOnDashboard: area.showOnDashboard,
                   openingHours: area.openingHours,
                 })}
@@ -208,6 +210,13 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   >
                     {area.allowReentry ? "Ja" : "Nein"}
                   </Badge>
+                  {!!area.scanLockSeconds && area.scanLockSeconds > 0 && (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Sperre {area.scanLockSeconds < 60
+                        ? `${area.scanLockSeconds} Sek.`
+                        : `${Math.round(area.scanLockSeconds / 60)} Min.`}
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell font-medium text-slate-700 dark:text-slate-300">
                   {area.personLimit ? (

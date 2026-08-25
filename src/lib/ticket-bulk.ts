@@ -18,11 +18,11 @@
  * Frontend wertet u. a. `error.code === "CODE_CONFLICT"` aus.
  */
 
-import type { PrismaClient } from "@prisma/client";
 import type { z } from "zod";
+import type { TenantDb } from "@/lib/prisma";
 import type { ticketBulkCreateSchema } from "./validators";
 
-type Db = PrismaClient | ReturnType<typeof import("@/lib/prisma").tenantClient>;
+type Db = TenantDb;
 
 export type TicketBulkInput = z.infer<typeof ticketBulkCreateSchema>;
 

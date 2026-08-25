@@ -22,6 +22,18 @@ export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
+/**
+ * Prisma-Client, wie ihn die Endpunkte bekommen: entweder der rohe Client
+ * (Super-Admin) oder der mandantengebundene Client aus `tenantClient`.
+ *
+ * MUSS die einzige Deklaration dieses Typs bleiben. Wird er mehrfach
+ * deklariert, vergleicht TypeScript die beiden riesigen Client-Typen
+ * strukturell statt ueber ihre Identitaet und bricht ab Schema-Groessen wie
+ * unserer mit TS2859 ("Excessive complexity comparing types") ab - und zwar in
+ * beliebigen anderen Dateien, sobald ein Feld dazukommt.
+ */
+export type TenantDb = PrismaClient | ReturnType<typeof tenantClient>;
+
 export function tenantClient(accountId: number) {
   return prisma.$extends({
     query: {

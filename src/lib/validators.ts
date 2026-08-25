@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_SCAN_LOCK_SECONDS } from "@/lib/scan-lock";
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -164,6 +165,7 @@ export const areaCreateSchema = z.object({
   parentId: z.coerce.number().int().optional(),
   allowReentry: z.boolean().optional(),
   personLimit: z.coerce.number().int().optional(),
+  scanLockSeconds: z.coerce.number().int().min(0).max(MAX_SCAN_LOCK_SECONDS).nullable().optional(),
 });
 
 export const areaUpdateSchema = areaCreateSchema.partial();
