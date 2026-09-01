@@ -79,7 +79,6 @@ const navGroups: NavGroup[] = [
       { href: "/services", label: "Services", icon: Package },
       { href: "/areas", label: "Resourcen", icon: MapPin },
       { href: "/lockers", label: "Schließfächer", icon: Lock },
-      { href: "/schliessanlage", label: "Schließanlage", icon: KeyRound },
       { href: "/fundsachen", label: "Fundsachen", icon: PackageSearch },
     ],
   },
@@ -88,6 +87,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/scanner", label: "Scanner", icon: QrCode },
       { href: "/scans", label: "Scans", icon: ScanLine },
+      { href: "/schliessanlage", label: "Schließanlage", icon: KeyRound },
       { href: "/bewaesserung", label: "Bewässerung", icon: Droplets },
       { href: "/audio", label: "Audio", icon: Volume2 },
       { href: "/monitor", label: "Live Monitor", icon: Monitor },

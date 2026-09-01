@@ -313,10 +313,18 @@ model Device {
   listedPersons        ListedPerson[]
   /// Beschallungszone, die dieser Abspieler (type = AUDIO_PLAYER) bedient.
   audioZone            AudioZone?           @relation("AudioZoneDevice")
+  /// Raum der Schliessanlage, in dem dieses Geraet physisch haengt (Shelly im
+  /// Technikraum, Taster im Flur). NULL = keinem Raum zugeordnet.
+  keyRoomId            Int?
+  keyRoom              KeyRoom?             @relation(fields: [keyRoomId], references: [id], onDelete: SetNull)
+  /// Schliesspunkte, die dieses Geraet elektronisch bedient (Nuki/LOQED auf dem
+  /// Zylinder, Shelly-Relais am Tueroeffner).
+  keyLocks             KeyLock[]
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 
   @@index([accountId])
+  @@index([keyRoomId])
   @@index([accessIn])
   @@index([accessOut])
   @@index([pumpDeviceId])
@@ -1644,11 +1652,16 @@ model Camera {
   /// Zugangsgeraete (Drehkreuze/Tueren), denen diese Kamera zugeordnet ist.
   devices             Device[]             @relation("DeviceCamera")
   scanSnapshots       ScanSnapshot[]
+  /// Raum der Schliessanlage, den diese Kamera abdeckt. NULL = keinem Raum
+  /// zugeordnet.
+  keyRoomId           Int?
+  keyRoom             KeyRoom?             @relation(fields: [keyRoomId], references: [id], onDelete: SetNull)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
+  @@index([keyRoomId])
 }
 
 /// Account-weiter Überwachungsmodus: manuell und/oder per Zeitplan scharf,
@@ -2216,6 +2229,10 @@ model KeyRoom {
   floor     String?
   notes     String?   @db.Text
   doors     KeyDoor[]
+  /// IoT-Geraete, die in diesem Raum haengen (Shelly, Taster, Smart Lock).
+  devices   Device[]
+  /// Kameras, die diesen Raum abdecken.
+  cameras   Camera[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -2258,12 +2275,17 @@ model KeyLock {
   manufacturer String?
   installedAt  DateTime?
   notes        String?             @db.Text
+  /// Optionales IoT-Geraet, das diesen Schliesspunkt elektronisch oeffnet
+  /// (Nuki/LOQED Smart Lock, Shelly am Tueroeffner). NULL = rein mechanisch.
+  deviceId     Int?
+  device       Device?             @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   keys         KeyLockAssignment[]
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
   @@index([accountId])
   @@index([doorId])
+  @@index([deviceId])
 }
 
 /// Physisches Schluessel-Exemplar. Jede Kopie ist ein eigener Datensatz, damit

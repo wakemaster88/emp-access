@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { roomInclude } from "@/lib/keying-queries";
+import { roomInclude, syncRoomEquipment } from "@/lib/keying-queries";
 import { keyRoomCreateSchema } from "@/lib/validators";
 
 export async function GET() {
@@ -28,17 +28,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  const { db, accountId } = session;
   const data = parsed.data;
-  const room = await session.db.keyRoom.create({
+  const created = await db.keyRoom.create({
     data: {
-      accountId: session.accountId,
+      accountId,
       name: data.name.trim(),
       number: data.number?.trim() || null,
       building: data.building?.trim() || null,
       floor: data.floor?.trim() || null,
       notes: data.notes?.trim() || null,
     },
-    include: roomInclude,
+    select: { id: true },
   });
+
+  await syncRoomEquipment(db, accountId, created.id, data);
+
+  const room = await db.keyRoom.findUnique({ where: { id: created.id }, include: roomInclude });
   return NextResponse.json(room, { status: 201 });
 }

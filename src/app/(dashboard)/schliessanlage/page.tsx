@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { SchliessanlageClient } from "@/components/schliessanlage/schliessanlage-client";
 import type {
+  CameraOption,
+  DeviceOption,
   DoorRow,
   HandoverRow,
   KeyRow,
@@ -88,6 +90,34 @@ export default async function SchliessanlagePage() {
     }),
   ]);
 
+  // Getrennt geladen: hält die Tupel-Inferenz des grossen Promise.all klein.
+  const [devices, cameras] = await Promise.all([
+    db.device.findMany({
+      where: accountFilter,
+      select: { id: true, name: true, type: true, category: true, keyRoomId: true },
+      orderBy: { name: "asc" },
+    }),
+    db.camera.findMany({
+      where: accountFilter,
+      select: { id: true, name: true, kind: true, keyRoomId: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  const deviceOptions: DeviceOption[] = devices.map((d) => ({
+    id: d.id,
+    name: d.name,
+    type: d.type,
+    category: d.category,
+    roomId: d.keyRoomId,
+  }));
+  const cameraOptions: CameraOption[] = cameras.map((c) => ({
+    id: c.id,
+    name: c.name,
+    kind: c.kind,
+    roomId: c.keyRoomId,
+  }));
+
   const doorRows: DoorRow[] = doors.map((d) => ({
     id: d.id,
     roomId: d.roomId,
@@ -104,6 +134,7 @@ export default async function SchliessanlagePage() {
       installedAt: l.installedAt ? l.installedAt.toISOString() : null,
       notes: l.notes,
       keyCount: l._count.keys,
+      deviceId: l.deviceId,
     })),
   }));
 
@@ -175,6 +206,8 @@ export default async function SchliessanlagePage() {
             rooms: roomRows,
             looseDoors: doorRows.filter((d) => d.roomId === null),
             lockOptions,
+            deviceOptions,
+            cameraOptions,
             keys: keyRows,
             holders: holders.map((h) => ({
               id: h.id,

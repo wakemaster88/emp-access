@@ -10,6 +10,8 @@ export interface LockRow {
   installedAt: string | null;
   notes: string | null;
   keyCount: number;
+  /** IoT-Gerät, das diesen Schließpunkt öffnet (Nuki, LOQED, Shelly). */
+  deviceId: number | null;
 }
 
 export interface DoorRow {
@@ -35,6 +37,22 @@ export interface RoomRow {
 export interface LockOption {
   id: number;
   label: string;
+}
+
+/** IoT-Geraet mit seiner aktuellen Raumzuordnung. */
+export interface DeviceOption {
+  id: number;
+  name: string;
+  type: string;
+  category: string | null;
+  roomId: number | null;
+}
+
+export interface CameraOption {
+  id: number;
+  name: string;
+  kind: string;
+  roomId: number | null;
 }
 
 export interface KeyRow {
@@ -118,6 +136,9 @@ export interface SchliessanlageData {
   /** Tueren ohne Raumzuordnung (Haupteingang, Treppenhaus …). */
   looseDoors: DoorRow[];
   lockOptions: LockOption[];
+  /** Alle Geräte/Kameras des Mandanten – Auswahl und Anzeige je Raum. */
+  deviceOptions: DeviceOption[];
+  cameraOptions: CameraOption[];
   keys: KeyRow[];
   holders: HolderRow[];
   employees: EmployeeOption[];

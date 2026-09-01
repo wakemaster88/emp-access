@@ -7,18 +7,25 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ErrorLine, apiRequest, isoToDateInput } from "@/components/schliessanlage/shared";
-import type { LockRow } from "@/components/schliessanlage/types";
+import {
+  ErrorLine,
+  apiRequest,
+  canOpenLock,
+  deviceMetaLabel,
+  isoToDateInput,
+} from "@/components/schliessanlage/shared";
+import type { DeviceOption, LockRow } from "@/components/schliessanlage/types";
 import { LOCK_TYPE_LABELS } from "@/lib/keying";
 
 interface Props {
   lock: LockRow | null;
   doorId: number;
+  devices: DeviceOption[];
   open: boolean;
   onClose: () => void;
 }
 
-export function LockDialog({ lock, doorId, open, onClose }: Props) {
+export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
   const router = useRouter();
   const isNew = !lock;
   const [lockNumber, setLockNumber] = useState(lock?.lockNumber ?? "");
@@ -27,8 +34,18 @@ export function LockDialog({ lock, doorId, open, onClose }: Props) {
   const [manufacturer, setManufacturer] = useState(lock?.manufacturer ?? "");
   const [installedAt, setInstalledAt] = useState(isoToDateInput(lock?.installedAt ?? null));
   const [notes, setNotes] = useState(lock?.notes ?? "");
+  const [deviceId, setDeviceId] = useState(lock?.deviceId ? String(lock.deviceId) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Smart Locks und Tür-Shellys zuerst, der Rest bleibt für Sonderfälle wählbar.
+  const [preferred, others] = devices.reduce<[DeviceOption[], DeviceOption[]]>(
+    (acc, d) => {
+      acc[canOpenLock(d.type, d.category) ? 0 : 1].push(d);
+      return acc;
+    },
+    [[], []],
+  );
 
   async function save() {
     setSaving(true);
@@ -44,6 +61,7 @@ export function LockDialog({ lock, doorId, open, onClose }: Props) {
         manufacturer: manufacturer.trim() || null,
         installedAt: installedAt || null,
         notes: notes.trim() || null,
+        deviceId: deviceId ? Number(deviceId) : null,
       },
     );
     setSaving(false);
@@ -146,6 +164,40 @@ export function LockDialog({ lock, doorId, open, onClose }: Props) {
                 className="h-9"
               />
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="k-device" className="text-xs">
+              Elektronisches Gerät
+            </Label>
+            <select
+              id="k-device"
+              value={deviceId}
+              onChange={(e) => setDeviceId(e.target.value)}
+              className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+            >
+              <option value="">Rein mechanisch</option>
+              {preferred.length > 0 && (
+                <optgroup label="Smart Locks & Türsteuerung">
+                  {preferred.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({deviceMetaLabel(d.type, d.category)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {others.length > 0 && (
+                <optgroup label="Weitere Geräte">
+                  {others.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({deviceMetaLabel(d.type, d.category)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <p className="text-[10px] text-slate-400">
+              Nuki, LOQED oder ein Shelly am Türöffner, der diesen Schließpunkt öffnet.
+            </p>
           </div>
           <ErrorLine message={error} />
         </div>

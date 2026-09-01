@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { roomInclude } from "@/lib/keying-queries";
+import { roomInclude, syncRoomEquipment } from "@/lib/keying-queries";
 import { keyRoomUpdateSchema } from "@/lib/validators";
 
 export async function PUT(
@@ -26,7 +26,7 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   const data = parsed.data;
-  const room = await db.keyRoom.update({
+  await db.keyRoom.update({
     where: { id: roomId },
     data: {
       ...(data.name !== undefined && { name: data.name.trim() }),
@@ -35,8 +35,12 @@ export async function PUT(
       ...(data.floor !== undefined && { floor: data.floor?.trim() || null }),
       ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
     },
-    include: roomInclude,
+    select: { id: true },
   });
+
+  await syncRoomEquipment(db, accountId, roomId, data);
+
+  const room = await db.keyRoom.findUnique({ where: { id: roomId }, include: roomInclude });
   return NextResponse.json(room);
 }
 

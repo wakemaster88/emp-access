@@ -30,6 +30,46 @@ export function handoverStatusLabel(status: string): string {
   return HANDOVER_STATUS_LABELS[status as HandoverStatus] ?? status;
 }
 
+const DEVICE_TYPE_LABELS: Record<string, string> = {
+  RASPBERRY_PI: "Raspberry Pi",
+  SHELLY: "Shelly",
+  NUKI_SMARTLOCK: "Nuki",
+  LOQED_SMARTLOCK: "LOQED",
+  GARDENA_VALVE: "GARDENA",
+  AUDIO_PLAYER: "Audio",
+};
+
+const DEVICE_CATEGORY_LABELS: Record<string, string> = {
+  DREHKREUZ: "Drehkreuz",
+  TUER: "Tür",
+  SENSOR: "Sensor",
+  SCHALTER: "Schalter",
+  BELEUCHTUNG: "Beleuchtung",
+  AUDIO: "Audio",
+  MARKISE: "Markise",
+  ROLLTOR: "Rolltor",
+  TASTER: "Taster",
+};
+
+export function deviceTypeLabel(type: string): string {
+  return DEVICE_TYPE_LABELS[type] ?? type;
+}
+
+/** "Shelly · Schalter" – kurze Herkunftszeile unter dem Gerätenamen. */
+export function deviceMetaLabel(type: string, category: string | null): string {
+  const cat = category ? DEVICE_CATEGORY_LABELS[category] ?? category : null;
+  return [deviceTypeLabel(type), cat].filter(Boolean).join(" · ");
+}
+
+/** Geräte, die einen Schließpunkt elektronisch öffnen können. */
+export function canOpenLock(type: string, category: string | null): boolean {
+  return (
+    type === "NUKI_SMARTLOCK" ||
+    type === "LOQED_SMARTLOCK" ||
+    (type === "SHELLY" && (category === "TUER" || category === "DREHKREUZ" || category === "TASTER"))
+  );
+}
+
 const LEVEL_CLASSES: Record<string, string> = {
   SINGLE: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   GROUP: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",

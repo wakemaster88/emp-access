@@ -34,10 +34,16 @@ export async function POST(request: NextRequest) {
   const door = await db.keyDoor.findFirst({ where: { id: data.doorId, accountId } });
   if (!door) return NextResponse.json({ error: "Tür nicht gefunden" }, { status: 400 });
 
+  if (data.deviceId != null) {
+    const device = await db.device.findFirst({ where: { id: data.deviceId, accountId } });
+    if (!device) return NextResponse.json({ error: "Gerät nicht gefunden" }, { status: 400 });
+  }
+
   const lock = await db.keyLock.create({
     data: {
       accountId,
       doorId: data.doorId,
+      deviceId: data.deviceId ?? null,
       lockNumber: data.lockNumber?.trim() || null,
       lockType: data.lockType ?? "CYLINDER",
       system: data.system?.trim() || null,

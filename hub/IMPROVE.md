@@ -192,3 +192,23 @@ Rohdaten: `hub/.cache/improve.jsonl` · API: `http://127.0.0.1:8787/api/improve`
 - `face.near_miss` weiter beobachten – die Personen-Ansicht zeigt jetzt Match/Near-Miss/Nomatch nebeneinander, damit die Schwelle belegbar wird.
 - Fahrzeug-Zähler standen nach dem Neustart auf 0; nach dem nächsten Burst prüfen, ob Kennzeichen und Whitelist-Treffer in der Fahrzeug-Ansicht auftauchen.
 - SNMP bleibt aus (`HUB_SNMP_TARGETS` fehlt) – erscheint als Health-Zeile „aus“.
+
+## 2026-09-01 (Kameras/Geräte an die Schließanlage gehängt)
+
+Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, `hub/.cache/improve-latest.md` existiert nicht – der Hub lief während der Arbeit nicht. Reine Cloud-/Schema-Arbeit, keine Hub-Laufzeit angefasst.
+
+### Befund
+
+- `Camera` und `Device` hatten keinen Ortsbezug zur Schließanlage: Bestand sind **78 Geräte** und **13 Kameras**, davon **0** einem Raum zugeordnet. Wo ein Shelly oder eine Kamera physisch hängt, stand nirgends.
+- Die drei neuen Fremdschlüssel haben den Typvergleich im ganzen Repo gekippt: `next build` brach in `src/app/(dashboard)/areas/page.tsx` mit TS2349 ab – genau der in `src/lib/prisma.ts` dokumentierte Effekt, und in einer Datei, die mit der Schließanlage nichts zu tun hat.
+
+### Änderungen
+
+- `Device.keyRoomId`, `Camera.keyRoomId`, `KeyLock.deviceId` (alle nullable, `ON DELETE SET NULL`) plus Indizes – Migration `20260901133000_link_devices_to_keying`.
+- `TenantDb` ist keine Union mehr: `tenantClient()` gibt jetzt `PrismaClient` zurück (die Erweiterung setzt nur den RLS-Kontext). `npx tsc --noEmit` fällt damit von **rund 200 Fehlern auf 0**; vorher war der Typecheck als Werkzeug unbrauchbar.
+- `network-scan-ingest.ts`: `IpHistoryEntry` von `interface` auf Type-Alias – erst dadurch passt es in Prismas `InputJsonValue`. Der Fehler war vorher hinter der Union versteckt.
+
+### Offen
+
+- Kein Gerät und keine Kamera ist bislang einem Raum zugeordnet – die Zuordnung muss einmal von Hand gepflegt werden, bevor die Anzeige im Raumbaum etwas hergibt.
+- Der Hub kennt die Raumzuordnung nicht. Falls Kamera-Events künftig nach Raum gefiltert werden sollen, muss `keyRoomId` in die Hub-Sicht auf Kameras.

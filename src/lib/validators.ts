@@ -578,6 +578,10 @@ export const keyRoomCreateSchema = z.object({
   building: z.string().max(120).nullable().optional(),
   floor: z.string().max(60).nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
+  /// IoT-Geräte, die in diesem Raum hängen (Vollersetzung).
+  deviceIds: z.array(z.coerce.number().int().positive()).optional(),
+  /// Kameras, die diesen Raum abdecken (Vollersetzung).
+  cameraIds: z.array(z.coerce.number().int().positive()).optional(),
 });
 
 export const keyRoomUpdateSchema = keyRoomCreateSchema.partial();
@@ -602,6 +606,8 @@ export const keyLockCreateSchema = z.object({
   manufacturer: z.string().max(120).nullable().optional(),
   installedAt: optionalDate.optional(),
   notes: z.string().max(1000).nullable().optional(),
+  /// Gerät, das diesen Schließpunkt elektronisch öffnet. null = rein mechanisch.
+  deviceId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 export const keyLockUpdateSchema = keyLockCreateSchema.partial();

@@ -44,7 +44,13 @@ export function SchliessanlageClient({ data, readonly }: Props) {
       </TabsList>
 
       <TabsContent value="struktur">
-        <RoomsTab rooms={data.rooms} looseDoors={data.looseDoors} readonly={readonly} />
+        <RoomsTab
+          rooms={data.rooms}
+          looseDoors={data.looseDoors}
+          devices={data.deviceOptions}
+          cameras={data.cameraOptions}
+          readonly={readonly}
+        />
       </TabsContent>
 
       <TabsContent value="schluessel">

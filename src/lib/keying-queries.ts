@@ -3,20 +3,44 @@
  * den Route-Dateien: `route.ts` darf nur HTTP-Handler exportieren.
  */
 
+import type { TenantDb } from "./prisma";
+
+/** Geraete-/Kamerakennung, wie sie in der Schliessanlage angezeigt wird. */
+export const deviceSummarySelect = {
+  id: true,
+  name: true,
+  type: true,
+  category: true,
+} as const;
+
+export const cameraSummarySelect = {
+  id: true,
+  name: true,
+  kind: true,
+} as const;
+
 export const lockWithPathInclude = {
   door: { include: { room: true } },
+  device: { select: deviceSummarySelect },
+} as const;
+
+const locksWithDevice = {
+  include: { device: { select: deviceSummarySelect } },
+  orderBy: { id: "asc" as const },
 } as const;
 
 export const roomInclude = {
   doors: {
-    include: { locks: { orderBy: { id: "asc" as const } } },
+    include: { locks: locksWithDevice },
     orderBy: { name: "asc" as const },
   },
+  devices: { select: deviceSummarySelect, orderBy: { name: "asc" as const } },
+  cameras: { select: cameraSummarySelect, orderBy: { name: "asc" as const } },
 } as const;
 
 export const doorInclude = {
   room: true,
-  locks: { orderBy: { id: "asc" as const } },
+  locks: locksWithDevice,
 } as const;
 
 export const keyItemInclude = {
@@ -57,6 +81,47 @@ export const handoverInclude = {
     orderBy: { id: "desc" as const },
   },
 } as const;
+
+/**
+ * Setzt Geraete- und Kamera-Zuordnung eines Raums vollersetzend: was nicht mehr
+ * in der Liste steht, faellt auf "kein Raum" zurueck. Ein Geraet haengt immer
+ * nur in genau einem Raum, deshalb genuegen Updates auf der Fremdschluessel-
+ * spalte statt einer eigenen Zuordnungstabelle.
+ */
+export async function syncRoomEquipment(
+  db: TenantDb,
+  accountId: number,
+  roomId: number,
+  input: { deviceIds?: number[]; cameraIds?: number[] },
+): Promise<void> {
+  if (input.deviceIds) {
+    const next = [...new Set(input.deviceIds)];
+    await db.device.updateMany({
+      where: { accountId, keyRoomId: roomId, ...(next.length && { id: { notIn: next } }) },
+      data: { keyRoomId: null },
+    });
+    if (next.length) {
+      await db.device.updateMany({
+        where: { accountId, id: { in: next } },
+        data: { keyRoomId: roomId },
+      });
+    }
+  }
+
+  if (input.cameraIds) {
+    const next = [...new Set(input.cameraIds)];
+    await db.camera.updateMany({
+      where: { accountId, keyRoomId: roomId, ...(next.length && { id: { notIn: next } }) },
+      data: { keyRoomId: null },
+    });
+    if (next.length) {
+      await db.camera.updateMany({
+        where: { accountId, id: { in: next } },
+        data: { keyRoomId: roomId },
+      });
+    }
+  }
+}
 
 /** Lesbarer Pfad eines Schlosses: "Gebäude · Raum · Tür (Schließung)". */
 export function lockPathLabel(lock: {

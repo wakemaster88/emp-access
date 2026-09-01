@@ -4,31 +4,48 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
+  Cctv,
   ChevronDown,
   ChevronRight,
+  Cpu,
   DoorOpen,
   KeyRound,
   Lock,
   Pencil,
   Plus,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DoorDialog } from "@/components/schliessanlage/door-dialog";
 import { LockDialog } from "@/components/schliessanlage/lock-dialog";
 import { RoomDialog } from "@/components/schliessanlage/room-dialog";
-import { EmptyHint, ErrorLine, apiRequest, lockTypeLabel } from "@/components/schliessanlage/shared";
-import type { DoorRow, LockRow, RoomRow } from "@/components/schliessanlage/types";
+import {
+  EmptyHint,
+  ErrorLine,
+  apiRequest,
+  deviceMetaLabel,
+  lockTypeLabel,
+} from "@/components/schliessanlage/shared";
+import type {
+  CameraOption,
+  DeviceOption,
+  DoorRow,
+  LockRow,
+  RoomRow,
+} from "@/components/schliessanlage/types";
 import { cn } from "@/lib/utils";
 
 interface Props {
   rooms: RoomRow[];
   looseDoors: DoorRow[];
+  devices: DeviceOption[];
+  cameras: CameraOption[];
   readonly: boolean;
 }
 
-export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
+export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Props) {
   const router = useRouter();
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [roomDialog, setRoomDialog] = useState<{ room: RoomRow | null } | null>(null);
@@ -54,6 +71,8 @@ export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
   }
 
   const doorCount = rooms.reduce((sum, r) => sum + r.doors.length, 0) + looseDoors.length;
+  const roomNames = new Map(rooms.map((r) => [r.id, r.name]));
+  const deviceById = new Map(devices.map((d) => [d.id, d]));
 
   const renderDoor = (door: DoorRow) => (
     <div
@@ -119,6 +138,15 @@ export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
               </span>
               <span className="text-[10px] text-slate-400">{lockTypeLabel(lock.lockType)}</span>
               {lock.system && <span className="truncate text-[10px] text-slate-400">· {lock.system}</span>}
+              {lock.deviceId != null && (
+                <span
+                  className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-indigo-500"
+                  title="Wird elektronisch geöffnet"
+                >
+                  <Zap className="h-2.5 w-2.5" />
+                  {deviceById.get(lock.deviceId)?.name ?? "Gerät"}
+                </span>
+              )}
               <span
                 className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-slate-400"
                 title={`${lock.keyCount} Schlüssel zugeordnet`}
@@ -204,6 +232,8 @@ export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
 
         {rooms.map((room) => {
           const isOpen = expanded.has(room.id);
+          const roomDevices = devices.filter((d) => d.roomId === room.id);
+          const roomCameras = cameras.filter((c) => c.roomId === room.id);
           return (
             <div
               key={room.id}
@@ -230,8 +260,28 @@ export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
                   <span className="shrink-0 text-[11px] text-slate-400">
                     {[room.building, room.floor].filter(Boolean).join(" · ")}
                   </span>
-                  <span className="ml-auto shrink-0 text-[11px] text-slate-400">
-                    {room.doors.length} {room.doors.length === 1 ? "Tür" : "Türen"}
+                  <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-slate-400">
+                    {roomDevices.length > 0 && (
+                      <span
+                        className="inline-flex items-center gap-0.5"
+                        title={`${roomDevices.length} Geräte in diesem Raum`}
+                      >
+                        <Cpu className="h-3 w-3" />
+                        {roomDevices.length}
+                      </span>
+                    )}
+                    {roomCameras.length > 0 && (
+                      <span
+                        className="inline-flex items-center gap-0.5"
+                        title={`${roomCameras.length} Kameras für diesen Raum`}
+                      >
+                        <Cctv className="h-3 w-3" />
+                        {roomCameras.length}
+                      </span>
+                    )}
+                    <span>
+                      {room.doors.length} {room.doors.length === 1 ? "Tür" : "Türen"}
+                    </span>
                   </span>
                 </button>
                 {!readonly && (
@@ -278,6 +328,31 @@ export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
                   ) : (
                     room.doors.map(renderDoor)
                   )}
+
+                  {(roomDevices.length > 0 || roomCameras.length > 0) && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {roomDevices.map((d) => (
+                        <span
+                          key={`d${d.id}`}
+                          title={deviceMetaLabel(d.type, d.category)}
+                          className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          <Cpu className="h-2.5 w-2.5 text-slate-400" />
+                          {d.name}
+                        </span>
+                      ))}
+                      {roomCameras.map((c) => (
+                        <span
+                          key={`c${c.id}`}
+                          title={c.kind}
+                          className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          <Cctv className="h-2.5 w-2.5 text-slate-400" />
+                          {c.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -297,6 +372,9 @@ export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
       {roomDialog && (
         <RoomDialog
           room={roomDialog.room}
+          devices={devices}
+          cameras={cameras}
+          roomNames={roomNames}
           open
           onClose={() => setRoomDialog(null)}
         />
@@ -314,6 +392,7 @@ export function RoomsTab({ rooms, looseDoors, readonly }: Props) {
         <LockDialog
           lock={lockDialog.lock}
           doorId={lockDialog.doorId}
+          devices={devices}
           open
           onClose={() => setLockDialog(null)}
         />
