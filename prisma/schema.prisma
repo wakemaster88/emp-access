@@ -173,6 +173,7 @@ model Account {
   audioSchedules       AudioSchedule[]
   audioJobs            AudioJob[]
   keyRooms             KeyRoom[]
+  operatingSchedules   OperatingSchedule[]
   keyDoors             KeyDoor[]
   keyLocks             KeyLock[]
   keyItems             KeyItem[]
@@ -2219,25 +2220,30 @@ model AudioJob {
 
 /// Raum bzw. Bereich, in dem Tueren haengen.
 model KeyRoom {
-  id        Int       @id @default(autoincrement())
-  accountId Int
-  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name      String
+  id                  Int                @id @default(autoincrement())
+  accountId           Int
+  account             Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name                String
   /// Raumnummer/Kennung, z. B. "1.03".
-  number    String?
-  building  String?
-  floor     String?
-  notes     String?   @db.Text
-  doors     KeyDoor[]
+  number              String?
+  building            String?
+  floor               String?
+  notes               String?            @db.Text
+  doors               KeyDoor[]
   /// IoT-Geraete, die in diesem Raum haengen (Shelly, Taster, Smart Lock).
-  devices   Device[]
+  devices             Device[]
   /// Kameras, die diesen Raum abdecken.
-  cameras   Camera[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  cameras             Camera[]
+  /// Betriebszeit, nach der sich dieser Raum richtet. Regeln fragen darueber,
+  /// ob gerade geoeffnet ist; ohne Profil gilt der Raum als immer verfuegbar.
+  operatingScheduleId Int?
+  operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   @@index([accountId])
   @@index([accountId, building])
+  @@index([operatingScheduleId])
 }
 
 /// Tuer. `roomId` ist optional, damit Aussen-/Gemeinschaftstueren (Haupteingang,
@@ -2455,4 +2461,88 @@ model KeySignature {
   @@index([accountId])
   @@index([handoverId])
   @@index([token])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Betriebszeiten
+// ─────────────────────────────────────────────────────────────────────────────
+// Wann hat der Betrieb geoeffnet? Diese Frage war bisher nirgends beantwortbar:
+// `AccessArea.openingHours` ist Freitext und wird nur angezeigt, maschinenlesbar
+// lagen die Zeiten ausschliesslich extern in ANNY – und dort je Service, nicht
+// je Betrieb. Automationen brauchen sie ausgewertet ("bei Betriebsbeginn Licht
+// an", "ausserhalb der Betriebszeit alles aus"), deshalb dieses Modell.
+//
+// Aufbau: Profil -> Saison -> Oeffnungsperiode je Wochentag, dazu Ausnahmetage.
+// Findet sich fuer einen Tag keine Saison, gilt der Betrieb als geschlossen.
+// Die Kindtabellen tragen bewusst keinen `accountId`: sie haengen ueber Cascade
+// am Profil, das die Mandantengrenze zieht (wie `ShellyGroupMember`).
+
+/// Betriebszeit-Profil, z. B. "Strandbad" oder "Gastronomie". Ein Raum haengt an
+/// hoechstens einem Profil; Regeln fragen darueber, ob gerade geoeffnet ist.
+model OperatingSchedule {
+  id          Int                  @id @default(autoincrement())
+  accountId   Int
+  account     Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  /// Vorbelegung fuer neue Raeume. Hoechstens ein Profil je Mandant.
+  isDefault   Boolean              @default(false)
+  sortOrder   Int                  @default(0)
+  seasons     OperatingSeason[]
+  exceptions  OperatingException[]
+  rooms       KeyRoom[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([accountId])
+}
+
+/// Zeitraum im Jahr mit eigenem Wochenplan, z. B. "Sommer 01.05.–15.09.".
+/// `startMmDd`/`endMmDd` sind "MM-TT" und gelten jedes Jahr erneut. Ein Ende vor
+/// dem Start laeuft ueber den Jahreswechsel (Wintersaison 11-01 bis 03-31).
+model OperatingSeason {
+  id         Int               @id @default(autoincrement())
+  scheduleId Int
+  schedule   OperatingSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  name       String
+  startMmDd  String
+  endMmDd    String
+  /// Bei Ueberschneidung gewinnt die Saison mit der kleineren Zahl.
+  sortOrder  Int               @default(0)
+  periods    OperatingPeriod[]
+
+  @@index([scheduleId])
+}
+
+/// Oeffnungszeit an einem Wochentag. Mehrere Perioden je Tag sind erlaubt, damit
+/// eine Mittagspause abbildbar bleibt. `closesAt` vor `opensAt` laeuft ueber
+/// Mitternacht (18:00–02:00); gleiche Werte bedeuten durchgehend geoeffnet.
+model OperatingPeriod {
+  id       Int             @id @default(autoincrement())
+  seasonId Int
+  season   OperatingSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  /// 0=Mo … 6=So, wie die `daysOfWeek`-Bitmasken der Automationen.
+  weekday  Int
+  opensAt  String
+  closesAt String
+
+  @@index([seasonId])
+  @@index([seasonId, weekday])
+}
+
+/// Einzelner abweichender Tag: Feiertag, Betriebsferien, Sonderoeffnung.
+/// Schlaegt jede Saison. `closed` heisst ganztaegig zu; sonst gelten die Zeiten.
+model OperatingException {
+  id         Int               @id @default(autoincrement())
+  scheduleId Int
+  schedule   OperatingSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  /// Kalendertag "YYYY-MM-TT" in der Zeitzone des Mandanten.
+  date       String
+  closed     Boolean           @default(true)
+  opensAt    String?
+  closesAt   String?
+  note       String?
+
+  @@unique([scheduleId, date])
+  @@index([scheduleId])
 }

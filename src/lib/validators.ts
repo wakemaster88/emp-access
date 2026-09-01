@@ -582,6 +582,8 @@ export const keyRoomCreateSchema = z.object({
   deviceIds: z.array(z.coerce.number().int().positive()).optional(),
   /// Kameras, die diesen Raum abdecken (Vollersetzung).
   cameraIds: z.array(z.coerce.number().int().positive()).optional(),
+  /// Betriebszeit-Profil; null = keines.
+  operatingScheduleId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 export const keyRoomUpdateSchema = keyRoomCreateSchema.partial();
@@ -735,3 +737,61 @@ export const keySignatureSubmitSchema = z.object({
   acceptedPolicy: z.literal(true),
   acceptedLiability: z.boolean().optional(),
 });
+
+// ─── Betriebszeiten ──────────────────────────────────────────────────────────
+
+/// Anders als `hhmm` weiter oben nicht nullable: eine Öffnungszeit ohne Uhrzeit
+/// gibt es nicht.
+const timeHhmm = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Uhrzeit muss HH:mm sein");
+
+const mmDd = z
+  .string()
+  .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Datum muss MM-TT sein");
+
+const ymd = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Datum muss JJJJ-MM-TT sein");
+
+export const operatingPeriodSchema = z.object({
+  /// 0=Mo … 6=So.
+  weekday: z.coerce.number().int().min(0).max(6),
+  opensAt: timeHhmm,
+  closesAt: timeHhmm,
+});
+
+export const operatingSeasonSchema = z.object({
+  name: z.string().min(1).max(80),
+  startMmDd: mmDd,
+  endMmDd: mmDd,
+  sortOrder: z.coerce.number().int().min(0).optional(),
+  /// Öffnungszeiten dieser Saison (Vollersetzung).
+  periods: z.array(operatingPeriodSchema).max(70).default([]),
+});
+
+export const operatingExceptionSchema = z
+  .object({
+    date: ymd,
+    closed: z.boolean().default(true),
+    opensAt: timeHhmm.nullable().optional(),
+    closesAt: timeHhmm.nullable().optional(),
+    note: z.string().max(200).nullable().optional(),
+  })
+  .refine((v) => v.closed || (!!v.opensAt && !!v.closesAt), {
+    message: "Sonderöffnung braucht Beginn und Ende",
+    path: ["opensAt"],
+  });
+
+export const operatingScheduleCreateSchema = z.object({
+  name: z.string().min(1).max(80),
+  description: z.string().max(500).nullable().optional(),
+  isDefault: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().min(0).optional(),
+  /// Saisons samt Öffnungszeiten (Vollersetzung, wenn angegeben).
+  seasons: z.array(operatingSeasonSchema).max(12).optional(),
+  /// Ausnahmetage (Vollersetzung, wenn angegeben).
+  exceptions: z.array(operatingExceptionSchema).max(400).optional(),
+});
+
+export const operatingScheduleUpdateSchema = operatingScheduleCreateSchema.partial();

@@ -4,7 +4,7 @@
  * Telegram-Foto bei Sighting mit Snapshot.
  */
 import { prisma } from "@/lib/prisma";
-import { isWithinTimeWindow } from "@/lib/shelly-automation";
+import { isWithinWindow } from "@/lib/tz-time";
 import { sendTelegramPhoto } from "@/lib/telegram";
 import { sendPushToAccount } from "@/lib/web-push";
 
@@ -57,7 +57,7 @@ export function isSurveillanceArmed(
   if (((config.daysOfWeek >> dow) & 1) !== 1) return false;
 
   if (config.windowStart && config.windowEnd) {
-    return isWithinTimeWindow(now, config.windowStart, config.windowEnd, timezone);
+    return isWithinWindow(now, config.windowStart, config.windowEnd, timezone);
   }
   // Zeitplan ohne Fenster = ganzer Tag an ausgewählten Wochentagen.
   return true;

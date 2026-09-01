@@ -1,12 +1,56 @@
 "use client";
 
-import { Building2, Cctv, Lock, Pencil, Radio, Zap } from "lucide-react";
+import { Building2, Cctv, DoorClosed, DoorOpen, Lock, Pencil, Radio, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeviceRow } from "@/components/raeume/device-row";
 import { eventTypeLabel, fmtAgo } from "@/components/raeume/shared";
 import type { DeviceStatus } from "@/components/raeume/status";
 import type { RoomDevice, RoomPanel as RoomPanelData } from "@/components/raeume/types";
+import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
+import { tzYmd } from "@/lib/tz-time";
 import { cn } from "@/lib/utils";
+
+/**
+ * Betriebszustand des Raums als Zeile: geoeffnet oder geschlossen, dazu die
+ * Zeiten von heute. Ohne Profil bleibt die Zeile weg – dann steuert nichts
+ * anderes als die Regeln selbst.
+ */
+function OperatingLine({
+  schedule,
+  timezone,
+  nowMs,
+}: {
+  schedule: NonNullable<RoomPanelData["schedule"]>;
+  timezone: string;
+  nowMs: number;
+}) {
+  const now = new Date(nowMs);
+  const spec = { name: schedule.name, seasons: schedule.seasons, exceptions: schedule.exceptions };
+  const open = isOperatingAt(spec, now, timezone);
+  const today = openingForDay(spec, tzYmd(now, timezone));
+
+  return (
+    <p
+      className={cn(
+        "mt-2 flex items-center gap-1.5 rounded px-2 py-1 text-[11px]",
+        open
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+          : "bg-slate-50 text-slate-500 dark:bg-slate-800/50 dark:text-slate-400",
+      )}
+      title={`Betriebszeit: ${schedule.name}`}
+    >
+      {open ? (
+        <DoorOpen className="h-3 w-3 shrink-0" />
+      ) : (
+        <DoorClosed className="h-3 w-3 shrink-0" />
+      )}
+      {open ? "geöffnet" : "geschlossen"}
+      <span className="truncate opacity-70">
+        · {schedule.name} · heute {describeDay(today)}
+      </span>
+    </p>
+  );
+}
 
 /**
  * Ein Raum als Leitstand-Karte: Geraete zum Schalten, Kameras mit letztem Bild,
@@ -17,6 +61,7 @@ export function RoomPanel({
   room,
   statuses,
   nowMs,
+  timezone,
   readonly,
   onAction,
   onEdit,
@@ -24,6 +69,7 @@ export function RoomPanel({
   room: RoomPanelData;
   statuses: Map<number, DeviceStatus>;
   nowMs: number;
+  timezone: string;
   readonly: boolean;
   onAction: (device: RoomDevice, action: string) => Promise<string | null>;
   onEdit: () => void;
@@ -75,6 +121,10 @@ export function RoomPanel({
             </button>
           )}
         </div>
+
+        {room.schedule && (
+          <OperatingLine schedule={room.schedule} timezone={timezone} nowMs={nowMs} />
+        )}
 
         {room.lastEvent && (
           <p className="mt-2 flex items-center gap-1.5 rounded bg-slate-50 px-2 py-1 text-[11px] text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">

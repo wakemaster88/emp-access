@@ -26,6 +26,17 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   const data = parsed.data;
+
+  if (data.operatingScheduleId) {
+    const schedule = await db.operatingSchedule.findFirst({
+      where: { id: data.operatingScheduleId, accountId },
+      select: { id: true },
+    });
+    if (!schedule) {
+      return NextResponse.json({ error: "Betriebszeit nicht gefunden" }, { status: 400 });
+    }
+  }
+
   await db.keyRoom.update({
     where: { id: roomId },
     data: {
@@ -34,6 +45,9 @@ export async function PUT(
       ...(data.building !== undefined && { building: data.building?.trim() || null }),
       ...(data.floor !== undefined && { floor: data.floor?.trim() || null }),
       ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
+      ...(data.operatingScheduleId !== undefined && {
+        operatingScheduleId: data.operatingScheduleId,
+      }),
     },
     select: { id: true },
   });

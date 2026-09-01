@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { EquipmentPicker, type EquipmentItem } from "@/components/schliessanlage/equipment-picker";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
-import type { RoomCamera, RoomDevice } from "@/components/raeume/types";
+import type { RoomCamera, RoomDevice, ScheduleOption } from "@/components/raeume/types";
 
 export interface Placed<T> {
   item: T;
@@ -27,6 +27,8 @@ export function RoomEquipmentDialog({
   devices,
   cameras,
   roomNames,
+  scheduleOptions,
+  currentScheduleId,
   open,
   onClose,
 }: {
@@ -35,6 +37,8 @@ export function RoomEquipmentDialog({
   devices: Placed<RoomDevice>[];
   cameras: Placed<RoomCamera>[];
   roomNames: Map<number, string>;
+  scheduleOptions: ScheduleOption[];
+  currentScheduleId: number | null;
   open: boolean;
   onClose: () => void;
 }) {
@@ -45,6 +49,7 @@ export function RoomEquipmentDialog({
   const [cameraIds, setCameraIds] = useState<number[]>(
     () => cameras.filter((c) => c.roomId === roomId).map((c) => c.item.id),
   );
+  const [scheduleId, setScheduleId] = useState<number | null>(currentScheduleId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -72,6 +77,7 @@ export function RoomEquipmentDialog({
     const res = await apiRequest(`/api/schliessanlage/rooms/${roomId}`, "PUT", {
       deviceIds,
       cameraIds,
+      operatingScheduleId: scheduleId,
     });
     setSaving(false);
     if (!res.ok) {
@@ -86,10 +92,32 @@ export function RoomEquipmentDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-base">{roomName}: Geräte und Kameras</DialogTitle>
+          <DialogTitle className="text-base">{roomName}: Ausstattung und Betriebszeit</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Betriebszeit</Label>
+            <select
+              value={scheduleId ?? ""}
+              onChange={(e) => setScheduleId(e.target.value ? Number(e.target.value) : null)}
+              className="h-9 w-full rounded-md border border-neutral-200 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            >
+              <option value="">keine – Raum gilt als dauerhaft verfügbar</option>
+              {scheduleOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                  {option.isDefault ? " (Vorbelegung)" : ""}
+                </option>
+              ))}
+            </select>
+            {scheduleOptions.length === 0 && (
+              <p className="text-[11px] text-neutral-500">
+                Noch keine Betriebszeit angelegt – unter „Betriebszeiten“ anlegen.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1">
             <Label className="text-xs">Geräte in diesem Raum</Label>
             <EquipmentPicker

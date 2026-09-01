@@ -15,7 +15,11 @@ const STATUS_SETTLE_MS = 1200;
 
 export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: boolean }) {
   const [query, setQuery] = useState("");
-  const [equipmentRoom, setEquipmentRoom] = useState<{ id: number; name: string } | null>(null);
+  const [equipmentRoom, setEquipmentRoom] = useState<{
+    id: number;
+    name: string;
+    scheduleId: number | null;
+  } | null>(null);
   const [error, setError] = useState("");
 
   // Nur Shelly-Geraete haben eine Statusabfrage. Geraete ohne Raum bleiben
@@ -182,9 +186,16 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
               room={room}
               statuses={statuses}
               nowMs={nowMs}
+              timezone={data.timezone}
               readonly={readonly}
               onAction={handleAction}
-              onEdit={() => setEquipmentRoom({ id: room.id, name: room.name })}
+              onEdit={() =>
+                setEquipmentRoom({
+                  id: room.id,
+                  name: room.name,
+                  scheduleId: room.schedule?.id ?? null,
+                })
+              }
             />
           ))}
         </div>
@@ -197,6 +208,8 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
           devices={placedDevices}
           cameras={placedCameras}
           roomNames={roomNames}
+          scheduleOptions={data.scheduleOptions}
+          currentScheduleId={equipmentRoom.scheduleId}
           open
           onClose={() => setEquipmentRoom(null)}
         />

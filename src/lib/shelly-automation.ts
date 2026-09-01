@@ -4,6 +4,7 @@ import { controlShelly } from "@/lib/shelly";
 import { runCoverAction } from "@/lib/shelly-cover";
 import { isCoverDevice, type CoverAction } from "@/lib/cover-constants";
 import { getSunTimesForAccount } from "@/lib/sun";
+import { isWithinWindow, tzInstant, tzWeekdayBit, tzYmd } from "@/lib/tz-time";
 import type { ShellyAction, AutomationTrigger } from "@prisma/client";
 
 /** Shelly-Cloud-Server, wenn im Account keiner hinterlegt ist. */
@@ -252,7 +253,7 @@ export async function runAutomationTick(now: Date = new Date()): Promise<{
     // Kamera-Automationen werden event-getrieben ausgeloest, nicht per Cron.
     if (a.trigger === ("CAMERA_EVENT" as AutomationTrigger)) continue;
 
-    const dow = berlinWeekdayBitIndex(now, a.account.timezone);
+    const dow = tzWeekdayBit(now, a.account.timezone);
     const todayAllowed = ((a.daysOfWeek >> dow) & 1) === 1;
     if (!todayAllowed) continue;
 
@@ -267,7 +268,7 @@ export async function runAutomationTick(now: Date = new Date()): Promise<{
     if (a.trigger === ("SCHEDULE" as AutomationTrigger)) {
       triggerKind = "schedule";
       if (!a.timeOfDay) continue;
-      scheduledAt = berlinTimeOfDayToUtc(now, a.timeOfDay, a.account.timezone);
+      scheduledAt = tzInstant(tzYmd(now, a.account.timezone), a.timeOfDay, a.account.timezone);
     } else if (
       a.trigger === ("SUNRISE" as AutomationTrigger) ||
       a.trigger === ("SUNSET" as AutomationTrigger)
@@ -346,11 +347,11 @@ export async function runCameraAutomations(
 
   let triggered = 0;
   for (const a of automations) {
-    const dow = berlinWeekdayBitIndex(now, account.timezone);
+    const dow = tzWeekdayBit(now, account.timezone);
     if (((a.daysOfWeek >> dow) & 1) !== 1) continue;
 
     if (a.windowStart && a.windowEnd) {
-      if (!isWithinTimeWindow(now, a.windowStart, a.windowEnd, account.timezone)) continue;
+      if (!isWithinWindow(now, a.windowStart, a.windowEnd, account.timezone)) continue;
     }
 
     const cooldownMs = Math.max(1, a.cooldownMinutes) * 60_000;
@@ -373,109 +374,4 @@ export async function runCameraAutomations(
   }
 
   return { triggered };
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Minuten seit Mitternacht in der Account-Zeitzone. */
-function minutesInTz(now: Date, tz: string | null | undefined): number {
-  const timeZone = tz ?? "Europe/Berlin";
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-  const h = Number(parts.find((p) => p.type === "hour")?.value);
-  const m = Number(parts.find((p) => p.type === "minute")?.value);
-  // en-GB kann "24" fuer Mitternacht liefern
-  return ((h === 24 ? 0 : h) * 60) + m;
-}
-
-function parseHhmmToMinutes(hhmm: string): number | null {
-  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
-
-/**
- * Prueft, ob `now` im Fenster [start, end) liegt.
- * end < start bedeutet Ueber-Mitternacht (z. B. 22:00–08:00).
- */
-export function isWithinTimeWindow(
-  now: Date,
-  start: string,
-  end: string,
-  tz: string | null | undefined
-): boolean {
-  const startM = parseHhmmToMinutes(start);
-  const endM = parseHhmmToMinutes(end);
-  if (startM == null || endM == null) return false;
-  const mins = minutesInTz(now, tz);
-  if (startM === endM) return true;
-  if (startM < endM) return mins >= startM && mins < endM;
-  return mins >= startM || mins < endM;
-}
-
-/**
- * Liefert den Wochentag als Bit-Index (0=Mo, 1=Di, …, 6=So) in der angegebenen
- * IANA-Zeitzone (fallback: Europe/Berlin). Nutzt Intl.DateTimeFormat, kein deps.
- */
-function berlinWeekdayBitIndex(now: Date, tz: string | null | undefined): number {
-  const timeZone = tz ?? "Europe/Berlin";
-  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" })
-    .format(now)
-    .toLowerCase();
-  // Map short to bit (bit0=Mo)
-  const map: Record<string, number> = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
-  return map[weekday] ?? 0;
-}
-
-/**
- * Konvertiert "HH:mm" in der Account-Zeitzone zu einem UTC-Date für "heute"
- * in dieser Zeitzone. Robust gegen DST, nutzt Intl.DateTimeFormat.
- */
-function berlinTimeOfDayToUtc(now: Date, hhmm: string, tz: string | null | undefined): Date {
-  const timeZone = tz ?? "Europe/Berlin";
-  const [hStr, mStr] = hhmm.split(":");
-  const h = Number(hStr);
-  const m = Number(mStr);
-
-  // Heutiges Datum in der Ziel-Zeitzone ermitteln
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-  const y = Number(parts.find((p) => p.type === "year")?.value);
-  const mo = Number(parts.find((p) => p.type === "month")?.value);
-  const d = Number(parts.find((p) => p.type === "day")?.value);
-
-  // Versuche: Konstruiere UTC-Zeit für y-mo-d h:m in der Ziel-TZ über
-  // Fixpunkt-Näherung (2 Iterationen reichen für alle Zeitzonen, DST inklusive).
-  let guess = new Date(Date.UTC(y, mo - 1, d, h, m, 0));
-  for (let i = 0; i < 2; i++) {
-    const shown = new Intl.DateTimeFormat("en-GB", {
-      timeZone,
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).formatToParts(guess);
-    const gy = Number(shown.find((p) => p.type === "year")?.value);
-    const gmo = Number(shown.find((p) => p.type === "month")?.value);
-    const gd = Number(shown.find((p) => p.type === "day")?.value);
-    const gh = Number(shown.find((p) => p.type === "hour")?.value);
-    const gm = Number(shown.find((p) => p.type === "minute")?.value);
-
-    const shownUtc = Date.UTC(gy, gmo - 1, gd, gh, gm, 0);
-    const targetUtc = Date.UTC(y, mo - 1, d, h, m, 0);
-    const diff = targetUtc - shownUtc;
-    if (diff === 0) break;
-    guess = new Date(guess.getTime() + diff);
-  }
-  return guess;
 }

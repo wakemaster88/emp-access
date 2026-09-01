@@ -238,3 +238,36 @@ Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, 
 - Die Regeln müssen anschließend auf den Hub gespiegelt werden (Etappe 3), damit Bewegung lokal unter 1 s schaltet und bei Cloud-Ausfall weiterläuft. Dafür braucht der Hub `keyRoomId` in seiner Kamera- und Gerätesicht; die Vorlage dafür ist `hub/src/vehicle-actuate.ts`, das genau das für die Kennzeichen-Whitelist schon tut.
 - `Device.schedule` entweder an die neue Engine anbinden oder die UI entfernen. Aktuell verspricht sie etwas, was nicht passiert.
 - 78 Geräte und 12 Kameras müssen einmal einem Raum zugeordnet werden, bevor der Leitstand etwas hergibt. Der gelbe Hinweiskasten oben auf `/raeume` führt dorthin.
+
+## 2026-09-01 (Betriebszeiten als Fundament der Regel-Engine, Etappe 2a)
+
+Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, `hub/.cache/` fehlt, `~/Library/Logs/emp-hub.log` existiert nicht – der Hub lief während der Arbeit nicht. Reine Cloud-Arbeit, keine Hub-Laufzeit angefasst. Offener Hinweis aus dem letzten Eintrag („Regel-Engine mit Raumbezug fehlt") wird hiermit begonnen.
+
+### Befund
+
+- **Nirgends im System steht, wann der Betrieb geöffnet hat.** `AccessArea.openingHours` ist ein Freitextfeld ohne Validierung, wird nur auf dem Dashboard und in der Bereichsliste angezeigt und in der Scan-Logik nie geprüft. Maschinenlesbar lagen die Zeiten ausschließlich extern in ANNY – und dort je Service und Ressource, nicht je Betrieb.
+- Die Zeile „Betrieb von X bis Y" auf der Drehkreuz-Kachel ist **keine konfigurierte Öffnungszeit**, sondern der erste und letzte Scan des Tages (`turnstile-card.tsx:271`). Sie beschreibt, was war, nicht was gilt.
+- Es gibt **kein Feiertags- oder Ausnahmetag-Modell**. Einzige Einzeltag-Ausnahme im Bestand ist `SlotBlock`, und die gilt nur für einen ANNY-Slot.
+- Kein Saison-Modell, obwohl der Betrieb saisonal läuft. Saison entsteht heute implizit aus Datumsbereichen auf `Subscription`/`Ticket` und aus ANNY-`/start-dates`.
+- Die Zeitzonen-Helfer für „HH:mm in Ortszeit" lagen **privat in `shelly-automation.ts`** (`minutesInTz`, `berlinWeekdayBitIndex`, `berlinTimeOfDayToUtc`). `surveillance.ts` importierte `isWithinTimeWindow` quer aus der Automations-Datei – eine Überwachungsfunktion hing damit an einem Shelly-Modul.
+
+### Änderungen
+
+- **`src/lib/tz-time.ts`** neu: Wanduhr-Rechnen in beliebiger IANA-Zeitzone (`tzMinutesOfDay`, `tzWeekdayBit`, `tzYmd`, `tzInstant`, `isWithinWindow`). Die Kopien in `shelly-automation.ts` sind entfernt, `surveillance.ts` importiert jetzt von hier. Verhalten unverändert, nur an einer Stelle.
+- **Datenmodell** `OperatingSchedule` → `OperatingSeason` → `OperatingPeriod`, dazu `OperatingException`. Profil je Betriebsteil (Strandbad, Gastronomie, Seilbahn), Saison als jährlich wiederkehrender `MM-TT`-Zeitraum, mehrere Öffnungsperioden je Wochentag (Mittagspause), Ausnahmetag schlägt jede Saison. `KeyRoom.operatingScheduleId` verbindet Raum und Profil (`onDelete: SetNull`).
+- **Bewusste Festlegung:** Ein Profil ohne passende Saison gilt als **geschlossen**, ein Raum ohne Profil als **dauerhaft verfügbar**. Ersteres fällt in der Oberfläche sofort auf, Letzteres verhindert, dass ein ungepflegter Raum stillschweigend alle Regeln blockiert.
+- Nur `OperatingSchedule` trägt `accountId` und RLS; Saison, Periode und Ausnahmetag hängen per Cascade daran – wie `ShellyGroupMember`.
+- **`src/lib/operating-hours.ts`**: reine Auswertung ohne Prisma, damit sie auch im Browser läuft. `openingForDay`, `isOperatingAt`, `boundariesForDay`. Letzteres liefert Betriebsbeginn und -ende als **echte Zeitpunkte**, weil die Regel-Engine „30 Minuten vor Betriebsende" braucht und eine Nachtspanne (18:00–02:00) am Folgetag endet.
+- Seite `/betriebszeiten` (Sidebar unter Betrieb) mit Wochenplan, Saisons und Ausnahmetagen. Der Raum-Leitstand zeigt je Raum „geöffnet/geschlossen · Profil · heute 10:00–20:00" und erlaubt die Zuordnung im Raum-Dialog.
+
+### Geprüft
+
+- 17 Unit-Tests zur Auswertung: Saisonwechsel, Saison über den Jahreswechsel, Ausnahmetag mit und ohne Sonderzeit, Mittagspause, Spanne über Mitternacht inklusive Vortags-Überhang, Winter- gegen Sommerzeit (10:00 Berlin = 09:00 UTC im Januar, 08:00 UTC im Juli) und der Umstellungstag 2026-03-29. Gesamt 43 Tests grün.
+- Rauchtest an der echten Datenbank: Profil mit zwei Saisons, 8 Perioden und einem Ausnahmetag angelegt, geladen, ausgewertet, einem Raum („Shop") zugeordnet und gelöscht. Bestätigt: Ausnahmetag schlägt die Sommersaison (2026-09-01 „geschlossen" trotz Saison 01.05.–15.09.), Cascade räumt Saisons und Ausnahmen mit ab, `SetNull` lässt den Raum stehen.
+
+### Offen
+
+- Etappe 2b: Regel-Engine mit Raumbezug. Betriebszeit-Trigger (`OPENING`/`CLOSING` mit Offset) und -Bedingung („nur während", „nur außerhalb") sind jetzt auswertbar; `boundariesForDay` ist der Einstiegspunkt. Sie soll `ShellyGroup`/`ShellyAutomation` **ablösen**, dazu Datenmigration der Bestandsregeln und Ersatz von `/automation`.
+- Beim Ablösen mitziehen: `POST /api/hub/camera-events` ruft `runCameraAutomations()`, `data-retention.ts` räumt `ShellyAutomationRun`, `cover-constants.isGroupActionValid` validiert Szenen-Aktionen.
+- Die fünf bestehenden Zeitplan-Systeme (Bewässerung, Audio, Überwachung, E-Mail, Shelly) pflegen ihre Fenster weiter selbst. Sobald die Engine steht, können sie auf die Betriebszeit verweisen statt eigene Uhrzeiten zu halten – das war der eigentliche Grund für dieses Modell.
+- Noch kein Profil angelegt (der Rauchtest hat sein eigenes wieder entfernt). Ohne mindestens ein Profil bleibt die Betriebszeit-Anzeige im Leitstand aus.

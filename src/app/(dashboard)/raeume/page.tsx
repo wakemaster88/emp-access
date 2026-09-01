@@ -9,6 +9,8 @@ import type {
 } from "@/components/raeume/types";
 import { safeAuth } from "@/lib/auth";
 import { superAdminClient, tenantClient, type TenantDb } from "@/lib/prisma";
+import { scheduleInclude } from "@/lib/operating-queries";
+import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 
 /** Fenster, in dem eine Bewegung im Raum noch als "zuletzt" gezeigt wird. */
 const EVENT_LOOKBACK_HOURS = 24;
@@ -88,12 +90,13 @@ export default async function RaeumePage() {
   const since = new Date(now);
   since.setHours(since.getHours() - EVENT_LOOKBACK_HOURS);
 
-  const [rooms, looseDevices, looseCameras, events] = await Promise.all([
+  const [rooms, looseDevices, looseCameras, events, schedules, account] = await Promise.all([
     db.keyRoom.findMany({
       where: accountFilter,
       include: {
         devices: { select: deviceSelect, orderBy: { name: "asc" } },
         cameras: { select: cameraSelect, orderBy: { name: "asc" } },
+        operatingSchedule: { include: scheduleInclude },
         doors: {
           select: {
             name: true,
@@ -143,6 +146,17 @@ export default async function RaeumePage() {
       orderBy: { startedAt: "desc" },
       distinct: ["cameraId"],
     }),
+    db.operatingSchedule.findMany({
+      where: accountFilter,
+      select: { id: true, name: true, isDefault: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+    isSuperAdmin
+      ? Promise.resolve(null)
+      : db.account.findUnique({
+          where: { id: session.user.accountId! },
+          select: { timezone: true },
+        }),
   ]);
 
   const lastEventByRoom = new Map<number, RoomEvent>();
@@ -180,6 +194,30 @@ export default async function RaeumePage() {
     ),
     doorCount: room.doors.length,
     lastEvent: lastEventByRoom.get(room.id) ?? null,
+    schedule: room.operatingSchedule
+      ? {
+          id: room.operatingSchedule.id,
+          name: room.operatingSchedule.name,
+          seasons: room.operatingSchedule.seasons.map((season) => ({
+            name: season.name,
+            startMmDd: season.startMmDd,
+            endMmDd: season.endMmDd,
+            sortOrder: season.sortOrder,
+            periods: season.periods.map((p) => ({
+              weekday: p.weekday,
+              opensAt: p.opensAt,
+              closesAt: p.closesAt,
+            })),
+          })),
+          exceptions: room.operatingSchedule.exceptions.map((e) => ({
+            date: e.date,
+            closed: e.closed,
+            opensAt: e.opensAt,
+            closesAt: e.closesAt,
+            note: e.note,
+          })),
+        }
+      : null,
   }));
 
   return (
@@ -191,6 +229,8 @@ export default async function RaeumePage() {
             rooms: roomPanels,
             looseDevices: looseDevices.map(toDevice),
             looseCameras: looseCameras.map(toCamera),
+            scheduleOptions: schedules,
+            timezone: account?.timezone || DEFAULT_TIMEZONE,
             renderedAt: now.toISOString(),
           }}
           readonly={isSuperAdmin}
