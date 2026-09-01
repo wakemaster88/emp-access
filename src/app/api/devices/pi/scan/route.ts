@@ -215,7 +215,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Wenn Binarytec konfiguriert: nur Binarytec für Ticketprüfung (kein Sync, kein EMP-Ticket-Lookup)
-  const binarytec = await checkBinarytec(db as Parameters<typeof checkBinarytec>[0], accountId, code);
+  const binarytec = await checkBinarytec(
+    db as unknown as Parameters<typeof checkBinarytec>[0],
+    accountId,
+    code,
+  );
   if (binarytec !== null) {
     if (binarytec.valid) {
       const locked = await lockedResponse();
@@ -368,7 +372,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const wakesys = await checkWakesys(db as Parameters<typeof checkWakesys>[0], accountId, stripped || code);
+    const wakesys = await checkWakesys(
+      db as unknown as Parameters<typeof checkWakesys>[0],
+      accountId,
+      stripped || code,
+    );
     if (wakesys?.valid) {
       const noteData: Record<string, string | number> = {};
       if (wakesys.name) noteData.name = wakesys.name;

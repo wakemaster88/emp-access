@@ -26,15 +26,24 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
  * Prisma-Client, wie ihn die Endpunkte bekommen: entweder der rohe Client
  * (Super-Admin) oder der mandantengebundene Client aus `tenantClient`.
  *
- * MUSS die einzige Deklaration dieses Typs bleiben. Wird er mehrfach
- * deklariert, vergleicht TypeScript die beiden riesigen Client-Typen
- * strukturell statt ueber ihre Identitaet und bricht ab Schema-Groessen wie
- * unserer mit TS2859 ("Excessive complexity comparing types") ab - und zwar in
- * beliebigen anderen Dateien, sobald ein Feld dazukommt.
+ * Beide teilen sich bewusst denselben Typ. Waeren es zwei - der rohe Client
+ * und der `$extends`-Typ - muesste TypeScript an jedem `db.model.query()` zwei
+ * riesige, strukturell verschiedene Client-Typen gegeneinander aufloesen und
+ * bricht ab Schema-Groessen wie unserer mit TS2349 bzw. TS2859 ("Excessive
+ * complexity comparing types") ab - und zwar in beliebigen anderen Dateien,
+ * sobald irgendwo ein Feld dazukommt.
  */
-export type TenantDb = PrismaClient | ReturnType<typeof tenantClient>;
+export type TenantDb = PrismaClient;
 
-export function tenantClient(accountId: number) {
+/**
+ * Mandantengebundener Client: setzt vor jeder Query `app.current_tenant_id`,
+ * damit die RLS-Policies greifen.
+ *
+ * Der Rueckgabetyp ist absichtlich auf `PrismaClient` festgenagelt. Die
+ * Erweiterung haengt nur Kontext an jede Query und laesst die Client-API
+ * unveraendert - siehe `TenantDb` fuer den Grund.
+ */
+export function tenantClient(accountId: number): PrismaClient {
   return prisma.$extends({
     query: {
       $allModels: {
@@ -47,7 +56,7 @@ export function tenantClient(accountId: number) {
         },
       },
     },
-  });
+  }) as unknown as PrismaClient;
 }
 
 export { prisma as superAdminClient };

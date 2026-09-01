@@ -26,10 +26,15 @@ interface DeviceInfo {
   reachable: boolean;
 }
 
-interface IpHistoryEntry {
+/**
+ * Bewusst ein Type-Alias und kein Interface: nur Aliase bekommen von
+ * TypeScript einen impliziten Index-Signature und passen damit in Prismas
+ * `InputJsonValue` der JSON-Spalte `ipHistory`.
+ */
+type IpHistoryEntry = {
   ip: string;
   seenUntil: string;
-}
+};
 
 function str(v: unknown, max: number): string | null {
   return typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
