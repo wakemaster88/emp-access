@@ -212,3 +212,29 @@ Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, 
 
 - Kein Gerät und keine Kamera ist bislang einem Raum zugeordnet – die Zuordnung muss einmal von Hand gepflegt werden, bevor die Anzeige im Raumbaum etwas hergibt.
 - Der Hub kennt die Raumzuordnung nicht. Falls Kamera-Events künftig nach Raum gefiltert werden sollen, muss `keyRoomId` in die Hub-Sicht auf Kameras.
+
+## 2026-09-01 (Raum-Leitstand, Etappe 1 zum Smart-Home-Ausbau)
+
+Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, `hub/.cache/` ist leer, `~/Library/Logs/emp-hub.log` existiert nicht – der Hub lief während der Arbeit nicht. Reine Cloud-Arbeit, keine Hub-Laufzeit angefasst.
+
+### Befund
+
+- Der Weg „Bewegung erkannt → Lampe an" braucht heute **3–7 s**, im schlechten Fall **10 s**: Reolink-Polling (0–5 s) → `POST /api/hub/camera-events` (0,1–0,5 s) → `runCameraAutomations()` in der Cloud (0,05–0,2 s) → `controlShelly()` von Vercel, das `192.168.x` nicht erreicht und deshalb über die Shelly Cloud geht (0,5–2 s). **LAN-only-Shellys ohne Cloud-Zugang schlagen dabei ganz fehl.**
+- `Device.schedule` (Json) hat eine vollständige UI („Automatische Zeitsteuerung", `src/components/devices/schedule-card.tsx`) und speichert, **aber kein Cron liest das Feld je aus**. Eingetragene Zeiten schalten nichts.
+- Fünf parallele Zeitplan-Systeme bauen dasselbe Muster (Cron + `lastRunAt`-Guard) nach: Shelly-Automationen, Bewässerung, Audio, Überwachung, E-Mail. Shelly wird an vier Stellen unterschiedlich geschaltet (`executeGroup`, `triggerDeviceAction`, `vehicles.ts`, `persons.ts`).
+- Kamera-Ereignisse sind **5915 in 24 h** über 13 Kameras – deutlich mehr als erwartet. Erste Fassung der Leitstand-Abfrage holte „die neuesten 300" und wäre damit komplett von den aktivsten Kameras belegt gewesen; Räume anderer Kameras hätten dauerhaft keine letzte Bewegung gezeigt. Jetzt `distinct: ["cameraId"]`, gegen `groupBy(_max(startedAt))` geprüft: 13 von 13 Kameras identisch, Ergebnis **1 Zeile statt 298** bei aktueller Zuordnung.
+- Zuordnungsstand: **1 von 13 Kameras** (Halle) und **0 von 78 Geräten** hängen an einem Raum. 17 Räume sind angelegt.
+
+### Änderungen
+
+- Neue Seite `/raeume` (Sidebar „Räume" unter Betrieb): pro Raum Geräte mit Live-Zustand und Schaltflächen, Kamera-Kacheln mit Schnappschuss, Schließpunkte aus der Schließanlage, letzte Bewegung im Raum.
+- Baut auf Vorhandenem auf statt daneben: `triggerDeviceAction()` zum Schalten, `visibleDeviceControls()` für die Knöpfe, `GET /api/devices/shelly-statuses` für den Zustand. Kein neues Schalt- oder Statussystem.
+- Zuordnung von Geräten und Kameras direkt aus dem Leitstand über denselben Endpunkt wie die Schließanlage (`PUT /api/schliessanlage/rooms/[id]`) – ein Raumbegriff, zwei Sichten.
+- Relative Zeitangaben („vor 3 Min") rechnen mit einem Server-Zeitstempel als Startwert und ziehen erst nach dem Mounten im Browser nach – sonst weicht das hydrierte Markup ab.
+
+### Offen
+
+- Regel-Engine mit Raumbezug fehlt noch (Etappe 2). Sie soll `ShellyAutomation` ablösen, nicht ergänzen – sonst ist es das sechste parallele System.
+- Die Regeln müssen anschließend auf den Hub gespiegelt werden (Etappe 3), damit Bewegung lokal unter 1 s schaltet und bei Cloud-Ausfall weiterläuft. Dafür braucht der Hub `keyRoomId` in seiner Kamera- und Gerätesicht; die Vorlage dafür ist `hub/src/vehicle-actuate.ts`, das genau das für die Kennzeichen-Whitelist schon tut.
+- `Device.schedule` entweder an die neue Engine anbinden oder die UI entfernen. Aktuell verspricht sie etwas, was nicht passiert.
+- 78 Geräte und 12 Kameras müssen einmal einem Raum zugeordnet werden, bevor der Leitstand etwas hergibt. Der gelbe Hinweiskasten oben auf `/raeume` führt dorthin.
