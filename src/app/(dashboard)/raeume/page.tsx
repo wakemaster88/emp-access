@@ -97,6 +97,17 @@ export default async function RaeumePage() {
         devices: { select: deviceSelect, orderBy: { name: "asc" } },
         cameras: { select: cameraSelect, orderBy: { name: "asc" } },
         operatingSchedule: { include: scheduleInclude },
+        rules: {
+          select: {
+            id: true,
+            name: true,
+            trigger: true,
+            isActive: true,
+            lastRunAt: true,
+            _count: { select: { actions: true } },
+          },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
         doors: {
           select: {
             name: true,
@@ -194,6 +205,14 @@ export default async function RaeumePage() {
     ),
     doorCount: room.doors.length,
     lastEvent: lastEventByRoom.get(room.id) ?? null,
+    rules: room.rules.map((rule) => ({
+      id: rule.id,
+      name: rule.name,
+      trigger: rule.trigger,
+      isActive: rule.isActive,
+      lastRunAt: rule.lastRunAt ? rule.lastRunAt.toISOString() : null,
+      actionCount: rule._count.actions,
+    })),
     schedule: room.operatingSchedule
       ? {
           id: room.operatingSchedule.id,

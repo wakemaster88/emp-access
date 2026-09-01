@@ -145,19 +145,6 @@ export function coverMotionLabel(
   return COVER_MOTION_LABELS[motion];
 }
 
-/** Szenen-Aktionen, die es nur bei Antrieben gibt. */
-const COVER_ONLY_ACTIONS = new Set(["OPEN", "CLOSE", "STOP"]);
-
-/**
- * Passt eine Szenen-Aktion zum Geraet? Ein Antrieb kennt nur Fahrbefehle, ein
- * Schalter nur Schaltbefehle – sonst laesst sich die Szene nicht ausfuehren.
- */
-export function isGroupActionValid(action: string, category: string | null): boolean {
-  return isCoverCategory(category)
-    ? COVER_ONLY_ACTIONS.has(action)
-    : !COVER_ONLY_ACTIONS.has(action);
-}
-
 export interface CoverColumns {
   coverUpChannel: number | null;
   coverDownChannel: number | null;

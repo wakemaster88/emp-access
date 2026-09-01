@@ -8,6 +8,7 @@ import {
 } from "@/lib/device-open";
 import { isAudioDevice } from "@/lib/device-controls";
 import { audioInputFromDeviceAction, controlAudioDevice } from "@/lib/audio-integration";
+import { runDeviceSwitchedRules } from "@/lib/room-rules";
 
 function hasApiToken(request: NextRequest) {
   return request.nextUrl.searchParams.has("token") || request.headers.has("authorization");
@@ -78,6 +79,15 @@ export async function POST(
     action,
     { seconds },
   );
+
+  // Raumregeln, die an diesem Schaltvorgang haengen. Nur bei Erfolg und
+  // bewusst nicht abgewartet – der Knopf in der Oberflaeche soll nicht auf
+  // Folgeaktionen warten.
+  if (!error) {
+    void runDeviceSwitchedRules(accountId!, existing.id, action).catch((err) => {
+      console.error("[device action] room rules failed:", err);
+    });
+  }
 
   const hasRemoteAction = deviceSendsRemoteCommand(existing.type);
   return NextResponse.json({

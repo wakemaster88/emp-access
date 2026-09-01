@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
-import { runCameraAutomations } from "@/lib/shelly-automation";
+import { runMotionRules } from "@/lib/room-rules";
 import { maybeSurveillanceAlert } from "@/lib/surveillance";
 
 const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "DOORBELL", "OTHER"];
@@ -57,10 +57,10 @@ export async function POST(request: NextRequest) {
         data: { cameraId, type, startedAt: at, accountId: account.id },
       });
       created++;
-      // Shelly-Automationen mit Kamera-Trigger asynchron ausloesen
+      // Raumregeln mit Bewegungs-Trigger asynchron ausloesen
       // (Fehler duerfen den Event-Ingest nicht blockieren).
-      runCameraAutomations(account.id, cameraId, type, at).catch((err) => {
-        console.error("[camera-events] automation failed:", err);
+      runMotionRules(account.id, cameraId, type, at).catch((err) => {
+        console.error("[camera-events] room rules failed:", err);
       });
 
       if (type === "VEHICLE") {

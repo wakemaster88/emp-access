@@ -61,6 +61,16 @@ export interface RoomSchedule {
   exceptions: ExceptionSpec[];
 }
 
+/** Regel des Raums, verkürzt auf das, was die Karte zeigt. */
+export interface RoomRuleSummary {
+  id: number;
+  name: string;
+  trigger: string;
+  isActive: boolean;
+  lastRunAt: string | null;
+  actionCount: number;
+}
+
 /** Auswahleintrag für die Zuordnung im Raum-Dialog. */
 export interface ScheduleOption {
   id: number;
@@ -82,6 +92,7 @@ export interface RoomPanel {
   lastEvent: RoomEvent | null;
   /** `null` = keine Betriebszeit, der Raum gilt dann als dauerhaft verfügbar. */
   schedule: RoomSchedule | null;
+  rules: RoomRuleSummary[];
 }
 
 export interface RaeumeData {

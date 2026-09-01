@@ -1,9 +1,21 @@
 "use client";
 
-import { Building2, Cctv, DoorClosed, DoorOpen, Lock, Pencil, Radio, Zap } from "lucide-react";
+import Link from "next/link";
+import {
+  Building2,
+  Cctv,
+  DoorClosed,
+  DoorOpen,
+  Lock,
+  Pencil,
+  Radio,
+  Workflow,
+  Zap,
+} from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeviceRow } from "@/components/raeume/device-row";
 import { eventTypeLabel, fmtAgo } from "@/components/raeume/shared";
+import { triggerLabel } from "@/components/regeln/shared";
 import type { DeviceStatus } from "@/components/raeume/status";
 import type { RoomDevice, RoomPanel as RoomPanelData } from "@/components/raeume/types";
 import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
@@ -54,8 +66,7 @@ function OperatingLine({
 
 /**
  * Ein Raum als Leitstand-Karte: Geraete zum Schalten, Kameras mit letztem Bild,
- * Schliesspunkte aus der Schliessanlage. Die Karte ist der Ort, an dem spaeter
- * auch die Regeln des Raums stehen.
+ * Schliesspunkte aus der Schliessanlage und die Regeln, die hier greifen.
  */
 export function RoomPanel({
   room,
@@ -190,6 +201,32 @@ export function RoomPanel({
                   </span>
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+
+        {room.rules.length > 0 && (
+          <div className="space-y-1">
+            {room.rules.map((rule) => (
+              <Link
+                key={rule.id}
+                href="/regeln"
+                className={cn(
+                  "flex items-center gap-1.5 rounded px-2 py-1 text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800",
+                  rule.isActive ? "" : "opacity-50",
+                )}
+                title={
+                  rule.isActive
+                    ? `Zuletzt ausgelöst: ${fmtAgo(rule.lastRunAt, nowMs)}`
+                    : "Regel ist pausiert"
+                }
+              >
+                <Workflow className="h-3 w-3 shrink-0 text-violet-500" />
+                <span className="truncate text-slate-600 dark:text-slate-300">{rule.name}</span>
+                <span className="ml-auto shrink-0 text-slate-400">
+                  {triggerLabel(rule.trigger)}
+                </span>
+              </Link>
             ))}
           </div>
         )}

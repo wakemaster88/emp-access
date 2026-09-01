@@ -333,67 +333,6 @@ export const lostItemUpdateSchema = lostItemBaseSchema.partial().superRefine((da
   }
 });
 
-// ─── Shelly-Automation Schemas ───────────────────────────────────────────────
-
-const hhmmRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-export const shellyGroupMemberSchema = z.object({
-  deviceId: z.coerce.number().int().positive(),
-  // OPEN/CLOSE/STOP gelten nur fuer Antriebe (MARKISE/ROLLTOR); ob die Aktion
-  // zum Geraet passt, prueft die Route beim Abgleich der Geraeteliste.
-  action: z.enum(["ON", "OFF", "TOGGLE", "OPEN", "CLOSE", "STOP"]),
-  timerSeconds: z.coerce.number().int().min(1).max(86400).nullable().optional(),
-  sortOrder: z.coerce.number().int().optional(),
-});
-
-export const shellyGroupCreateSchema = z.object({
-  name: z.string().min(1).max(80),
-  description: z.string().max(500).nullable().optional(),
-  sortOrder: z.coerce.number().int().optional(),
-  members: z.array(shellyGroupMemberSchema).default([]),
-});
-
-export const shellyGroupUpdateSchema = shellyGroupCreateSchema.partial();
-
-const cameraEventType = z.enum(["MOTION", "PERSON", "VEHICLE", "ANIMAL", "OTHER"]);
-
-export const shellyAutomationCreateSchema = z
-  .object({
-    name: z.string().min(1).max(80),
-    groupId: z.coerce.number().int().positive(),
-    isActive: z.boolean().optional(),
-    trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET", "CAMERA_EVENT"]),
-    daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
-    timeOfDay: z
-      .string()
-      .regex(hhmmRegex, "Format HH:mm")
-      .nullable()
-      .optional(),
-    offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
-    cameraId: z.coerce.number().int().positive().nullable().optional(),
-    eventType: cameraEventType.nullable().optional(),
-    windowStart: z.string().regex(hhmmRegex, "Format HH:mm").nullable().optional(),
-    windowEnd: z.string().regex(hhmmRegex, "Format HH:mm").nullable().optional(),
-    cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
-  })
-  .refine(
-    (v) => v.trigger !== "SCHEDULE" || (typeof v.timeOfDay === "string" && hhmmRegex.test(v.timeOfDay)),
-    { message: "timeOfDay erforderlich bei Trigger=SCHEDULE", path: ["timeOfDay"] }
-  )
-  .refine(
-    (v) => v.trigger !== "CAMERA_EVENT" || (typeof v.cameraId === "number" && v.cameraId > 0),
-    { message: "cameraId erforderlich bei Trigger=CAMERA_EVENT", path: ["cameraId"] }
-  )
-  .refine(
-    (v) =>
-      v.trigger !== "CAMERA_EVENT" ||
-      (typeof v.windowStart === "string" &&
-        typeof v.windowEnd === "string" &&
-        hhmmRegex.test(v.windowStart) &&
-        hhmmRegex.test(v.windowEnd)),
-    { message: "Zeitfenster erforderlich bei Trigger=CAMERA_EVENT", path: ["windowStart"] }
-  );
-
 // ─── Email-Automation Schemas ────────────────────────────────────────────────
 
 export const emailConfigUpdateSchema = z.object({
@@ -461,21 +400,6 @@ export const emailRuleTestSchema = z.object({
   voucherTicketTypeName: z.string().max(120).nullable().optional(),
   renewUrl: z.string().url().max(500).nullable().optional(),
   ruleId: z.coerce.number().int().positive().optional(),
-});
-
-export const shellyAutomationUpdateSchema = z.object({
-  name: z.string().min(1).max(80).optional(),
-  groupId: z.coerce.number().int().positive().optional(),
-  isActive: z.boolean().optional(),
-  trigger: z.enum(["SCHEDULE", "SUNRISE", "SUNSET", "CAMERA_EVENT"]).optional(),
-  daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
-  timeOfDay: z.string().regex(hhmmRegex).nullable().optional(),
-  offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
-  cameraId: z.coerce.number().int().positive().nullable().optional(),
-  eventType: cameraEventType.nullable().optional(),
-  windowStart: z.string().regex(hhmmRegex).nullable().optional(),
-  windowEnd: z.string().regex(hhmmRegex).nullable().optional(),
-  cooldownMinutes: z.coerce.number().int().min(1).max(1440).optional(),
 });
 
 // ─── Fahrzeuge ───────────────────────────────────────────────────────────────
@@ -795,3 +719,124 @@ export const operatingScheduleCreateSchema = z.object({
 });
 
 export const operatingScheduleUpdateSchema = operatingScheduleCreateSchema.partial();
+
+// ─── Raumregeln ──────────────────────────────────────────────────────────────
+
+const ruleTrigger = z.enum([
+  "TIME",
+  "OPENING",
+  "CLOSING",
+  "SUNRISE",
+  "SUNSET",
+  "MOTION",
+  "DEVICE_SWITCHED",
+  "SCAN",
+  "IDLE",
+]);
+
+export const roomRuleActionSchema = z
+  .object({
+    kind: z.enum(["DEVICE", "NOTIFY", "AUDIO"]),
+    sortOrder: z.coerce.number().int().min(0).optional(),
+    deviceId: z.coerce.number().int().positive().nullable().optional(),
+    deviceAction: z.string().max(40).nullable().optional(),
+    timerSeconds: z.coerce.number().int().min(1).max(86400).nullable().optional(),
+    channel: z.enum(["TELEGRAM", "PUSH", "BOTH"]).nullable().optional(),
+    message: z.string().max(500).nullable().optional(),
+    audioZoneId: z.coerce.number().int().positive().nullable().optional(),
+    audioAnnouncementId: z.coerce.number().int().positive().nullable().optional(),
+    audioPlaylistId: z.coerce.number().int().positive().nullable().optional(),
+  })
+  .refine((v) => v.kind !== "DEVICE" || (!!v.deviceId && !!v.deviceAction), {
+    message: "Geräte-Aktion braucht Gerät und Schaltbefehl",
+    path: ["deviceId"],
+  })
+  .refine((v) => v.kind !== "AUDIO" || !!v.audioZoneId, {
+    message: "Audio-Aktion braucht eine Zone",
+    path: ["audioZoneId"],
+  })
+  .refine((v) => v.kind !== "AUDIO" || !(v.audioAnnouncementId && v.audioPlaylistId), {
+    message: "Entweder Durchsage oder Playlist, nicht beides",
+    path: ["audioPlaylistId"],
+  });
+
+export const roomRuleCreateSchema = z
+  .object({
+    name: z.string().min(1).max(120),
+    description: z.string().max(500).nullable().optional(),
+    /// null = betriebsweite Regel ohne Raumbezug.
+    roomId: z.coerce.number().int().positive().nullable().optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z.coerce.number().int().min(0).optional(),
+
+    trigger: ruleTrigger,
+    daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
+    timeOfDay: hhmm.optional(),
+    offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
+
+    cameraId: z.coerce.number().int().positive().nullable().optional(),
+    eventType: z.enum(["PERSON", "VEHICLE", "MOTION"]).nullable().optional(),
+
+    triggerDeviceId: z.coerce.number().int().positive().nullable().optional(),
+    triggerAction: z.string().max(40).nullable().optional(),
+
+    areaId: z.coerce.number().int().positive().nullable().optional(),
+    scanDirection: z.enum(["IN", "OUT"]).nullable().optional(),
+
+    idleMinutes: z.coerce.number().int().min(1).max(1440).nullable().optional(),
+
+    operating: z.enum(["ANY", "OPEN", "CLOSED"]).optional(),
+    operatingScheduleId: z.coerce.number().int().positive().nullable().optional(),
+    windowStart: hhmm.optional(),
+    windowEnd: hhmm.optional(),
+    onlyWhenDark: z.boolean().optional(),
+    cooldownSeconds: z.coerce.number().int().min(0).max(86400).optional(),
+
+    /// Aktionen der Regel (Vollersetzung, wenn angegeben).
+    actions: z.array(roomRuleActionSchema).max(20).optional(),
+  })
+  .refine((v) => v.trigger !== "TIME" || !!v.timeOfDay, {
+    message: "Uhrzeit fehlt",
+    path: ["timeOfDay"],
+  })
+  .refine((v) => v.trigger !== "DEVICE_SWITCHED" || !!v.triggerDeviceId, {
+    message: "Auslösendes Gerät fehlt",
+    path: ["triggerDeviceId"],
+  })
+  .refine((v) => v.trigger !== "IDLE" || (!!v.idleMinutes && !!v.roomId), {
+    message: "Ruhe im Raum braucht einen Raum und eine Dauer",
+    path: ["idleMinutes"],
+  })
+  .refine((v) => v.trigger !== "MOTION" || !!v.cameraId || !!v.roomId, {
+    message: "Bewegung braucht eine Kamera oder einen Raum",
+    path: ["cameraId"],
+  });
+
+/// Für Teiländerungen: `.partial()` auf einem verfeinerten Schema geht nicht,
+/// deshalb die Prüfungen hier bewusst nur beim Anlegen. Die Oberfläche schickt
+/// beim Bearbeiten ohnehin den vollständigen Satz.
+export const roomRuleUpdateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().max(500).nullable().optional(),
+  roomId: z.coerce.number().int().positive().nullable().optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().min(0).optional(),
+  trigger: ruleTrigger.optional(),
+  daysOfWeek: z.coerce.number().int().min(0).max(127).optional(),
+  timeOfDay: hhmm.optional(),
+  offsetMinutes: z.coerce.number().int().min(-720).max(720).optional(),
+  cameraId: z.coerce.number().int().positive().nullable().optional(),
+  eventType: z.enum(["PERSON", "VEHICLE", "MOTION"]).nullable().optional(),
+  triggerDeviceId: z.coerce.number().int().positive().nullable().optional(),
+  triggerAction: z.string().max(40).nullable().optional(),
+  areaId: z.coerce.number().int().positive().nullable().optional(),
+  scanDirection: z.enum(["IN", "OUT"]).nullable().optional(),
+  idleMinutes: z.coerce.number().int().min(1).max(1440).nullable().optional(),
+  operating: z.enum(["ANY", "OPEN", "CLOSED"]).optional(),
+  operatingScheduleId: z.coerce.number().int().positive().nullable().optional(),
+  windowStart: hhmm.optional(),
+  windowEnd: hhmm.optional(),
+  onlyWhenDark: z.boolean().optional(),
+  cooldownSeconds: z.coerce.number().int().min(0).max(86400).optional(),
+  actions: z.array(roomRuleActionSchema).max(20).optional(),
+});

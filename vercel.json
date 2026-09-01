@@ -56,7 +56,7 @@
       "schedule": "5 * * * *"
     },
     {
-      "path": "/api/cron/shelly-automations",
+      "path": "/api/cron/room-rules",
       "schedule": "*/5 * * * *"
     },
     {

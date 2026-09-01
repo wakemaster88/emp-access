@@ -9,6 +9,7 @@ import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { evaluateAreaScanLock, evaluateScanLock } from "@/lib/scan-lock";
 import { DEBOUNCE_WINDOW_MS, resolveDebounce } from "@/lib/scan-debounce";
 import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
+import { runScanRules } from "@/lib/room-rules";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -864,6 +865,15 @@ export async function POST(request: NextRequest) {
       ticket: ticketInfo,
     });
   }
+
+  // Raumregeln mit Scan-Trigger anstossen, ohne den Scan zu verzoegern: das
+  // Drehkreuz wartet auf diese Antwort. Fehler bleiben im Log.
+  const scanAreaIds = [device.accessIn, device.accessOut].filter(
+    (id): id is number => id != null,
+  );
+  void runScanRules(accountId, scanAreaIds, isExitScan ? "OUT" : "IN", now).catch((err) => {
+    console.error("[scan] room rules failed:", err);
+  });
 
   return NextResponse.json({
     granted: true,

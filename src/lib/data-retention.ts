@@ -65,8 +65,8 @@ export const RETENTION_LABELS: Record<
     description: "Bewässerungs-Läufe",
   },
   automationRuns: {
-    label: "Automation",
-    description: "Shelly-/Kamera-Automations-Protokoll",
+    label: "Regeln",
+    description: "Verlauf der Raumregeln",
   },
   emailSends: {
     label: "E-Mail",
@@ -181,7 +181,7 @@ export async function purgeAccountRetention(
   });
 
   await del("automationRuns", async (cutoff) => {
-    const r = await prisma.shellyAutomationRun.deleteMany({
+    const r = await prisma.roomRuleRun.deleteMany({
       where: { accountId, triggeredAt: { lt: cutoff } },
     });
     return r.count;

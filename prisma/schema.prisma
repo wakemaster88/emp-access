@@ -132,9 +132,6 @@ model Account {
   services             Service[]
   vouchers             Voucher[]
   telegramConfigs      TelegramConfig[]
-  shellyGroups         ShellyGroup[]
-  automations          ShellyAutomation[]
-  automationRuns       ShellyAutomationRun[]
   vereine              Verein[]
   lockers              Locker[]
   emailConfig          EmailConfig?
@@ -174,6 +171,8 @@ model Account {
   audioJobs            AudioJob[]
   keyRooms             KeyRoom[]
   operatingSchedules   OperatingSchedule[]
+  roomRules            RoomRule[]
+  roomRuleRuns         RoomRuleRun[]
   keyDoors             KeyDoor[]
   keyLocks             KeyLock[]
   keyItems             KeyItem[]
@@ -301,7 +300,6 @@ model Device {
   accountId            Int
   account              Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   scans                Scan[]
-  groupMembers         ShellyGroupMember[]
   irrigationSchedules  IrrigationSchedule[]
   irrigationRuns       IrrigationRun[]
   /// Tickets, die diesem Geraet direkt zugewiesen sind (additiv zu Bereichen).
@@ -323,6 +321,8 @@ model Device {
   keyLocks             KeyLock[]
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
+  ruleTriggers         RoomRule[]           @relation("RoomRuleTriggerDevice")
+  ruleActions          RoomRuleAction[]     @relation("RoomRuleActionDevice")
 
   @@index([accountId])
   @@index([keyRoomId])
@@ -528,6 +528,7 @@ model AccessArea {
   annyLinks       AnnyResourceLink[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+  scanRules       RoomRule[]
 
   @@index([accountId])
   @@index([parentId])
@@ -1152,86 +1153,9 @@ enum ShellyAction {
   STOP
 }
 
-enum AutomationTrigger {
-  SCHEDULE
-  SUNRISE
-  SUNSET
-  /// Kamera-Ereignis (z. B. PERSON) loest eine Szene aus.
-  CAMERA_EVENT
-}
 
-/// Eine Gruppe fungiert als Szene: mehrere Shelly-Geräte mit jeweils eigener
-/// Aktion (ON/OFF/TOGGLE) und optionalem Timer. Gruppen können manuell per
-/// Button oder über Automationen ausgeführt werden.
-model ShellyGroup {
-  id          Int                 @id @default(autoincrement())
-  accountId   Int
-  account     Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  sortOrder   Int                 @default(0)
-  members     ShellyGroupMember[]
-  automations ShellyAutomation[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
 
-  @@index([accountId])
-}
 
-model ShellyGroupMember {
-  id           Int          @id @default(autoincrement())
-  groupId      Int
-  group        ShellyGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  deviceId     Int
-  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  action       ShellyAction @default(ON)
-  /// Optionaler Auto-Off-Timer in Sekunden (Shelly-native `timer`-Param bei ON).
-  timerSeconds Int?
-  sortOrder    Int          @default(0)
-
-  @@unique([groupId, deviceId])
-  @@index([groupId])
-  @@index([deviceId])
-}
-
-/// Eine Automation triggert eine Gruppe (Szene) nach einem Zeitplan,
-/// relativ zu Sonnenauf-/Sonnenuntergang oder bei einem Kamera-Ereignis.
-model ShellyAutomation {
-  id              Int                   @id @default(autoincrement())
-  accountId       Int
-  account         Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  groupId         Int
-  group           ShellyGroup           @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  name            String
-  isActive        Boolean               @default(true)
-  trigger         AutomationTrigger
-  /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
-  daysOfWeek      Int                   @default(127)
-  /// "HH:mm" (nur relevant für trigger=SCHEDULE).
-  timeOfDay       String?
-  /// Offset in Minuten zum Sonnenauf/-untergang (nur SUNRISE/SUNSET).
-  /// Negativ = vor dem Ereignis, positiv = danach.
-  offsetMinutes   Int                   @default(0)
-  /// Kamera fuer trigger=CAMERA_EVENT.
-  cameraId        Int?
-  camera          Camera?               @relation(fields: [cameraId], references: [id], onDelete: SetNull)
-  /// Ereignistyp: "MOTION" | "PERSON" | "VEHICLE" | "ANIMAL" | "OTHER".
-  eventType       String?
-  /// Aktives Zeitfenster "HH:mm"–"HH:mm" (Account-TZ). end < start = ueber Mitternacht.
-  windowStart     String?
-  windowEnd       String?
-  /// Mindestabstand zwischen zwei Ausloesungen (Kamera-Events flackern oft).
-  cooldownMinutes Int                   @default(5)
-  /// Letzter Lauf – dient als Idempotenz-Guard im Cron (verhindert Doppel-Ausführung).
-  lastRunAt       DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  runs            ShellyAutomationRun[]
-
-  @@index([accountId, isActive])
-  @@index([groupId])
-  @@index([cameraId])
-}
 
 /// Vereinigung mehrerer Mitglieds-Tickets. Über `VereinAccessTicket` werden
 /// dem Verein ein oder mehrere "Zutritts-Tickets" (z. B. Bahnmiete) zugeordnet
@@ -1363,27 +1287,6 @@ model IrrigationRun {
   @@index([scheduleId])
 }
 
-model ShellyAutomationRun {
-  id           Int               @id @default(autoincrement())
-  automationId Int?
-  automation   ShellyAutomation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
-  /// Auch manuelle Gruppen-Ausführungen werden hier geloggt – dann ohne Automation.
-  groupId      Int?
-  accountId    Int
-  account      Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  triggeredAt  DateTime          @default(now())
-  /// "schedule" | "sunrise" | "sunset" | "manual"
-  triggerKind  String
-  success      Boolean
-  /// Strukturierte Member-Ergebnisse: [{ deviceId, deviceName, action, ok, error? }]
-  details      Json?
-  durationMs   Int?
-  errorMessage String?
-
-  @@index([accountId, triggeredAt])
-  @@index([automationId])
-  @@index([groupId])
-}
 
 // ── Netzwerk-Verwaltung ──────────────────────────────────────────────────────
 
@@ -1643,7 +1546,6 @@ model Camera {
   accountId           Int
   account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   events              CameraEvent[]
-  automations         ShellyAutomation[]
   vehicleSightings    VehicleSighting[]
   allowedVehicles     AllowedVehicle[]     @relation("VehicleTriggerCamera")
   doorbirdVehicles    AllowedVehicle[]     @relation("VehicleDoorbird")
@@ -1659,6 +1561,7 @@ model Camera {
   keyRoom             KeyRoom?             @relation(fields: [keyRoomId], references: [id], onDelete: SetNull)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
+  motionRules         RoomRule[]
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -2040,6 +1943,7 @@ model AudioZone {
   jobs               AudioJob[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
+  ruleActions        RoomRuleAction[]
 
   @@index([accountId, sortOrder])
   @@index([playlistId])
@@ -2088,6 +1992,7 @@ model AudioPlaylist {
   schedules    AudioSchedule[]
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
+  ruleActions  RoomRuleAction[]
 
   @@index([accountId])
 }
@@ -2149,6 +2054,7 @@ model AudioAnnouncement {
   jobs         AudioJob[]
   createdAt    DateTime                @default(now())
   updatedAt    DateTime                @updatedAt
+  ruleActions  RoomRuleAction[]
 
   @@index([accountId, isTemplate])
   @@index([trackId])
@@ -2240,6 +2146,7 @@ model KeyRoom {
   operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
+  rules               RoomRule[]
 
   @@index([accountId])
   @@index([accountId, building])
@@ -2475,7 +2382,7 @@ model KeySignature {
 // Aufbau: Profil -> Saison -> Oeffnungsperiode je Wochentag, dazu Ausnahmetage.
 // Findet sich fuer einen Tag keine Saison, gilt der Betrieb als geschlossen.
 // Die Kindtabellen tragen bewusst keinen `accountId`: sie haengen ueber Cascade
-// am Profil, das die Mandantengrenze zieht (wie `ShellyGroupMember`).
+// am Profil, das die Mandantengrenze zieht.
 
 /// Betriebszeit-Profil, z. B. "Strandbad" oder "Gastronomie". Ein Raum haengt an
 /// hoechstens einem Profil; Regeln fragen darueber, ob gerade geoeffnet ist.
@@ -2493,6 +2400,7 @@ model OperatingSchedule {
   rooms       KeyRoom[]
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
+  rules       RoomRule[]
 
   @@index([accountId])
 }
@@ -2545,4 +2453,188 @@ model OperatingException {
 
   @@unique([scheduleId, date])
   @@index([scheduleId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regeln je Raum
+// ─────────────────────────────────────────────────────────────────────────────
+// Loest `ShellyGroup`/`ShellyAutomation` ab. Unterschiede zum Vorgaenger:
+//
+//  * Raumbezug: eine Regel haengt an einem Raum (oder gilt betriebsweit) und
+//    bekommt dessen Betriebszeit und Kameras geschenkt.
+//  * Betriebszeit: als Ausloeser (OPENING/CLOSING mit Offset) und als
+//    Bedingung (nur waehrend / nur ausserhalb).
+//  * Aktionen statt Szenen: mehrere Aktionen je Regel, und sie schalten ueber
+//    `triggerDeviceAction` – damit auch Schloesser und Ventile, nicht nur
+//    Shelly. Benachrichtigung und Audio sind eigene Aktionsarten.
+//
+// Bewusst kein Verzoegerungsfeld an der Aktion: in einer Serverless-Funktion
+// laesst sich nicht zuverlaessig warten. Wer "Licht 3 Minuten" will, nutzt
+// `timerSeconds` – der Timer laeuft im Geraet.
+
+enum RuleTrigger {
+  /// Feste Uhrzeit in der Zeitzone des Mandanten.
+  TIME
+  /// Betriebsbeginn der zustaendigen Betriebszeit, plus/minus `offsetMinutes`.
+  OPENING
+  /// Betriebsende, plus/minus `offsetMinutes`.
+  CLOSING
+  SUNRISE
+  SUNSET
+  /// Kamera-Ereignis im Raum (Bewegung, Person, Fahrzeug).
+  MOTION
+  /// Ein Geraet wird geschaltet. Erkennt nur Befehle aus diesem System:
+  /// Shelly meldet Zustandswechsel nicht zurueck.
+  DEVICE_SWITCHED
+  /// Gewaehrter Zutritt an einem Leser.
+  SCAN
+  /// Seit `idleMinutes` keine Bewegung im Raum gemeldet.
+  IDLE
+}
+
+/// Bedingung an die Betriebszeit.
+enum RuleOperatingCondition {
+  /// Betriebszeit spielt keine Rolle.
+  ANY
+  OPEN
+  CLOSED
+}
+
+enum RuleActionKind {
+  DEVICE
+  NOTIFY
+  AUDIO
+}
+
+enum RuleNotifyChannel {
+  TELEGRAM
+  PUSH
+  BOTH
+}
+
+model RoomRule {
+  id          Int      @id @default(autoincrement())
+  accountId   Int
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// `null` = betriebsweite Regel ohne Raumbezug.
+  roomId      Int?
+  room        KeyRoom? @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  trigger    RuleTrigger
+  /// Wochentage als Bitmaske: bit0=Mo … bit6=So. 127 = jeden Tag.
+  daysOfWeek Int         @default(127)
+
+  /// "HH:mm" (nur TIME).
+  timeOfDay     String?
+  /// Verschiebung in Minuten (OPENING, CLOSING, SUNRISE, SUNSET).
+  offsetMinutes Int     @default(0)
+
+  /// MOTION: bestimmte Kamera; null = jede Kamera des Raums.
+  cameraId  Int?
+  camera    Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  /// MOTION: Ereignisart (PERSON, VEHICLE, MOTION); null = jede.
+  eventType String?
+
+  /// DEVICE_SWITCHED: ausloesendes Geraet.
+  triggerDeviceId Int?
+  triggerDevice   Device? @relation("RoomRuleTriggerDevice", fields: [triggerDeviceId], references: [id], onDelete: Cascade)
+  /// DEVICE_SWITCHED: nur bei dieser Aktion; null = jede.
+  triggerAction   String?
+
+  /// SCAN: Zutrittsbereich; null = jeder Bereich.
+  areaId        Int?
+  area          AccessArea? @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  /// SCAN: "IN", "OUT" oder null fuer beide Richtungen.
+  scanDirection String?
+
+  /// IDLE: Minuten ohne Bewegung, bevor die Regel greift.
+  idleMinutes Int?
+
+  /// Betriebszeit-Bedingung.
+  operating           RuleOperatingCondition @default(ANY)
+  /// Welche Betriebszeit gilt; null = die des Raums.
+  operatingScheduleId Int?
+  operatingSchedule   OperatingSchedule?     @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
+  /// Zusaetzliches Zeitfenster "HH:mm"–"HH:mm"; Ende vor Beginn = ueber Mitternacht.
+  windowStart         String?
+  windowEnd           String?
+  /// Nur zwischen Sonnenuntergang und -aufgang.
+  onlyWhenDark        Boolean                @default(false)
+
+  /// Sperrzeit nach dem Auslösen, verhindert Dauerfeuer bei Bewegung.
+  cooldownSeconds Int       @default(60)
+  lastRunAt       DateTime?
+
+  actions RoomRuleAction[]
+  runs    RoomRuleRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, trigger, isActive])
+  @@index([roomId])
+  @@index([cameraId])
+  @@index([triggerDeviceId])
+  @@index([areaId])
+  @@index([operatingScheduleId])
+}
+
+model RoomRuleAction {
+  id        Int            @id @default(autoincrement())
+  ruleId    Int
+  rule      RoomRule       @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  sortOrder Int            @default(0)
+  kind      RuleActionKind
+
+  /// DEVICE: Zielgeraet und Aktion ("open", "reset", "close", "stop", …),
+  /// wie `DeviceAction` in `src/lib/device-open.ts`.
+  deviceId     Int?
+  device       Device? @relation("RoomRuleActionDevice", fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceAction String?
+  /// Sekunden bis zur Selbstabschaltung; der Timer laeuft im Geraet.
+  timerSeconds Int?
+
+  /// NOTIFY: Kanal und Text.
+  channel RuleNotifyChannel?
+  message String?
+
+  /// AUDIO: Zone plus entweder Durchsage oder Playlist.
+  audioZoneId         Int?
+  audioZone           AudioZone?         @relation(fields: [audioZoneId], references: [id], onDelete: Cascade)
+  audioAnnouncementId Int?
+  audioAnnouncement   AudioAnnouncement? @relation(fields: [audioAnnouncementId], references: [id], onDelete: SetNull)
+  audioPlaylistId     Int?
+  audioPlaylist       AudioPlaylist?     @relation(fields: [audioPlaylistId], references: [id], onDelete: SetNull)
+
+  @@index([ruleId])
+  @@index([deviceId])
+  @@index([audioZoneId])
+}
+
+/// Verlauf: was hat wann ausgeloest und was ist dabei passiert.
+model RoomRuleRun {
+  id           Int       @id @default(autoincrement())
+  accountId    Int
+  account      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Bleibt als Verlauf stehen, wenn die Regel geloescht wird.
+  ruleId       Int?
+  rule         RoomRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  /// Name der Regel zum Zeitpunkt des Laufs, damit der Verlauf lesbar bleibt.
+  ruleName     String
+  roomId       Int?
+  triggeredAt  DateTime  @default(now())
+  triggerKind  String
+  success      Boolean
+  /// Ergebnis je Aktion als JSON-Liste.
+  details      Json?
+  durationMs   Int?
+  errorMessage String?
+
+  @@index([accountId, triggeredAt])
+  @@index([ruleId])
 }

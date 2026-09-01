@@ -271,3 +271,38 @@ Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, 
 - Beim Ablösen mitziehen: `POST /api/hub/camera-events` ruft `runCameraAutomations()`, `data-retention.ts` räumt `ShellyAutomationRun`, `cover-constants.isGroupActionValid` validiert Szenen-Aktionen.
 - Die fünf bestehenden Zeitplan-Systeme (Bewässerung, Audio, Überwachung, E-Mail, Shelly) pflegen ihre Fenster weiter selbst. Sobald die Engine steht, können sie auf die Betriebszeit verweisen statt eigene Uhrzeiten zu halten – das war der eigentliche Grund für dieses Modell.
 - Noch kein Profil angelegt (der Rauchtest hat sein eigenes wieder entfernt). Ohne mindestens ein Profil bleibt die Betriebszeit-Anzeige im Leitstand aus.
+
+## 2026-09-01 (Regel-Engine löst die Shelly-Automation ab, Etappe 2b)
+
+Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, `hub/.cache/` fehlt, `~/Library/Logs/emp-hub.log` existiert nicht – der Hub lief während der Arbeit nicht. Cloud-Arbeit; der Hub-Ingest für Kamera-Ereignisse wird auf die neue Engine umgehängt, sein Vertrag bleibt unverändert.
+
+### Befund
+
+- Im Bestand lagen genau **eine Szene, eine Automation und neun Läufe**: „Aquapark Person nachts → Außenbeleuchtung", Kamera-Trigger `PERSON`, Fenster 22:00–08:00, fünf Minuten Sperre, ein Zielgerät. Die Ablösung war damit eine Datenmigration von neun Zeilen, keine Umstellung im großen Stil.
+- Die alte Automation konnte **nur Shelly-Szenen schalten**. Schlösser, Ventile und Audio waren nicht erreichbar, obwohl `triggerDeviceAction()` sie längst bedient.
+- Kamera und Zielgerät der Bestandsautomation haben **keinen Raum**. Die migrierte Regel läuft deshalb betriebsweit weiter; sobald „Kamera Aquapark" und „Außenbeleuchtung" einem Raum zugeordnet sind, greift der Raumbezug von selbst.
+- `ShellyAction` wird außerhalb der Automation weiterverwendet (`AllowedVehicle.shellyAction`, `ListedPerson.shellyAction`) und bleibt deshalb stehen. Entfernt wurde nur `AutomationTrigger`.
+
+### Änderungen
+
+- **Datenmodell** `RoomRule` → `RoomRuleAction`, dazu `RoomRuleRun` als Verlauf. Neun Auslöser (Uhrzeit, Betriebsbeginn, Betriebsende, Sonnenauf-/-untergang, Bewegung, Gerät geschaltet, Zutritt am Leser, Ruhe im Raum) und drei Aktionsarten (Gerät, Benachrichtigung, Audio). Bedingungen: Wochentage, Zeitfenster, Betriebszeit-Status, Dunkelheit.
+- **`src/lib/room-rules.ts`** in drei Schichten: `ruleAllows()` prüft Bedingungen ohne Datenbank und ist deshalb testbar, `executeRule()` führt die Aktionen der Reihe nach aus und schreibt den Verlauf, darüber je eine Funktion pro Auslöserquelle.
+- **Doppelausführung** verhindert `claimRule()`: `lastRunAt` wird per `updateMany` mit der alten Zeit in der Bedingung gesetzt, zwei gleichzeitige Cron-Läufe können nicht beide gewinnen. Bei zeitgesteuerten Regeln gilt mindestens das Feuerfenster (drei Minuten) als Sperre, sonst würde eine Regel im selben Fenster zweimal auslösen.
+- **Regelketten** über `DEVICE_SWITCHED` sind auf `MAX_CHAIN_DEPTH = 1` begrenzt. Ohne Grenze könnten sich zwei Regeln endlos gegenseitig schalten.
+- **Anbindung:** Cron `/api/cron/room-rules` (alle 5 Min.) für alles Zeitgesteuerte, `POST /api/hub/camera-events` für Bewegung, `POST /api/devices/pi/scan` für Zutritt, `POST /api/devices/[id]/action` für Schaltvorgänge. Die drei Ereignis-Hooks laufen bewusst unaufgeschoben nebenher (`void … .catch`), damit ein Knopfdruck nicht auf Folgeregeln wartet.
+- **Datenmigration** `20260901161000_migrate_shelly_automations`: Szene, Automation und Läufe nach `RoomRule`/`RoomRuleAction`/`RoomRuleRun` überführt. `lastRunAt` wandert mit, damit eine gerade gelaufene Automation nicht unmittelbar nach der Migration erneut feuert. Danach `20260901162000_drop_shelly_automations`.
+- **Abgelöst und entfernt:** Seite `/automation`, `src/components/automation/`, `src/lib/shelly-automation.ts`, die Routen `shelly-groups`, `shelly-automations`, `automation-runs`, der Cron `shelly-automations`, die zugehörigen Zod-Schemata und `isGroupActionValid`. `data-retention.ts` räumt jetzt `RoomRuleRun`; der Schlüssel `automationRuns` in den Aufbewahrungs-Einstellungen bleibt, damit eingestellte Fristen erhalten bleiben.
+- **Oberfläche** `/regeln` (Sidebar unter Betrieb, neben Räume und Betriebszeiten): Regeln nach Raum gruppiert, je Regel Auslöser und Aktionen im Klartext, „jetzt ausführen", Pause und Verlauf. Der Raum-Leitstand zeigt die Regeln des Raums auf der Karte.
+
+### Geprüft
+
+- Rauchtest an der echten Datenbank gegen eine Regel mit Betriebsbeginn-Auslöser: 30 Minuten vorher **kein** Auslösen, exakt zum Betriebsbeginn ausgelöst (Verlaufseintrag `opening`), zweiter Tick zum selben Zeitpunkt durch die Sperre blockiert. Das Zielgerät war absichtlich deaktiviert, damit keine Hardware geschaltet wird – die Engine meldet „Gerät ist deaktiviert" und schreibt den Lauf als fehlgeschlagen.
+- Migration nachgezählt: eine Regel mit einer Geräte-Aktion, neun Läufe übernommen, `lastRunAt` (2026-08-30) erhalten, Sperre korrekt von 5 Minuten auf 300 Sekunden umgerechnet.
+- 55 Unit-Tests grün, `tsc` sauber, Build durch. Kein neuer Lint-Fehler (die 20 bestehenden liegen alle in älteren Dateien).
+
+### Offen
+
+- **Alles läuft weiterhin über die Cloud.** Bewegung im Raum bis geschaltetes Licht heißt: Hub pollt die Kamera (bis 5 s), meldet an die Cloud, die Cloud ruft Shelly Cloud – zusammen 3–7 Sekunden, und für LAN-only-Shellys gar nicht. Der beschlossene Zielzustand ist der Spiegel der Regeln auf den Hub, damit er lokal und offline schaltet. Das ist Etappe 3.
+- Kein Profil in `OperatingSchedule` angelegt. Ohne mindestens eines bleiben die Auslöser „Betriebsbeginn"/„Betriebsende" und die Bedingung „nur während der Betriebszeit" wirkungslos – die Regel findet dann keinen Zeitpunkt und feuert nicht.
+- Die vier verbliebenen Zeitplan-Systeme (Bewässerung, Audio, Überwachung, E-Mail) halten weiter eigene Fenster. Sie könnten jetzt Regeln werden oder wenigstens auf die Betriebszeit verweisen.
+- `Device.schedule` ist weiterhin ein Feld ohne Ausführung. Entweder in eine Regel überführen oder aus der Oberfläche nehmen.
