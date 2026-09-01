@@ -11,6 +11,38 @@ import {
 const HEARTBEAT_TYPES = ["RASPBERRY_PI", "AUDIO_PLAYER"] as const;
 
 /**
+ * Ein Hub meldet sich alle 30 s. 5 min Toleranz wie in den Detailseiten
+ * (`/network`, `/cameras`, `/fahrzeuge`) – ein einzelner verpasster
+ * Heartbeat oder ein Update-Neustart soll noch nicht Alarm schlagen.
+ */
+const HUB_OFFLINE_AFTER_MS = 5 * 60_000;
+
+/**
+ * Ein Hub, der seit Tagen nichts meldet, ist keine Störung mehr, sondern eine
+ * alte Karteileiche (z. B. umbenannter `HUB_NAME`). Sonst stünde das Widget
+ * dauerhaft auf Rot.
+ */
+const HUB_STALE_AFTER_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * Commit, der gerade auf Vercel läuft. Die Hubs fahren dasselbe `origin/main`
+ * und melden ihren Stand im Heartbeat – weicht er ab, hat der Hub das letzte
+ * Update noch nicht gezogen. Lokal (ohne Vercel-Env) bleibt der Vergleich aus.
+ */
+const CLOUD_COMMIT = process.env.VERCEL_GIT_COMMIT_SHA ?? null;
+
+/**
+ * Hub- und Cloud-Hash sind unterschiedlich lang: `git rev-parse --short`
+ * liefert 7 Zeichen, bei Kollisionen mehr (beobachtet: 8), Vercel liefert die
+ * volle SHA. Deshalb über das gemeinsame Präfix vergleichen statt stur kürzen.
+ */
+function sameCommit(hubVersion: string, cloudSha: string): boolean {
+  const len = Math.min(hubVersion.length, cloudSha.length);
+  if (len < 7) return true; // zu kurz für eine belastbare Aussage
+  return hubVersion.slice(0, len) === cloudSha.slice(0, len);
+}
+
+/**
  * Schlanker Ist-Zustand für die Dashboard-Leiste.
  *
  * Bewusst getrennt von `/api/dashboard`: die Tagesansicht holt ANNY-Slots
@@ -29,7 +61,7 @@ export async function GET() {
   const hm = berlinHm(now);
   const dow = berlinWeekdayBit(now);
 
-  const [zones, heartbeatDevices, openAlertCount, openAlerts, unmatchedVehicles, unmatchedToday, irrigRuns, irrigSchedules] =
+  const [zones, heartbeatDevices, openAlertCount, openAlerts, unmatchedVehicles, unmatchedToday, irrigRuns, irrigSchedules, hubAgents] =
     await Promise.all([
       db.audioZone.findMany({
         where: { ...where, isActive: true },
@@ -97,6 +129,11 @@ export async function GET() {
           device: { select: { name: true } },
         },
       }),
+      db.hubAgent.findMany({
+        where,
+        select: { id: true, name: true, hostname: true, version: true, lastSeenAt: true },
+        orderBy: { lastSeenAt: "desc" },
+      }),
     ]);
 
   const watering: { name: string; remainingMin: number }[] = [];
@@ -126,6 +163,24 @@ export async function GET() {
       .sort((a, b) => a.startTime.localeCompare(b.startTime))[0] ?? null;
 
   const offlinePlayers = heartbeatDevices.filter((d) => !isPlayerOnline(d.lastUpdate));
+
+  const hubOfflineCutoff = now.getTime() - HUB_OFFLINE_AFTER_MS;
+  const hubStaleCutoff = now.getTime() - HUB_STALE_AFTER_MS;
+  const hubs = hubAgents
+    .filter((h) => h.lastSeenAt && h.lastSeenAt.getTime() > hubStaleCutoff)
+    .map((h) => {
+      const online = !!h.lastSeenAt && h.lastSeenAt.getTime() > hubOfflineCutoff;
+      return {
+        id: h.id,
+        name: h.name,
+        hostname: h.hostname,
+        version: h.version,
+        lastSeenAt: h.lastSeenAt?.toISOString() ?? null,
+        online,
+        // Nur bei erreichbaren Hubs aussagekräftig – ein offline Hub ist per se alt.
+        outdated: online && !!CLOUD_COMMIT && !!h.version && !sameCommit(h.version, CLOUD_COMMIT),
+      };
+    });
 
   return NextResponse.json({
     audio: {
@@ -175,6 +230,12 @@ export async function GET() {
         type: d.type,
         lastUpdate: d.lastUpdate?.toISOString() ?? null,
       })),
+    },
+    hubs: {
+      online: hubs.filter((h) => h.online).length,
+      total: hubs.length,
+      cloudCommit: CLOUD_COMMIT?.slice(0, 7) ?? null,
+      agents: hubs,
     },
   });
 }
