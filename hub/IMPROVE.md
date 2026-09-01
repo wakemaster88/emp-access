@@ -156,11 +156,18 @@ Rohdaten: `hub/.cache/improve.jsonl` · API: `http://127.0.0.1:8787/api/improve`
 - `hub/README.md`: Installation nicht mehr „auf dem iMac", sondern für beliebige Hub-Maschinen inklusive `git clone`, eindeutigem `HUB_NAME` und dem Update-Weg über einen Push auf `main`.
 - Gegen echte Daten geprüft: Karte zeigt „1/1 verbunden – Stand f7262052", die 16-Tage-Leiche ist gefiltert, `outdated` bleibt korrekt false. `npx next build` läuft durch, `tsc` bei 0 Fehlern.
 
+### Nachtrag: Lücke im Selbst-Update
+
+- Beim Live-Test fiel auf, dass der Updater nur `origin/main` gegen den Checkout verglich. Sind beide gleich, tat er nichts – auch wenn der **laufende Prozess** auf einem älteren Commit gestartet war. Genau der Fall auf dieser Maschine: HEAD stand nach dem Commit auf `9d0d0588`, der Hub meldete weiter `f7262052` und wäre nie von selbst neu gestartet. Dasselbe passiert nach einem manuellen `git pull` auf einem Hub.
+- `updater.ts` vergleicht jetzt zusätzlich HEAD mit der beim Start ermittelten `CONFIG.version` und startet dann neu. Kein Neustartkreis, weil die Version nach dem Neustart genau HEAD ist; bei `unknown` oder zu kurzem Hash bleibt er ruhig.
+- Nebenwirkung, bewusst in Kauf genommen: auf der Entwicklermaschine startet der Hub nach jedem Commit einmal neu.
+- Kette komplett geprüft: fünf Commits gepusht, Vercel-Deploy für `89501bb2` erfolgreich, Hub meldet nach dem Neustart `89501bb2`, Karte steht damit auf „1/1 verbunden – Stand 89501bb2".
+
 ### Offen
 
-- Visuell nicht gesehen: die gerenderte Karte im Dashboard braucht eine Session, geprüft sind Datenpfad, Typen und Build.
-- Karteileiche `imac-von-aaron` in der Cloud löschen, dann ist die Hubliste sauber.
+- Visuell nicht gesehen: die gerenderte Karte im Dashboard braucht eine Session, geprüft sind Datenpfad, Typen, Build und die gemeldete Version.
 - Der Hub ist macOS-gebunden (launchd, `vm_stat`, Swift-Vision-OCR im Kennzeichen-Fallback). Für Linux-Hubs müssten `install/`, `system-metrics.ts` und `plate.ts` Alternativen bekommen.
+- Karteileiche `imac-von-aaron` ist gelöscht; es bleibt ein Hub in der Liste.
 
 ## 2026-09-01 (Grenze Cloud ↔ lokal geprüft)
 
