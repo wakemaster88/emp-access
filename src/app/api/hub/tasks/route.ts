@@ -17,6 +17,7 @@ const VALID_TASK_TYPES = [
   "CAMERA_IR",
   "CAMERA_SIREN",
   "CAMERA_PTZ_PRESETS",
+  "SWITCH_SYNC",
 ];
 
 /**
