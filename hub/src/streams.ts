@@ -1,24 +1,27 @@
 /**
- * Lokale Stream-Konfiguration (go2rtc + Kiosk) bei Kamera-IP-Wechsel
- * nachziehen. Wird vom MAC-Re-Mapping in cameras.ts aufgerufen: Wenn eine
- * Kamera per DHCP eine neue IP bekommen hat, ersetzt der Hub die alte IP in
- *   - webcams/infra/go2rtc.yaml  (RTSP-Quellen fuer Live-Video)
- *   - webcams/config.json        (Kiosk-App-Konfiguration)
- * und laedt go2rtc per API neu, damit das Kontrollzentrum ohne manuellen
- * Eingriff weiter Live-Bilder bekommt. Alles best-effort: Fehler hier duerfen
- * das eigentliche Re-Mapping (Cloud/Hub) nie blockieren.
+ * Lokale Stream-Konfiguration (go2rtc + Kiosk) an die Cloud-Kamera-Liste
+ * angleichen. Cloud-Camera ist führend; Dateien sind gitignored, kein Commit.
  */
 import { promises as fs } from "node:fs";
-import { execSync } from "node:child_process";
 import path from "node:path";
 import { CONFIG, log } from "./config.js";
 
 const GO2RTC_URL = (process.env.HUB_GO2RTC_URL || "http://127.0.0.1:1984").replace(/\/$/, "");
 
-/**
- * Exakte IP im Text ersetzen. Lookarounds verhindern Teil-Treffer
- * (z. B. darf "192.168.1.10" nicht in "192.168.1.107" matchen).
- */
+export interface CloudCameraHost {
+  name: string;
+  host: string;
+  kind?: string;
+}
+
+function go2rtcPath() {
+  return path.join(CONFIG.repoDir, "webcams", "infra", "go2rtc.yaml");
+}
+
+function kioskPath() {
+  return path.join(CONFIG.repoDir, "webcams", "config.json");
+}
+
 function replaceIp(text: string, oldIp: string, newIp: string): { text: string; count: number } {
   const re = new RegExp(`(?<![\\d.])${oldIp.replace(/\./g, "\\.")}(?![\\d])`, "g");
   let count = 0;
@@ -34,7 +37,7 @@ async function rewriteFile(file: string, oldIp: string, newIp: string): Promise<
   try {
     text = await fs.readFile(file, "utf8");
   } catch {
-    return 0; // Datei existiert auf diesem Host nicht – ok.
+    return 0;
   }
   const { text: replaced, count } = replaceIp(text, oldIp, newIp);
   if (count === 0) return 0;
@@ -54,18 +57,10 @@ async function restartGo2rtc(): Promise<boolean> {
   }
 }
 
-/**
- * Alte IP in go2rtc-/Kiosk-Konfiguration durch die neue ersetzen und go2rtc
- * neu laden. Liefert true, wenn mindestens eine Datei angepasst wurde.
- */
-export async function updateLocalStreams(oldIp: string, newIp: string): Promise<boolean> {
-  const files = [
-    path.join(CONFIG.repoDir, "webcams", "infra", "go2rtc.yaml"),
-    path.join(CONFIG.repoDir, "webcams", "config.json"),
-  ];
-
+async function applyIpChange(oldIp: string, newIp: string): Promise<number> {
+  if (!oldIp || !newIp || oldIp === newIp) return 0;
   let total = 0;
-  for (const file of files) {
+  for (const file of [go2rtcPath(), kioskPath()]) {
     try {
       const count = await rewriteFile(file, oldIp, newIp);
       if (count > 0) {
@@ -76,24 +71,16 @@ export async function updateLocalStreams(oldIp: string, newIp: string): Promise<
       log(`Stream-Konfig ${path.basename(file)} nicht anpassbar: ${e instanceof Error ? e.message : e}`);
     }
   }
+  return total;
+}
 
+/**
+ * Alte IP in go2rtc-/Kiosk-Konfiguration durch die neue ersetzen und go2rtc
+ * neu laden. Kein git – die Dateien sind lokal und gitignored.
+ */
+export async function updateLocalStreams(oldIp: string, newIp: string): Promise<boolean> {
+  const total = await applyIpChange(oldIp, newIp);
   if (total === 0) return false;
-
-  // Die Dateien sind im Git-Repo versioniert. Ohne Commit+Push wuerde der
-  // Auto-Updater (updater.ts) irgendwann ueber die lokalen Aenderungen
-  // stolpern bzw. sie per reset --hard verwerfen. Best-effort: bei
-  // fehlendem Push-Zugriff bleibt die Aenderung lokal wirksam.
-  try {
-    const rel = files.map((f) => path.relative(CONFIG.repoDir, f)).join(" ");
-    execSync(
-      `git add ${rel} && git commit -m "hub: Kamera-IP ${oldIp} → ${newIp} (MAC-Re-Mapping)" && git push origin main`,
-      { cwd: CONFIG.repoDir, stdio: "pipe", timeout: 30_000 }
-    );
-    log(`Stream-Konfig committet + gepusht (${oldIp} → ${newIp})`);
-  } catch (e) {
-    log(`Stream-Konfig-Commit/Push fehlgeschlagen (Änderung lokal aktiv): ${e instanceof Error ? e.message : e}`);
-  }
-
   const restarted = await restartGo2rtc();
   log(
     restarted
@@ -101,4 +88,55 @@ export async function updateLocalStreams(oldIp: string, newIp: string): Promise<
       : `go2rtc-Neustart fehlgeschlagen – Streams laufen ggf. bis zum naechsten Neustart auf der alten IP`
   );
   return true;
+}
+
+/**
+ * Cloud-Kamera-Hosts in die lokale Kiosk-/go2rtc-Config spiegeln (Name oder
+ * aktuelle IP als Schlüssel). Zusätzliche Kiosk-Cams bleiben unangetastet.
+ */
+export async function syncLocalStreamsFromCloud(cameras: CloudCameraHost[]): Promise<void> {
+  let cfg: {
+    cams?: Array<{ name?: string; ip?: string }>;
+    doorbird?: { enabled?: boolean; ip?: string };
+  };
+  try {
+    cfg = JSON.parse(await fs.readFile(kioskPath(), "utf8")) as typeof cfg;
+  } catch {
+    return;
+  }
+
+  const changes: Array<{ oldIp: string; newIp: string }> = [];
+  const cams = Array.isArray(cfg.cams) ? cfg.cams : [];
+
+  for (const cloud of cameras) {
+    const host = String(cloud.host ?? "").trim();
+    const name = String(cloud.name ?? "").trim().toLowerCase();
+    if (!host) continue;
+
+    if (cloud.kind === "DOORBIRD" && cfg.doorbird?.ip && cfg.doorbird.ip !== host) {
+      changes.push({ oldIp: cfg.doorbird.ip, newIp: host });
+      continue;
+    }
+
+    const match =
+      cams.find((c) => String(c.ip ?? "") === host) ??
+      cams.find((c) => String(c.name ?? "").trim().toLowerCase() === name);
+    if (!match) continue;
+    const oldIp = String(match.ip ?? "").trim();
+    if (oldIp && oldIp !== host) {
+      changes.push({ oldIp, newIp: host });
+    }
+  }
+
+  let total = 0;
+  for (const { oldIp, newIp } of changes) {
+    total += await applyIpChange(oldIp, newIp);
+  }
+  if (total === 0) return;
+  const restarted = await restartGo2rtc();
+  log(
+    restarted
+      ? `go2rtc nach Cloud-Sync neu geladen (${changes.length} Hosts)`
+      : `go2rtc-Neustart nach Cloud-Sync fehlgeschlagen`
+  );
 }

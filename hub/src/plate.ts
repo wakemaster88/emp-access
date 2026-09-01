@@ -193,6 +193,29 @@ async function ensureWhitelist(): Promise<WhitelistEntry[]> {
   return whitelist;
 }
 
+/** Whitelist fuer das lokale Dashboard – ohne Aktor-Details (Shelly-IP). */
+export function listWhitelistPublic(): Array<{
+  id: number;
+  name: string;
+  plate: string;
+  cameraId: number | null;
+  doorbirdCameraId: number | null;
+  cooldownMinutes: number;
+  lastTriggeredAt: string | null;
+}> {
+  return whitelist
+    .map((v) => ({
+      id: v.id,
+      name: v.name,
+      plate: v.plate,
+      cameraId: v.cameraId,
+      doorbirdCameraId: v.doorbirdCameraId,
+      cooldownMinutes: v.cooldownMinutes,
+      lastTriggeredAt: v.lastTriggeredAt ? new Date(v.lastTriggeredAt).toISOString() : null,
+    }))
+    .sort((a, b) => a.plate.localeCompare(b.plate, "de"));
+}
+
 export function findAllowedVehicle(plate: string): CachedVehicle | null {
   const n = normalizePlate(plate);
   if (n.length < 4) return null;

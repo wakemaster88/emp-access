@@ -1,6 +1,6 @@
 /**
  * Parkplatz-Belegung aus der lokalen Kiosk-Config (webcams/config.json)
- * und dem YOLO-Tracker (vehicleGate-Zonen, aktuell Kamera Halle).
+ * und dem YOLO-Tracker (nur Cams mit vehicleGate).
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -68,26 +68,25 @@ function parkingSetup(
       zone: Array.isArray(c.vehicleGate.zone) ? c.vehicleGate.zone : null,
     };
   }
-  const name = String(c.name ?? "");
-  const pc = c.peopleCounter;
-  if (/halle/i.test(name) && pc?.enabled && pc.mode === "zone") {
-    return {
-      mode: "zone",
-      zone: Array.isArray(pc.zone) ? pc.zone : null,
-    };
-  }
   return null;
+}
+
+let lastSnapshot: ParkingSnapshot = emptySnapshot();
+
+/** Zuletzt eingesammelte Belegung – fuer das Dashboard, ohne neuen Tracker-Call. */
+export function lastParkingSnapshot(): ParkingSnapshot {
+  return lastSnapshot;
 }
 
 export async function collectParkingSnapshot(): Promise<ParkingSnapshot> {
   const cfg = await loadKioskConfig();
-  if (!cfg) return emptySnapshot();
+  if (!cfg) return (lastSnapshot = emptySnapshot());
 
   const cams = Array.isArray(cfg.cams) ? cfg.cams : [];
   const lotsCfg = cams
     .map((c) => ({ cam: c, setup: parkingSetup(c) }))
     .filter((x): x is { cam: KioskCam; setup: NonNullable<ReturnType<typeof parkingSetup>> } => x.setup != null);
-  if (lotsCfg.length === 0) return emptySnapshot();
+  if (lotsCfg.length === 0) return (lastSnapshot = emptySnapshot());
 
   const trackerUrl = (cfg.settings?.tracker?.url || TRACKER_DEFAULT).replace(/\/$/, "");
   const pin = cfg.settings?.adminPin || "";
@@ -110,7 +109,7 @@ export async function collectParkingSnapshot(): Promise<ParkingSnapshot> {
     // Tracker nicht erreichbar – Zonen trotzdem melden.
   }
 
-  return {
+  return (lastSnapshot = {
     at: new Date().toISOString(),
     trackerOnline,
     lots: lotsCfg.map(({ cam, setup }) => {
@@ -128,7 +127,7 @@ export async function collectParkingSnapshot(): Promise<ParkingSnapshot> {
         zone: setup.zone,
       };
     }),
-  };
+  });
 }
 
 const lastSnapAt = new Map<string, number>();

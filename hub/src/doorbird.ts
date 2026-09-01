@@ -8,10 +8,12 @@
  * Klingel/Bewegung → Snapshot → Gesichts-Pipeline (wie Reolink-PERSON).
  */
 import { api, log } from "./config.js";
-import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
+import { recordHubEvent } from "./state.js";
+import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
 import { jpegContainsVehicle } from "./vision.js";
-import type { CameraConfig } from "./cameras.js";
+import type { CameraConfig, LastPerson } from "./cameras.js";
 import { updateLocalStreams } from "./streams.js";
+import { improve } from "./improve-log.js";
 
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -43,6 +45,20 @@ interface DoorbirdRuntime {
   lastGateAlertAt: number;
   stopped: boolean;
   unreachableLogged: boolean;
+  /* Nur fuer das lokale Dashboard. */
+  connected: boolean;
+  lastEventAt: string | null;
+  lastPerson: LastPerson | null;
+}
+
+export interface DoorbirdStatus {
+  id: number;
+  name: string;
+  host: string;
+  connected: boolean;
+  activeStates: string[];
+  lastEventAt: string | null;
+  lastPerson: LastPerson | null;
 }
 
 const doorbirds = new Map<number, DoorbirdRuntime>();
@@ -93,6 +109,23 @@ export function isDoorbird(cameraId: number): boolean {
 /** IDs der lokal verbundenen DoorBirds (für Fahrzeug-Aktoren). */
 export function listDoorbirdIds(): number[] {
   return [...doorbirds.keys()];
+}
+
+/** DoorBird-Lage fuer das lokale Dashboard (ohne Zugangsdaten). */
+export function listDoorbirdStatus(): DoorbirdStatus[] {
+  return [...doorbirds.values()]
+    .map((rt) => ({
+      id: rt.config.id,
+      name: rt.config.name,
+      host: rt.config.host,
+      connected: rt.connected,
+      activeStates: Object.entries(rt.states)
+        .filter(([, active]) => active)
+        .map(([key]) => (key === "doorbell" ? "DOORBELL" : "MOTION")),
+      lastEventAt: rt.lastEventAt,
+      lastPerson: rt.lastPerson,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
 
 /** JPEG von der DoorBird holen (ohne Upload) – z. B. fuer Scan-Schnappschuesse. */
@@ -230,11 +263,13 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
 
   if (!face) {
     log(`DoorBird ${c.name}: ${trigger} ohne erkennbares Gesicht (${SNAP_ATTEMPTS} Versuche)`);
+    improve("doorbird", "no_face", { name: c.name, trigger });
     return;
   }
 
   await refreshGallery();
-  const match = matchEmbedding(face.embedding);
+  const scored = scoreGallery(face.embedding, { upscaled: face.upscaled });
+  const match = scored.match;
   const qs = new URLSearchParams({ cameraId: String(c.id) });
   if (match) {
     qs.set("listedPersonId", String(match.listedPersonId));
@@ -242,8 +277,40 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
     qs.set("matchMethod", "FACE_EMBEDDING");
     log(`DoorBird ${c.name}: Match „${match.name}“ score=${match.score.toFixed(3)}`);
   } else {
-    log(`DoorBird ${c.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match`);
+    const near = scored.nearest;
+    log(
+      `DoorBird ${c.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match` +
+        (near
+          ? ` (best ${near.score.toFixed(3)} „${near.name}“, n=${scored.gallery}, ≥${scored.threshold.toFixed(2)})`
+          : ` (Gallery leer)`)
+    );
   }
+  improve("doorbird", match ? "match" : "face", {
+    name: c.name,
+    score: match?.score ?? scored.nearest?.score,
+    threshold: scored.threshold,
+    gallery: scored.gallery,
+    upscaled: face.upscaled,
+  });
+  rt.lastPerson = {
+    at: new Date().toISOString(),
+    name: match?.name ?? scored.nearest?.name ?? null,
+    score: match?.score ?? scored.nearest?.score ?? null,
+    threshold: scored.threshold,
+    matched: !!match,
+  };
+  recordHubEvent({
+    kind: "person",
+    severity: match ? "alert" : "info",
+    where: c.name,
+    title: match ? `Person erkannt: ${match.name}` : "Person unbekannt",
+    detail: match
+      ? undefined
+      : scored.nearest
+        ? `best ${scored.nearest.score.toFixed(3)} „${scored.nearest.name}“ (n=${scored.gallery}, ≥${scored.threshold.toFixed(2)})`
+        : "Gallery leer",
+    score: match?.score ?? scored.nearest?.score,
+  });
 
   try {
     const upload = await api(`/api/hub/person-sightings?${qs}`, {
@@ -271,6 +338,13 @@ function handleMonitorLine(rt: DoorbirdRuntime, line: string): void {
 
   const type = key === "doorbell" ? "DOORBELL" : "MOTION";
   log(`DoorBird ${rt.config.name}: ${type} ${active ? "aktiv" : "ende"}`);
+  rt.lastEventAt = new Date().toISOString();
+  recordHubEvent({
+    kind: "doorbird",
+    severity: active && type === "DOORBELL" ? "alert" : "info",
+    where: rt.config.name,
+    title: `${type === "DOORBELL" ? "Klingel" : "Bewegung"} ${active ? "aktiv" : "ende"}`,
+  });
   void reportEvent(rt.config.id, type, active ? "start" : "end");
   if (active) {
     void runSnapshotPipeline(rt, type as "DOORBELL" | "MOTION");
@@ -298,7 +372,15 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
       if (rt.unreachableLogged) {
         log(`DoorBird ${rt.config.name}: wieder erreichbar`);
         rt.unreachableLogged = false;
+        improve("doorbird", "monitor_ok", { name: rt.config.name });
+        recordHubEvent({
+          kind: "doorbird",
+          severity: "info",
+          where: rt.config.name,
+          title: "Monitor wieder verbunden",
+        });
       }
+      rt.connected = true;
       rt.reconnectDelay = RECONNECT_MIN_MS;
       resetIdle();
 
@@ -334,8 +416,20 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
           `DoorBird ${rt.config.name}: Monitor getrennt (${e instanceof Error ? e.message : e}) – Reconnect …`
         );
         rt.unreachableLogged = true;
+        improve("doorbird", "monitor_drop", {
+          name: rt.config.name,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        recordHubEvent({
+          kind: "doorbird",
+          severity: "warn",
+          where: rt.config.name,
+          title: "Monitor getrennt",
+          detail: e instanceof Error ? e.message : String(e),
+        });
       }
     } finally {
+      rt.connected = false;
       if (idleTimer) clearTimeout(idleTimer);
       if (seenTimer) clearInterval(seenTimer);
       rt.abort = null;
@@ -386,9 +480,13 @@ export function syncDoorbirds(configs: CameraConfig[]): void {
       lastGateAlertAt: 0,
       stopped: false,
       unreachableLogged: false,
+      connected: false,
+      lastEventAt: null,
+      lastPerson: null,
     };
     doorbirds.set(config.id, rt);
     log(`DoorBird ${config.name}: Monitor startet (${config.host})`);
+    improve("doorbird", "monitor_start", { name: config.name, host: config.host });
     void monitorLoop(rt);
   }
 }

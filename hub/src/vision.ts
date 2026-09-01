@@ -1,167 +1,82 @@
 /**
- * Lokale Bild-Prüfung via Ollama (llava): Filtert leere Fahrzeug-Snaps,
- * wenn die Kamera-KI falsch auslöst (z.B. Aqua-Park / Weitwinkel).
- * Prüft Vollbild + Zoom-Crops (Zentrum / untere Hälfte), weicherer Prompt.
+ * Lokale Bild-Prüfung via YOLO-Tracker (POST /classify).
+ * Filtert leere Fahrzeug-Snaps, wenn die Kamera-KI falsch auslöst.
  */
-import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
-import { log } from "./config.js";
+import { CONFIG, log } from "./config.js";
+import { improve } from "./improve-log.js";
 
-const execFileAsync = promisify(execFile);
+const TRACKER_DEFAULT = "http://127.0.0.1:8088";
+const CLASSIFY_TIMEOUT_MS = Number(process.env.HUB_VISION_TIMEOUT_MS || 5_000);
 
-const OLLAMA_URL = (process.env.HUB_OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
-const OLLAMA_MODEL = process.env.HUB_OLLAMA_VISION_MODEL || "llava:7b";
-const VISION_TIMEOUT_MS = 45_000;
-const MAX_EDGE = 1280;
+type TrackerTarget = { url: string; pin: string };
 
-const PROMPT =
-  "Look carefully. Answer YES if there is any car, truck, van, SUV, bus, or motorcycle " +
-  "in this photo — including distant, small, parked, or partially visible vehicles. " +
-  "Answer NO only if there is definitely no such vehicle. " +
-  "Water-park inflatables, building roofs, boats alone, and empty roads are NO. " +
-  "Reply with only YES or NO.";
+let cachedTarget: { at: number; value: TrackerTarget } | null = null;
+const TARGET_TTL_MS = 60_000;
 
-async function sipsResize(buf: Buffer, maxEdge: number): Promise<Buffer> {
-  const id = randomUUID();
-  const tmpIn = path.join(tmpdir(), `emp-vis-in-${id}.jpg`);
-  const tmpOut = path.join(tmpdir(), `emp-vis-out-${id}.jpg`);
-  try {
-    await fs.writeFile(tmpIn, buf);
-    await execFileAsync("sips", ["-Z", String(maxEdge), tmpIn, "--out", tmpOut], {
-      timeout: 10_000,
-    });
-    return await fs.readFile(tmpOut);
-  } catch {
-    return buf;
-  } finally {
-    await Promise.allSettled([fs.unlink(tmpIn), fs.unlink(tmpOut)]);
+async function trackerTarget(): Promise<TrackerTarget> {
+  if (cachedTarget && Date.now() - cachedTarget.at < TARGET_TTL_MS) {
+    return cachedTarget.value;
   }
-}
-
-/** Zentrum (~55%) oder untere Hälfte zuschneiden und skalieren. */
-async function sipsRegion(
-  buf: Buffer,
-  region: "center" | "lower"
-): Promise<Buffer | null> {
-  const id = randomUUID();
-  const tmpIn = path.join(tmpdir(), `emp-vis-reg-in-${id}.jpg`);
-  const tmpOut = path.join(tmpdir(), `emp-vis-reg-out-${id}.jpg`);
+  const envUrl = (process.env.HUB_TRACKER_URL || "").replace(/\/$/, "");
+  let url = envUrl || TRACKER_DEFAULT;
+  let pin = process.env.HUB_TRACKER_PIN || "";
   try {
-    await fs.writeFile(tmpIn, buf);
-    // Pixelgröße ermitteln
-    const { stdout } = await execFileAsync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", tmpIn], {
-      timeout: 5_000,
-    });
-    const w = Number(/pixelWidth:\s*(\d+)/.exec(stdout)?.[1] ?? 0);
-    const h = Number(/pixelHeight:\s*(\d+)/.exec(stdout)?.[1] ?? 0);
-    if (!w || !h) return null;
-
-    let cropW: number;
-    let cropH: number;
-    let offsetX: number;
-    let offsetY: number;
-    if (region === "center") {
-      cropW = Math.round(w * 0.55);
-      cropH = Math.round(h * 0.55);
-      offsetX = Math.round((w - cropW) / 2);
-      offsetY = Math.round((h - cropH) / 2);
-    } else {
-      // Untere 55% – oft Straße / Zufahrt
-      cropW = w;
-      cropH = Math.round(h * 0.55);
-      offsetX = 0;
-      offsetY = h - cropH;
-    }
-
-    await execFileAsync(
-      "sips",
-      [
-        "--cropToHeightWidth",
-        String(cropH),
-        String(cropW),
-        "--cropOffset",
-        String(offsetY),
-        String(offsetX),
-        tmpIn,
-        "--out",
-        tmpOut,
-      ],
-      { timeout: 10_000 }
+    const raw = await fs.readFile(
+      path.join(CONFIG.repoDir, "webcams", "config.json"),
+      "utf8"
     );
-    const cropped = await fs.readFile(tmpOut);
-    return sipsResize(cropped, MAX_EDGE);
+    const cfg = JSON.parse(raw) as {
+      settings?: { adminPin?: string; tracker?: { url?: string } };
+    };
+    if (!envUrl && cfg.settings?.tracker?.url) {
+      url = String(cfg.settings.tracker.url).replace(/\/$/, "");
+    }
+    if (!pin && cfg.settings?.adminPin) pin = String(cfg.settings.adminPin);
   } catch {
-    return null;
-  } finally {
-    await Promise.allSettled([fs.unlink(tmpIn), fs.unlink(tmpOut)]);
+    // Default reicht, wenn die Kiosk-Config fehlt.
   }
-}
-
-function parseYesNo(text: string): boolean | null {
-  const t = text.trim().toUpperCase();
-  if (!t) return null;
-  if (/\bYES\b|\bJA\b/.test(t)) return true;
-  if (/\bNO\b|\bNEIN\b/.test(t)) return false;
-  if (t.startsWith("Y") || t.startsWith("J")) return true;
-  if (t.startsWith("N")) return false;
-  return null;
-}
-
-async function askOllama(jpeg: Buffer, label: string): Promise<boolean | null> {
-  const b64 = jpeg.toString("base64");
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      prompt: PROMPT,
-      images: [b64],
-      stream: false,
-      options: { num_predict: 8, temperature: 0 },
-    }),
-    signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    log(`Vision-Check (${label}) fehlgeschlagen: HTTP ${res.status}`);
-    return null;
-  }
-  const json = (await res.json()) as { response?: string };
-  const raw = json.response ?? "";
-  const verdict = parseYesNo(raw);
-  log(`Vision (${label}): ${JSON.stringify(raw.trim())} → ${verdict === null ? "?" : verdict ? "YES" : "NO"}`);
-  return verdict;
+  const value = { url, pin };
+  cachedTarget = { at: Date.now(), value };
+  return value;
 }
 
 /**
  * Prüft, ob im JPEG ein Fahrzeug ist.
- * `quick: true` = nur Vollbild (für Burst-Auswahl, schneller).
- * Sonst Vollbild + Zoom-Crops. `null` = Ollama down / Timeout.
+ * `quick` bleibt aus Kompatibilität, der Tracker sieht immer das Vollbild.
+ * `null` = Tracker down / Timeout.
  */
 export async function jpegContainsVehicle(
   jpeg: Buffer,
-  opts: { quick?: boolean } = {}
+  _opts: { quick?: boolean } = {}
 ): Promise<boolean | null> {
   try {
-    const full = await sipsResize(jpeg, MAX_EDGE);
-    const fullVerdict = await askOllama(full, opts.quick ? "full-quick" : "full");
-    if (fullVerdict === true) return true;
-    if (opts.quick) return fullVerdict;
-
-    for (const region of ["center", "lower"] as const) {
-      const crop = await sipsRegion(jpeg, region);
-      if (!crop) continue;
-      const v = await askOllama(crop, region);
-      if (v === true) return true;
+    const { url, pin } = await trackerTarget();
+    const res = await fetch(`${url}/classify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "image/jpeg",
+        ...(pin ? { "x-admin-token": pin } : {}),
+      },
+      body: new Uint8Array(jpeg),
+      signal: AbortSignal.timeout(CLASSIFY_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      log(`Vision-Check fehlgeschlagen: HTTP ${res.status}`);
+      improve("vision", "fail", { http: res.status });
+      return null;
     }
-
-    if (fullVerdict === false) return false;
-    return fullVerdict;
+    const json = (await res.json()) as { vehicle?: boolean; conf?: number };
+    const vehicle = json.vehicle === true;
+    log(
+      `Vision (yolo): ${vehicle ? "YES" : "NO"} conf=${Number(json.conf ?? 0).toFixed(2)}`
+    );
+    improve("vision", vehicle ? "yes" : "no", { conf: Number(json.conf ?? 0) });
+    return vehicle;
   } catch (e) {
     log(`Vision-Check Fehler: ${e instanceof Error ? e.message : e}`);
+    improve("vision", "fail", { error: e instanceof Error ? e.message : String(e) });
     return null;
   }
 }

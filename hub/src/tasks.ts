@@ -96,6 +96,12 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       return runPing(task.payload);
     case "NETWORK_SCAN":
       return runNetworkScan();
+    case "SWITCH_SYNC": {
+      const { runSwitchSync } = await import("./snmp.js");
+      const r = await runSwitchSync("SWITCH_SYNC");
+      if (!r.ok) return { success: false, error: r.error ?? "SNMP fehlgeschlagen", result: r };
+      return { success: true, result: r };
+    }
     case "WAKE_ON_LAN":
       return runWakeOnLan(task.payload);
     case "CAMERA_SNAPSHOT": {

@@ -7,14 +7,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
-import { STATE } from "./state.js";
-import { embedJpeg, matchEmbedding, refreshGallery } from "./face.js";
-import { scorePlateFromJpeg, type PlateScore } from "./plate.js";
+import { STATE, recordHubEvent } from "./state.js";
+import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
+import { findAllowedVehicle, scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
 import { readArp } from "./scanner.js";
-import { updateLocalStreams } from "./streams.js";
+import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
+import { improve } from "./improve-log.js";
 
 export interface CameraConfig {
   id: number;
@@ -33,6 +34,23 @@ export interface CameraConfig {
   vehicleDetection?: boolean;
 }
 
+/** Letzte Personen-Sichtung an einer Kamera (Dashboard „wer war wo“). */
+export interface LastPerson {
+  at: string;
+  name: string | null;
+  score: number | null;
+  threshold: number;
+  matched: boolean;
+}
+
+/** Letztes Kennzeichen an einer Kamera (Dashboard „was fuhr wo“). */
+export interface LastPlate {
+  at: string;
+  plate: string | null;
+  confidence: number | null;
+  listed: boolean;
+}
+
 interface CameraRuntime {
   config: CameraConfig;
   token: string | null;
@@ -40,11 +58,38 @@ interface CameraRuntime {
   /** Aktueller Alarm-Zustand pro Ereignistyp (fuer Flankenerkennung). */
   states: Record<string, boolean>;
   lastSnapshotAt: number;
+  /** Personen-/Fahrzeug-Pipeline läuft – keine zweite starten. */
+  snapshotInFlight: boolean;
+  /** VEHICLE kam während einer Pipeline – Burst danach nachholen. */
+  pendingVehicle: boolean;
   unreachableLogged: boolean;
   /** Letzter MAC-Lernversuch (Throttle, erfolgreich erreichte Kamera). */
   lastMacLearnAt: number;
   /** Letzter IP-Re-Mapping-Versuch per MAC (Throttle bei Unerreichbarkeit). */
   lastRelocateAt: number;
+  /* Nur fuer das lokale Dashboard – nicht Teil der Kamera-Logik. */
+  reachable: boolean;
+  lastError: string | null;
+  lastEventAt: string | null;
+  lastPerson: LastPerson | null;
+  lastPlate: LastPlate | null;
+}
+
+export interface CameraStatus {
+  id: number;
+  name: string;
+  host: string;
+  kind: string;
+  vehicleDetection: boolean;
+  reachable: boolean;
+  lastError: string | null;
+  activeStates: string[];
+  busy: boolean;
+  pendingVehicle: boolean;
+  lastSnapshotAt: string | null;
+  lastEventAt: string | null;
+  lastPerson: LastPerson | null;
+  lastPlate: LastPlate | null;
 }
 
 const cameras = new Map<number, CameraRuntime>();
@@ -185,7 +230,7 @@ async function cgi(
   cam: CameraRuntime,
   cmd: string,
   param: Record<string, unknown>,
-  { withToken = true }: { withToken?: boolean } = {}
+  { withToken = true, retried = false }: { withToken?: boolean; retried?: boolean } = {}
 ): Promise<Record<string, unknown>> {
   const qs = withToken && cam.token ? `&token=${encodeURIComponent(cam.token)}` : "";
   const res = await fetch(`${baseUrl(cam.config)}/cgi-bin/api.cgi?cmd=${cmd}${qs}`, {
@@ -203,7 +248,13 @@ async function cgi(
   const first = json?.[0];
   if (!first || first.code !== 0) {
     const rsp = first?.error?.rspCode;
-    // Token abgelaufen/ungueltig -> beim naechsten Versuch neu einloggen.
+    // Token abgelaufen oder Poll vor Login (Neustart) → einmal neu einloggen.
+    if ((rsp === -6 || rsp === -1) && withToken && !retried && cmd !== "Login") {
+      cam.token = null;
+      cam.tokenExpiresAt = 0;
+      await ensureLogin(cam);
+      return cgi(cam, cmd, param, { withToken, retried: true });
+    }
     if (rsp === -6 || rsp === -1) {
       cam.token = null;
       cam.tokenExpiresAt = 0;
@@ -329,7 +380,30 @@ export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number 
 async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number } | null> {
   const cam = cameras.get(cameraId);
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
+  if (cam.snapshotInFlight) {
+    log(`Personen-Snapshot ${cam.config.name}: übersprungen (Pipeline läuft)`);
+    improve("face", "skip_inflight", { cam: cam.config.name });
+    return null;
+  }
+  cam.snapshotInFlight = true;
+  try {
+    return await uploadPersonSnapshotBody(cam, cameraId);
+  } finally {
+    cam.snapshotInFlight = false;
+    if (cam.pendingVehicle) {
+      cam.pendingVehicle = false;
+      log(`Fahrzeug-Snapshot ${cam.config.name}: nachgezogen (war hinter Person)`);
+      void uploadVehicleSnapshot(cameraId).catch((e) =>
+        log(`Fahrzeug-Snapshot ${cam.config.name} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+      );
+    }
+  }
+}
 
+async function uploadPersonSnapshotBody(
+  cam: CameraRuntime,
+  cameraId: number
+): Promise<{ bytes: number } | null> {
   await new Promise((r) => setTimeout(r, PERSON_SNAP_DELAY_MS));
 
   let buf: Buffer | null = null;
@@ -345,6 +419,7 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
             (attempt > 1 ? `, nach Versuch ${attempt - 1}` : "") +
             `)`
         );
+        improve("face", "skip_inactive", { cam: cam.config.name });
         return null;
       }
     } catch (e) {
@@ -376,11 +451,13 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
     log(
       `Personen-Snapshot ${cam.config.name}: übersprungen (kein Gesicht nach ${PERSON_SNAP_ATTEMPTS} Versuchen)`
     );
+    improve("face", "skip_no_face", { cam: cam.config.name });
     return null;
   }
 
   await refreshGallery();
-  const match = matchEmbedding(face.embedding);
+  const scored = scoreGallery(face.embedding, { upscaled: face.upscaled });
+  const match = scored.match;
   const qs = new URLSearchParams({ cameraId: String(cameraId) });
   if (match) {
     qs.set("listedPersonId", String(match.listedPersonId));
@@ -390,10 +467,41 @@ async function uploadPersonSnapshot(cameraId: number): Promise<{ bytes: number }
       `Personen-Snapshot ${cam.config.name}: Match „${match.name}“ score=${match.score.toFixed(3)}`
     );
   } else {
+    const near = scored.nearest;
     log(
-      `Personen-Snapshot ${cam.config.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match`
+      `Personen-Snapshot ${cam.config.name}: klares Gesicht (det=${face.detScore.toFixed(2)}), kein Gallery-Match` +
+        (near
+          ? ` (best ${near.score.toFixed(3)} „${near.name}“, n=${scored.gallery}, ≥${scored.threshold.toFixed(2)})`
+          : ` (Gallery leer)`)
     );
   }
+  const nearMiss = !match && (scored.nearest?.score ?? 0) >= scored.threshold - 0.10;
+  cam.lastPerson = {
+    at: new Date().toISOString(),
+    name: match?.name ?? scored.nearest?.name ?? null,
+    score: match?.score ?? scored.nearest?.score ?? null,
+    threshold: scored.threshold,
+    matched: !!match,
+  };
+  recordHubEvent({
+    kind: "person",
+    severity: match ? "alert" : "info",
+    where: cam.config.name,
+    title: match ? `Person erkannt: ${match.name}` : nearMiss ? "Person knapp unter Schwelle" : "Person unbekannt",
+    detail: match
+      ? undefined
+      : scored.nearest
+        ? `best ${scored.nearest.score.toFixed(3)} „${scored.nearest.name}“ (n=${scored.gallery}, ≥${scored.threshold.toFixed(2)})`
+        : "Gallery leer",
+    score: match?.score ?? scored.nearest?.score,
+  });
+  improve("face", match ? "person_match" : nearMiss ? "near_miss" : "person_nomatch", {
+    cam: cam.config.name,
+    score: match?.score ?? scored.nearest?.score,
+    threshold: scored.threshold,
+    gallery: scored.gallery,
+    upscaled: face.upscaled,
+  });
 
   const upload = await api(`/api/hub/person-sightings?${qs}`, {
     method: "POST",
@@ -423,6 +531,24 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (Fahrzeug-Erkennung aus)`);
     return null;
   }
+  if (cam.snapshotInFlight) {
+    cam.pendingVehicle = true;
+    log(`Fahrzeug-Snapshot ${cam.config.name}: wartet (Pipeline läuft)`);
+    improve("alpr", "deferred", { cam: cam.config.name });
+    return null;
+  }
+  cam.snapshotInFlight = true;
+  try {
+    return await uploadVehicleSnapshotBody(cam, cameraId);
+  } finally {
+    cam.snapshotInFlight = false;
+  }
+}
+
+async function uploadVehicleSnapshotBody(
+  cam: CameraRuntime,
+  cameraId: number
+): Promise<{ bytes: number } | null> {
 
   await new Promise((r) => setTimeout(r, VEHICLE_SNAP_DELAY_MS));
 
@@ -498,10 +624,7 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
       log(
         `Fahrzeug-Burst ${cam.config.name}: Frame ${i + 1}/${snaps.length} → ${score.plate} conf=${score.confidence.toFixed(2)}${score.viaWhitelist ? " WL" : ""}`
       );
-      if (
-        !dumpRoot &&
-        (score.confidence >= PLATE_EARLY_STOP_CONF || score.viaWhitelist)
-      ) {
+      if (score.confidence >= PLATE_EARLY_STOP_CONF || score.viaWhitelist) {
         break;
       }
     } else {
@@ -545,6 +668,7 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
         log(
           `Fahrzeug-Snapshot ${cam.config.name}: übersprungen (kein Plate/Fahrzeug in ${snaps.length} Frames)`
         );
+        improve("alpr", "skip", { cam: cam.config.name, frames: snaps.length });
         // Auch Skips throtteln – sonst Dauerschleife bei statischen Fehlalarmen.
         cam.lastSnapshotAt = Date.now();
         return null;
@@ -569,6 +693,30 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
   } else {
     log(`Fahrzeug-Snapshot ${cam.config.name}: kein Kennzeichen – manuelles Mapping`);
   }
+  improve("alpr", plate ? "plate" : "upload_noplate", {
+    cam: cam.config.name,
+    frames: snaps.length,
+    conf: bestScore?.confidence,
+    wl: bestScore?.viaWhitelist,
+  });
+  const listed = plate ? findAllowedVehicle(plate) : null;
+  cam.lastPlate = {
+    at: new Date().toISOString(),
+    plate,
+    confidence: bestScore?.confidence ?? null,
+    listed: !!listed,
+  };
+  recordHubEvent({
+    kind: "vehicle",
+    severity: listed ? "alert" : "info",
+    where: cam.config.name,
+    title: plate
+      ? `Kennzeichen ${plate}${listed ? ` – ${listed.name}` : ""}`
+      : "Fahrzeug ohne Kennzeichen",
+    detail: `${snaps.length} Frames${bestScore ? ` · conf ${bestScore.confidence.toFixed(2)}` : ""}`,
+    plate: plate ?? undefined,
+    listed: !!listed,
+  });
 
   const local = plate ? await actuateIfAllowed({ cameraId, plate }) : null;
   if (local?.skipCloud) {
@@ -770,18 +918,52 @@ async function refreshConfigs(): Promise<void> {
         tokenExpiresAt: 0,
         states: {},
         lastSnapshotAt: 0,
+        snapshotInFlight: false,
+        pendingVehicle: false,
         unreachableLogged: false,
         lastMacLearnAt: 0,
         lastRelocateAt: 0,
+        reachable: false,
+        lastError: null,
+        lastEventAt: null,
+        lastPerson: null,
+        lastPlate: null,
       });
     }
   }
   configLoadedAt = Date.now();
+  void syncLocalStreamsFromCloud(
+    all.map((c) => ({ name: c.name, host: c.host, kind: c.kind }))
+  ).catch((e) => log(`Cloud-Stream-Sync: ${e instanceof Error ? e.message : e}`));
 }
 
 /** Nächster Poll zieht die Kamera-Liste neu (z. B. nach Ensure einer Parkkamera). */
 export function markCameraConfigStale() {
   configLoadedAt = 0;
+}
+
+/** Kamera-Lage fuer das lokale Dashboard (ohne Zugangsdaten). */
+export function listCameraStatus(): CameraStatus[] {
+  return [...cameras.values()]
+    .map((cam) => ({
+      id: cam.config.id,
+      name: cam.config.name,
+      host: cam.config.host,
+      kind: cam.config.kind ?? "REOLINK",
+      vehicleDetection: cam.config.vehicleDetection !== false,
+      reachable: cam.reachable,
+      lastError: cam.lastError,
+      activeStates: Object.entries(cam.states)
+        .filter(([, active]) => active)
+        .map(([type]) => type),
+      busy: cam.snapshotInFlight,
+      pendingVehicle: cam.pendingVehicle,
+      lastSnapshotAt: cam.lastSnapshotAt ? new Date(cam.lastSnapshotAt).toISOString() : null,
+      lastEventAt: cam.lastEventAt,
+      lastPerson: cam.lastPerson,
+      lastPlate: cam.lastPlate,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
 
 /* ---------------------------------------------------------------------------
@@ -892,12 +1074,24 @@ export async function pollCameras(): Promise<void> {
     const personSnapshotJobs: number[] = [];
     const vehicleSnapshotJobs: number[] = [];
 
-    for (const cam of cameras.values()) {
+    const list = [...cameras.values()];
+    let pollIndex = 0;
+    const POLL_CONCURRENCY = 6;
+    async function pollOne(cam: CameraRuntime): Promise<void> {
       try {
         const states = await pollStates(cam);
         seen.push(cam.config.id);
+        if (!cam.reachable && cam.lastError) {
+          recordHubEvent({
+            kind: "camera",
+            severity: "info",
+            where: cam.config.name,
+            title: "wieder erreichbar",
+          });
+        }
+        cam.reachable = true;
+        cam.lastError = null;
         cam.unreachableLogged = false;
-        // MAC im Hintergrund lernen/aktualisieren (gedrosselt, best-effort).
         void learnCameraMac(cam);
 
         for (const [type, active] of Object.entries(states)) {
@@ -909,26 +1103,59 @@ export async function pollCameras(): Promise<void> {
               phase: "start",
               at: now,
             });
-            if (Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS) {
+            const idle =
+              !cam.snapshotInFlight &&
+              Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS;
+            if (type === "VEHICLE") {
+              // Kennzeichen nicht durch Personen-Throttle oder Parallel-Person verlieren.
+              vehicleSnapshotJobs.push(cam.config.id);
+            } else if (idle) {
               if (type === "PERSON") personSnapshotJobs.push(cam.config.id);
-              else if (type === "VEHICLE") vehicleSnapshotJobs.push(cam.config.id);
               else snapshotJobs.push(cam.config.id);
             }
           } else if (!active && was) {
             events.push({ cameraId: cam.config.id, type, phase: "end", at: now });
           }
+          if (active !== was) {
+            cam.lastEventAt = now;
+            recordHubEvent({
+              kind: "camera",
+              severity: "info",
+              where: cam.config.name,
+              title: `${type} ${active ? "erkannt" : "beendet"}`,
+            });
+          }
           cam.states[type] = active;
         }
       } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (cam.reachable || !cam.lastError) {
+          recordHubEvent({
+            kind: "camera",
+            severity: "warn",
+            where: cam.config.name,
+            title: "nicht erreichbar",
+            detail: msg,
+          });
+        }
+        cam.reachable = false;
+        cam.lastError = msg;
         if (!cam.unreachableLogged) {
-          log(`Kamera ${cam.config.name}: ${e instanceof Error ? e.message : e}`);
+          log(`Kamera ${cam.config.name}: ${msg}`);
           cam.unreachableLogged = true;
         }
-        // Unerreichbar: per MAC-Abgleich pruefen, ob die Kamera eine neue
-        // DHCP-IP bekommen hat, und ggf. sofort umstellen.
         void tryRelocateCamera(cam);
       }
     }
+    async function pollWorker() {
+      while (pollIndex < list.length) {
+        const cam = list[pollIndex++];
+        await pollOne(cam);
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(POLL_CONCURRENCY, list.length) }, () => pollWorker())
+    );
 
     const seenDue = Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
     if (events.length > 0 || (seen.length > 0 && seenDue)) {
@@ -944,15 +1171,34 @@ export async function pollCameras(): Promise<void> {
       }
     }
 
-    for (const cameraId of [...new Set(personSnapshotJobs)]) {
+    const vehicleIds = [...new Set(vehicleSnapshotJobs)];
+    const personIds = [...new Set(personSnapshotJobs)];
+    const both = new Set(personIds.filter((id) => vehicleIds.includes(id)));
+
+    for (const cameraId of vehicleIds) {
+      void (async () => {
+        try {
+          await uploadVehicleSnapshot(cameraId);
+        } catch (e) {
+          log(
+            `Fahrzeug-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`
+          );
+        }
+        if (both.has(cameraId)) {
+          try {
+            await uploadPersonSnapshot(cameraId);
+          } catch (e) {
+            log(
+              `Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`
+            );
+          }
+        }
+      })();
+    }
+    for (const cameraId of personIds) {
+      if (both.has(cameraId)) continue;
       uploadPersonSnapshot(cameraId).catch((e) =>
         log(`Personen-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
-      );
-    }
-
-    for (const cameraId of [...new Set(vehicleSnapshotJobs)]) {
-      uploadVehicleSnapshot(cameraId).catch((e) =>
-        log(`Fahrzeug-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
       );
     }
 

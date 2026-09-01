@@ -1,8 +1,15 @@
-import { execSync } from "node:child_process";
+import { execFile, execSync } from "node:child_process";
+import { promisify } from "node:util";
 import { CONFIG, log } from "./config.js";
 
-function git(args: string): string {
-  return execSync(`git ${args}`, { cwd: CONFIG.repoDir, encoding: "utf8" }).trim();
+const execFileAsync = promisify(execFile);
+
+async function git(args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync("git", args, {
+    cwd: CONFIG.repoDir,
+    timeout: 60_000,
+  });
+  return stdout.trim();
 }
 
 /**
@@ -11,21 +18,22 @@ function git(args: string): string {
  * go2rtc.yaml ohne erfolgreichen Push) duerfen Updates nicht blockieren.
  *
  * Ablauf: fetch → bei Abweichung reset --hard → npm install → exit
- * (launchd KeepAlive startet neu).
+ * (launchd KeepAlive startet neu). git fetch ist async, damit DoorBird-
+ * Monitor und Polls nicht einfrieren.
  */
-export function checkForUpdate(): void {
+export async function checkForUpdate(): Promise<void> {
   try {
-    git("fetch origin main --quiet");
-    const local = git("rev-parse HEAD");
-    const remote = git("rev-parse origin/main");
+    await git(["fetch", "origin", "main", "--quiet"]);
+    const local = await git(["rev-parse", "HEAD"]);
+    const remote = await git(["rev-parse", "origin/main"]);
     if (local === remote) return;
 
-    const dirty = git("status --porcelain --untracked-files=no");
+    const dirty = await git(["status", "--porcelain", "--untracked-files=no"]);
     if (dirty) {
       log(`Update: lokale Aenderungen werden verworfen:\n${dirty}`);
     }
     log(`Update gefunden: ${local.slice(0, 7)} -> ${remote.slice(0, 7)}. reset --hard + Neustart …`);
-    git("reset --hard origin/main");
+    await git(["reset", "--hard", "origin/main"]);
     execSync("npm install --no-audit --no-fund", { cwd: CONFIG.hubDir, stdio: "inherit" });
     log("Update installiert – Prozess wird beendet (launchd startet neu).");
     process.exit(0);

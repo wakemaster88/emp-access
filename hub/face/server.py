@@ -24,6 +24,14 @@ MIN_FACE_FRAC = float(os.environ.get("FACE_MIN_FRAC", "0.03"))
 # Vor der Erkennung skalieren (bessere Detektion + weniger RAM als Roh-4K/Panorama).
 MAX_EDGE = int(os.environ.get("FACE_MAX_EDGE", "1920"))
 DET_SIZE = int(os.environ.get("FACE_DET_SIZE", "960"))
+# Weitwinkel: erkanntes Mini-Gesicht ausschneiden und hochskalieren (ArcFace ~112 px).
+ZOOM_TARGET = int(os.environ.get("FACE_ZOOM_TARGET", "112"))
+MAX_ZOOM = float(os.environ.get("FACE_MAX_ZOOM", "8"))
+# Nach dem Hochskalieren: niedrigere Schwellen – das Bild ist weichgezeichnet.
+ZOOM_MIN_DET = float(os.environ.get("FACE_ZOOM_MIN_DET", "0.32"))
+ZOOM_MIN_SIZE = int(os.environ.get("FACE_ZOOM_MIN_SIZE", "24"))
+# Unter dieser Größe (skalierte px) kein Embedding-Fallback – zu unbrauchbar.
+KEEP_MIN_SIZE = float(os.environ.get("FACE_KEEP_MIN_SIZE", "12"))
 MAX_BODY_BYTES = int(os.environ.get("FACE_MAX_BODY", str(32 * 1024 * 1024)))
 
 _app = None
@@ -40,6 +48,8 @@ def get_app():
         from insightface.app import FaceAnalysis
 
         MODEL_ROOT.mkdir(parents=True, exist_ok=True)
+        # CoreML (Apple Neural Engine) wirft bei buffalo_l Shape-Fehler
+        # (inferred vs. static rank) – CPU ist langsamer, aber stabil.
         app = FaceAnalysis(
             name="buffalo_l",
             root=str(MODEL_ROOT),
@@ -47,7 +57,7 @@ def get_app():
         )
         app.prepare(ctx_id=-1, det_size=(DET_SIZE, DET_SIZE))
         _app = app
-        print(f"[face] buffalo_l bereit (models={MODEL_ROOT}, det={DET_SIZE})", flush=True)
+        print(f"[face] buffalo_l bereit (models={MODEL_ROOT}, det={DET_SIZE}, cpu)", flush=True)
         return _app
 
 
@@ -68,38 +78,131 @@ def downscale(img):
     return out, scale
 
 
-def detect_on(app, region, min_side: int, ox: int, oy: int, scale: float):
+def _mapped_bbox(bbox_scaled, scale: float):
+    if scale:
+        return [c / scale for c in bbox_scaled]
+    return list(bbox_scaled)
+
+
+def detect_on(
+    app,
+    region,
+    min_side: int,
+    ox: int,
+    oy: int,
+    scale: float,
+    region_zoom: float = 1.0,
+    min_det: float | None = None,
+):
     """Gesichter in einer Bildregion finden; BBox auf Originalkoordinaten mappen."""
     faces = app.get(region) or []
     out = []
     rejected = []
+    zoom = region_zoom if region_zoom else 1.0
+    to_orig = (scale * zoom) if scale else zoom
+    det_need = MIN_DET_SCORE if min_det is None else min_det
     for f in faces:
         bbox = [float(x) for x in f.bbox.tolist()]
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
         det = float(getattr(f, "det_score", 0.0) or 0.0)
-        if det < MIN_DET_SCORE or min(w, h) < min_side:
-            rejected.append({"det_score": det, "size": round(min(w, h), 1), "need": min_side})
-            continue
-        emb = f.normed_embedding
-        if emb is None:
-            continue
-        # Region-Offset + Downscale zurück auf Original.
-        mapped = [
-            (bbox[0] + ox) / scale,
-            (bbox[1] + oy) / scale,
-            (bbox[2] + ox) / scale,
-            (bbox[3] + oy) / scale,
+        # bbox_scaled: Koordinaten im herunterskalierten Vollbild (vor Digital-Zoom).
+        bbox_scaled = [
+            bbox[0] / zoom + ox,
+            bbox[1] / zoom + oy,
+            bbox[2] / zoom + ox,
+            bbox[3] / zoom + oy,
         ]
+        emb = f.normed_embedding
+        emb_list = [float(x) for x in emb.tolist()] if emb is not None else None
+        too_small = min(w, h) < min_side
+        if det < det_need or too_small:
+            rejected.append(
+                {
+                    "det_score": det,
+                    "size": round(min(w, h) / zoom, 1),
+                    "need": min_side,
+                    "bbox_scaled": bbox_scaled,
+                    "embedding": emb_list if det >= MIN_DET_SCORE and emb_list else None,
+                }
+            )
+            continue
+        if emb_list is None:
+            continue
         out.append(
             {
-                "embedding": [float(x) for x in emb.tolist()],
-                "bbox": mapped,
+                "embedding": emb_list,
+                "bbox": _mapped_bbox(bbox_scaled, scale),
                 "det_score": det,
-                "size": round(min(w, h) / scale if scale else min(w, h), 1),
+                "size": round(min(w, h) / to_orig if to_orig else min(w, h), 1),
             }
         )
     return out, rejected
+
+
+def rescue_zoom(app, img, bbox_scaled, scale: float, min_side: int):
+    """Kleines Gesicht ausschneiden, hochskalieren, erneut erkennen."""
+    ih, iw = img.shape[:2]
+    x1, y1, x2, y2 = bbox_scaled
+    fw, fh = max(1.0, x2 - x1), max(1.0, y2 - y1)
+    face = min(fw, fh)
+    zoom = min(MAX_ZOOM, max(1.0, ZOOM_TARGET / face))
+    if zoom < 1.2:
+        return [], zoom
+    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    half = max(fw, fh) * 1.4
+    xa = int(max(0, cx - half))
+    ya = int(max(0, cy - half))
+    xb = int(min(iw, cx + half))
+    yb = int(min(ih, cy + half))
+    crop = img[ya:yb, xa:xb]
+    if crop is None or getattr(crop, "size", 0) == 0:
+        return [], zoom
+    new_w = max(1, int(crop.shape[1] * zoom))
+    new_h = max(1, int(crop.shape[0] * zoom))
+    m = max(new_w, new_h)
+    if m > MAX_EDGE:
+        z2 = MAX_EDGE / m
+        new_w = max(1, int(new_w * z2))
+        new_h = max(1, int(new_h * z2))
+        zoom *= z2
+    up = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+    found, _ = detect_on(
+        app,
+        up,
+        ZOOM_MIN_SIZE,
+        xa,
+        ya,
+        scale,
+        region_zoom=zoom,
+        min_det=ZOOM_MIN_DET,
+    )
+    return found, zoom
+
+
+def upscaled_roi(app, img, min_side: int, scale: float, frac: float, y_frac: float):
+    """ROI hochskalieren (echter Digital-Zoom, nicht nur Crop)."""
+    ih, iw = img.shape[:2]
+    cw, ch = max(1, int(iw * frac)), max(1, int(ih * frac))
+    ox = (iw - cw) // 2
+    oy = int(ih * y_frac)
+    oy = min(max(0, oy), max(0, ih - ch))
+    crop = img[oy : oy + ch, ox : ox + cw]
+    if crop is None or getattr(crop, "size", 0) == 0:
+        return []
+    m = max(crop.shape[0], crop.shape[1])
+    zoom = min(MAX_ZOOM, MAX_EDGE / m) if m else 1.0
+    if zoom < 1.5:
+        return []
+    up = cv2.resize(
+        crop,
+        (max(1, int(crop.shape[1] * zoom)), max(1, int(crop.shape[0] * zoom))),
+        interpolation=cv2.INTER_LANCZOS4,
+    )
+    found, _ = detect_on(
+        app, up, ZOOM_MIN_SIZE, ox, oy, scale, region_zoom=zoom, min_det=ZOOM_MIN_DET
+    )
+    return found
 
 
 def embed_jpeg(data: bytes) -> dict:
@@ -113,9 +216,8 @@ def embed_jpeg(data: bytes) -> dict:
     ih, iw = img.shape[:2]
     min_side = max(MIN_FACE_SIZE, int(min(iw, ih) * MIN_FACE_FRAC))
 
-    # Mehrere ROIs: Vollbild + Zoom-Crops (Weitwinkel/Eingang – Gesicht oft klein).
+    # Mehrere ROIs: Vollbild + Crops (Weitwinkel). Echter Zoom erst in rescue_zoom.
     regions: list[tuple[str, object, int, int]] = [("full", img, 0, 0)]
-    # Zentrum 50% → effektiver 2×-Zoom
     cw, ch = int(iw * 0.50), int(ih * 0.50)
     cx0, cy0 = (iw - cw) // 2, (ih - ch) // 2
     regions.append(("center_zoom", img[cy0 : cy0 + ch, cx0 : cx0 + cw], cx0, cy0))
@@ -132,6 +234,7 @@ def embed_jpeg(data: bytes) -> dict:
     all_rejected = []
     used_region = "full"
     out = []
+    upscaled = False
     for name, region, ox, oy in regions:
         if region is None or getattr(region, "size", 0) == 0:
             continue
@@ -141,14 +244,75 @@ def embed_jpeg(data: bytes) -> dict:
             out = found
             used_region = name
             break
+        # Mini-Gesicht im Vollbild: Rest-Crops ohne Zoom überspringen, Rescue folgt.
+        if name == "full" and any(
+            r.get("det_score", 0) >= MIN_DET_SCORE and r.get("bbox_scaled") for r in rejected
+        ):
+            break
+
+    if not out:
+        candidates = [
+            r
+            for r in all_rejected
+            if r.get("bbox_scaled") and r.get("det_score", 0) >= MIN_DET_SCORE
+        ]
+        candidates.sort(key=lambda r: (r.get("size", 0), r.get("det_score", 0)), reverse=True)
+        for cand in candidates[:2]:
+            found, zoom = rescue_zoom(app, img, cand["bbox_scaled"], scale, min_side)
+            if found:
+                out = found
+                used_region = "rescue_zoom"
+                upscaled = True
+                print(
+                    f"[face] zoom {cand.get('size')}px ×{zoom:.1f} → det={found[0]['det_score']:.2f}",
+                    flush=True,
+                )
+                break
+            print(f"[face] zoom miss {cand.get('size')}px ×{zoom:.1f}", flush=True)
+
+    if not out:
+        keep = [
+            r
+            for r in candidates
+            if r.get("embedding") and float(r.get("size") or 0) >= KEEP_MIN_SIZE
+        ]
+        if keep:
+            best = max(keep, key=lambda r: (float(r.get("size") or 0), r.get("det_score", 0)))
+            out = [
+                {
+                    "embedding": best["embedding"],
+                    "bbox": _mapped_bbox(best["bbox_scaled"], scale),
+                    "det_score": best["det_score"],
+                    "size": best["size"],
+                }
+            ]
+            used_region = "small_keep"
+            upscaled = True
+            print(
+                f"[face] keep small {best.get('size')}px det={best['det_score']:.2f}",
+                flush=True,
+            )
+
+    if not out:
+        for name, frac, y_frac in (("zoom_upper", 0.28, 0.06), ("zoom_center", 0.32, 0.22)):
+            found = upscaled_roi(app, img, min_side, scale, frac, y_frac)
+            if found:
+                out = found
+                used_region = name
+                upscaled = True
+                break
 
     out.sort(key=lambda x: x["det_score"], reverse=True)
     return {
         "ok": True,
         "model": "buffalo_l",
         "faces": out,
-        "rejected": all_rejected[:8],
+        "rejected": [
+            {k: v for k, v in r.items() if k not in ("bbox_scaled", "embedding")}
+            for r in all_rejected[:8]
+        ],
         "region": used_region,
+        "upscaled": upscaled,
         "image": {
             "w": orig_w,
             "h": orig_h,

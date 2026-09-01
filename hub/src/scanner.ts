@@ -18,10 +18,12 @@ import dns from "node:dns/promises";
 import { networkInterfaces } from "node:os";
 import { promisify } from "node:util";
 import { CONFIG, api, log } from "./config.js";
-import { STATE } from "./state.js";
+import { STATE, recordHubEvent } from "./state.js";
 
 const exec = promisify(execFile);
 let busy = false;
+/** Letztes Scan-Ergebnis fuer das lokale Dashboard (nicht nur die Anzahl). */
+let lastDevices: ScannedDevice[] = [];
 
 export interface ScannedDevice {
   ip: string;
@@ -307,6 +309,14 @@ export async function runCloudScan(label = "Auto-Scan"): Promise<CloudScanResult
   try {
     log(`${label} gestartet (Ping-Sweep + Portscan) …`);
     const devices = await fullScan();
+    lastDevices = devices;
+    recordHubEvent({
+      kind: "network",
+      severity: "info",
+      where: "LAN",
+      title: `${label}: ${devices.length} Geräte`,
+      detail: `${Math.round((Date.now() - startedAt) / 1000)} s`,
+    });
 
     const res = await api("/api/hub/scan", {
       method: "POST",
@@ -342,6 +352,23 @@ export async function runCloudScan(label = "Auto-Scan"): Promise<CloudScanResult
   } finally {
     busy = false;
   }
+}
+
+/** Letzter Scan fuer das lokale Dashboard (Geraeteliste, nicht nur Zaehler). */
+export function lastScanResult(): {
+  scanning: boolean;
+  lastRunAt: string | null;
+  uploaded: boolean;
+  error: string | null;
+  devices: ScannedDevice[];
+} {
+  return {
+    scanning: busy,
+    lastRunAt: STATE.autoScan.lastRunAt,
+    uploaded: STATE.autoScan.uploaded,
+    error: STATE.autoScan.error,
+    devices: lastDevices,
+  };
 }
 
 export async function autoScan(): Promise<void> {

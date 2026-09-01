@@ -50,15 +50,38 @@ export const CONFIG = {
   taskIntervalMs: intEnv("HUB_TASK_INTERVAL", 2) * 1000,
   updateIntervalMs: intEnv("HUB_UPDATE_INTERVAL", 300) * 1000,
   dashboardPort: intEnv("HUB_DASHBOARD_PORT", 8787),
+  /** Gesetzt = Dashboard darf ins LAN (Zugang nur mit diesem Token). */
+  dashboardToken: (process.env.HUB_DASHBOARD_TOKEN || "").trim(),
+  /**
+   * Ohne Token bleibt das Dashboard strikt lokal – so kann es nie
+   * versehentlich offen im Netz stehen.
+   */
+  dashboardHost:
+    process.env.HUB_DASHBOARD_HOST?.trim() ||
+    ((process.env.HUB_DASHBOARD_TOKEN || "").trim() ? "0.0.0.0" : "127.0.0.1"),
   // 30 min statt 5 min: Der Auto-Scan (Ping-Sweep + Portscan + Cloud-Upload)
   // erzeugt spuerbare Netz- und DB-Last; Inventardaten aendern sich selten.
   scanIntervalMs: intEnv("HUB_SCAN_INTERVAL", 1800) * 1000,
-  modules: ["tasks", "ping", "network-scan", "wake-on-lan", "auto-scan", "cameras", "face", "vision"],
+  modules: [
+    "tasks",
+    "ping",
+    "network-scan",
+    "wake-on-lan",
+    "auto-scan",
+    "cameras",
+    "doorbird",
+    "face",
+    "alpr",
+    "parking",
+    "vision",
+    "snmp",
+  ],
 };
 
 export async function api(pathname: string, init?: RequestInit): Promise<Response> {
   return fetch(`${CONFIG.apiUrl}${pathname}`, {
     ...init,
+    signal: init?.signal ?? AbortSignal.timeout(30_000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${CONFIG.apiToken}`,
