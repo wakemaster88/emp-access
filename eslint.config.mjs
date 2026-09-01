@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Lokale Teile: eigener Build, eigene Regeln (`webcams/eslint.config.mjs`),
+    // im Vercel-Build ohnehin ausgeschlossen (siehe tsconfig `exclude`).
+    "hub/**",
+    "webcams/**",
   ]),
 ]);
 

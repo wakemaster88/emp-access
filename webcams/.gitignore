@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+# Snapshot-Zwischenstände aus Kameratests – nie ins Repo.
+/.cache-*
 
 # debug
 npm-debug.log*

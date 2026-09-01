@@ -4,6 +4,10 @@
 /node_modules
 /.pnp
 .pnp.*
+# Das Repo baut mit npm (package-lock.json ist geführt). Ein mitgelieferter
+# pnpm-Lock würde den Vercel-Build auf pnpm umschalten.
+/.pnpm-store
+/pnpm-lock.yaml
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -53,6 +57,10 @@ __pycache__/
 
 # vercel
 .vercel
+
+# cursor: Projektregeln sind geführt, lokale Hooks nicht
+/.cursor/hooks
+/.cursor/hooks.json
 
 # typescript
 *.tsbuildinfo

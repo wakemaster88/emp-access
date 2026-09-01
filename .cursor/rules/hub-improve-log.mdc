@@ -1,0 +1,13 @@
+---
+description: Nach Hub-Arbeit immer das automatische Verbesserungslog lesen und fortschreiben.
+alwaysApply: true
+---
+
+# Hub-Verbesserungslog
+
+Bei jeder Arbeit am lokalen Hub (`hub/`, Kameras, Face, ALPR, DoorBird, Parken, Tasks):
+
+1. Zuerst lesen: `http://127.0.0.1:8787/api/improve`, sonst `hub/.cache/improve-latest.md`, plus die letzten relevanten Zeilen in `~/Library/Logs/emp-hub.log`.
+2. Danach einen Eintrag an `hub/IMPROVE.md` anhängen: Datum, Befund (mit Zahlen), Änderung, nächster Schritt. Keine Secrets (Tokens, Passwörter, Embeddings).
+3. Offene Hinweise aus dem Snapshot (`hints`) zuerst abarbeiten, nicht bei null anfangen.
+4. Rohdaten liegen in `hub/.cache/improve.jsonl` (gitignored). Das Journal `hub/IMPROVE.md` ist die verdichtete Spur.
