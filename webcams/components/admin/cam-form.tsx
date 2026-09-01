@@ -35,7 +35,7 @@ const EMPTY: Cam = {
   peopleCounter: {
     enabled: false,
     intervalSec: 60,
-    mode: "presence",
+    mode: "zone",
     line: null,
     zone: null,
     direction: "ab",
@@ -331,8 +331,8 @@ export function CamForm({
           <div>
             <div className="text-sm font-medium">Personen zählen (KI)</div>
             <div className="text-xs text-foreground/60">
-              Anwesenheit per Snapshot (Ollama), gerichtetes Zählen (rein/raus)
-              oder Belegung einer Fläche (z. B. Aquapark).
+              Anwesenheit per Snapshot (YOLO-Tracker), gerichtetes Zählen
+              (rein/raus) oder Belegung einer Fläche (z. B. Aquapark).
             </div>
           </div>
           <Switch
@@ -355,7 +355,7 @@ export function CamForm({
                     })
                   }
                 >
-                  <option value="presence">Anwesenheit (Ollama)</option>
+                  <option value="presence">Anwesenheit (YOLO-Tracker)</option>
                   <option value="crossing">Crossing rein/raus (Sidecar)</option>
                   <option value="zone">Zone / Belegung (Sidecar)</option>
                 </Select>

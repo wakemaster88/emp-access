@@ -58,6 +58,14 @@
       "showTitleBar": false
     },
     {
+      "id": "w-dienste",
+      "type": "services",
+      "title": "Dienste",
+      "intervalMs": 5000,
+      "enabled": true,
+      "showTitleBar": true
+    },
+    {
       "id": "w-zeit",
       "type": "iframe",
       "title": "Zeiterfassung",

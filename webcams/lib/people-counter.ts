@@ -1,15 +1,15 @@
+import { sidecarAuthHeaders } from "./auth";
 import { loadConfig } from "./config";
 import { getSnapshot } from "./reolink-control";
-import type { Cam, Settings } from "./types";
+import type { Cam } from "./types";
 
 /**
- * People-Counter über Vision-LLM (Ollama, lokal) — Presence-Modus.
+ * People-Counter Presence-Modus: Snapshot → YOLO-Tracker POST /classify.
  *
  * Pro Cam mit `peopleCounter.enabled && peopleCounter.mode === "presence"`
  * läuft im Server-Prozess ein Polling-Worker, der in `intervalSec`-Abständen
- * einen Snapshot von der Cam holt und ihn an Ollama (Modell: `settings.ollama.model`)
- * schickt. Das Ergebnis (eine Ganzzahl: „wie viele Personen gerade sichtbar")
- * wird in einem In-Memory-Store gehalten.
+ * einen Snapshot holt und die Personenzahl vom Tracker bekommt.
+ * Crossing/Zone laufen weiter im Python-Sidecar (Stream).
  *
  * Für gerichtetes Zählen (rein/raus) siehe `lib/people-tracker.ts` —
  * das wird vom Python-Sidecar übernommen, weil ein LLM auf einzelnen
@@ -144,7 +144,7 @@ async function tickOnce(camId: string) {
     ) {
       return;
     }
-    const count = await analyseCamSnapshot(cam, config.settings);
+    const count = await analyseCamSnapshot(cam, config.settings.tracker.url);
     const entry = state.counters.get(camId);
     if (!entry) return;
     entry.count = count;
@@ -163,46 +163,28 @@ async function tickOnce(camId: string) {
   }
 }
 
-/**
- * Holt einen Snapshot, schickt ihn an Ollama, parsed eine Ganzzahl.
- * Bei kleineren Modellen (llava:7b, moondream) ist das auf macOS
- * mit Metal in 1–5 s durch.
- */
-async function analyseCamSnapshot(cam: Cam, settings: Settings): Promise<number> {
+/** Holt einen Snapshot und zählt Personen über den YOLO-Tracker. */
+async function analyseCamSnapshot(cam: Cam, trackerUrl: string): Promise<number> {
   const ctl = new AbortController();
-  const timeout = setTimeout(() => ctl.abort(), 30_000);
+  const timeout = setTimeout(() => ctl.abort(), 8_000);
   try {
     const buf = await getSnapshot(cam, { signal: ctl.signal });
-    const base64 = buf.toString("base64");
-
-    const url = `${settings.ollama.url.replace(/\/$/, "")}/api/generate`;
-    const body = {
-      model: settings.ollama.model,
-      prompt:
-        "Count the visible people in this image. " +
-        "Reply with ONLY a single non-negative integer (e.g. 0, 1, 2, 3). " +
-        "No explanation, no words, just the number.",
-      images: [base64],
-      stream: false,
-      options: { temperature: 0, num_predict: 8 },
-    };
-
-    const r = await fetch(url, {
+    const r = await fetch(`${trackerUrl.replace(/\/$/, "")}/classify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "image/jpeg",
+        ...(await sidecarAuthHeaders()),
+      },
+      body: new Uint8Array(buf),
       signal: ctl.signal,
     });
-    if (!r.ok) throw new Error(`ollama HTTP ${r.status}`);
-    const data = (await r.json()) as { response?: string };
-    const raw = (data.response ?? "").trim();
-    const match = raw.match(/-?\d+/);
-    if (!match) throw new Error(`unparsbar: ${raw.slice(0, 60)}`);
-    const n = parseInt(match[0], 10);
-    if (Number.isNaN(n) || n < 0 || n > 200) {
+    if (!r.ok) throw new Error(`tracker classify HTTP ${r.status}`);
+    const data = (await r.json()) as { people?: number };
+    const n = Number(data.people);
+    if (!Number.isFinite(n) || n < 0 || n > 200) {
       throw new Error(`unplausibel: ${n}`);
     }
-    return n;
+    return Math.round(n);
   } finally {
     clearTimeout(timeout);
   }

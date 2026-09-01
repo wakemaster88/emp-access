@@ -20,6 +20,7 @@ const TYPE_LABELS: Record<Widget["type"], string> = {
   doorbird: "Doorbird",
   scans: "Scan-Monitor",
   tailgate: "Drehkreuz-Kontrolle",
+  services: "Dienste-Status",
 };
 
 export default function WidgetsPage() {
@@ -81,6 +82,8 @@ export default function WidgetsPage() {
         const cam = cams.find((c) => c.id === w.camId);
         return cam ? `${cam.name} · Durchgänge gegen Scans` : "erste Kamera mit Kontrolle";
       }
+      case "services":
+        return `Hub, Tracker, Streams, Cloud · alle ${w.intervalMs / 1000}s`;
     }
   }
 

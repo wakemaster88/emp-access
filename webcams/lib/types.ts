@@ -197,6 +197,12 @@ export const TailgateWidgetSchema = BaseWidget.extend({
   intervalMs: z.number().int().min(2000).max(60000).default(10000),
 });
 
+/** Live-Status der lokalen Dienste (Hub, Tracker, go2rtc, Cloud, …). */
+export const ServicesWidgetSchema = BaseWidget.extend({
+  type: z.literal("services"),
+  intervalMs: z.number().int().min(2000).max(60000).default(5000),
+});
+
 export const WidgetSchema = z.discriminatedUnion("type", [
   ReolinkWidgetSchema,
   IframeWidgetSchema,
@@ -205,6 +211,7 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   DoorbirdWidgetSchema,
   ScansWidgetSchema,
   TailgateWidgetSchema,
+  ServicesWidgetSchema,
 ]);
 
 export type Widget = z.infer<typeof WidgetSchema>;
@@ -215,6 +222,7 @@ export type ClockWidget = z.infer<typeof ClockWidgetSchema>;
 export type DoorbirdWidget = z.infer<typeof DoorbirdWidgetSchema>;
 export type ScansWidget = z.infer<typeof ScansWidgetSchema>;
 export type TailgateWidget = z.infer<typeof TailgateWidgetSchema>;
+export type ServicesWidget = z.infer<typeof ServicesWidgetSchema>;
 
 /**
  * Normalisierte 2D-Koordinate, 0..1, Origin oben-links.
@@ -230,7 +238,7 @@ export const PeopleCounterSchema = z.object({
   enabled: z.boolean().default(false),
   intervalSec: z.number().int().min(15).max(3600).default(60),
   /**
-   * "presence" – Vision-LLM (Ollama), zählt sichtbare Personen pro Snapshot.
+   * "presence" – Snapshot an den YOLO-Tracker, zählt sichtbare Personen.
    * "crossing" – YOLO + ByteTrack im Python-Sidecar; Personen die eine
    * Linie überqueren werden je nach Richtung als „rein" oder „raus" gezählt.
    * "zone" – YOLO + ByteTrack; Personen deren Fußpunkt in einem Polygon
@@ -443,7 +451,7 @@ export const CamSchema = z
     peopleCounter: PeopleCounterSchema.default({
       enabled: false,
       intervalSec: 60,
-      mode: "presence",
+      mode: "zone",
       line: null,
       zone: null,
       direction: "ab",
@@ -736,10 +744,6 @@ export const SettingsSchema = z.object({
   streamRefreshMin: z.number().int().min(0).max(1440).default(60),
   sirenCooldownSec: z.number().int().min(10).max(600).default(60),
   sirenMaxDurationSec: z.number().int().min(1).max(60).default(30),
-  ollama: z.object({
-    url: z.string().default("http://127.0.0.1:11434"),
-    model: z.string().default("llava:7b"),
-  }).default({ url: "http://127.0.0.1:11434", model: "llava:7b" }),
   /** Telegram-Benachrichtigungen für Tür-/ALPR-Events. */
   telegram: TelegramConfigSchema.default({
     enabled: false,

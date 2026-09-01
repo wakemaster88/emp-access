@@ -26,6 +26,7 @@ const TYPES = [
   { value: "clock", label: "Uhr / Datum" },
   { value: "scans", label: "Scan-Monitor (emp-access)" },
   { value: "tailgate", label: "Drehkreuz-Kontrolle" },
+  { value: "services", label: "Dienste-Status" },
 ] as const;
 
 function slugify(s: string) {
@@ -88,6 +89,13 @@ function defaultsForType(type: Widget["type"], cams: Cam[]): Widget {
         type,
         camId: cams.find((c) => c.tailgate.enabled)?.id ?? "",
         intervalMs: 10000,
+      } as Widget;
+    case "services":
+      return {
+        ...base,
+        type,
+        title: "Dienste",
+        intervalMs: 5000,
       } as Widget;
   }
 }
@@ -386,6 +394,23 @@ export function WidgetForm({ initial, cams, onSaved, onCancel }: WidgetFormProps
             />
           </Field>
         </>
+      )}
+
+      {data.type === "services" && (
+        <Field
+          label="Aktualisierung (ms)"
+          hint="Hub, Tracker, go2rtc, Cloud, Doorbird und Face."
+          className="sm:col-span-2"
+        >
+          <Input
+            type="number"
+            min={2000}
+            max={60000}
+            step={1000}
+            value={data.intervalMs}
+            onChange={(e) => update("intervalMs", Number(e.target.value))}
+          />
+        </Field>
       )}
 
       <div className="sm:col-span-2 flex justify-end gap-2 pt-2">

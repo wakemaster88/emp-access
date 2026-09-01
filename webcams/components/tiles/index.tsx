@@ -7,6 +7,7 @@ import { ClockTile } from "./clock-tile";
 import { DoorbirdTile } from "./doorbird-tile";
 import { ScansTile } from "./scans-tile";
 import { TailgateTile } from "./tailgate-tile";
+import { ServicesTile } from "./services-tile";
 import type { Cam, DoorbirdConfig, Widget } from "@/lib/types";
 
 interface TileProps {
@@ -63,6 +64,8 @@ export function Tile({
       return <ScansTile widget={widget} />;
     case "tailgate":
       return <TailgateTile widget={widget} />;
+    case "services":
+      return <ServicesTile widget={widget} />;
     default:
       return null;
   }

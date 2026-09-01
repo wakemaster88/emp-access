@@ -229,6 +229,21 @@ class CamCounter:
 
 # COCO: car, motorcycle, bus, truck — kein Fahrrad (zu viele Fehltreffer am Zaun).
 VEHICLE_CLASSES = [2, 3, 5, 7]
+PERSON_CLASS = 0
+CLASSIFY_CLASSES = [PERSON_CLASS, *VEHICLE_CLASSES]
+
+_classify_model: YOLO | None = None
+_classify_lock = threading.Lock()
+
+
+def classify_model() -> YOLO:
+    """Eigenes YOLO für Einzelbild-Klassifikation (Hub-Fahrzeugfilter, Presence)."""
+    global _classify_model
+    if _classify_model is None:
+        with _classify_lock:
+            if _classify_model is None:
+                _classify_model = YOLO(YOLO_MODEL)
+    return _classify_model
 
 
 def _hash_config(cam: dict[str, Any]) -> str:
@@ -1646,6 +1661,7 @@ manager = TrackerManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("starting tracker (config=%s, model=%s)", CONFIG_PATH, YOLO_MODEL)
+    classify_model()
     manager.sync()
     manager.ensure_alpr_worker()
     manager.ensure_history_cleanup()
@@ -1676,6 +1692,52 @@ def health() -> dict[str, Any]:
         "ok": True,
         "workers": list(manager.counters.keys()),
         "model": YOLO_MODEL,
+    }
+
+
+@app.post("/classify")
+async def classify(request: Request) -> dict[str, Any]:
+    """Einzelnes JPEG: Fahrzeug ja/nein + Personenzahl (Hub / Presence)."""
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty body")
+    arr = np.frombuffer(data, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise HTTPException(status_code=400, detail="invalid jpeg")
+    # 4K-Vollbilder sind für ja/nein unnötig – lange erste Inferenz.
+    ih, iw = frame.shape[:2]
+    edge = max(ih, iw)
+    if edge > 1280:
+        z = 1280 / edge
+        frame = cv2.resize(frame, (int(iw * z), int(ih * z)), interpolation=cv2.INTER_AREA)
+
+    results = classify_model().predict(
+        frame,
+        classes=CLASSIFY_CLASSES,
+        verbose=False,
+        conf=0.25,
+    )
+    vehicle_conf = 0.0
+    people = 0
+    people_conf = 0.0
+    for r in results:
+        if r.boxes is None:
+            continue
+        cls = r.boxes.cls.tolist() if r.boxes.cls is not None else []
+        confs = r.boxes.conf.tolist() if r.boxes.conf is not None else []
+        for c, conf in zip(cls, confs):
+            score = float(conf)
+            if int(c) == PERSON_CLASS:
+                people += 1
+                people_conf = max(people_conf, score)
+            elif int(c) in VEHICLE_CLASSES:
+                vehicle_conf = max(vehicle_conf, score)
+    return {
+        "vehicle": vehicle_conf > 0,
+        "conf": round(vehicle_conf, 3),
+        "people": people,
+        "peopleConf": round(people_conf, 3),
     }
 
 

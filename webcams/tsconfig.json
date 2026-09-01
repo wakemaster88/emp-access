@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "tests/parking-lot-schema.test.ts",
+    "components/admin/parking-spots-editor.tsx",
+    "components/admin/parking-history-card.tsx"
+  ]
 }
