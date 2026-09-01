@@ -172,6 +172,14 @@ model Account {
   audioAnnouncements   AudioAnnouncement[]
   audioSchedules       AudioSchedule[]
   audioJobs            AudioJob[]
+  keyRooms             KeyRoom[]
+  keyDoors             KeyDoor[]
+  keyLocks             KeyLock[]
+  keyItems             KeyItem[]
+  keyHolders           KeyHolder[]
+  keyHandovers         KeyHandover[]
+  keyPolicyTemplates   KeyPolicyTemplate[]
+  keySignatures        KeySignature[]
 }
 
 model Admin {
@@ -409,6 +417,7 @@ model Ticket {
   ticketDevices           TicketDevice[]
   vereinAccess            VereinAccessTicket[] // Vereine, die über DIESES Ticket Zutritt erhalten
   lockerRentals           LockerRental[] // Schließfach-Vermietungen, in denen dieses Ticket Mieter ist (jahresweise)
+  keyHolders              KeyHolder[] // Schlüsselnehmer-Einträge, die auf dieses Mitarbeiter-Ticket zeigen
   emailSends              EmailSend[] // Historie der an dieses Ticket gesendeten Automation-Mails
   scans                   Scan[]
   createdAt               DateTime             @default(now())
@@ -747,25 +756,25 @@ model SlotBlock {
 }
 
 model MonitorConfig {
-  id        Int      @id @default(autoincrement())
-  name      String
-  token     String   @unique @default(cuid())
-  type      String   @default("MONITOR") // MONITOR | CHECKIN | RESOURCE_MONITOR | SCANNER
-  deviceIds Json     @default("[]")
+  id               Int      @id @default(autoincrement())
+  name             String
+  token            String   @unique @default(cuid())
+  type             String   @default("MONITOR") // MONITOR | CHECKIN | RESOURCE_MONITOR | SCANNER
+  deviceIds        Json     @default("[]")
   // Optionale Bereichs-Eingrenzung fuer Scan-Monitore (Typ MONITOR), deren
   // Personenliste sonst nur ueber die Geraete-Bereiche gefiltert wird. Damit
   // laesst sich ein Monitor auch fuer Bereiche OHNE eigenes Scan-Geraet
   // erstellen (z.B. Seilbahn B / Uebungslift). Enthaelt AccessArea-IDs.
-  areaIds   Json     @default("[]")
+  areaIds          Json     @default("[]")
   /// Geraete, die vom oeffentlichen Scan-Monitor aus geschaltet werden
   /// duerfen – unabhaengig von `deviceIds` (Scan-Quellen). Beispiel:
   /// Monitor Seilbahn A steuert einen Shelly, der das Drehkreuz stromlos schaltet.
-  controlDeviceIds Json @default("[]")
-  isActive  Boolean  @default(true)
-  accountId Int
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  controlDeviceIds Json     @default("[]")
+  isActive         Boolean  @default(true)
+  accountId        Int
+  account          Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([accountId])
   @@index([token])
@@ -2187,4 +2196,241 @@ model AudioJob {
   @@index([accountId, createdAt])
   @@index([zoneId, status])
   @@index([announcementId])
+}
+
+// ─── Schließanlage ───────────────────────────────────────────────────────────
+// Hierarchie: Raum -> Tuer -> Schloss. Schluessel haengen ueber
+// `KeyLockAssignment` an beliebig vielen Schloessern; ein Generalschluessel ist
+// damit einfach ein Schluessel mit vielen Zuordnungen. Ausgabe/Ruecknahme laeuft
+// ueber `KeyHandover` (Kopf) + `KeyHandoverItem` (je Schluessel).
+
+/// Raum bzw. Bereich, in dem Tueren haengen.
+model KeyRoom {
+  id        Int       @id @default(autoincrement())
+  accountId Int
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  /// Raumnummer/Kennung, z. B. "1.03".
+  number    String?
+  building  String?
+  floor     String?
+  notes     String?   @db.Text
+  doors     KeyDoor[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, building])
+}
+
+/// Tuer. `roomId` ist optional, damit Aussen-/Gemeinschaftstueren (Haupteingang,
+/// Treppenhaus) ohne Pseudo-Raum erfasst werden koennen.
+model KeyDoor {
+  id         Int       @id @default(autoincrement())
+  accountId  Int
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  roomId     Int?
+  room       KeyRoom?  @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  name       String
+  doorNumber String?
+  notes      String?   @db.Text
+  locks      KeyLock[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([roomId])
+}
+
+/// Schloss/Zylinder in einer Tuer. Eine Tuer kann mehrere Schloesser haben.
+model KeyLock {
+  id           Int                 @id @default(autoincrement())
+  accountId    Int
+  account      Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  doorId       Int
+  door         KeyDoor             @relation(fields: [doorId], references: [id], onDelete: Cascade)
+  /// Schliessungs-/Zylindernummer aus dem Schliessplan.
+  lockNumber   String?
+  /// "CYLINDER" | "PADLOCK" | "ELECTRONIC" | "OTHER"
+  lockType     String              @default("CYLINDER")
+  /// Schliessystem/Anlage, z. B. "Hauptanlage 2024".
+  system       String?
+  manufacturer String?
+  installedAt  DateTime?
+  notes        String?             @db.Text
+  keys         KeyLockAssignment[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([accountId])
+  @@index([doorId])
+}
+
+/// Physisches Schluessel-Exemplar. Jede Kopie ist ein eigener Datensatz, damit
+/// das Protokoll eindeutig auf ein Stueck zeigt.
+model KeyItem {
+  id        Int                 @id @default(autoincrement())
+  accountId Int
+  account   Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// Praegung/Kennzeichnung, eindeutig je Mandant.
+  keyNumber String
+  label     String?
+  /// "SINGLE" | "GROUP" | "MAIN" | "GRAND" – reine Klassifizierung, die
+  /// tatsaechliche Schliessberechtigung ergibt sich aus `locks`.
+  level     String              @default("SINGLE")
+  /// "AVAILABLE" | "ISSUED" | "LOST" | "DESTROYED"
+  status    String              @default("AVAILABLE")
+  notes     String?             @db.Text
+  locks     KeyLockAssignment[]
+  handovers KeyHandoverItem[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([accountId, keyNumber])
+  @@index([accountId])
+  @@index([accountId, status])
+}
+
+/// n:m zwischen Schluessel und Schloss.
+model KeyLockAssignment {
+  id        Int      @id @default(autoincrement())
+  keyId     Int
+  key       KeyItem  @relation(fields: [keyId], references: [id], onDelete: Cascade)
+  lockId    Int
+  lock      KeyLock  @relation(fields: [lockId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([keyId, lockId])
+  @@index([lockId])
+}
+
+/// Schluesselnehmer. Entweder ein Mitarbeiter (`ticketId` auf ein Ticket mit
+/// `source = EMP_CONTROL`) oder frei erfasst (Externe, Handwerker, Reinigung).
+/// Name/Kontakt werden auch bei Mitarbeitern als Snapshot gehalten, damit das
+/// Protokoll nach dem Loeschen des Tickets lesbar bleibt.
+model KeyHolder {
+  id        Int           @id @default(autoincrement())
+  accountId Int
+  account   Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ticketId  Int?
+  ticket    Ticket?       @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  firstName String?
+  lastName  String?
+  company   String?
+  email     String?
+  phone     String?
+  notes     String?       @db.Text
+  handovers KeyHandover[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([accountId])
+  @@index([ticketId])
+}
+
+/// Protokollkopf einer Schluesselausgabe. Buendelt mehrere Schluessel, damit
+/// eine Belehrung/Unterschrift fuer den gesamten Vorgang gilt.
+model KeyHandover {
+  id               Int                @id @default(autoincrement())
+  accountId        Int
+  account          Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  holderId         Int
+  holder           KeyHolder          @relation(fields: [holderId], references: [id], onDelete: Cascade)
+  policyTemplateId Int?
+  policyTemplate   KeyPolicyTemplate? @relation(fields: [policyTemplateId], references: [id], onDelete: SetNull)
+  issuedAt         DateTime           @default(now())
+  /// Name des ausgebenden Admins (Snapshot, kein FK – Admins koennen wegfallen).
+  issuedByName     String?
+  /// Geplante Rueckgabe.
+  dueAt            DateTime?
+  /// Pfand in Euro.
+  deposit          Float?
+  /// "DRAFT" | "ISSUED" | "PARTIALLY_RETURNED" | "RETURNED" | "LOST"
+  status           String             @default("ISSUED")
+  notes            String?            @db.Text
+  items            KeyHandoverItem[]
+  signatures       KeySignature[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([accountId])
+  @@index([accountId, status])
+  @@index([holderId])
+}
+
+/// Ein Schluessel innerhalb eines Protokolls. Rueckgabe ist einzeln moeglich.
+model KeyHandoverItem {
+  id             Int         @id @default(autoincrement())
+  handoverId     Int
+  handover       KeyHandover @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+  keyId          Int
+  key            KeyItem     @relation(fields: [keyId], references: [id], onDelete: Restrict)
+  /// "ISSUED" | "RETURNED" | "LOST"
+  itemStatus     String      @default("ISSUED")
+  returnedAt     DateTime?
+  returnedByName String?
+  notes          String?     @db.Text
+  createdAt      DateTime    @default(now())
+
+  @@unique([handoverId, keyId])
+  @@index([keyId])
+}
+
+/// Belehrungs-/Haftungstext. Append-only versioniert: eine Aenderung erzeugt
+/// einen neuen Datensatz mit `version + 1`, damit bereits signierte Dokumente
+/// reproduzierbar bleiben.
+model KeyPolicyTemplate {
+  id            Int            @id @default(autoincrement())
+  accountId     Int
+  account       Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name          String
+  version       Int            @default(1)
+  /// Belehrungstext (Umgang mit Schluesseln, Verlustmeldung, Rueckgabe).
+  bodyText      String         @db.Text
+  /// Haftungserklaerung, die separat bestaetigt wird.
+  liabilityText String?        @db.Text
+  isActive      Boolean        @default(true)
+  handovers     KeyHandover[]
+  signatures    KeySignature[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([accountId, name, version])
+  @@index([accountId])
+  @@index([accountId, isActive])
+}
+
+/// Signaturvorgang zu einem Protokoll. `token` ist das Zugriffsgeheimnis der
+/// oeffentlichen `/schluessel/<token>`-Seite (QR-Code). Die Snapshots frieren
+/// Text und Schluesseldaten zum Zeitpunkt der Ausstellung ein.
+model KeySignature {
+  id               Int                @id @default(autoincrement())
+  accountId        Int
+  account          Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  handoverId       Int
+  handover         KeyHandover        @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+  /// "HANDOVER" | "RETURN"
+  kind             String             @default("HANDOVER")
+  token            String             @unique
+  expiresAt        DateTime
+  policyTemplateId Int?
+  policyTemplate   KeyPolicyTemplate? @relation(fields: [policyTemplateId], references: [id], onDelete: SetNull)
+  /// Volltext-Kopie von Belehrung + Haftung zum Ausstellungszeitpunkt.
+  policySnapshot   Json
+  /// Schluesselliste + Empfaengerdaten als JSON-Snapshot.
+  keySnapshot      Json
+  signedName       String?
+  /// Unterschrift als PNG-DataURL.
+  signatureImage   String?            @db.Text
+  signedAt         DateTime?
+  signerIp         String?
+  signerUserAgent  String?
+  /// Archiviertes PDF, wird beim Signieren erzeugt.
+  pdf              Bytes?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([accountId])
+  @@index([handoverId])
+  @@index([token])
 }

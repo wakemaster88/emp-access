@@ -564,3 +564,168 @@ export const surveillanceUpdateSchema = z.object({
   alertTelegram: z.boolean().optional(),
   cameraIds: z.array(z.coerce.number().int().positive()).optional(),
 });
+
+// ─── Schließanlage ───────────────────────────────────────────────────────────
+
+const optionalDate = z
+  .string()
+  .refine((s) => s === "" || !isNaN(new Date(s).getTime()), "Ungültiges Datum")
+  .nullable();
+
+export const keyRoomCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  number: z.string().max(40).nullable().optional(),
+  building: z.string().max(120).nullable().optional(),
+  floor: z.string().max(60).nullable().optional(),
+  notes: z.string().max(1000).nullable().optional(),
+});
+
+export const keyRoomUpdateSchema = keyRoomCreateSchema.partial();
+
+export const keyDoorCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  /// null = Gemeinschafts-/Aussentuer ohne Raumzuordnung.
+  roomId: z.coerce.number().int().positive().nullable().optional(),
+  doorNumber: z.string().max(40).nullable().optional(),
+  notes: z.string().max(1000).nullable().optional(),
+});
+
+export const keyDoorUpdateSchema = keyDoorCreateSchema.partial();
+
+export const keyLockTypeSchema = z.enum(["CYLINDER", "PADLOCK", "ELECTRONIC", "OTHER"]);
+
+export const keyLockCreateSchema = z.object({
+  doorId: z.coerce.number().int().positive(),
+  lockNumber: z.string().max(60).nullable().optional(),
+  lockType: keyLockTypeSchema.optional(),
+  system: z.string().max(120).nullable().optional(),
+  manufacturer: z.string().max(120).nullable().optional(),
+  installedAt: optionalDate.optional(),
+  notes: z.string().max(1000).nullable().optional(),
+});
+
+export const keyLockUpdateSchema = keyLockCreateSchema.partial();
+
+export const keyLevelSchema = z.enum(["SINGLE", "GROUP", "MAIN", "GRAND"]);
+export const keyStatusSchema = z.enum(["AVAILABLE", "ISSUED", "LOST", "DESTROYED"]);
+
+export const keyItemCreateSchema = z.object({
+  keyNumber: z.string().min(1).max(60),
+  label: z.string().max(120).nullable().optional(),
+  level: keyLevelSchema.optional(),
+  status: keyStatusSchema.optional(),
+  notes: z.string().max(1000).nullable().optional(),
+  /// IDs der Schlösser, die dieser Schlüssel sperrt (Vollersetzung).
+  lockIds: z.array(z.coerce.number().int().positive()).optional(),
+});
+
+export const keyItemUpdateSchema = keyItemCreateSchema.partial();
+
+/// Nummernserie anlegen: "Z12" + 1..5 -> "Z12-1" ... "Z12-5".
+export const keyItemBulkCreateSchema = z.object({
+  prefix: z.string().min(1).max(40),
+  startIndex: z.coerce.number().int().min(0).max(9999).optional(),
+  count: z.coerce.number().int().min(1).max(200),
+  separator: z.string().max(3).optional(),
+  /// Stellen der laufenden Nummer, z. B. 3 -> "Z12-001".
+  padding: z.coerce.number().int().min(1).max(6).optional(),
+  label: z.string().max(120).nullable().optional(),
+  level: keyLevelSchema.optional(),
+  notes: z.string().max(1000).nullable().optional(),
+  lockIds: z.array(z.coerce.number().int().positive()).optional(),
+});
+
+export const keyHolderCreateSchema = z
+  .object({
+    /// Mitarbeiter-Ticket (source EMP_CONTROL) oder null für freie Erfassung.
+    ticketId: z.coerce.number().int().positive().nullable().optional(),
+    firstName: z.string().max(120).nullable().optional(),
+    lastName: z.string().max(120).nullable().optional(),
+    company: z.string().max(120).nullable().optional(),
+    email: z.union([z.literal(""), z.string().email().max(180)]).nullable().optional(),
+    phone: z.string().max(40).nullable().optional(),
+    notes: z.string().max(1000).nullable().optional(),
+  })
+  .refine(
+    (v) => v.ticketId != null || !!v.lastName?.trim() || !!v.company?.trim(),
+    { message: "Mitarbeiter, Nachname oder Firma erforderlich", path: ["lastName"] },
+  );
+
+export const keyHolderUpdateSchema = z.object({
+  ticketId: z.coerce.number().int().positive().nullable().optional(),
+  firstName: z.string().max(120).nullable().optional(),
+  lastName: z.string().max(120).nullable().optional(),
+  company: z.string().max(120).nullable().optional(),
+  email: z.union([z.literal(""), z.string().email().max(180)]).nullable().optional(),
+  phone: z.string().max(40).nullable().optional(),
+  notes: z.string().max(1000).nullable().optional(),
+});
+
+export const keyPolicyCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  bodyText: z.string().min(1).max(20000),
+  liabilityText: z.string().max(20000).nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+/// Textänderungen erzeugen eine neue Version; nur `isActive` wird in-place
+/// geändert (siehe Route).
+export const keyPolicyUpdateSchema = keyPolicyCreateSchema.partial();
+
+export const keyHandoverCreateSchema = z
+  .object({
+    holderId: z.coerce.number().int().positive().nullable().optional(),
+    /// Alternative zu `holderId`: Empfänger direkt mit anlegen.
+    newHolder: keyHolderCreateSchema.optional(),
+    keyIds: z.array(z.coerce.number().int().positive()).min(1),
+    policyTemplateId: z.coerce.number().int().positive().nullable().optional(),
+    issuedByName: z.string().max(120).nullable().optional(),
+    dueAt: optionalDate.optional(),
+    deposit: z.coerce.number().min(0).max(100000).nullable().optional(),
+    notes: z.string().max(1000).nullable().optional(),
+  })
+  .refine((v) => v.holderId != null || v.newHolder != null, {
+    message: "Empfänger erforderlich",
+    path: ["holderId"],
+  });
+
+export const keyHandoverUpdateSchema = z.object({
+  policyTemplateId: z.coerce.number().int().positive().nullable().optional(),
+  dueAt: optionalDate.optional(),
+  deposit: z.coerce.number().min(0).max(100000).nullable().optional(),
+  notes: z.string().max(1000).nullable().optional(),
+});
+
+/// Rückgabe: entweder ausgewählte Positionen oder alle offenen.
+export const keyReturnSchema = z
+  .object({
+    itemIds: z.array(z.coerce.number().int().positive()).optional(),
+    all: z.boolean().optional(),
+    /// RETURNED = zurück im Bestand, LOST = als verloren markieren.
+    itemStatus: z.enum(["RETURNED", "LOST"]).optional(),
+    returnedByName: z.string().max(120).nullable().optional(),
+    notes: z.string().max(1000).nullable().optional(),
+  })
+  .refine((v) => v.all === true || (v.itemIds?.length ?? 0) > 0, {
+    message: "Keine Schlüssel ausgewählt",
+    path: ["itemIds"],
+  });
+
+export const keySignatureCreateSchema = z.object({
+  kind: z.enum(["HANDOVER", "RETURN"]).optional(),
+  /// Gültigkeit des QR-Links in Tagen.
+  expiresInDays: z.coerce.number().int().min(1).max(365).optional(),
+  policyTemplateId: z.coerce.number().int().positive().nullable().optional(),
+});
+
+/// Eingabe der öffentlichen Signaturseite.
+export const keySignatureSubmitSchema = z.object({
+  signedName: z.string().min(2).max(120),
+  /// PNG-Data-URL aus dem Unterschriftenfeld (~max. 1 MB).
+  signatureImage: z
+    .string()
+    .max(1_500_000, "Unterschrift zu groß")
+    .refine((s) => s.startsWith("data:image/png;base64,"), "Ungültige Unterschrift"),
+  acceptedPolicy: z.literal(true),
+  acceptedLiability: z.boolean().optional(),
+});
