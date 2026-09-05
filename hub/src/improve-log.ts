@@ -69,6 +69,8 @@ function n(key: string): number {
 
 function hints(): string[] {
   const out: string[] = [];
+  // Zuerst der Mac selbst: ohne Auto-Login und Einschaltplan ist alles andere egal.
+  for (const h of STATE.system?.hints ?? []) out.push(h);
   const personOk = n("face.person_match") + n("face.person_nomatch");
   const skipNoFace = n("face.skip_no_face");
   const personPipelines = personOk + skipNoFace + n("face.skip_inactive") + n("face.skip_inflight");

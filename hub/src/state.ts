@@ -44,6 +44,25 @@ export interface HubEvent {
   listed?: boolean;
 }
 
+/** Systemzustand des Hub-Macs (Auto-Login, Ruhezustand, Einschaltplan) – system-setup.ts. */
+export interface SystemState {
+  checkedAt: string;
+  /** Benutzer der automatischen Anmeldung, null = aus. */
+  autoLoginUser: string | null;
+  /** Minuten bis Ruhezustand laut pmset, 0 = nie, null = unbekannt. */
+  sleepMinutes: number | null;
+  autorestart: boolean | null;
+  /** Taeglicher Einschaltplan laut `pmset -g sched`, null = keiner. */
+  powerOnSchedule: string | null;
+  /** caffeinate laeuft und haelt den Mac wach, solange der Hub lebt. */
+  caffeinate: boolean;
+  /** sudoers-Regel fuer pmset vorhanden (install/setup-system.sh). */
+  sudoPmset: boolean;
+  /** Einstellungen in diesem Lauf per pmset nachgezogen. */
+  applied: boolean;
+  hints: string[];
+}
+
 const MAX_LOGS = 200;
 const MAX_TASKS = 50;
 const MAX_EVENTS = 300;
@@ -79,6 +98,7 @@ export const STATE = {
     lots: 0,
   },
   pendingTasks: 0,
+  system: null as SystemState | null,
   improve: {
     since: new Date().toISOString(),
     counts: {} as Record<string, number>,

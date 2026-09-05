@@ -85,7 +85,7 @@ export default async function NetworkPage() {
     }),
     db.hubAgent.findMany({
       where: { accountId },
-      select: { id: true, name: true, hostname: true, version: true, lastSeenAt: true },
+      select: { id: true, name: true, hostname: true, version: true, lastSeenAt: true, status: true },
       orderBy: { name: "asc" },
     }),
     db.discoveredDevice.findMany({
@@ -213,6 +213,17 @@ export default async function NetworkPage() {
                     );
                   })}
                 </div>
+                {/* Hinweise des Hubs zum Mac selbst: Auto-Login, Ruhezustand, Einschaltplan. */}
+                {hubAgents.flatMap((h) => {
+                  const sys = (h.status as { system?: { hints?: unknown } } | null)?.system;
+                  const hints = Array.isArray(sys?.hints) ? (sys!.hints as string[]) : [];
+                  return hints.map((hint, i) => (
+                    <p key={`${h.id}-${i}`} className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                      {hubAgents.length > 1 ? `${h.name}: ` : ""}
+                      {hint}
+                    </p>
+                  ));
+                })}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <HubLogButton hubName={hubAgents.length === 1 ? hubAgents[0].name : undefined} />

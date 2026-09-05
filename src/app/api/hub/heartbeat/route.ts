@@ -26,13 +26,24 @@ export async function POST(request: NextRequest) {
       ? body.parking
       : undefined;
 
+  // Systemzustand des Hub-Macs (Auto-Login, Ruhezustand, Einschaltplan).
+  const system =
+    body.system && typeof body.system === "object" && !Array.isArray(body.system)
+      ? body.system
+      : undefined;
+
   const existing = await db.hubAgent.findUnique({
     where: { accountId_name: { accountId: account.id, name } },
     select: { status: true },
   });
-  const status = parking
-    ? ({ ...statusObject(existing?.status), parking } as Prisma.InputJsonValue)
-    : undefined;
+  const status =
+    parking || system
+      ? ({
+          ...statusObject(existing?.status),
+          ...(parking ? { parking } : {}),
+          ...(system ? { system } : {}),
+        } as Prisma.InputJsonValue)
+      : undefined;
 
   const agent = await db.hubAgent.upsert({
     where: { accountId_name: { accountId: account.id, name } },

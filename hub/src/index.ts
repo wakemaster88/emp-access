@@ -12,6 +12,7 @@ import { collectParkingSnapshot, ensureParkingCameras, uploadParkingTrackerFrame
 import { runSwitchSync, snmpConfigured } from "./snmp.js";
 import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
 import { startSystemMetrics } from "./system-metrics.js";
+import { startSystemSetup } from "./system-setup.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -87,6 +88,8 @@ async function heartbeat() {
         hostname: CONFIG.hostname,
         version: CONFIG.version,
         modules: CONFIG.modules,
+        // Auto-Login/Ruhezustand/Einschaltplan des Hub-Macs fuer die Hub-Karte.
+        system: STATE.system ?? undefined,
       }),
     });
     if (!res.ok) {
@@ -170,6 +173,8 @@ async function pollTasks() {
 // Lokales Dashboard starten, sofort melden, dann in Intervallen weiterarbeiten.
 startImproveLog();
 startSystemMetrics();
+// Ruhezustand verhindern, pmset nachziehen (falls sudoers-Regel), Auto-Login melden.
+startSystemSetup();
 recordHubEvent({
   kind: "system",
   severity: "info",

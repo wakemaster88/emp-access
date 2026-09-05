@@ -397,3 +397,20 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 
 - Zone für Kamera Eingang im Editor setzen (Straße und Parkplatz oben links ausklammern); Schnappschuss vorher per „Schnappschuss“ anfordern, sonst ist der Editor leer.
 - Wirkung nach ein paar Tagen an `vision.no_small`/`vision.no_zone` gegen `vision.yes` im Diagnose-Snapshot ablesen.
+
+## 2026-09-05 (Systempflege: Ruhezustand, pmset, Auto-Login automatisch soweit möglich)
+
+### Befunde
+
+- Der Hub läuft ohne Root. Auto-Login (`sysadminctl`, braucht das Benutzerpasswort) und `pmset` kann er nicht selbst setzen; nur `caffeinate` geht ohne Rechte.
+- Auf dem Entwickler-MacBook geprüft: `checkSystem()` liest Auto-Login (`defaults read … autoLoginUser`), `pmset -g` (sleep/autorestart) und `pmset -g sched` korrekt, startet `caffeinate -i -s -w <pid>` und erkennt die fehlende sudoers-Regel.
+
+### Änderungen
+
+- `hub/src/system-setup.ts`: bei jedem Start (also nach jedem Update) und alle 6 h – caffeinate gegen den Ruhezustand; wenn `/etc/sudoers.d/emp-hub` da ist, `pmset -a sleep 0 disksleep 0 displaysleep 10 autorestart 1 womp 1` und `pmset repeat wakeorpoweron MTWRFSU <HUB_POWER_ON_TIME>` nachziehen; Zustand nach `STATE.system`, ins Log („Systempflege: …“), in die Diagnose-Hinweise und per Heartbeat in `HubAgent.status.system`.
+- `install/setup-system.sh` (einmal mit sudo): pmset-Werte, tägliches Einschalten (Standard 06:00), sudoers-Regel nur für `/usr/bin/pmset`, Auto-Login per `sysadminctl -autologin set` mit Passwortabfrage (FileVault-Check).
+- Hub-Karte unter Netzwerk zeigt die Hinweise des Hubs (Auto-Login aus, Ruhezustand, kein Einschaltplan) in Amber.
+
+### Offen
+
+- Einmal auf dem iMac: `cd ~/repos/emp-access/hub && sudo ./install/setup-system.sh 06:00`. Danach verschwinden die Hinweise in der Hub-Karte von selbst.

@@ -52,22 +52,37 @@ der nächsten Anmeldung wieder – genau so entstand die Lücke vom 03.09. 20:37
 bis 04.09. 10:53 Uhr, in der keine Kamera, kein Kennzeichen und kein
 Türöffner lief. Dasselbe gilt für Tracker und go2rtc.
 
-Damit das nicht passiert:
+Was der Hub selbst tut (bei jedem Start, also auch nach jedem Update,
+`src/system-setup.ts`):
 
-1. **Automatische Anmeldung** einschalten: Systemeinstellungen → Benutzer &
-   Gruppen → Automatisch anmelden als Hub-Benutzer. Zum Betriebsende nur den
-   Bildschirm sperren, nie abmelden oder ausschalten.
-2. **Kein Ruhezustand, Neustart nach Stromausfall:**
+- **Ruhezustand verhindern:** `caffeinate -i -s` läuft mit, solange der Hub
+  lebt – ohne Root, sofort wirksam.
+- **Energieeinstellungen nachziehen:** Ist die sudoers-Regel aus dem
+  Setup-Skript vorhanden, setzt er `pmset` selbst (nie schlafen, Neustart
+  nach Stromausfall, tägliches Einschalten um `HUB_POWER_ON_TIME`, Standard
+  06:00). Ändert jemand die Werte, stehen sie nach dem nächsten Hub-Start
+  wieder.
+- **Zustand melden:** Auto-Login, Ruhezustand und Einschaltplan stehen im
+  Log („Systempflege: …“), im Diagnose-Snapshot und in der Hub-Karte unter
+  Netzwerk – mit Hinweis, wenn etwas fehlt.
 
-   ```bash
-   sudo pmset -a sleep 0 disksleep 0 displaysleep 10 autorestart 1 womp 1
-   ```
+Was einmal Root braucht – **einmalig auf dem Hub-Mac**:
 
-3. Fällt der Hub trotzdem aus, kommt seit 09/2026 innerhalb von zehn Minuten
-   ein **Push „Hub offline“** an alle registrierten Geräte (Einstellungen →
-   Push-Benachrichtigungen), und „Hub wieder online“, sobald der Heartbeat
-   zurück ist. Grundlage ist `HubAgent.offlineNotifiedAt`, geprüft vom
-   5-Minuten-Cron.
+```bash
+cd ~/repos/emp-access/hub && sudo ./install/setup-system.sh 06:00
+```
+
+Das Skript setzt die `pmset`-Werte, plant das tägliche Einschalten, legt die
+sudoers-Regel nur für `/usr/bin/pmset` an und schaltet die automatische
+Anmeldung des Hub-Benutzers ein (Passwort wird abgefragt, nicht gespeichert;
+mit FileVault geht Auto-Login nicht). Danach genügt: zum Betriebsende den
+Bildschirm sperren, nicht abmelden – und selbst ein Herunterfahren endet
+morgens um 06:00 mit einem laufenden Hub.
+
+Fällt der Hub trotzdem aus, kommt innerhalb von zehn Minuten ein **Push „Hub
+offline“** an alle registrierten Geräte (Einstellungen →
+Push-Benachrichtigungen) und „Hub wieder online“, sobald der Heartbeat zurück
+ist (`HubAgent.offlineNotifiedAt`, 5-Minuten-Cron).
 
 Eine LaunchDaemon-Variante (läuft ohne angemeldeten Benutzer) ist nicht
 umgesetzt: Vision-OCR und Face-Sidecar müssten dafür erst einmal in einer
