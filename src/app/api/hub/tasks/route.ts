@@ -22,6 +22,8 @@ const VALID_TASK_TYPES = [
   "HUB_LOG",
   // Tracker oder Hub neu starten – der Hub kennt nur diese beiden Dienste.
   "SERVICE_RESTART",
+  // Auto-Login/Ruhezustand/Einschaltplan des Hub-Macs sofort neu lesen.
+  "SYSTEM_CHECK",
 ];
 
 /**

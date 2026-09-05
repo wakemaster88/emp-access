@@ -14,6 +14,7 @@ import {
 import { enrollFromSighting } from "./face.js";
 import { readHubLog } from "./hublog.js";
 import { restartService } from "./services.js";
+import { checkSystem } from "./system-setup.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 import {
   openDoorbirdDoor,
@@ -214,6 +215,13 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
     case "SERVICE_RESTART":
       // Tracker per launchctl, Hub per Exit (launchd startet neu) – feste Liste, kein freier Befehl.
       return restartService(task.payload);
+    case "SYSTEM_CHECK": {
+      // Auto-Login/Ruhezustand/Einschaltplan sofort neu lesen (z. B. nach setup-system.sh),
+      // pmset dabei nachziehen, falls die sudoers-Regel inzwischen da ist.
+      const system = await checkSystem();
+      if (!system) return { success: false, error: "Systempflege nur auf macOS" };
+      return { success: true, result: system };
+    }
     default:
       return { success: false, error: `Unbekannter Task-Typ: ${task.type}` };
   }

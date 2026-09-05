@@ -55,6 +55,15 @@ else
 fi
 
 echo
+echo "Hub neu starten, damit er den neuen Zustand sofort meldet …"
+HUB_UID="$(id -u "$HUB_USER")"
+if sudo -u "$HUB_USER" launchctl kickstart -k "gui/$HUB_UID/com.emp-access.hub" 2>/dev/null; then
+  echo "     Hub neu gestartet"
+else
+  echo "     Hub-Agent nicht gefunden (com.emp-access.hub) – der Hub liest den Zustand spätestens in 6 h neu"
+fi
+
+echo
 echo "Fertig. Kontrolle:"
 echo "  pmset -g | grep -E ' sleep| autorestart'"
 echo "  pmset -g sched"
