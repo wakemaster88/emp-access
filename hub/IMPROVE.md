@@ -430,3 +430,8 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 ### Offen
 
 - Entscheidung: FileVault am iMac ausschalten (Systemeinstellungen → Datenschutz & Sicherheit → FileVault), dann `sudo install/setup-system.sh` erneut für Auto-Login. Ohne das gilt: Der Mac darf abends nicht heruntergefahren werden; das tägliche Einschalten um 06:00 hilft dann nur bis zur Anmeldemaske.
+
+## 2026-09-05 (Hub-Mac fertig eingerichtet)
+
+- 13:53 Uhr per `SYSTEM_CHECK` bestätigt: FileVault aus, Auto-Login `aaronarmnborst`, kein Ruhezustand, Neustart nach Stromausfall, Einschalten täglich 06:00, sudo-Regel für pmset, caffeinate an – keine Hinweise mehr. Auto-Login wurde über die Systemeinstellungen gesetzt, nachdem der zweite Lauf des Setup-Skripts bei `sysadminctl` abgebrochen war (Skript-Ausgabe nicht gesehen).
+- Damit überlebt der Hub Herunterfahren und Neustart des iMac ohne Zutun; der Ausfall vom 3./4.9. kann so nicht mehr entstehen.
