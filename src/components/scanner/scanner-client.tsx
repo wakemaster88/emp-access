@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
+import { useWakeLock } from "@/hooks/use-wake-lock";
+import type { Html5Qrcode } from "html5-qrcode";
+
 import {
   Camera,
   SwitchCamera,
@@ -22,6 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+
+/** Die Bibliothek wird erst beim Start der Kamera geladen (dynamischer Import). */
+type Html5QrcodeModule = typeof import("html5-qrcode");
 
 function playTone(granted: boolean) {
   try {
@@ -99,6 +104,8 @@ export function ScannerClient({
   scanCheckUrl = "/api/scan-check",
 }: ScannerClientProps = {}) {
   const [isScanning, setIsScanning] = useState(false);
+  // Bildschirm wach halten, solange die Seite sichtbar ist.
+  useWakeLock(true);
   const [isStarting, setIsStarting] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
@@ -108,6 +115,7 @@ export function ScannerClient({
   const [error, setError] = useState<string | null>(null);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const html5Ref = useRef<Html5QrcodeModule | null>(null);
   const scannerRunningRef = useRef(false);
   const cooldownRef = useRef<string | null>(null);
   const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -178,8 +186,9 @@ export function ScannerClient({
   const stopScannerSafe = useCallback(async () => {
     if (scannerRef.current) {
       try {
+        const states = html5Ref.current?.Html5QrcodeScannerState;
         const state = scannerRef.current.getState();
-        if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+        if (states && (state === states.SCANNING || state === states.PAUSED)) {
           await scannerRef.current.stop();
         }
       } catch {
@@ -203,7 +212,9 @@ export function ScannerClient({
     try {
       await stopScannerSafe();
 
-      const scanner = new Html5Qrcode("scanner-viewport");
+      const mod = html5Ref.current ?? (await import("html5-qrcode"));
+      html5Ref.current = mod;
+      const scanner = new mod.Html5Qrcode("scanner-viewport");
       scannerRef.current = scanner;
 
       const qrboxFn = (vw: number, vh: number) => {
@@ -250,8 +261,9 @@ export function ScannerClient({
       mountedRef.current = false;
       if (scannerRef.current) {
         try {
+          const states = html5Ref.current?.Html5QrcodeScannerState;
           const state = scannerRef.current.getState();
-          if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+          if (states && (state === states.SCANNING || state === states.PAUSED)) {
             scannerRef.current.stop().catch(() => {});
           }
         } catch { /* ignore */ }

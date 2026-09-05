@@ -267,7 +267,7 @@ export function MobileAccessClient({ token, profile }: Props) {
         <div className="absolute -top-16 -right-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
         <div className="absolute -bottom-12 -left-6 h-32 w-32 rounded-full bg-fuchsia-300/20 blur-2xl" />
 
-        <div className="relative px-4 pt-3 pb-3.5 text-white">
+        <div className="relative px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3.5 text-white">
           {/* Top-Row: Tenant + Live */}
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] font-medium text-white/70 inline-flex items-center gap-1">

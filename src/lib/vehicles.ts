@@ -3,6 +3,7 @@ import { isUniqueConstraintError, withDbRetry } from "@/lib/db-errors";
 import { controlShelly } from "@/lib/shelly";
 import { maybeSurveillanceTelegramAlert } from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
+import { storeSightingSnapshot } from "@/lib/blob-store";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 
@@ -57,6 +58,8 @@ export async function processVehicleSighting(opts: {
     (plateNormalized ? "CAMERA_PLATE" : "CAMERA_VEHICLE");
   const snapshot =
     opts.snapshot?.length ? new Uint8Array(opts.snapshot) : null;
+  // Bild in den Blob-Speicher; die Bytes bleiben nur fuer Telegram im Speicher.
+  const storedSnapshot = await storeSightingSnapshot("vehicle-sightings", opts.accountId, snapshot);
 
   let vehicle =
     plateNormalized
@@ -175,7 +178,7 @@ export async function processVehicleSighting(opts: {
       shellyTriggered,
       shellyOk,
       seenAt,
-      ...(snapshot ? { snapshot } : {}),
+      ...storedSnapshot,
     },
     // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
     select: { id: true },

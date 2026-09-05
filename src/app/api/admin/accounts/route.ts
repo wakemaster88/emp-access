@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { safeAuth } from "@/lib/auth";
 import { superAdminClient } from "@/lib/prisma";
 import { accountCreateSchema } from "@/lib/validators";
+import { newAccountApiToken } from "@/lib/tokens";
 
 async function requireSuperAdmin() {
   const session = await safeAuth();
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
     data: {
       name: parsed.data.name,
       subdomain: parsed.data.subdomain,
+      apiToken: newAccountApiToken(),
       isActive: parsed.data.isActive ?? true,
     },
   });

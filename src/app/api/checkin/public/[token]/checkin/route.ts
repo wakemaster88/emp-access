@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 
@@ -7,6 +8,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
+  const limited = publicRateLimit(token, "checkin-checkin");
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });

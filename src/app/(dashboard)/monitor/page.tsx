@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,9 @@ interface DeviceStatus {
 
 const OPENABLE_CATEGORIES = new Set(["DREHKREUZ", "TUER"]);
 
+/** Poll-Takt des Leitstands. */
+const MONITOR_POLL_MS = 5000;
+
 export default function MonitorPage() {
   const [scans, setScans] = useState<MonitorScan[]>([]);
   const [newIds, setNewIds] = useState<Set<number>>(new Set());
@@ -65,6 +69,8 @@ export default function MonitorPage() {
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  // Bildschirm wach halten, solange die Seite sichtbar ist.
+  useWakeLock(true);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [dayKey, setDayKey] = useState(() => berlinYmd(new Date()));
   const [openingId, setOpeningId] = useState<number | null>(null);
@@ -128,17 +134,27 @@ export default function MonitorPage() {
   useEffect(() => {
     if (isPaused) return;
 
-    let es: EventSource | null = null;
+    // Kurzes Polling statt SSE: ein Event-Stream hielt pro Tab eine
+    // Function-Instanz dauerhaft offen (siehe /api/monitor).
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let since = 0;
+    const devicesParam = selectedDeviceIds.length > 0 ? selectedDeviceIds.join(",") : "";
 
-    function connectSSE() {
-      const devicesParam = selectedDeviceIds.length > 0 ? selectedDeviceIds.join(",") : "";
-      es = new EventSource(`/api/monitor?areas=&devices=${devicesParam}`);
+    async function poll() {
+      try {
+        const res = await fetch(`/api/monitor?since=${since}&areas=&devices=${devicesParam}`, { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const msg = (await res.json()) as {
+          scans: MonitorScan[];
+          counts: AreaCount[] | null;
+          devices: DeviceStatus[];
+          lastScanId: number;
+        };
+        if (cancelled) return;
 
-      es.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-
-        if (msg.type === "scans" && msg.data.length > 0) {
-          const incoming = (msg.data as MonitorScan[]).filter((s) => isSameBerlinDay(s.scanTime));
+        if (msg.scans.length > 0) {
+          const incoming = msg.scans.filter((s) => isSameBerlinDay(s.scanTime));
           setScans((prev) => {
             const todayPrev = prev.filter((s) => isSameBerlinDay(s.scanTime));
             const existing = new Set(todayPrev.map((s) => s.id));
@@ -154,27 +170,39 @@ export default function MonitorPage() {
           if (soundEnabled && incoming.some((s) => s.result === "DENIED")) {
             playAlertSound();
           }
+        } else {
+          isFirstLoad.current = false;
         }
-        if (msg.type === "counts") setCounts(msg.data);
-        if (msg.type === "devices") setDevices(msg.data);
-      };
+        if (typeof msg.lastScanId === "number") since = msg.lastScanId;
+        if (msg.counts) setCounts(msg.counts);
+        if (msg.devices) setDevices(msg.devices);
+      } catch {
+        /* Netzwerkfehler still ignorieren – der naechste Poll kommt. */
+      }
     }
 
-    connectSSE();
+    function start() {
+      if (timer) return;
+      void poll();
+      timer = setInterval(() => void poll(), MONITOR_POLL_MS);
+    }
+    function stop() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+
+    start();
 
     const handleVisibility = () => {
-      if (document.hidden) {
-        es?.close();
-        es = null;
-      } else if (!es) {
-        connectSSE();
-      }
+      if (document.hidden) stop();
+      else start();
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
+      cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibility);
-      es?.close();
+      stop();
     };
   }, [isPaused, soundEnabled, playAlertSound, selectedDeviceIds, dayKey]);
 
@@ -202,7 +230,7 @@ export default function MonitorPage() {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
   return (
-    <div ref={containerRef} className="bg-slate-50 dark:bg-slate-950 min-h-screen">
+    <div ref={containerRef} className="bg-slate-50 dark:bg-slate-950 min-h-[100dvh]">
 
       <Header title="Live Monitor" />
 

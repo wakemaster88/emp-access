@@ -18,9 +18,9 @@ DEFAULT = {
     "server_url": "",
     "api_token": "",
     "device_id": 0,
-    # Job-Poll: bestimmt, wie schnell eine Durchsage startet. Unter 3 s bringt
-    # kaum noch etwas, kostet aber spuerbar Function-Invocations.
-    "job_poll_interval": 5,
+    # Job-Poll: bestimmt, wie schnell eine Durchsage startet. 8 s statt 5 s
+    # spart ein Drittel der Function-Invocations; unter 3 s bringt nichts mehr.
+    "job_poll_interval": 8,
     # Heartbeat meldet Ist-Zustand und Systeminfos; 60 s reichen, das Dashboard
     # wertet bis ~5 Minuten ohne Heartbeat als online.
     "heartbeat_interval": 60,
@@ -67,8 +67,20 @@ class Config:
                     stored = json.load(f)
                 self._data.update(stored)
                 logger.info("Konfiguration geladen: %s", CONFIG_PATH)
+                self._migrate_polling_defaults(stored)
             except Exception as e:
                 logger.error("Fehler beim Laden der Konfiguration: %s", e)
+
+    def _migrate_polling_defaults(self, stored: dict) -> None:
+        """
+        Hebt den alten Job-Poll-Default (5 s) einmalig auf 8 s an – nur wenn
+        der Wert exakt dem alten Default entspricht, individuell gesetzte
+        Werte bleiben unangetastet.
+        """
+        if stored.get("job_poll_interval") == 5:
+            self._data["job_poll_interval"] = 8
+            logger.info("Polling-Default migriert: job_poll_interval=8s")
+            self.save()
 
     def save(self):
         try:

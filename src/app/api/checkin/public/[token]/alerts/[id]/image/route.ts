@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveBinary } from "@/lib/blob-store";
 
 export const maxDuration = 10;
 
 /**
  * GET: Bild zu einer Warnung als JPEG, `?i=` waehlt den Blickwinkel.
  *
- * Eigener Endpunkt statt Base64 in der Alarmliste: Die wird alle vier
+ * Eigener Endpunkt statt Base64 in der Alarmliste: Die wird alle paar
  * Sekunden geholt, das Bild genau einmal.
  */
 export async function GET(
@@ -39,13 +40,14 @@ export async function GET(
       position,
       alert: { accountId: monitor.accountId },
     },
-    select: { image: true, createdAt: true },
+    select: { image: true, blobPathname: true, createdAt: true },
   });
-  if (!img) {
+  const bytes = img ? await resolveBinary({ blob: img.blobPathname, bytes: img.image }) : null;
+  if (!img || !bytes) {
     return NextResponse.json({ error: "Kein Bild vorhanden" }, { status: 404 });
   }
 
-  return new NextResponse(Buffer.from(img.image), {
+  return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "Content-Type": "image/jpeg",
       // Bild aendert sich nicht mehr — der Monitor darf es behalten.

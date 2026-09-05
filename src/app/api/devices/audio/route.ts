@@ -7,19 +7,21 @@
  * Auth läuft wie bei den Scanner-Pis über das Account-API-Token.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
 import { clampVolume, pairableSeconds, parseExternalKind } from "@/lib/audio";
 
 const JOB_BATCH_SIZE = 20;
 
 export async function GET(request: NextRequest) {
-  const auth = await validateApiToken(request);
+  const auth = await validateApiToken(request, { allowDevice: true });
   if ("error" in auth) return auth.error;
 
   const deviceId = Number(request.nextUrl.searchParams.get("id"));
   if (!Number.isInteger(deviceId)) {
     return NextResponse.json({ error: "Missing id parameter" }, { status: 400 });
   }
+  const mismatch = deviceTokenMismatch(auth, deviceId);
+  if (mismatch) return mismatch;
 
   const { db } = auth;
   const zone = await db.audioZone.findFirst({
@@ -101,7 +103,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await validateApiToken(request);
+  const auth = await validateApiToken(request, { allowDevice: true });
   if ("error" in auth) return auth.error;
 
   const body = await request.json().catch(() => null);
@@ -113,6 +115,8 @@ export async function POST(request: NextRequest) {
   if (!Number.isInteger(deviceId)) {
     return NextResponse.json({ error: "deviceId erforderlich" }, { status: 400 });
   }
+  const mismatch = deviceTokenMismatch(auth, deviceId);
+  if (mismatch) return mismatch;
 
   const { db } = auth;
   const zone = await db.audioZone.findFirst({

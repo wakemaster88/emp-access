@@ -1,5 +1,6 @@
-import { jsPDF } from "jspdf";
-import QRCode from "qrcode";
+// jspdf und qrcode werden erst beim Drucken geladen (dynamischer Import),
+// damit sie nicht im Bundle jeder Seite haengen, die dieses Modul importiert.
+import type { jsPDF } from "jspdf";
 
 /**
  * Druckhilfen fuer den 72mm-Bondrucker (z. B. Epson TM-m30/M30).
@@ -60,6 +61,7 @@ function fmtDate(iso: string | null | undefined): string {
 /** Erzeugt QR-Code-DataURL einmal pro Barcode (cache-bar in Maps). */
 async function generateQrCode(barcode: string): Promise<string> {
   try {
+    const QRCode = (await import("qrcode")).default;
     return await QRCode.toDataURL(barcode, {
       width: 400,
       margin: 1,
@@ -197,6 +199,7 @@ async function buildTicketsPdfBlob(
   tickets: PrintableTicket[],
   accountName: string,
 ): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
   // QR-Codes vorab erzeugen, damit Dry-Run und Real-Pass denselben benutzen
   const qrCache = new Map<string, string>();
   await Promise.all(

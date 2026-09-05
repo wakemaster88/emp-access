@@ -98,7 +98,7 @@ sudo systemctl restart emp-audio
 | `server_url` | – | Basis-URL des Dashboards |
 | `api_token` | – | Account-API-Token |
 | `device_id` | – | Geräte-ID aus dem Dashboard |
-| `job_poll_interval` | `5` | Sekunden bis eine Durchsage startet (min. 3) |
+| `job_poll_interval` | `8` | Sekunden bis eine Durchsage startet (min. 3; alte Configs mit `5` werden beim Start auf `8` angehoben) |
 | `heartbeat_interval` | `60` | Zustandsmeldung an den Server |
 | `update_check_interval` | `300` | Update-Prüfung |
 | `audio_device` | `""` | mpv-Ausgabegerät; leer bedeutet `alsa/default` |

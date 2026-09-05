@@ -5,12 +5,13 @@ import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2 } from "lucide-react";
+import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
 import { GardenaCard } from "@/components/settings/gardena-card";
 import { OwnApiCard } from "@/components/settings/own-api-card";
 import { TelegramCard } from "@/components/settings/telegram-card";
 import { PushCard } from "@/components/settings/push-card";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { DataRetentionCard } from "@/components/settings/data-retention-card";
 import { parseDataRetention } from "@/lib/data-retention";
 
@@ -172,6 +173,17 @@ export default async function SettingsPage() {
             </h2>
           </div>
           <DataRetentionCard initial={dataRetention} />
+        </section>
+
+        {/* App auf dem Handy */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5 text-slate-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+              App auf dem Handy
+            </h2>
+          </div>
+          <InstallPrompt variant="card" />
         </section>
 
         {/* Push-Benachrichtigungen */}

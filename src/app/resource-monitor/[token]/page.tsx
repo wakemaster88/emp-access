@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, use, useRef } from "react";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 import { cn } from "@/lib/utils";
 
 interface TimeSlot {
@@ -90,6 +91,8 @@ export default function ResourceMonitorPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = use(params);
+  // Bildschirm wach halten, solange die Seite sichtbar ist.
+  useWakeLock(true);
   const [data, setData] = useState<MonitorData | null>(null);
   const [error, setError] = useState(false);
   const [nowMinutes, setNowMinutes] = useState(getNowBerlinMinutes);

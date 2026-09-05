@@ -55,6 +55,15 @@ def check_and_update() -> bool:
 
         logger.info("Update verfügbar: %s → %s", local_hash[:8], remote_hash[:8])
 
+        # Welche Dateien unter raspberry-pi/ aendern sich? Ein Commit, der nur
+        # die Cloud betrifft, soll den Pi nicht neu starten.
+        diff = subprocess.run(
+            ["git", "diff", "--name-only", local_hash, remote_hash, "--", "raspberry-pi"],
+            capture_output=True, text=True, cwd=PROJECT_DIR, timeout=30,
+        )
+        changed = [f for f in diff.stdout.split("\n") if f.strip()] if diff.returncode == 0 else ["raspberry-pi"]
+        requirements_changed = any(f.endswith("requirements.txt") for f in changed)
+
         # Hard reset to remote (avoids merge conflicts from local changes)
         reset = subprocess.run(
             ["git", "reset", "--hard", "origin/main"],
@@ -64,15 +73,19 @@ def check_and_update() -> bool:
             logger.error("git reset fehlgeschlagen: %s", reset.stderr.strip())
             return False
 
-        # Install updated dependencies
+        # Install updated dependencies (nur wenn sich die Liste geaendert hat)
         req_file = os.path.join(PACKAGE_DIR, "requirements.txt")
-        if os.path.exists(req_file):
+        if requirements_changed and os.path.exists(req_file):
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "-q", "-r", req_file],
                 capture_output=True, cwd=PROJECT_DIR, timeout=120,
             )
 
-        logger.info("Update erfolgreich angewendet")
+        if not changed:
+            logger.info("Update eingespielt (nur Cloud-Aenderungen) – kein Neustart noetig")
+            return False
+
+        logger.info("Update erfolgreich angewendet (%d Pi-Dateien geaendert)", len(changed))
         return True
 
     except Exception as e:

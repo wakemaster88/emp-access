@@ -4,6 +4,13 @@
  */
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { deleteBlobs } from "@/lib/blob-store";
+
+/**
+ * Blob-Pfade werden vor dem Loeschen eingesammelt, hoechstens so viele pro
+ * Lauf. Was uebrig bleibt, holt der Blob-GC im selben Cron nach.
+ */
+const BLOB_BATCH = 5000;
 
 export const RETENTION_KEYS = [
   "vehicleSightings",
@@ -146,16 +153,26 @@ export async function purgeAccountRetention(
   }
 
   await del("vehicleSightings", async (cutoff) => {
-    const r = await prisma.vehicleSighting.deleteMany({
-      where: { accountId, seenAt: { lt: cutoff } },
+    const where = { accountId, seenAt: { lt: cutoff } };
+    const blobs = await prisma.vehicleSighting.findMany({
+      where: { ...where, snapshotBlob: { not: null } },
+      select: { snapshotBlob: true },
+      take: BLOB_BATCH,
     });
+    const r = await prisma.vehicleSighting.deleteMany({ where });
+    await deleteBlobs(blobs.map((b) => b.snapshotBlob));
     return r.count;
   });
 
   await del("personSightings", async (cutoff) => {
-    const r = await prisma.personSighting.deleteMany({
-      where: { accountId, seenAt: { lt: cutoff } },
+    const where = { accountId, seenAt: { lt: cutoff } };
+    const blobs = await prisma.personSighting.findMany({
+      where: { ...where, snapshotBlob: { not: null } },
+      select: { snapshotBlob: true },
+      take: BLOB_BATCH,
     });
+    const r = await prisma.personSighting.deleteMany({ where });
+    await deleteBlobs(blobs.map((b) => b.snapshotBlob));
     return r.count;
   });
 
@@ -167,9 +184,16 @@ export async function purgeAccountRetention(
   });
 
   await del("scans", async (cutoff) => {
+    // Snapshots haengen per Cascade am Scan; ihre Blobs vorher einsammeln.
+    const blobs = await prisma.scanSnapshot.findMany({
+      where: { accountId, blobPathname: { not: null }, scan: { scanTime: { lt: cutoff } } },
+      select: { blobPathname: true },
+      take: BLOB_BATCH,
+    });
     const r = await prisma.scan.deleteMany({
       where: { accountId, scanTime: { lt: cutoff } },
     });
+    await deleteBlobs(blobs.map((b) => b.blobPathname));
     return r.count;
   });
 
@@ -216,11 +240,16 @@ export async function purgeAccountRetention(
     return r.count;
   });
 
-  // Bilder haengen per Cascade an der Warnung und gehen mit.
+  // Bilder haengen per Cascade an der Warnung; ihre Blobs vorher einsammeln.
   await del("monitorAlerts", async (cutoff) => {
-    const r = await prisma.monitorAlert.deleteMany({
-      where: { accountId, createdAt: { lt: cutoff } },
+    const where = { accountId, createdAt: { lt: cutoff } };
+    const blobs = await prisma.monitorAlertImage.findMany({
+      where: { blobPathname: { not: null }, alert: where },
+      select: { blobPathname: true },
+      take: BLOB_BATCH,
     });
+    const r = await prisma.monitorAlert.deleteMany({ where });
+    await deleteBlobs(blobs.map((b) => b.blobPathname));
     return r.count;
   });
 

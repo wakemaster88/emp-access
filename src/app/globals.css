@@ -124,10 +124,33 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* iOS: avoid 100vh gap (address bar); use 100dvh where needed */
+/* iOS: avoid 100vh gap (address bar); vh als Fallback, dvh wenn bekannt */
 .min-h-screen-ios {
-  min-height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Als installierte App: kein Gummiband-Scrollen der ganzen Seite und kein
+   versehentliches Pull-to-Refresh – Listen scrollen weiterhin normal. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
+/* Kiosk- und Monitorflaechen: Tippen markiert keinen Text, langes Druecken
+   oeffnet kein Kontextmenue, kein Gummiband. */
+.kiosk-surface {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+.kiosk-surface input,
+.kiosk-surface textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Prevent iOS input zoom: ensure inputs are at least 16px */
@@ -153,6 +176,9 @@
   input[type="tel"],
   input[type="number"],
   input[type="url"],
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
   select,
   textarea {
     font-size: max(16px, 1rem);

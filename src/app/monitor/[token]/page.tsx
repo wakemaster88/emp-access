@@ -1,6 +1,10 @@
 "use client";
 
+/** Poll-Takt des oeffentlichen Scan-Monitors (5 s statt 3 s: 17.000 statt 29.000 Aufrufe am Tag). */
+const PUBLIC_MONITOR_POLL_MS = 5000;
+
 import { useEffect, useRef, useState, useMemo, useCallback, use } from "react";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Ticket, Sun, Moon, ChevronLeft, ChevronDown, LogIn, Pause, Loader2, Camera, Search, Megaphone, X, Power, PowerOff, AlertTriangle, Check, Volume2, VolumeX, Trophy } from "lucide-react";
 import { cn, fmtTime } from "@/lib/utils";
@@ -153,6 +157,8 @@ interface Props {
 
 export default function PublicMonitorPage({ params }: Props) {
   const { token } = use(params);
+  // Bildschirm wach halten, solange die Seite sichtbar ist.
+  useWakeLock(true);
   const [monitorName, setMonitorName] = useState<string>("");
   const [devices, setDevices] = useState<Device[]>([]);
   const [controlDevices, setControlDevices] = useState<ControlDevice[]>([]);
@@ -465,7 +471,7 @@ export default function PublicMonitorPage({ params }: Props) {
     }
 
     doPoll();
-    pollTimerRef.current = setInterval(doPoll, 3000);
+    pollTimerRef.current = setInterval(doPoll, PUBLIC_MONITOR_POLL_MS);
 
     const handleVisibility = () => {
       if (document.hidden) {
@@ -478,7 +484,7 @@ export default function PublicMonitorPage({ params }: Props) {
         pollTickRef.current = 0;
         void doPoll();
         if (!pollTimerRef.current) {
-          pollTimerRef.current = setInterval(doPoll, 3000);
+          pollTimerRef.current = setInterval(doPoll, PUBLIC_MONITOR_POLL_MS);
         }
       }
     };
@@ -835,14 +841,14 @@ export default function PublicMonitorPage({ params }: Props) {
 
   if (error) {
     return (
-      <div className={cn("min-h-screen flex items-center justify-center", styles.page)}>
+      <div className={cn("min-h-[100dvh] flex items-center justify-center", styles.page)}>
         <p className="text-rose-400">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className={cn("min-h-screen flex flex-col transition-colors duration-300", styles.page)}>
+    <div className={cn("min-h-[100dvh] flex flex-col transition-colors duration-300 kiosk-surface", styles.page)}>
       {/* Header */}
       <header className={cn("border-b px-3 py-2 sm:px-6 sm:py-3.5 flex items-center justify-between transition-colors duration-300", styles.header)} style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -1138,7 +1144,7 @@ export default function PublicMonitorPage({ params }: Props) {
                 Warte auf Scans…
               </div>
             )}
-            <div className="max-h-[calc(100vh-9rem)] overflow-y-auto pr-1 monitor-scrollbar">
+            <div className="max-h-[calc(100dvh-9rem)] overflow-y-auto pr-1 monitor-scrollbar">
               {/* Top 2 hero scans */}
               {groupedScans.length > 0 && (
                 <div className="grid grid-cols-2 gap-3 mb-3" style={{ minHeight: "calc(50vh - 5rem)" }}>
@@ -1353,7 +1359,7 @@ export default function PublicMonitorPage({ params }: Props) {
               </p>
             )}
 
-            <div className="space-y-1.5 max-h-[calc(100vh-26rem)] lg:max-h-[calc(100vh-22rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
+            <div className="space-y-1.5 max-h-[calc(100dvh-26rem)] lg:max-h-[calc(100dvh-22rem)] overflow-y-auto pr-1 monitor-scrollbar flex-1">
               {tickets.length === 0 && (
                 <p className={cn("text-sm text-center py-6", styles.sectionLabel)}>Keine aktiven Tickets</p>
               )}

@@ -22,8 +22,20 @@ function intEnv(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/** Letzter Commit, der den Hub-Code (hub/) beruehrt hat – nur der zwingt zum Neustart. */
+export function gitHubCodeRevision(): string {
+  try {
+    return execSync("git rev-list -1 HEAD -- hub", {
+      cwd: path.resolve(hubDir, ".."),
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 /** Kurzer Git-Commit-Hash des laufenden Codes (fuer Update-Diagnose). */
-function gitVersion(): string {
+export function gitVersion(): string {
   try {
     // Repo-Root (Parent von hub/), nicht hubDir – sonst falsche Version bei Submodulen.
     return execSync("git rev-parse --short HEAD", {
@@ -42,12 +54,18 @@ export const CONFIG = {
   apiToken: requireEnv("HUB_API_TOKEN"),
   name: process.env.HUB_NAME || hostname(),
   hostname: hostname(),
+  /** Checkout-Stand; wird nach einem Update ohne Neustart nachgezogen (updater.ts). */
   version: gitVersion(),
-  heartbeatIntervalMs: intEnv("HUB_HEARTBEAT_INTERVAL", 30) * 1000,
-  // 2 s statt 5 s: Scan-Schnappschuesse (SCAN_SNAPSHOT) sollen moeglichst
-  // nah am Scan-Zeitpunkt entstehen; auch PTZ/Tueroeffner reagieren dadurch
-  // schneller. Per HUB_TASK_INTERVAL uebersteuerbar.
-  taskIntervalMs: intEnv("HUB_TASK_INTERVAL", 2) * 1000,
+  /** Commit, mit dessen hub/-Stand dieser Prozess gestartet wurde. */
+  hubCodeRevision: gitHubCodeRevision(),
+  // 60 s: Der Heartbeat schreibt jedes Mal in die DB; das Dashboard wertet
+  // bis ~5 Minuten ohne Heartbeat als online.
+  heartbeatIntervalMs: intEnv("HUB_HEARTBEAT_INTERVAL", 60) * 1000,
+  // 5 s Grundtakt (frueher 2 s = 43.000 Aufrufe am Tag). Sobald der
+  // Heartbeat offene Tasks meldet, faellt der Takt auf 1 s, damit
+  // Tueroeffner und Scan-Schnappschuesse nicht warten. Per HUB_TASK_INTERVAL
+  // uebersteuerbar.
+  taskIntervalMs: intEnv("HUB_TASK_INTERVAL", 5) * 1000,
   updateIntervalMs: intEnv("HUB_UPDATE_INTERVAL", 300) * 1000,
   dashboardPort: intEnv("HUB_DASHBOARD_PORT", 8787),
   /** Gesetzt = Dashboard darf ins LAN (Zugang nur mit diesem Token). */

@@ -94,7 +94,7 @@ function useCameraEvents(): Record<number, CameraEventRow[]> {
     }
 
     tick();
-    const t = setInterval(tick, 5_000);
+    const t = setInterval(tick, 15_000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -195,7 +195,7 @@ function useScanOverlays(): Record<number, ScanOverlayRow> {
     fetchScans().then(recompute);
     const t = setInterval(async () => {
       tickCount += 1;
-      if (tickCount % 3 === 0) await fetchScans();
+      if (tickCount % 10 === 0) await fetchScans();
       if (!cancelled) recompute();
     }, 1_000);
 

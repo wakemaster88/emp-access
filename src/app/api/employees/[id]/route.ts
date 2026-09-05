@@ -109,11 +109,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   // Bereiche/Geraete-Whitelist: komplett ersetzen, wenn das Feld geschickt wurde.
-  // Raw `prisma` mit manuellem set_config, weil der tenant-Extended Client
-  // pro Query in eine eigene Transaktion wrappt (siehe lib/prisma.ts).
+  // Roher Client in einer Transaktion; das Ticket ist oben bereits als
+  // Datensatz dieses Accounts geprueft.
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
-
     if (Object.keys(updateData).length > 0) {
       await tx.ticket.update({ where: { id: employeeId }, data: updateData });
     }

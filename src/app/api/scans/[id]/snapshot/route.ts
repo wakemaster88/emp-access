@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { resolveBinary } from "@/lib/blob-store";
 
 /** GET (Session): Kamera-Schnappschuss zum Scan-Zeitpunkt als JPEG. */
 export async function GET(
@@ -16,13 +17,16 @@ export async function GET(
 
   const snapshot = await db.scanSnapshot.findFirst({
     where: { scanId, accountId: accountId! },
-    select: { image: true, capturedAt: true },
+    select: { image: true, blobPathname: true, capturedAt: true },
   });
-  if (!snapshot) {
+  const bytes = snapshot
+    ? await resolveBinary({ blob: snapshot.blobPathname, bytes: snapshot.image })
+    : null;
+  if (!snapshot || !bytes) {
     return NextResponse.json({ error: "Kein Schnappschuss vorhanden" }, { status: 404 });
   }
 
-  return new NextResponse(Buffer.from(snapshot.image), {
+  return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "Content-Type": "image/jpeg",
       // Bild ist unveraenderlich – Browser darf es cachen.

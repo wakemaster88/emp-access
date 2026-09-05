@@ -1,52 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# EMP Access
 
-## Getting Started
+Zutritts- und Betriebssystem für einen Freizeitstandort: Drehkreuze und Türen
+mit Ticket-Scan, Kassen-Kiosk, Schließanlage, Kameras mit Personen- und
+Kennzeichenerkennung, Beschallung, Bewässerung, Netzwerkinventar und
+Raumregeln – als Multi-Mandanten-Cloud auf Vercel mit Neon Postgres.
 
-First, run the development server:
+## Architektur
+
+Vier Laufzeitumgebungen in einem Repository:
+
+| Teil | Ordner | Läuft wo | Aufgabe |
+| --- | --- | --- | --- |
+| Cloud | `src/` | Vercel (Region `fra1`), Neon Postgres | Dashboard, öffentliche Token-Seiten (Monitor, Kiosk, Scanner), API für Geräte und Integrationen, Crons |
+| Hub | `hub/` | Mac vor Ort (launchd) | Kameras, DoorBird, Gesichter, Kennzeichen, Netzwerkscan; verbindet sich nur ausgehend |
+| Scanner-Pi | `raspberry-pi/emp_scanner` | Raspberry Pi am Drehkreuz | USB-Scanner, Relais, Heartbeat |
+| Audio-Pi | `raspberry-pi/emp_audio` | Raspberry Pi am Verstärker | Musik, Durchsagen, Snapcast |
+
+Hub und Pis aktualisieren sich selbst aus `origin/main`; neu gestartet wird
+nur, wenn sich ihr eigener Ordner geändert hat.
+
+**Mandantentrennung.** Jede Anfrage bekommt über `tenantClient(accountId)`
+(`src/lib/prisma.ts`) einen Prisma-Client, der jede Query auf den Account
+einschränkt und beim Anlegen den `accountId` setzt. Der rohe Client ist Cron,
+Super-Admin und den öffentlichen Token-Endpunkten vorbehalten, die den Account
+selbst mitgeben. Die RLS-Policies in der Datenbank bleiben bestehen, greifen
+für die Owner-Rolle der App aber nicht – `npx tsx scripts/db-rls-check.ts`
+zeigt den Ist-Zustand.
+
+**Auth.** Dashboard per E-Mail/Passwort (bcrypt, Sperre nach zehn
+Fehlversuchen, optional TOTP), JWT-Sitzung eine Woche mit Revalidierung gegen
+die Datenbank alle fünf Minuten. Maschinen nutzen das Account-API-Token
+(Hub, Integrationen) oder ein Geräte-Token pro Pi (nur Geräte-Endpunkte,
+Gerätedetail → *Geräte-Token*). Öffentliche Seiten (Monitor, Kiosk, Scanner,
+Mitarbeiter-PWA, Schlüsselprotokoll) laufen über zufällige URL-Token; die
+schreibenden Endpunkte sind pro Token gebremst.
+
+**Bilder und PDFs** liegen im Vercel-Blob-Speicher (privat), die Datenbank
+hält nur den Pfad. Altbestand in den Bytes-Spalten zieht
+`npx tsx scripts/migrate-images-to-blob.ts` um; der nächtliche Cron räumt
+verwaiste Dateien weg.
+
+## Entwicklung
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npx prisma generate
+npm run dev          # http://localhost:3000
+npm run typecheck    # tsc --noEmit
+npm run lint
+npm test             # node:test in src/lib/*.test.ts
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Umgebungsvariablen (lokal in `.env`, auf Vercel unter Settings → Environment
+Variables): `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (Migrationen),
+`AUTH_SECRET`, `AUTH_URL`, `CRON_SECRET`, `BLOB_READ_WRITE_TOKEN`, optional
+`XAI_API_KEY` (TTS), `NEXT_PUBLIC_VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
+`VAPID_SUBJECT` (Web-Push), `TWO_FACTOR_KEY`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Datenbank.** Schema in `prisma/schema.prisma`, Migrationen in
+`prisma/migrations`. Der Vercel-Build (`scripts/vercel-build.mjs`) führt
+`prisma migrate deploy` nur für Production aus; Preview-Deployments migrieren
+nur mit `PREVIEW_MIGRATE=1` (setzen, wenn die Neon-Integration pro Preview
+eine eigene Branch anlegt). Nach Schema-Änderungen `npm run tenant-models`
+ausführen, damit die Liste der Mandanten-Modelle stimmt (CI prüft das).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**Crons** (`vercel.json`): `audio-schedules` minütlich, `tick-5min`
+(Raumregeln, Bewässerung, Geräte-Offline-Check, Telegram-Tagesbericht),
+`anny-sync` stündlich, `email-automations` täglich, `cleanup` nachts
+(abgelaufene Tickets, Löschfristen, Blob-GC). Alle verlangen
+`Authorization: Bearer <CRON_SECRET>`.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Skripte** in `scripts/`: Prüf- und Wartungswerkzeuge; einmalige
+Datenkorrekturen liegen in `scripts/archive/`.
 
 ## Telegram Tagesbericht (Vercel Cron)
 
 1. **Umgebungsvariable `CRON_SECRET`** in Vercel anlegen (z. B. 32 Zeichen Zufall), **Production** (und ggf. Preview) aktivieren, danach **Redeploy**.
-2. Ohne `CRON_SECRET` antwortet `/api/cron/telegram-report` mit **503** – der Job läuft dann nicht sichtbar „erfolgreich“.
+2. Ohne `CRON_SECRET` antwortet `/api/cron/tick-5min` mit **503** – der Job läuft dann nicht sichtbar „erfolgreich“.
 3. Vercel sendet bei Cron-Aufrufen `Authorization: Bearer <CRON_SECRET>`. Der Wert muss **exakt** mit der Variable übereinstimmen.
-4. Der Bericht wird nur gesendet, wenn die **Berliner Uhrzeit** (HH:mm) mit der in den Einstellungen gewählten Zeit übereinstimmt (Cron alle 15 Minuten).
+4. Der Bericht wird gesendet, sobald der 5-Minuten-Tick die in den Einstellungen gewählte **Berliner Uhrzeit** erreicht hat; pro Tag genau einmal (`dailyReportLastSentAt`), ein verspäteter Tick holt ihn bis 20 Minuten nach.
 5. Test manuell:  
-   `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/telegram-report"`
+   `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/tick-5min"`
 
 ## Push-Benachrichtigung „Gerät offline" (PWA / Web-Push)
 
-Alle 5 Minuten prüft `/api/cron/device-offline-check`, ob Geräte offline gegangen
+Alle 5 Minuten prüft `/api/cron/tick-5min`, ob Geräte offline gegangen
 (oder wieder online gekommen) sind, und sendet Web-Push an alle im Dashboard
 registrierten Browser/PWA-Geräte. Pro Offline-Episode gibt es genau eine
 Benachrichtigung (Zustandsübergang, kein Spam).
@@ -67,7 +105,7 @@ Benachrichtigung (Zustandsübergang, kein Spam).
    **Offline-Benachrichtigung** (Opt-in, Standard: aus). Nur Geräte mit
    aktiviertem Schalter lösen Push-Meldungen aus.
 5. Test manuell:  
-   `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/device-offline-check"`
+   `curl -s -H "Authorization: Bearer DEIN_CRON_SECRET" "https://deine-domain.vercel.app/api/cron/tick-5min"`
 
 **Erkennung je Gerätetyp:** Raspberry Pi über Heartbeat (`lastUpdate` älter als
 5 Min = offline), Shelly über die Shelly Cloud, GARDENA über die GARDENA Cloud.
@@ -310,3 +348,24 @@ Stelle wird auch ein Wiederherstellungscode akzeptiert.
 
 `npx tsx scripts/two-factor-check.ts` prüft die Umsetzung gegen die Testvektoren
 aus RFC 6238 sowie Sperre, Einmaligkeit und Wiederherstellungscodes.
+
+## Mobile und PWA
+
+Jede Oberfläche lässt sich als App auf den Home-Bildschirm legen; erst so gibt
+es auf iPhone und iPad Push-Nachrichten, Vollbild und ein Startbild.
+
+- **Dashboard** (`/manifest.json`): Einstellungen → *App auf dem Handy* zeigt
+  die passenden Schritte (Android: Installieren-Knopf, iOS: Teilen → Zum
+  Home-Bildschirm). Auf Handys gibt es unten eine Tab-Leiste, offene Warnungen
+  erscheinen als Zähler auf dem App-Symbol.
+- **Kiosk, Scan-Monitor, Auslastung, Scanner** haben je Token ein eigenes
+  Manifest (`/api/pwa-manifest/<art>/<token>`) mit dem Monitornamen; Kiosk und
+  Monitore starten im Vollbild und halten den Bildschirm wach (Wake Lock).
+- **Mitarbeiter-PWA** (`/m/<token>`): Manifest pro Person, Installationshinweis
+  unten auf der Seite.
+- **Offline**: Der Service Worker (`public/sw.js`) zeigt ohne Netz `/offline`
+  statt der Browser-Fehlerseite und hält statische Dateien im Cache. `/api`
+  wird nie gecacht. Bei Änderungen an `sw.js` die `VERSION`-Konstante anheben.
+- **Startbilder und Maskable-Icons** liegen unter `public/splash` bzw.
+  `public/icon-*-maskable.png` und werden mit `npm run pwa-assets` aus
+  `logo.png`/`logo-dark.png` erzeugt (Geräteliste in `src/lib/pwa-splash.ts`).

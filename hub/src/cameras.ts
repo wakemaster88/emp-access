@@ -16,6 +16,7 @@ import { actuateIfAllowed } from "./vehicle-actuate.js";
 import { readArp } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve } from "./improve-log.js";
+import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
 export interface CameraConfig {
   id: number;
@@ -503,10 +504,13 @@ async function uploadPersonSnapshotBody(
     upscaled: face.upscaled,
   });
 
+  // Verkleinert hochladen: die Cloud zeigt das Bild nur an (FACE_ENROLL kommt
+  // mit 1600 px noch gut zurecht); das Original bleibt hier fuer die Pipeline.
+  const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
   const upload = await api(`/api/hub/person-sightings?${qs}`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
-    body: new Uint8Array(buf),
+    body: new Uint8Array(uploadBuf),
     signal: AbortSignal.timeout(60_000),
   });
   if (!upload.ok) {
@@ -726,10 +730,11 @@ async function uploadVehicleSnapshotBody(
   }
 
   try {
+    const uploadBuf = await shrinkJpeg(buf, DISPLAY_SNAPSHOT_MAX_PX);
     const upload = await api(`/api/hub/vehicle-sightings?${qs}`, {
       method: "POST",
       headers: { "Content-Type": "image/jpeg" },
-      body: new Uint8Array(buf),
+      body: new Uint8Array(uploadBuf),
       signal: AbortSignal.timeout(60_000),
     });
     if (!upload.ok) {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import {
   Dialog,
   DialogContent,
@@ -24,25 +23,29 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (canvasRef.current) {
-      QRCode.toCanvas(canvasRef.current, value, {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    void import("qrcode").then((m) =>
+      m.default.toCanvas(canvas, value, {
         width: size,
         margin: 1,
         color: { dark: "#1e293b", light: "#f8fafc" },
-      });
-    }
+      }),
+    );
   }, [value, size]);
 
   useEffect(() => {
     if (!open) return;
     const timer = setTimeout(() => {
-      if (dialogCanvasRef.current) {
-        QRCode.toCanvas(dialogCanvasRef.current, value, {
+      const canvas = dialogCanvasRef.current;
+      if (!canvas) return;
+      void import("qrcode").then((m) =>
+        m.default.toCanvas(canvas, value, {
           width: 280,
           margin: 2,
           color: { dark: "#1e293b", light: "#ffffff" },
-        });
-      }
+        }),
+      );
     }, 50);
     return () => clearTimeout(timer);
   }, [open, value]);

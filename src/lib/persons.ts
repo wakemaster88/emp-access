@@ -5,6 +5,7 @@ import {
   maybeSurveillanceTelegramAlert,
 } from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
+import { storeSightingSnapshot } from "@/lib/blob-store";
 
 const SHELLY_ACTIONS = ["ON", "OFF", "TOGGLE"] as const;
 export const PERSON_LIST_TYPES = ["WHITELIST", "BLACKLIST"] as const;
@@ -126,6 +127,8 @@ export async function processCameraPersonEvent(opts: {
   const seenAt = opts.seenAt ?? new Date();
   const snapshot =
     opts.snapshot?.length ? new Uint8Array(opts.snapshot) : null;
+  // Bild in den Blob-Speicher; die Bytes bleiben nur fuer Telegram/Push im Speicher.
+  const storedSnapshot = await storeSightingSnapshot("person-sightings", opts.accountId, snapshot);
 
   let sightings = 0;
   let triggered = 0;
@@ -179,7 +182,7 @@ export async function processCameraPersonEvent(opts: {
           shellyTriggered,
           shellyOk,
           seenAt,
-          ...(snapshot ? { snapshot } : {}),
+          ...storedSnapshot,
         },
         // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
         select: { id: true },
@@ -223,7 +226,7 @@ export async function processCameraPersonEvent(opts: {
       matchScore: opts.matchScore ?? null,
       matchMethod: null,
       seenAt,
-      ...(snapshot ? { snapshot } : {}),
+      ...storedSnapshot,
     },
     // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
     select: { id: true },
@@ -308,9 +311,10 @@ export async function assignPersonToSighting(opts: {
 }> {
   const sighting = await prisma.personSighting.findFirst({
     where: { id: opts.sightingId, accountId: opts.accountId },
-    select: { id: true, snapshot: true },
+    select: { id: true, snapshotBlob: true, snapshot: true },
   });
   if (!sighting) throw new Error("Sichtung nicht gefunden");
+  const hasSnapshot = Boolean(sighting.snapshotBlob) || Boolean(sighting.snapshot?.length);
 
   const person = await prisma.listedPerson.findFirst({
     where: { id: opts.listedPersonId, accountId: opts.accountId },
@@ -335,7 +339,7 @@ export async function assignPersonToSighting(opts: {
   });
 
   let enrollTaskId: number | null = null;
-  if (sighting.snapshot) {
+  if (hasSnapshot) {
     const task = await prisma.hubTask.create({
       data: {
         accountId: opts.accountId,

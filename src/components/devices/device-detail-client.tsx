@@ -193,7 +193,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
   const motion = shellyStatus?.cover?.motion;
   useEffect(() => {
     if (motion !== "opening" && motion !== "closing") return;
-    const timer = setInterval(fetchShellyStatus, 3000);
+    const timer = setInterval(fetchShellyStatus, 10_000);
     return () => clearInterval(timer);
   }, [motion, fetchShellyStatus]);
 

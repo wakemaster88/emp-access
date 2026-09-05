@@ -9,7 +9,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   if (!session?.user) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
+    <div className="flex h-[100dvh] overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Sidebar
         userName={session.user.name || "Admin"}
         role={session.user.role || "SUPER_ADMIN"}

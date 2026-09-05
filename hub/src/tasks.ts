@@ -12,6 +12,7 @@ import {
   getPtzPresets,
 } from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
+import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 import {
   openDoorbirdDoor,
   isDoorbird,
@@ -131,9 +132,11 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
         return { success: true, result: { skipped: "stale", at } };
       }
       try {
-        const buf = isDoorbird(cameraId)
+        const raw = isDoorbird(cameraId)
           ? await captureDoorbirdSnapshot(cameraId)
           : await captureSnapshot(cameraId);
+        // Fuer die Anzeige reicht 1280 px; das spart Upload und Speicher in der Cloud.
+        const buf = await shrinkJpeg(raw, DISPLAY_SNAPSHOT_MAX_PX);
         const params = new URLSearchParams({
           cameraId: String(cameraId),
           deviceId: String(deviceId),

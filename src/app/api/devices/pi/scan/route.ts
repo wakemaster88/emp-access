@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { checkWakesys } from "@/lib/wakesys";
 import { checkBinarytec } from "@/lib/binarytec";
@@ -36,7 +36,7 @@ const ANNY_BARCODE_PREFIX = "!TIX";
 const ANNY_BARCODE_LENGTH = 20;
 
 export async function POST(request: NextRequest) {
-  const auth = await validateApiToken(request);
+  const auth = await validateApiToken(request, { allowDevice: true });
   if ("error" in auth) return auth.error;
 
   const body = await request.json();
@@ -84,6 +84,9 @@ export async function POST(request: NextRequest) {
 
   const { db } = auth;
   const accountId = auth.account.id;
+
+  const mismatch = deviceTokenMismatch(auth, deviceId);
+  if (mismatch) return mismatch;
 
   const device = await db.device.findFirst({
     where: { id: deviceId, accountId, type: "RASPBERRY_PI" },
@@ -304,9 +307,7 @@ export async function POST(request: NextRequest) {
 
         // Atomar: Ticket anlegen + Voucher nur einlösen, wenn noch nicht eingelöst.
         // Bei paralleler Einlösung gewinnt genau einer (updateMany count=1).
-        // set_config in der Transaktion, damit RLS weiterhin greift (vgl. Hinweis oben).
         const redeemed = await prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
           const newTicket = await tx.ticket.create({
             data: {
               name: voucher.ticketTypeName ?? "Gutschein-Ticket",
@@ -751,12 +752,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Atomar: Scan + Ticket-State-Transition in einer Transaktion.
-  // - Wir nutzen absichtlich `prisma.$transaction` (nicht `db.$transaction`),
-  //   weil die tenantClient-Extension pro Einzel-Query ein eigenes $transaction
-  //   öffnet – verschachtelt ginge das schief.
-  // - Damit RLS im Transaktions-Scope weiterhin greift, setzen wir
-  //   set_config manuell als erste Query in der Transaktion.
+  // Atomar: Scan + Ticket-State-Transition in einer Transaktion (roher
+  // Client, alle Filter tragen den accountId explizit).
   // - Optimistic Locking via version verhindert Doppel-Einlösung bei
   //   parallelen Scans (updateMany.count=0 = Konflikt).
   // Status- und Timer-Aenderungen passieren ausschliesslich an der
@@ -813,7 +810,6 @@ export async function POST(request: NextRequest) {
   if (locked) return locked;
 
   const txResult = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
 
     if (shouldRedeem) {
       const data: { status: "REDEEMED"; version: { increment: number }; firstScanAt?: Date } = {

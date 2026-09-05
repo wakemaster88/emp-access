@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { triggerDeviceAction, DEVICE_TASK_MAP } from "@/lib/device-open";
 
@@ -13,6 +14,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string; id: string }> },
 ) {
   const { token, id } = await params;
+  const limited = publicRateLimit(token, "checkin-device-action");
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({
     where: { token },
     select: { id: true, accountId: true, isActive: true, type: true },

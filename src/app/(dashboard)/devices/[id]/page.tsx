@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { DeviceActions } from "@/components/devices/device-actions";
 import { DeviceQr } from "@/components/devices/device-qr";
+import { DeviceTokenCard } from "@/components/devices/device-token-card";
 import { AudioSetupCard } from "@/components/devices/audio-setup-card";
 import { EditDeviceDialog } from "@/components/devices/edit-device-dialog";
 import {
@@ -98,9 +99,10 @@ export default async function DeviceDetailPage({ params }: Props) {
       : process.env.VERCEL_URL
         ? `https://${process.env.VERCEL_URL}`
         : process.env.AUTH_URL ?? "http://localhost:3000";
+  // Geraete-Token, wenn eines erzeugt wurde; sonst (Altbestand) das Account-Token.
   const configUrl = JSON.stringify({
     url: serverUrl,
-    token: account?.apiToken ?? "",
+    token: device.apiToken ?? account?.apiToken ?? "",
     id: device.id,
   });
 
@@ -257,6 +259,11 @@ export default async function DeviceDetailPage({ params }: Props) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Eigenes Token pro Pi statt Account-Token fuer alle Geraete */}
+        {(device.type === "RASPBERRY_PI" || device.type === "AUDIO_PLAYER") && (
+          <DeviceTokenCard deviceId={device.id} hasToken={Boolean(device.apiToken)} />
+        )}
 
         {/* Abspieler: Installation und Konfigurations-JSON. Ein Audio-Pi hat
             keinen Scanner, deshalb Text zum Kopieren statt QR-Code. */}

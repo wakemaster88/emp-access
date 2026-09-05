@@ -47,11 +47,9 @@ export async function POST(
   const targetKeyIds = targets.map((t) => t.keyId);
   const returnedByName = data.returnedByName?.trim() || session.session.user.name || null;
 
-  // Raw `prisma.$transaction` mit manuellem RLS: der tenantClient wrappt sonst
-  // jede Query einzeln und erzeugt verschachtelte Transaktionen.
+  // Roher Client in einer Transaktion; die Positionen sind oben bereits als
+  // Datensaetze dieses Accounts geprueft.
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
-
     await tx.keyHandoverItem.updateMany({
       where: { id: { in: targetIds } },
       data: {

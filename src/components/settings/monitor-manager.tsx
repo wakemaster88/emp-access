@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import QRCode from "qrcode";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -485,11 +484,14 @@ function MonitorUrlQr({ url, size = QR_SIZE_DEFAULT }: { url: string; size?: num
 
   useEffect(() => {
     if (!url || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, url, {
-      width: size,
-      margin: 1,
-      color: { dark: "#1e293b", light: "#ffffff" },
-    });
+    const canvas = canvasRef.current;
+    void import("qrcode").then((m) =>
+      m.default.toCanvas(canvas, url, {
+        width: size,
+        margin: 1,
+        color: { dark: "#1e293b", light: "#ffffff" },
+      }),
+    );
   }, [url, size]);
 
   return (

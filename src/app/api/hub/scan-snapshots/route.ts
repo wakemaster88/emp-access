@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { storeImageColumn } from "@/lib/blob-store";
 
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 
@@ -76,12 +77,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, attached: false, scanId: scan.id });
   }
 
+  // Bild in den Blob-Speicher (Fallback: Bytes in der Spalte `image`).
+  const stored = await storeImageColumn("scan-snapshots", account.id, buf);
   // select {id}: verhindert, dass RETURNING die JPEG-Bytes zurueckueberraegt.
   await db.scanSnapshot.create({
     data: {
       scanId: scan.id,
       cameraId,
-      image: buf,
+      ...stored,
       capturedAt: new Date(),
       accountId: account.id,
     },

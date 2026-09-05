@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicRateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ticketCreateSchema } from "@/lib/validators";
@@ -18,6 +19,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicRateLimit(token, "checkin-ticket");
+  if (limited) return limited;
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
@@ -347,7 +350,6 @@ export async function POST(
   if (voucherCode) {
     try {
       const result = await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(monitor.accountId)}, TRUE)`;
 
         const voucher = await tx.voucher.findUnique({
           where: { code: voucherCode },
@@ -412,7 +414,6 @@ export async function POST(
       // Code-Transfer: in einer Transaktion alten Code abziehen und
       // neues Ticket mit dem Code erstellen.
       const ticket = await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(monitor.accountId)}, TRUE)`;
         await tx.ticket.update({
           where: { id: conflictTicketId! },
           data: { barcode: null, qrCode: null, rfidCode: null },

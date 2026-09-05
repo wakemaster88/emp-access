@@ -195,7 +195,7 @@ ensureFaceSidecar()
   })
   .catch((e) => log(`Face-Sidecar: ${e instanceof Error ? e.message : e}`));
 setInterval(heartbeat, CONFIG.heartbeatIntervalMs);
-setInterval(reportParking, 20_000);
+setInterval(reportParking, 30_000);
 void reportParking();
 setTaskPollInterval(CONFIG.taskIntervalMs);
 setInterval(() => {

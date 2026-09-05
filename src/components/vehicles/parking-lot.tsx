@@ -88,7 +88,7 @@ export function ParkingLot({
       }
     }
     void tick();
-    const t = setInterval(tick, 8_000);
+    const t = setInterval(tick, 15_000);
     const clock = setInterval(() => setNow((n) => n + 1), 10_000);
     return () => {
       cancelled = true;

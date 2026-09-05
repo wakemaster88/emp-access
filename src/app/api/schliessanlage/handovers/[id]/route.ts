@@ -107,11 +107,8 @@ export async function DELETE(
     .filter((i) => i.itemStatus === "ISSUED")
     .map((i) => i.keyId);
 
-  // Raw `prisma.$transaction` mit manuellem RLS: der tenantClient wrappt sonst
-  // jede Query einzeln und erzeugt verschachtelte Transaktionen.
+  // Roher Client in einer Transaktion; alle Filter tragen den accountId.
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
-
     if (openKeyIds.length > 0) {
       await tx.keyItem.updateMany({
         where: { id: { in: openKeyIds }, accountId },
