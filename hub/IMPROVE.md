@@ -361,3 +361,21 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 - **Hub als LaunchDaemon oder Auto-Login:** Solange der Hub ein Benutzer-Agent ist, stirbt er mit jeder Abmeldung. Entweder Auto-Login und „Ruhezustand nie“ auf dem iMac, oder `install/` um eine Daemon-Variante (`/Library/LaunchDaemons`, `UserName`) ergänzen.
 - Tracker über „Tracker neu starten“ neu starten und danach im Log nach `Vision (yolo)` mit `Fläche=` schauen.
 - DNS-Aussetzer am Standort prüfen (Router/Pi-hole?); der Hub sollte bei `Could not resolve host` nicht jede 5 Minuten eine Fehlerzeile schreiben, sondern gedrosselt.
+
+## 2026-09-05 (Hub-Ausfall als Push, Update-Fehler gedrosselt)
+
+### Befunde
+
+- Der Ausfall 3.→4.9. blieb 14 Stunden unbemerkt: die Offline-Prüfung im 5-Minuten-Cron kannte nur Pis, Shellys und GARDENA, nicht den Hub. Die rote Hub-Karte im Dashboard sieht nur, wer gerade hinschaut.
+- Tracker auf dem iMac um 11:22 Uhr weiterhin „Tracker ohne Boxen“ – der Neustart per Knopf steht noch aus.
+
+### Änderungen
+
+- `HubAgent.offlineNotifiedAt` (Migration `20260905120000_hub_offline_notified`); `runOfflineCheckTick` prüft je Account zuerst die Hubs: Heartbeat älter als 5 min → Push „Hub offline“ mit Uhrzeit des letzten Lebenszeichens, Heartbeat zurück → „Hub wieder online“. Zustandsübergang wie bei den Geräten, Karteileichen älter als 7 Tage werden nicht gemeldet.
+- Updater loggt Fetch-Fehler nur noch beim ersten Mal und dann stündlich mit Zähler, plus eine Zeile, wenn es wieder geht.
+- README: Abschnitt „Betrieb rund um die Uhr“ (Auto-Login, `pmset`, warum der Agent mit der Abmeldung stirbt, LaunchDaemon bewusst nicht umgesetzt).
+
+### Offen
+
+- Tracker neu starten (Knopf), danach `Vision (yolo)` mit `Fläche=` im Log erwarten.
+- Auto-Login und `pmset` auf dem iMac setzen; Push-Abo auf dem Handy prüfen (Einstellungen → Push).

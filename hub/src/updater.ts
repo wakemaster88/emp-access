@@ -25,9 +25,48 @@ async function git(args: string[]): Promise<string> {
  *
  * git fetch ist async, damit DoorBird-Monitor und Polls nicht einfrieren.
  */
+/**
+ * Fehlgeschlagene Update-Pruefungen gedrosselt loggen: DNS-Aussetzer am
+ * Standort („Could not resolve host: github.com“) kamen sonst alle fuenf
+ * Minuten als eigene Zeile. Erste Meldung sofort, danach einmal pro Stunde
+ * mit Zaehler, und eine Zeile, wenn es wieder geht.
+ */
+const ERROR_LOG_EVERY_MS = 60 * 60_000;
+let failStreak = 0;
+let failSince = 0;
+let failLastLoggedAt = 0;
+
+function noteFetchError(message: string): void {
+  failStreak++;
+  const now = Date.now();
+  if (failStreak === 1) {
+    failSince = now;
+    failLastLoggedAt = now;
+    log(`Update-Check fehlgeschlagen: ${message}`);
+    return;
+  }
+  if (now - failLastLoggedAt >= ERROR_LOG_EVERY_MS) {
+    failLastLoggedAt = now;
+    log(
+      `Update-Check weiterhin fehlgeschlagen (${failStreak}× seit ${new Date(failSince).toLocaleTimeString("de-DE")}): ${message}`
+    );
+  }
+}
+
+function noteFetchOk(): void {
+  if (failStreak > 0) {
+    log(
+      `Update-Check wieder erfolgreich nach ${failStreak} Fehlversuch(en) seit ${new Date(failSince).toLocaleTimeString("de-DE")}.`
+    );
+  }
+  failStreak = 0;
+  failSince = 0;
+}
+
 export async function checkForUpdate(): Promise<void> {
   try {
     await git(["fetch", "origin", "main", "--quiet"]);
+    noteFetchOk();
     const head = await git(["rev-parse", "HEAD"]);
     const remote = await git(["rev-parse", "origin/main"]);
 
@@ -54,6 +93,6 @@ export async function checkForUpdate(): Promise<void> {
     log("Neuer Stand installiert – Prozess wird beendet (launchd startet neu).");
     process.exit(0);
   } catch (e) {
-    log(`Update-Check fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+    noteFetchError(e instanceof Error ? e.message : String(e));
   }
 }

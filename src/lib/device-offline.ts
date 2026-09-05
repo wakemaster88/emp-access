@@ -79,6 +79,78 @@ function resolveOnline(
   return null;
 }
 
+/** Hub gilt als offline, wenn der Heartbeat (alle 60 s) laenger ausbleibt – wie im Dashboard. */
+const HUB_OFFLINE_AFTER_MS = 5 * 60_000;
+/** Karteileichen (z. B. alter HUB_NAME) nicht ewig melden. */
+const HUB_STALE_AFTER_MS = 7 * 24 * 3_600_000;
+
+function formatBerlinTime(d: Date): string {
+  return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+}
+
+/**
+ * Hub-Agents eines Accounts auf Zustandsuebergaenge pruefen und Push senden.
+ * Gleiche Mechanik wie bei den Geraeten: `HubAgent.offlineNotifiedAt` merkt
+ * sich, dass der Offline-Push raus ist; kommt der Heartbeat zurueck, gibt es
+ * einmal „wieder online“ und das Feld wird geleert.
+ */
+async function checkHubs(
+  accountId: number,
+  now: number,
+): Promise<{ wentOffline: string[]; cameOnline: string[]; pushed: number }> {
+  const out = { wentOffline: [] as string[], cameOnline: [] as string[], pushed: 0 };
+  const hubs = await prisma.hubAgent.findMany({
+    where: { accountId, lastSeenAt: { not: null } },
+    select: { id: true, name: true, lastSeenAt: true, offlineNotifiedAt: true },
+  });
+  const wentOffline = hubs.filter(
+    (h) =>
+      !h.offlineNotifiedAt &&
+      h.lastSeenAt!.getTime() < now - HUB_OFFLINE_AFTER_MS &&
+      h.lastSeenAt!.getTime() > now - HUB_STALE_AFTER_MS,
+  );
+  const cameOnline = hubs.filter(
+    (h) => !!h.offlineNotifiedAt && h.lastSeenAt!.getTime() >= now - HUB_OFFLINE_AFTER_MS,
+  );
+  if (wentOffline.length === 0 && cameOnline.length === 0) return out;
+
+  // Erst DB-Zustand fortschreiben, dann senden (kein Dauerfeuer bei Push-Fehlern).
+  if (wentOffline.length > 0) {
+    await prisma.hubAgent.updateMany({
+      where: { id: { in: wentOffline.map((h) => h.id) } },
+      data: { offlineNotifiedAt: new Date() },
+    });
+  }
+  if (cameOnline.length > 0) {
+    await prisma.hubAgent.updateMany({
+      where: { id: { in: cameOnline.map((h) => h.id) } },
+      data: { offlineNotifiedAt: null },
+    });
+  }
+
+  for (const h of wentOffline) {
+    out.wentOffline.push(`Hub ${h.name}`);
+    const push = await sendPushToAccount(accountId, {
+      title: "⚠️ Hub offline",
+      body: `${h.name} meldet sich seit ${formatBerlinTime(h.lastSeenAt!)} Uhr nicht mehr. Kameras, Kennzeichen und Türöffner stehen still.`,
+      url: "/network",
+      tag: `hub-offline-${h.id}`,
+    });
+    out.pushed += push.sent;
+  }
+  for (const h of cameOnline) {
+    out.cameOnline.push(`Hub ${h.name}`);
+    const push = await sendPushToAccount(accountId, {
+      title: "✅ Hub wieder online",
+      body: `${h.name} meldet sich wieder (${formatBerlinTime(h.lastSeenAt!)} Uhr).`,
+      url: "/network",
+      tag: `hub-online-${h.id}`,
+    });
+    out.pushed += push.sent;
+  }
+  return out;
+}
+
 export async function runOfflineCheckTick(): Promise<OfflineTickResult> {
   const now = Date.now();
   const result: OfflineTickResult = {
@@ -97,6 +169,18 @@ export async function runOfflineCheckTick(): Promise<OfflineTickResult> {
 
   for (const accountId of accountIds) {
     result.accountsChecked++;
+
+    // Lokale Hubs zuerst: ohne Hub gibt es keine Kameras, Kennzeichen und
+    // Tueroeffner – ein stiller Ausfall ueber Nacht soll nicht erst am
+    // naechsten Vormittag auffallen.
+    try {
+      const hubResult = await checkHubs(accountId, now);
+      result.wentOffline.push(...hubResult.wentOffline);
+      result.cameOnline.push(...hubResult.cameOnline);
+      result.pushed += hubResult.pushed;
+    } catch (err) {
+      console.error("[device-offline] hub check failed:", err);
+    }
 
     const devices: DeviceRow[] = await prisma.device.findMany({
       where: {

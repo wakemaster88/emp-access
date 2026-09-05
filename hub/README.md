@@ -40,6 +40,36 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 - **Selbst-Update**: alle 5 min `git fetch` (async). Bei neuen Commits:
   `reset --hard origin/main` + `npm install` + Neustart durch launchd.
 
+## Betrieb rund um die Uhr
+
+Der Hub läuft als **launchd-Agent in der Benutzersitzung** (`gui/<uid>`,
+`~/Library/LaunchAgents`). Das heißt: Meldet sich der Benutzer am Hub-Mac ab
+oder fährt ihn herunter, endet der Hub mit einem SIGTERM und startet erst mit
+der nächsten Anmeldung wieder – genau so entstand die Lücke vom 03.09. 20:37
+bis 04.09. 10:53 Uhr, in der keine Kamera, kein Kennzeichen und kein
+Türöffner lief. Dasselbe gilt für Tracker und go2rtc.
+
+Damit das nicht passiert:
+
+1. **Automatische Anmeldung** einschalten: Systemeinstellungen → Benutzer &
+   Gruppen → Automatisch anmelden als Hub-Benutzer. Zum Betriebsende nur den
+   Bildschirm sperren, nie abmelden oder ausschalten.
+2. **Kein Ruhezustand, Neustart nach Stromausfall:**
+
+   ```bash
+   sudo pmset -a sleep 0 disksleep 0 displaysleep 10 autorestart 1 womp 1
+   ```
+
+3. Fällt der Hub trotzdem aus, kommt seit 09/2026 innerhalb von zehn Minuten
+   ein **Push „Hub offline“** an alle registrierten Geräte (Einstellungen →
+   Push-Benachrichtigungen), und „Hub wieder online“, sobald der Heartbeat
+   zurück ist. Grundlage ist `HubAgent.offlineNotifiedAt`, geprüft vom
+   5-Minuten-Cron.
+
+Eine LaunchDaemon-Variante (läuft ohne angemeldeten Benutzer) ist nicht
+umgesetzt: Vision-OCR und Face-Sidecar müssten dafür erst einmal in einer
+Sitzung ohne Fenster-Server geprüft werden.
+
 ## Installation auf einer Hub-Maschine
 
 Der Hub ist ein reines Deployment-Target: er fährt `origin/main` aus dem

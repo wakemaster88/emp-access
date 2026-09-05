@@ -1502,6 +1502,9 @@ model HubAgent {
   /// Live-Status vom Hub, z. B. Parkplatz-Belegung aus dem Kiosk-Tracker.
   status     Json?
   lastSeenAt DateTime?
+  /// Gesetzt, sobald der Offline-Push raus ist; geleert beim Online-Push
+  /// (Zustandsuebergang, kein Dauerfeuer) – wie Device.offlineNotifiedAt.
+  offlineNotifiedAt DateTime?
   accountId  Int
   account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt  DateTime  @default(now())
