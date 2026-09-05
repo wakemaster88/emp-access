@@ -337,3 +337,27 @@ Snapshot nicht verfügbar: Hub läuft auf dem iMac, diese Sitzung lief auf dem M
 - Einfahrtszone für Kamera 9 ausmessen und als `HUB_VEHICLE_ZONE_9` setzen, wenn die 2-%-Schwelle allein nicht reicht; alternativ die Erkennungszone in der Reolink-Kamera auf die Einfahrt begrenzen.
 - Abendstunden: Belichtung/IR der Eingangskamera für Kennzeichen prüfen, sonst bleibt nach 20 Uhr nichts lesbar.
 - Der Tracker auf dem iMac muss neu gestartet werden, damit `/classify` die Boxen liefert; bis dahin greift die alte Ja/Nein-Antwort ohne Größenfilter.
+
+## 2026-09-05 (Ausfallnacht geklärt, Log-Zeitsuche, Dienst-Neustart aus der Cloud)
+
+Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom iMac.
+
+### Befunde
+
+- **Ausfall 3.→4.9. war kein Absturz:** letzte Zeile am 3.9. 20:37:44 Uhr `SIGTERM – Hub beendet sich.`, danach nichts bis 4.9. 10:53:39 Uhr `EMP-Access-Hub startet (60b46750)`. Kein Neustart-Loop, keine Fehler davor (Log 19:30–20:37 Uhr ohne „fehl“). Der Hub läuft als launchd-**Agent** (`gui/<uid>`), also nur in einer angemeldeten Sitzung: SIGTERM um 20:37 heißt Abmelden oder Herunterfahren des iMac zum Betriebsende, Wiederanlauf mit der Anmeldung am nächsten Vormittag. In dieser Zeit sind alle Kennzeichen, DoorBird-Öffnungen und Kameraereignisse verloren; die Cloud zeigt den Hub nur als offline.
+- Dasselbe Muster am 5.9. um 11:08 Uhr (SIGTERM, sofortiger Neustart – hier von Hand).
+- Fehler-Log enthält wiederholt `fatal: unable to access 'https://github.com/…': Could not resolve host: github.com` – DNS am Standort fällt zeitweise aus; Cloud-API blieb erreichbar. Nur die Update-Prüfung scheitert dann.
+- Nach dem Update auf `a930f6b` lief der YOLO-Tracker noch als alter Prozess: `Vision (yolo) Kamera Eingang: YES conf=0.91 (Tracker ohne Boxen)` – der Größenfilter greift erst nach einem Tracker-Neustart.
+- Versionsnummer im Heartbeat ist seit `bc50d63` kein Beleg für einen Neustart mehr (`CONFIG.version` wird nach `reset --hard` auch ohne Neustart nachgezogen); Beleg ist die Zeile `EMP-Access-Hub startet`.
+
+### Änderungen
+
+- `HUB_LOG` liest jetzt ein 1-MB-Fenster an wählbarer Stelle: Dateiende, `at` (Binärsuche über die `[ISO]`-Zeitstempel, bei 91 MB wenige Lesezugriffe), `before`/`after` (Blättern, lückenlos an Zeilengrenzen). Ergebnis mit `windowStart/End`, `hasOlder/Newer`, `firstTs/lastTs`. UI: Datum/Uhrzeit, „Ab hier lesen“, Älter/Neuer.
+- Neuer Task `SERVICE_RESTART` (`hub/src/services.ts`): `tracker` per `launchctl kickstart -k gui/<uid>/<HUB_TRACKER_LAUNCHD_LABEL>` mit Warten auf `/health`, `hub` per Exit nach Ergebnis. Knöpfe mit Rückfrage in der Hub-Karte.
+- Updater: Änderungen an `hub/IMPROVE.md`, `hub/README.md`, `hub/.env.example` lösen keinen Neustart mehr aus.
+
+### Offen
+
+- **Hub als LaunchDaemon oder Auto-Login:** Solange der Hub ein Benutzer-Agent ist, stirbt er mit jeder Abmeldung. Entweder Auto-Login und „Ruhezustand nie“ auf dem iMac, oder `install/` um eine Daemon-Variante (`/Library/LaunchDaemons`, `UserName`) ergänzen.
+- Tracker über „Tracker neu starten“ neu starten und danach im Log nach `Vision (yolo)` mit `Fläche=` schauen.
+- DNS-Aussetzer am Standort prüfen (Router/Pi-hole?); der Hub sollte bei `Could not resolve host` nicht jede 5 Minuten eine Fehlerzeile schreiben, sondern gedrosselt.

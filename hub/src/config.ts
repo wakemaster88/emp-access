@@ -25,7 +25,9 @@ function intEnv(key: string, fallback: number): number {
 /** Letzter Commit, der den Hub-Code (hub/) beruehrt hat – nur der zwingt zum Neustart. */
 export function gitHubCodeRevision(): string {
   try {
-    return execSync("git rev-list -1 HEAD -- hub", {
+    // Doku und Beispiel-Env unter hub/ zaehlen nicht – sonst startet jeder
+    // Eintrag im Verbesserungslog alle Hubs neu.
+    return execSync("git rev-list -1 HEAD -- hub ':!hub/IMPROVE.md' ':!hub/README.md' ':!hub/.env.example'", {
       cwd: path.resolve(hubDir, ".."),
       encoding: "utf8",
     }).trim();
