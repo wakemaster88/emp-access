@@ -414,3 +414,19 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 ### Offen
 
 - Einmal auf dem iMac: `cd ~/repos/emp-access/hub && sudo ./install/setup-system.sh 06:00`. Danach verschwinden die Hinweise in der Hub-Karte von selbst.
+
+## 2026-09-05 (Setup-Skript gelaufen, FileVault blockiert Auto-Login)
+
+### Befunde
+
+- Nach `sudo install/setup-system.sh` meldet der iMac um 12:43 Uhr: kein Ruhezustand, Einschalten täglich 06:00, pmset per sudo erlaubt, caffeinate an – aber weiterhin „Auto-Login aus“.
+- Ursache per `fdesetup status`: **FileVault ist an**. macOS erlaubt dann keine automatische Anmeldung; nach einem Neustart wartet der Mac an der Anmeldemaske, der Hub-Agent startet erst mit der Anmeldung.
+
+### Änderungen
+
+- Task `SYSTEM_CHECK` liest den Zustand auf Abruf und zieht pmset nach; das Setup-Skript startet den Hub zum Schluss selbst neu.
+- `system-setup.ts` erkennt FileVault; der Hinweis nennt jetzt die Ursache und die zwei Auswege (FileVault aus oder nie herunterfahren).
+
+### Offen
+
+- Entscheidung: FileVault am iMac ausschalten (Systemeinstellungen → Datenschutz & Sicherheit → FileVault), dann `sudo install/setup-system.sh` erneut für Auto-Login. Ohne das gilt: Der Mac darf abends nicht heruntergefahren werden; das tägliche Einschalten um 06:00 hilft dann nur bis zur Anmeldemaske.
