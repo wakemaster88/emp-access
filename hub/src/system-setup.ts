@@ -41,6 +41,15 @@ async function readAutoLogin(): Promise<string | null> {
   return r.ok && user ? user : null;
 }
 
+/** FileVault-Status (ohne Root lesbar). Mit FileVault ist Auto-Login nicht möglich. */
+async function readFileVault(): Promise<boolean | null> {
+  const r = await out("fdesetup", ["status"]);
+  if (!r.ok && !r.stdout) return null;
+  if (/FileVault is On/i.test(r.stdout)) return true;
+  if (/FileVault is Off/i.test(r.stdout)) return false;
+  return null;
+}
+
 async function readPower(): Promise<{ sleep: number | null; autorestart: boolean | null }> {
   const r = await out(PMSET, ["-g"]);
   const sleep = /^\s*sleep\s+(\d+)/m.exec(r.stdout);
@@ -98,7 +107,11 @@ async function applyPower(): Promise<boolean> {
 function buildHints(s: Omit<SystemState, "hints">): string[] {
   const hints: string[] = [];
   if (!s.autoLoginUser) {
-    hints.push("Auto-Login aus – nach Abmeldung oder Neustart des Macs steht der Hub still (sudo install/setup-system.sh)");
+    hints.push(
+      s.fileVault
+        ? "Auto-Login aus, weil FileVault an ist – nach einem Neustart wartet der Mac auf die Anmeldung. Entweder FileVault ausschalten (Systemeinstellungen → Datenschutz & Sicherheit) oder den Mac nie herunterfahren."
+        : "Auto-Login aus – nach Abmeldung oder Neustart des Macs steht der Hub still (Systemeinstellungen → Benutzer & Gruppen → Automatisch anmelden, oder sudo install/setup-system.sh)"
+    );
   }
   if (s.sleepMinutes !== 0) {
     hints.push(
@@ -116,8 +129,9 @@ function buildHints(s: Omit<SystemState, "hints">): string[] {
 /** Zustand ermitteln, was geht nachziehen, Ergebnis in STATE.system. */
 export async function checkSystem(): Promise<SystemState | null> {
   if (process.platform !== "darwin") return null;
-  const [autoLoginUser, power, schedule, sudoPmset] = await Promise.all([
+  const [autoLoginUser, fileVault, power, schedule, sudoPmset] = await Promise.all([
     readAutoLogin(),
+    readFileVault(),
     readPower(),
     readSchedule(),
     sudoPmsetAllowed(),
@@ -145,6 +159,7 @@ export async function checkSystem(): Promise<SystemState | null> {
   const base = {
     checkedAt: new Date().toISOString(),
     autoLoginUser,
+    fileVault,
     sleepMinutes,
     autorestart,
     powerOnSchedule,
@@ -164,7 +179,7 @@ export function startSystemSetup(): void {
     .then((s) => {
       if (!s) return;
       const summary = [
-        s.autoLoginUser ? `Auto-Login ${s.autoLoginUser}` : "Auto-Login aus",
+        s.autoLoginUser ? `Auto-Login ${s.autoLoginUser}` : `Auto-Login aus${s.fileVault ? " (FileVault an)" : ""}`,
         s.sleepMinutes === 0 ? "kein Ruhezustand" : `Ruhezustand ${s.sleepMinutes ?? "?"} min`,
         s.powerOnSchedule ? `Einschalten ${s.powerOnSchedule}` : "kein Einschaltplan",
         s.caffeinate ? "caffeinate an" : "caffeinate aus",

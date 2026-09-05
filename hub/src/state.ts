@@ -49,6 +49,8 @@ export interface SystemState {
   checkedAt: string;
   /** Benutzer der automatischen Anmeldung, null = aus. */
   autoLoginUser: string | null;
+  /** FileVault an – dann laesst macOS keine automatische Anmeldung zu. null = unbekannt. */
+  fileVault: boolean | null;
   /** Minuten bis Ruhezustand laut pmset, 0 = nie, null = unbekannt. */
   sleepMinutes: number | null;
   autorestart: boolean | null;
