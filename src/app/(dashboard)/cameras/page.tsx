@@ -26,6 +26,8 @@ export default async function CamerasPage() {
         channel: true,
         enabled: true,
         vehicleDetection: true,
+        vehicleMinArea: true,
+        vehicleZone: true,
         notes: true,
         snapshotAt: true,
         lastSeenAt: true,
@@ -62,6 +64,8 @@ export default async function CamerasPage() {
         <CamerasView
           cameras={cameras.map((c) => ({
             ...c,
+            // JSON-Spalte → Punktliste; alles andere (null, kaputt) heisst „keine Zone“.
+            vehicleZone: Array.isArray(c.vehicleZone) ? (c.vehicleZone as [number, number][]) : null,
             snapshotAt: c.snapshotAt?.toISOString() ?? null,
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
           }))}

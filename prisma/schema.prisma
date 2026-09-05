@@ -1557,6 +1557,12 @@ model Camera {
   enabled             Boolean              @default(true)
   /// Fahrzeug-Erkennung (Burst + Plate-OCR + Sichtungen) auf dieser Kamera.
   vehicleDetection    Boolean              @default(true)
+  /// Fahrzeug-Box muss mindestens diesen Anteil der Bildflaeche belegen
+  /// (0..1), sonst gilt sie als Hintergrundverkehr. null = Hub-Standard (2 %).
+  vehicleMinArea      Float?
+  /// Einfahrtszone als Polygon [[x,y],...] normiert 0..1; nur Boxen mit
+  /// Mittelpunkt in der Zone zaehlen. null = keine Zone.
+  vehicleZone         Json?
   notes               String?
   /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
   snapshot            Bytes?

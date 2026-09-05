@@ -131,10 +131,14 @@ export interface VehicleCheck {
  */
 export async function checkVehicle(
   jpeg: Buffer,
-  opts: { minArea?: number; cameraId?: number; label?: string } = {}
+  opts: { minArea?: number; cameraId?: number; label?: string; zone?: [number, number][] | null } = {}
 ): Promise<VehicleCheck> {
   const minArea = opts.minArea ?? VEHICLE_MIN_AREA;
-  const zone = vehicleZoneFor(opts.cameraId);
+  // Zone aus der Cloud-Kamera hat Vorrang; sonst HUB_VEHICLE_ZONE(_<id>).
+  const zone =
+    Array.isArray(opts.zone) && opts.zone.length >= 3
+      ? opts.zone.map(([x, y]) => ({ x, y }))
+      : vehicleZoneFor(opts.cameraId);
   const tag = opts.label ? ` ${opts.label}` : "";
   try {
     const { url, pin } = await trackerTarget();
@@ -213,7 +217,13 @@ export async function checkVehicle(
  */
 export async function jpegContainsVehicle(
   jpeg: Buffer,
-  opts: { quick?: boolean; minArea?: number; cameraId?: number; label?: string } = {}
+  opts: {
+    quick?: boolean;
+    minArea?: number;
+    cameraId?: number;
+    label?: string;
+    zone?: [number, number][] | null;
+  } = {}
 ): Promise<boolean | null> {
   const r = await checkVehicle(jpeg, opts);
   return r.vehicle;

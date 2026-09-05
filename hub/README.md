@@ -25,8 +25,11 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 - **Kennzeichen**: fast-alpr (primär), macOS Vision als Fallback; lokale
   Aktoren (DoorBird/Shelly) ohne Cloud-Roundtrip. Ohne lesbares Kennzeichen
   entscheidet der YOLO-Tracker, ob überhaupt ein Auto an der Einfahrt steht:
-  Boxen unter `HUB_VEHICLE_MIN_AREA` (2 % Bildfläche) oder außerhalb der
-  optionalen Zone `HUB_VEHICLE_ZONE` gelten als Hintergrundverkehr.
+  Boxen unter der Mindestgröße (Standard 2 % Bildfläche) oder außerhalb der
+  Einfahrtszone gelten als Hintergrundverkehr. Beides wird pro Kamera in der
+  Cloud eingestellt (Kameras → Bearbeiten → „Fahrzeug ohne Kennzeichen“, Zone
+  per Klick auf den Schnappschuss); `HUB_VEHICLE_MIN_AREA` und
+  `HUB_VEHICLE_ZONE(_<id>)` in `.env` sind nur noch der Fallback.
 - **Log-Abruf**: Task `HUB_LOG` liefert Ausschnitte von `emp-hub.log`,
   `emp-hub.error.log` oder der Diagnose an die Cloud (Netzwerk → Lokaler Hub
   → „Log abrufen“): Dateiende, ab Zeitpunkt (Binärsuche über die

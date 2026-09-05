@@ -33,6 +33,10 @@ export interface CameraConfig {
   channel: number;
   /** Fahrzeug-Erkennung auf dieser Kamera (Events + Burst + OCR). */
   vehicleDetection?: boolean;
+  /** Mindestanteil der Bildfläche für eine Fahrzeug-Box (Cloud-Einstellung, null = HUB_VEHICLE_MIN_AREA). */
+  vehicleMinArea?: number | null;
+  /** Einfahrtszone [[x,y],…] normiert (Cloud-Einstellung, null = HUB_VEHICLE_ZONE_<id>). */
+  vehicleZone?: [number, number][] | null;
 }
 
 /** Letzte Personen-Sichtung an einer Kamera (Dashboard „wer war wo“). */
@@ -669,10 +673,13 @@ async function uploadVehicleSnapshotBody(
     } else {
       for (let i = snaps.length - 1; i >= 0; i--) {
         // Größen-/Zonenregel: geparkte Autos und Straße im Hintergrund zählen nicht.
+        // Cloud-Einstellung der Kamera geht vor, sonst Umgebung (HUB_VEHICLE_*).
         const ok = await jpegContainsVehicle(snaps[i], {
           quick: true,
           cameraId,
           label: cam.config.name,
+          minArea: cam.config.vehicleMinArea ?? undefined,
+          zone: cam.config.vehicleZone ?? undefined,
         });
         if (ok === true) {
           buf = snaps[i];

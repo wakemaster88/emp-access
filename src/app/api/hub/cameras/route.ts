@@ -24,6 +24,9 @@ export async function GET(request: NextRequest) {
       password: true,
       channel: true,
       vehicleDetection: true,
+      // Fallback-Regeln fuer „Fahrzeug ohne Kennzeichen“ (vision.ts am Hub).
+      vehicleMinArea: true,
+      vehicleZone: true,
     },
     orderBy: { id: "asc" },
   });

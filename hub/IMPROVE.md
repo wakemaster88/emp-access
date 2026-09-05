@@ -379,3 +379,21 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 
 - Tracker neu starten (Knopf), danach `Vision (yolo)` mit `Fläche=` im Log erwarten.
 - Auto-Login und `pmset` auf dem iMac setzen; Push-Abo auf dem Handy prüfen (Einstellungen → Push).
+
+## 2026-09-05 (Mindestgröße und Einfahrtszone pro Kamera in der Cloud)
+
+### Befunde
+
+- Tracker läuft seit ~12:00 Uhr mit Box-Ausgabe: `Vision (yolo) Kamera Eingang: YES conf=0.93 Fläche=31.3%` (echtes Fahrzeug), DoorBird-Prüfungen melden `NO – kein Fahrzeug`. Der Größenfilter ist damit scharf.
+- Zone und Schwelle lagen bisher nur in `hub/.env` auf dem iMac – ohne SSH nicht erreichbar, und je Kamera-ID von Hand.
+
+### Änderungen
+
+- `Camera.vehicleMinArea` (Anteil 0..0,5) und `Camera.vehicleZone` (Polygon, normiert) – Migration `20260905130000_camera_vehicle_zone`. `/api/hub/cameras` liefert beide mit, der Hub nimmt sie vor `HUB_VEHICLE_MIN_AREA`/`HUB_VEHICLE_ZONE(_<id>)`.
+- Kameras → Bearbeiten: Abschnitt „Fahrzeug ohne Kennzeichen“ mit Prozentfeld und Klick-Editor auf dem letzten Schnappschuss (`zone-editor.tsx`, Polygon ab 3 Punkten, max. 32, „Letzten Punkt“/„Zone löschen“). Leer = Hub-Standard bzw. keine Zone.
+- Mock-Test: Cloud-Zone rechts lehnt Box links ab (`zone`), Zone links akzeptiert, 2-Punkte-Zone wird ignoriert, Cloud-Schwelle 10 % lehnt 4 %-Box ab (`small`).
+
+### Offen
+
+- Zone für Kamera Eingang im Editor setzen (Straße und Parkplatz oben links ausklammern); Schnappschuss vorher per „Schnappschuss“ anfordern, sonst ist der Editor leer.
+- Wirkung nach ein paar Tagen an `vision.no_small`/`vision.no_zone` gegen `vision.yes` im Diagnose-Snapshot ablesen.

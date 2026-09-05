@@ -22,6 +22,7 @@ import {
   User, Car, PawPrint, Activity, Bell, DoorOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ZoneEditor, type ZonePoint } from "@/components/cameras/zone-editor";
 
 export interface CameraRow {
   id: number;
@@ -34,6 +35,10 @@ export interface CameraRow {
   channel: number;
   enabled: boolean;
   vehicleDetection: boolean;
+  /** Anteil der Bildfläche 0..1, null = Hub-Standard (2 %). */
+  vehicleMinArea: number | null;
+  /** Einfahrtszone, normierte Punkte; null = keine Zone. */
+  vehicleZone: ZonePoint[] | null;
   notes: string | null;
   snapshotAt: string | null;
   lastSeenAt: string | null;
@@ -67,6 +72,9 @@ const EMPTY = {
   channel: "0",
   enabled: true,
   vehicleDetection: true,
+  /** Prozent der Bildfläche als Text; leer = Hub-Standard. */
+  vehicleMinAreaPct: "",
+  vehicleZone: [] as ZonePoint[],
   notes: "",
 };
 
@@ -142,6 +150,8 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       channel: String(c.channel),
       enabled: c.enabled,
       vehicleDetection: c.vehicleDetection,
+      vehicleMinAreaPct: c.vehicleMinArea != null ? String(Math.round(c.vehicleMinArea * 1000) / 10) : "",
+      vehicleZone: c.vehicleZone ?? [],
       notes: c.notes ?? "",
     });
     setError("");
@@ -167,6 +177,10 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           channel: Number(form.channel) || 0,
           enabled: form.enabled,
           vehicleDetection: form.vehicleDetection,
+          // Prozent aus dem Formular → Anteil 0..1; leer = Hub-Standard.
+          vehicleMinArea:
+            form.vehicleMinAreaPct.trim() === "" ? null : Number(form.vehicleMinAreaPct) / 100,
+          vehicleZone: form.vehicleZone.length >= 3 ? form.vehicleZone : null,
           notes: form.notes,
         }),
       });
@@ -561,6 +575,46 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 onCheckedChange={(v) => set("vehicleDetection", v)}
               />
             </div>
+
+            {form.vehicleDetection && (
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium">Fahrzeug ohne Kennzeichen</p>
+                  <p className="text-xs text-muted-foreground">
+                    Liest der Hub kein Kennzeichen, entscheidet der YOLO-Tracker, ob überhaupt ein
+                    Auto an der Einfahrt steht. Geparkte Wagen und Straße im Hintergrund sollen
+                    dabei nicht zählen.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Mindestgröße (% der Bildfläche)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={50}
+                    step={0.5}
+                    value={form.vehicleMinAreaPct}
+                    onChange={(e) => set("vehicleMinAreaPct", e.target.value)}
+                    placeholder="2 (Hub-Standard)"
+                  />
+                  <p className="text-xs text-muted-foreground/70">
+                    Auto an der Einfahrt in 4K etwa 3 bis 30 %, Parkplatz im Hintergrund unter 0,1 %.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Einfahrtszone</Label>
+                  <ZoneEditor
+                    imageUrl={
+                      editing?.snapshotAt
+                        ? `/api/cameras/${editing.id}/snapshot?t=${encodeURIComponent(editing.snapshotAt)}`
+                        : null
+                    }
+                    points={form.vehicleZone}
+                    onChange={(pts) => set("vehicleZone", pts)}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Notizen</Label>
