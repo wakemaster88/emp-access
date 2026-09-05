@@ -232,7 +232,7 @@ export default function MonitorPage() {
   return (
     <div ref={containerRef} className="bg-slate-50 dark:bg-slate-950 min-h-[100dvh]">
 
-      <Header title="Live Monitor" />
+      <Header title="Live-Monitor" />
 
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">

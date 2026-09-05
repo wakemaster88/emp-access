@@ -3,124 +3,42 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import {
-  LayoutDashboard,
-  Ticket,
-  HardDrive,
-  MapPin,
-  ScanLine,
-  Monitor,
-  MonitorCog,
-  ChevronLeft,
-  ChevronRight,
-  Shield,
-  ShieldCheck,
-  LogOut,
-  Settings,
-  CreditCard,
-  Package,
-  Users,
-  BarChart3,
-  QrCode,
-  Workflow,
-  Lock,
-  Gift,
-  Mail,
-  IdCard,
-  PackageSearch,
-  Droplets,
-  Network,
-  Cctv,
-  Joystick,
-  Car,
-  UserRound,
-  Eye,
-  Volume2,
-  KeyRound,
-  Building2,
-  CalendarClock,
-} from "lucide-react";
+import { useCallback, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  accountItem,
+  adminItems,
+  isNavItemActive,
+  navGroups,
+  type NavGroup,
+  type NavItem,
+} from "@/components/layout/nav-config";
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
+/** Zugeklappte Gruppen, pro Browser gemerkt. Fehlt der Eintrag, ist die Gruppe offen. */
+const COLLAPSED_GROUPS_KEY = "emp-access:nav-collapsed-groups";
+
+function loadCollapsedGroups(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_GROUPS_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
 }
 
-interface NavGroup {
-  label: string;
-  items: NavItem[];
+function saveCollapsedGroups(value: Record<string, boolean>) {
+  try {
+    window.localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(value));
+  } catch {
+    // Kein Speicher verfügbar (privater Modus o. ä.): Zustand gilt nur für die Sitzung.
+  }
 }
-
-const navGroups: NavGroup[] = [
-  {
-    label: "Übersicht",
-    items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/analytics", label: "Auswertung", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "Verkauf",
-    items: [
-      { href: "/tickets", label: "Tickets", icon: Ticket },
-      { href: "/subscriptions", label: "Abos", icon: CreditCard },
-      { href: "/vouchers", label: "Gutscheine", icon: Gift },
-      { href: "/vereine", label: "Vereine", icon: Users },
-      { href: "/employees", label: "Mitarbeiter", icon: IdCard },
-    ],
-  },
-  {
-    label: "Erlebnis",
-    items: [
-      { href: "/services", label: "Services", icon: Package },
-      { href: "/areas", label: "Resourcen", icon: MapPin },
-      { href: "/lockers", label: "Schließfächer", icon: Lock },
-      { href: "/fundsachen", label: "Fundsachen", icon: PackageSearch },
-    ],
-  },
-  {
-    label: "Betrieb",
-    items: [
-      { href: "/scanner", label: "Scanner", icon: QrCode },
-      { href: "/scans", label: "Scans", icon: ScanLine },
-      { href: "/raeume", label: "Räume", icon: Building2 },
-      { href: "/betriebszeiten", label: "Betriebszeiten", icon: CalendarClock },
-      { href: "/regeln", label: "Regeln", icon: Workflow },
-      { href: "/schliessanlage", label: "Schließanlage", icon: KeyRound },
-      { href: "/bewaesserung", label: "Bewässerung", icon: Droplets },
-      { href: "/audio", label: "Audio", icon: Volume2 },
-      { href: "/monitor", label: "Live Monitor", icon: Monitor },
-      { href: "/monitors", label: "Monitore", icon: MonitorCog },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { href: "/devices", label: "Geräte", icon: HardDrive },
-      { href: "/network", label: "Netzwerk", icon: Network },
-      { href: "/cameras", label: "Kameras", icon: Cctv },
-      { href: "/webcams", label: "Kontrollzentrum", icon: Joystick },
-      { href: "/ueberwachung", label: "Überwachung", icon: Eye },
-      { href: "/fahrzeuge", label: "Fahrzeuge", icon: Car },
-      { href: "/personen", label: "Personen", icon: UserRound },
-      { href: "/email", label: "E-Mail", icon: Mail },
-      { href: "/settings", label: "Einstellungen", icon: Settings },
-      { href: "/sicherheit", label: "Sicherheit", icon: ShieldCheck },
-    ],
-  },
-];
-
-const adminItems: NavItem[] = [
-  { href: "/admin", label: "Admin Dashboard", icon: Shield },
-  { href: "/admin/accounts", label: "Mandanten", icon: LayoutDashboard },
-  { href: "/sicherheit", label: "Sicherheit", icon: ShieldCheck },
-];
 
 interface SidebarProps {
   userName: string;
@@ -131,16 +49,26 @@ interface SidebarProps {
 
 export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(loadCollapsedGroups);
   const pathname = usePathname();
   const isSuperAdmin = role === "SUPER_ADMIN";
 
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveCollapsedGroups(next);
+      return next;
+    });
+  }, []);
+
   const NavLink = ({ href, label, icon: Icon }: NavItem) => {
-    const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+    const isActive = isNavItemActive(pathname, href);
 
     const link = (
       <Link
         href={href}
         onClick={onNavigate}
+        aria-current={isActive ? "page" : undefined}
         className={cn(
           "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
           "hover:bg-slate-700/50",
@@ -169,6 +97,9 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
   };
 
   const NavGroupBlock = ({ group, isFirst }: { group: NavGroup; isFirst: boolean }) => {
+    const isOpen = !collapsedGroups[group.key];
+    const hasActive = group.items.some((item) => isNavItemActive(pathname, item.href));
+
     if (collapsed) {
       return (
         <div className={cn("space-y-1", !isFirst && "pt-2 mt-2 border-t border-slate-800/70")}>
@@ -178,17 +109,32 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
         </div>
       );
     }
+
     return (
       <div className={cn("space-y-1", !isFirst && "pt-3 mt-1")}>
-        <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500/80">
-          {group.label}
-        </div>
-        {group.items.map((item) => (
-          <NavLink key={item.href} {...item} />
-        ))}
+        <button
+          type="button"
+          onClick={() => toggleGroup(group.key)}
+          aria-expanded={isOpen}
+          className={cn(
+            "flex w-full items-center justify-between rounded-md px-3 pb-1.5 pt-1",
+            "text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors",
+            "text-slate-500/80 hover:text-slate-300"
+          )}
+        >
+          <span className="flex items-center gap-1.5">
+            {group.label}
+            {/* Zugeklappte Gruppe mit aktiver Seite: Punkt zeigt, wo man gerade ist. */}
+            {!isOpen && hasActive && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden />}
+          </span>
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !isOpen && "-rotate-90")} />
+        </button>
+        {isOpen && group.items.map((item) => <NavLink key={item.href} {...item} />)}
       </div>
     );
   };
+
+  const accountActive = isNavItemActive(pathname, accountItem.href);
 
   return (
     <aside
@@ -226,30 +172,48 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
           </div>
         ) : (
           navGroups.map((group, idx) => (
-            <NavGroupBlock key={group.label} group={group} isFirst={idx === 0} />
+            <NavGroupBlock key={group.key} group={group} isFirst={idx === 0} />
           ))
         )}
       </nav>
 
       <Separator className="bg-slate-800" />
 
+      {/* Benutzerblock: führt zu Konto & Sicherheit, daneben Abmelden. */}
       <div className="p-3">
-        <div className={cn("flex items-center gap-3", collapsed ? "justify-center" : "px-3 py-2")}>
-          <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-200 truncate">{userName}</p>
-              <p className="text-xs text-slate-500">{role.replace("_", " ")}</p>
-            </div>
-          )}
+        <div className={cn("flex items-center gap-2", collapsed ? "flex-col" : "px-1 py-1")}>
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <Link
+                href={accountItem.href}
+                onClick={onNavigate}
+                aria-current={accountActive ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg min-w-0 transition-colors hover:bg-slate-800/70",
+                  collapsed ? "p-1" : "flex-1 px-2 py-1.5",
+                  accountActive && "bg-indigo-600/20"
+                )}
+              >
+                <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                  {userName.charAt(0).toUpperCase()}
+                </div>
+                {!collapsed && (
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-200 truncate">{userName}</p>
+                    <p className="text-xs text-slate-500">{role.replace("_", " ")}</p>
+                  </div>
+                )}
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">{accountItem.label}</TooltipContent>
+          </Tooltip>
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onSignOut}
+                aria-label="Abmelden"
                 className="text-slate-400 hover:text-red-400 hover:bg-slate-800 h-10 w-10 min-h-[44px] min-w-[44px] md:h-8 md:w-8 md:min-h-0 md:min-w-0 shrink-0"
               >
                 <LogOut className="h-4 w-4" />
