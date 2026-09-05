@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -139,11 +138,14 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
   useEffect(() => {
     if (!qrRef.current || !mobileUrl) return;
-    QRCode.toCanvas(qrRef.current, mobileUrl, {
-      width: 180,
-      margin: 1,
-      color: { dark: "#1e293b", light: "#ffffff" },
-    });
+    const canvas = qrRef.current;
+    void import("qrcode").then((m) =>
+      m.default.toCanvas(canvas, mobileUrl, {
+        width: 180,
+        margin: 1,
+        color: { dark: "#1e293b", light: "#ffffff" },
+      }),
+    );
   }, [mobileUrl]);
 
   async function handleTokenAction(kind: "create" | "rotate" | "revoke") {

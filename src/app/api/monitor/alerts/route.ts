@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { storeImageColumn } from "@/lib/blob-store";
 
 export const maxDuration = 10;
 
@@ -83,6 +84,10 @@ export async function POST(request: NextRequest) {
     parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
 
   const images = parseImages(o.images);
+  // Bilder in den Blob-Speicher (Fallback: Bytes in der Spalte `image`).
+  const storedImages = await Promise.all(
+    images.map((img) => storeImageColumn("alert-images", auth.account.id, img.data)),
+  );
 
   const alert = await auth.db.monitorAlert.create({
     data: {
@@ -95,7 +100,7 @@ export async function POST(request: NextRequest) {
         create: images.map((img, i) => ({
           position: i,
           label: img.label,
-          image: img.data,
+          ...storedImages[i],
         })),
       },
     },

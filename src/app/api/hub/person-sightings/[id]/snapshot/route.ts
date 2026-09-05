@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { resolveBinary } from "@/lib/blob-store";
 
 /** GET (Hub, Token): JPEG einer Sichtung fuer FACE_ENROLL. */
 export async function GET(
@@ -15,14 +16,15 @@ export async function GET(
 
   const sighting = await db.personSighting.findFirst({
     where: { id, accountId: account.id },
-    select: { snapshot: true, seenAt: true },
+    select: { snapshot: true, snapshotBlob: true, seenAt: true },
   });
   if (!sighting) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
-  if (!sighting.snapshot) {
+  const bytes = await resolveBinary({ blob: sighting.snapshotBlob, bytes: sighting.snapshot });
+  if (!bytes) {
     return NextResponse.json({ error: "Kein Schnappschuss" }, { status: 404 });
   }
 
-  return new NextResponse(Buffer.from(sighting.snapshot), {
+  return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "Content-Type": "image/jpeg",
       "Cache-Control": "private, no-store",

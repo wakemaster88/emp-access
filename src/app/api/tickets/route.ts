@@ -37,10 +37,16 @@ export async function GET(request: NextRequest) {
   if (accessId) where.accessAreaId = Number(accessId);
   if (since) where.version = { gt: Number(since) };
 
+  // Obergrenze statt unbegrenzter Liste: `?limit=` bis 20.000, Standard 5.000.
+  // Wer inkrementell synchronisiert, nutzt ohnehin `since`.
+  const limitParam = Number(request.nextUrl.searchParams.get("limit") ?? "");
+  const take = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 20_000) : 5_000;
+
   const tickets = await db.ticket.findMany({
     where,
     include: { accessArea: true },
     orderBy: { updatedAt: "desc" },
+    take,
   });
 
   return NextResponse.json(tickets);

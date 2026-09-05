@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { newPublicToken } from "@/lib/tokens";
 
 export async function GET() {
   const session = await getSessionWithDb();
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
   const monitor = await db.monitorConfig.create({
     data: {
       name: body.name.trim(),
+      token: newPublicToken(),
       type,
       deviceIds: body.deviceIds ?? [],
       areaIds: Array.isArray(body.areaIds) ? body.areaIds : [],

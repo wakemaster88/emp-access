@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { setAppBadge } from "@/lib/app-badge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -805,11 +806,16 @@ export function DashboardClient() {
     async function loadOps() {
       try {
         const res = await fetch("/api/dashboard/ops");
-        if (!cancelled && res.ok) setOps(await res.json());
+        if (!cancelled && res.ok) {
+          const json = await res.json();
+          setOps(json);
+          // Offene Warnungen als Zaehler auf dem App-Icon (installierte PWA).
+          setAppBadge(Number(json?.alerts?.open) || 0);
+        }
       } catch { /* ignore */ }
     }
     loadOps();
-    const t = setInterval(loadOps, 15_000);
+    const t = setInterval(loadOps, 30_000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 

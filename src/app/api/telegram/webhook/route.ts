@@ -1,29 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { answerCallbackQuery, editMessageCaption } from "@/lib/telegram";
+import { answerCallbackQuery, editMessageCaption, telegramWebhookSecret } from "@/lib/telegram";
+import { secretsEqual } from "@/lib/cron-auth";
 
 /**
  * Telegram-Webhook: verarbeitet Inline-Button-Klicks (callback_query).
  *
- * Auth: Die Webhook-URL enthält ?token=<botToken>; wir akzeptieren nur
- * Updates, wenn ein aktiver TelegramConfig mit genau diesem Bot-Token
- * existiert und der Klick aus dem konfigurierten Chat kommt. Damit kann
- * niemand fremde Updates einschleusen (das Bot-Token kennt nur Telegram
- * selbst und der Account-Inhaber).
+ * Auth: Die Webhook-URL traegt nur noch die Config-ID (`?id=`). Telegram
+ * schickt den bei setWebhook hinterlegten `secret_token` im Header
+ * `X-Telegram-Bot-Api-Secret-Token` mit; er wird aus dem Bot-Token und
+ * AUTH_SECRET abgeleitet (siehe telegramWebhookSecret). Damit steht das
+ * Bot-Token nicht mehr in URL und Request-Logs.
+ *
+ * Uebergang: Alte Registrierungen mit `?token=<botToken>` funktionieren
+ * weiter, bis `npx tsx scripts/telegram-webhook-setup.ts` gelaufen ist.
  *
  * Unterstützte Callbacks:
  *   door:<cameraId>  → DOORBIRD_OPEN-Hub-Task (Tor öffnen)
  */
-export async function POST(request: NextRequest) {
-  const botToken = request.nextUrl.searchParams.get("token") ?? "";
-  if (!botToken) return NextResponse.json({ ok: true });
+type WebhookConfig = { accountId: number; chatId: string; botToken: string };
 
+async function resolveConfig(request: NextRequest): Promise<WebhookConfig | null> {
+  const idParam = request.nextUrl.searchParams.get("id");
+  if (idParam) {
+    const id = Number(idParam);
+    if (!Number.isInteger(id)) return null;
+    const config = await prisma.telegramConfig.findFirst({
+      where: { id, isActive: true },
+      select: { accountId: true, chatId: true, botToken: true },
+    });
+    if (!config) return null;
+    const header = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
+    if (!header || !secretsEqual(header, telegramWebhookSecret(config.botToken))) return null;
+    return config;
+  }
+
+  const botToken = request.nextUrl.searchParams.get("token") ?? "";
+  if (!botToken) return null;
   const config = await prisma.telegramConfig.findFirst({
     where: { botToken, isActive: true },
-    select: { accountId: true, chatId: true },
+    select: { accountId: true, chatId: true, botToken: true },
   });
+  if (config) {
+    console.warn("[telegram webhook] Aufruf mit Bot-Token in der URL – bitte scripts/telegram-webhook-setup.ts ausfuehren.");
+  }
+  return config;
+}
+
+export async function POST(request: NextRequest) {
+  const config = await resolveConfig(request);
   // Immer 200 antworten, sonst wiederholt Telegram das Update endlos.
   if (!config) return NextResponse.json({ ok: true });
+  const botToken = config.botToken;
 
   const update = (await request.json().catch(() => null)) as {
     callback_query?: {

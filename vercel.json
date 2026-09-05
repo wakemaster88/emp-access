@@ -14,7 +14,7 @@
       "memory": 1024
     },
     "src/app/api/monitor/route.ts": {
-      "maxDuration": 60,
+      "maxDuration": 10,
       "memory": 1024
     },
     "src/app/api/email/info-requests/route.ts": {
@@ -33,6 +33,14 @@
       "maxDuration": 60,
       "memory": 1024
     },
+    "src/app/api/cron/tick-5min/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
+    },
+    "src/app/api/cron/cleanup/route.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
     "src/app/api/cron/anny-sync/route.ts": {
       "maxDuration": 300,
       "memory": 1024
@@ -48,40 +56,24 @@
   },
   "crons": [
     {
-      "path": "/api/cron/telegram-report",
-      "schedule": "0,15,30,45 * * * *"
+      "path": "/api/cron/audio-schedules",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/tick-5min",
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/anny-sync",
       "schedule": "5 * * * *"
     },
     {
-      "path": "/api/cron/room-rules",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/irrigation",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/email-automations",
       "schedule": "10 8 * * *"
     },
     {
-      "path": "/api/cron/cleanup-tickets",
+      "path": "/api/cron/cleanup",
       "schedule": "30 1 * * *"
-    },
-    {
-      "path": "/api/cron/cleanup-retention",
-      "schedule": "45 1 * * *"
-    },
-    {
-      "path": "/api/cron/device-offline-check",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/audio-schedules",
-      "schedule": "* * * * *"
     }
   ]
 }

@@ -14,6 +14,7 @@ import { jpegContainsVehicle } from "./vision.js";
 import type { CameraConfig, LastPerson } from "./cameras.js";
 import { updateLocalStreams } from "./streams.js";
 import { improve } from "./improve-log.js";
+import { PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -313,10 +314,11 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
   });
 
   try {
+    const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
     const upload = await api(`/api/hub/person-sightings?${qs}`, {
       method: "POST",
       headers: { "Content-Type": "image/jpeg" },
-      body: new Uint8Array(buf),
+      body: new Uint8Array(uploadBuf),
       signal: AbortSignal.timeout(60_000),
     });
     if (!upload.ok) throw new Error(`HTTP ${upload.status}`);

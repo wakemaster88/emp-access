@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { isWithinSchedule } from "@/lib/schedule";
 
@@ -185,3 +186,9 @@ export async function loadEmployeeByMobileToken(
     contractReason,
   };
 }
+
+/**
+ * Pro Request gecachte Variante fuer Layout, Metadata und Seite von
+ * /m/[token] – sonst laeuft dieselbe Abfrage dreimal.
+ */
+export const loadEmployeeByMobileTokenCached = cache(loadEmployeeByMobileToken);

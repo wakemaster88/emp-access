@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Bell, BellOff, Send, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -16,7 +17,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return output;
 }
 
-type Support = "checking" | "supported" | "unsupported" | "not-configured";
+type Support = "checking" | "supported" | "unsupported" | "not-configured" | "needs-install";
 
 export function PushCard() {
   const [support, setSupport] = useState<Support>("checking");
@@ -28,6 +29,15 @@ export function PushCard() {
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
 
   const refresh = useCallback(async () => {
+    // iPhone/iPad koennen Push nur als installierte Home-Bildschirm-App.
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (ios && !standalone) {
+      setSupport("needs-install");
+      return;
+    }
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       setSupport("unsupported");
       return;
@@ -136,10 +146,23 @@ export function PushCard() {
         )}
 
         {support === "unsupported" && (
-          <p className="text-sm text-slate-500">
-            Dieser Browser unterstützt keine Push-Benachrichtigungen. Auf iPhone/iPad:
-            Seite über Safari zum Home-Bildschirm hinzufügen und die App von dort öffnen.
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-slate-500">
+              Dieser Browser unterstützt hier keine Push-Benachrichtigungen. Auf iPhone und iPad
+              geht es nur als installierte App:
+            </p>
+            <InstallPrompt variant="inline" />
+          </div>
+        )}
+
+        {support === "needs-install" && (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-500">
+              Auf iPhone und iPad gibt es Push-Benachrichtigungen nur als installierte App.
+              Danach hier erneut aktivieren.
+            </p>
+            <InstallPrompt variant="inline" />
+          </div>
         )}
 
         {support === "not-configured" && (

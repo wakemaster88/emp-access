@@ -1,6 +1,6 @@
 import { execFile, execSync } from "node:child_process";
 import { promisify } from "node:util";
-import { CONFIG, log } from "./config.js";
+import { CONFIG, gitHubCodeRevision, gitVersion, log } from "./config.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -13,28 +13,17 @@ async function git(args: string[]): Promise<string> {
 }
 
 /**
- * Laeuft dieser Prozess noch auf dem Commit, der ausgecheckt ist?
- *
- * `CONFIG.version` wird beim Start einmal ermittelt. Wandert der Checkout
- * danach weiter – lokaler Commit auf der Entwicklermaschine, manuelles
- * `git pull` auf einem Hub – dann arbeitet der Prozess mit altem Code und
- * meldet trotzdem eine Version, die niemand mehr faehrt.
- */
-function startedOnCommit(headSha: string): boolean {
-  const started = CONFIG.version;
-  // "unknown" oder verdaechtig kurz: keine belastbare Aussage, nicht neu starten.
-  if (!started || started === "unknown" || started.length < 7) return true;
-  return headSha.startsWith(started);
-}
-
-/**
  * Selbst-Update ueber GitHub: Hub-Maschinen sind reine Deployment-Targets und
  * sollen exakt origin/main fahren. Lokale Aenderungen (z. B. Webcam-IP in
  * go2rtc.yaml ohne erfolgreichen Push) duerfen Updates nicht blockieren.
  *
- * Ablauf: fetch → bei Abweichung reset --hard → npm install → exit
- * (launchd KeepAlive startet neu). git fetch ist async, damit DoorBird-
- * Monitor und Polls nicht einfrieren.
+ * Ablauf: fetch → bei Abweichung reset --hard. Neu gestartet wird nur, wenn
+ * sich unter hub/ etwas geaendert hat – ein Commit, der allein die Cloud
+ * betrifft, laesst den Hub weiterlaufen (frueher startete jeder Push alle
+ * Hubs neu). Der Checkout wird trotzdem nachgezogen, damit der Heartbeat den
+ * aktuellen Stand meldet.
+ *
+ * git fetch ist async, damit DoorBird-Monitor und Polls nicht einfrieren.
  */
 export async function checkForUpdate(): Promise<void> {
   try {
@@ -47,14 +36,20 @@ export async function checkForUpdate(): Promise<void> {
       if (dirty) {
         log(`Update: lokale Aenderungen werden verworfen:\n${dirty}`);
       }
-      log(`Update gefunden: ${head.slice(0, 7)} -> ${remote.slice(0, 7)}. reset --hard + Neustart …`);
+      log(`Update gefunden: ${head.slice(0, 7)} -> ${remote.slice(0, 7)}. reset --hard …`);
       await git(["reset", "--hard", "origin/main"]);
-    } else if (!startedOnCommit(head)) {
-      log(`Checkout ist weiter als der laufende Prozess (${CONFIG.version} -> ${head.slice(0, 7)}). Neustart …`);
-    } else {
+      CONFIG.version = gitVersion();
+    }
+
+    // Neustart nur, wenn der laufende Prozess einen anderen hub/-Stand hat
+    // als der Checkout – egal ob durch dieses Update oder ein manuelles pull.
+    const hubRev = gitHubCodeRevision();
+    if (hubRev === "unknown" || hubRev === CONFIG.hubCodeRevision) {
+      if (head !== remote) log("Update betrifft nur die Cloud – Hub laeuft ohne Neustart weiter.");
       return;
     }
 
+    log(`Hub-Code geaendert (${CONFIG.hubCodeRevision.slice(0, 7)} -> ${hubRev.slice(0, 7)}): npm install + Neustart …`);
     execSync("npm install --no-audit --no-fund", { cwd: CONFIG.hubDir, stdio: "inherit" });
     log("Neuer Stand installiert – Prozess wird beendet (launchd startet neu).");
     process.exit(0);

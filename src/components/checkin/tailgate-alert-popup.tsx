@@ -13,7 +13,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
  * per Klick, damit es nicht unbemerkt verschwindet, waehrend jemand kassiert.
  */
 
-const POLL_MS = 4000;
+const POLL_MS = 6000;
 
 interface AlertImage {
   position: number;

@@ -127,7 +127,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
       <Card className="w-full max-w-md border-slate-200 dark:border-slate-800 shadow-xl">
         <CardHeader className="text-center pb-2">
           <Image src="/logo.png" alt="EMP Access" width={80} height={80} className="mx-auto mb-4 dark:hidden" priority />
@@ -146,12 +146,17 @@ export default function LoginPage() {
                   id="email"
                   name="email"
                   type="email"
+                  inputMode="email"
                   placeholder="admin@example.de"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus
                   autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="next"
                 />
               </div>
               <div className="space-y-2">
@@ -165,6 +170,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
+                  enterKeyHint="go"
                 />
               </div>
               {error && (
@@ -198,6 +204,10 @@ export default function LoginPage() {
                   required
                   autoFocus
                   autoComplete="one-time-code"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="go"
                   className="text-center text-lg tracking-[0.3em] font-mono"
                 />
               </div>

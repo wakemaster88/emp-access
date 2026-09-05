@@ -18,29 +18,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   return NextResponse.json(
     {
+      id: `/m/${token}`,
       name: `${displayName} · ${account}`,
       short_name: shortName,
       description: `Mobile Zugangskontrolle fuer ${displayName}`,
       start_url: `/m/${token}`,
       scope: `/m/${token}`,
       display: "standalone",
+      display_override: ["standalone"],
       orientation: "portrait",
       background_color: "#0f172a",
       theme_color: "#4f46e5",
       lang: "de",
       icons: [
-        {
-          src: "/icon-192.png",
-          sizes: "192x192",
-          type: "image/png",
-          purpose: "any maskable",
-        },
-        {
-          src: "/icon-512.png",
-          sizes: "512x512",
-          type: "image/png",
-          purpose: "any maskable",
-        },
+        { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: "/icon-192-maskable.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+        { src: "/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
       ],
     },
     {

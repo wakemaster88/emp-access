@@ -4,7 +4,6 @@ import { signOut, useSession } from "next-auth/react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { SessionProvider } from "next-auth/react";
 import { DashboardShellInner } from "@/components/layout/dashboard-shell-inner";
-import { SwRegister } from "@/components/layout/sw-register";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -36,7 +35,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <SwRegister />
       <DashboardShell>{children}</DashboardShell>
     </SessionProvider>
   );

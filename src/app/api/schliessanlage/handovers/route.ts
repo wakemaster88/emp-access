@@ -73,11 +73,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Raw `prisma.$transaction`, weil der tenantClient jede Query in eine eigene
-  // Transaktion wrappt – RLS setzen wir hier als erstes Statement selbst.
+  // Roher Client in einer Transaktion; alle Filter tragen den accountId.
   const handover = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
-
     const created = await tx.keyHandover.create({
       data: {
         accountId,

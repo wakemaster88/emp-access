@@ -94,15 +94,34 @@ export async function editMessageCaption(
   return res.json();
 }
 
+import { createHmac } from "node:crypto";
+
+/**
+ * Geheimnis, das Telegram bei jedem Webhook-Aufruf im Header
+ * `X-Telegram-Bot-Api-Secret-Token` mitschickt. Abgeleitet aus Bot-Token und
+ * AUTH_SECRET, damit nichts extra gespeichert werden muss und das Bot-Token
+ * selbst nicht mehr in der Webhook-URL steht. Telegram erlaubt 1–256 Zeichen
+ * aus A–Z, a–z, 0–9, `_` und `-`; base64url passt genau.
+ */
+export function telegramWebhookSecret(botToken: string): string {
+  const key = process.env.TWO_FACTOR_KEY || process.env.AUTH_SECRET || "";
+  return createHmac("sha256", key).update(`telegram-webhook:${botToken}`).digest("base64url");
+}
+
 /** Webhook für Bot-Updates registrieren (Callback-Buttons). */
 export async function setTelegramWebhook(
   botToken: string,
-  url: string
+  url: string,
+  secretToken?: string,
 ): Promise<{ ok: boolean; description?: string }> {
   const res = await fetch(`${BASE}${botToken}/setWebhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, allowed_updates: ["callback_query", "message"] }),
+    body: JSON.stringify({
+      url,
+      allowed_updates: ["callback_query", "message"],
+      ...(secretToken ? { secret_token: secretToken } : {}),
+    }),
   });
   return res.json();
 }

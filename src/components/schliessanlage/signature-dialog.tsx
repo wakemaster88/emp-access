@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import QRCode from "qrcode";
 import { CheckCircle2, Copy, FileDown, Loader2, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,12 +25,15 @@ function TokenQr({ url }: { url: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, url, {
-      width: 220,
-      margin: 1,
-      color: { dark: "#1e293b", light: "#ffffff" },
-    });
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    void import("qrcode").then((m) =>
+      m.default.toCanvas(canvas, url, {
+        width: 220,
+        margin: 1,
+        color: { dark: "#1e293b", light: "#ffffff" },
+      }),
+    );
   }, [url]);
 
   return <canvas ref={canvasRef} className="rounded-md bg-white p-1" />;

@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { MobileMenuProvider, useMobileMenu } from "@/components/layout/mobile-menu-context";
+import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 import { cn } from "@/lib/utils";
 
 interface DashboardShellInnerProps {
@@ -33,15 +34,17 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
       {/* Mobile: Sheet with sidebar */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent side="left" className="w-[280px] max-w-[85vw] p-0 gap-0 bg-slate-900 border-slate-800" showCloseButton={true}>
-          <div className="pt-[env(safe-area-inset-top)] overflow-y-auto h-full">
+          <div className="pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] overflow-y-auto h-full">
             <Sidebar userName={userName} role={role} onSignOut={onSignOut} onNavigate={() => setMobileMenuOpen(false)} />
           </div>
         </SheetContent>
       </Sheet>
 
-      <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto bg-slate-50 dark:bg-slate-950">
+      <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto bg-slate-50 dark:bg-slate-950 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
         {children}
       </main>
+
+      <MobileTabBar />
     </>
   );
 }

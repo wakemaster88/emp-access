@@ -40,10 +40,8 @@ export async function POST(request: NextRequest) {
   const version = (latest?.version ?? 0) + 1;
   const isActive = data.isActive ?? true;
 
-  // Raw `prisma.$transaction` mit manuellem RLS (siehe lib/prisma.ts).
+  // Roher Client in einer Transaktion; alle Filter tragen den accountId.
   const policy = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
-
     if (isActive) {
       await tx.keyPolicyTemplate.updateMany({
         where: { accountId, name },

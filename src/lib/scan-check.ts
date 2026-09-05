@@ -241,7 +241,6 @@ export async function performScanCheck({
 
         const redeemed = await prisma
           .$transaction(async (tx) => {
-            await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
             const newTicket = await tx.ticket.create({
               data: {
                 name: voucher.ticketTypeName ?? "Gutschein-Ticket",
@@ -533,7 +532,6 @@ export async function performScanCheck({
     scanHitsMainResource;
 
   const txResult = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${String(accountId)}, TRUE)`;
     if (shouldRedeem) {
       const data: { status: "REDEEMED"; version: { increment: number }; firstScanAt?: Date } = {
         status: "REDEEMED",

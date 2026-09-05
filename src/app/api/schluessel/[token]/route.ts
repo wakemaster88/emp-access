@@ -4,6 +4,7 @@ import { buildKeyProtocolPdf, type KeySnapshot, type PolicySnapshot } from "@/li
 import { clientIp } from "@/lib/key-signature";
 import { isPlausibleSignatureToken, signatureState } from "@/lib/keying";
 import { keySignatureSubmitSchema } from "@/lib/validators";
+import { storePdfColumn } from "@/lib/blob-store";
 
 /**
  * Oeffentliche Signaturseite der Schliessanlage (QR-Link).
@@ -29,6 +30,7 @@ async function loadSignature(token: string) {
       keySnapshot: true,
       signatureImage: true,
       handoverId: true,
+      accountId: true,
       account: { select: { name: true } },
     },
   });
@@ -102,6 +104,9 @@ export async function POST(
     signerIp: ip,
   });
 
+  // PDF in den Blob-Speicher (Fallback: Bytes in der Spalte `pdf`).
+  const storedPdf = await storePdfColumn(signature.accountId, new Uint8Array(pdf));
+
   // Bedingtes Update: falls zwei Geraete gleichzeitig absenden, gewinnt das
   // erste und das zweite bekommt 409 statt eines ueberschriebenen Dokuments.
   const claimed = await prisma.keySignature.updateMany({
@@ -112,7 +117,7 @@ export async function POST(
       signedAt,
       signerIp: ip,
       signerUserAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
-      pdf: Buffer.from(pdf),
+      ...storedPdf,
     },
   });
 

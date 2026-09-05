@@ -7,7 +7,9 @@ export function hasApiToken(request: NextRequest) {
 }
 
 type CachedAccount = { id: number; isActive: boolean };
-type CacheEntry = { account: CachedAccount | null; expiresAt: number };
+/** Geraet, wenn das Token ein Geraete-Token ist (Device.apiToken). */
+type CachedDevice = { id: number; type: string; isActive: boolean };
+type CacheEntry = { account: CachedAccount | null; device: CachedDevice | null; expiresAt: number };
 
 // In-Memory-Cache fuer API-Token-Lookups. Reduziert pro warmer Function-
 // Instanz die Anzahl der Account-Lookups massiv (Pi-Heartbeats pollen alle
@@ -29,7 +31,7 @@ function cacheGet(token: string): CacheEntry | null {
   return entry;
 }
 
-function cacheSet(token: string, account: CachedAccount | null) {
+function cacheSet(token: string, account: CachedAccount | null, device: CachedDevice | null) {
   if (tokenCache.size >= TOKEN_CACHE_MAX_ENTRIES) {
     // Einfaches LRU-Surrogat: aelteste Eintraege rauswerfen.
     const firstKey = tokenCache.keys().next().value;
@@ -37,6 +39,7 @@ function cacheSet(token: string, account: CachedAccount | null) {
   }
   tokenCache.set(token, {
     account,
+    device,
     expiresAt: Date.now() + (account ? TOKEN_CACHE_TTL_OK_MS : TOKEN_CACHE_TTL_FAIL_MS),
   });
 }
@@ -46,7 +49,38 @@ export function _clearApiTokenCache() {
   tokenCache.clear();
 }
 
-export async function validateApiToken(request: NextRequest) {
+async function lookupToken(token: string): Promise<{ account: CachedAccount | null; device: CachedDevice | null }> {
+  const account = await prisma.account.findUnique({
+    where: { apiToken: token },
+    select: { id: true, isActive: true },
+  });
+  if (account) return { account, device: null };
+
+  // Geraete-Token: gilt nur fuer das eine Geraet und nur auf den
+  // Geraete-Endpunkten (siehe `allowDevice`). Ein Pi, der abhanden kommt,
+  // gibt damit nicht mehr die ganze Account-API preis.
+  const device = await prisma.device.findUnique({
+    where: { apiToken: token },
+    select: { id: true, type: true, isActive: true, account: { select: { id: true, isActive: true } } },
+  });
+  if (!device) return { account: null, device: null };
+  return {
+    account: { id: device.account.id, isActive: device.account.isActive },
+    device: { id: device.id, type: device.type, isActive: device.isActive },
+  };
+}
+
+/**
+ * Account-API-Token (Bearer oder `?token=`) pruefen.
+ *
+ * `allowDevice: true` laesst zusaetzlich Geraete-Token zu; der Aufrufer muss
+ * dann `device.id` gegen das angesprochene Geraet pruefen. Ohne die Option
+ * wird ein Geraete-Token abgewiesen.
+ */
+export async function validateApiToken(
+  request: NextRequest,
+  options: { allowDevice?: boolean } = {},
+) {
   const token =
     request.headers.get("authorization")?.replace("Bearer ", "") ??
     request.nextUrl.searchParams.get("token");
@@ -57,21 +91,43 @@ export async function validateApiToken(request: NextRequest) {
 
   const cached = cacheGet(token);
   let account: CachedAccount | null;
+  let device: CachedDevice | null;
   if (cached) {
     account = cached.account;
+    device = cached.device;
   } else {
-    account = await prisma.account.findUnique({
-      where: { apiToken: token },
-      select: { id: true, isActive: true },
-    });
-    cacheSet(token, account);
+    ({ account, device } = await lookupToken(token));
+    cacheSet(token, account, device);
   }
 
   if (!account || !account.isActive) {
     return { error: NextResponse.json({ error: "Invalid API token" }, { status: 403 }) };
   }
 
-  return { account, db: tenantClient(account.id) };
+  if (device && !options.allowDevice) {
+    return {
+      error: NextResponse.json(
+        { error: "Geräte-Token gilt nur für die Geräte-Endpunkte (/api/devices/pi, /api/devices/audio)" },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { account, db: tenantClient(account.id), device };
+}
+
+/**
+ * 403, wenn ein Geraete-Token ein anderes Geraet anspricht als sein eigenes;
+ * sonst null. Account-Token duerfen alle Geraete des Accounts.
+ */
+export function deviceTokenMismatch(
+  auth: { device: CachedDevice | null },
+  deviceId: number,
+): NextResponse | null {
+  if (auth.device && auth.device.id !== deviceId) {
+    return NextResponse.json({ error: "Token gehört zu einem anderen Gerät" }, { status: 403 });
+  }
+  return null;
 }
 
 export async function getSessionWithDb() {

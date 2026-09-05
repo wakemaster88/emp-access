@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,11 +53,14 @@ export function TwoFactorCard({
 
   useEffect(() => {
     if (stage !== "verify" || !setup || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, setup.url, {
-      width: 208,
-      margin: 1,
-      color: { dark: "#0f172a", light: "#ffffff" },
-    });
+    const canvas = canvasRef.current;
+    void import("qrcode").then((m) =>
+      m.default.toCanvas(canvas, setup.url, {
+        width: 208,
+        margin: 1,
+        color: { dark: "#0f172a", light: "#ffffff" },
+      }),
+    );
   }, [stage, setup]);
 
   function resetInputs() {

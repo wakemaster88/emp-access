@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SwRegister } from "@/components/layout/sw-register";
+import { appleStartupImages } from "@/lib/pwa-splash";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -12,6 +14,8 @@ export const viewport: Viewport = {
   maximumScale: 5,
   minimumScale: 1,
   viewportFit: "cover",
+  // Android/Chrome: Tastatur verkleinert den Viewport statt ihn zu ueberdecken.
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
@@ -26,6 +30,9 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "default",
     title: "EMP Access",
+    // Ohne passendes Startbild zeigt iOS beim Start einer Home-Bildschirm-App
+    // nur Weiss. Die PNGs erzeugt `npx tsx scripts/gen-pwa-assets.ts`.
+    startupImage: appleStartupImages(),
   },
   formatDetection: {
     telephone: false,
@@ -50,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
           </TooltipProvider>
         </ThemeProvider>
+        <SwRegister />
       </body>
     </html>
   );

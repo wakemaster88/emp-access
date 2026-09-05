@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { validateApiToken } from "@/lib/api-auth";
+import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
 import { piStatusSchema } from "@/lib/validators";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
 
@@ -71,13 +71,15 @@ function ifNoneMatchMatches(headerValue: string | null, etag: string): boolean {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await validateApiToken(request);
+  const auth = await validateApiToken(request, { allowDevice: true });
   if ("error" in auth) return auth.error;
 
   const piId = request.nextUrl.searchParams.get("id");
   if (!piId) {
     return NextResponse.json({ error: "Missing id parameter" }, { status: 400 });
   }
+  const mismatch = deviceTokenMismatch(auth, Number(piId));
+  if (mismatch) return mismatch;
 
   const { db } = auth;
   const device = await db.device.findFirst({
@@ -113,7 +115,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await validateApiToken(request);
+  const auth = await validateApiToken(request, { allowDevice: true });
   if ("error" in auth) return auth.error;
 
   const body = await request.json();
@@ -129,6 +131,11 @@ export async function POST(request: NextRequest) {
   > = [];
 
   for (const update of parsed.data) {
+    // Ein Geraete-Token darf nur den eigenen Zustand melden.
+    if (auth.device && auth.device.id !== update.pis_id) {
+      results.push({ pis_id: update.pis_id, updated: false });
+      continue;
+    }
     // 1 Read: kompletter Pi-State + task fuer die "Task=1 → 0" Entscheidung.
     const current = await db.device.findFirst({
       where: { id: update.pis_id, type: "RASPBERRY_PI" },

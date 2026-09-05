@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobRow, ZoneStatus } from "./types";
 
 /** Zonen ändern ihren Zustand im Sekundenbereich – häufiger als andere Module. */
-const POLL_MS = 8_000;
+const POLL_MS = 15_000;
 
 interface AudioStatus {
   zones: Map<number, ZoneStatus>;

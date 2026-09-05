@@ -1,26 +1,28 @@
 {
+  "id": "/",
   "name": "EMP Access",
   "short_name": "EMP Access",
   "description": "Zugangskontrolle für Drehkreuze, Türen und Smart Relays",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone"],
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "orientation": "any",
-  "scope": "/",
   "lang": "de",
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Live Monitor", "short_name": "Monitor", "url": "/monitor?source=pwa", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Scanner", "short_name": "Scanner", "url": "/scanner?source=pwa", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Tickets", "short_name": "Tickets", "url": "/tickets?source=pwa", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Geräte", "short_name": "Geräte", "url": "/devices?source=pwa", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
   ]
 }

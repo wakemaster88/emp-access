@@ -4,6 +4,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { clearLoginThrottle, hitLoginThrottle } from "@/lib/login-throttle";
 import { isTwoFactorActive, isTwoFactorLocked } from "@/lib/two-factor";
+import {
+  DUMMY_PASSWORD_HASH,
+  isLoginLocked,
+  loginRetryAfterSec,
+  registerLoginFailure,
+} from "@/lib/login-lockout";
 
 /**
  * Sagt dem Login-Formular nach der Passworteingabe, ob noch ein zweiter Faktor
@@ -12,6 +18,9 @@ import { isTwoFactorActive, isTwoFactorLocked } from "@/lib/two-factor";
  *
  * Die Antwort verraet nichts, was ein Angreifer nicht ohnehin am regulaeren
  * Login ablesen koennte: ob das Passwort stimmt, sieht er dort genauso.
+ *
+ * Zwei Bremsen: die In-Memory-Bremse pro Instanz (IP + E-Mail) und die
+ * Sperre am Admin-Datensatz nach zu vielen falschen Passwoertern.
  */
 
 const schema = z.object({
@@ -19,14 +28,21 @@ const schema = z.object({
   password: z.string().min(1),
 });
 
-// Damit ein unbekanntes Konto nicht spuerbar schneller antwortet als ein
-// bekanntes, laeuft auch dann ein echter bcrypt-Vergleich (gegen ein Passwort,
-// das niemand kennt) mit denselben Kosten wie ein regulaerer Login.
-const DUMMY_HASH = "$2b$12$tPNA94P44gf5rC3TNFFr/OMt4HF6aef5QS33gm5HpP6V43cURutca";
-
 function clientKey(request: NextRequest, email: string): string {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   return `${ip}|${email.toLowerCase()}`;
+}
+
+function lockedResponse(retryAfterSec: number) {
+  const minutes = Math.max(1, Math.ceil(retryAfterSec / 60));
+  return NextResponse.json(
+    {
+      error: `Konto vorübergehend gesperrt. Bitte in ${minutes} Minute${minutes === 1 ? "" : "n"} erneut versuchen.`,
+      locked: true,
+      retryAfterSec,
+    },
+    { status: 423, headers: { "Retry-After": String(retryAfterSec) } },
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -53,15 +69,24 @@ export async function POST(request: NextRequest) {
   const admin = await prisma.admin.findUnique({
     where: { email: parsed.data.email },
     select: {
+      id: true,
       password: true,
+      loginFailures: true,
+      loginLockedUntil: true,
       twoFactorSecret: true,
       twoFactorEnabledAt: true,
       twoFactorLockedUntil: true,
     },
   });
 
-  const valid = await compare(parsed.data.password, admin?.password ?? DUMMY_HASH);
+  const now = new Date();
+  if (admin && isLoginLocked(admin, now)) {
+    return lockedResponse(loginRetryAfterSec(admin, now));
+  }
+
+  const valid = await compare(parsed.data.password, admin?.password ?? DUMMY_PASSWORD_HASH);
   if (!admin || !valid) {
+    if (admin) await registerLoginFailure(admin, now);
     return NextResponse.json({ ok: false });
   }
 
@@ -70,7 +95,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, twoFactor: false });
   }
 
-  const now = new Date();
   if (isTwoFactorLocked(admin, now)) {
     return NextResponse.json({
       ok: true,

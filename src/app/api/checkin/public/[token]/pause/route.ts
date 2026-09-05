@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicRateLimit } from "@/lib/rate-limit";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -38,6 +39,8 @@ export async function POST(
 ) {
   try {
     const { token } = await params;
+    const limited = publicRateLimit(token, "checkin-pause");
+    if (limited) return limited;
     const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
     if (!monitor || !monitor.isActive || monitor.type !== "CHECKIN") {
       return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });

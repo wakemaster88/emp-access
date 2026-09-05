@@ -6,8 +6,13 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 
 ## Was er kann
 
-- **Heartbeat**: alle 30 s zur Cloud; bei offenen Tasks verkürzt sich der
-  Task-Poll auf 1 s.
+- **Heartbeat**: alle 60 s zur Cloud; Task-Poll alle 5 s, bei offenen Tasks
+  verkürzt er sich auf 1 s.
+- **Updates ohne Neustart**: Ein Push auf `main`, der nur die Cloud betrifft,
+  zieht den Checkout nach, startet den Hub aber nicht neu. Neu gestartet wird
+  nur, wenn sich unter `hub/` etwas geändert hat.
+- **Bilder** gehen verkleinert in die Cloud (1280 px, Personen 1600 px); das
+  Original bleibt lokal für Gesichts- und Kennzeichen-Pipeline.
 - **Task-Queue**: pollt offene Tasks, arbeitet zeitkritische parallel
   (`SCAN_SNAPSHOT`, Türöffner, PTZ, Snapshots). `NETWORK_SCAN` läuft im
   Hintergrund und blockiert die Queue nicht.

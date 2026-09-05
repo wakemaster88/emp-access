@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { loadEmployeeByMobileToken } from "@/lib/employee-access";
+import { loadEmployeeByMobileTokenCached as loadEmployeeByMobileToken } from "@/lib/employee-access";
 import { MobileAccessClient } from "@/components/employees/mobile-pwa-client";
 
 interface PageProps {

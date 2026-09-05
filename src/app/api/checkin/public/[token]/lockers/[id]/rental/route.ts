@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -72,6 +73,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string; id: string }> }
 ) {
   const { token, id } = await params;
+  const limited = publicRateLimit(token, "checkin-locker-rental");
+  if (limited) return limited;
   const monitor = await resolveMonitor(token);
   if (!monitor) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
@@ -158,6 +161,8 @@ export async function DELETE(
   { params }: { params: Promise<{ token: string; id: string }> }
 ) {
   const { token, id } = await params;
+  const limited = publicRateLimit(token, "checkin-locker-rental");
+  if (limited) return limited;
   const monitor = await resolveMonitor(token);
   if (!monitor) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { publicRateLimit } from "@/lib/rate-limit";
 import type { PrismaClient } from "@prisma/client";
 import { prisma, tenantClient } from "@/lib/prisma";
 import { performScanCheck } from "@/lib/scan-check";
@@ -12,6 +13,8 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
+  const limited = publicRateLimit(token, "scanner-scan-check");
+  if (limited) return limited;
 
   const monitor = await prisma.monitorConfig.findUnique({ where: { token } });
   if (!monitor || !monitor.isActive || monitor.type !== "SCANNER") {

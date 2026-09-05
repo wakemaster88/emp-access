@@ -18,6 +18,7 @@ export async function GET() {
       area: { select: { id: true, name: true, sortOrder: true, vlanId: true } },
     },
     orderBy: { name: "asc" },
+    take: 2000,
   });
   return NextResponse.json(clients);
 }

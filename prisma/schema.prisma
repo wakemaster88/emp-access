@@ -108,7 +108,7 @@ model Account {
   id                   Int                   @id @default(autoincrement())
   subdomain            String                @unique
   name                 String
-  apiToken             String                @unique @default(cuid())
+  apiToken             String                @unique
   isActive             Boolean               @default(true)
   // Standort für Sonnenauf-/-untergangs-Automationen (Default: Berlin).
   latitude             Float?
@@ -208,6 +208,11 @@ model Admin {
   twoFactorFailures      Int       @default(0)
   twoFactorLockedUntil   DateTime?
 
+  /// Fehlgeschlagene Passwort-Anmeldungen; nach LOGIN_MAX_FAILURES
+  /// (src/lib/account-security.ts) ist das Konto fuer LOGIN_LOCK_MINUTES gesperrt.
+  loginFailures          Int       @default(0)
+  loginLockedUntil       DateTime?
+
   @@index([accountId])
   @@index([email])
 }
@@ -216,6 +221,10 @@ model Device {
   id                   Int                  @id @default(autoincrement())
   name                 String
   type                 DeviceType
+  /// Geraete-eigenes Token fuer Scanner- und Audio-Pis. Gilt nur fuer die
+  /// Geraete-Endpunkte (/api/devices/pi, /api/devices/audio) und nur fuer
+  /// dieses Geraet. Null = Geraet nutzt noch das Account-Token.
+  apiToken             String?              @unique
   category             DeviceCategory?
   ipAddress            String?
   shellyId             String?
@@ -483,8 +492,10 @@ model ScanSnapshot {
   scan       Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
   cameraId   Int?
   camera     Camera?  @relation(fields: [cameraId], references: [id], onDelete: SetNull)
-  /// JPEG-Bilddaten.
-  image      Bytes
+  /// JPEG-Bilddaten – nur noch fuer Altbestand; neue Bilder liegen im
+  /// Blob-Speicher (`blobPathname`). `scripts/migrate-images-to-blob.ts` zieht um.
+  image      Bytes?
+  blobPathname String?
   /// Zeitpunkt der Aufnahme durch den Hub.
   capturedAt DateTime @default(now())
   accountId  Int
@@ -493,6 +504,7 @@ model ScanSnapshot {
 
   @@index([accountId])
   @@index([cameraId])
+  @@index([blobPathname])
 }
 
 model AccessArea {
@@ -768,7 +780,7 @@ model SlotBlock {
 model MonitorConfig {
   id               Int      @id @default(autoincrement())
   name             String
-  token            String   @unique @default(cuid())
+  token            String   @unique
   type             String   @default("MONITOR") // MONITOR | CHECKIN | RESOURCE_MONITOR | SCANNER
   deviceIds        Json     @default("[]")
   // Optionale Bereichs-Eingrenzung fuer Scan-Monitore (Typ MONITOR), deren
@@ -851,11 +863,13 @@ model MonitorAlertImage {
   position  Int          @default(0)
   /// Woher das Bild stammt, z. B. der Kameraname.
   label     String?
-  /// JPEG-Bilddaten.
-  image     Bytes
+  /// JPEG-Bilddaten – nur Altbestand, neue Bilder liegen im Blob-Speicher.
+  image     Bytes?
+  blobPathname String?
   createdAt DateTime     @default(now())
 
   @@unique([alertId, position])
+  @@index([blobPathname])
 }
 
 // ── Email-Automationen ───────────────────────────────────────────────────────
@@ -1055,6 +1069,9 @@ model TelegramConfig {
   isActive        Boolean  @default(true)
   dailyReport     Boolean  @default(true)
   dailyReportTime String   @default("20:00") // HH:mm Berlin time
+  /// Wann der letzte Tagesbericht rausging – verhindert Doppelversand und
+  /// erlaubt das Nachholen bei verspaetetem Cron-Tick.
+  dailyReportLastSentAt DateTime?
   accountId       Int
   account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
@@ -1664,6 +1681,8 @@ model VehicleSighting {
   shellyOk         Boolean?
   /// Schnappschuss bei Fahrzeugerkennung (JPEG).
   snapshot         Bytes?
+  /// Pfad im Blob-Speicher; gesetzt statt `snapshot` bei neuen Sichtungen.
+  snapshotBlob     String?
   seenAt           DateTime        @default(now())
   createdAt        DateTime        @default(now())
 
@@ -1671,6 +1690,7 @@ model VehicleSighting {
   @@index([cameraId, seenAt])
   @@index([plateNormalized])
   @@index([allowedVehicleId])
+  @@index([snapshotBlob])
 }
 
 /// Person auf White- oder Blacklist (z. B. VIP / Hausverbot).
@@ -1750,6 +1770,8 @@ model PersonSighting {
   notes           String?
   /// Schnappschuss bei klarer Personen-/Gesichtserkennung (JPEG).
   snapshot        Bytes?
+  /// Pfad im Blob-Speicher; gesetzt statt `snapshot` bei neuen Sichtungen.
+  snapshotBlob    String?
   seenAt          DateTime      @default(now())
   createdAt       DateTime      @default(now())
 
@@ -1757,6 +1779,7 @@ model PersonSighting {
   @@index([cameraId, seenAt])
   @@index([listedPersonId])
   @@index([listType, seenAt])
+  @@index([snapshotBlob])
 }
 
 /// Bewegungs-/KI-Ereignis einer Kamera, vom Hub per Polling gemeldet.
@@ -2362,12 +2385,15 @@ model KeySignature {
   signerUserAgent  String?
   /// Archiviertes PDF, wird beim Signieren erzeugt.
   pdf              Bytes?
+  /// Pfad des PDF im Blob-Speicher; gesetzt statt `pdf` bei neuen Protokollen.
+  pdfBlob          String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
   @@index([accountId])
   @@index([handoverId])
   @@index([token])
+  @@index([pdfBlob])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
