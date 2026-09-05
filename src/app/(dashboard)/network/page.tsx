@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/header";
 import { Card, CardContent } from "@/components/ui/card";
 import { NetworkTabs } from "@/components/network/network-tabs";
 import { HubLogButton } from "@/components/network/hub-log-button";
+import { HubRestartButton } from "@/components/network/hub-restart-button";
 import { Badge } from "@/components/ui/badge";
 import { Network, Server, EthernetPort, Cable, Cpu } from "lucide-react";
 import { macVendor, isVirtualMac } from "@/lib/oui";
@@ -213,7 +214,19 @@ export default async function NetworkPage() {
                   })}
                 </div>
               </div>
-              <HubLogButton hubName={hubAgents.length === 1 ? hubAgents[0].name : undefined} />
+              <div className="flex flex-wrap items-center gap-2">
+                <HubLogButton hubName={hubAgents.length === 1 ? hubAgents[0].name : undefined} />
+                <HubRestartButton
+                  service="tracker"
+                  label="Tracker neu starten"
+                  confirmText="Den YOLO-Tracker auf dem Hub jetzt neu starten? Personenzähler und Parkplatz-Tracker setzen für einige Sekunden aus."
+                />
+                <HubRestartButton
+                  service="hub"
+                  label="Hub neu starten"
+                  confirmText="Den Hub-Prozess jetzt neu starten? Kameras, DoorBird und Kennzeichen-Erkennung sind für etwa 10 Sekunden nicht aktiv."
+                />
+              </div>
             </CardContent>
           </Card>
         )}

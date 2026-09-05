@@ -27,9 +27,13 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
   entscheidet der YOLO-Tracker, ob überhaupt ein Auto an der Einfahrt steht:
   Boxen unter `HUB_VEHICLE_MIN_AREA` (2 % Bildfläche) oder außerhalb der
   optionalen Zone `HUB_VEHICLE_ZONE` gelten als Hintergrundverkehr.
-- **Log-Abruf**: Task `HUB_LOG` liefert das Ende von `emp-hub.log`,
+- **Log-Abruf**: Task `HUB_LOG` liefert Ausschnitte von `emp-hub.log`,
   `emp-hub.error.log` oder der Diagnose an die Cloud (Netzwerk → Lokaler Hub
-  → „Log abrufen“), mit Zeilenzahl und Filter. Kein SSH nötig.
+  → „Log abrufen“): Dateiende, ab Zeitpunkt (Binärsuche über die
+  Zeitstempel) oder blätternd, mit Zeilenzahl und Filter. Kein SSH nötig.
+- **Dienst-Neustart**: Task `SERVICE_RESTART` startet den YOLO-Tracker
+  (`launchctl kickstart -k`, Label `HUB_TRACKER_LAUNCHD_LABEL`) oder den Hub
+  selbst neu – nur diese beiden, kein freier Befehl.
 - **Parken**: YOLO-Tracker-Zonen (`vehicleGate`) → Cloud.
 - **Streams**: Cloud-Camera ist führend; der Hub schreibt IPs in
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).

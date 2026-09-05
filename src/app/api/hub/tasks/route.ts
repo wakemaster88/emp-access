@@ -18,8 +18,10 @@ const VALID_TASK_TYPES = [
   "CAMERA_SIREN",
   "CAMERA_PTZ_PRESETS",
   "SWITCH_SYNC",
-  // Log-Ende vom Hub abrufen (Netzwerk-Seite, Karte „Lokaler Hub“).
+  // Log-Ausschnitt vom Hub abrufen (Netzwerk-Seite, Karte „Lokaler Hub“).
   "HUB_LOG",
+  // Tracker oder Hub neu starten – der Hub kennt nur diese beiden Dienste.
+  "SERVICE_RESTART",
 ];
 
 /**

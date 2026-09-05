@@ -54,6 +54,11 @@ async function trackerTarget(): Promise<TrackerTarget> {
   return value;
 }
 
+/** Basis-URL des Trackers (für Health-Checks nach einem Neustart). */
+export async function trackerBaseUrl(): Promise<string> {
+  return (await trackerTarget()).url;
+}
+
 /* ---------------------------------------------------------------------------
  * Einfahrtszone: Polygon aus der Umgebung, "x,y;x,y;x,y…" mit Werten 0..1.
  * ------------------------------------------------------------------------- */

@@ -30,6 +30,7 @@ const HIGH_PRIORITY = new Set([
   "CAMERA_SNAPSHOT",
   // Log-Abruf ist ein reiner Dateizugriff und soll nicht hinter einem Scan warten.
   "HUB_LOG",
+  "SERVICE_RESTART",
 ]);
 
 const BACKGROUND_TYPES = new Set(["NETWORK_SCAN", "SWITCH_SYNC"]);

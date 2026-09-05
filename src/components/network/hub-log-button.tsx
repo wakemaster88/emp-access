@@ -10,9 +10,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Copy, FileText, Loader2, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, FileText, Loader2, RefreshCw } from "lucide-react";
 
 type HubLogFile = "hub" | "error" | "improve";
+type HubLogMode = "tail" | "at" | "before" | "after";
 
 interface HubLogResult {
   file: HubLogFile;
@@ -24,6 +25,13 @@ interface HubLogResult {
   scanned: number;
   truncated: boolean;
   grep: string | null;
+  mode: HubLogMode;
+  windowStart: number;
+  windowEnd: number;
+  hasOlder: boolean;
+  hasNewer: boolean;
+  firstTs: string | null;
+  lastTs: string | null;
   hub: string;
   version: string;
   at: string;
@@ -35,6 +43,9 @@ interface TaskRow {
   result: HubLogResult | null;
   error: string | null;
 }
+
+/** Position im Log: Dateiende, ab Zeitpunkt oder Blättern um eine Byte-Position. */
+type Position = { at?: string; before?: number; after?: number };
 
 const FILES: { value: HubLogFile; label: string }[] = [
   { value: "hub", label: "Hub-Log" },
@@ -53,16 +64,30 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatTs(iso: string | null): string {
+  if (!iso) return "–";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("de-DE");
+}
+
+/** Wert für <input type="datetime-local"> in lokaler Zeit. */
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /**
  * „Log abrufen“: legt einen HUB_LOG-Task an, wartet auf das Ergebnis und
- * zeigt die Zeilen an. Der Hub liest nur das Dateiende, deshalb kommt die
- * Antwort in wenigen Sekunden – auch bei einem Log von mehreren MB.
+ * zeigt die Zeilen an. Der Hub liest nur ein Fenster von 1 MB – am Ende, ab
+ * einem Zeitpunkt (Binärsuche über die Zeitstempel) oder blätternd. Deshalb
+ * kommt die Antwort in wenigen Sekunden, auch bei einem Log von 100 MB.
  */
 export function HubLogButton({ hubName }: { hubName?: string }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<HubLogFile>("hub");
   const [lines, setLines] = useState(LINE_OPTIONS[1]);
   const [grep, setGrep] = useState("");
+  const [atInput, setAtInput] = useState(() => toLocalInput(new Date(Date.now() - 3_600_000)));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<HubLogResult | null>(null);
@@ -75,11 +100,13 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
   }, [open]);
 
   useEffect(() => {
-    // Neueste Zeile sichtbar machen.
-    if (result && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
+    // Rückwärts gelesen: neueste Zeile sichtbar machen; vorwärts: oben anfangen.
+    if (!result || !preRef.current) return;
+    const forward = result.mode === "at" || result.mode === "after";
+    preRef.current.scrollTop = forward ? 0 : preRef.current.scrollHeight;
   }, [result]);
 
-  async function fetchLog() {
+  async function fetchLog(position: Position = {}) {
     abort.current = false;
     setLoading(true);
     setError(null);
@@ -90,7 +117,7 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "HUB_LOG",
-          payload: { file, lines, grep: grep.trim() || undefined },
+          payload: { file, lines, grep: grep.trim() || undefined, ...position },
         }),
       });
       if (!created.ok) throw new Error(`Task konnte nicht angelegt werden (HTTP ${created.status})`);
@@ -126,6 +153,15 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
     if (!result && !loading) void fetchLog();
   }
 
+  function fetchAt() {
+    const d = new Date(atInput);
+    if (Number.isNaN(d.getTime())) {
+      setError("Zeitpunkt ungültig");
+      return;
+    }
+    void fetchLog({ at: d.toISOString() });
+  }
+
   async function copyAll() {
     if (!result) return;
     try {
@@ -136,6 +172,13 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
       setCopied(false);
     }
   }
+
+  const modeLabel: Record<HubLogMode, string> = {
+    tail: "Dateiende",
+    at: "ab Zeitpunkt",
+    before: "älterer Abschnitt",
+    after: "neuerer Abschnitt",
+  };
 
   return (
     <>
@@ -149,8 +192,8 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
           <DialogHeader>
             <DialogTitle>Hub-Log{hubName ? ` · ${hubName}` : ""}</DialogTitle>
             <DialogDescription>
-              Das Ende der Logdatei, direkt vom Hub geliefert. Der Hub holt den Auftrag beim
-              nächsten Poll ab, die Antwort dauert einige Sekunden.
+              Direkt vom Hub geliefert: das Dateiende, ein Abschnitt ab Zeitpunkt oder blätternd.
+              Der Hub holt den Auftrag beim nächsten Poll ab, die Antwort dauert einige Sekunden.
             </DialogDescription>
           </DialogHeader>
 
@@ -191,11 +234,11 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
                 if (e.key === "Enter" && !loading) void fetchLog();
               }}
               placeholder="Filter, z. B. ALPR oder Fahrzeug-Burst"
-              className="h-7 w-56 text-xs"
+              className="h-7 w-52 text-xs"
             />
             <Button size="sm" variant="secondary" onClick={() => void fetchLog()} disabled={loading} className="gap-1.5">
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              {loading ? "Warte auf Hub …" : "Neu laden"}
+              {loading ? "Warte auf Hub …" : "Dateiende"}
             </Button>
             <Button size="sm" variant="ghost" onClick={copyAll} disabled={!result} className="gap-1.5">
               <Copy className="h-3.5 w-3.5" />
@@ -203,19 +246,61 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
             </Button>
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs text-muted-foreground" htmlFor="hub-log-at">
+              Ab Zeitpunkt
+            </label>
+            <Input
+              id="hub-log-at"
+              type="datetime-local"
+              value={atInput}
+              onChange={(e) => setAtInput(e.target.value)}
+              className="h-7 w-52 text-xs"
+              disabled={file !== "hub"}
+            />
+            <Button size="sm" variant="secondary" onClick={fetchAt} disabled={loading || file !== "hub"}>
+              Ab hier lesen
+            </Button>
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => result && void fetchLog({ before: result.windowStart })}
+              disabled={loading || !result?.hasOlder}
+              className="gap-1"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Älter
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => result && void fetchLog({ after: result.windowEnd })}
+              disabled={loading || !result?.hasNewer}
+              className="gap-1"
+            >
+              Neuer
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           {result && (
             <p className="text-[11px] text-muted-foreground">
               {result.hub} ({result.version}) · {result.exists ? result.path : "Datei fehlt, Zeilen aus dem Speicher"}
               {result.exists ? ` · ${formatBytes(result.sizeBytes)}` : ""}
-              {result.mtime ? ` · zuletzt ${new Date(result.mtime).toLocaleString("de-DE")}` : ""}
+              {result.mtime ? ` · zuletzt ${formatTs(result.mtime)}` : ""}
+              {" · "}
+              {modeLabel[result.mode]}
+              {result.exists
+                ? ` (Bytes ${formatBytes(result.windowStart)} bis ${formatBytes(result.windowEnd)})`
+                : ""}
               {" · "}
               {result.lines.length} von {result.scanned} Zeilen
               {result.grep ? ` (Filter „${result.grep}“)` : ""}
-              {result.truncated ? " · älteres gekürzt" : ""}
+              {result.truncated ? " · im Fenster gekürzt" : ""}
+              {result.firstTs ? ` · ${formatTs(result.firstTs)} bis ${formatTs(result.lastTs)}` : ""}
             </p>
           )}
 
@@ -226,7 +311,7 @@ export function HubLogButton({ hubName }: { hubName?: string }) {
             {result
               ? result.lines.length > 0
                 ? result.lines.join("\n")
-                : "Keine Zeilen (Filter zu eng oder Log leer)."
+                : "Keine Zeilen (Filter zu eng, Abschnitt leer oder Zeitpunkt hinter dem Dateiende)."
               : loading
                 ? "Warte auf den Hub …"
                 : ""}

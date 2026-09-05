@@ -13,6 +13,7 @@ import {
 } from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
 import { readHubLog } from "./hublog.js";
+import { restartService } from "./services.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 import {
   openDoorbirdDoor,
@@ -206,10 +207,13 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       return { success: true, result: { cameraId, relay, opened: true } };
     }
     case "HUB_LOG": {
-      // Log-Ende in die Cloud liefern (Netzwerk → Lokaler Hub → „Log abrufen“).
+      // Log-Ausschnitt in die Cloud liefern (Netzwerk → Lokaler Hub → „Log abrufen“).
       const result = await readHubLog(task.payload);
       return { success: true, result };
     }
+    case "SERVICE_RESTART":
+      // Tracker per launchctl, Hub per Exit (launchd startet neu) – feste Liste, kein freier Befehl.
+      return restartService(task.payload);
     default:
       return { success: false, error: `Unbekannter Task-Typ: ${task.type}` };
   }
