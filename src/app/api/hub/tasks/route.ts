@@ -18,6 +18,8 @@ const VALID_TASK_TYPES = [
   "CAMERA_SIREN",
   "CAMERA_PTZ_PRESETS",
   "SWITCH_SYNC",
+  // Log-Ende vom Hub abrufen (Netzwerk-Seite, Karte „Lokaler Hub“).
+  "HUB_LOG",
 ];
 
 /**

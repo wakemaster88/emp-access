@@ -90,6 +90,14 @@ function hints(): string[] {
   if (n("vision.fail") >= 3) {
     out.push("YOLO-/Vision-Classify schlägt fehl – Tracker oder Timeout (HUB, 2 s)");
   }
+  if (n("vision.no_small") >= 5 && n("vision.no_small") > 2 * n("vision.yes")) {
+    out.push(
+      "Fahrzeug-Alarme ohne Auto an der Einfahrt – Kamera-KI reagiert auf Hintergrundverkehr (Erkennungszone in der Kamera enger ziehen)"
+    );
+  }
+  if (n("alpr.repeat") >= 5) {
+    out.push("Kennzeichen mehrfach kurz hintereinander – Alarm flackert, HUB_VEHICLE_GRACE_FRAMES prüfen");
+  }
   if (n("alpr.skip") >= 4 && n("alpr.plate") === 0) {
     out.push("Fahrzeug-Bursts ohne Plate – Zufahrt/OCR oder Fehlalarm der Kamera-KI");
   }

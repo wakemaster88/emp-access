@@ -23,7 +23,13 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 - **DoorBird**: `monitor.cgi` (Push), Klingel, Türöffner, Telegram-Torwunsch.
 - **Gesichter**: InsightFace-Sidecar (`buffalo_l`, CoreML wenn vorhanden).
 - **Kennzeichen**: fast-alpr (primär), macOS Vision als Fallback; lokale
-  Aktoren (DoorBird/Shelly) ohne Cloud-Roundtrip.
+  Aktoren (DoorBird/Shelly) ohne Cloud-Roundtrip. Ohne lesbares Kennzeichen
+  entscheidet der YOLO-Tracker, ob überhaupt ein Auto an der Einfahrt steht:
+  Boxen unter `HUB_VEHICLE_MIN_AREA` (2 % Bildfläche) oder außerhalb der
+  optionalen Zone `HUB_VEHICLE_ZONE` gelten als Hintergrundverkehr.
+- **Log-Abruf**: Task `HUB_LOG` liefert das Ende von `emp-hub.log`,
+  `emp-hub.error.log` oder der Diagnose an die Cloud (Netzwerk → Lokaler Hub
+  → „Log abrufen“), mit Zeilenzahl und Filter. Kein SSH nötig.
 - **Parken**: YOLO-Tracker-Zonen (`vehicleGate`) → Cloud.
 - **Streams**: Cloud-Camera ist führend; der Hub schreibt IPs in
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).

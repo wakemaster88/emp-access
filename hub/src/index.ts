@@ -6,7 +6,7 @@ import { autoScan } from "./scanner.js";
 import { pollCameras, CAMERA_POLL_INTERVAL_MS } from "./cameras.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
-import { alprAvailable, alprWarmup } from "./alpr.js";
+import { alprWarmup } from "./alpr.js";
 import { STATE, recordHeartbeat, recordHubEvent, recordTask } from "./state.js";
 import { collectParkingSnapshot, ensureParkingCameras, uploadParkingTrackerFrames } from "./parking.js";
 import { runSwitchSync, snmpConfigured } from "./snmp.js";
@@ -28,6 +28,8 @@ const HIGH_PRIORITY = new Set([
   "CAMERA_IR",
   "CAMERA_SIREN",
   "CAMERA_SNAPSHOT",
+  // Log-Abruf ist ein reiner Dateizugriff und soll nicht hinter einem Scan warten.
+  "HUB_LOG",
 ]);
 
 const BACKGROUND_TYPES = new Set(["NETWORK_SCAN", "SWITCH_SYNC"]);
@@ -217,8 +219,8 @@ setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 setInterval(() => refreshGallery(true).catch(() => {}), 900_000);
 refreshVehicleWhitelist().catch(() => {});
 setInterval(() => refreshVehicleWhitelist().catch(() => {}), 300_000);
+// STATE.alpr.ready pflegt alpr.ts selbst (true sobald der Daemon „ready“ meldet).
 alprWarmup();
-STATE.alpr.ready = alprAvailable();
 
 process.on("SIGTERM", () => {
   log("SIGTERM – Hub beendet sich.");

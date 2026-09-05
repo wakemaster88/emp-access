@@ -188,7 +188,8 @@ async function maybeSendGateAlert(
   if (trigger === "MOTION") {
     if (GATE_ON_MOTION === "off") return;
     if (GATE_ON_MOTION !== "always") {
-      const vehicle = await jpegContainsVehicle(buf, { quick: true });
+      // Nahaufnahme an der Tür: keine Größenschwelle, jede Fahrzeug-Box zählt.
+      const vehicle = await jpegContainsVehicle(buf, { quick: true, minArea: 0, label: rt.config.name });
       if (vehicle === false) {
         log(`DoorBird ${rt.config.name}: MOTION ohne Fahrzeug – kein Öffnungswunsch`);
         return;

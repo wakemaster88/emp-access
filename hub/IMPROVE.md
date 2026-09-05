@@ -306,3 +306,34 @@ Snapshot nicht verfügbar: `http://127.0.0.1:8787/api/improve` antwortet nicht, 
 - Kein Profil in `OperatingSchedule` angelegt. Ohne mindestens eines bleiben die Auslöser „Betriebsbeginn"/„Betriebsende" und die Bedingung „nur während der Betriebszeit" wirkungslos – die Regel findet dann keinen Zeitpunkt und feuert nicht.
 - Die vier verbliebenen Zeitplan-Systeme (Bewässerung, Audio, Überwachung, E-Mail) halten weiter eigene Fenster. Sie könnten jetzt Regeln werden oder wenigstens auf die Betriebszeit verweisen.
 - `Device.schedule` ist weiterhin ein Feld ohne Ausführung. Entweder in eine Regel überführen oder aus der Oberfläche nehmen.
+
+## 2026-09-05 (Fahrzeugerkennung: Fehlalarme, verlorene Bursts, Log-Abruf)
+
+Snapshot nicht verfügbar: Hub läuft auf dem iMac, diese Sitzung lief auf dem MacBook (kein Zugriff auf `emp-hub.log`, SSH abgelehnt). Befund deshalb aus der Cloud-Datenbank (nur lesend) und aus 23 Fahrzeug-Schnappschüssen, lokal mit denselben fast-alpr-Modellen nachgerechnet.
+
+### Befunde
+
+- **Hub-Ausfall 3.9. ~21:00 bis 4.9. 10:50 Uhr.** In dieser Zeit kam von keiner Kamera ein Ereignis an; sonst liefern die Kameras nachts 100–200 Ereignisse pro Stunde. DO-HM 338E wurde bis 2.9. täglich zwischen 9:20 und 10:20 Uhr erkannt, am 3./4.9. nicht – am 4.9. stand der Hub in genau diesem Fenster. Ursache steht nur im Log auf dem iMac.
+- **Kennzeichen-OCR unverändert, Liste doppelt so verrauscht.** Kennzeichen je VEHICLE-Alarm (tags, Eingang): Woche ab 24.8. 21 %, Woche ab 31.8. 20 %. Anteil der Alarme, die als „Fahrzeug ohne Kennzeichen" landen: 23.–30.8. ~28 %, ab 31.8. ~55 %. Seit dem Tracker-Neustart am 30.8. antwortet `/classify` wieder – und sagt „Fahrzeug" auf jedes geparkte Auto und jeden Wagen auf der Straße oben links im Bild. 23 von 23 geprüften „ohne Kennzeichen"-Bildern (1.–4.9.) zeigen kein Fahrzeug an der Einfahrt, fast-alpr findet in keinem ein Kennzeichen.
+- **Abends nichts lesbar:** nach 20 Uhr 109 Alarme, 3 Kennzeichen; nach 21 Uhr null. Sonnenuntergang rückt wöchentlich 15 min vor.
+- **Zweiter Wagen ging verloren:** `pendingVehicle` wurde nur nach der Personen-Pipeline abgearbeitet, nie nach dem Fahrzeug-Burst.
+- **Phantom-Flanken:** der Burst schrieb `cam.states.VEHICLE` selbst; der parallele Poll sah beim Flackern neue Flanken. 60–70 % der VEHICLE-Ereignisse hatten kein Ende, nach jedem Burst startete sofort der nächste (Doppel-Einträge im Minutenabstand, z. B. BN-PL 8546 um 10:38:18 und „ohne Kennzeichen" um 10:38:41).
+- **ALPR konnte sich still abschalten:** ein Daemon-Start über 30 s setzte `disabled = true` bis zum Neustart, stderr des Daemons wurde verworfen.
+- Plates je Frame laufen auf dem MacBook in 0,2 s inkl. 3×2 Kacheln; die Vito-Platte (129×43 px in 4K) fand nur der Kachel-Durchlauf, das Vollbild nicht – die Kacheln bleiben Pflicht.
+
+### Änderungen
+
+- Tracker `/classify` liefert zusätzlich `vehicles[]` mit normierten Boxen (x, y, w, h, conf, cls); `vehicle`/`conf` bleiben für alte Hubs.
+- `vision.ts`: `checkVehicle()` zählt eine Box nur ab `HUB_VEHICLE_MIN_AREA` (Default 2 % Bildfläche) und – falls `HUB_VEHICLE_ZONE` bzw. `HUB_VEHICLE_ZONE_<kameraId>` gesetzt – nur mit Mittelpunkt in der Zone. Log nennt den Grund (`größte Box 0.06% < 2.0%`, `außerhalb der Einfahrtszone`). Vito-Frame 3,8 %, geparkter BMW am Tor 3,1 %, Wagen auf der Straße 0,5 %, Parkplatz 0,07 %. DoorBird bleibt ohne Schwelle (`minArea: 0`).
+- `cameras.ts`: Burst liest den Alarm nur noch, schreibt `cam.states` nicht mehr; `pendingVehicle` wird auch nach dem Fahrzeug-Burst nachgezogen (Body prüft zuerst den Alarm, sonst Abbruch); gleiches Kennzeichen an derselben Kamera innerhalb `HUB_PLATE_REPEAT_MS` (60 s) wird nicht erneut hochgeladen (`alpr.repeat`).
+- `alpr.ts`: Startup-Timeout 60 s (`HUB_ALPR_STARTUP_TIMEOUT_MS`), danach Pause 5 → 10 → 20 → 30 min statt Aus bis zum Neustart; stderr im 30-Zeilen-Ring, die letzten Zeilen stehen bei Abbruch/Timeout im Log; `STATE.alpr.ready` spiegelt jetzt den laufenden Daemon.
+- Neuer Task `HUB_LOG` (`hub/src/hublog.ts`): liefert das Ende von `emp-hub.log`, `emp-hub.error.log` oder `improve-latest.md` (max. 2000 Zeilen, nur das letzte MB gelesen, Filter, `token=`-Werte geschwärzt, Fallback auf den Speicher-Ring). Cloud: Typ freigeschaltet, `GET /api/hub/tasks/[id]`, Knopf „Log abrufen" in der Hub-Karte unter Netzwerk mit Datei, Zeilenzahl, Filter und Kopieren. Bei mehreren Hubs antwortet der, der den Task zuerst holt.
+- Diagnose-Hinweise für `vision.no_small` (Kamera-KI reagiert auf Hintergrund) und `alpr.repeat`.
+- Geprüft: `tsc` Hub und Cloud ohne Fehler, ESLint der neuen Cloud-Dateien sauber, `py_compile` des Trackers, Mock-Test für Log-Tail (3000 Zeilen, Filter, Schwärzung, fehlende Datei) und Größen-/Zonenfilter.
+
+### Offen
+
+- Log vom 3.9. abends holen (jetzt per „Log abrufen", Filter `Update` oder `ALPR`) und die Ausfallursache eintragen.
+- Einfahrtszone für Kamera 9 ausmessen und als `HUB_VEHICLE_ZONE_9` setzen, wenn die 2-%-Schwelle allein nicht reicht; alternativ die Erkennungszone in der Reolink-Kamera auf die Einfahrt begrenzen.
+- Abendstunden: Belichtung/IR der Eingangskamera für Kennzeichen prüfen, sonst bleibt nach 20 Uhr nichts lesbar.
+- Der Tracker auf dem iMac muss neu gestartet werden, damit `/classify` die Boxen liefert; bis dahin greift die alte Ja/Nein-Antwort ohne Größenfilter.

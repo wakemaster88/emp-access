@@ -114,6 +114,8 @@ const VEHICLE_SNAP_DELAY_MS = 0;
 const PLATE_EARLY_STOP_CONF = Number(process.env.HUB_PLATE_EARLY_STOP_CONF || 0.85);
 /** Nach VEHICLE-Ende noch ein paar Frames – Alarm flackert, Auto oft noch näher. */
 const VEHICLE_GRACE_FRAMES = Number(process.env.HUB_VEHICLE_GRACE_FRAMES || 3);
+/** Gleiches Kennzeichen an derselben Kamera innerhalb dieser Zeit nur einmal melden. */
+const PLATE_REPEAT_MS = Number(process.env.HUB_PLATE_REPEAT_MS || 60_000);
 /** Dump-Rotation: max. Ordner und max. Alter. */
 const DUMP_MAX_FOLDERS = Number(process.env.HUB_VEHICLE_DUMP_MAX || 150);
 const DUMP_MAX_AGE_MS =
@@ -546,6 +548,16 @@ async function uploadVehicleSnapshot(cameraId: number): Promise<{ bytes: number 
     return await uploadVehicleSnapshotBody(cam, cameraId);
   } finally {
     cam.snapshotInFlight = false;
+    // Kam während des Bursts eine neue VEHICLE-Flanke (zweiter Wagen direkt
+    // dahinter), jetzt nachziehen. Der Body prüft zuerst, ob der Alarm noch
+    // steht, und bricht sonst sofort ab – keine Endlosschleife.
+    if (cam.pendingVehicle) {
+      cam.pendingVehicle = false;
+      log(`Fahrzeug-Snapshot ${cam.config.name}: nachgezogen (kam während Burst)`);
+      void uploadVehicleSnapshot(cameraId).catch((e) =>
+        log(`Fahrzeug-Snapshot ${cam.config.name} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
+      );
+    }
   }
 }
 
@@ -564,8 +576,10 @@ async function uploadVehicleSnapshotBody(
   );
   for (let i = 0; i < plan.count; i++) {
     try {
+      // Nur lesen, nicht in cam.states schreiben: sonst sieht der parallele
+      // Poll beim Flackern eine neue Flanke, meldet Phantom-Ereignisse und
+      // stößt mitten im Burst den nächsten an.
       const states = await pollStates(cam);
-      cam.states.VEHICLE = states.VEHICLE ?? false;
       if (!states.VEHICLE) {
         if (snaps.length === 0) {
           log(`Fahrzeug-Snapshot ${cam.config.name}: übersprungen (nicht mehr aktiv)`);
@@ -654,7 +668,12 @@ async function uploadVehicleSnapshotBody(
       );
     } else {
       for (let i = snaps.length - 1; i >= 0; i--) {
-        const ok = await jpegContainsVehicle(snaps[i], { quick: true });
+        // Größen-/Zonenregel: geparkte Autos und Straße im Hintergrund zählen nicht.
+        const ok = await jpegContainsVehicle(snaps[i], {
+          quick: true,
+          cameraId,
+          label: cam.config.name,
+        });
         if (ok === true) {
           buf = snaps[i];
           bestIdx = i;
@@ -683,6 +702,21 @@ async function uploadVehicleSnapshotBody(
   // Reolink-LPR nur wenn OCR nichts fand.
   if (!plate) {
     plate = await tryReadPlate(cam);
+  }
+
+  // Gleiches Kennzeichen kurz hintereinander (Alarm flackert, Nachzieh-Burst):
+  // ein Eintrag reicht. Aktoren haben ihren eigenen Cooldown.
+  if (plate && cam.lastPlate?.plate === plate) {
+    const ago = Date.now() - Date.parse(cam.lastPlate.at);
+    if (ago >= 0 && ago < PLATE_REPEAT_MS) {
+      log(
+        `Fahrzeug-Snapshot ${cam.config.name}: ${plate} schon vor ${Math.round(ago / 1000)} s gemeldet – kein zweiter Upload`
+      );
+      improve("alpr", "repeat", { cam: cam.config.name, plate, agoMs: ago });
+      cam.lastPlate = { ...cam.lastPlate, at: new Date().toISOString() };
+      cam.lastSnapshotAt = Date.now();
+      return null;
+    }
   }
 
   if (dumpRoot) {

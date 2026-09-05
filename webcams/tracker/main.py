@@ -1718,24 +1718,42 @@ async def classify(request: Request) -> dict[str, Any]:
         verbose=False,
         conf=0.25,
     )
+    fh, fw = frame.shape[:2]
     vehicle_conf = 0.0
     people = 0
     people_conf = 0.0
+    # Fahrzeug-Boxen normiert (0..1), damit der Hub Hintergrundverkehr
+    # (winzige Boxen, außerhalb der Einfahrt) selbst aussortieren kann.
+    vehicles: list[dict[str, float | int]] = []
     for r in results:
         if r.boxes is None:
             continue
         cls = r.boxes.cls.tolist() if r.boxes.cls is not None else []
         confs = r.boxes.conf.tolist() if r.boxes.conf is not None else []
-        for c, conf in zip(cls, confs):
+        xyxy = r.boxes.xyxy.tolist() if r.boxes.xyxy is not None else []
+        for c, conf, box in zip(cls, confs, xyxy):
             score = float(conf)
             if int(c) == PERSON_CLASS:
                 people += 1
                 people_conf = max(people_conf, score)
             elif int(c) in VEHICLE_CLASSES:
                 vehicle_conf = max(vehicle_conf, score)
+                x1, y1, x2, y2 = box
+                vehicles.append(
+                    {
+                        "cls": int(c),
+                        "conf": round(score, 3),
+                        "x": round(x1 / fw, 4),
+                        "y": round(y1 / fh, 4),
+                        "w": round((x2 - x1) / fw, 4),
+                        "h": round((y2 - y1) / fh, 4),
+                    }
+                )
+    vehicles.sort(key=lambda v: float(v["conf"]), reverse=True)
     return {
         "vehicle": vehicle_conf > 0,
         "conf": round(vehicle_conf, 3),
+        "vehicles": vehicles,
         "people": people,
         "peopleConf": round(people_conf, 3),
     }

@@ -12,6 +12,7 @@ import {
   getPtzPresets,
 } from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
+import { readHubLog } from "./hublog.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 import {
   openDoorbirdDoor,
@@ -203,6 +204,11 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const r = await openDoorbirdDoor(cameraId, relay);
       if (!r.ok) return { success: false, error: r.error ?? "Türöffner fehlgeschlagen" };
       return { success: true, result: { cameraId, relay, opened: true } };
+    }
+    case "HUB_LOG": {
+      // Log-Ende in die Cloud liefern (Netzwerk → Lokaler Hub → „Log abrufen“).
+      const result = await readHubLog(task.payload);
+      return { success: true, result };
     }
     default:
       return { success: false, error: `Unbekannter Task-Typ: ${task.type}` };

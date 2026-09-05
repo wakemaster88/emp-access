@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent } from "@/components/ui/card";
 import { NetworkTabs } from "@/components/network/network-tabs";
+import { HubLogButton } from "@/components/network/hub-log-button";
 import { Badge } from "@/components/ui/badge";
 import { Network, Server, EthernetPort, Cable, Cpu } from "lucide-react";
 import { macVendor, isVirtualMac } from "@/lib/oui";
@@ -212,6 +213,7 @@ export default async function NetworkPage() {
                   })}
                 </div>
               </div>
+              <HubLogButton hubName={hubAgents.length === 1 ? hubAgents[0].name : undefined} />
             </CardContent>
           </Card>
         )}
