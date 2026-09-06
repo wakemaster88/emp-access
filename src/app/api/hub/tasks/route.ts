@@ -12,6 +12,8 @@ const VALID_TASK_TYPES = [
   "CAMERA_SNAPSHOT",
   "FACE_ENROLL",
   "DOORBIRD_OPEN",
+  // Tor offen halten: Hub loest das Relais bis payload.until im Takt aus (null = beenden).
+  "DOORBIRD_HOLD",
   "CAMERA_PTZ",
   "CAMERA_SPOTLIGHT",
   "CAMERA_IR",

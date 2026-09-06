@@ -558,8 +558,10 @@ function renderKameras(d) {
       <div class="chips">
         ${badge("idle", "DoorBird")}
         ${b.connected ? badge("ok", "Monitor verbunden") : badge("warn", "getrennt")}
+        ${b.hold ? badge(b.hold.lastError ? "warn" : "ok", `Offen bis ${clock(b.hold.until)}`) : ""}
         ${b.activeStates.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("")}
       </div>
+      ${b.hold ? `<div class="line"><span class="k">Offen halten</span><span class="v${b.hold.lastError ? "" : " muted"}">${b.hold.pulses} Impulse · letzter ${esc(ago(b.hold.lastPulseAt))}${b.hold.lastError ? ` · Fehler: ${esc(b.hold.lastError)}` : ""}</span></div>` : ""}
       <div class="line"><span class="k">Letztes Signal</span><span class="v muted">${esc(ago(b.lastEventAt))}</span></div>
       <div><button type="button" class="btn small" data-snapshot="${b.id}">Schnappschuss</button></div>
     </article>`

@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
       // Fallback-Regeln fuer „Fahrzeug ohne Kennzeichen“ (vision.ts am Hub).
       vehicleMinArea: true,
       vehicleZone: true,
+      // Laufende Tor-Offenhaltung: Der Hub nimmt sie nach einem Neustart
+      // wieder auf (doorbird.ts, syncDoorbirds).
+      doorHoldUntil: true,
     },
     orderBy: { id: "asc" },
   });

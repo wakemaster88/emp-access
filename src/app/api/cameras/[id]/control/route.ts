@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { waitForHubTask } from "@/lib/hub-task-wait";
 
 /**
  * Kamera-Steuerung (Kontrollzentrum): legt einen Hub-Task an und wartet
- * kurz auf das Ergebnis. Der Hub pollt Tasks alle ~5 s, daher warten wir
- * bis zu 15 s bevor wir mit "pending" antworten.
+ * kurz auf das Ergebnis (waitForHubTask: bis zu 15 s, sonst "pending").
  */
 
 const ACTION_TO_TASK: Record<string, string> = {
@@ -22,9 +22,6 @@ const ACTIONS_BY_KIND: Record<string, string[]> = {
   REOLINK: ["ptz", "spotlight", "ir", "siren", "presets", "snapshot"],
   DOORBIRD: ["door", "snapshot"],
 };
-
-const WAIT_TIMEOUT_MS = 15_000;
-const WAIT_POLL_MS = 750;
 
 export async function POST(
   request: NextRequest,
@@ -77,24 +74,15 @@ export async function POST(
     },
   });
 
-  // Auf das Hub-Ergebnis warten (kurzes DB-Polling).
-  const deadline = Date.now() + WAIT_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
-    const current = await db.hubTask.findUnique({
-      where: { id: task.id },
-      select: { status: true, result: true, error: true },
-    });
-    if (!current) break;
-    if (current.status === "DONE") {
-      return NextResponse.json({ ok: true, taskId: task.id, result: current.result });
-    }
-    if (current.status === "FAILED") {
-      return NextResponse.json(
-        { ok: false, taskId: task.id, error: current.error ?? "Task fehlgeschlagen" },
-        { status: 502 }
-      );
-    }
+  const outcome = await waitForHubTask(db, task.id);
+  if (outcome.status === "DONE") {
+    return NextResponse.json({ ok: true, taskId: task.id, result: outcome.result });
+  }
+  if (outcome.status === "FAILED") {
+    return NextResponse.json(
+      { ok: false, taskId: task.id, error: outcome.error },
+      { status: 502 }
+    );
   }
 
   return NextResponse.json(

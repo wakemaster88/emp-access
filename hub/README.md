@@ -21,6 +21,13 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 - **Kameras (Reolink)**: CGI-Polling (parallel), Events, Personen- und
   Fahrzeug-Pipelines, PTZ/Scheinwerfer/IR/Sirene, MAC-Re-Mapping bei DHCP.
 - **DoorBird**: `monitor.cgi` (Push), Klingel, Türöffner, Telegram-Torwunsch.
+  **Tor offen halten** (Task `DOORBIRD_HOLD`, Webcams/Kameras → Uhr-Symbol):
+  Das Tor schließt ~1 min nach jedem Impuls von selbst, darum löst der Hub
+  das Relais bis zum gewählten Endzeitpunkt alle 50 s erneut aus
+  (`HUB_GATE_HOLD_PULSE`) und meldet jeden Impuls an die Cloud. Zielzustand
+  ist `Camera.doorHoldUntil`; nach einem Hub-Neustart wird eine laufende
+  Offenhaltung aus der Kamera-Konfiguration wieder aufgenommen, „Beenden“
+  stoppt sofort.
 - **Gesichter**: InsightFace-Sidecar (`buffalo_l`, CoreML wenn vorhanden).
 - **Kennzeichen**: fast-alpr (primär), macOS Vision als Fallback; lokale
   Aktoren (DoorBird/Shelly) ohne Cloud-Roundtrip. Ohne lesbares Kennzeichen

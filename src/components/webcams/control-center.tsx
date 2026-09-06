@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WebRTCVideo } from "./webrtc-video";
+import { DoorHoldBadge, DoorHoldButton, useNow, type DoorHoldState } from "@/components/cameras/door-hold";
+import { isDoorHoldActive } from "@/lib/door-hold";
 
 export interface WebcamRow {
   id: number;
@@ -354,6 +356,50 @@ function useGo2rtc(): [Go2rtcInfo, (url: string) => void] {
   return [{ url, reachable, byHost }, save];
 }
 
+/**
+ * Tor offen halten: Zustand aller DoorBirds alle 10 s pollen, solange eine
+ * angezeigt wird (Endzeit, letzter Hub-Impuls, Fehler). Nach Start/Beenden
+ * wird der Zustand aus der Antwort sofort übernommen.
+ */
+function useDoorHolds(
+  cameras: WebcamRow[]
+): [Record<number, DoorHoldState>, (cameraId: number, hold: DoorHoldState) => void] {
+  const [byCamera, setByCamera] = useState<Record<number, DoorHoldState>>({});
+  const hasDoorbird = cameras.some((c) => c.kind === "DOORBIRD");
+
+  useEffect(() => {
+    if (!hasDoorbird) return;
+    let cancelled = false;
+
+    async function tick() {
+      try {
+        const res = await fetch("/api/cameras/door-holds", { cache: "no-store" });
+        if (!res.ok) return;
+        const rows = (await res.json()) as Array<DoorHoldState & { cameraId: number }>;
+        if (cancelled) return;
+        const map: Record<number, DoorHoldState> = {};
+        for (const r of rows) map[r.cameraId] = { until: r.until, pulseAt: r.pulseAt, error: r.error };
+        setByCamera(map);
+      } catch {
+        /* Netzwerkfehler still ignorieren – nächster Poll kommt. */
+      }
+    }
+
+    tick();
+    const t = setInterval(tick, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [hasDoorbird]);
+
+  const setHold = useCallback((cameraId: number, hold: DoorHoldState) => {
+    setByCamera((prev) => ({ ...prev, [cameraId]: hold }));
+  }, []);
+
+  return [byCamera, setHold];
+}
+
 const PTZ_PAD: Array<{ op: PtzOp | null; icon: React.ElementType | null }> = [
   { op: "LeftUp", icon: ArrowUpLeft },
   { op: "Up", icon: ArrowUp },
@@ -373,6 +419,8 @@ function CameraPanel({
   streamBase,
   events,
   scan,
+  hold,
+  onHoldChange,
 }: {
   cam: WebcamRow;
   hubOnline: boolean;
@@ -384,10 +432,15 @@ function CameraPanel({
   events: CameraEventRow[];
   /** Aktueller Scan am verknuepften Zugangsgeraet (fuers Einblend-Banner). */
   scan: ScanOverlayRow | null;
+  /** Tor offen halten (nur DoorBird): Zustand aus dem Poll, null = unbekannt/aus. */
+  hold: DoorHoldState | null;
+  onHoldChange: (hold: DoorHoldState) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const now = useNow();
+  const holdActive = !!now && !!hold && isDoorHoldActive(hold, now);
   const [snapshotAt, setSnapshotAt] = useState(cam.snapshotAt);
   const [presets, setPresets] = useState<Preset[] | null>(null);
   const [presetsLoading, setPresetsLoading] = useState(false);
@@ -501,8 +554,23 @@ function CameraPanel({
         <ScanOverlay scan={scan} />
 
 
-        {/* Buttons nur bei Hover einblenden, damit das Grid ruhig bleibt. */}
-        <div className="absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        {/* Tor offen halten: immer sichtbar – der Zustand ist sicherheitsrelevant. */}
+        {isDoorbird && (
+          <DoorHoldBadge
+            hold={hold}
+            now={now}
+            className={cn("absolute left-1.5 max-w-[calc(100%-5rem)]", go2rtcUrl && streamBase && live ? "top-7" : "top-1.5")}
+          />
+        )}
+
+        {/* Buttons nur bei Hover einblenden, damit das Grid ruhig bleibt;
+            bei laufender Offenhaltung bleiben sie stehen (Beenden per Touch). */}
+        <div
+          className={cn(
+            "absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity",
+            holdActive && "opacity-100"
+          )}
+        >
           {!isDoorbird && go2rtcUrl && streamSrc && (
             <Button
               variant="secondary"
@@ -532,18 +600,32 @@ function CameraPanel({
             </Button>
           )}
           {isDoorbird ? (
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-7 w-7 bg-black/50 hover:bg-emerald-700/80 text-white"
-              title="Tür öffnen"
-              onClick={openDoor}
-              disabled={disabled}
-            >
-              {busy === "door"
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <DoorOpen className="h-3.5 w-3.5" />}
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                size="icon"
+                className="h-7 w-7 bg-black/50 hover:bg-emerald-700/80 text-white"
+                title="Tür öffnen"
+                onClick={openDoor}
+                disabled={disabled}
+              >
+                {busy === "door"
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <DoorOpen className="h-3.5 w-3.5" />}
+              </Button>
+              <DoorHoldButton
+                cameraId={cam.id}
+                cameraName={cam.name}
+                hold={hold}
+                disabled={!hubOnline}
+                onChange={onHoldChange}
+                onError={setError}
+                variant="secondary"
+                className="h-7 w-7 bg-black/50 hover:bg-emerald-700/80 text-white"
+                activeClassName="bg-emerald-600/90 hover:bg-rose-700/90"
+                iconClassName="h-3.5 w-3.5"
+              />
+            </>
           ) : (
             <Button
               variant="secondary"
@@ -736,6 +818,7 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
   const [go2rtc, saveGo2rtcUrl] = useGo2rtc();
   const eventsByCamera = useCameraEvents();
   const scansByCamera = useScanOverlays();
+  const [doorHolds, setDoorHold] = useDoorHolds(cameras);
   const [showSettings, setShowSettings] = useState(false);
   const [urlDraft, setUrlDraft] = useState("");
 
@@ -857,6 +940,8 @@ export function WebcamControlCenter({ cameras, hubOnline }: ControlCenterProps) 
               streamBase={go2rtc.byHost[c.host] ?? null}
               events={eventsByCamera[c.id] ?? []}
               scan={scansByCamera[c.id] ?? null}
+              hold={doorHolds[c.id] ?? null}
+              onHoldChange={(h) => setDoorHold(c.id, h)}
             />
           ))}
         </div>

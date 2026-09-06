@@ -31,6 +31,9 @@ export default async function CamerasPage() {
         notes: true,
         snapshotAt: true,
         lastSeenAt: true,
+        doorHoldUntil: true,
+        doorHoldPulseAt: true,
+        doorHoldError: true,
       },
       orderBy: { name: "asc" },
     }),
@@ -68,6 +71,9 @@ export default async function CamerasPage() {
             vehicleZone: Array.isArray(c.vehicleZone) ? (c.vehicleZone as [number, number][]) : null,
             snapshotAt: c.snapshotAt?.toISOString() ?? null,
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
+            doorHoldUntil: c.doorHoldUntil?.toISOString() ?? null,
+            doorHoldPulseAt: c.doorHoldPulseAt?.toISOString() ?? null,
+            doorHoldError: c.doorHoldError,
           }))}
           events={events.map((e) => ({
             id: e.id,

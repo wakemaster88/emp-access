@@ -10,6 +10,7 @@ import {
   setIrLights,
   setSiren,
   getPtzPresets,
+  ensureCameraConfigs,
 } from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
 import { readHubLog } from "./hublog.js";
@@ -18,6 +19,7 @@ import { checkSystem } from "./system-setup.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 import {
   openDoorbirdDoor,
+  setDoorbirdHold,
   isDoorbird,
   uploadDoorbirdSnapshot,
   captureDoorbirdSnapshot,
@@ -203,9 +205,25 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const cameraId = Number(task.payload?.cameraId);
       if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
       const relay = Number(task.payload?.relay) || 1;
+      if (!isDoorbird(cameraId)) await ensureCameraConfigs();
       const r = await openDoorbirdDoor(cameraId, relay);
       if (!r.ok) return { success: false, error: r.error ?? "Türöffner fehlgeschlagen" };
       return { success: true, result: { cameraId, relay, opened: true } };
+    }
+    case "DOORBIRD_HOLD": {
+      // Tor offen halten: payload.until (ISO) = bis dahin im Takt pulsen,
+      // null = beenden. Der Task schlaegt nur fehl, wenn die DoorBird hier
+      // unbekannt ist – ein fehlgeschlagener erster Impuls wird gemeldet,
+      // die Schleife versucht es weiter (Cloud zeigt den Fehler an).
+      const cameraId = Number(task.payload?.cameraId);
+      if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
+      const rawUntil = task.payload?.until;
+      const until = typeof rawUntil === "string" && rawUntil ? rawUntil : null;
+      const relay = Number(task.payload?.relay) || 1;
+      if (!isDoorbird(cameraId)) await ensureCameraConfigs();
+      const r = await setDoorbirdHold(cameraId, until, { relay, source: "task" });
+      if (!r.ok) return { success: false, error: r.error ?? "Offen halten fehlgeschlagen" };
+      return { success: true, result: { cameraId, ...r.state } };
     }
     case "HUB_LOG": {
       // Log-Ausschnitt in die Cloud liefern (Netzwerk → Lokaler Hub → „Log abrufen“).

@@ -17,6 +17,9 @@ const LIST_SELECT = {
   notes: true,
   snapshotAt: true,
   lastSeenAt: true,
+  doorHoldUntil: true,
+  doorHoldPulseAt: true,
+  doorHoldError: true,
 } as const;
 
 export async function GET() {

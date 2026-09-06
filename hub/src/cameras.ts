@@ -37,6 +37,8 @@ export interface CameraConfig {
   vehicleMinArea?: number | null;
   /** Einfahrtszone [[x,y],…] normiert (Cloud-Einstellung, null = HUB_VEHICLE_ZONE_<id>). */
   vehicleZone?: [number, number][] | null;
+  /** DoorBird: Tor offen halten bis (ISO), null = aus – Wiederaufnahme nach Neustart. */
+  doorHoldUntil?: string | null;
 }
 
 /** Letzte Personen-Sichtung an einer Kamera (Dashboard „wer war wo“). */
@@ -981,6 +983,11 @@ async function refreshConfigs(): Promise<void> {
   void syncLocalStreamsFromCloud(
     all.map((c) => ({ name: c.name, host: c.host, kind: c.kind }))
   ).catch((e) => log(`Cloud-Stream-Sync: ${e instanceof Error ? e.message : e}`));
+}
+
+/** Konfiguration sicherstellen – Tasks können vor dem ersten Kamera-Poll eintreffen. */
+export async function ensureCameraConfigs(): Promise<void> {
+  if (configLoadedAt === 0) await refreshConfigs();
 }
 
 /** Nächster Poll zieht die Kamera-Liste neu (z. B. nach Ensure einer Parkkamera). */

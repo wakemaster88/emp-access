@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ZoneEditor, type ZonePoint } from "@/components/cameras/zone-editor";
+import { DoorHoldBadge, DoorHoldButton, useNow } from "@/components/cameras/door-hold";
 
 export interface CameraRow {
   id: number;
@@ -42,6 +43,10 @@ export interface CameraRow {
   notes: string | null;
   snapshotAt: string | null;
   lastSeenAt: string | null;
+  /** Tor offen halten (DoorBird): Endzeit, letzter Hub-Impuls, Fehler. */
+  doorHoldUntil: string | null;
+  doorHoldPulseAt: string | null;
+  doorHoldError: string | null;
 }
 
 export interface CameraEventRow {
@@ -114,6 +119,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [snappingId, setSnappingId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  // Tor offen halten: Fehler aus Start/Beenden als Banner; Uhr fuer die Restzeit.
+  const [holdError, setHoldError] = useState("");
+  const now = useNow();
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -255,6 +263,13 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           Der lokale Hub ist offline - Ereignisse und Schnappschüsse werden erst wieder geliefert, wenn er läuft.
         </div>
       )}
+      {holdError && (
+        <div className="flex items-center gap-2 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-800 dark:text-rose-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">Tor offen halten: {holdError}</span>
+          <Button variant="ghost" size="sm" className="h-7" onClick={() => setHoldError("")}>OK</Button>
+        </div>
+      )}
 
       <Card className="border-slate-200 dark:border-slate-800">
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
@@ -310,6 +325,14 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                             Deaktiviert
                           </Badge>
                         )}
+                        {c.kind === "DOORBIRD" && (
+                          <DoorHoldBadge
+                            hold={{ until: c.doorHoldUntil, pulseAt: c.doorHoldPulseAt, error: c.doorHoldError }}
+                            now={now}
+                            showPulse={!!c.doorHoldError}
+                            className="h-5"
+                          />
+                        )}
                       </div>
                       {c.snapshotAt && (
                         <span className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white font-mono">
@@ -352,6 +375,21 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                               ? <Loader2 className="h-4 w-4 animate-spin" />
                               : <DoorOpen className="h-4 w-4" />}
                           </Button>
+                        )}
+                        {c.kind === "DOORBIRD" && (
+                          <DoorHoldButton
+                            cameraId={c.id}
+                            cameraName={c.name}
+                            hold={{ until: c.doorHoldUntil, pulseAt: c.doorHoldPulseAt, error: c.doorHoldError }}
+                            disabled={!hubOnline || !c.enabled}
+                            onChange={() => {
+                              setHoldError("");
+                              router.refresh();
+                            }}
+                            onError={setHoldError}
+                            className="h-8 w-8 text-slate-400 hover:text-emerald-600"
+                            activeClassName="text-emerald-600 hover:text-rose-600"
+                          />
                         )}
                         <Button
                           variant="ghost"

@@ -1569,6 +1569,14 @@ model Camera {
   snapshotAt          DateTime?
   /// Zuletzt vom Hub erfolgreich erreicht (Basis fuer Online-Status).
   lastSeenAt          DateTime?
+  /// Tor offen halten (DoorBird): Bis zu diesem Zeitpunkt loest der Hub das
+  /// Tueroeffner-Relais im Takt erneut aus (das Tor schliesst sonst nach ~1 min).
+  /// NULL oder vergangen = aus. Quelle der Wahrheit fuer Hub und UI.
+  doorHoldUntil       DateTime?
+  /// Letzter erfolgreicher Offenhalte-Impuls, vom Hub gemeldet.
+  doorHoldPulseAt     DateTime?
+  /// Fehler des letzten Offenhalte-Impulses (DoorBird nicht erreichbar o. ae.), NULL = ok.
+  doorHoldError       String?
   accountId           Int
   account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   events              CameraEvent[]
