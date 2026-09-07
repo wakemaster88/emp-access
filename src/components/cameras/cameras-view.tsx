@@ -58,12 +58,12 @@ export interface CameraEventRow {
 }
 
 const EVENT_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  MOTION:  { label: "Bewegung", icon: Activity, color: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
-  PERSON:  { label: "Person",   icon: User,     color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
-  VEHICLE: { label: "Fahrzeug", icon: Car,      color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
-  ANIMAL:  { label: "Tier",     icon: PawPrint, color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
+  MOTION:  { label: "Bewegung", icon: Activity, color: "bg-info/12 text-info" },
+  PERSON:  { label: "Person",   icon: User,     color: "bg-destructive/12 text-destructive" },
+  VEHICLE: { label: "Fahrzeug", icon: Car,      color: "bg-warning/14 text-warning" },
+  ANIMAL:  { label: "Tier",     icon: PawPrint, color: "bg-success/12 text-success" },
   DOORBELL:{ label: "Klingel",  icon: Bell,     color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
-  OTHER:   { label: "Sonstiges", icon: Activity, color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
+  OTHER:   { label: "Sonstiges", icon: Activity, color: "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground" },
 };
 
 const EMPTY = {
@@ -258,32 +258,32 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
   return (
     <div className="space-y-4 sm:space-y-6">
       {!hubOnline && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+        <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           Der lokale Hub ist offline - Ereignisse und Schnappschüsse werden erst wieder geliefert, wenn er läuft.
         </div>
       )}
       {holdError && (
-        <div className="flex items-center gap-2 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-800 dark:text-rose-300">
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="flex-1">Tor offen halten: {holdError}</span>
           <Button variant="ghost" size="sm" className="h-7" onClick={() => setHoldError("")}>OK</Button>
         </div>
       )}
 
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
           <CardTitle className="text-base sm:text-xl">Kameras ({cameras.length})</CardTitle>
-          <Button onClick={openAdd} className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm">
+          <Button onClick={openAdd} className="gap-2 shadow-sm">
             <Plus className="h-4 w-4" />
             Kamera hinzufügen
           </Button>
         </CardHeader>
         <CardContent>
           {cameras.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
+            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
               <Cctv className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-              <p className="font-medium text-slate-600 dark:text-slate-400">Keine Kameras erfasst</p>
+              <p className="font-medium text-muted-foreground">Keine Kameras erfasst</p>
               <p className="text-sm text-center max-w-md">
                 Lege deine Reolink-Kameras mit IP-Adresse und Zugangsdaten an - der lokale Hub
                 überwacht sie dann automatisch auf Bewegung und KI-Erkennungen.
@@ -296,9 +296,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 return (
                   <div
                     key={c.id}
-                    className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900"
+                    className="rounded-xl border border-border overflow-hidden bg-card"
                   >
-                    <div className="relative aspect-video bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                    <div className="relative aspect-video bg-muted flex items-center justify-center">
                       {c.snapshotAt ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -311,7 +311,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                       )}
                       <div className="absolute top-2 left-2 flex items-center gap-1.5">
                         {online === true && (
-                          <Badge className="bg-emerald-500/90 text-white gap-1 text-xs h-5">
+                          <Badge className="bg-success/90 text-white gap-1 text-xs h-5">
                             <span className="h-1.5 w-1.5 rounded-full bg-white" /> Online
                           </Badge>
                         )}
@@ -343,7 +343,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     <div className="flex items-center justify-between gap-2 p-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">{c.name}</p>
+                          <p className="font-medium text-sm text-foreground truncate">{c.name}</p>
                           {c.kind === "DOORBIRD" && (
                             <Bell
                               className="h-3.5 w-3.5 shrink-0 text-violet-500"
@@ -352,12 +352,12 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                           )}
                           {c.vehicleDetection && (
                             <Car
-                              className="h-3.5 w-3.5 shrink-0 text-amber-500"
+                              className="h-3.5 w-3.5 shrink-0 text-warning"
                               aria-label="Fahrzeug-Erkennung aktiv"
                             />
                           )}
                         </div>
-                        <p className="text-xs text-slate-400 font-mono truncate">
+                        <p className="text-xs text-muted-foreground/70 font-mono truncate">
                           {c.host}{c.channel > 0 ? ` · Kanal ${c.channel}` : ""}
                         </p>
                       </div>
@@ -366,7 +366,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-slate-400 hover:text-emerald-600"
+                            className="h-8 w-8 text-muted-foreground/70 hover:text-success"
                             title="Tür öffnen"
                             onClick={() => openDoor(c)}
                             disabled={openingDoorId === c.id || !hubOnline}
@@ -387,14 +387,14 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                               router.refresh();
                             }}
                             onError={setHoldError}
-                            className="h-8 w-8 text-slate-400 hover:text-emerald-600"
-                            activeClassName="text-emerald-600 hover:text-rose-600"
+                            className="h-8 w-8 text-muted-foreground/70 hover:text-success"
+                            activeClassName="text-success hover:text-destructive"
                           />
                         )}
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-slate-400 hover:text-indigo-600"
+                          className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
                           title="Neuen Schnappschuss anfordern"
                           onClick={() => requestSnapshot(c)}
                           disabled={snappingId === c.id || !hubOnline}
@@ -404,7 +404,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-slate-400 hover:text-indigo-600"
+                          className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
                           onClick={() => openEdit(c)}
                         >
                           <Pencil className="h-4 w-4" />
@@ -412,7 +412,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                          className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
                           onClick={() => handleDelete(c)}
                           disabled={deletingId === c.id}
                         >
@@ -430,15 +430,15 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
         </CardContent>
       </Card>
 
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardHeader className="pb-4">
           <CardTitle className="text-base sm:text-xl">Letzte Ereignisse</CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:px-6 sm:pb-6">
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+          <div className="rounded-lg border border-border overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
+                <TableRow className="border-border hover:bg-transparent bg-muted/40">
                   <TableHead>Zeitpunkt</TableHead>
                   <TableHead>Kamera</TableHead>
                   <TableHead>Ereignis</TableHead>
@@ -448,7 +448,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
               <TableBody>
                 {events.length === 0 && (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4} className="text-center py-10 text-sm text-slate-400">
+                    <TableCell colSpan={4} className="text-center py-10 text-sm text-muted-foreground/70">
                       Noch keine Ereignisse - sobald eine Kamera Bewegung oder eine Person erkennt,
                       erscheint sie hier.
                     </TableCell>
@@ -458,11 +458,11 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                   const meta = EVENT_META[e.type] ?? EVENT_META.OTHER;
                   const Icon = meta.icon;
                   return (
-                    <TableRow key={e.id} className="border-slate-200 dark:border-slate-700">
-                      <TableCell className="font-mono text-xs text-slate-500">
+                    <TableRow key={e.id} className="border-border">
+                      <TableCell className="font-mono text-xs text-muted-foreground">
                         {fmtTime(e.startedAt)}
                       </TableCell>
-                      <TableCell className="text-sm text-slate-700 dark:text-slate-300">
+                      <TableCell className="text-sm text-foreground/80">
                         {e.camera.name}
                       </TableCell>
                       <TableCell>
@@ -471,7 +471,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                           {meta.label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell text-xs text-slate-500">
+                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
                         {duration(e.startedAt, e.endedAt)}
                       </TableCell>
                     </TableRow>
@@ -490,7 +490,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             {!editing && suggestions.length > 0 && (
-              <div className="space-y-1.5 rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 p-3">
+              <div className="space-y-1.5 rounded-lg border border-primary/30 bg-primary/10 p-3">
                 <Label>Aus dem Netzwerk übernehmen</Label>
                 <Select onValueChange={applySuggestion}>
                   <SelectTrigger>
@@ -504,7 +504,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Füllt Name und IP-Adresse automatisch aus - nur noch Zugangsdaten ergänzen.
                 </p>
               </div>
@@ -521,7 +521,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 </SelectContent>
               </Select>
               {form.kind === "DOORBIRD" && (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Klingel- und Bewegungs-Events, Schnappschüsse mit Gesichtserkennung und
                   Türöffner über den Hub. App-Benutzer mit API-Berechtigung verwenden.
                 </p>
@@ -529,7 +529,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                <Label>Name <span className="text-rose-500">*</span></Label>
+                <Label>Name <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.name}
                   onChange={(e) => set("name", e.target.value)}
@@ -539,7 +539,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 />
               </div>
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                <Label>IP-Adresse / Host <span className="text-rose-500">*</span></Label>
+                <Label>IP-Adresse / Host <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.host}
                   onChange={(e) => set("host", e.target.value)}
@@ -549,11 +549,11 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Benutzername <span className="text-rose-500">*</span></Label>
+                <Label>Benutzername <span className="text-destructive">*</span></Label>
                 <Input value={form.username} onChange={(e) => set("username", e.target.value)} required />
               </div>
               <div className="space-y-1.5">
-                <Label>Passwort {editing ? "" : <span className="text-rose-500">*</span>}</Label>
+                <Label>Passwort {editing ? "" : <span className="text-destructive">*</span>}</Label>
                 <Input
                   type="password"
                   value={form.password}
@@ -581,30 +581,30 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                   value={form.channel}
                   onChange={(e) => set("channel", e.target.value)}
                 />
-                <p className="text-xs text-slate-400">0 bei Einzelkameras, 0-n am NVR.</p>
+                <p className="text-xs text-muted-foreground/70">0 bei Einzelkameras, 0-n am NVR.</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">HTTPS</p>
-                <p className="text-xs text-slate-500">Kamera-API über HTTPS ansprechen (Standard: HTTP)</p>
+                <p className="text-xs text-muted-foreground">Kamera-API über HTTPS ansprechen (Standard: HTTP)</p>
               </div>
               <Switch checked={form.https} onCheckedChange={(v) => set("https", v)} />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Aktiv</p>
-                <p className="text-xs text-slate-500">Vom Hub überwachen (Events + Schnappschüsse)</p>
+                <p className="text-xs text-muted-foreground">Vom Hub überwachen (Events + Schnappschüsse)</p>
               </div>
               <Switch checked={form.enabled} onCheckedChange={(v) => set("enabled", v)} />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Fahrzeug-Erkennung</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Fahrzeug-Events, Kennzeichen-OCR und Sichtungen auf dieser Kamera
                 </p>
               </div>
@@ -660,7 +660,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
             </div>
 
             {error && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
             )}
 
             <div className="flex justify-end gap-2 pt-1">
@@ -670,7 +670,7 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
               <Button
                 type="submit"
                 disabled={saving || !form.name.trim() || !form.host.trim()}
-                className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
+                className="min-w-28"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>

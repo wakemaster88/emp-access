@@ -70,7 +70,7 @@ export default async function UeberwachungPage() {
   return (
     <>
       <Header title="Überwachung" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <SurveillanceClient initial={initial} cameras={cameras} />
       </div>
     </>

@@ -362,7 +362,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
 
   return (
     <>
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
@@ -392,7 +392,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <TableBody>
               {accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-slate-500 py-12">
+                  <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
                     Keine Mandanten vorhanden
                   </TableCell>
                 </TableRow>
@@ -400,15 +400,15 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
               {accounts.map((acc) => (
                 <TableRow key={acc.id} className="group">
                   <TableCell className="font-medium">{acc.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-slate-500">{acc.subdomain}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{acc.subdomain}</TableCell>
                   <TableCell>
                     <button
                       onClick={() => copyToken(acc)}
-                      className="flex items-center gap-1 font-mono text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                      className="flex items-center gap-1 font-mono text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
                     >
                       {acc.apiToken.slice(0, 12)}...
                       {copiedToken === acc.id ? (
-                        <Check className="h-3 w-3 text-emerald-500" />
+                        <Check className="h-3 w-3 text-success" />
                       ) : (
                         <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100" />
                       )}
@@ -418,8 +418,8 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                     <Badge
                       className={
                         acc.isActive
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                          : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                          ? "bg-success/12 text-success"
+                          : "bg-destructive/12 text-destructive"
                       }
                     >
                       {acc.isActive ? "Aktiv" : "Inaktiv"}
@@ -429,7 +429,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                   <TableCell className="text-right">{acc._count.devices}</TableCell>
                   <TableCell className="text-right">{acc._count.tickets}</TableCell>
                   <TableCell className="text-right">{acc._count.scans}</TableCell>
-                  <TableCell className="text-sm text-slate-500">{fmtDate(acc.createdAt)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{fmtDate(acc.createdAt)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openUsers(acc)} title="Benutzer verwalten">
@@ -441,7 +441,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setDeleteAccount(acc)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -486,7 +486,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                 value={form.subdomain}
                 onChange={(e) => setForm({ ...form, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
               />
-              <p className="text-xs text-slate-500">Nur Kleinbuchstaben, Zahlen und Bindestriche</p>
+              <p className="text-xs text-muted-foreground">Nur Kleinbuchstaben, Zahlen und Bindestriche</p>
             </div>
 
             <div className="flex items-center justify-between">
@@ -510,14 +510,14 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                   onChange={(e) => setForm({ ...form, apiToken: e.target.value })}
                   className="font-mono text-xs"
                 />
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[11px] text-muted-foreground">
                   Mandanten-Token für Raspberry Pi, Shelly und eigene API. Nach Änderung Geräte aktualisieren.
                 </p>
               </div>
             )}
 
             {error && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950 dark:text-rose-400 px-3 py-2 rounded-lg">
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
                 {error}
               </p>
             )}
@@ -551,7 +551,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              className="bg-rose-600 hover:bg-rose-700 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
               {saving ? "Löschen..." : "Endgültig löschen"}
             </AlertDialogAction>
@@ -574,7 +574,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
 
           {usersLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/70" />
             </div>
           ) : (
             <div className="space-y-4">
@@ -592,7 +592,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                 <TableBody>
                   {users.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-slate-500 py-8">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                         Keine Benutzer vorhanden
                       </TableCell>
                     </TableRow>
@@ -600,27 +600,27 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                   {users.map((u) => (
                     <TableRow key={u.id} className="group">
                       <TableCell className="font-medium">{u.name}</TableCell>
-                      <TableCell className="text-sm text-slate-500">{u.email}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
                       <TableCell>
                         <Badge className={
                           u.role === "ADMIN"
-                            ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                            : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            ? "bg-primary/10 text-primary "
+                            : "bg-muted text-muted-foreground"
                         }>
                           {u.role === "ADMIN" ? "Admin" : "Benutzer"}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         {u.twoFactorEnabledAt ? (
-                          <span className="inline-flex items-center gap-1 text-sm text-emerald-600 dark:text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-sm text-success">
                             <ShieldCheck className="h-4 w-4" />
                             Aktiv
                           </span>
                         ) : (
-                          <span className="text-sm text-slate-400">—</span>
+                          <span className="text-sm text-muted-foreground/70">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-slate-500">
+                      <TableCell className="text-sm text-muted-foreground">
                         {u.lastLogin
                           ? new Date(u.lastLogin).toLocaleString("de-DE", {
                               day: "2-digit", month: "2-digit", year: "numeric",
@@ -637,7 +637,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                              className="h-8 w-8 text-warning hover:text-warning hover:bg-warning/10"
                               title="Zwei-Faktor zurücksetzen"
                               onClick={() => setResetTwoFactorUser(u)}
                             >
@@ -647,7 +647,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => setDeleteUser(u)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -740,7 +740,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             </div>
 
             {userError && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950 dark:text-rose-400 px-3 py-2 rounded-lg">
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
                 {userError}
               </p>
             )}
@@ -771,7 +771,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleUserDelete}
-              className="bg-rose-600 hover:bg-rose-700 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
               {userSaving ? "Löschen..." : "Endgültig löschen"}
             </AlertDialogAction>
@@ -797,7 +797,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleTwoFactorReset}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
+              className="bg-warning hover:bg-warning/90 text-warning-foreground"
             >
               {userSaving ? "Zurücksetzen..." : "Zurücksetzen"}
             </AlertDialogAction>

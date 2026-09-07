@@ -139,14 +139,14 @@ export default async function DeviceDetailPage({ params }: Props) {
   });
 
   const categoryMeta: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-    DREHKREUZ:   { label: "Drehkreuz",  icon: GitMerge,    color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" },
-    TUER:        { label: "Tür",        icon: DoorOpen,    color: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
-    SENSOR:      { label: "Sensor",     icon: Activity,    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
-    SCHALTER:    { label: "Schalter",   icon: ToggleRight, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+    DREHKREUZ:   { label: "Drehkreuz",  icon: GitMerge,    color: "bg-primary/10 text-primary " },
+    TUER:        { label: "Tür",        icon: DoorOpen,    color: "bg-info/12 text-info" },
+    SENSOR:      { label: "Sensor",     icon: Activity,    color: "bg-success/12 text-success" },
+    SCHALTER:    { label: "Schalter",   icon: ToggleRight, color: "bg-warning/14 text-warning" },
     BELEUCHTUNG: { label: "Beleuchtung",icon: Lightbulb,   color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
     MARKISE:     { label: "Markise",    icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
-    ROLLTOR:     { label: "Rolltor",    icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
-    TASTER:      { label: "Taster",     icon: CircleDot,   color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
+    ROLLTOR:     { label: "Rolltor",    icon: Blinds,      color: "bg-muted text-muted-foreground" },
+    TASTER:      { label: "Taster",     icon: CircleDot,   color: "bg-destructive/12 text-destructive" },
     AUDIO:       { label: "Audio-Zone", icon: Volume2,     color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
   };
 
@@ -160,16 +160,16 @@ export default async function DeviceDetailPage({ params }: Props) {
   return (
     <>
       <Header title="Gerätedetails" accountName={session.user.accountName} />
-      <div className="p-6 space-y-6 max-w-4xl">
+      <div className="page-content space-y-6 max-w-4xl">
 
         {/* Back */}
-        <Link href="/devices" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+        <Link href="/devices" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" />
           Zurück zu Geräte
         </Link>
 
         {/* Main Card */}
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col sm:flex-row gap-6">
 
@@ -177,7 +177,7 @@ export default async function DeviceDetailPage({ params }: Props) {
               {device.type === "RASPBERRY_PI" && (
                 <div className="shrink-0 flex flex-col items-center gap-2">
                   <DeviceQr value={configUrl} size={110} />
-                  <p className="text-xs text-indigo-500 text-center cursor-pointer hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">Konfigurations-QR</p>
+                  <p className="text-xs text-primary text-center cursor-pointer hover:text-primary transition-colors">Konfigurations-QR</p>
                 </div>
               )}
 
@@ -185,8 +185,8 @@ export default async function DeviceDetailPage({ params }: Props) {
               <div className="flex-1 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{device.name}</h2>
-                    <p className="text-sm text-slate-500 mt-0.5">
+                    <h2 className="text-xl font-semibold text-foreground">{device.name}</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
                       {device.type === "RASPBERRY_PI"
                         ? "Raspberry Pi – Drehkreuz/Tür"
                         : device.type === "NUKI_SMARTLOCK"
@@ -200,7 +200,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                                 : "Shelly – Relais"}
                     </p>
                     {device.ipAddress && (
-                      <p className="text-xs text-slate-400 font-mono mt-1">{device.ipAddress}</p>
+                      <p className="text-xs text-muted-foreground/70 font-mono mt-1">{device.ipAddress}</p>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -218,7 +218,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                         Shelly & GARDENA zeigen ihren Online-Status live im Client. */}
                     {device.type !== "SHELLY" && device.type !== "GARDENA_VALVE" && (
                       isOnline ? (
-                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1">
+                        <Badge variant="success" className="gap-1">
                           <Wifi className="h-3 w-3" /> Online
                         </Badge>
                       ) : (
@@ -228,12 +228,12 @@ export default async function DeviceDetailPage({ params }: Props) {
                       )
                     )}
 
-                    <Badge variant={device.isActive ? "default" : "destructive"} className={device.isActive ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" : ""}>
+                    <Badge variant={device.isActive ? "default" : "destructive"} className={device.isActive ? "bg-primary/10 text-primary " : ""}>
                       {device.isActive ? "Aktiv" : "Inaktiv"}
                     </Badge>
                     {/* Task-Badge nur für Pi-Zugangsgeräte */}
                     {device.type !== "SHELLY" && device.type !== "GARDENA_VALVE" && device.task > 0 && (
-                      <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                      <Badge variant="warning">
                         {taskLabel[device.task] ?? `Task ${device.task}`}
                       </Badge>
                     )}
@@ -243,21 +243,21 @@ export default async function DeviceDetailPage({ params }: Props) {
                 {/* Code Types + Firmware – nur für Raspberry Pi */}
                 {device.type === "RASPBERRY_PI" && (
                   <div className="flex gap-3">
-                    <span className="flex items-center gap-1 text-xs text-slate-500">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <QrCode className="h-4 w-4" /> QR
                     </span>
-                    <span className="flex items-center gap-1 text-xs text-slate-500">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <CreditCard className="h-4 w-4" /> RFID
                     </span>
                     {device.firmware && (
-                      <span className="flex items-center gap-1 text-xs text-slate-400">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground/70">
                         <Cpu className="h-4 w-4" /> FW {device.firmware}
                       </span>
                     )}
                   </div>
                 )}
 
-                <Separator className="dark:bg-slate-800" />
+                <Separator className="dark:bg-muted" />
 
                 {/* Actions */}
                 <DeviceDetailClient
@@ -306,7 +306,7 @@ export default async function DeviceDetailPage({ params }: Props) {
 
         {/* Verknüpfte Kamera – zeigt den Zugang (z. B. Drehkreuz "Eingang A") */}
         {device.camera && (
-          <Card className="border-slate-200 dark:border-slate-800 overflow-hidden">
+          <Card className="overflow-hidden">
             <CardContent className="pt-6">
               <div className="flex flex-col sm:flex-row gap-4">
                 <Link href="/cameras" className="shrink-0 block group">
@@ -314,20 +314,20 @@ export default async function DeviceDetailPage({ params }: Props) {
                   <img
                     src={`/api/cameras/${device.camera.id}/snapshot?t=${device.camera.snapshotAt ? new Date(device.camera.snapshotAt).getTime() : ""}`}
                     alt={`Schnappschuss ${device.camera.name}`}
-                    className="w-full sm:w-64 rounded-lg border border-slate-200 dark:border-slate-700 group-hover:opacity-90 transition-opacity"
+                    className="w-full sm:w-64 rounded-lg border border-border group-hover:opacity-90 transition-opacity"
                   />
                 </Link>
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                     <Cctv className="h-3.5 w-3.5" /> Verknüpfte Kamera
                   </p>
-                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{device.camera.name}</p>
+                  <p className="text-base font-semibold text-foreground">{device.camera.name}</p>
                   {device.camera.snapshotAt && (
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-muted-foreground/70">
                       Schnappschuss: {fmtDateTime(device.camera.snapshotAt)}
                     </p>
                   )}
-                  <Link href="/cameras" className="inline-block text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                  <Link href="/cameras" className="inline-block text-xs font-medium text-primary hover:underline">
                     Zu den Kameras →
                   </Link>
                 </div>
@@ -419,12 +419,12 @@ export default async function DeviceDetailPage({ params }: Props) {
           if (!hasScans) return null;
 
           const stats = [
-            { label: "Tickets",        value: ticketCount,             icon: Ticket,        color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-950/30",  href: deviceAreaIds.length ? `/tickets?area=${deviceAreaIds[0]}` : "/tickets" },
-            { label: "Scans gesamt",   value: totalScans,              icon: ScanLine,      color: "text-slate-600 dark:text-slate-400",   bg: "bg-slate-50 dark:bg-slate-900",        href: `/scans?device=${device.id}` },
-            { label: "Gültige Scans",  value: granted,                 icon: CheckCircle2,  color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/30", href: `/scans?device=${device.id}&result=GRANTED` },
-            { label: "Ungültige Scans",value: denied,                  icon: XCircle,       color: "text-rose-600 dark:text-rose-400",     bg: "bg-rose-50 dark:bg-rose-950/30",       href: `/scans?device=${device.id}&result=DENIED` },
+            { label: "Tickets",        value: ticketCount,             icon: Ticket,        color: "text-primary", bg: "bg-primary/8",  href: deviceAreaIds.length ? `/tickets?area=${deviceAreaIds[0]}` : "/tickets" },
+            { label: "Scans gesamt",   value: totalScans,              icon: ScanLine,      color: "text-muted-foreground",   bg: "bg-muted/50",        href: `/scans?device=${device.id}` },
+            { label: "Gültige Scans",  value: granted,                 icon: CheckCircle2,  color: "text-success", bg: "bg-success/10", href: `/scans?device=${device.id}&result=GRANTED` },
+            { label: "Ungültige Scans",value: denied,                  icon: XCircle,       color: "text-destructive",     bg: "bg-destructive/10",       href: `/scans?device=${device.id}&result=DENIED` },
             ...(device.category === "DREHKREUZ" ? [
-              { label: "NOT-AUF", value: device.task === 2 ? 1 : 0, icon: AlertTriangle, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/30", href: `/scans?device=${device.id}` },
+              { label: "NOT-AUF", value: device.task === 2 ? 1 : 0, icon: AlertTriangle, color: "text-warning", bg: "bg-warning/10", href: `/scans?device=${device.id}` },
             ] : []),
           ];
 
@@ -434,14 +434,14 @@ export default async function DeviceDetailPage({ params }: Props) {
                 const Icon = stat.icon;
                 return (
                   <Link key={stat.label} href={stat.href}>
-                    <Card className="border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors cursor-pointer">
+                    <Card className="hover:border-primary/60 transition-colors cursor-pointer">
                       <CardContent className="pt-4 pb-4">
                         <div className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${stat.bg} mb-2`}>
                           <Icon className={`h-5 w-5 ${stat.color}`} />
                         </div>
-                        <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stat.value}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{stat.label}</p>
-                        <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 font-medium">Ansehen →</p>
+                        <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
+                        <p className="text-xs text-primary mt-1 font-medium">Ansehen →</p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -453,7 +453,7 @@ export default async function DeviceDetailPage({ params }: Props) {
 
         {/* Last update – nur wenn keine SystemInfo-Card angezeigt wird */}
         {device.lastUpdate && !(["RASPBERRY_PI", "AUDIO_PLAYER"].includes(device.type) && device.systemInfo) && (
-          <p className="text-xs text-slate-400 text-right">
+          <p className="text-xs text-muted-foreground/70 text-right">
             Letztes Update: {fmtDateTime(device.lastUpdate)}
           </p>
         )}

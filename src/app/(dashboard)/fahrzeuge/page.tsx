@@ -108,7 +108,7 @@ export default async function FahrzeugePage() {
   return (
     <>
       <Header title="Fahrzeuge" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <VehiclesClient
           vehicles={vehicles.map((v) => {
             const { sightings: recentSightings, ...rest } = v;

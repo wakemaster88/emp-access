@@ -210,7 +210,7 @@ export function ScheduleDialog({
               </SelectContent>
             </Select>
             {isEdit && (
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Die Aktion lässt sich nachträglich nicht ändern – dafür einen neuen Zeitplan
                 anlegen.
               </p>
@@ -233,7 +233,7 @@ export function ScheduleDialog({
                 </SelectContent>
               </Select>
               {templates.length === 0 && (
-                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                <p className="text-xs text-warning mt-1">
                   Noch keine gespeicherte Durchsage vorhanden.
                 </p>
               )}
@@ -289,7 +289,7 @@ export function ScheduleDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-slate-500 mt-1">{TRIGGER_HINTS[trigger]}</p>
+            <p className="text-xs text-muted-foreground mt-1">{TRIGGER_HINTS[trigger]}</p>
           </div>
 
           {trigger === "TIME" ? (
@@ -316,7 +316,7 @@ export function ScheduleDialog({
                   onChange={(e) => setOffsetMinutes(Number(e.target.value) || 0)}
                   className="w-32"
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Negativ = vorher, positiv = nachher. „−15“ heißt eine Viertelstunde vor{" "}
                   {trigger === "OPENING" ? "Betriebsbeginn" : "Betriebsende"}.
                 </p>
@@ -337,7 +337,7 @@ export function ScheduleDialog({
                   </SelectContent>
                 </Select>
                 {operatingSchedules.length === 0 && (
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                  <p className="text-xs text-warning mt-1">
                     Noch keine Betriebszeit angelegt – unter „Betriebszeiten“ anlegen.
                   </p>
                 )}
@@ -362,7 +362,7 @@ export function ScheduleDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Gilt je Zone nach der Betriebszeit ihres Raums. Eine Zone ohne Betriebszeit gilt als
               dauerhaft geöffnet.
             </p>
@@ -384,8 +384,8 @@ export function ScheduleDialog({
                     className={cn(
                       "h-11 rounded-lg border text-xs font-medium transition-colors sm:h-9",
                       active
-                        ? "bg-indigo-600 text-white border-indigo-600"
-                        : "border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        ? "bg-primary text-white border-primary"
+                        : "border-input text-muted-foreground hover:bg-muted"
                     )}
                   >
                     {day}
@@ -413,7 +413,7 @@ export function ScheduleDialog({
           </div>
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-lg border border-red-200 dark:border-red-900/40">
+            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
               {error}
             </p>
           )}

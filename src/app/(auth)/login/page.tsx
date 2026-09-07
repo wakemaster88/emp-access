@@ -4,7 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -127,112 +127,178 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
-      <Card className="w-full max-w-md border-slate-200 dark:border-slate-800 shadow-xl">
-        <CardHeader className="text-center pb-2">
-          <Image src="/logo.png" alt="EMP Access" width={80} height={80} className="mx-auto mb-4 dark:hidden" priority />
-          <Image src="/logo-dark.png" alt="EMP Access" width={80} height={80} className="mx-auto mb-4 hidden dark:block" priority />
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">EMP Access</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            {step === "credentials" ? "Zugangskontrolle anmelden" : "Bestätigung in zwei Schritten"}
-          </p>
-        </CardHeader>
-        <CardContent>
-          {step === "credentials" ? (
-            <form onSubmit={handleCredentials} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">E-Mail</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  inputMode="email"
-                  placeholder="admin@example.de"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoFocus
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  enterKeyHint="next"
-                />
+    <div className="relative min-h-[100dvh] bg-background bg-grid-dots">
+      {/* Farbverlauf oben: gibt der Seite Tiefe, ohne den Inhalt zu stören. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[45vh] bg-[radial-gradient(ellipse_at_top,_color-mix(in_oklch,var(--primary)_22%,transparent),transparent_65%)]"
+      />
+      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-6xl flex-col lg:grid lg:grid-cols-[1.1fr_minmax(0,26rem)] lg:items-center lg:gap-16 px-4 py-8 sm:px-6 lg:px-8">
+        {/* Markenfläche: nur auf großen Bildschirmen. */}
+        <section className="hidden lg:flex flex-col gap-8 animate-fade-up">
+          <div className="flex items-center gap-3">
+            <Image src="/logo.png" alt="EMP Access" width={44} height={44} className="dark:hidden" priority />
+            <Image src="/logo-dark.png" alt="EMP Access" width={44} height={44} className="hidden dark:block" priority />
+            <div className="leading-none">
+              <p className="text-xl font-semibold tracking-tight">EMP Access</p>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-4xl font-semibold tracking-tight text-balance">
+              Zutritt, Technik und Betrieb <span className="text-primary">auf einem Bildschirm.</span>
+            </h2>
+            <p className="max-w-md text-base text-muted-foreground">
+              Drehkreuze, Türen, Kameras, Audio und Bewässerung – überwacht, gesteuert und ausgewertet.
+            </p>
+          </div>
+          <dl className="grid grid-cols-3 gap-4 max-w-md">
+            {[
+              { k: "Zutritt", v: "Tickets · Abos · Scans" },
+              { k: "Technik", v: "Geräte · Regeln · Netz" },
+              { k: "Sicherheit", v: "Kameras · Personen · Kfz" },
+            ].map((f) => (
+              <div key={f.k} className="rounded-lg border bg-card/70 px-3 py-2.5 backdrop-blur-sm">
+                <dt className="text-label">{f.k}</dt>
+                <dd className="mt-1 text-xs text-foreground/80">{f.v}</dd>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Passwort</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  enterKeyHint="go"
-                />
+            ))}
+          </dl>
+        </section>
+
+        {/* Anmeldung */}
+        <div className="flex flex-1 items-center justify-center lg:flex-none animate-fade-up">
+          <Card className="w-full max-w-md gap-4 py-7 shadow-lg shadow-black/5 dark:shadow-none">
+            <CardHeader className="gap-1 px-6 sm:px-8">
+              <div className="mb-3 flex items-center gap-3 lg:hidden">
+                <Image src="/logo.png" alt="EMP Access" width={40} height={40} className="dark:hidden" priority />
+                <Image src="/logo-dark.png" alt="EMP Access" width={40} height={40} className="hidden dark:block" priority />
+                <div className="leading-none">
+                  <p className="text-lg font-semibold tracking-tight">EMP Access</p>
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>
+                </div>
               </div>
-              {error && (
-                <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
-                  {error}
-                </p>
+              <h1 className="text-xl font-semibold tracking-tight">
+                {step === "credentials" ? "Anmelden" : "Bestätigung in zwei Schritten"}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {step === "credentials"
+                  ? "Mit E-Mail und Passwort des Mandanten."
+                  : "Code aus der Authenticator-App oder ein Wiederherstellungscode."}
+              </p>
+            </CardHeader>
+            <CardContent className="px-6 sm:px-8">
+              {step === "credentials" ? (
+                <form onSubmit={handleCredentials} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">E-Mail</Label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      inputMode="email"
+                      placeholder="name@betrieb.de"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      autoFocus
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      enterKeyHint="next"
+                      className="h-11"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Passwort</Label>
+                    <Input
+                      id="password"
+                      name="password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      autoComplete="current-password"
+                      enterKeyHint="go"
+                      className="h-11"
+                    />
+                  </div>
+                  {error && (
+                    <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {error}
+                    </p>
+                  )}
+                  <Button type="submit" size="lg" className="w-full" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Anmelden …
+                      </>
+                    ) : (
+                      "Anmelden"
+                    )}
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={handleCode} className="space-y-4">
+                  <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/8 px-3 py-2.5">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                    <p className="text-sm text-foreground/80">
+                      Bitte den aktuellen Code aus der Authenticator-App eingeben. Ersatzweise geht auch ein
+                      Wiederherstellungscode.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="code">Code</Label>
+                    <Input
+                      id="code"
+                      name="code"
+                      type="text"
+                      inputMode="text"
+                      placeholder="123456"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      required
+                      autoFocus
+                      autoComplete="one-time-code"
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      enterKeyHint="go"
+                      className="h-12 text-center text-lg tracking-[0.3em] font-mono"
+                    />
+                  </div>
+                  {error && (
+                    <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {error}
+                    </p>
+                  )}
+                  <Button type="submit" size="lg" className="w-full" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Prüfen …
+                      </>
+                    ) : (
+                      "Bestätigen"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full text-muted-foreground"
+                    onClick={backToCredentials}
+                    disabled={loading}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Zurück
+                  </Button>
+                </form>
               )}
-              <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700" disabled={loading}>
-                {loading ? "Anmelden..." : "Anmelden"}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleCode} className="space-y-4">
-              <div className="flex items-start gap-3 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2.5">
-                <ShieldCheck className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />
-                <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Bitte den aktuellen Code aus der Authenticator-App eingeben. Ersatzweise geht auch ein
-                  Wiederherstellungscode.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="code">Code</Label>
-                <Input
-                  id="code"
-                  name="code"
-                  type="text"
-                  inputMode="text"
-                  placeholder="123456"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  required
-                  autoFocus
-                  autoComplete="one-time-code"
-                  autoCapitalize="characters"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  enterKeyHint="go"
-                  className="text-center text-lg tracking-[0.3em] font-mono"
-                />
-              </div>
-              {error && (
-                <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
-                  {error}
-                </p>
-              )}
-              <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700" disabled={loading}>
-                {loading ? "Prüfen..." : "Bestätigen"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full text-slate-500"
-                onClick={backToCredentials}
-                disabled={loading}
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Zurück
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

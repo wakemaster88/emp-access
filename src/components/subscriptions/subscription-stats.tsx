@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card } from "@/components/ui/card";
+import { StatCard, type StatTone } from "@/components/ui/stat-card";
 import {
   Activity,
   TrendingUp,
@@ -42,35 +43,6 @@ function fmtDate(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  iconClass,
-  valueClass,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string | number;
-  hint?: string;
-  iconClass?: string;
-  valueClass?: string;
-}) {
-  return (
-    <Card className="py-3 px-4 gap-1.5">
-      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <Icon className={cn("h-3.5 w-3.5", iconClass ?? "text-slate-500")} />
-        <span className="font-medium">{label}</span>
-      </div>
-      <div className={cn("text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100", valueClass)}>
-        {value}
-      </div>
-      {hint && <p className="text-[11px] text-slate-500 dark:text-slate-400">{hint}</p>}
-    </Card>
-  );
-}
-
 function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDays: number }) {
   const totalActive = data[data.length - 1]?.active ?? 0;
   const totalNew = data.reduce((s, d) => s + d.newCount, 0);
@@ -81,35 +53,35 @@ function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDa
 
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-border/60">
         <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-indigo-500 shrink-0" />
+          <Activity className="h-4 w-4 text-primary shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Abo-Verlauf</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            <p className="text-sm font-semibold text-foreground">Abo-Verlauf</p>
+            <p className="text-[11px] text-muted-foreground">
               Bestand der letzten {windowDays} Tage
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-indigo-500" />
+            <span className="h-2 w-2 rounded-full bg-primary" />
             Bestand
-            <span className="text-slate-700 dark:text-slate-300 font-semibold ml-0.5 tabular-nums">
+            <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">
               {totalActive}
             </span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="h-2 w-2 rounded-full bg-success" />
             Neu
-            <span className="text-slate-700 dark:text-slate-300 font-semibold ml-0.5 tabular-nums">
+            <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">
               {totalNew}
             </span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-rose-500" />
+            <span className="h-2 w-2 rounded-full bg-destructive" />
             Auslauf
-            <span className="text-slate-700 dark:text-slate-300 font-semibold ml-0.5 tabular-nums">
+            <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">
               {totalExpired}
             </span>
           </span>
@@ -117,7 +89,7 @@ function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDa
       </div>
       <div className="px-3 pt-3 pb-3">
         {data.length === 0 ? (
-          <p className="py-10 text-center text-xs text-slate-400">Keine Daten im Zeitraum.</p>
+          <p className="py-10 text-center text-xs text-muted-foreground/70">Keine Daten im Zeitraum.</p>
         ) : (
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -197,18 +169,18 @@ function TopAbosCard({ rows }: { rows: SubscriptionTopRow[] }) {
   const max = useMemo(() => rows.reduce((m, r) => Math.max(m, r.active), 0), [rows]);
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/60">
         <div className="flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-amber-500 shrink-0" />
+          <CreditCard className="h-4 w-4 text-warning shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Top-Abos</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Aktiver Bestand</p>
+            <p className="text-sm font-semibold text-foreground">Top-Abos</p>
+            <p className="text-[11px] text-muted-foreground">Aktiver Bestand</p>
           </div>
         </div>
       </div>
       <div className="px-4 py-3">
         {rows.length === 0 ? (
-          <p className="py-6 text-center text-xs text-slate-400">Keine aktiven Abos.</p>
+          <p className="py-6 text-center text-xs text-muted-foreground/70">Keine aktiven Abos.</p>
         ) : (
           <ul className="space-y-2.5">
             {rows.map((r) => {
@@ -216,10 +188,10 @@ function TopAbosCard({ rows }: { rows: SubscriptionTopRow[] }) {
               return (
                 <li key={r.subscriptionId} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-700 dark:text-slate-200 truncate">{r.name}</span>
-                    <span className="tabular-nums text-slate-500 dark:text-slate-400">{r.active}</span>
+                    <span className="font-medium text-foreground/80 truncate">{r.name}</span>
+                    <span className="tabular-nums text-muted-foreground">{r.active}</span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-600"
                       style={{ width: `${pct}%` }}
@@ -237,11 +209,7 @@ function TopAbosCard({ rows }: { rows: SubscriptionTopRow[] }) {
 
 export function SubscriptionStats({ stats }: { stats: Stats }) {
   const growthIcon = stats.growthAbs >= 0 ? TrendingUp : TrendingDown;
-  const growthClass = stats.growthAbs > 0
-    ? "text-emerald-600 dark:text-emerald-400"
-    : stats.growthAbs < 0
-      ? "text-rose-600 dark:text-rose-400"
-      : "text-slate-500";
+  const growthTone: StatTone = stats.growthAbs > 0 ? "success" : stats.growthAbs < 0 ? "danger" : "neutral";
   const growthHint = stats.growthPercent != null
     ? `${stats.growthAbs >= 0 ? "+" : ""}${stats.growthAbs} (${stats.growthPercent >= 0 ? "+" : ""}${stats.growthPercent}%) vs. vor ${stats.windowDays} Tagen`
     : `vor ${stats.windowDays} Tagen: ${stats.activePast}`;
@@ -254,29 +222,29 @@ export function SubscriptionStats({ stats }: { stats: Stats }) {
           label="Aktiv jetzt"
           value={stats.activeNow}
           hint={`Insgesamt ${stats.totalAbos} Abos`}
-          iconClass="text-indigo-500"
+          tone="primary"
         />
         <StatCard
           icon={growthIcon}
           label={`Wachstum (${stats.windowDays}T)`}
           value={`${stats.growthAbs >= 0 ? "+" : ""}${stats.growthAbs}`}
           hint={growthHint}
-          iconClass={growthClass}
-          valueClass={growthClass}
+          tone={growthTone}
+          accentValue
         />
         <StatCard
           icon={CalendarPlus}
           label="Neu (30T)"
           value={stats.newLast30}
           hint={`Auslauf 30T: ${stats.expiredLast30}`}
-          iconClass="text-emerald-500"
+          tone="success"
         />
         <StatCard
           icon={CalendarX}
           label="Auslaufend (30T)"
           value={stats.expiringNext30}
           hint="Enden in den nächsten 30 Tagen"
-          iconClass="text-rose-500"
+          tone="danger"
         />
       </div>
 

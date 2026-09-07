@@ -105,7 +105,7 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
                 id="k-type"
                 value={lockType}
                 onChange={(e) => setLockType(e.target.value)}
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
               >
                 {Object.entries(LOCK_TYPE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
@@ -173,7 +173,7 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
               id="k-device"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
-              className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+              className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
             >
               <option value="">Rein mechanisch</option>
               {preferred.length > 0 && (
@@ -195,7 +195,7 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
                 </optgroup>
               )}
             </select>
-            <p className="text-[10px] text-slate-400">
+            <p className="text-[10px] text-muted-foreground/70">
               Nuki, LOQED oder ein Shelly am Türöffner, der diesen Schließpunkt öffnet.
             </p>
           </div>
@@ -210,7 +210,7 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
             size="sm"
             onClick={save}
             disabled={saving}
-            className="h-8 min-w-24 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-24"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

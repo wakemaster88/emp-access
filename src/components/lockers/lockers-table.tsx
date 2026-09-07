@@ -127,8 +127,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
               filter === "all"
-                ? "bg-indigo-600 text-white"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                ? "bg-primary text-white"
+                : "bg-muted text-muted-foreground hover:bg-accent"
             )}
           >
             Alle ({lockers.length})
@@ -139,8 +139,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
               filter === "assigned"
-                ? "bg-emerald-600 text-white"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                ? "bg-success text-success-foreground"
+                : "bg-muted text-muted-foreground hover:bg-accent"
             )}
           >
             Belegt {currentYear} ({assignedCount})
@@ -152,7 +152,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
               filter === "free"
                 ? "bg-slate-700 text-white"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                : "bg-muted text-muted-foreground hover:bg-accent"
             )}
           >
             Frei {currentYear} ({freeCount})
@@ -164,8 +164,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
               className={cn(
                 "px-3 py-1.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1.5",
                 filter === "openKeys"
-                  ? "bg-amber-600 text-white"
-                  : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-950/60"
+                  ? "bg-warning text-warning-foreground"
+                  : "bg-warning/14 text-warning hover:bg-amber-200 "
               )}
               title="Schließfächer mit ausstehenden Schlüsseln aus früheren Jahren"
             >
@@ -176,13 +176,13 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
         </div>
 
         <div className="relative sm:ml-auto sm:w-64">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
           <input
             type="text"
             placeholder="Nr., Standort, Mieter, Abo, Jahr…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
 
@@ -190,7 +190,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           <Button
             onClick={() => { setSelected(null); setAddOpen(true); }}
             type="button"
-            className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm"
+            className="bg-primary hover:bg-primary/90 gap-2 shadow-sm"
           >
             <Plus className="h-4 w-4" />
             Schließfach anlegen
@@ -199,34 +199,34 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
       </div>
 
       {lockersWithOpenPast.length > 0 && (
-        <div className="mb-3 rounded-lg border border-amber-300 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/20 p-3">
+        <div className="mb-3 rounded-lg border border-warning/30 bg-warning/10 p-3">
           <div className="flex items-start gap-2.5">
-            <AlertTriangle className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <AlertTriangle className="h-4.5 w-4.5 text-warning shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+              <p className="text-sm font-medium text-warning">
                 {totalOpenKeys} {totalOpenKeys === 1 ? "Schlüssel" : "Schlüssel/Schlösser"} aus
                 früheren Jahren noch nicht zurückgegeben
                 {" "}
-                <span className="font-normal text-amber-800/80 dark:text-amber-300/70">
+                <span className="font-normal text-warning/80">
                   ({lockersWithOpenPast.length} {lockersWithOpenPast.length === 1 ? "Schließfach" : "Schließfächer"})
                 </span>
               </p>
-              <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-amber-900/90 dark:text-amber-200/90">
+              <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-warning/90">
                 {lockersWithOpenPast.slice(0, 12).map((l) => {
                   const newest = l.openPast[0];
                   return (
                     <li key={l.id} className="inline-flex items-center gap-1">
                       <span className="font-mono">#{l.number}</span>
-                      <span className="text-amber-700/70 dark:text-amber-300/60">·</span>
+                      <span className="text-warning/70">·</span>
                       <span className="font-medium">{rentalDisplayName(newest)}</span>
-                      <span className="text-amber-700/70 dark:text-amber-300/60">
+                      <span className="text-warning/70">
                         ({newest.year}, {newest.keysIssued - newest.keysReturned} offen)
                       </span>
                     </li>
                   );
                 })}
                 {lockersWithOpenPast.length > 12 && (
-                  <li className="text-amber-700 dark:text-amber-300/70">
+                  <li className="text-warning/70">
                     +{lockersWithOpenPast.length - 12} weitere
                   </li>
                 )}
@@ -235,7 +235,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                 <button
                   type="button"
                   onClick={() => setFilter("openKeys")}
-                  className="mt-2 text-[11px] font-medium text-amber-800 dark:text-amber-300 underline hover:text-amber-900 dark:hover:text-amber-200"
+                  className="mt-2 text-[11px] font-medium text-warning underline hover:text-amber-900"
                 >
                   Nur betroffene Schließfächer anzeigen
                 </button>
@@ -245,37 +245,37 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+      <div className="rounded-lg border border-border overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-              <TableHead className="hidden sm:table-cell w-[90px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableRow className="border-border hover:bg-transparent bg-muted/40">
+              <TableHead className="hidden sm:table-cell w-[90px] text-muted-foreground font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <Hash className="h-4 w-4 text-slate-400" />
+                  <Hash className="h-4 w-4 text-muted-foreground/70" />
                   Nr.
                 </span>
               </TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="text-muted-foreground font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <Lock className="h-4 w-4 text-slate-400" />
+                  <Lock className="h-4 w-4 text-muted-foreground/70" />
                   Schließfach
                 </span>
               </TableHead>
-              <TableHead className="hidden md:table-cell text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden md:table-cell text-muted-foreground font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <MapPin className="h-4 w-4 text-slate-400" />
+                  <MapPin className="h-4 w-4 text-muted-foreground/70" />
                   Standort
                 </span>
               </TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="text-muted-foreground font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="h-4 w-4 text-slate-400" />
+                  <Calendar className="h-4 w-4 text-muted-foreground/70" />
                   Mieter {currentYear}
                 </span>
               </TableHead>
-              <TableHead className="hidden lg:table-cell w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden lg:table-cell w-[140px] text-muted-foreground font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <History className="h-4 w-4 text-slate-400" />
+                  <History className="h-4 w-4 text-muted-foreground/70" />
                   Historie
                 </span>
               </TableHead>
@@ -283,13 +283,13 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-700">
+              <TableRow className="hover:bg-transparent border-border">
                 <TableCell colSpan={5} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3 text-slate-500">
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
                     <Lock className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                     {lockers.length === 0 ? (
                       <>
-                        <p className="font-medium text-slate-600 dark:text-slate-400">Noch keine Schließfächer angelegt</p>
+                        <p className="font-medium text-muted-foreground">Noch keine Schließfächer angelegt</p>
                         <p className="text-sm">
                           Lege ein Schließfach an und vermiete es jahresweise an Abo-Tickets.
                         </p>
@@ -306,22 +306,22 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                 key={l.id}
                 onClick={() => !readonly && openEdit(l)}
                 className={cn(
-                  "border-slate-200 dark:border-slate-700 transition-colors group",
+                  "border-border transition-colors group",
                   readonly
-                    ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
-                    : "hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 cursor-pointer",
+                    ? "hover:bg-muted/40"
+                    : "hover:bg-primary/10 cursor-pointer",
                 )}
               >
-                <TableCell className="hidden sm:table-cell w-[90px] font-mono text-sm text-slate-700 dark:text-slate-300 tabular-nums">
+                <TableCell className="hidden sm:table-cell w-[90px] font-mono text-sm text-foreground/80 tabular-nums">
                   {l.number}
                 </TableCell>
                 <TableCell>
                   <div className="min-w-0">
-                    <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100">
-                      <Lock className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                    <span className="inline-flex items-center gap-2 font-medium text-foreground">
+                      <Lock className="h-4 w-4 text-primary shrink-0" />
                       {l.name}
                       <span
-                        className="text-[10px] inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums"
+                        className="text-[10px] inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-muted text-muted-foreground tabular-nums"
                         title={
                           l.lockType === "KEY"
                             ? `Schlüsselschloss · ${l.keyCount} Schlüssel`
@@ -334,20 +334,20 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                         {l.keyCount}×
                       </span>
                     </span>
-                    <div className="sm:hidden ml-6 mt-0.5 text-[11px] text-slate-400 font-mono">
+                    <div className="sm:hidden ml-6 mt-0.5 text-[11px] text-muted-foreground/70 font-mono">
                       Nr. {l.number}
                     </div>
                     {l.lockType === "KEY" && l.lockNumber && (
-                      <p className="ml-6 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                      <p className="ml-6 text-[11px] text-muted-foreground font-mono">
                         Schloss-Nr. {l.lockNumber}
                       </p>
                     )}
                     {l.notes && (
-                      <p className="ml-6 text-[11px] text-slate-400 truncate">{l.notes}</p>
+                      <p className="ml-6 text-[11px] text-muted-foreground/70 truncate">{l.notes}</p>
                     )}
                     <div className="md:hidden ml-6 mt-1">
                       {l.location ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                           <MapPin className="h-3 w-3" />
                           {l.location}
                         </span>
@@ -355,34 +355,34 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                     </div>
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell text-slate-600 dark:text-slate-400 text-sm">
+                <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
                   {l.location ? (
                     <span className="inline-flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                      <MapPin className="h-3.5 w-3.5 text-muted-foreground/70" />
                       {l.location}
                     </span>
                   ) : (
-                    <span className="text-slate-400">–</span>
+                    <span className="text-muted-foreground/70">–</span>
                   )}
                 </TableCell>
                 <TableCell>
                   {l.current ? (
                     <div className="flex flex-col gap-0.5 min-w-0">
-                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground/90 truncate">
                         {l.current.ticket
                           ? <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                          : <User className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                          : <User className="h-3.5 w-3.5 text-warning shrink-0" />}
                         {rentalDisplayName(l.current)}
                       </span>
                       <div className="flex flex-wrap items-center gap-1">
                         {l.current.ticket?.subscription && (
-                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0">
+                          <Badge variant="success" className="gap-1 text-[10px] py-0">
                             <CreditCard className="h-2.5 w-2.5" />
                             {l.current.ticket.subscription.name}
                           </Badge>
                         )}
                         {!l.current.ticket && l.current.renterName && (
-                          <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 gap-1 text-[10px] py-0" title="Manuell hinterlegter Mieter ohne Abo-Verknüpfung">
+                          <Badge className="bg-warning/10 text-warning gap-1 text-[10px] py-0" title="Manuell hinterlegter Mieter ohne Abo-Verknüpfung">
                             <User className="h-2.5 w-2.5" />
                             Manuell
                           </Badge>
@@ -395,8 +395,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                               className={cn(
                                 "text-[10px] inline-flex items-center gap-0.5 px-1 rounded tabular-nums",
                                 allBack
-                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
-                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                                  ? "bg-success/10 text-success "
+                                  : "bg-warning/10 text-warning "
                               )}
                               title={
                                 allBack
@@ -412,13 +412,13 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                       </div>
                     </div>
                   ) : (
-                    <Badge variant="outline" className="text-slate-400 border-slate-200 dark:border-slate-700 text-xs">
+                    <Badge variant="outline" className="text-muted-foreground/70 border-border text-xs">
                       Frei
                     </Badge>
                   )}
                   {l.openPast.length > 0 && (
                     <div
-                      className="mt-1 inline-flex items-start gap-1 text-[10px] leading-tight px-1.5 py-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300 max-w-full"
+                      className="mt-1 inline-flex items-start gap-1 text-[10px] leading-tight px-1.5 py-1 rounded bg-warning/10 text-warning max-w-full"
                       title={l.openPast
                         .map((r) => `${r.year}: ${rentalDisplayName(r)} – ${r.keysIssued - r.keysReturned} offen`)
                         .join("\n")}
@@ -443,7 +443,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                 </TableCell>
                 <TableCell className="hidden lg:table-cell w-[140px]">
                   {l.past.length === 0 ? (
-                    <span className="text-[11px] text-slate-400">–</span>
+                    <span className="text-[11px] text-muted-foreground/70">–</span>
                   ) : (
                     <div className="flex flex-wrap gap-0.5">
                       {l.past.slice(0, 4).map((r) => {
@@ -455,8 +455,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                             className={cn(
                               "font-mono text-[10px] tabular-nums px-1.5 py-0.5 rounded inline-flex items-center gap-0.5",
                               isOpen
-                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 ring-1 ring-amber-300 dark:ring-amber-800"
-                                : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                                ? "bg-warning/14 text-warning ring-1 ring-amber-300 "
+                                : "bg-muted text-muted-foreground",
                             )}
                             title={
                               isOpen
@@ -470,7 +470,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                         );
                       })}
                       {l.past.length > 4 && (
-                        <span className="text-[10px] text-slate-400 px-1">+{l.past.length - 4}</span>
+                        <span className="text-[10px] text-muted-foreground/70 px-1">+{l.past.length - 4}</span>
                       )}
                     </div>
                   )}

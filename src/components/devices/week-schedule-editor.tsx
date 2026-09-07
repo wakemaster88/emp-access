@@ -28,9 +28,9 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
         {/* Header */}
         <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr] gap-2 px-1 mb-1">
           <div />
-          <p className="text-xs font-medium text-slate-500 text-center">Tag</p>
-          <p className="text-xs font-medium text-slate-500 text-center">Einschalten</p>
-          <p className="text-xs font-medium text-slate-500 text-center">Ausschalten</p>
+          <p className="text-xs font-medium text-muted-foreground text-center">Tag</p>
+          <p className="text-xs font-medium text-muted-foreground text-center">Einschalten</p>
+          <p className="text-xs font-medium text-muted-foreground text-center">Ausschalten</p>
         </div>
 
         {DAY_KEYS.map((day) => {
@@ -53,7 +53,7 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
                   "w-8 h-4.5 rounded-full transition-colors relative shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-yellow-400",
                   entry.enabled
                     ? "bg-yellow-500 dark:bg-yellow-400"
-                    : "bg-slate-200 dark:bg-slate-700"
+                    : "bg-border dark:bg-accent"
                 )}
                 aria-label={`${DAY_LABELS[day]} ${entry.enabled ? "deaktivieren" : "aktivieren"}`}
               >
@@ -68,7 +68,7 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
               {/* Day label */}
               <span className={cn(
                 "text-sm font-semibold text-center",
-                entry.enabled ? "text-yellow-800 dark:text-yellow-300" : "text-slate-400"
+                entry.enabled ? "text-yellow-800 dark:text-yellow-300" : "text-muted-foreground/70"
               )}>
                 {DAY_LABELS[day]}
               </span>
@@ -82,8 +82,8 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
                 className={cn(
                   "w-full rounded-lg border px-2 py-1 text-sm text-center font-mono transition-colors outline-none",
                   entry.enabled
-                    ? "border-yellow-300 dark:border-yellow-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-yellow-400"
-                    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
+                    ? "border-yellow-300 dark:border-yellow-800 bg-card text-foreground/90 focus:ring-1 focus:ring-yellow-400"
+                    : "border-border bg-muted/50 text-muted-foreground/70 cursor-not-allowed"
                 )}
               />
 
@@ -96,8 +96,8 @@ export function WeekScheduleEditor({ value, onChange, className }: WeekScheduleE
                 className={cn(
                   "w-full rounded-lg border px-2 py-1 text-sm text-center font-mono transition-colors outline-none",
                   entry.enabled
-                    ? "border-yellow-300 dark:border-yellow-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-yellow-400"
-                    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
+                    ? "border-yellow-300 dark:border-yellow-800 bg-card text-foreground/90 focus:ring-1 focus:ring-yellow-400"
+                    : "border-border bg-muted/50 text-muted-foreground/70 cursor-not-allowed"
                 )}
               />
             </div>
@@ -132,9 +132,9 @@ export function WeekScheduleDisplay({ schedule }: { schedule: WeekSchedule }) {
         {/* Header */}
         <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr] gap-2 px-1 mb-1">
           <div />
-          <p className="text-xs font-medium text-slate-500 text-center">Tag</p>
-          <p className="text-xs font-medium text-slate-500 text-center">Ein</p>
-          <p className="text-xs font-medium text-slate-500 text-center">Aus</p>
+          <p className="text-xs font-medium text-muted-foreground text-center">Tag</p>
+          <p className="text-xs font-medium text-muted-foreground text-center">Ein</p>
+          <p className="text-xs font-medium text-muted-foreground text-center">Aus</p>
         </div>
         {DAY_KEYS.map((day) => {
           const entry = schedule[day];
@@ -150,13 +150,13 @@ export function WeekScheduleDisplay({ schedule }: { schedule: WeekSchedule }) {
                 "h-2 w-2 rounded-full mx-auto",
                 entry.enabled ? "bg-yellow-500" : "bg-slate-300 dark:bg-slate-600"
               )} />
-              <span className={cn("text-center font-semibold", entry.enabled ? "text-yellow-800 dark:text-yellow-300" : "text-slate-400")}>
+              <span className={cn("text-center font-semibold", entry.enabled ? "text-yellow-800 dark:text-yellow-300" : "text-muted-foreground/70")}>
                 {DAY_LABELS[day]}
               </span>
-              <span className={cn("text-center font-mono", entry.enabled ? "text-slate-700 dark:text-slate-300" : "text-slate-400")}>
+              <span className={cn("text-center font-mono", entry.enabled ? "text-foreground/80" : "text-muted-foreground/70")}>
                 {entry.enabled && entry.on ? entry.on : "–"}
               </span>
-              <span className={cn("text-center font-mono", entry.enabled ? "text-slate-700 dark:text-slate-300" : "text-slate-400")}>
+              <span className={cn("text-center font-mono", entry.enabled ? "text-foreground/80" : "text-muted-foreground/70")}>
                 {entry.enabled && entry.off ? entry.off : "–"}
               </span>
             </div>

@@ -105,19 +105,19 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
 
   if (step === "done" && config) {
     return (
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardContent className="pt-5 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-500">Status</span>
-            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">Verbunden</Badge>
+            <span className="text-sm text-muted-foreground">Status</span>
+            <Badge variant="success" className="text-xs">Verbunden</Badge>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-500">Chat-ID</span>
+            <span className="text-sm text-muted-foreground">Chat-ID</span>
             <Badge variant="outline" className="font-mono text-xs">{config.chatId}</Badge>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-500">Tagesbericht</span>
-            <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
+            <span className="text-sm text-muted-foreground">Tagesbericht</span>
+            <span className="text-sm font-medium text-foreground">
               {config.dailyReport ? `Täglich um ${config.dailyReportTime}` : "Deaktiviert"}
             </span>
           </div>
@@ -126,14 +126,14 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
               Bericht testen
             </Button>
-            <Button variant="outline" size="sm" onClick={handleDelete} disabled={loading} className="text-rose-600 hover:text-rose-700 border-rose-200 hover:border-rose-300">
+            <Button variant="outline" size="sm" onClick={handleDelete} disabled={loading} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60">
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
           {testResult && (
             <div className={cn(
               "flex items-center gap-2 p-2.5 rounded-lg text-xs font-medium",
-              testResult === "ok" ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400" : "bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400",
+              testResult === "ok" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive",
             )}>
               {testResult === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
               {testResult === "ok" ? "Tagesbericht erfolgreich gesendet!" : "Fehler beim Senden"}
@@ -145,12 +145,12 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="pt-5 space-y-4">
         {step === "idle" && (
           <>
-            <p className="text-sm text-slate-500">
-              Erstelle einen Telegram Bot via <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline">@BotFather</a>,
+            <p className="text-sm text-muted-foreground">
+              Erstelle einen Telegram Bot via <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="text-primary font-medium hover:underline">@BotFather</a>,
               fuege ihn zu einer Gruppe hinzu und sende dort eine Nachricht. Dann gib hier den Bot-Token ein.
             </p>
             <Button size="sm" onClick={() => setStep("token")}>Bot einrichten</Button>
@@ -160,16 +160,16 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
         {step === "token" && (
           <>
             <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Bot Token</label>
+              <label className="text-sm font-medium text-foreground/80">Bot Token</label>
               <input
                 type="text"
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
                 placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
             </div>
-            {error && <p className="text-xs text-rose-600">{error}</p>}
+            {error && <p className="text-xs text-destructive">{error}</p>}
             <div className="flex gap-2">
               <Button size="sm" onClick={handleValidate} disabled={!botToken || loading}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
@@ -182,14 +182,14 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
 
         {step === "chat" && (
           <>
-            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-success/10 text-xs font-medium text-success">
               <CheckCircle2 className="h-4 w-4" />
               Bot @{botUsername} verbunden
             </div>
 
             {chats.length > 0 ? (
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Chat auswählen</label>
+                <label className="text-sm font-medium text-foreground/80">Chat auswählen</label>
                 <div className="mt-1 space-y-1.5">
                   {chats.map((chat) => (
                     <button
@@ -198,27 +198,27 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
                       className={cn(
                         "w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors",
                         selectedChat === String(chat.id)
-                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30 dark:border-indigo-500"
-                          : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600",
+                          ? "border-primary bg-primary/8 "
+                          : "border-border hover:border-input dark:hover:border-slate-600",
                       )}
                     >
                       <span className="font-medium">{chat.title}</span>
-                      <span className="ml-2 text-xs text-slate-400">{chat.type} · {chat.id}</span>
+                      <span className="ml-2 text-xs text-muted-foreground/70">{chat.type} · {chat.id}</span>
                     </button>
                   ))}
                 </div>
               </div>
             ) : (
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Chat-ID manuell eingeben</label>
+                <label className="text-sm font-medium text-foreground/80">Chat-ID manuell eingeben</label>
                 <input
                   type="text"
                   value={selectedChat}
                   onChange={(e) => setSelectedChat(e.target.value)}
                   placeholder="-1001234567890"
-                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
                 />
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-muted-foreground/70 mt-1">
                   Sende eine Nachricht in den Chat und klicke dann &quot;Aktualisieren&quot;, oder gib die Chat-ID manuell ein.
                 </p>
                 <Button size="sm" variant="outline" className="mt-2" onClick={handleValidate} disabled={loading}>
@@ -228,14 +228,14 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               </div>
             )}
 
-            <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <div className="space-y-3 pt-2 border-t border-border">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Tagesbericht</label>
+                <label className="text-sm font-medium text-foreground/80">Tagesbericht</label>
                 <button
                   onClick={() => setDailyReport(!dailyReport)}
                   className={cn(
                     "relative h-6 w-11 rounded-full transition-colors",
-                    dailyReport ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700",
+                    dailyReport ? "bg-primary" : "bg-slate-300 dark:bg-accent",
                   )}
                 >
                   <span className={cn(
@@ -246,11 +246,11 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               </div>
               {dailyReport && (
                 <div>
-                  <label className="text-xs text-slate-500">Uhrzeit (Berlin)</label>
+                  <label className="text-xs text-muted-foreground">Uhrzeit (Berlin)</label>
                   <select
                     value={reportTime}
                     onChange={(e) => setReportTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
                   >
                     {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t} Uhr</option>)}
                   </select>
@@ -258,7 +258,7 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               )}
             </div>
 
-            {error && <p className="text-xs text-rose-600">{error}</p>}
+            {error && <p className="text-xs text-destructive">{error}</p>}
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSave} disabled={!selectedChat || loading}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}

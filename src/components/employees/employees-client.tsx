@@ -127,20 +127,20 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
     }
     if (e.status === "PROTECTED") {
       return (
-        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1 text-xs">
+        <Badge variant="warning" className="gap-1 text-xs">
           <ShieldOff className="h-3 w-3" /> Gesperrt
         </Badge>
       );
     }
     if (isExpired) {
       return (
-        <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 gap-1 text-xs">
+        <Badge variant="danger" className="gap-1 text-xs">
           <AlertTriangle className="h-3 w-3" /> Vertrag abgelaufen
         </Badge>
       );
     }
     return (
-      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs">
+      <Badge variant="success" className="gap-1 text-xs">
         <CheckCircle2 className="h-3 w-3" /> Aktiv
       </Badge>
     );
@@ -148,24 +148,24 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
 
   return (
     <>
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-              <IdCard className="h-5 w-5 text-indigo-500" />
+              <IdCard className="h-5 w-5 text-primary" />
               Mitarbeiter ({filteredCounts.total})
             </CardTitle>
             <div className="hidden sm:flex items-center gap-2">
-              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
+              <Badge variant="success" className="text-xs">
                 {filteredCounts.active} aktiv
               </Badge>
               {filteredCounts.expired > 0 && (
-                <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 text-xs">
+                <Badge variant="danger" className="text-xs">
                   {filteredCounts.expired} abgelaufen
                 </Badge>
               )}
               {filteredCounts.blocked > 0 && (
-                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-xs">
+                <Badge variant="warning" className="text-xs">
                   {filteredCounts.blocked} blockiert
                 </Badge>
               )}
@@ -173,7 +173,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {empControlLastSync && (
-              <span className="text-xs text-slate-400 hidden md:flex items-center gap-1">
+              <span className="text-xs text-muted-foreground/70 hidden md:flex items-center gap-1">
                 <RefreshCw className="h-3 w-3" />
                 EMP-Control: {fmtDateTime(empControlLastSync)}
               </span>
@@ -188,7 +188,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
               <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
               Neu laden
             </Button>
-            <Button size="sm" onClick={() => setEditingId("new")} className="bg-indigo-600 hover:bg-indigo-700 gap-1.5">
+            <Button size="sm" onClick={() => setEditingId("new")} className="bg-primary hover:bg-primary/90 gap-1.5">
               <Plus className="h-4 w-4" /> Mitarbeiter
             </Button>
           </div>
@@ -197,7 +197,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
         <CardContent className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
               <Input
                 placeholder="Name, RFID oder Email suchen…"
                 value={search}
@@ -233,28 +233,28 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
           </div>
 
           {error && (
-            <div className="rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-sm text-rose-700 dark:text-rose-400">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </div>
           )}
 
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+          <div className="rounded-lg border border-border overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-                  <TableHead className="min-w-[220px] text-slate-600 dark:text-slate-400 font-medium">Mitarbeiter</TableHead>
-                  <TableHead className="hidden sm:table-cell w-[160px] text-slate-600 dark:text-slate-400 font-medium">RFID / Email</TableHead>
-                  <TableHead className="hidden md:table-cell w-[200px] text-slate-600 dark:text-slate-400 font-medium">Vertrag</TableHead>
-                  <TableHead className="hidden md:table-cell min-w-[200px] text-slate-600 dark:text-slate-400 font-medium">Zugang</TableHead>
-                  <TableHead className="w-[140px] text-slate-600 dark:text-slate-400 font-medium">Status</TableHead>
-                  <TableHead className="hidden lg:table-cell w-[160px] text-slate-600 dark:text-slate-400 font-medium">Letzte Aktivität</TableHead>
+                <TableRow className="border-border hover:bg-transparent bg-muted/40">
+                  <TableHead className="min-w-[220px] text-muted-foreground font-medium">Mitarbeiter</TableHead>
+                  <TableHead className="hidden sm:table-cell w-[160px] text-muted-foreground font-medium">RFID / Email</TableHead>
+                  <TableHead className="hidden md:table-cell w-[200px] text-muted-foreground font-medium">Vertrag</TableHead>
+                  <TableHead className="hidden md:table-cell min-w-[200px] text-muted-foreground font-medium">Zugang</TableHead>
+                  <TableHead className="w-[140px] text-muted-foreground font-medium">Status</TableHead>
+                  <TableHead className="hidden lg:table-cell w-[160px] text-muted-foreground font-medium">Letzte Aktivität</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading && employees.length === 0 && (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="text-center py-10 text-slate-400 text-sm">
+                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground/70 text-sm">
                       Lade Mitarbeiter…
                     </TableCell>
                   </TableRow>
@@ -262,9 +262,9 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                 {!loading && employees.length === 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={7} className="text-center py-16">
-                      <div className="flex flex-col items-center gap-2 text-slate-500">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <IdCard className="h-10 w-10 text-slate-300 dark:text-slate-600" />
-                        <p className="font-medium text-slate-600 dark:text-slate-400">Keine Mitarbeiter gefunden</p>
+                        <p className="font-medium text-muted-foreground">Keine Mitarbeiter gefunden</p>
                         <p className="text-sm">Per EMP-Control-Webhook oder manuell über &bdquo;+ Mitarbeiter&ldquo; anlegen.</p>
                       </div>
                     </TableCell>
@@ -278,12 +278,12 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                   return (
                     <TableRow
                       key={e.id}
-                      className="group cursor-pointer border-slate-200 dark:border-slate-700 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-colors"
+                      className="group cursor-pointer border-border hover:bg-primary/10 transition-colors"
                       onClick={() => setEditingId(e.id)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-9 w-9 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
+                          <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
                             {e.profileImage ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={e.profileImage} alt="" className="h-full w-full object-cover" />
@@ -292,13 +292,13 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                             )}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                            <p className="text-sm font-medium text-foreground truncate">
                               {fullName}
                             </p>
-                            <p className="text-xs text-slate-500 truncate">
+                            <p className="text-xs text-muted-foreground truncate">
                               {e.ticketTypeName ?? "Mitarbeiter"}
                               {e.hasSchedule && (
-                                <span className="ml-1.5 inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+                                <span className="ml-1.5 inline-flex items-center gap-0.5 text-warning">
                                   <Clock className="h-3 w-3" /> Plan
                                 </span>
                               )}
@@ -310,28 +310,28 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                       <TableCell className="hidden sm:table-cell">
                         <div className="space-y-0.5">
                           {e.rfidCode ? (
-                            <p className="text-xs font-mono text-slate-700 dark:text-slate-300 inline-flex items-center gap-1">
-                              <KeyRound className="h-3 w-3 text-slate-400" />
+                            <p className="text-xs font-mono text-foreground/80 inline-flex items-center gap-1">
+                              <KeyRound className="h-3 w-3 text-muted-foreground/70" />
                               {e.rfidCode}
                             </p>
                           ) : (
-                            <p className="text-xs text-slate-400">—</p>
+                            <p className="text-xs text-muted-foreground/70">—</p>
                           )}
                           {e.email && (
-                            <p className="text-[11px] text-slate-400 truncate max-w-[160px]">{e.email}</p>
+                            <p className="text-[11px] text-muted-foreground/70 truncate max-w-[160px]">{e.email}</p>
                           )}
                         </div>
                       </TableCell>
 
                       <TableCell className="hidden md:table-cell">
-                        <div className="text-xs text-slate-600 dark:text-slate-400">
+                        <div className="text-xs text-muted-foreground">
                           {e.startDate || e.endDate ? (
                             <>
-                              <p>{e.startDate ? fmtDate(e.startDate) : "—"} <span className="text-slate-400">bis</span></p>
+                              <p>{e.startDate ? fmtDate(e.startDate) : "—"} <span className="text-muted-foreground/70">bis</span></p>
                               <p>{e.endDate ? fmtDate(e.endDate) : "unbefristet"}</p>
                             </>
                           ) : (
-                            <p className="text-slate-400">unbefristet</p>
+                            <p className="text-muted-foreground/70">unbefristet</p>
                           )}
                         </div>
                       </TableCell>
@@ -339,7 +339,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                       <TableCell className="hidden md:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {e.areas.length === 0 && e.directDevices.length === 0 && (
-                            <span className="text-xs text-slate-400">Kein Zugang</span>
+                            <span className="text-xs text-muted-foreground/70">Kein Zugang</span>
                           )}
                           {e.areas.slice(0, 3).map((a) => (
                             <Badge key={a.id} variant="secondary" className="text-[10px] gap-1">
@@ -350,23 +350,23 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                             <Badge variant="secondary" className="text-[10px]">+{e.areas.length - 3}</Badge>
                           )}
                           {e.directDevices.slice(0, 2).map((d) => (
-                            <Badge key={d.id} className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 text-[10px] gap-1">
+                            <Badge key={d.id} className="bg-destructive/12 text-destructive text-[10px] gap-1">
                               <Cpu className="h-2.5 w-2.5" /> {d.name}
                             </Badge>
                           ))}
                           {e.directDevices.length > 2 && (
-                            <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 text-[10px]">+{e.directDevices.length - 2}</Badge>
+                            <Badge variant="danger" className="text-[10px]">+{e.directDevices.length - 2}</Badge>
                           )}
                         </div>
                       </TableCell>
 
                       <TableCell>{statusBadge(e)}</TableCell>
 
-                      <TableCell className="hidden lg:table-cell text-xs text-slate-500">
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                         {e.lastScan ? (
                           <>
                             <p>{fmtDateTime(e.lastScan.scanTime)}</p>
-                            <p className={e.lastScan.result === "GRANTED" ? "text-emerald-600" : "text-rose-600"}>
+                            <p className={e.lastScan.result === "GRANTED" ? "text-success" : "text-destructive"}>
                               {e.lastScan.result}
                             </p>
                           </>

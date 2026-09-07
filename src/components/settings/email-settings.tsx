@@ -167,25 +167,25 @@ const TRIGGER_META: Record<
     label: "Abo läuft aus",
     helper: "Tage VOR endDate",
     icon: CalendarClock,
-    color: "text-amber-600 dark:text-amber-400",
+    color: "text-warning",
   },
   SUBSCRIPTION_EXPIRED: {
     label: "Abo abgelaufen",
     helper: "Tage NACH endDate",
     icon: CalendarX,
-    color: "text-rose-600 dark:text-rose-400",
+    color: "text-destructive",
   },
   DAY_VISIT_FOLLOWUP: {
     label: "Tagesgast Followup",
     helper: "Tage NACH erstem Scan",
     icon: Smile,
-    color: "text-emerald-600 dark:text-emerald-400",
+    color: "text-success",
   },
   TICKET_WELCOME: {
     label: "Welcome",
     helper: "Tage NACH Ticket-Anlage",
     icon: Sparkles,
-    color: "text-indigo-600 dark:text-indigo-400",
+    color: "text-primary",
   },
 };
 
@@ -244,21 +244,21 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
       <EmailConfigCard config={config} onConfigChange={setConfig} />
 
       {config && (
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="pt-5 space-y-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Automatische Mails</h3>
-                <p className="text-xs text-slate-500">
+                <h3 className="text-sm font-semibold text-foreground">Automatische Mails</h3>
+                <p className="text-xs text-muted-foreground">
                   Regelbasierte Mails zu Aboablauf, Followups und Welcome-Nachrichten.
                 </p>
               </div>
               <div className="flex gap-2 shrink-0">
                 <Button variant="outline" size="sm" onClick={() => setPresetPickerOpen(true)} className="gap-1.5">
-                  <Sparkles className="h-4 w-4 text-indigo-500" />
+                  <Sparkles className="h-4 w-4 text-primary" />
                   Aus Vorlage
                 </Button>
-                <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 gap-1.5" onClick={handleNewBlank}>
+                <Button size="sm" className="gap-1.5" onClick={handleNewBlank}>
                   <Plus className="h-4 w-4" />
                   Neue Regel
                 </Button>
@@ -266,14 +266,14 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
             </div>
 
             {rulesLoading && rules == null ? (
-              <div className="py-6 text-center text-sm text-slate-400">
+              <div className="py-6 text-center text-sm text-muted-foreground/70">
                 <Loader2 className="h-4 w-4 animate-spin mx-auto" />
               </div>
             ) : rules && rules.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-6 text-center">
+              <div className="rounded-lg border border-dashed border-border bg-muted/50/40 p-6 text-center">
                 <Mail className="h-8 w-8 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Noch keine Regeln</p>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-sm font-medium text-muted-foreground">Noch keine Regeln</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
                   Lege jetzt deine erste automatische Mail an – am schnellsten geht es mit einer Vorlage.
                 </p>
                 <Button
@@ -282,7 +282,7 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
                   className="mt-3 gap-1.5"
                   onClick={() => setPresetPickerOpen(true)}
                 >
-                  <Sparkles className="h-4 w-4 text-indigo-500" />
+                  <Sparkles className="h-4 w-4 text-primary" />
                   Vorlage wählen
                 </Button>
               </div>
@@ -447,14 +447,14 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="pt-5 space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-slate-500" />
+            <History className="h-4 w-4 text-muted-foreground" />
             <div>
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Mail-Historie</h3>
-              <p className="text-xs text-slate-500">
+              <h3 className="text-sm font-semibold text-foreground">Mail-Historie</h3>
+              <p className="text-xs text-muted-foreground">
                 Wer hat wann welche Mail bekommen – inkl. Cron, manuell ausgeloester Sends und Tests.
               </p>
             </div>
@@ -473,7 +473,7 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
 
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -484,7 +484,7 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
               <button
                 type="button"
                 onClick={() => setSearch("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground"
                 aria-label="Suche leeren"
               >
                 <X className="h-3.5 w-3.5" />
@@ -518,20 +518,20 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
         </div>
 
         {loading && sends == null ? (
-          <div className="py-6 text-center text-sm text-slate-400">
+          <div className="py-6 text-center text-sm text-muted-foreground/70">
             <Loader2 className="h-4 w-4 animate-spin mx-auto" />
           </div>
         ) : sends && sends.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-6 text-center">
+          <div className="rounded-lg border border-dashed border-border bg-muted/50/40 p-6 text-center">
             <Mail className="h-7 w-7 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Noch keine Sends</p>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-sm font-medium text-muted-foreground">Noch keine Sends</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">
               Sobald der Cron oder ein Test eine Mail verschickt, taucht sie hier auf.
             </p>
           </div>
         ) : (
           <>
-            <ul className="divide-y divide-slate-100 dark:divide-slate-800 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <ul className="divide-y divide-border/60 rounded-lg border border-border overflow-hidden">
               {sends?.map((s) => <EmailSendRow key={s.id} send={s} />)}
             </ul>
             {hasMore && (
@@ -558,7 +558,7 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
 function StatusBadge({ status }: { status: string }) {
   if (status === "SENT") {
     return (
-      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 gap-1 font-medium">
+      <Badge className="bg-success/10 text-success hover:bg-success/10 gap-1 font-medium">
         <CheckCircle2 className="h-3 w-3" />
         Versendet
       </Badge>
@@ -566,7 +566,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   if (status === "FAILED") {
     return (
-      <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 gap-1 font-medium">
+      <Badge className="bg-destructive/10 text-destructive hover:bg-destructive/10 gap-1 font-medium">
         <AlertTriangle className="h-3 w-3" />
         Fehler
       </Badge>
@@ -574,7 +574,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   if (status === "TEST") {
     return (
-      <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 gap-1 font-medium">
+      <Badge className="bg-warning/10 text-warning hover:bg-warning/10 gap-1 font-medium">
         <FlaskConical className="h-3 w-3" />
         Test
       </Badge>
@@ -598,45 +598,45 @@ function EmailSendRow({ send }: { send: EmailSendDTO }) {
     null;
 
   return (
-    <li className="px-4 py-3 bg-white dark:bg-slate-950 hover:bg-slate-50/60 dark:hover:bg-slate-900/40 transition-colors">
+    <li className="px-4 py-3 bg-background hover:bg-muted/50/60 dark:hover:bg-card/40 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={send.status} />
-            <span className="text-xs text-slate-500 inline-flex items-center gap-1">
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
               <Clock className="h-3 w-3" />
               {dateLabel}
             </span>
             {send.rule && (
-              <span className="text-xs text-slate-500 inline-flex items-center gap-1 truncate max-w-[200px]">
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1 truncate max-w-[200px]">
                 · {send.rule.name}
               </span>
             )}
           </div>
-          <div className="mt-1.5 text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+          <div className="mt-1.5 text-sm font-medium text-foreground truncate">
             {send.subject}
           </div>
-          <div className="mt-0.5 text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
+          <div className="mt-0.5 text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
             <Mail className="h-3 w-3 shrink-0" />
             <span className="truncate">
               {recipientName ? (
                 <>
-                  <span className="text-slate-700 dark:text-slate-300 font-medium">{recipientName}</span>
-                  <span className="text-slate-400"> · {send.to}</span>
+                  <span className="text-foreground/80 font-medium">{recipientName}</span>
+                  <span className="text-muted-foreground/70"> · {send.to}</span>
                 </>
               ) : (
                 send.to
               )}
             </span>
             {send.voucher && (
-              <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 font-mono">
+              <span className="inline-flex items-center gap-1 text-warning font-mono">
                 <GiftIcon className="h-3 w-3" />
                 {send.voucher.code}
               </span>
             )}
           </div>
           {send.status === "FAILED" && send.errorMessage && (
-            <div className="mt-1.5 text-xs text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-md px-2 py-1">
+            <div className="mt-1.5 text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-2 py-1">
               {send.errorMessage}
             </div>
           )}
@@ -767,19 +767,19 @@ function EmailConfigCard({
 
   if (config && !editing) {
     return (
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardContent className="pt-5 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <Mail className="h-4 w-4 text-indigo-500" />
-              <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">Versand-Konfiguration</span>
+              <Mail className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">Versand-Konfiguration</span>
             </div>
             <Badge
               className={cn(
                 "text-xs",
                 config.isActive && config.hasApiKey
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                  : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+                  ? "bg-success/12 text-success"
+                  : "bg-border text-muted-foreground dark:bg-muted dark:text-muted-foreground",
               )}
             >
               {config.isActive && config.hasApiKey ? "Aktiv" : config.hasApiKey ? "Deaktiviert" : "Kein API-Key"}
@@ -797,13 +797,13 @@ function EmailConfigCard({
             <Row
               label="App-Passwort"
               value={
-                config.hasApiKey ? config.apiKey ?? "•••" : <span className="text-rose-500">fehlt</span>
+                config.hasApiKey ? config.apiKey ?? "•••" : <span className="text-destructive">fehlt</span>
               }
               mono
             />
           </div>
-          <div className="border-t border-slate-100 dark:border-slate-800 pt-3 space-y-2">
-            <Label htmlFor="email-test-to" className="text-xs text-slate-500">
+          <div className="border-t border-border/60 pt-3 space-y-2">
+            <Label htmlFor="email-test-to" className="text-xs text-muted-foreground">
               Test-Mail senden an
             </Label>
             <div className="flex gap-2">
@@ -831,8 +831,8 @@ function EmailConfigCard({
                 className={cn(
                   "flex items-start gap-2 p-2.5 rounded-lg text-xs font-medium",
                   testResult === "ok"
-                    ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400"
-                    : "bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400",
+                    ? "bg-success/10 text-success"
+                    : "bg-destructive/10 text-destructive",
                 )}
               >
                 {testResult === "ok" ? (
@@ -854,7 +854,7 @@ function EmailConfigCard({
               size="sm"
               onClick={handleDelete}
               disabled={saving}
-              className="text-rose-600 hover:text-rose-700 border-rose-200 hover:border-rose-300 ml-auto"
+              className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 ml-auto"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -865,17 +865,17 @@ function EmailConfigCard({
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="pt-5 space-y-4">
         <div className="flex items-center gap-2">
-          <Mail className="h-4 w-4 text-indigo-500" />
-          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <Mail className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">
             {config ? "Konfiguration bearbeiten" : "Email-Versand einrichten"}
           </span>
         </div>
-        <div className="rounded-lg border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 px-3 py-2.5 text-xs text-slate-700 dark:text-slate-300 space-y-1">
-          <p className="font-medium text-indigo-700 dark:text-indigo-300">So richtest du Gmail ein:</p>
-          <ol className="list-decimal list-inside space-y-0.5 text-slate-600 dark:text-slate-400">
+        <div className="rounded-lg border border-primary/30/40 bg-primary/10 px-3 py-2.5 text-xs text-foreground/80 space-y-1">
+          <p className="font-medium text-primary">So richtest du Gmail ein:</p>
+          <ol className="list-decimal list-inside space-y-0.5 text-muted-foreground">
             <li>2-Faktor-Authentifizierung im Google-Konto aktivieren</li>
             <li>
               Unter{" "}
@@ -883,7 +883,7 @@ function EmailConfigCard({
                 href="https://myaccount.google.com/apppasswords"
                 target="_blank"
                 rel="noopener"
-                className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
+                className="text-primary font-medium hover:underline"
               >
                 myaccount.google.com/apppasswords
               </a>{" "}
@@ -896,7 +896,7 @@ function EmailConfigCard({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="email-from">
-              Gmail-Adresse <span className="text-rose-500">*</span>
+              Gmail-Adresse <span className="text-destructive">*</span>
             </Label>
             <Input
               id="email-from"
@@ -907,12 +907,12 @@ function EmailConfigCard({
               required
               autoComplete="email"
             />
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-muted-foreground/70">
               Auch erlaubt: in Gmail verifizierter Alias (z. B. eigene Domain).
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="email-api-key">Gmail App-Passwort <span className="text-rose-500">*</span></Label>
+            <Label htmlFor="email-api-key">Gmail App-Passwort <span className="text-destructive">*</span></Label>
             <Input
               id="email-api-key"
               type="password"
@@ -922,8 +922,8 @@ function EmailConfigCard({
               onChange={(e) => setApiKey(e.target.value)}
             />
             {keepKey && (
-              <p className="text-[11px] text-slate-400">
-                <button type="button" onClick={() => setKeepKey(false)} className="underline hover:text-rose-500">
+              <p className="text-[11px] text-muted-foreground/70">
+                <button type="button" onClick={() => setKeepKey(false)} className="underline hover:text-destructive">
                   Gespeichertes Passwort entfernen
                 </button>
               </p>
@@ -976,19 +976,19 @@ function EmailConfigCard({
               />
             </div>
           </div>
-          <div className="flex items-center justify-between sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
+          <div className="flex items-center justify-between sm:col-span-2 rounded-lg border border-border px-3 py-2">
             <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Versand aktiv</p>
-              <p className="text-xs text-slate-400">Wenn aus, werden keine automatischen Mails versendet.</p>
+              <p className="text-sm font-medium text-foreground/80">Versand aktiv</p>
+              <p className="text-xs text-muted-foreground/70">Wenn aus, werden keine automatischen Mails versendet.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
         </div>
 
-        {error && <p className="text-sm text-rose-600">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         <div className="flex gap-2">
-          <Button onClick={handleSave} disabled={saving || !fromEmail.trim()} className="bg-indigo-600 hover:bg-indigo-700">
+          <Button onClick={handleSave} disabled={saving || !fromEmail.trim()}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
             Speichern
           </Button>
@@ -1006,8 +1006,8 @@ function EmailConfigCard({
 function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-500">{label}</span>
-      <span className={cn("text-slate-800 dark:text-slate-200 truncate", mono && "font-mono text-xs")}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("text-foreground/90 truncate", mono && "font-mono text-xs")}>
         {value}
       </span>
     </div>
@@ -1140,30 +1140,30 @@ function RuleRow({
   return (
     <li
       className={cn(
-        "rounded-lg border bg-white dark:bg-slate-950 transition-colors",
+        "rounded-lg border bg-background transition-colors",
         rule.isActive
-          ? "border-slate-200 dark:border-slate-800"
-          : "border-slate-200 dark:border-slate-800 opacity-60",
+          ? "border-border"
+          : "border-border opacity-60",
       )}
     >
       <div className="flex items-center gap-3 p-3 flex-wrap">
-        <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0")}>
+        <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center bg-muted shrink-0")}>
           <Icon className={cn("h-4 w-4", meta.color)} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{rule.name}</p>
+            <p className="text-sm font-medium text-foreground truncate">{rule.name}</p>
             {rule.createVoucher && (
-              <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px] gap-1">
+              <Badge variant="warning" className="text-[10px] gap-1">
                 <GiftIcon className="h-3 w-3" />
                 {rule.voucherDiscountPercent ?? 0}%
               </Badge>
             )}
           </div>
-          <p className="text-xs text-slate-500 truncate">
+          <p className="text-xs text-muted-foreground truncate">
             <span className={meta.color}>{meta.label}</span>
             <span className="text-slate-300 mx-1.5">·</span>
-            {rule.daysOffset} Tage <span className="text-slate-400">({meta.helper})</span>
+            {rule.daysOffset} Tage <span className="text-muted-foreground/70">({meta.helper})</span>
             <span className="text-slate-300 mx-1.5">·</span>
             <Clock className="h-3 w-3 inline mb-0.5" /> Cooldown {rule.cooldownDays}d
             <span className="text-slate-300 mx-1.5">·</span>
@@ -1181,7 +1181,7 @@ function RuleRow({
             }}
             disabled={busy !== null}
             title="Test-Mail mit Beispieldaten senden"
-            className={cn(testOpen && "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400")}
+            className={cn(testOpen && "bg-warning/10 text-warning")}
           >
             <TestTube2 className="h-4 w-4" />
           </Button>
@@ -1194,7 +1194,7 @@ function RuleRow({
             onClick={runDiagnose}
             disabled={busy !== null}
             title="Diagnose: warum sendet die Regel (nichts)?"
-            className={cn(diagnose && "bg-sky-50 dark:bg-sky-950/30 text-sky-600 dark:text-sky-400")}
+            className={cn(diagnose && "bg-info/10 text-info")}
           >
             {busy === "diagnose" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
           </Button>
@@ -1206,7 +1206,7 @@ function RuleRow({
             size="icon"
             onClick={remove}
             disabled={busy !== null}
-            className="text-rose-500 hover:text-rose-600"
+            className="text-destructive hover:text-destructive"
             title="Löschen"
           >
             {busy === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -1214,16 +1214,16 @@ function RuleRow({
         </div>
       </div>
       {testOpen && (
-        <div className="border-t border-amber-200 dark:border-amber-900/40 px-3 py-2.5 bg-amber-50/50 dark:bg-amber-950/20 rounded-b-lg space-y-2">
+        <div className="border-t border-warning/30/40 px-3 py-2.5 bg-warning/10 rounded-b-lg space-y-2">
           <div className="flex items-center gap-2">
-            <TestTube2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
+            <TestTube2 className="h-3.5 w-3.5 text-warning shrink-0" />
+            <span className="text-xs font-medium text-warning">
               Test-Mail mit Beispieldaten (Max Mustermann, fiktive Termine)
             </span>
             <button
               type="button"
               onClick={() => setTestOpen(false)}
-              className="ml-auto text-amber-600/60 hover:text-amber-700 dark:hover:text-amber-300"
+              className="ml-auto text-warning/60 hover:text-warning"
               aria-label="Test schließen"
             >
               <X className="h-3.5 w-3.5" />
@@ -1241,14 +1241,14 @@ function RuleRow({
                   sendTest();
                 }
               }}
-              className="h-9 bg-white dark:bg-slate-900"
+              className="h-9 bg-card"
               autoFocus
             />
             <Button
               size="sm"
               onClick={sendTest}
               disabled={busy === "test" || !testTo.trim()}
-              className="bg-amber-600 hover:bg-amber-700 gap-1.5 shrink-0"
+              className="bg-warning hover:bg-warning/90 gap-1.5 shrink-0"
             >
               {busy === "test" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Senden
@@ -1259,8 +1259,8 @@ function RuleRow({
               className={cn(
                 "flex items-start gap-2 p-2 rounded-md text-xs font-medium",
                 testResult.ok
-                  ? "bg-emerald-100/60 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
-                  : "bg-rose-100/60 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400",
+                  ? "bg-success/10 text-success"
+                  : "bg-destructive/10 text-destructive",
               )}
             >
               {testResult.ok ? (
@@ -1274,7 +1274,7 @@ function RuleRow({
         </div>
       )}
       {runMsg && (
-        <div className="border-t border-slate-100 dark:border-slate-800 px-3 py-2 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/40 rounded-b-lg">
+        <div className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground bg-muted/50/40 rounded-b-lg">
           {runMsg}
         </div>
       )}
@@ -1326,8 +1326,8 @@ function DiagnoseBlock({
   const wouldSend = f.ticketsWouldSend;
   const tone =
     wouldSend > 0
-      ? "border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/60 dark:bg-emerald-950/20"
-      : "border-sky-200 dark:border-sky-900/40 bg-sky-50/60 dark:bg-sky-950/20";
+      ? "border-success/30/40 bg-success/10 "
+      : "border-info/30/40 bg-info/10 ";
 
   function formatDate(iso: string | null): string {
     if (!iso) return "—";
@@ -1360,17 +1360,17 @@ function DiagnoseBlock({
   return (
     <div className={cn("border-t px-3 py-3 rounded-b-lg space-y-3", tone)}>
       <div className="flex items-center gap-2">
-        <Stethoscope className="h-3.5 w-3.5 text-sky-700 dark:text-sky-400 shrink-0" />
-        <span className="text-xs font-semibold text-sky-900 dark:text-sky-200">
+        <Stethoscope className="h-3.5 w-3.5 text-info shrink-0" />
+        <span className="text-xs font-semibold text-info">
           Diagnose
         </span>
-        <span className="text-xs text-slate-600 dark:text-slate-400">
+        <span className="text-xs text-muted-foreground">
           Lookback {diagnose.rule.lookbackDays}d · Cooldown {diagnose.rule.cooldownDays}d
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="ml-auto text-sky-700/60 hover:text-sky-800 dark:text-sky-300/60 dark:hover:text-sky-200"
+          className="ml-auto text-info/60 hover:text-info/60"
           aria-label="Diagnose schließen"
         >
           <X className="h-3.5 w-3.5" />
@@ -1384,31 +1384,31 @@ function DiagnoseBlock({
             className={cn(
               "flex items-center justify-between gap-2 px-2 py-1 rounded",
               idx === steps.length - 1 || s.value === 0
-                ? "bg-white/60 dark:bg-slate-950/40"
-                : "bg-white/30 dark:bg-slate-950/20",
+                ? "bg-white/60 dark:bg-background/40"
+                : "bg-white/30 dark:bg-background/20",
             )}
           >
             <div className="min-w-0">
-              <span className="text-slate-700 dark:text-slate-300">{s.label}</span>
+              <span className="text-foreground/80">{s.label}</span>
               {s.hint && (
-                <span className="text-slate-400 dark:text-slate-500 ml-1.5">({s.hint})</span>
+                <span className="text-muted-foreground/70 ml-1.5">({s.hint})</span>
               )}
             </div>
             <span
               className={cn(
                 "font-mono font-semibold tabular-nums shrink-0",
-                s.value === 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-slate-100",
+                s.value === 0 ? "text-destructive" : "text-foreground",
               )}
             >
               {s.value}
             </span>
           </div>
         ))}
-        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded bg-emerald-100/70 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-900/50">
-          <span className="font-medium text-emerald-900 dark:text-emerald-200">
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded bg-success/10 border border-success/30">
+          <span className="font-medium text-success">
             Würde jetzt versenden
           </span>
-          <span className="font-mono font-bold tabular-nums text-emerald-900 dark:text-emerald-200">
+          <span className="font-mono font-bold tabular-nums text-success">
             {wouldSend}
           </span>
         </div>
@@ -1416,22 +1416,22 @@ function DiagnoseBlock({
 
       {diagnose.samplesInWindow.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
             Beispiele im Fenster
           </p>
           <ul className="space-y-0.5">
             {diagnose.samplesInWindow.slice(0, 5).map((s) => (
               <li
                 key={s.id}
-                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-slate-950/40"
+                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-background/40"
               >
                 <span className="truncate flex-1">
-                  {s.name ?? "—"} <span className="text-slate-400">·</span>{" "}
-                  <span className="text-slate-500">{s.email ?? "kein Email"}</span>
+                  {s.name ?? "—"} <span className="text-muted-foreground/70">·</span>{" "}
+                  <span className="text-muted-foreground">{s.email ?? "kein Email"}</span>
                 </span>
-                <span className="text-slate-500 shrink-0">{formatDate(s.triggerDate)}</span>
+                <span className="text-muted-foreground shrink-0">{formatDate(s.triggerDate)}</span>
                 {s.cooldownBlocked && (
-                  <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px]">
+                  <Badge variant="warning" className="text-[10px]">
                     Cooldown
                   </Badge>
                 )}
@@ -1443,20 +1443,20 @@ function DiagnoseBlock({
 
       {diagnose.samplesInWindow.length === 0 && diagnose.upcomingSample.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
             Nächste passende Tickets (außerhalb Fenster)
           </p>
           <ul className="space-y-0.5">
             {diagnose.upcomingSample.slice(0, 5).map((s) => (
               <li
                 key={s.id}
-                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-slate-950/40"
+                className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-white/60 dark:bg-background/40"
               >
                 <span className="truncate flex-1">
-                  {s.name ?? "—"} <span className="text-slate-400">·</span>{" "}
-                  <span className="text-slate-500">{s.email ?? "kein Email"}</span>
+                  {s.name ?? "—"} <span className="text-muted-foreground/70">·</span>{" "}
+                  <span className="text-muted-foreground">{s.email ?? "kein Email"}</span>
                 </span>
-                <span className="text-slate-500 shrink-0">{formatDate(s.triggerDate)}</span>
+                <span className="text-muted-foreground shrink-0">{formatDate(s.triggerDate)}</span>
               </li>
             ))}
           </ul>
@@ -1465,7 +1465,7 @@ function DiagnoseBlock({
 
       {f.ticketsTotal > 0 && f.ticketsWithEmail < f.ticketsTotal && (
         <div className="space-y-2">
-          <div className="flex items-start gap-2 p-2 rounded bg-amber-100/80 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs">
+          <div className="flex items-start gap-2 p-2 rounded bg-warning/10 text-warning text-xs">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             <span>
               {f.ticketsWithEmail === 0
@@ -1491,14 +1491,14 @@ function DiagnoseBlock({
               Anny-Sync jetzt starten
             </Button>
             {backfillResult && (
-              <span className="text-xs text-slate-600 dark:text-slate-400">{backfillResult}</span>
+              <span className="text-xs text-muted-foreground">{backfillResult}</span>
             )}
           </div>
         </div>
       )}
 
       {f.ticketsScopeMatch > 0 && f.ticketsInWindow === 0 && (
-        <div className="flex items-start gap-2 p-2 rounded bg-sky-100/80 dark:bg-sky-950/40 text-sky-900 dark:text-sky-200 text-xs">
+        <div className="flex items-start gap-2 p-2 rounded bg-info/10 text-info text-xs">
           <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <span>
             Es gibt {f.ticketsScopeMatch} grundsätzlich passende Tickets, aber gerade keines im
@@ -1509,7 +1509,7 @@ function DiagnoseBlock({
       )}
 
       {diagnose.lastSend && (
-        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+        <p className="text-[11px] text-muted-foreground">
           Letzter Send: {formatDate(diagnose.lastSend.sentAt)} an {diagnose.lastSend.to} ·{" "}
           {diagnose.lastSend.status}
           {diagnose.lastSend.errorMessage ? ` · ${diagnose.lastSend.errorMessage}` : ""}
@@ -1535,7 +1535,7 @@ function PresetPickerDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-indigo-600" />
+            <Sparkles className="h-5 w-5 text-primary" />
             Vorlage wählen
           </DialogTitle>
         </DialogHeader>
@@ -1548,15 +1548,15 @@ function PresetPickerDialog({
                 key={p.id}
                 type="button"
                 onClick={() => onPick(p)}
-                className="w-full text-left rounded-lg border border-slate-200 dark:border-slate-800 p-3 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-colors"
+                className="w-full text-left rounded-lg border border-border p-3 hover:border-primary/60 hover:bg-primary/10 transition-colors"
               >
                 <div className="flex items-start gap-3">
-                  <div className="h-9 w-9 rounded-lg flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0">
+                  <div className="h-9 w-9 rounded-lg flex items-center justify-center bg-muted shrink-0">
                     <Icon className={cn("h-4 w-4", meta.color)} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{p.label}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{p.description}</p>
+                    <p className="text-sm font-medium text-foreground">{p.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{p.description}</p>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <Badge variant="outline" className="text-[10px]">
                         {meta.label}
@@ -1565,7 +1565,7 @@ function PresetPickerDialog({
                         {p.defaults.daysOffset}d {p.defaults.trigger.startsWith("SUBSCRIPTION_EXPIRING") ? "vor" : "nach"}
                       </Badge>
                       {p.defaults.createVoucher && (
-                        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px] gap-1">
+                        <Badge variant="warning" className="text-[10px] gap-1">
                           <GiftIcon className="h-3 w-3" />
                           {p.defaults.voucherDiscountPercent}%
                         </Badge>
@@ -1820,7 +1820,7 @@ function RuleDialog({
       <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Mail className="h-5 w-5 text-indigo-600" />
+            <Mail className="h-5 w-5 text-primary" />
             {isEdit ? "Regel bearbeiten" : "Neue Regel"}
           </DialogTitle>
         </DialogHeader>
@@ -1851,14 +1851,14 @@ function RuleDialog({
                       className={cn(
                         "flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition-all",
                         trigger === t
-                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
-                          : "border-slate-200 dark:border-slate-800 hover:border-slate-300",
+                          ? "border-primary bg-primary/8"
+                          : "border-border hover:border-input",
                       )}
                     >
                       <Icon className={cn("h-4 w-4 shrink-0", m.color)} />
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{m.label}</p>
-                        <p className="text-xs text-slate-400 truncate">{m.helper}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{m.label}</p>
+                        <p className="text-xs text-muted-foreground/70 truncate">{m.helper}</p>
                       </div>
                     </button>
                   );
@@ -1876,7 +1876,7 @@ function RuleDialog({
                 value={daysOffset}
                 onChange={(e) => setDaysOffset(Number(e.target.value) || 0)}
               />
-              <p className="text-xs text-slate-400">{triggerInfo.helper}</p>
+              <p className="text-xs text-muted-foreground/70">{triggerInfo.helper}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="rule-cooldown">Cooldown (Tage)</Label>
@@ -1888,7 +1888,7 @@ function RuleDialog({
                 value={cooldownDays}
                 onChange={(e) => setCooldownDays(Number(e.target.value) || 0)}
               />
-              <p className="text-xs text-slate-400">Mindestabstand pro Empfänger.</p>
+              <p className="text-xs text-muted-foreground/70">Mindestabstand pro Empfänger.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="rule-lookback">Nachhol-Fenster (Tage)</Label>
@@ -1900,7 +1900,7 @@ function RuleDialog({
                 value={lookbackDays}
                 onChange={(e) => setLookbackDays(Number(e.target.value) || 0)}
               />
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-muted-foreground/70">
                 Holt verpasste Tage rückwirkend nach (0 = nur exakter Soll-Sendetag).
                 Cooldown verhindert Doppel-Sends.
               </p>
@@ -1952,14 +1952,14 @@ function RuleDialog({
                 value={renewUrl}
                 onChange={(e) => setRenewUrl(e.target.value)}
               />
-              <p className="text-xs text-slate-400">{renewUrlHelper}</p>
+              <p className="text-xs text-muted-foreground/70">{renewUrlHelper}</p>
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-3">
+          <div className="rounded-lg border border-border p-3 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <GiftIcon className="h-4 w-4 text-amber-500" />
+                <GiftIcon className="h-4 w-4 text-warning" />
                 <span className="text-sm font-medium">Rabatt-Voucher erzeugen</span>
               </div>
               <Switch checked={createVoucher} onCheckedChange={setCreateVoucher} />
@@ -2021,7 +2021,7 @@ function RuleDialog({
               value={bodyHtml}
               onChange={(e) => setBodyHtml(e.target.value)}
               rows={9}
-              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring/50"
             />
             <div className="flex flex-wrap gap-1">
               {variableHints.map((v) => (
@@ -2029,7 +2029,7 @@ function RuleDialog({
                   key={v}
                   type="button"
                   onClick={() => setBodyHtml((prev) => prev + v)}
-                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-indigo-900/40 text-slate-600 dark:text-slate-300 transition-colors"
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted hover:bg-primary/10 dark:bg-muted text-muted-foreground transition-colors"
                 >
                   {v}
                 </button>
@@ -2037,22 +2037,22 @@ function RuleDialog({
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
             <div>
               <p className="text-sm font-medium">Regel aktiv</p>
-              <p className="text-xs text-slate-400">Inaktive Regeln werden vom Cron ignoriert.</p>
+              <p className="text-xs text-muted-foreground/70">Inaktive Regeln werden vom Cron ignoriert.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
 
-          <div className="rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-3 space-y-2">
+          <div className="rounded-lg border border-warning/30/40 bg-warning/10 px-3 py-3 space-y-2">
             <div className="flex items-center gap-2">
-              <TestTube2 className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              <TestTube2 className="h-4 w-4 text-warning" />
+              <span className="text-sm font-medium text-warning">
                 Test-Mail mit Beispieldaten senden
               </span>
             </div>
-            <p className="text-xs text-amber-700/80 dark:text-amber-300/70">
+            <p className="text-xs text-warning/80">
               Rendert Betreff &amp; Body mit Platzhaltern wie <code className="font-mono">Max Mustermann</code> und
               fiktiven Daten – ohne dass die Regel gespeichert oder Empfänger ausgewählt werden müssen.
             </p>
@@ -2068,14 +2068,14 @@ function RuleDialog({
                     handleTest();
                   }
                 }}
-                className="h-9 bg-white dark:bg-slate-900"
+                className="h-9 bg-card"
               />
               <Button
                 type="button"
                 size="sm"
                 onClick={handleTest}
                 disabled={testing || !testTo.trim()}
-                className="bg-amber-600 hover:bg-amber-700 gap-1.5 shrink-0"
+                className="bg-warning hover:bg-warning/90 gap-1.5 shrink-0"
               >
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Test senden
@@ -2086,8 +2086,8 @@ function RuleDialog({
                 className={cn(
                   "flex items-start gap-2 p-2 rounded-md text-xs font-medium",
                   testResult.ok
-                    ? "bg-emerald-100/60 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
-                    : "bg-rose-100/60 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400",
+                    ? "bg-success/10 text-success"
+                    : "bg-destructive/10 text-destructive",
                 )}
               >
                 {testResult.ok ? (
@@ -2100,13 +2100,13 @@ function RuleDialog({
             )}
           </div>
 
-          {error && <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/20 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={saving}>
               Abbrechen
             </Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 min-w-32">
+            <Button onClick={handleSave} disabled={saving} className="min-w-32">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
             </Button>
           </div>

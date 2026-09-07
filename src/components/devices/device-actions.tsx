@@ -20,9 +20,9 @@ interface DeviceActionsProps {
 
 // Actions for access control devices (Drehkreuz, Tür)
 const ACCESS_ACTIONS = [
-  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, className: "bg-rose-600 hover:bg-rose-700 text-white",   activeTask: 2 },
-  { key: "open",       label: "Öffnen",       icon: DoorOpen,      className: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
-  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   className: "bg-amber-500 hover:bg-amber-600 text-white",  activeTask: 3 },
+  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, className: "bg-destructive hover:bg-destructive/90 text-white",   activeTask: 2 },
+  { key: "open",       label: "Öffnen",       icon: DoorOpen,      className: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
+  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   className: "bg-warning hover:bg-warning/90 text-warning-foreground",  activeTask: 3 },
   { key: "reset",      label: "Reset",        icon: RotateCcw,     className: "bg-slate-600 hover:bg-slate-700 text-white",  activeTask: 0 },
 ];
 
@@ -32,7 +32,7 @@ const TUER_ACTIONS = ACCESS_ACTIONS.filter((a) => a.key !== "emergency");
 
 // Actions for Schalter & Beleuchtung
 const SWITCH_ACTIONS = [
-  { key: "open",  label: "Einschalten", icon: Power,    className: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
+  { key: "open",  label: "Einschalten", icon: Power,    className: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
   { key: "reset", label: "Ausschalten", icon: PowerOff, className: "bg-slate-600 hover:bg-slate-700 text-white",    activeTask: 0 },
 ];
 
@@ -77,7 +77,7 @@ export function DeviceActions({ deviceId, deviceCategory, currentTask, onEdit }:
       </Button>
 
       {isSensor ? (
-        <span className="flex items-center gap-1.5 text-xs text-slate-400 px-2 italic">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70 px-2 italic">
           <Activity className="h-3.5 w-3.5" /> Sensor – nur Anzeige
         </span>
       ) : isSwitch ? (() => {

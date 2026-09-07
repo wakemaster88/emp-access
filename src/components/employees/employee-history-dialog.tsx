@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatCard } from "@/components/ui/stat-card";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -93,17 +94,17 @@ function deviceIcon(device: HistoryScan["device"]) {
 function sourceMeta(source: HistoryScan["source"]) {
   switch (source) {
     case "mobile":    return { label: "Mobile", icon: Smartphone, cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" };
-    case "dashboard": return { label: "Dashboard", icon: Monitor,    cls: "bg-slate-500/10 text-slate-600 dark:text-slate-400" };
+    case "dashboard": return { label: "Dashboard", icon: Monitor,    cls: "bg-slate-500/10 text-muted-foreground" };
     case "rfid":
-    default:          return { label: "Scanner",  icon: KeyRound,    cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" };
+    default:          return { label: "Scanner",  icon: KeyRound,    cls: "bg-info/10 text-info" };
   }
 }
 
 function resultMeta(result: string) {
   switch (result) {
-    case "GRANTED":   return { label: "OK",        icon: CheckCircle2, cls: "text-emerald-600 bg-emerald-500/10" };
-    case "PROTECTED": return { label: "Geschützt", icon: ShieldOff,    cls: "text-amber-600 bg-amber-500/10" };
-    default:          return { label: "Verweigert", icon: XCircle,     cls: "text-rose-600 bg-rose-500/10" };
+    case "GRANTED":   return { label: "OK",        icon: CheckCircle2, cls: "text-success bg-success/10" };
+    case "PROTECTED": return { label: "Geschützt", icon: ShieldOff,    cls: "text-warning bg-warning/10" };
+    default:          return { label: "Verweigert", icon: XCircle,     cls: "text-destructive bg-destructive/10" };
   }
 }
 
@@ -198,7 +199,7 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
       <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <History className="h-5 w-5 text-indigo-500" />
+            <History className="h-5 w-5 text-primary" />
             Verlauf{employeeName ? ` · ${employeeName}` : ""}
           </DialogTitle>
         </DialogHeader>
@@ -226,7 +227,7 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
         </div>
 
         {loading && (
-          <div className="py-10 text-center text-slate-400 text-sm">
+          <div className="py-10 text-center text-muted-foreground/70 text-sm">
             <Loader2 className="h-5 w-5 animate-spin inline-block mr-2" />
             Lade Verlauf…
           </div>
@@ -235,21 +236,21 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
         {!loading && data && (
           <>
             {/* Stats */}
-            <div className="grid grid-cols-4 gap-2 mt-3">
-              <StatCard label="Gesamt"     value={data.stats.total}   color="slate" />
-              <StatCard label="Erfolgreich" value={data.stats.granted} color="emerald" />
-              <StatCard label="Verweigert" value={data.stats.denied}  color="rose" />
-              <StatCard label="Erfolgsrate" value={successRate !== null ? `${successRate}%` : "—"} color="indigo" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+              <StatCard label="Gesamt" value={data.stats.total}   tone="neutral" size="sm" />
+              <StatCard label="Erfolgreich" value={data.stats.granted} tone="success" size="sm" />
+              <StatCard label="Verweigert" value={data.stats.denied}  tone="danger" size="sm" />
+              <StatCard label="Erfolgsrate" value={successRate !== null ? `${successRate}%` : "—"} tone="primary" size="sm" />
             </div>
 
             {/* Mini-Chart letzten 14 Tage */}
             {data.byDay.length > 0 && (
-              <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 p-3">
+              <div className="mt-3 rounded-lg border border-border bg-muted/50 dark:bg-card/30 p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wide text-slate-500 inline-flex items-center gap-1">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
                     <TrendingUp className="h-3 w-3" /> Aktivität – 14 Tage
                   </h4>
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-muted-foreground/70">
                     {data.byDay.reduce((s, d) => s + d.granted + d.denied, 0)} Scans
                   </span>
                 </div>
@@ -265,11 +266,11 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
                         title={`${d.day}: ${d.granted} OK, ${d.denied} Fehler`}
                       >
                         <div
-                          className="w-full rounded-sm bg-slate-200 dark:bg-slate-700 overflow-hidden transition-all"
+                          className="w-full rounded-sm bg-border dark:bg-accent overflow-hidden transition-all"
                           style={{ height: `${Math.max(h, total > 0 ? 6 : 0)}%` }}
                         >
                           <div
-                            className="bg-emerald-500"
+                            className="bg-success"
                             style={{ height: `${grantedPct}%`, width: "100%" }}
                           />
                         </div>
@@ -283,7 +284,7 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
             {/* Top-Devices */}
             {data.topDevices.length > 0 && (
               <div className="mt-3">
-                <h4 className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">Häufigste Geräte</h4>
+                <h4 className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">Häufigste Geräte</h4>
                 <div className="flex flex-wrap gap-1.5">
                   {data.topDevices.map((td, i) => (
                     <Badge
@@ -292,7 +293,7 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
                       className="text-[11px] gap-1 py-0.5 px-2"
                     >
                       {td.device?.name ?? "Unbekannt"}
-                      <span className="text-slate-500 font-mono ml-0.5">×{td.count}</span>
+                      <span className="text-muted-foreground font-mono ml-0.5">×{td.count}</span>
                     </Badge>
                   ))}
                 </div>
@@ -301,12 +302,12 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
 
             {/* Timeline */}
             <div className="mt-4 space-y-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <h4 className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 Verlauf · {data.scans.length} Eintr&auml;ge
               </h4>
 
               {data.scans.length === 0 && (
-                <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 p-8 text-center text-sm text-slate-400">
+                <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground/70">
                   <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                   Keine Eintr&auml;ge in diesem Zeitraum.
                 </div>
@@ -315,15 +316,15 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
               {groupedByDay.map((group) => (
                 <div key={group.day}>
                   <div className="flex items-center gap-2 px-1 mb-1.5">
-                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    <span className="text-[11px] font-bold text-foreground/80">
                       {fmtDayHeader(group.day)}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
+                    <span className="text-[10px] text-muted-foreground/70 font-mono">
                       {new Date(group.day).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
                     </span>
-                    <span className="ml-auto text-[10px] text-slate-400">{group.items.length}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground/70">{group.items.length}</span>
                   </div>
-                  <div className="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+                  <div className="rounded-lg bg-card border border-border divide-y divide-border/60 overflow-hidden">
                     {group.items.map((scan) => (
                       <HistoryRow key={scan.id} scan={scan} />
                     ))}
@@ -332,7 +333,7 @@ export function EmployeeHistoryDialog({ employeeId, employeeName, onClose }: Pro
               ))}
             </div>
 
-            <div className="flex justify-end mt-4 sticky bottom-0 bg-white dark:bg-slate-950 pt-2 pb-1 -mx-6 px-6 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex justify-end mt-4 sticky bottom-0 bg-background pt-2 pb-1 -mx-6 px-6 border-t border-border">
               <Button variant="ghost" size="sm" onClick={onClose}>Schliessen</Button>
             </div>
           </>
@@ -352,7 +353,7 @@ function HistoryRow({ scan }: { scan: HistoryScan }) {
   return (
     <div className="flex items-center gap-2.5 px-3 py-2">
       {/* Time */}
-      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 shrink-0 w-9 text-right tabular-nums">
+      <span className="text-[11px] font-mono text-muted-foreground shrink-0 w-9 text-right tabular-nums">
         {fmtTime(scan.scanTime)}
       </span>
 
@@ -363,10 +364,10 @@ function HistoryRow({ scan }: { scan: HistoryScan }) {
 
       {/* Device + Action */}
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight">
-          {scan.device?.name ?? <span className="italic text-slate-400">(ohne Gerät)</span>}
+        <p className="text-[13px] font-semibold text-foreground truncate leading-tight">
+          {scan.device?.name ?? <span className="italic text-muted-foreground/70">(ohne Gerät)</span>}
         </p>
-        <p className="text-[10px] text-slate-500 truncate flex items-center gap-1">
+        <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
           {createElement(src.icon, { className: "h-2.5 w-2.5 shrink-0" })}
           <span>{src.label}</span>
           <span className="text-slate-300">·</span>
@@ -374,7 +375,7 @@ function HistoryRow({ scan }: { scan: HistoryScan }) {
           {scan.note && scan.result !== "GRANTED" && (
             <>
               <span className="text-slate-300">·</span>
-              <span className="text-rose-500 truncate">{scan.note}</span>
+              <span className="text-destructive truncate">{scan.note}</span>
             </>
           )}
         </p>
@@ -389,26 +390,3 @@ function HistoryRow({ scan }: { scan: HistoryScan }) {
   );
 }
 
-// ─── StatCard ────────────────────────────────────────────────────────────────
-
-function StatCard({
-  label, value, color,
-}: {
-  label: string;
-  value: string | number;
-  color: "slate" | "emerald" | "rose" | "indigo";
-}) {
-  const cls = {
-    slate:   "bg-slate-500/10   text-slate-700   dark:text-slate-300",
-    emerald: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-    rose:    "bg-rose-500/10    text-rose-700    dark:text-rose-400",
-    indigo:  "bg-indigo-500/10  text-indigo-700  dark:text-indigo-400",
-  }[color];
-
-  return (
-    <div className={cn("rounded-lg px-3 py-2", cls)}>
-      <p className="text-[9px] font-bold uppercase tracking-wide opacity-75">{label}</p>
-      <p className="text-lg font-bold tabular-nums leading-tight mt-0.5">{value}</p>
-    </div>
-  );
-}

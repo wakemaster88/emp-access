@@ -163,7 +163,7 @@ export function AnnouncementDialog({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <Label htmlFor="aa-text">Ansagetext</Label>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-muted-foreground">
                     {text.length}/{MAX_ANNOUNCEMENT_CHARS}
                   </span>
                 </div>
@@ -210,7 +210,7 @@ export function AnnouncementDialog({
                 </SelectContent>
               </Select>
               {fileTracks.length === 0 && (
-                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                <p className="text-xs text-warning mt-1">
                   Noch keine Jingles oder Ansagen in der Mediathek.
                 </p>
               )}
@@ -218,7 +218,7 @@ export function AnnouncementDialog({
           )}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
-            <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
               <Switch checked={chime} onCheckedChange={setChime} />
               Gong voranstellen
             </label>
@@ -238,7 +238,7 @@ export function AnnouncementDialog({
             </div>
           </div>
 
-          <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+          <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
             <Switch checked={emergency} onCheckedChange={setEmergency} />
             Notfall – unterbricht laufende Durchsagen
           </label>
@@ -262,7 +262,7 @@ export function AnnouncementDialog({
           </div>
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-lg border border-red-200 dark:border-red-900/40">
+            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
               {error}
             </p>
           )}

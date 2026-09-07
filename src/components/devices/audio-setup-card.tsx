@@ -30,7 +30,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       onClick={copy}
       className="gap-1.5 text-xs shrink-0"
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
       {copied ? "Kopiert" : label}
     </Button>
   );
@@ -47,11 +47,11 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
   const setupCmd = `sudo /opt/emp-audio/venv/bin/python -m emp_audio.setup '${configJson}'`;
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="pt-6 space-y-5">
         <div className="flex items-center gap-2">
           <Volume2 className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <h3 className="text-sm font-semibold text-foreground">
             Abspieler einrichten
           </h3>
         </div>
@@ -60,18 +60,18 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 text-xs">1</Badge>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Software auf dem Raspberry Pi</p>
+            <p className="text-sm font-medium text-foreground/80">Software auf dem Raspberry Pi</p>
           </div>
           <div className="flex items-start gap-2">
             <div className="bg-slate-900 dark:bg-slate-950 rounded-lg p-3 font-mono text-xs text-slate-300 overflow-x-auto flex-1">
               <div className="flex items-start gap-2">
-                <Terminal className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+                <Terminal className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                 <span className="whitespace-pre select-all">{installCmd}</span>
               </div>
             </div>
             <CopyButton value={installCmd} label="Befehle" />
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground/70">
             Installiert mpv, den Dienst <span className="font-mono">emp-audio</span> und den Update-Timer.
           </p>
         </div>
@@ -80,15 +80,15 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 text-xs">2</Badge>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Konfigurations-JSON eingeben</p>
+            <p className="text-sm font-medium text-foreground/80">Konfigurations-JSON eingeben</p>
           </div>
           <div className="flex items-start gap-2">
-            <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-600 dark:text-slate-300 break-all flex-1 select-all">
+            <div className="bg-muted/50 border border-border rounded-lg p-3 font-mono text-xs text-muted-foreground break-all flex-1 select-all">
               {configJson}
             </div>
             <CopyButton value={configJson} label="JSON" />
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground/70">
             Das Installationsskript fragt diesen Text ab. Nachtragen geht später mit:
           </p>
           <div className="flex items-start gap-2">
@@ -97,7 +97,7 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
             </div>
             <CopyButton value={setupCmd} label="Befehl" />
           </div>
-          <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+          <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
             <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             <span>Enthält das API-Token des Mandanten – nur auf den eigenen Pi kopieren.</span>
           </div>
@@ -107,38 +107,38 @@ export function AudioSetupCard({ configJson, zoneName }: AudioSetupCardProps) {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 text-xs">3</Badge>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Beschallungszone zuweisen</p>
+            <p className="text-sm font-medium text-foreground/80">Beschallungszone zuweisen</p>
           </div>
           {zoneName ? (
-            <p className="text-xs text-slate-500">
-              Zugewiesen an Zone <span className="font-medium text-slate-700 dark:text-slate-300">{zoneName}</span>.
+            <p className="text-xs text-muted-foreground">
+              Zugewiesen an Zone <span className="font-medium text-foreground/80">{zoneName}</span>.
             </p>
           ) : (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
+            <p className="text-xs text-warning">
               Noch keine Zone zugewiesen – ohne Zone spielt der Abspieler nichts.
               Unter <span className="font-medium">Audio → Zonen</span> nachholen.
             </p>
           )}
         </div>
 
-        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 space-y-2">
-          <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Nützliche Befehle</h4>
+        <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Nützliche Befehle</h4>
           <div className="grid grid-cols-1 gap-1.5 text-xs font-mono">
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Status:</span>
-              <span className="text-slate-600 dark:text-slate-300">systemctl status emp-audio</span>
+              <span className="text-muted-foreground/70">Status:</span>
+              <span className="text-muted-foreground">systemctl status emp-audio</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Logs:</span>
-              <span className="text-slate-600 dark:text-slate-300">journalctl -u emp-audio -f</span>
+              <span className="text-muted-foreground/70">Logs:</span>
+              <span className="text-muted-foreground">journalctl -u emp-audio -f</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Ausgabe testen:</span>
-              <span className="text-slate-600 dark:text-slate-300">speaker-test -c2 -twav</span>
+              <span className="text-muted-foreground/70">Ausgabe testen:</span>
+              <span className="text-muted-foreground">speaker-test -c2 -twav</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-slate-400">Soundkarten:</span>
-              <span className="text-slate-600 dark:text-slate-300">aplay -l</span>
+              <span className="text-muted-foreground/70">Soundkarten:</span>
+              <span className="text-muted-foreground">aplay -l</span>
             </div>
           </div>
         </div>

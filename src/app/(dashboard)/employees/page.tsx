@@ -36,7 +36,7 @@ export default async function EmployeesPage() {
   return (
     <>
       <Header title="Mitarbeiter" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <EmployeesClient
           areas={areas}
           devices={devices}

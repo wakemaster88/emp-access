@@ -78,7 +78,7 @@ function ScheduleCard({
             <Badge
               className={
                 open
-                  ? "h-5 border-0 bg-emerald-100 text-[10px] text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                  ? "h-5 border-0 bg-success/10 text-[10px] text-success "
                   : "h-5 border-0 bg-neutral-100 text-[10px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
               }
             >
@@ -109,7 +109,7 @@ function ScheduleCard({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-red-600"
+              className="h-7 w-7 p-0 text-neutral-400 hover:text-destructive"
               onClick={onDelete}
               title="Löschen"
             >
@@ -125,7 +125,7 @@ function ScheduleCard({
           <dd className="font-medium">
             {describeDay(today)}
             {today.source === "exception" && (
-              <span className="ml-1.5 font-normal text-amber-600">
+              <span className="ml-1.5 font-normal text-warning">
                 Ausnahme{today.label ? `: ${today.label}` : ""}
               </span>
             )}
@@ -229,7 +229,7 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
         {!data.readonly && (
           <Button
             size="sm"
-            className="h-8 bg-indigo-600 text-xs hover:bg-indigo-700"
+            className="h-8 text-xs"
             onClick={() => setCreating(true)}
           >
             <Plus className="mr-1 h-3.5 w-3.5" />

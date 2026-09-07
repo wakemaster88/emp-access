@@ -94,7 +94,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label htmlFor="s-number" className="text-xs">
-                Schlüsselnummer <span className="text-rose-500">*</span>
+                Schlüsselnummer <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="s-number"
@@ -128,7 +128,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 id="s-level"
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
               >
                 {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
@@ -146,7 +146,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 disabled={isIssued}
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm disabled:opacity-60 dark:border-border dark:bg-card"
               >
                 {Object.entries(KEY_STATUS_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
@@ -155,7 +155,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 ))}
               </select>
               {isIssued && (
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-muted-foreground/70">
                   Ausgegeben – Rücknahme läuft über das Protokoll.
                 </p>
               )}
@@ -166,7 +166,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
             <Label className="text-xs">Schließt folgende Schlösser</Label>
             <LockPicker options={lockOptions} value={lockIds} onChange={setLockIds} />
             {level === "GRAND" && lockIds.length === 0 && (
-              <p className="text-[10px] text-amber-600">
+              <p className="text-[10px] text-warning">
                 Ein Generalschlüssel ohne zugeordnete Schlösser sperrt nichts.
               </p>
             )}
@@ -187,7 +187,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
           <ErrorLine message={error} />
         </div>
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         <div className="flex items-center justify-between">
           {!isNew ? (
@@ -196,7 +196,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
               size="sm"
               onClick={remove}
               disabled={saving || deleting}
-              className="h-8 text-xs text-slate-400 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/20"
+              className="h-8 text-xs text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive"
             >
               {deleting ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -216,7 +216,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
               size="sm"
               onClick={save}
               disabled={saving || deleting || !keyNumber.trim()}
-              className="h-8 min-w-24 bg-indigo-600 hover:bg-indigo-700"
+              className="h-8 min-w-24"
             >
               {saving ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -60,7 +60,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="pb-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -76,7 +76,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
             <Button
               size="sm"
               onClick={() => setDialog({ policy: null })}
-              className="h-8 bg-indigo-600 hover:bg-indigo-700"
+              className="h-8 bg-primary hover:bg-primary/90"
             >
               <Plus className="mr-1 h-3.5 w-3.5" />
               Vorlage
@@ -102,28 +102,28 @@ export function PoliciesTab({ policies, readonly }: Props) {
           return (
             <div
               key={group.name}
-              className="rounded-md border border-slate-200 p-3 dark:border-slate-700"
+              className="rounded-md border border-border p-3 dark:border-border"
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-200">
+                  <p className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground/90">
                     {group.name}
                     <Badge
                       className={cn(
                         "py-0 text-[10px]",
                         current.isActive
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                          : "bg-slate-100 text-slate-500 dark:bg-slate-800",
+                          ? "bg-success/12 text-success"
+                          : "bg-muted text-muted-foreground dark:bg-muted",
                       )}
                     >
                       {current.isActive ? `aktiv · v${current.version}` : `inaktiv · v${current.version}`}
                     </Badge>
                   </p>
-                  <p className="mt-1 line-clamp-2 whitespace-pre-line text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 line-clamp-2 whitespace-pre-line text-[11px] text-muted-foreground">
                     {current.bodyText}
                   </p>
                   {current.liabilityText && (
-                    <p className="mt-1 text-[10px] text-slate-400">Mit Haftungserklärung</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground/70">Mit Haftungserklärung</p>
                   )}
                 </div>
                 {!readonly && (
@@ -132,7 +132,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
                       <button
                         type="button"
                         onClick={() => activate(current)}
-                        className="p-1 text-slate-400 hover:text-emerald-600"
+                        className="p-1 text-muted-foreground/70 hover:text-success"
                         title="Diese Version aktivieren"
                       >
                         <Check className="h-3.5 w-3.5" />
@@ -141,7 +141,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
                     <button
                       type="button"
                       onClick={() => setDialog({ policy: current })}
-                      className="p-1 text-slate-400 hover:text-indigo-500"
+                      className="p-1 text-muted-foreground/70 hover:text-primary"
                       title="Neue Version erstellen"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -150,7 +150,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
                       <button
                         type="button"
                         onClick={() => setExpanded(isOpen ? null : group.name)}
-                        className="inline-flex items-center gap-0.5 p-1 text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                        className="inline-flex items-center gap-0.5 p-1 text-[11px] text-muted-foreground/70 hover:text-foreground"
                         title="Ältere Versionen"
                       >
                         <History className="h-3.5 w-3.5" />
@@ -162,20 +162,20 @@ export function PoliciesTab({ policies, readonly }: Props) {
               </div>
 
               {isOpen && (
-                <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 dark:border-slate-800">
+                <div className="mt-2 space-y-1 border-t border-border/60 pt-2 dark:border-border">
                   {older.map((v) => (
                     <div
                       key={v.id}
-                      className="flex items-center gap-2 rounded bg-slate-50 px-2 py-1 dark:bg-slate-800/50"
+                      className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1 dark:bg-muted/50"
                     >
-                      <span className="font-mono text-[11px] text-slate-500">v{v.version}</span>
-                      <span className="text-[11px] text-slate-400">{fmtDate(v.createdAt)}</span>
+                      <span className="font-mono text-[11px] text-muted-foreground">v{v.version}</span>
+                      <span className="text-[11px] text-muted-foreground/70">{fmtDate(v.createdAt)}</span>
                       {!readonly && (
                         <div className="ml-auto flex items-center gap-0.5">
                           <button
                             type="button"
                             onClick={() => activate(v)}
-                            className="p-0.5 text-slate-400 hover:text-emerald-600"
+                            className="p-0.5 text-muted-foreground/70 hover:text-success"
                             title="Diese Version wieder aktivieren"
                           >
                             <Check className="h-3 w-3" />
@@ -183,7 +183,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
                           <button
                             type="button"
                             onClick={() => remove(v)}
-                            className="p-0.5 text-slate-400 hover:text-rose-500"
+                            className="p-0.5 text-muted-foreground/70 hover:text-destructive"
                             title="Version löschen"
                           >
                             <Trash2 className="h-3 w-3" />

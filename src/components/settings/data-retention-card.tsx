@@ -18,7 +18,7 @@ import {
   RETENTION_DAY_OPTIONS,
   type DataRetentionConfig,
   type RetentionKey,
-} from "@/lib/data-retention";
+} from "@/lib/data-retention-config";
 
 interface Props {
   initial: DataRetentionConfig;
@@ -72,12 +72,12 @@ export function DataRetentionCard({ initial }: Props) {
     <Card>
       <CardContent className="pt-6 space-y-5">
         <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2 text-slate-600 dark:text-slate-300">
+          <div className="rounded-lg bg-muted p-2 text-muted-foreground">
             <Trash2 className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-slate-900 dark:text-white">Löschfristen</h3>
-            <p className="text-sm text-slate-500 mt-0.5">
+            <h3 className="font-semibold text-foreground">Löschfristen</h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
               Historien und Logs werden nächtlich automatisch gelöscht. Stammdaten (Fahrzeuge,
               Personen, Kameras, Tickets) bleiben erhalten.
             </p>
@@ -105,14 +105,14 @@ export function DataRetentionCard({ initial }: Props) {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-500">{meta.description}</p>
+                <p className="text-xs text-muted-foreground">{meta.description}</p>
               </div>
             );
           })}
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {saved && <p className="text-sm text-emerald-600">Gespeichert – gilt ab dem nächsten Nacht-Lauf.</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {saved && <p className="text-sm text-success">Gespeichert – gilt ab dem nächsten Nacht-Lauf.</p>}
 
         <Button onClick={save} disabled={saving} className="gap-1.5">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

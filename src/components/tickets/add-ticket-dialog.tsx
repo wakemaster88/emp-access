@@ -232,7 +232,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
       <DialogTrigger asChild>
-        <Button className="bg-indigo-600 hover:bg-indigo-700 gap-2">
+        <Button className="gap-2">
           <Plus className="h-4 w-4" />
           Ticket erstellen
         </Button>
@@ -246,7 +246,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="t-first">Vorname <span className="text-rose-500">*</span></Label>
+              <Label htmlFor="t-first">Vorname <span className="text-destructive">*</span></Label>
               <Input
                 id="t-first"
                 placeholder="Max"
@@ -257,7 +257,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="t-last">Nachname <span className="text-rose-500">*</span></Label>
+              <Label htmlFor="t-last">Nachname <span className="text-destructive">*</span></Label>
               <Input
                 id="t-last"
                 placeholder="Mustermann"
@@ -270,7 +270,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
 
           <div className="space-y-1.5">
             <Label htmlFor="t-email">
-              Email <span className="text-slate-400 font-normal">(für automatische Mails)</span>
+              Email <span className="text-muted-foreground/70 font-normal">(für automatische Mails)</span>
             </Label>
             <Input
               id="t-email"
@@ -284,7 +284,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
 
           <div className="space-y-1.5">
             <Label htmlFor="t-code" className="flex items-center gap-1.5">
-              <ScanLine className="h-3.5 w-3.5 text-slate-400" />
+              <ScanLine className="h-3.5 w-3.5 text-muted-foreground/70" />
               Code
             </Label>
             <Input
@@ -296,7 +296,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
               autoComplete="off"
             />
             {missingCard && (
-              <p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-500">
+              <p className="flex items-start gap-1.5 text-xs text-warning">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span>
                   „{selectedOption?.name}“ verlangt eine Karte. Ohne Code ist das
@@ -327,8 +327,8 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                     className={cn(
                       "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
                       selectedId === opt.id && selectedType === opt.type
-                        ? "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:text-indigo-600",
+                        ? "bg-primary text-white border-primary"
+                        : "bg-muted/50 text-foreground/80 border-border hover:border-primary/60 hover:text-primary",
                     )}
                   >
                     {opt.name}
@@ -341,8 +341,8 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
           {vereine.length > 0 && (
             <div className="space-y-1.5">
               <Label htmlFor="t-verein" className="flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5 text-slate-400" />
-                Verein <span className="text-slate-400 font-normal">(optional)</span>
+                <Users className="h-3.5 w-3.5 text-muted-foreground/70" />
+                Verein <span className="text-muted-foreground/70 font-normal">(optional)</span>
               </Label>
               <Select value={vereinId} onValueChange={setVereinId}>
                 <SelectTrigger id="t-verein" className="h-9 text-sm"><SelectValue placeholder="Kein Verein" /></SelectTrigger>
@@ -357,11 +357,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
           )}
 
           {pendingConflict && (
-            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-lg p-3 text-sm space-y-2">
-              <p className="font-semibold text-amber-800 dark:text-amber-200">
+            <div className="bg-warning/10 border border-warning/40/60 rounded-lg p-3 text-sm space-y-2">
+              <p className="font-semibold text-warning">
                 Bändchen bereits vergeben
               </p>
-              <p className="text-amber-700 dark:text-amber-100/90">
+              <p className="text-warning">
                 Der Code ist aktuell Ticket{" "}
                 <span className="font-semibold">{pendingConflict.label}</span>
                 {pendingConflict.type ? (
@@ -384,7 +384,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                   type="button"
                   onClick={confirmTransfer}
                   disabled={loading}
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+                  className="flex-1 bg-warning hover:bg-warning/90 text-warning-foreground"
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -397,7 +397,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
           )}
 
           {error && (
-            <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
               {error}
             </p>
           )}
@@ -413,7 +413,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                 || pendingConflict !== null
                 || (!firstName.trim() && !lastName.trim())
               }
-              className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
+              className="min-w-28"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}
             </Button>

@@ -145,12 +145,12 @@ function ticketDisplayName(t: AboTicketRef): string {
 
 function ticketStatusBadge(t: AboTicketRef): { label: string; cls: string } | null {
   if (t.status === "PAUSED") return { label: "Pausiert", cls: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300" };
-  if (t.status === "CANCELED") return { label: "Gekündigt", cls: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" };
-  if (t.status === "INVALID") return { label: "Ungültig", cls: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300" };
+  if (t.status === "CANCELED") return { label: "Gekündigt", cls: "bg-destructive/12 text-destructive" };
+  if (t.status === "INVALID") return { label: "Ungültig", cls: "bg-border text-muted-foreground dark:bg-accent dark:text-foreground/80" };
   if (t.endDate) {
     const end = new Date(t.endDate);
     if (!isNaN(end.getTime()) && end < new Date()) {
-      return { label: "Abgelaufen", cls: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300" };
+      return { label: "Abgelaufen", cls: "bg-destructive/10 text-destructive " };
     }
   }
   return null;
@@ -194,19 +194,19 @@ function TicketPicker({
       <div className="rounded-md border border-violet-200 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/10 p-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate inline-flex items-center gap-1.5">
+            <p className="text-sm font-medium text-foreground/90 truncate inline-flex items-center gap-1.5">
               <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
               {ticketDisplayName(selected)}
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-1">
               {selected.subscription && (
-                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[10px] py-0">
+                <Badge variant="success" className="gap-1 text-[10px] py-0">
                   <CreditCard className="h-2.5 w-2.5" />
                   {selected.subscription.name}
                 </Badge>
               )}
               {selected.ticketTypeName && (
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                <span className="text-[10px] text-muted-foreground">
                   {selected.ticketTypeName}
                 </span>
               )}
@@ -217,7 +217,7 @@ function TicketPicker({
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="text-slate-400 hover:text-indigo-500 p-1"
+              className="text-muted-foreground/70 hover:text-primary p-1"
               aria-label="Anderes Ticket wählen"
               title="Anderes Ticket wählen"
             >
@@ -226,7 +226,7 @@ function TicketPicker({
             <button
               type="button"
               onClick={() => onChange(null)}
-              className="text-slate-400 hover:text-rose-500 p-1"
+              className="text-muted-foreground/70 hover:text-destructive p-1"
               aria-label="Ticket entfernen"
               title="Ticket entfernen"
             >
@@ -244,28 +244,28 @@ function TicketPicker({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="w-full text-left h-9 px-3 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-slate-500 hover:border-indigo-300 transition-colors inline-flex items-center justify-between"
+          className="w-full text-left h-9 px-3 text-sm bg-card border border-border rounded-md text-muted-foreground hover:border-primary/60 transition-colors inline-flex items-center justify-between"
         >
-          <span className="text-slate-400">{placeholder ?? "— Ticket wählen —"}</span>
-          <Search className="h-3.5 w-3.5 text-slate-400" />
+          <span className="text-muted-foreground/70">{placeholder ?? "— Ticket wählen —"}</span>
+          <Search className="h-3.5 w-3.5 text-muted-foreground/70" />
         </button>
       )}
       {open && (
-        <div className="rounded-md border border-slate-200 dark:border-slate-700 p-1.5 space-y-1.5">
+        <div className="rounded-md border border-border p-1.5 space-y-1.5">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
             <input
               type="text"
               autoFocus={autoFocus ?? true}
               placeholder="Mieter, Abo, Tickettyp suchen…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
           <div className="max-h-[220px] overflow-y-auto space-y-0.5">
             {filtered.length === 0 ? (
-              <p className="text-[11px] text-slate-400 py-4 text-center">
+              <p className="text-[11px] text-muted-foreground/70 py-4 text-center">
                 {aboTickets.length === 0 ? "Noch keine Abo-Tickets vorhanden." : "Keine Treffer."}
               </p>
             ) : filtered.map((t) => {
@@ -278,28 +278,28 @@ function TicketPicker({
                   onClick={() => { onChange(t.id); setOpen(false); setQuery(""); }}
                   className={cn(
                     "w-full flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
-                    isSel ? "bg-violet-50 dark:bg-violet-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    isSel ? "bg-violet-50 dark:bg-violet-900/20" : "hover:bg-muted/50"
                   )}
                 >
                   <div className={cn(
                     "h-4 w-4 rounded-full border flex items-center justify-center shrink-0",
-                    isSel ? "bg-violet-500 border-violet-500" : "border-slate-300 dark:border-slate-600"
+                    isSel ? "bg-violet-500 border-violet-500" : "border-input"
                   )}>
                     {isSel && <Check className="h-2.5 w-2.5 text-white" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                    <p className="text-xs text-foreground/80 truncate">
                       {ticketDisplayName(t)}
                     </p>
                     <div className="flex flex-wrap items-center gap-1 mt-0.5">
                       {t.subscription && (
-                        <span className="text-[10px] text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-0.5">
+                        <span className="text-[10px] text-success inline-flex items-center gap-0.5">
                           <CreditCard className="h-2.5 w-2.5" />
                           {t.subscription.name}
                         </span>
                       )}
                       {t.ticketTypeName && (
-                        <span className="text-[10px] text-slate-400 truncate">· {t.ticketTypeName}</span>
+                        <span className="text-[10px] text-muted-foreground/70 truncate">· {t.ticketTypeName}</span>
                       )}
                       {sb && <span className={cn("text-[9px] px-1 rounded", sb.cls)}>{sb.label}</span>}
                     </div>
@@ -313,7 +313,7 @@ function TicketPicker({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 px-1"
+                className="text-[10px] text-muted-foreground/70 hover:text-foreground px-1"
               >
                 Abbrechen
               </button>
@@ -338,12 +338,12 @@ function RenterModeToggle({
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+      <span className="text-[10px] text-muted-foreground">
         Mieter{required ? " *" : ""}
       </span>
       <div
         role="tablist"
-        className="inline-flex rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-0.5 gap-0.5"
+        className="inline-flex rounded-md border border-border bg-muted/50/40 p-0.5 gap-0.5"
       >
         <button
           type="button"
@@ -353,8 +353,8 @@ function RenterModeToggle({
           className={cn(
             "inline-flex items-center gap-1 px-2 h-6 rounded text-[10px] font-medium transition-colors",
             mode === "ticket"
-              ? "bg-white dark:bg-slate-800 text-violet-700 dark:text-violet-300 shadow-sm"
-              : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200",
+              ? "bg-card text-violet-700 dark:text-violet-300 shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
           )}
           title="Mieter aus den Abo-Tickets auswählen"
         >
@@ -369,8 +369,8 @@ function RenterModeToggle({
           className={cn(
             "inline-flex items-center gap-1 px-2 h-6 rounded text-[10px] font-medium transition-colors",
             mode === "manual"
-              ? "bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 shadow-sm"
-              : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200",
+              ? "bg-card text-warning shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
           )}
           title="Mietername frei eingeben (ohne Abo-Verknüpfung)"
         >
@@ -654,8 +654,8 @@ export function LockerDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1 col-span-2">
               <Label htmlFor="l-name" className="text-xs inline-flex items-center gap-1">
-                <Lock className="h-3 w-3 text-slate-400" />
-                Name <span className="text-rose-500">*</span>
+                <Lock className="h-3 w-3 text-muted-foreground/70" />
+                Name <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="l-name" value={name} onChange={(e) => setName(e.target.value)}
@@ -664,8 +664,8 @@ export function LockerDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="l-number" className="text-xs inline-flex items-center gap-1">
-                <Hash className="h-3 w-3 text-slate-400" />
-                Nummer <span className="text-rose-500">*</span>
+                <Hash className="h-3 w-3 text-muted-foreground/70" />
+                Nummer <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="l-number" value={number} onChange={(e) => setNumber(e.target.value)}
@@ -674,7 +674,7 @@ export function LockerDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="l-location" className="text-xs inline-flex items-center gap-1">
-                <MapPin className="h-3 w-3 text-slate-400" />
+                <MapPin className="h-3 w-3 text-muted-foreground/70" />
                 Standort
               </Label>
               <Input
@@ -686,7 +686,7 @@ export function LockerDialog({
 
           <div className="space-y-1">
             <Label htmlFor="l-notes" className="text-xs inline-flex items-center gap-1">
-              <FileText className="h-3 w-3 text-slate-400" />
+              <FileText className="h-3 w-3 text-muted-foreground/70" />
               Notiz
             </Label>
             <Input
@@ -699,7 +699,7 @@ export function LockerDialog({
           <div className="grid grid-cols-[1fr_120px] gap-3 items-end">
             <div className="space-y-1">
               <Label className="text-xs inline-flex items-center gap-1">
-                <KeyRound className="h-3 w-3 text-slate-400" />
+                <KeyRound className="h-3 w-3 text-muted-foreground/70" />
                 Schlosstyp
               </Label>
               <div className="grid grid-cols-2 gap-1.5">
@@ -712,8 +712,8 @@ export function LockerDialog({
                   className={cn(
                     "h-9 px-2 rounded-md border text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors",
                     lockType === "KEY"
-                      ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
-                      : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                      ? "border-primary/30 bg-primary/10 text-primary "
+                      : "border-border text-muted-foreground hover:border-input dark:hover:border-slate-600"
                   )}
                 >
                   <Key className="h-3.5 w-3.5" />
@@ -728,8 +728,8 @@ export function LockerDialog({
                   className={cn(
                     "h-9 px-2 rounded-md border text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors",
                     lockType === "PADLOCK"
-                      ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
-                      : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                      ? "border-primary/30 bg-primary/10 text-primary "
+                      : "border-border text-muted-foreground hover:border-input dark:hover:border-slate-600"
                   )}
                 >
                   <Lock className="h-3.5 w-3.5" />
@@ -754,7 +754,7 @@ export function LockerDialog({
           {lockType === "KEY" && (
             <div className="space-y-1">
               <Label htmlFor="l-locknumber" className="text-xs inline-flex items-center gap-1">
-                <Key className="h-3 w-3 text-slate-400" />
+                <Key className="h-3 w-3 text-muted-foreground/70" />
                 Schlossnummer
               </Label>
               <Input
@@ -768,18 +768,18 @@ export function LockerDialog({
           )}
         </div>
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         {/* Vermietungs-Block */}
         {isNew ? (
           <div className="space-y-2">
-            <Label className="text-xs inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-              <Calendar className="h-3 w-3 text-slate-400" />
+            <Label className="text-xs inline-flex items-center gap-1.5 text-muted-foreground">
+              <Calendar className="h-3 w-3 text-muted-foreground/70" />
               Erste Vermietung (optional)
             </Label>
             <div className="grid grid-cols-[100px_1fr] gap-2 items-start">
               <div className="space-y-1">
-                <span className="text-[10px] text-slate-400">Jahr</span>
+                <span className="text-[10px] text-muted-foreground/70">Jahr</span>
                 <Input
                   type="number"
                   value={initialRentalYear}
@@ -815,22 +815,22 @@ export function LockerDialog({
                 )}
               </div>
             </div>
-            <p className="text-[10px] text-slate-400">
+            <p className="text-[10px] text-muted-foreground/70">
               Weitere Jahre kannst du nach dem Anlegen hinzufügen.
             </p>
           </div>
         ) : (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                <History className="h-3.5 w-3.5 text-slate-400" />
+              <Label className="text-xs inline-flex items-center gap-1.5 text-muted-foreground">
+                <History className="h-3.5 w-3.5 text-muted-foreground/70" />
                 Vermietungs-Historie ({rentals.length})
               </Label>
               {!editor && (
                 <button
                   type="button"
                   onClick={startNewRental}
-                  className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5"
+                  className="text-[11px] text-primary hover:underline inline-flex items-center gap-0.5"
                 >
                   <Plus className="h-3 w-3" />
                   Jahr hinzufügen
@@ -839,7 +839,7 @@ export function LockerDialog({
             </div>
 
             {rentals.length === 0 && !editor && (
-              <p className="text-[11px] text-slate-400 py-3 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-md">
+              <p className="text-[11px] text-muted-foreground/70 py-3 text-center border border-dashed border-border rounded-md">
                 Noch keine Vermietung hinterlegt.
               </p>
             )}
@@ -855,34 +855,34 @@ export function LockerDialog({
                     className={cn(
                       "rounded-md border p-2 flex items-center gap-2",
                       isCurrent
-                        ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/10"
-                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40"
+                        ? "border-success/30 bg-success/10 "
+                        : "border-border bg-card/40"
                     )}
                   >
                     <div className={cn(
                       "shrink-0 px-2 py-1 rounded font-mono text-xs font-semibold tabular-nums",
                       isCurrent
-                        ? "bg-emerald-500 text-white"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                        ? "bg-success text-success-foreground"
+                        : "bg-muted text-muted-foreground"
                     )}>
                       {r.year}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate inline-flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-foreground/90 truncate inline-flex items-center gap-1.5">
                         {r.ticket
                           ? <TicketIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                          : <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
+                          : <User className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />}
                         {rentalDisplayName(r)}
                       </p>
                       <div className="flex flex-wrap items-center gap-1 mt-0.5">
                         {r.ticket?.subscription && (
-                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-0.5">
+                          <span className="text-[10px] text-success inline-flex items-center gap-0.5">
                             <CreditCard className="h-2.5 w-2.5" />
                             {r.ticket.subscription.name}
                           </span>
                         )}
                         {!r.ticket && r.renterName && (
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-0.5">
+                          <span className="text-[10px] text-muted-foreground inline-flex items-center gap-0.5">
                             <User className="h-2.5 w-2.5" />
                             Manuell
                           </span>
@@ -895,8 +895,8 @@ export function LockerDialog({
                               className={cn(
                                 "text-[10px] inline-flex items-center gap-0.5 px-1 rounded",
                                 allBack
-                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
-                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                                  ? "bg-success/10 text-success "
+                                  : "bg-warning/10 text-warning "
                               )}
                               title={
                                 allBack
@@ -910,7 +910,7 @@ export function LockerDialog({
                           );
                         })()}
                         {r.notes && (
-                          <span className="text-[10px] text-slate-400 truncate">· {r.notes}</span>
+                          <span className="text-[10px] text-muted-foreground/70 truncate">· {r.notes}</span>
                         )}
                       </div>
                     </div>
@@ -919,7 +919,7 @@ export function LockerDialog({
                         <button
                           type="button"
                           onClick={() => startEditRental(r)}
-                          className="text-slate-400 hover:text-indigo-500 p-1"
+                          className="text-muted-foreground/70 hover:text-primary p-1"
                           title="Bearbeiten"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -927,7 +927,7 @@ export function LockerDialog({
                         <button
                           type="button"
                           onClick={() => handleDeleteRental(r)}
-                          className="text-slate-400 hover:text-rose-500 p-1"
+                          className="text-muted-foreground/70 hover:text-destructive p-1"
                           title="Entfernen"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -939,10 +939,10 @@ export function LockerDialog({
               })}
 
               {editor && (
-                <div className="rounded-md border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/10 p-3 space-y-2">
+                <div className="rounded-md border border-primary/30/40 bg-primary/10 p-3 space-y-2">
                   <div className="grid grid-cols-[100px_1fr] gap-2 items-start">
                     <div className="space-y-1">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">Jahr</span>
+                      <span className="text-[10px] text-muted-foreground">Jahr</span>
                       <Input
                         type="number"
                         value={editor.year}
@@ -951,7 +951,7 @@ export function LockerDialog({
                         className="h-9 text-sm"
                       />
                       {editorYearConflict && (
-                        <p className="text-[10px] text-amber-600">Jahr bereits vergeben.</p>
+                        <p className="text-[10px] text-warning">Jahr bereits vergeben.</p>
                       )}
                     </div>
                     <div className="space-y-1.5">
@@ -987,9 +987,9 @@ export function LockerDialog({
 
                   {/* Schlüssel/Schloss-Ausgabe + Rücknahme */}
                   {keyCount > 0 && (
-                    <div className="rounded-md border border-amber-200 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/10 p-2 space-y-2">
+                    <div className="rounded-md border border-warning/30/40 bg-warning/10 p-2 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium text-amber-800 dark:text-amber-300 inline-flex items-center gap-1">
+                        <span className="text-[10px] font-medium text-warning inline-flex items-center gap-1">
                           {lockType === "KEY"
                             ? <Key className="h-3 w-3" />
                             : <Lock className="h-3 w-3" />}
@@ -1000,7 +1000,7 @@ export function LockerDialog({
                             type="button"
                             onClick={quickIssue}
                             disabled={editor.keysIssued >= editor.keysReturned && editor.keysReturned > 0}
-                            className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-success/10 text-success hover:bg-emerald-200 disabled:opacity-40 disabled:cursor-not-allowed"
                             title="Ausgabe erfassen (heute, Soll-Anzahl)"
                           >
                             <ArrowRightCircle className="h-3 w-3" />
@@ -1021,7 +1021,7 @@ export function LockerDialog({
 
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-0.5">
+                          <span className="text-[10px] text-muted-foreground inline-flex items-center gap-0.5">
                             <ArrowRightCircle className="h-2.5 w-2.5" />
                             Ausgegeben
                           </span>
@@ -1048,7 +1048,7 @@ export function LockerDialog({
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 inline-flex items-center gap-0.5">
+                          <span className="text-[10px] text-muted-foreground inline-flex items-center gap-0.5">
                             <ArrowLeftCircle className="h-2.5 w-2.5" />
                             Zurückgegeben
                           </span>
@@ -1072,7 +1072,7 @@ export function LockerDialog({
                         </div>
                       </div>
                       {editor.keysIssued > 0 && editor.keysReturned < editor.keysIssued && (
-                        <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                        <p className="text-[10px] text-warning">
                           Noch {editor.keysIssued - editor.keysReturned} {itemLabel(lockType, editor.keysIssued - editor.keysReturned !== 1)} draußen.
                         </p>
                       )}
@@ -1080,7 +1080,7 @@ export function LockerDialog({
                   )}
 
                   <div className="space-y-1">
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400">Notiz (optional)</span>
+                    <span className="text-[10px] text-muted-foreground">Notiz (optional)</span>
                     <Input
                       value={editor.notes}
                       onChange={(e) => setEditor({ ...editor, notes: e.target.value })}
@@ -1089,7 +1089,7 @@ export function LockerDialog({
                     />
                   </div>
                   {rentalError && (
-                    <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-2 py-1 rounded">{rentalError}</p>
+                    <p className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">{rentalError}</p>
                   )}
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -1110,7 +1110,7 @@ export function LockerDialog({
                           ? !editor.ticketId
                           : !editor.renterName.trim())
                       }
-                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+                      className="h-7 text-xs"
                     >
                       {savingRental
                         ? <Loader2 className="h-3 w-3 animate-spin" />
@@ -1122,23 +1122,23 @@ export function LockerDialog({
             </div>
 
             {rentalError && !editor && (
-              <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-2 py-1 rounded">{rentalError}</p>
+              <p className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">{rentalError}</p>
             )}
           </div>
         )}
 
         {error && (
-          <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
+          <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
         )}
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         <div className="flex items-center justify-between">
           {!isNew ? (
             <Button
               type="button" variant="ghost" size="sm" onClick={handleDelete}
               disabled={deleting || saving}
-              className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs"
+              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs"
             >
               {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
               Löschen
@@ -1154,7 +1154,7 @@ export function LockerDialog({
             <Button
               type="button" size="sm" onClick={handleSaveLocker}
               disabled={saving || deleting || !name.trim() || !number.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8"
+              className="min-w-24 h-8"
             >
               {saving
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />

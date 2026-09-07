@@ -18,7 +18,7 @@ export default async function AccountsPage() {
   return (
     <>
       <Header title="Mandanten-Verwaltung" />
-      <div className="p-6">
+      <div className="page-content">
         <AccountsClient accounts={JSON.parse(JSON.stringify(accounts))} />
       </div>
     </>

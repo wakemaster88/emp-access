@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fmtDateTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -146,21 +147,21 @@ interface DevicesTableProps {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const CATEGORY_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  DREHKREUZ:   { label: "Drehkreuz",   icon: GitMerge,    color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" },
-  TUER:        { label: "Tür",         icon: DoorOpen,    color: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
-  SENSOR:      { label: "Sensor",      icon: Activity,    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
-  SCHALTER:    { label: "Schalter",    icon: ToggleRight, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+  DREHKREUZ:   { label: "Drehkreuz",   icon: GitMerge,    color: "bg-primary/10 text-primary " },
+  TUER:        { label: "Tür",         icon: DoorOpen,    color: "bg-info/12 text-info" },
+  SENSOR:      { label: "Sensor",      icon: Activity,    color: "bg-success/12 text-success" },
+  SCHALTER:    { label: "Schalter",    icon: ToggleRight, color: "bg-warning/14 text-warning" },
   BELEUCHTUNG: { label: "Beleuchtung", icon: Lightbulb,   color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
   MARKISE:     { label: "Markise",     icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
-  ROLLTOR:     { label: "Rolltor",     icon: Blinds,      color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
-  TASTER:      { label: "Taster",      icon: CircleDot,   color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
+  ROLLTOR:     { label: "Rolltor",     icon: Blinds,      color: "bg-muted text-muted-foreground" },
+  TASTER:      { label: "Taster",      icon: CircleDot,   color: "bg-destructive/12 text-destructive" },
   AUDIO:       { label: "Audio-Zone",  icon: Volume2,     color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
 };
 
 const TASK_LABEL: Record<number, { label: string; color: string }> = {
-  1: { label: "Öffne einmal", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
-  2: { label: "NOT-AUF",      color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" },
-  3: { label: "Deaktiviert",  color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+  1: { label: "Öffne einmal", color: "bg-success/12 text-success" },
+  2: { label: "NOT-AUF",      color: "bg-destructive/12 text-destructive" },
+  3: { label: "Deaktiviert",  color: "bg-warning/14 text-warning" },
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -201,49 +202,49 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
   }, [devices]);
 
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+    <div className="rounded-lg border border-border overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-            <TableHead className="min-w-[180px] text-slate-600 dark:text-slate-400 font-medium">
+          <TableRow className="border-border hover:bg-transparent bg-muted/40">
+            <TableHead className="min-w-[180px] text-muted-foreground font-medium">
               <span className="inline-flex items-center gap-1.5">
-                <Wifi className="h-4 w-4 text-slate-400" />
+                <Wifi className="h-4 w-4 text-muted-foreground/70" />
                 Gerät
               </span>
             </TableHead>
-            <TableHead className="hidden sm:table-cell w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden sm:table-cell w-[140px] text-muted-foreground font-medium">
               <span className="inline-flex items-center gap-1.5">
-                <Activity className="h-4 w-4 text-slate-400" />
+                <Activity className="h-4 w-4 text-muted-foreground/70" />
                 Funktion
               </span>
             </TableHead>
-            <TableHead className="hidden lg:table-cell w-[130px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden lg:table-cell w-[130px] text-muted-foreground font-medium">
               <span className="inline-flex items-center gap-1.5">
-                <Globe className="h-4 w-4 text-slate-400" />
+                <Globe className="h-4 w-4 text-muted-foreground/70" />
                 IP-Adresse
               </span>
             </TableHead>
-            <TableHead className="hidden md:table-cell min-w-[140px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden md:table-cell min-w-[140px] text-muted-foreground font-medium">
               <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-4 w-4 text-slate-400" />
+                <MapPin className="h-4 w-4 text-muted-foreground/70" />
                 Resourcen
               </span>
             </TableHead>
-            <TableHead className="w-[200px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="w-[200px] text-muted-foreground font-medium">
               <span className="inline-flex items-center gap-1.5">
-                <Activity className="h-4 w-4 text-slate-400" />
+                <Activity className="h-4 w-4 text-muted-foreground/70" />
                 Status
               </span>
             </TableHead>
-            <TableHead className="hidden lg:table-cell w-[120px] text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden lg:table-cell w-[120px] text-muted-foreground font-medium">
               <span className="inline-flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-slate-400" />
+                <Clock className="h-4 w-4 text-muted-foreground/70" />
                 Letzte Aktivität
               </span>
             </TableHead>
-            <TableHead className="hidden sm:table-cell w-[80px] text-right text-slate-600 dark:text-slate-400 font-medium">
+            <TableHead className="hidden sm:table-cell w-[80px] text-right text-muted-foreground font-medium">
               <span className="inline-flex items-center justify-end gap-1.5">
-                <ScanLine className="h-4 w-4 text-slate-400" />
+                <ScanLine className="h-4 w-4 text-muted-foreground/70" />
                 Scans
               </span>
             </TableHead>
@@ -252,13 +253,13 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
         </TableHeader>
         <TableBody>
           {devices.length === 0 && (
-            <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-700">
-              <TableCell colSpan={8} className="text-center py-16">
-                <div className="flex flex-col items-center gap-3 text-slate-500">
-                  <Cpu className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                  <p className="font-medium text-slate-600 dark:text-slate-400">Keine Geräte konfiguriert</p>
-                  <p className="text-sm">Füge ein Gerät hinzu (Raspberry Pi, Shelly oder Nuki), um Zugang zu steuern.</p>
-                </div>
+            <TableRow className="hover:bg-transparent border-border">
+              <TableCell colSpan={8} className="p-0">
+                <EmptyState
+                  icon={Cpu}
+                  title="Keine Geräte konfiguriert"
+                  description="Füge ein Gerät hinzu (Raspberry Pi, Shelly oder Nuki), um Zugang zu steuern."
+                />
               </TableCell>
             </TableRow>
           )}
@@ -283,21 +284,21 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               if (statusLoading && !shelly) {
                 return (
                   <span className="flex items-center gap-1.5 text-xs text-slate-300 animate-pulse">
-                    <span className="h-2 w-2 rounded-full bg-slate-200" /> …
+                    <span className="h-2 w-2 rounded-full bg-border" /> …
                   </span>
                 );
               }
               if (!shelly) {
-                return <span className="text-xs text-slate-400">–</span>;
+                return <span className="text-xs text-muted-foreground/70">–</span>;
               }
               return (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {shelly.online ? (
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Online
+                    <Badge variant="success" className="gap-1 text-xs h-5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Online
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
                       <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Offline
                     </Badge>
                   )}
@@ -306,12 +307,12 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                       className={cn(
                         "gap-1 text-xs h-5",
                         shelly.motion === "conflict"
-                          ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                          ? "bg-destructive/12 text-destructive"
                           // Nur eine laufende Fahrt wird hervorgehoben; Endlagen
                           // und Stillstand bleiben ruhig.
                           : shelly.motion === "opening" || shelly.motion === "closing"
-                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                            : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+                            ? "bg-warning/14 text-warning"
+                            : "bg-muted text-muted-foreground",
                       )}
                     >
                       {coverMotionLabel(shelly.motion, device.category)}
@@ -322,12 +323,12 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                       Shelly wie ein Schaltkanal, wuerde dessen Zustand hier
                       sonst als der des Sensors erscheinen. */}
                   {shelly.online && !shelly.motion && !isSensor && shelly.output === true && (
-                    <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1 text-xs h-5">
+                    <Badge variant="warning" className="gap-1 text-xs h-5">
                       <Power className="h-3 w-3" /> Ein
                     </Badge>
                   )}
                   {shelly.online && !shelly.motion && !isSensor && shelly.output === false && (
-                    <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
                       <PowerOff className="h-3 w-3" /> Aus
                     </Badge>
                   )}
@@ -337,8 +338,8 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     <SensorReadings readings={shelly.readings} />
                   )}
                   {shelly.power !== undefined && shelly.power > 0.5 && (
-                    <span className="flex items-center gap-0.5 text-xs text-slate-400">
-                      <Zap className="h-3 w-3 text-amber-400" />{shelly.power.toFixed(0)} W
+                    <span className="flex items-center gap-0.5 text-xs text-muted-foreground/70">
+                      <Zap className="h-3 w-3 text-warning" />{shelly.power.toFixed(0)} W
                     </span>
                   )}
                 </div>
@@ -350,7 +351,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               if (!gardena) {
                 return (
                   <span className="flex items-center gap-1.5 text-xs text-slate-300 animate-pulse">
-                    <span className="h-2 w-2 rounded-full bg-slate-200" /> …
+                    <span className="h-2 w-2 rounded-full bg-border" /> …
                   </span>
                 );
               }
@@ -358,27 +359,27 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               return (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {gardena.online ? (
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Online
+                    <Badge variant="success" className="gap-1 text-xs h-5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Online
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
                       <WifiOff className="h-3 w-3" /> Offline
                     </Badge>
                   )}
                   {gardena.watering ? (
-                    <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 gap-1 text-xs h-5">
+                    <Badge variant="info" className="gap-1 text-xs h-5">
                       <Droplets className="h-3 w-3" /> {gardenaActivityLabel(gardena.activity)}
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
                       <Square className="h-3 w-3" /> {gardenaActivityLabel(gardena.activity)}
                     </Badge>
                   )}
                   {hasBat && gardena.batteryLevel != null && (
                     <span className={cn(
                       "flex items-center gap-0.5 text-xs",
-                      gardena.batteryLevel < 20 ? "text-rose-500" : "text-slate-400",
+                      gardena.batteryLevel < 20 ? "text-destructive" : "text-muted-foreground/70",
                     )}>
                       {gardena.batteryLevel < 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />}
                       {gardena.batteryLevel}%
@@ -393,19 +394,19 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               const ns = nukiStatus(device.systemInfo);
               const charge = ns.charge;
               const batCls = ns.critical || (charge != null && charge < 15)
-                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                ? "bg-destructive/12 text-destructive"
                 : (charge != null && charge < 30)
-                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400";
+                  ? "bg-warning/14 text-warning"
+                  : "bg-success/12 text-success";
               const BatIcon = ns.charging ? Plug
                 : (ns.critical || (charge != null && charge < 15)) ? BatteryWarning
                 : (charge != null && charge < 30) ? BatteryLow
                 : Battery;
               const stateCls =
-                ns.state === 1 || ns.state === 4 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                : ns.state === 3 || ns.state === 5 || ns.state === 6 || ns.state === 7 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                : ns.state === 254 ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
+                ns.state === 1 || ns.state === 4 ? "bg-success/12 text-success"
+                : ns.state === 3 || ns.state === 5 || ns.state === 6 || ns.state === 7 ? "bg-warning/14 text-warning"
+                : ns.state === 254 ? "bg-destructive/12 text-destructive"
+                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground";
               const stateLabel =
                 ns.state === 1 ? "Verschlossen"
                 : ns.state === 3 ? "Entriegelt"
@@ -425,7 +426,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     {charge != null ? `${Math.round(charge)}%` : (ns.critical ? "schwach" : "OK")}
                   </Badge>
                   {ns.keypadCritical && (
-                    <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 gap-1 text-xs h-5">
+                    <Badge variant="danger" className="gap-1 text-xs h-5">
                       <KeyRound className="h-3 w-3" /> Keypad
                     </Badge>
                   )}
@@ -437,14 +438,14 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
             if (isLoqed) {
               const ls = loqedStatus(device.systemInfo);
               const boltCls =
-                ls.bolt === "night_lock" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                : ls.bolt === "open" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
+                ls.bolt === "night_lock" ? "bg-success/12 text-success"
+                : ls.bolt === "open" ? "bg-warning/14 text-warning"
+                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground";
               const batCls = ls.charge != null && ls.charge < 15
-                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                ? "bg-destructive/12 text-destructive"
                 : ls.charge != null && ls.charge < 30
-                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400";
+                  ? "bg-warning/14 text-warning"
+                  : "bg-success/12 text-success";
               const BatIcon = ls.charge != null && ls.charge < 15 ? BatteryWarning
                 : ls.charge != null && ls.charge < 30 ? BatteryLow
                 : Battery;
@@ -467,11 +468,11 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
             return (
               <div className="flex flex-wrap items-center gap-1.5">
                 {piOnline ? (
-                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Online
+                  <Badge variant="success" className="gap-1 text-xs h-5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-success" /> Online
                   </Badge>
                 ) : (
-                  <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
+                  <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
                     <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Offline
                   </Badge>
                 )}
@@ -486,20 +487,20 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
 
           // Resourcen: Einlass/Auslass mit Icons
           const bereicheCell = (() => {
-            if (!isPi || (!device.accessIn && !device.accessOut)) return <span className="text-slate-400">–</span>;
+            if (!isPi || (!device.accessIn && !device.accessOut)) return <span className="text-muted-foreground/70">–</span>;
             const inName  = device.accessIn  ? (areaMap[device.accessIn]  ?? `#${device.accessIn}`)  : null;
             const outName = device.accessOut ? (areaMap[device.accessOut] ?? `#${device.accessOut}`) : null;
             return (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {inName && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5" title="Einlass">
-                    <MapPin className="h-3 w-3 text-emerald-500 shrink-0" />
+                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5" title="Einlass">
+                    <MapPin className="h-3 w-3 text-success shrink-0" />
                     {inName}
                   </span>
                 )}
                 {outName && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5" title="Auslass">
-                    <MapPin className="h-3 w-3 text-sky-500 shrink-0" />
+                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5" title="Auslass">
+                    <MapPin className="h-3 w-3 text-info shrink-0" />
                     {outName}
                   </span>
                 )}
@@ -510,7 +511,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           return (
             <TableRow
               key={device.id}
-              className="group cursor-pointer border-slate-200 dark:border-slate-700 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-colors"
+              className="group cursor-pointer border-border hover:bg-primary/10 transition-colors"
             >
               {/* Gerät */}
               <TableCell>
@@ -518,23 +519,23 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                   <div className={cn(
                     "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
                     isShelly
-                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                      ? "bg-warning/10 text-warning"
                       : isNuki
-                        ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                        ? "bg-destructive/10 text-destructive"
                         : isGardena
-                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          ? "bg-success/10 text-success"
                           : isAudio
                             ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
-                            : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                            : "bg-primary/10 text-primary"
                   )}>
                     {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : isGardena ? <Sprout className="h-4 w-4" /> : isAudio ? <Volume2 className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-medium text-sm text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+                    <p className="font-medium text-sm text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
                       {device.name}
                     </p>
                     {!device.isActive && (
-                      <span className="text-xs text-slate-400 italic">Inaktiv</span>
+                      <span className="text-xs text-muted-foreground/70 italic">Inaktiv</span>
                     )}
                   </div>
                 </Link>
@@ -547,12 +548,12 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     <cat.icon className="h-3 w-3" /> {cat.label}
                   </Badge>
                 ) : (
-                  <span className="text-xs text-slate-400">{isShelly ? "Shelly" : isNuki ? "Nuki" : isGardena ? "GARDENA" : "Pi"}</span>
+                  <span className="text-xs text-muted-foreground/70">{isShelly ? "Shelly" : isNuki ? "Nuki" : isGardena ? "GARDENA" : "Pi"}</span>
                 )}
               </TableCell>
 
               {/* IP */}
-              <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
+              <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
                 {device.ipAddress || <span className="text-slate-300">–</span>}
               </TableCell>
 
@@ -563,7 +564,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               <TableCell>{statusCell}</TableCell>
 
               {/* Letzte Aktivität */}
-              <TableCell className="hidden lg:table-cell text-xs text-slate-400 whitespace-nowrap">
+              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground/70 whitespace-nowrap">
                 {lastUpd
                   ? fmtDateTime(lastUpd, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
                   : <span className="text-slate-300">–</span>}
@@ -575,12 +576,12 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                   <Link
                     href={`/scans?device=${device.id}`}
                     onClick={(e) => e.stopPropagation()}
-                    className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                    className="text-primary hover:underline"
                   >
                     {device._count.scans}
                   </Link>
                 ) : (
-                  <span className="text-slate-400">0</span>
+                  <span className="text-muted-foreground/70">0</span>
                 )}
               </TableCell>
 

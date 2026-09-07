@@ -98,7 +98,7 @@ export function TicketSortFilter({
     <div className="flex items-center gap-2 flex-wrap">
       <Select value={sortValue} onValueChange={handleSortChange}>
         <SelectTrigger className="w-[180px] h-9 text-sm">
-          <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
+          <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
           <SelectValue placeholder="Sortieren" />
         </SelectTrigger>
         <SelectContent>
@@ -111,7 +111,7 @@ export function TicketSortFilter({
       </Select>
       <Select value={currentSource || "all"} onValueChange={handleSourceChange}>
         <SelectTrigger className="w-[160px] h-9 text-sm">
-          <Filter className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
+          <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
           <SelectValue placeholder="Quelle" />
         </SelectTrigger>
         <SelectContent>
@@ -124,8 +124,8 @@ export function TicketSortFilter({
       </Select>
       {subscriptions.length > 0 && (
         <Select value={currentSub || "none"} onValueChange={(v) => updateParams({ sub: v })}>
-          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSub && "border-indigo-300 dark:border-indigo-700")}>
-            <CreditCard className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
+          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSub && "border-primary/30 ")}>
+            <CreditCard className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
             <SelectValue placeholder="Alle Abos" />
           </SelectTrigger>
           <SelectContent>
@@ -139,8 +139,8 @@ export function TicketSortFilter({
       )}
       {services.length > 0 && (
         <Select value={currentSvc || "none"} onValueChange={(v) => updateParams({ svc: v })}>
-          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSvc && "border-indigo-300 dark:border-indigo-700")}>
-            <Package className="h-3.5 w-3.5 mr-1.5 text-slate-400 shrink-0" />
+          <SelectTrigger className={cn("w-[170px] h-9 text-sm", currentSvc && "border-primary/30 ")}>
+            <Package className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70 shrink-0" />
             <SelectValue placeholder="Alle Services" />
           </SelectTrigger>
           <SelectContent>

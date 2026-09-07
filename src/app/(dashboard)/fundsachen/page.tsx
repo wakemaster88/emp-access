@@ -21,8 +21,8 @@ export default async function FundsachenPage() {
   return (
     <>
       <Header title="Fundsachen" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Fundsachen & Verlustmeldungen ({items.length})</CardTitle>
             <CardDescription>

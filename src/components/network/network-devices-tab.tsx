@@ -34,11 +34,11 @@ function lastSeenLabel(iso: string | null): string {
 }
 
 const TYPE_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  SWITCH:       { label: "Switch",       icon: Server,    color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
-  ROUTER:       { label: "Router",       icon: Router,    color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  ACCESS_POINT: { label: "Access Point", icon: Wifi,      color: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
-  FIREWALL:     { label: "Firewall",     icon: Shield,    color: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
-  OTHER:        { label: "Sonstiges",    icon: HardDrive, color: "bg-slate-500/10 text-slate-600 dark:text-slate-400" },
+  SWITCH:       { label: "Switch",       icon: Server,    color: "bg-primary/10 text-primary" },
+  ROUTER:       { label: "Router",       icon: Router,    color: "bg-success/10 text-success" },
+  ACCESS_POINT: { label: "Access Point", icon: Wifi,      color: "bg-info/10 text-info" },
+  FIREWALL:     { label: "Firewall",     icon: Shield,    color: "bg-destructive/10 text-destructive" },
+  OTHER:        { label: "Sonstiges",    icon: HardDrive, color: "bg-slate-500/10 text-muted-foreground" },
 };
 
 const EMPTY = {
@@ -145,21 +145,21 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
         <CardTitle className="text-base sm:text-xl">
           Switches &amp; Router ({devices.length})
         </CardTitle>
-        <Button onClick={openAdd} className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm">
+        <Button onClick={openAdd} className="gap-2 shadow-sm">
           <Plus className="h-4 w-4" />
           Hardware hinzufügen
         </Button>
       </CardHeader>
       <CardContent className="p-0 sm:px-6 sm:pb-6">
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+        <div className="rounded-lg border border-border overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
+              <TableRow className="border-border hover:bg-transparent bg-muted/40">
                 <TableHead className="min-w-[180px]">Gerät</TableHead>
                 <TableHead className="hidden md:table-cell">Modell</TableHead>
                 <TableHead className="hidden lg:table-cell">IP-Adresse</TableHead>
@@ -173,9 +173,9 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
               {devices.length === 0 && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={7} className="text-center py-16">
-                    <div className="flex flex-col items-center gap-3 text-slate-500">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       <Server className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                      <p className="font-medium text-slate-600 dark:text-slate-400">
+                      <p className="font-medium text-muted-foreground">
                         Keine Netzwerk-Hardware erfasst
                       </p>
                       <p className="text-sm">
@@ -191,7 +191,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                 return (
                   <TableRow
                     key={d.id}
-                    className="group border-slate-200 dark:border-slate-700 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20"
+                    className="group border-border hover:bg-primary/10"
                   >
                     <TableCell>
                       <Link href={`/network/${d.id}`} className="flex items-center gap-3 min-w-0">
@@ -199,17 +199,17 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                           <Icon className="h-4 w-4" />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-medium text-sm text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
+                          <p className="font-medium text-sm text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
                             {d.name}
                           </p>
-                          <p className="text-xs text-slate-400">{meta.label}</p>
+                          <p className="text-xs text-muted-foreground/70">{meta.label}</p>
                         </div>
                       </Link>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       {[d.vendor, d.model].filter(Boolean).join(" ") || <span className="text-slate-300">–</span>}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell font-mono text-xs text-slate-500">
+                    <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
                       {d.ipAddress || <span className="text-slate-300">–</span>}
                     </TableCell>
                     <TableCell>
@@ -218,10 +218,10 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         if (online === true) {
                           return (
                             <Badge
-                              className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1.5 text-xs h-5"
+                              className="bg-success/12 text-success gap-1.5 text-xs h-5"
                               title={lastSeenLabel(d.lastSeenAt)}
                             >
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              <span className="h-1.5 w-1.5 rounded-full bg-success" />
                               Online
                             </Badge>
                           );
@@ -230,7 +230,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                           return (
                             <Badge
                               variant="secondary"
-                              className="text-slate-500 gap-1.5 text-xs h-5"
+                              className="text-muted-foreground gap-1.5 text-xs h-5"
                               title={lastSeenLabel(d.lastSeenAt)}
                             >
                               <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
@@ -247,8 +247,8 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {d.location ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                          <MapPin className="h-3 w-3 text-slate-400" />
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <MapPin className="h-3 w-3 text-muted-foreground/70" />
                           {d.location}
                         </span>
                       ) : (
@@ -270,7 +270,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-slate-400 hover:text-indigo-600"
+                          className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
                           onClick={() => openEdit(d)}
                         >
                           <Pencil className="h-4 w-4" />
@@ -278,7 +278,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                          className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
                           onClick={() => handleDelete(d)}
                           disabled={deletingId === d.id}
                         >
@@ -307,7 +307,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                <Label>Name <span className="text-rose-500">*</span></Label>
+                <Label>Name <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.name}
                   onChange={(e) => set("name", e.target.value)}
@@ -357,7 +357,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                     value={form.portCount}
                     onChange={(e) => set("portCount", e.target.value)}
                   />
-                  <p className="text-xs text-slate-400">Ports werden automatisch angelegt (1–n).</p>
+                  <p className="text-xs text-muted-foreground/70">Ports werden automatisch angelegt (1–n).</p>
                 </div>
               )}
               <div className="space-y-1.5 col-span-2">
@@ -367,7 +367,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
             </div>
 
             {error && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
             )}
 
             <div className="flex justify-end gap-2 pt-1">
@@ -377,7 +377,7 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
               <Button
                 type="submit"
                 disabled={saving || !form.name.trim()}
-                className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
+                className="min-w-28"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>

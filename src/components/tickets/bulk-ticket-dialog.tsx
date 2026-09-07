@@ -283,7 +283,7 @@ export function BulkTicketDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-indigo-600" />
+            <Layers className="h-5 w-5 text-primary" />
             Tickets bulk erstellen
           </DialogTitle>
         </DialogHeader>
@@ -336,15 +336,15 @@ export function BulkTicketDialog({
                   className={cn(
                     "px-2.5 py-1 rounded-md text-xs font-medium border transition-colors",
                     count === n
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300",
+                      ? "bg-primary text-white border-primary"
+                      : "bg-muted/50 text-muted-foreground border-border hover:border-primary/60",
                   )}
                 >
                   {n}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-400">Max. {MAX_COUNT} Tickets pro Bulk.</p>
+            <p className="text-xs text-muted-foreground/70">Max. {MAX_COUNT} Tickets pro Bulk.</p>
           </div>
 
           <div className="space-y-1.5">
@@ -356,7 +356,7 @@ export function BulkTicketDialog({
               placeholder="Tagesgast"
               disabled={loading}
             />
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted-foreground/70">
               Wird durchnummeriert: <span className="font-mono">{namePrefix.trim() || "Ticket"} 1</span>,{" "}
               <span className="font-mono">{namePrefix.trim() || "Ticket"} 2</span> …
             </p>
@@ -364,7 +364,7 @@ export function BulkTicketDialog({
 
           {allOptions.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Ticket-Typ <span className="text-slate-400 font-normal">(optional)</span></Label>
+              <Label>Ticket-Typ <span className="text-muted-foreground/70 font-normal">(optional)</span></Label>
               <div className="flex flex-wrap gap-2">
                 {allOptions.map((opt) => (
                   <button
@@ -388,8 +388,8 @@ export function BulkTicketDialog({
                     className={cn(
                       "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
                       selectedId === opt.id && selectedType === opt.type
-                        ? "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:text-indigo-600",
+                        ? "bg-primary text-white border-primary"
+                        : "bg-muted/50 text-foreground/80 border-border hover:border-primary/60 hover:text-primary",
                     )}
                   >
                     {opt.name}
@@ -397,7 +397,7 @@ export function BulkTicketDialog({
                 ))}
               </div>
               {selectedOpt && (
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-muted-foreground/70">
                   Gueltigkeits-Defaults werden uebernommen.
                 </p>
               )}
@@ -408,7 +408,7 @@ export function BulkTicketDialog({
             <div className="space-y-1.5">
               <Label htmlFor="bulk-area">
                 {isService ? "Hauptressource" : "Bereich"}{" "}
-                <span className="text-slate-400 font-normal">
+                <span className="text-muted-foreground/70 font-normal">
                   {isService && serviceAreaIds.length > 1 ? "(empfohlen)" : "(optional)"}
                 </span>
               </Label>
@@ -418,7 +418,7 @@ export function BulkTicketDialog({
                   className={cn(
                     "h-9 text-sm",
                     needsExplicitMainArea
-                      ? "border-amber-400 dark:border-amber-600"
+                      ? "border-warning "
                       : "",
                   )}
                 >
@@ -440,8 +440,8 @@ export function BulkTicketDialog({
                   className={cn(
                     "text-[11px]",
                     needsExplicitMainArea
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-slate-400",
+                      ? "text-warning"
+                      : "text-muted-foreground/70",
                   )}
                 >
                   Hier startet die Zeitg&uuml;ltigkeit (DURATION) und wird das Ticket
@@ -458,8 +458,8 @@ export function BulkTicketDialog({
             className={cn(
               "flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors",
               cutPerTicket
-                ? "border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30"
-                : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40",
+                ? "border-primary/30 bg-primary/10 "
+                : "border-border bg-muted/50 dark:border-border dark:bg-card/40",
             )}
           >
             <input
@@ -468,14 +468,14 @@ export function BulkTicketDialog({
               checked={cutPerTicket}
               onChange={(e) => toggleCutPerTicket(e.target.checked)}
               disabled={loading}
-              className="mt-0.5 h-4 w-4 accent-indigo-600"
+              className="mt-0.5 h-4 w-4 accent-primary"
             />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                <Scissors className="h-3.5 w-3.5 text-indigo-600" />
+              <p className="text-sm font-medium text-foreground/90 flex items-center gap-1.5">
+                <Scissors className="h-3.5 w-3.5 text-primary" />
                 Nach jedem Ticket schneiden
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Druckt jeden Bon als eigenen Druckjob – der Bondrucker schneidet
                 garantiert dazwischen. Achtung: der Druckdialog kann pro Bon
                 erscheinen.
@@ -484,13 +484,13 @@ export function BulkTicketDialog({
           </label>
 
           {error && (
-            <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
               {error}
             </p>
           )}
 
           {doneCount != null && !error && !printResult && (
-            <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg flex items-center gap-2">
+            <p className="text-sm text-success bg-success/10 px-3 py-2 rounded-lg flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               {doneCount} Tickets erstellt.
             </p>
@@ -499,19 +499,19 @@ export function BulkTicketDialog({
           {doneCount != null && printResult && (
             <div className="space-y-2">
               {printResult.ok && printResult.transport === "iframe" && (
-                <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg flex items-center gap-2">
+                <p className="text-sm text-success bg-success/10 px-3 py-2 rounded-lg flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   {doneCount} Tickets erstellt. Druckdialog wurde geöffnet.
                 </p>
               )}
 
               {printResult.ok && printResult.transport === "newTab" && (
-                <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg space-y-1">
+                <div className="text-sm text-warning bg-warning/10 px-3 py-2 rounded-lg space-y-1">
                   <p className="flex items-center gap-2 font-medium">
                     <ExternalLink className="h-4 w-4 shrink-0" />
                     {doneCount} Tickets erstellt. PDF wurde im neuen Tab geöffnet.
                   </p>
-                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                  <p className="text-xs text-warning/80">
                     Drucken funktioniert über Strg/⌘+P im neuen Tab. Direkter Druckdialog war nicht möglich
                     {printResult.error ? ` (${printResult.error})` : ""}.
                   </p>
@@ -519,12 +519,12 @@ export function BulkTicketDialog({
               )}
 
               {!printResult.ok && printResult.transport === "download" && (
-                <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg space-y-2">
+                <div className="text-sm text-warning bg-warning/10 px-3 py-2 rounded-lg space-y-2">
                   <p className="flex items-center gap-2 font-medium">
                     <AlertTriangle className="h-4 w-4 shrink-0" />
                     {doneCount} Tickets erstellt. Druck konnte nicht direkt gestartet werden.
                   </p>
-                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                  <p className="text-xs text-warning/80">
                     Das PDF wurde stattdessen heruntergeladen
                     {printResult.error ? ` (${printResult.error})` : ""}. Öffne es manuell und drucke es aus dem
                     Reader (z. B. Adobe oder Vorschau) – dort kannst du auch das richtige Druckerprofil
@@ -534,7 +534,7 @@ export function BulkTicketDialog({
                     <a
                       href={printResult.fallbackUrl}
                       download={printResult.fallbackFilename}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 underline underline-offset-2 hover:text-amber-900"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-warning underline underline-offset-2 hover:text-amber-900"
                     >
                       <Download className="h-3.5 w-3.5" />
                       PDF erneut herunterladen
@@ -544,7 +544,7 @@ export function BulkTicketDialog({
               )}
 
               {!printResult.ok && printResult.transport !== "download" && (
-                <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg flex items-center gap-2">
+                <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   Druck fehlgeschlagen{printResult.error ? `: ${printResult.error}` : ""}.
                 </p>
@@ -575,7 +575,7 @@ export function BulkTicketDialog({
               type="button"
               onClick={() => handleSubmit({ print: true })}
               disabled={loading || !namePrefix.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 gap-1.5 min-w-44"
+              className="bg-primary hover:bg-primary/90 gap-1.5 min-w-44"
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

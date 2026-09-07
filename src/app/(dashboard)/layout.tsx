@@ -1,20 +1,14 @@
 "use client";
 
 import { signOut, useSession } from "next-auth/react";
-import { Sidebar } from "@/components/layout/sidebar";
 import { SessionProvider } from "next-auth/react";
 import { DashboardShellInner } from "@/components/layout/dashboard-shell-inner";
+import { ShellLoading } from "@/components/layout/shell-loading";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
 
-  if (status === "loading") {
-    return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-slate-50 dark:bg-slate-950 safe-area-padding">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
-      </div>
-    );
-  }
+  if (status === "loading") return <ShellLoading />;
 
   if (status === "unauthenticated" || !session?.user) {
     if (typeof window !== "undefined") window.location.href = "/login";

@@ -30,8 +30,8 @@ export function Chip({
       className={cn(
         "inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors sm:min-h-8 sm:px-3 sm:text-xs",
         active
-          ? "border-indigo-600 bg-indigo-600 text-white"
-          : "border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800",
+          ? "border-primary bg-primary text-white"
+          : "border-input text-muted-foreground hover:bg-muted dark:border-border dark:text-foreground/80 dark:hover:bg-muted",
         className
       )}
     >
@@ -59,4 +59,4 @@ export function sliderFill(value: number): React.CSSProperties {
  * der Oberfläche verschoben weiter. Der Input-Baustein macht es genauso.
  */
 export const TEXTAREA_CLASS =
-  "w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 md:text-sm dark:border-slate-700";
+  "w-full rounded-lg border border-input bg-transparent px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-sm dark:border-border";

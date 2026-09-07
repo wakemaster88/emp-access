@@ -101,7 +101,7 @@ export async function apiRequest<T = unknown>(
 export function ErrorLine({ message }: { message: string }) {
   if (!message) return null;
   return (
-    <p className="rounded bg-rose-50 px-2 py-1.5 text-xs text-rose-600 dark:bg-rose-950/30">
+    <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
       {message}
     </p>
   );

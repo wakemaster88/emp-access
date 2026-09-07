@@ -77,25 +77,25 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
   const renderDoor = (door: DoorRow) => (
     <div
       key={door.id}
-      className="rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900/40"
+      className="rounded-md border border-border bg-white p-2 dark:border-border dark:bg-card/40"
     >
       <div className="flex items-start gap-2">
-        <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+        <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+          <p className="truncate text-sm font-medium text-foreground/90">
             {door.name}
             {door.doorNumber && (
-              <span className="ml-1.5 font-mono text-[11px] text-slate-400">{door.doorNumber}</span>
+              <span className="ml-1.5 font-mono text-[11px] text-muted-foreground/70">{door.doorNumber}</span>
             )}
           </p>
-          {door.notes && <p className="truncate text-[11px] text-slate-400">{door.notes}</p>}
+          {door.notes && <p className="truncate text-[11px] text-muted-foreground/70">{door.notes}</p>}
         </div>
         {!readonly && (
           <div className="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
               onClick={() => setLockDialog({ lock: null, doorId: door.id })}
-              className="p-1 text-slate-400 hover:text-indigo-500"
+              className="p-1 text-muted-foreground/70 hover:text-primary"
               title="Schloss hinzufügen"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -103,7 +103,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
             <button
               type="button"
               onClick={() => setDoorDialog({ door, roomId: door.roomId })}
-              className="p-1 text-slate-400 hover:text-indigo-500"
+              className="p-1 text-muted-foreground/70 hover:text-primary"
               title="Tür bearbeiten"
             >
               <Pencil className="h-3.5 w-3.5" />
@@ -116,7 +116,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                   `Tür "${door.name}" inkl. ihrer Schlösser wirklich löschen?`,
                 )
               }
-              className="p-1 text-slate-400 hover:text-rose-500"
+              className="p-1 text-muted-foreground/70 hover:text-destructive"
               title="Tür löschen"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -130,17 +130,17 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
           {door.locks.map((lock) => (
             <div
               key={lock.id}
-              className="flex items-center gap-2 rounded bg-slate-50 px-2 py-1 dark:bg-slate-800/50"
+              className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1 dark:bg-muted/50"
             >
-              <Lock className="h-3 w-3 shrink-0 text-slate-400" />
-              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">
+              <Lock className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+              <span className="font-mono text-[11px] text-foreground/80">
                 {lock.lockNumber || "ohne Nummer"}
               </span>
-              <span className="text-[10px] text-slate-400">{lockTypeLabel(lock.lockType)}</span>
-              {lock.system && <span className="truncate text-[10px] text-slate-400">· {lock.system}</span>}
+              <span className="text-[10px] text-muted-foreground/70">{lockTypeLabel(lock.lockType)}</span>
+              {lock.system && <span className="truncate text-[10px] text-muted-foreground/70">· {lock.system}</span>}
               {lock.deviceId != null && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-indigo-500"
+                  className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-primary"
                   title="Wird elektronisch geöffnet"
                 >
                   <Zap className="h-2.5 w-2.5" />
@@ -148,7 +148,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                 </span>
               )}
               <span
-                className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-slate-400"
+                className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/70"
                 title={`${lock.keyCount} Schlüssel zugeordnet`}
               >
                 <KeyRound className="h-2.5 w-2.5" />
@@ -159,7 +159,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                   <button
                     type="button"
                     onClick={() => setLockDialog({ lock, doorId: door.id })}
-                    className="p-0.5 text-slate-400 hover:text-indigo-500"
+                    className="p-0.5 text-muted-foreground/70 hover:text-primary"
                     title="Schloss bearbeiten"
                   >
                     <Pencil className="h-3 w-3" />
@@ -172,7 +172,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                         `Schloss "${lock.lockNumber || lock.id}" wirklich löschen? Schlüssel bleiben erhalten, verlieren aber diese Zuordnung.`,
                       )
                     }
-                    className="p-0.5 text-slate-400 hover:text-rose-500"
+                    className="p-0.5 text-muted-foreground/70 hover:text-destructive"
                     title="Schloss löschen"
                   >
                     <Trash2 className="h-3 w-3" />
@@ -187,7 +187,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
   );
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="pb-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -213,7 +213,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
               <Button
                 size="sm"
                 onClick={() => setRoomDialog({ room: null })}
-                className="h-8 bg-indigo-600 hover:bg-indigo-700"
+                className="h-8 bg-primary hover:bg-primary/90"
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Raum
@@ -237,7 +237,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
           return (
             <div
               key={room.id}
-              className="rounded-md border border-slate-200 dark:border-slate-700"
+              className="rounded-md border border-border"
             >
               <div className="flex items-center gap-2 p-2">
                 <button
@@ -246,21 +246,21 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
                   {isOpen ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                   ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                   )}
-                  <Building2 className="h-4 w-4 shrink-0 text-indigo-500" />
-                  <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                  <Building2 className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="truncate text-sm font-medium text-foreground/90">
                     {room.name}
                   </span>
                   {room.number && (
-                    <span className="shrink-0 font-mono text-[11px] text-slate-400">{room.number}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{room.number}</span>
                   )}
-                  <span className="shrink-0 text-[11px] text-slate-400">
+                  <span className="shrink-0 text-[11px] text-muted-foreground/70">
                     {[room.building, room.floor].filter(Boolean).join(" · ")}
                   </span>
-                  <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-slate-400">
+                  <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground/70">
                     {roomDevices.length > 0 && (
                       <span
                         className="inline-flex items-center gap-0.5"
@@ -289,7 +289,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                     <button
                       type="button"
                       onClick={() => setDoorDialog({ door: null, roomId: room.id })}
-                      className="p-1 text-slate-400 hover:text-indigo-500"
+                      className="p-1 text-muted-foreground/70 hover:text-primary"
                       title="Tür hinzufügen"
                     >
                       <Plus className="h-3.5 w-3.5" />
@@ -297,7 +297,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                     <button
                       type="button"
                       onClick={() => setRoomDialog({ room })}
-                      className="p-1 text-slate-400 hover:text-indigo-500"
+                      className="p-1 text-muted-foreground/70 hover:text-primary"
                       title="Raum bearbeiten"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -310,7 +310,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                           `Raum "${room.name}" wirklich löschen? Die Türen bleiben erhalten und rutschen auf "ohne Raum".`,
                         )
                       }
-                      className="p-1 text-slate-400 hover:text-rose-500"
+                      className="p-1 text-muted-foreground/70 hover:text-destructive"
                       title="Raum löschen"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -320,9 +320,9 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
               </div>
 
               {isOpen && (
-                <div className={cn("space-y-1.5 border-t border-slate-100 p-2 dark:border-slate-800")}>
+                <div className={cn("space-y-1.5 border-t border-border/60 p-2 dark:border-border")}>
                   {room.doors.length === 0 ? (
-                    <p className="py-2 text-center text-[11px] text-slate-400">
+                    <p className="py-2 text-center text-[11px] text-muted-foreground/70">
                       Noch keine Tür in diesem Raum.
                     </p>
                   ) : (
@@ -335,9 +335,9 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                         <span
                           key={`d${d.id}`}
                           title={deviceMetaLabel(d.type, d.category)}
-                          className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                          className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
                         >
-                          <Cpu className="h-2.5 w-2.5 text-slate-400" />
+                          <Cpu className="h-2.5 w-2.5 text-muted-foreground/70" />
                           {d.name}
                         </span>
                       ))}
@@ -345,9 +345,9 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                         <span
                           key={`c${c.id}`}
                           title={c.kind}
-                          className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                          className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
                         >
-                          <Cctv className="h-2.5 w-2.5 text-slate-400" />
+                          <Cctv className="h-2.5 w-2.5 text-muted-foreground/70" />
                           {c.name}
                         </span>
                       ))}
@@ -360,8 +360,8 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
         })}
 
         {looseDoors.length > 0 && (
-          <div className="rounded-md border border-dashed border-slate-300 p-2 dark:border-slate-700">
-            <p className="mb-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+          <div className="rounded-md border border-dashed border-input p-2 dark:border-border">
+            <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
               Türen ohne Raumzuordnung
             </p>
             <div className="space-y-1.5">{looseDoors.map(renderDoor)}</div>

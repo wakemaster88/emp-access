@@ -201,40 +201,40 @@ function TicketRow({ ticket, onClick, inSlot, hideType, hideTime }: { ticket: Ti
 
   return (
     <div
-      className="flex items-center gap-2 py-1 cursor-pointer rounded px-1 -mx-1 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+      className="flex items-center gap-2 py-1 cursor-pointer rounded px-1 -mx-1 hover:bg-muted/50 transition-colors"
       onClick={onClick}
     >
       {ticket.profileImage ? (
         <img src={ticket.profileImage} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
       ) : (
-        <div className="h-6 w-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-          <span className="text-[10px] font-bold text-slate-400">
+        <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">
+          <span className="text-[10px] font-bold text-muted-foreground/70">
             {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
           </span>
         </div>
       )}
-      <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate flex-1 min-w-0">
+      <span className="text-xs font-medium text-foreground/90 truncate flex-1 min-w-0">
         {personName(ticket)}
       </span>
       {!inSlot && !hideType && ticket.ticketTypeName && (
-        <span className="text-[10px] text-slate-400 truncate max-w-[90px] hidden sm:inline">{ticket.ticketTypeName}</span>
+        <span className="text-[10px] text-muted-foreground/70 truncate max-w-[90px] hidden sm:inline">{ticket.ticketTypeName}</span>
       )}
       {time && (
-        <span className="text-[10px] text-indigo-500 font-mono shrink-0">{time}</span>
+        <span className="text-[10px] text-primary font-mono shrink-0">{time}</span>
       )}
       {ticket.needsPhoto && (
-        <Camera className="h-3 w-3 text-amber-500 shrink-0" />
+        <Camera className="h-3 w-3 text-warning shrink-0" />
       )}
       {ticket.needsRfid && (
-        <ScanLine className="h-3 w-3 text-amber-500 shrink-0" />
+        <ScanLine className="h-3 w-3 text-warning shrink-0" />
       )}
       <div
         className={cn(
           "h-1.5 w-1.5 rounded-full shrink-0",
           ticket.status === "VALID"
-            ? "bg-emerald-500"
+            ? "bg-success"
             : ticket.status === "REDEEMED"
-              ? "bg-sky-500"
+              ? "bg-info"
               : "bg-slate-300"
         )}
       />
@@ -255,14 +255,14 @@ function HourlyChart({ data, peakHour }: { data: HourlyBucket[]; peakHour: { hou
   const total = data.reduce((s, b) => s + b.total, 0);
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
-          <BarChart3 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+          <BarChart3 className="h-3.5 w-3.5 text-primary shrink-0" />
           Scan-Verlauf (Tag)
         </span>
-        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Erlaubt
+            <span className="h-2 w-2 rounded-full bg-success" /> Erlaubt
           </span>
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full bg-rose-400" /> Abgelehnt
@@ -271,7 +271,7 @@ function HourlyChart({ data, peakHour }: { data: HourlyBucket[]; peakHour: { hou
       </div>
       <div className="px-3 pt-3 pb-2">
         {total === 0 ? (
-          <p className="py-10 text-center text-xs text-slate-400">Keine Scans an diesem Tag.</p>
+          <p className="py-10 text-center text-xs text-muted-foreground/70">Keine Scans an diesem Tag.</p>
         ) : (
           <>
             <div className="h-[180px]">
@@ -293,8 +293,8 @@ function HourlyChart({ data, peakHour }: { data: HourlyBucket[]; peakHour: { hou
               </ResponsiveContainer>
             </div>
             {peakHour && (
-              <p className="text-[10px] text-slate-500 mt-1 text-center">
-                Spitze um <span className="font-semibold text-slate-700 dark:text-slate-300">{peakHour.hour}</span> mit {peakHour.count} Scans
+              <p className="text-[10px] text-muted-foreground mt-1 text-center">
+                Spitze um <span className="font-semibold text-foreground/80">{peakHour.hour}</span> mit {peakHour.count} Scans
               </p>
             )}
           </>
@@ -314,8 +314,8 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
 
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
           <PieChartIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
           Scan-Ergebnisse
         </span>
@@ -323,7 +323,7 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
       </div>
       <div className="px-3 pt-3 pb-2">
         {total === 0 ? (
-          <p className="py-10 text-center text-xs text-slate-400">Noch keine Scans an diesem Tag.</p>
+          <p className="py-10 text-center text-xs text-muted-foreground/70">Noch keine Scans an diesem Tag.</p>
         ) : (
           <div className="flex items-center gap-3">
             <div className="h-[160px] w-[160px] shrink-0 relative">
@@ -336,8 +336,8 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-none">{total}</span>
-                <span className="text-[10px] text-slate-400 mt-0.5">Scans</span>
+                <span className="text-2xl font-bold text-foreground tabular-nums leading-none">{total}</span>
+                <span className="text-[10px] text-muted-foreground/70 mt-0.5">Scans</span>
               </div>
             </div>
             <div className="flex-1 space-y-1.5 min-w-0">
@@ -346,9 +346,9 @@ function ScanResultDonut({ results }: { results: { granted: number; denied: numb
                 return (
                   <div key={d.name} className="flex items-center gap-2 min-w-0">
                     <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                    <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1">{d.name}</span>
-                    <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{d.value}</span>
-                    <span className="text-[10px] text-slate-400 tabular-nums w-8 text-right">{pct}%</span>
+                    <span className="text-[11px] text-muted-foreground truncate flex-1">{d.name}</span>
+                    <span className="text-[11px] font-semibold text-foreground/80 tabular-nums">{d.value}</span>
+                    <span className="text-[10px] text-muted-foreground/70 tabular-nums w-8 text-right">{pct}%</span>
                   </div>
                 );
               })}
@@ -365,25 +365,25 @@ function WeekTrendChart({ data, selectedDate }: { data: WeekTrendDay[]; selected
   const totalTickets = data.reduce((s, d) => s + d.tickets, 0);
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
-          <Activity className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+          <Activity className="h-3.5 w-3.5 text-primary shrink-0" />
           7-Tage-Trend
         </span>
-        <div className="flex items-center gap-3 text-[10px] text-slate-500">
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-indigo-500" /> Scans
-            <span className="text-slate-700 dark:text-slate-300 font-semibold ml-0.5 tabular-nums">{totalScans}</span>
+            <span className="h-2 w-2 rounded-full bg-primary" /> Scans
+            <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">{totalScans}</span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Neue Tickets
-            <span className="text-slate-700 dark:text-slate-300 font-semibold ml-0.5 tabular-nums">{totalTickets}</span>
+            <span className="h-2 w-2 rounded-full bg-success" /> Neue Tickets
+            <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">{totalTickets}</span>
           </span>
         </div>
       </div>
       <div className="px-3 pt-3 pb-2">
         {totalScans === 0 && totalTickets === 0 ? (
-          <p className="py-10 text-center text-xs text-slate-400">Keine Aktivität in den letzten 7 Tagen.</p>
+          <p className="py-10 text-center text-xs text-muted-foreground/70">Keine Aktivität in den letzten 7 Tagen.</p>
         ) : (
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -426,16 +426,16 @@ function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
   const max = devices.reduce((m, d) => Math.max(m, d.total), 0);
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
-          <Smartphone className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+          <Smartphone className="h-3.5 w-3.5 text-warning shrink-0" />
           Top-Geräte heute
         </span>
         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">{devices.length}</Badge>
       </div>
       <div className="px-3 pt-2 pb-2 space-y-2">
         {devices.length === 0 ? (
-          <p className="py-8 text-center text-xs text-slate-400">Noch keine Scans an diesem Tag.</p>
+          <p className="py-8 text-center text-xs text-muted-foreground/70">Noch keine Scans an diesem Tag.</p>
         ) : (
           devices.map((d) => {
             const grantedPct = max > 0 ? (d.granted / max) * 100 : 0;
@@ -444,15 +444,15 @@ function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
             return (
               <div key={d.id} className="space-y-1">
                 <div className="flex items-center gap-2 text-[11px]">
-                  <span className="font-medium text-slate-700 dark:text-slate-300 truncate flex-1 min-w-0">{d.name}</span>
-                  <span className="text-slate-400 tabular-nums">{d.total}</span>
+                  <span className="font-medium text-foreground/80 truncate flex-1 min-w-0">{d.name}</span>
+                  <span className="text-muted-foreground/70 tabular-nums">{d.total}</span>
                   <span className={cn(
                     "tabular-nums w-10 text-right font-semibold",
-                    rate >= 90 ? "text-emerald-500" : rate >= 70 ? "text-amber-500" : "text-rose-500",
+                    rate >= 90 ? "text-success" : rate >= 70 ? "text-warning" : "text-destructive",
                   )}>{rate}%</span>
                 </div>
-                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
-                  <div className="bg-emerald-500 h-full" style={{ width: `${grantedPct}%` }} />
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
+                  <div className="bg-success h-full" style={{ width: `${grantedPct}%` }} />
                   <div className="bg-rose-400 h-full" style={{ width: `${deniedPct}%` }} />
                 </div>
               </div>
@@ -466,11 +466,11 @@ function TopDevicesCard({ devices }: { devices: TopDevice[] }) {
 
 const MEMBERSHIP_PALETTE = [
   { bar: "bg-violet-500", dot: "bg-violet-500" },
-  { bar: "bg-indigo-500", dot: "bg-indigo-500" },
-  { bar: "bg-sky-500", dot: "bg-sky-500" },
-  { bar: "bg-emerald-500", dot: "bg-emerald-500" },
-  { bar: "bg-amber-500", dot: "bg-amber-500" },
-  { bar: "bg-rose-500", dot: "bg-rose-500" },
+  { bar: "bg-primary", dot: "bg-primary" },
+  { bar: "bg-info", dot: "bg-info" },
+  { bar: "bg-success", dot: "bg-success" },
+  { bar: "bg-warning", dot: "bg-warning" },
+  { bar: "bg-destructive", dot: "bg-destructive" },
   { bar: "bg-teal-500", dot: "bg-teal-500" },
   { bar: "bg-pink-500", dot: "bg-pink-500" },
 ] as const;
@@ -518,19 +518,19 @@ function MembershipsCard({
 
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
           {icon}
           {title}
         </span>
-        <span className="text-xs font-bold tabular-nums text-slate-700 dark:text-slate-200">
+        <span className="text-xs font-bold tabular-nums text-foreground/80">
           {total}
         </span>
       </div>
 
       {colored.length > 1 && (
         <div className="px-3 pt-2.5">
-          <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+          <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
             {colored.map((c) => (
               <div
                 key={c.name}
@@ -545,7 +545,7 @@ function MembershipsCard({
 
       <div className="max-h-[360px] overflow-y-auto light-scrollbar dark:monitor-scrollbar min-h-[60px]">
         {colored.length === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-slate-400 dark:text-slate-500">
+          <p className="px-3 py-6 text-center text-xs text-muted-foreground/70">
             Keine aktiven Einträge am gewählten Tag.
           </p>
         ) : (
@@ -557,21 +557,21 @@ function MembershipsCard({
                   <button
                     type="button"
                     onClick={() => toggle(name)}
-                    className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    className="w-full flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-muted/50 transition-colors"
                   >
                     <span className={cn("h-2 w-2 rounded-full shrink-0", color.dot)} aria-hidden />
-                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate flex-1 min-w-0 text-left">
+                    <span className="text-xs font-medium text-foreground/80 truncate flex-1 min-w-0 text-left">
                       {name}
                     </span>
-                    <span className="text-[10px] tabular-nums text-slate-400 shrink-0">
+                    <span className="text-[10px] tabular-nums text-muted-foreground/70 shrink-0">
                       {Math.round(pct)}%
                     </span>
-                    <span className="text-xs font-semibold tabular-nums text-slate-700 dark:text-slate-200 shrink-0 min-w-[1.5rem] text-right">
+                    <span className="text-xs font-semibold tabular-nums text-foreground/80 shrink-0 min-w-[1.5rem] text-right">
                       {group.length}
                     </span>
                     <ChevronDown
                       className={cn(
-                        "h-3 w-3 text-slate-400 shrink-0 transition-transform",
+                        "h-3 w-3 text-muted-foreground/70 shrink-0 transition-transform",
                         isOpen && "rotate-180",
                       )}
                     />
@@ -611,35 +611,34 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
   return (
     <Card
       className={cn(
-        "relative border-slate-200 dark:border-slate-800 overflow-hidden gap-0 py-0 shadow-sm",
+        "relative border-border overflow-hidden gap-0 py-0 shadow-sm",
         "transition-shadow hover:shadow-md",
         area.id === null && "border-dashed",
-      )}
-    >
+      )}>
       <span
         aria-hidden
         className={cn(
           "absolute left-0 top-0 bottom-0 w-1",
           overLimit
-            ? "bg-rose-500"
+            ? "bg-destructive"
             : utilTone === "amber"
-              ? "bg-amber-500"
+              ? "bg-warning"
               : count > 0
-                ? "bg-indigo-500"
-                : "bg-slate-200 dark:bg-slate-800",
+                ? "bg-primary"
+                : "bg-border dark:bg-muted",
         )}
       />
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800 pl-3.5">
-        <span className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate text-slate-900 dark:text-slate-100">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60 pl-3.5">
+        <span className="text-sm font-semibold flex items-center gap-1.5 min-w-0 truncate text-foreground">
           <MapPin className={cn(
             "h-3.5 w-3.5 shrink-0",
-            count > 0 ? "text-indigo-500" : "text-slate-400",
+            count > 0 ? "text-primary" : "text-muted-foreground/70",
           )} />
           {area.name}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
           {area.openingHours && (
-            <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+            <span className="text-[10px] text-muted-foreground/70 font-mono hidden sm:inline">
               {area.openingHours}
             </span>
           )}
@@ -649,12 +648,12 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
               className={cn(
                 "text-[10px] px-1.5 py-0 font-mono tabular-nums",
                 overLimit
-                  ? "border-rose-300 text-rose-600 dark:border-rose-800 dark:text-rose-400"
+                  ? "border-destructive/30 text-destructive "
                   : utilTone === "amber"
-                    ? "border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-400"
+                    ? "border-warning/30 text-warning "
                     : count > 0
-                      ? "border-indigo-200 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300"
-                      : "border-slate-200 text-slate-400 dark:border-slate-700",
+                      ? "border-primary/30 text-primary "
+                      : "border-border text-muted-foreground/70 dark:border-border",
               )}
             >
               {count}/{limit}
@@ -664,8 +663,8 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
               className={cn(
                 "text-[10px] px-1.5 py-0 tabular-nums",
                 count > 0
-                  ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                  : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500",
+                  ? "bg-primary/10 text-primary "
+                  : "bg-muted text-muted-foreground/70 dark:bg-muted dark:text-muted-foreground/70",
               )}
             >
               {count}
@@ -676,15 +675,15 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
 
       {utilPct != null && count > 0 && (
         <div className="px-3.5 pt-2">
-          <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+          <div className="h-1 rounded-full bg-muted overflow-hidden">
             <div
               className={cn(
                 "h-full rounded-full transition-all",
                 overLimit
-                  ? "bg-rose-500"
+                  ? "bg-destructive"
                   : utilTone === "amber"
-                    ? "bg-amber-500"
-                    : "bg-gradient-to-r from-indigo-500 to-violet-500",
+                    ? "bg-warning"
+                    : "bg-gradient-to-r from-primary to-violet-500",
               )}
               style={{ width: `${utilPct}%` }}
             />
@@ -696,13 +695,13 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
         <div className="px-3 pb-2 pt-1 pl-3.5 max-h-[320px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
           {area.resources.map((res, ri) => (
             <div key={res.resourceName} className={cn(ri > 0 && "mt-2")}>
-              <div className="flex items-center gap-1.5 py-1 border-b border-slate-100 dark:border-slate-800">
-                <Clock className="h-2.5 w-2.5 text-indigo-400 shrink-0" />
-                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 truncate">
+              <div className="flex items-center gap-1.5 py-1 border-b border-border/60">
+                <Clock className="h-2.5 w-2.5 text-primary shrink-0" />
+                <span className="text-[11px] font-semibold text-muted-foreground truncate">
                   {res.resourceName}
                 </span>
                 {res.slots.length > 0 && (
-                  <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-auto">
+                  <span className="text-[10px] text-muted-foreground/70 font-mono shrink-0 ml-auto">
                     {res.slots.map((s) => `${s.startTime}–${s.endTime}`).join(" · ")}
                   </span>
                 )}
@@ -720,8 +719,8 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
           {hasOther && (
             <div className={cn(hasResources && "mt-2")}>
               {hasResources && (
-                <div className="py-1 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-[11px] font-semibold text-slate-400">Sonstige</span>
+                <div className="py-1 border-b border-border/60">
+                  <span className="text-[11px] font-semibold text-muted-foreground/70">Sonstige</span>
                 </div>
               )}
               {area.otherTickets.map((ticket) => (
@@ -738,32 +737,32 @@ function AreaCard({ area, openTicket }: { area: AreaData; openTicket: (id: numbe
 function QuietAreasCard({ areas }: { areas: AreaData[] }) {
   if (areas.length === 0) return null;
   return (
-    <Card className="py-0 gap-0 overflow-hidden border-dashed border-slate-200 dark:border-slate-800">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dashed border-slate-200 dark:border-slate-800">
-        <span className="text-xs font-semibold flex items-center gap-1.5 text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-          <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+    <Card className="py-0 gap-0 overflow-hidden border-dashed">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dashed border-border">
+        <span className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground uppercase tracking-wide">
+          <MapPin className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
           Ruhige Bereiche
         </span>
         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
           {areas.length}
         </Badge>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-px bg-slate-100 dark:bg-slate-800">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-px bg-muted">
         {areas.map((area, i) => (
           <div
             key={area.id ?? `unassigned-${i}`}
-            className="flex items-center gap-2 px-3 py-2 min-w-0 bg-white dark:bg-slate-950"
+            className="flex items-center gap-2 px-3 py-2 min-w-0 bg-background"
           >
             <MapPin className="h-3 w-3 text-slate-300 dark:text-slate-600 shrink-0" />
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate flex-1 min-w-0">
+            <span className="text-xs font-medium text-muted-foreground truncate flex-1 min-w-0">
               {area.name}
             </span>
             {area.openingHours && (
-              <span className="text-[10px] text-slate-400 font-mono shrink-0 hidden md:inline">
+              <span className="text-[10px] text-muted-foreground/70 font-mono shrink-0 hidden md:inline">
                 {area.openingHours}
               </span>
             )}
-            <span className="text-[10px] font-mono tabular-nums text-slate-400 shrink-0">
+            <span className="text-[10px] font-mono tabular-nums text-muted-foreground/70 shrink-0">
               {area.personLimit != null ? `0/${area.personLimit}` : "0"}
             </span>
           </div>
@@ -924,8 +923,8 @@ export function DashboardClient() {
               className={cn(
                 "h-8 px-3 rounded-md text-xs font-semibold transition-colors",
                 isToday(date)
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+                  ? "bg-primary text-white"
+                  : "bg-muted text-muted-foreground hover:bg-primary/10 "
               )}
             >
               Heute
@@ -934,11 +933,11 @@ export function DashboardClient() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <span className="text-sm font-semibold text-foreground/80">
             {fmtDisplayDate(date)}
           </span>
           <div className="ml-auto flex items-center gap-2">
-            {(loading || ticketLoading) && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            {(loading || ticketLoading) && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/70" />}
           </div>
         </div>
 
@@ -951,10 +950,10 @@ export function DashboardClient() {
               className={cn(
                 "flex flex-col items-center py-1.5 rounded-lg text-center transition-all",
                 wd.isSelected
-                  ? "bg-indigo-600 text-white shadow-sm"
+                  ? "bg-primary text-white shadow-sm"
                   : wd.isToday
-                    ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-950/50"
-                    : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+                    ? "bg-primary/8 text-primary hover:bg-primary/10 "
+                    : "hover:bg-muted text-muted-foreground"
               )}
             >
               <span className="text-[10px] font-medium uppercase">{wd.dayName}</span>
@@ -972,37 +971,37 @@ export function DashboardClient() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card className="py-3 px-4 gap-0">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Tickets</span>
-                <Ticket className="h-3.5 w-3.5 text-indigo-500" />
+                <span className="text-[11px] font-medium text-muted-foreground">Tickets</span>
+                <Ticket className="h-3.5 w-3.5 text-primary" />
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{totalTickets}</p>
+              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{totalTickets}</p>
               {totalTickets > 0 && (
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  {noShowCount > 0 ? <><span className="text-rose-500 font-medium">{noShowCount}</span> No-Show</> : "Alle eingecheckt"}
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                  {noShowCount > 0 ? <><span className="text-destructive font-medium">{noShowCount}</span> No-Show</> : "Alle eingecheckt"}
                 </p>
               )}
             </Card>
             <Card className="py-3 px-4 gap-0">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Scans</span>
-                <ScanLine className="h-3.5 w-3.5 text-sky-500" />
+                <span className="text-[11px] font-medium text-muted-foreground">Scans</span>
+                <ScanLine className="h-3.5 w-3.5 text-info" />
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{data.scansToday}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">
+              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{data.scansToday}</p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
                 {data.scansToday > 0 ? (
-                  <><span className="text-emerald-500 font-medium">{data.grantRate}%</span> Erfolgsrate</>
+                  <><span className="text-success font-medium">{data.grantRate}%</span> Erfolgsrate</>
                 ) : "Keine Scans"}
               </p>
             </Card>
             <Card className="py-3 px-4 gap-0">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Eingecheckt</span>
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="text-[11px] font-medium text-muted-foreground">Eingecheckt</span>
+                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{data.checkedInCount}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">
+              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{data.checkedInCount}</p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
                 {totalTickets > 0 ? (
-                  <><span className="font-medium text-slate-500">{checkInRate}%</span> der Tickets</>
+                  <><span className="font-medium text-muted-foreground">{checkInRate}%</span> der Tickets</>
                 ) : data.peakHour ? (
                   <>Spitze {data.peakHour.hour}</>
                 ) : "—"}
@@ -1010,11 +1009,11 @@ export function DashboardClient() {
             </Card>
             <Card className="py-3 px-4 gap-0">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Geräte</span>
-                <Wifi className="h-3.5 w-3.5 text-amber-500" />
+                <span className="text-[11px] font-medium text-muted-foreground">Geräte</span>
+                <Wifi className="h-3.5 w-3.5 text-warning" />
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">{data.activeDevices}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">
+              <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{data.activeDevices}</p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
                 {data.peakHour ? <>Spitze {data.peakHour.hour} ({data.peakHour.count})</> : "online"}
               </p>
             </Card>
@@ -1036,10 +1035,10 @@ export function DashboardClient() {
           <div className={cn(
             "rounded-xl border text-sm",
             hasErrors
-              ? "border-rose-200 bg-rose-50/50 dark:border-rose-900/50 dark:bg-rose-950/10"
+              ? "border-destructive/30 bg-destructive/10 "
               : isStale
-                ? "border-amber-200 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/10"
-                : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/10",
+                ? "border-warning/30 bg-warning/10 "
+                : "border-success/30 bg-success/10 ",
           )}>
             <div
               className={cn("flex items-center gap-3 px-4 py-2.5", hasErrors && details.length > 0 && "cursor-pointer")}
@@ -1047,11 +1046,11 @@ export function DashboardClient() {
             >
               <RefreshCw className={cn(
                 "h-4 w-4 shrink-0",
-                hasErrors ? "text-rose-500" : isStale ? "text-amber-500" : "text-emerald-500",
+                hasErrors ? "text-destructive" : isStale ? "text-warning" : "text-success",
               )} />
               <div className="flex-1 min-w-0">
-                <span className="font-semibold text-slate-800 dark:text-slate-200">ANNY Sync</span>
-                <span className="text-slate-500 dark:text-slate-400 ml-2">
+                <span className="font-semibold text-foreground/90">ANNY Sync</span>
+                <span className="text-muted-foreground ml-2">
                   {fmtSyncAgo(s.lastSync)}
                   {s.lastSync && (
                     <span className="hidden sm:inline"> ({new Date(s.lastSync).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" })} Uhr)</span>
@@ -1060,34 +1059,34 @@ export function DashboardClient() {
               </div>
               <div className="flex items-center gap-2 shrink-0 text-xs">
                 {s.total != null && (
-                  <span className="text-slate-500 dark:text-slate-400">{s.total} Buchungen</span>
+                  <span className="text-muted-foreground">{s.total} Buchungen</span>
                 )}
                 {(s.created ?? 0) > 0 && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                  <Badge className="text-[10px] px-1.5 py-0 bg-success/12 text-success">
                     +{s.created} neu
                   </Badge>
                 )}
                 {(s.updated ?? 0) > 0 && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">
+                  <Badge className="text-[10px] px-1.5 py-0 bg-info/12 text-info">
                     {s.updated} aktualisiert
                   </Badge>
                 )}
                 {hasErrors && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                  <Badge className="text-[10px] px-1.5 py-0 bg-destructive/12 text-destructive">
                     {s.errors} Fehler {details.length > 0 && (syncErrorsOpen ? "▲" : "▼")}
                   </Badge>
                 )}
                 {!s.lastSync && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  <Badge className="text-[10px] px-1.5 py-0 bg-warning/14 text-warning">
                     Kein Sync
                   </Badge>
                 )}
               </div>
             </div>
             {syncErrorsOpen && details.length > 0 && (
-              <div className="px-4 pb-3 space-y-1 border-t border-rose-200/50 dark:border-rose-900/30 pt-2">
+              <div className="px-4 pb-3 space-y-1 border-t border-destructive/30/50 pt-2">
                 {details.map((d, i) => (
-                  <p key={i} className="text-xs text-rose-600 dark:text-rose-400 font-mono truncate">{d}</p>
+                  <p key={i} className="text-xs text-destructive font-mono truncate">{d}</p>
                 ))}
               </div>
             )}
@@ -1097,7 +1096,7 @@ export function DashboardClient() {
 
       {/* Area cards: aktive zuerst, ruhige Bereiche kompakt darunter */}
       {data && allAreas.length === 0 && (
-        <div className="text-center py-12 text-slate-400">
+        <div className="text-center py-12 text-muted-foreground/70">
           <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p className="text-xs">Keine Resourcen für dieses Datum</p>
         </div>
@@ -1162,7 +1161,7 @@ export function DashboardClient() {
           {data.services.length > 0 && (
             <MembershipsCard
               title="Services"
-              icon={<Users className="h-3.5 w-3.5 text-indigo-500 shrink-0" />}
+              icon={<Users className="h-3.5 w-3.5 text-primary shrink-0" />}
               tickets={data.services}
               openTicket={openTicket}
               fallbackGroupName="Service"
@@ -1175,55 +1174,55 @@ export function DashboardClient() {
       {data && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Card className="py-0 gap-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-              <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
-                <ScanLine className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+              <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <ScanLine className="h-3.5 w-3.5 text-info shrink-0" />
                 Letzte Scans
               </span>
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
                 {data.scansToday}
               </Badge>
             </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
+            <div className="divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
               {data.recentScans.length === 0 ? (
                 <div className="flex flex-col items-center justify-center px-6 py-10 gap-2 text-center">
-                  <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800/60 flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-full bg-muted/60 flex items-center justify-center">
                     <ScanLine className="h-5 w-5 text-slate-300 dark:text-slate-600" />
                   </div>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <p className="text-xs font-medium text-muted-foreground">
                     Keine Scans an diesem Tag
                   </p>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 max-w-[260px]">
+                  <p className="text-[11px] text-muted-foreground/70 max-w-[260px]">
                     Anderes Datum oben wählen oder die vollständige Historie öffnen.
                   </p>
                 </div>
               ) : (
                 data.recentScans.map((scan) => (
-                  <div key={scan.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <div key={scan.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/50 transition-colors">
                     {scan.profileImage ? (
                       <img src={scan.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
                     ) : (
                       <div className={cn(
                         "h-7 w-7 rounded-full flex items-center justify-center shrink-0",
-                        scan.result === "GRANTED" ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-rose-100 dark:bg-rose-900/30"
+                        scan.result === "GRANTED" ? "bg-success/10 " : "bg-destructive/10 "
                       )}>
                         {scan.result === "GRANTED"
-                          ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                          : <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
+                          ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                          : <XCircle className="h-3.5 w-3.5 text-destructive" />}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">{scan.ticketName}</p>
-                      <p className="text-[10px] text-slate-400 truncate">
+                      <p className="text-xs font-medium text-foreground/90 truncate">{scan.ticketName}</p>
+                      <p className="text-[10px] text-muted-foreground/70 truncate">
                         {scan.ticketTypeName && <>{scan.ticketTypeName} · </>}
                         {scan.deviceName || "Unbekannt"}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="text-[10px] font-mono text-slate-400">{fmtScanTime(scan.scanTime)}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground/70">{fmtScanTime(scan.scanTime)}</span>
                       <div className={cn(
                         "h-1.5 w-1.5 rounded-full ml-auto mt-0.5",
-                        scan.result === "GRANTED" ? "bg-emerald-500" : scan.result === "DENIED" ? "bg-rose-500" : "bg-amber-500"
+                        scan.result === "GRANTED" ? "bg-success" : scan.result === "DENIED" ? "bg-destructive" : "bg-warning"
                       )} />
                     </div>
                   </div>
@@ -1233,25 +1232,25 @@ export function DashboardClient() {
           </Card>
 
           <Card className="py-0 gap-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-              <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100">
-                <TrendingUp className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
+              <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                <TrendingUp className="h-3.5 w-3.5 text-success shrink-0" />
                 Neueste Tickets
               </span>
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
                 {data.newTicketsCount}
               </Badge>
             </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
+            <div className="divide-y divide-border/60 max-h-[360px] min-h-[160px] overflow-y-auto light-scrollbar dark:monitor-scrollbar">
               {data.newTickets.length === 0 ? (
                 <div className="flex flex-col items-center justify-center px-6 py-10 gap-2 text-center">
-                  <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800/60 flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-full bg-muted/60 flex items-center justify-center">
                     <Ticket className="h-5 w-5 text-slate-300 dark:text-slate-600" />
                   </div>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <p className="text-xs font-medium text-muted-foreground">
                     Keine neuen Tickets an diesem Tag
                   </p>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 max-w-[260px]">
+                  <p className="text-[11px] text-muted-foreground/70 max-w-[260px]">
                     Hier erscheinen Tickets, sobald sie für diesen Tag angelegt wurden.
                   </p>
                 </div>
@@ -1259,26 +1258,26 @@ export function DashboardClient() {
                 data.newTickets.map((ticket) => (
                   <div
                     key={ticket.id}
-                    className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => openTicket(ticket.id)}
                   >
                     {ticket.profileImage ? (
                       <img src={ticket.profileImage} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
                     ) : (
-                      <div className="h-7 w-7 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
-                        <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                      <div className="h-7 w-7 rounded-full bg-primary/12 flex items-center justify-center shrink-0">
+                        <span className="text-[10px] font-bold text-primary">
                           {(ticket.name[0] || "?").toUpperCase()}
                         </span>
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">{ticket.name}</p>
-                      <p className="text-[10px] text-slate-400 truncate">
+                      <p className="text-xs font-medium text-foreground/90 truncate">{ticket.name}</p>
+                      <p className="text-[10px] text-muted-foreground/70 truncate">
                         {ticket.typeName || "Ticket"}
                         {ticket.source && <> · {ticket.source === "ANNY" ? "anny.co" : ticket.source === "EMP_CONTROL" ? "Mitarbeiter" : ticket.source}</>}
                       </p>
                     </div>
-                    <span className="text-[10px] font-mono text-slate-400 shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground/70 shrink-0">{fmtCreatedAt(ticket.createdAt)}</span>
                   </div>
                 ))
               )}

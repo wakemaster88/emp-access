@@ -95,7 +95,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-black">
+    <div className="rounded-lg border border-border overflow-hidden bg-black">
       <input
         ref={fileInputRef}
         type="file"
@@ -111,7 +111,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
       <div className="relative aspect-[4/3] bg-black flex items-center justify-center">
         {error ? (
           <div className="text-center p-4">
-            <p className="text-sm text-slate-400 mb-3">{error}</p>
+            <p className="text-sm text-muted-foreground/70 mb-3">{error}</p>
             <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
               <ImageIcon className="h-4 w-4 mr-1.5" />
               Bild auswählen
@@ -146,7 +146,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           variant="ghost"
           size="sm"
           onClick={() => fileInputRef.current?.click()}
-          className="text-slate-400 hover:text-white hover:bg-slate-800"
+          className="text-muted-foreground/70 hover:text-white hover:bg-slate-800"
         >
           <ImageIcon className="h-4 w-4 mr-1.5" />
           Datei
@@ -166,7 +166,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           variant="ghost"
           size="sm"
           onClick={() => setFacingMode((m) => m === "user" ? "environment" : "user")}
-          className="text-slate-400 hover:text-white hover:bg-slate-800"
+          className="text-muted-foreground/70 hover:text-white hover:bg-slate-800"
           disabled={!stream}
         >
           <RotateCcw className="h-4 w-4 mr-1.5" />

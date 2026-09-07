@@ -89,30 +89,30 @@ export function DeviceRow({
   }
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900/40">
+    <div className="rounded-md border border-border bg-white p-2 dark:border-border dark:bg-card/40">
       <div className="flex items-center gap-2">
         <span
           className={cn(
             "flex h-7 w-7 shrink-0 items-center justify-center rounded",
             on
-              ? "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-              : "bg-slate-100 text-slate-400 dark:bg-slate-800",
+              ? "bg-warning/10 text-warning "
+              : "bg-muted text-muted-foreground/70 dark:bg-muted",
           )}
         >
           <DeviceIcon device={device} className="h-4 w-4" />
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+          <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground/90">
             {device.name}
             {!device.isActive && (
-              <span className="shrink-0 text-[10px] font-normal text-slate-400">außer Betrieb</span>
+              <span className="shrink-0 text-[10px] font-normal text-muted-foreground/70">außer Betrieb</span>
             )}
           </p>
-          <p className="truncate text-[11px] text-slate-400">
+          <p className="truncate text-[11px] text-muted-foreground/70">
             {deviceMetaLabel(device.type, device.category)}
             {status && status.source !== "unavailable" && isLatching && (
-              <span className={cn("ml-1.5", on ? "text-amber-600 dark:text-amber-400" : "")}>
+              <span className={cn("ml-1.5", on ? "text-warning" : "")}>
                 · {on ? "an" : "aus"}
               </span>
             )}
@@ -129,7 +129,7 @@ export function DeviceRow({
           <span
             className={cn(
               "h-1.5 w-1.5 shrink-0 rounded-full",
-              status.online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600",
+              status.online ? "bg-success" : "bg-slate-300 dark:bg-slate-600",
             )}
             title={status.online ? `erreichbar (${status.source})` : "nicht erreichbar"}
           />
@@ -149,10 +149,10 @@ export function DeviceRow({
                   className={cn(
                     "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
                     control.role === "danger"
-                      ? "bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400"
+                      ? "bg-destructive/10 text-destructive hover:bg-destructive/10 "
                       : control.role === "primary"
-                        ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300",
+                        ? "bg-primary text-white hover:bg-primary/90"
+                        : "bg-muted text-muted-foreground hover:bg-accent dark:bg-muted dark:text-foreground/80",
                   )}
                 >
                   {active ? (
@@ -176,10 +176,10 @@ export function DeviceRow({
               className={cn(
                 "rounded px-1.5 py-0.5 text-[10px]",
                 reading.emphasis === "alert"
-                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                  ? "bg-destructive/12 text-destructive"
                   : reading.emphasis === "warn"
-                    ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
-                    : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+                    ? "bg-warning/10 text-warning "
+                    : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground",
               )}
             >
               {reading.label} {reading.value}
@@ -188,7 +188,7 @@ export function DeviceRow({
         </div>
       )}
 
-      {error && <p className="mt-1.5 pl-9 text-[11px] text-rose-600">{error}</p>}
+      {error && <p className="mt-1.5 pl-9 text-[11px] text-destructive">{error}</p>}
     </div>
   );
 }

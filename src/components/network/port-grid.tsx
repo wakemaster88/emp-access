@@ -124,7 +124,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
   return (
     <div className="space-y-6">
       {/* Port-Matrix wie am physischen Switch */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-4">
+      <div className="rounded-xl border border-border bg-muted/50 dark:bg-card/40 p-4">
         <div className="flex flex-wrap gap-2">
           {ports.map((p) => {
             const inactive = p.status === "INACTIVE";
@@ -145,16 +145,16 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                 className={cn(
                   "relative flex flex-col items-center justify-center h-14 w-14 rounded-lg border-2 text-xs font-mono font-semibold transition-all hover:scale-105 hover:shadow-md",
                   faulty
-                    ? "border-rose-400 bg-rose-50 dark:bg-rose-950/40 text-rose-600"
+                    ? "border-destructive bg-destructive/10 text-destructive"
                     : inactive
-                      ? "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-400"
+                      ? "border-border bg-muted text-muted-foreground/70"
                       : reserved
-                        ? "border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+                        ? "border-warning/30 bg-warning/10 text-warning"
                         : p.uplink
                           ? "border-violet-500 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
                           : p.vlan
                             ? cn("border-transparent", vlanColor(p.vlan.id))
-                            : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                            : "border-input bg-card text-muted-foreground"
                 )}
               >
                 <span>{p.number}</span>
@@ -168,12 +168,12 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
             );
           })}
           {ports.length === 0 && (
-            <p className="text-sm text-slate-400 py-4">Keine Ports vorhanden.</p>
+            <p className="text-sm text-muted-foreground/70 py-4">Keine Ports vorhanden.</p>
           )}
         </div>
 
         {/* Legende */}
-        <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400"><ArrowUp className="h-3 w-3" /> Uplink / Zuleitung</span>
           <span className="inline-flex items-center gap-1"><Zap className="h-3 w-3" /> PoE</span>
           <span className="inline-flex items-center gap-1"><Cable className="h-3 w-3" /> Anschluss verbunden</span>
@@ -183,10 +183,10 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
       </div>
 
       {/* Tabellen-Ansicht */}
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+      <div className="rounded-lg border border-border overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
+            <TableRow className="border-border hover:bg-transparent bg-muted/40">
               <TableHead className="w-16">Port</TableHead>
               <TableHead className="hidden sm:table-cell">Beschriftung</TableHead>
               <TableHead>VLAN</TableHead>
@@ -200,15 +200,15 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
             {ports.map((p) => (
               <TableRow
                 key={p.id}
-                className="border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20"
+                className="border-border cursor-pointer hover:bg-primary/10"
                 onClick={() => openPort(p)}
               >
                 <TableCell className="font-mono font-semibold text-sm">
                   {p.number}
-                  {p.poe && <Zap className="inline h-3 w-3 ml-1 text-amber-500" />}
+                  {p.poe && <Zap className="inline h-3 w-3 ml-1 text-warning" />}
                   {p.uplink && <ArrowUp className="inline h-3 w-3 ml-1 text-violet-500" />}
                 </TableCell>
-                <TableCell className="hidden sm:table-cell text-sm text-slate-500">
+                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5">
                     {p.label || <span className="text-slate-300">–</span>}
                     {p.uplink && (
@@ -224,7 +224,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                       {p.vlan.vlanId} · {p.vlan.name}
                     </Badge>
                   ) : (
-                    <span className="text-xs text-slate-400">–</span>
+                    <span className="text-xs text-muted-foreground/70">–</span>
                   )}
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
@@ -237,15 +237,15 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                       ))}
                     </div>
                   ) : (
-                    <span className="text-xs text-slate-400">–</span>
+                    <span className="text-xs text-muted-foreground/70">–</span>
                   )}
                 </TableCell>
-                <TableCell className="hidden sm:table-cell text-xs text-slate-500">
+                <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
                   {p.outlet?.label || <span className="text-slate-300">–</span>}
                 </TableCell>
                 <TableCell className="text-xs">
                   {p.client ? (
-                    <span className="text-slate-700 dark:text-slate-300">{p.client.name}</span>
+                    <span className="text-foreground/80">{p.client.name}</span>
                   ) : (
                     <span className="text-slate-300">–</span>
                   )}
@@ -255,9 +255,9 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                     variant="secondary"
                     className={cn(
                       "text-[10px]",
-                      p.status === "FAULTY" && "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
-                      p.status === "RESERVED" && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-                      p.status === "INACTIVE" && "text-slate-400",
+                      p.status === "FAULTY" && "bg-destructive/12 text-destructive",
+                      p.status === "RESERVED" && "bg-warning/14 text-warning",
+                      p.status === "INACTIVE" && "text-muted-foreground/70",
                     )}
                   >
                     {PORT_STATUS.find((s) => s.value === p.status)?.label ?? p.status}
@@ -326,7 +326,7 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
                           "rounded-md border px-2 py-1 text-xs font-mono transition-all",
                           active
                             ? cn("border-transparent", vlanColor(v.id))
-                            : "border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300"
+                            : "border-border text-muted-foreground/70 hover:border-input"
                         )}
                       >
                         {v.vlanId} · {v.name}
@@ -350,18 +350,18 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
               </Select>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Uplink / Zuleitung</p>
-                <p className="text-xs text-slate-500">Verbindung zu einem anderen Switch/Router</p>
+                <p className="text-xs text-muted-foreground">Verbindung zu einem anderen Switch/Router</p>
               </div>
               <Switch checked={form.uplink} onCheckedChange={(v) => setForm((f) => ({ ...f, uplink: v }))} />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">PoE</p>
-                <p className="text-xs text-slate-500">Port liefert Power over Ethernet</p>
+                <p className="text-xs text-muted-foreground">Port liefert Power over Ethernet</p>
               </div>
               <Switch checked={form.poe} onCheckedChange={(v) => setForm((f) => ({ ...f, poe: v }))} />
             </div>
@@ -376,21 +376,21 @@ export function PortGrid({ ports, vlans, outlets }: PortGridProps) {
             </div>
 
             {selected?.client && (
-              <p className="text-xs text-slate-400">
-                Zugewiesenes Gerät: <span className="text-slate-600 dark:text-slate-300">{selected.client.name}</span>{" "}
+              <p className="text-xs text-muted-foreground/70">
+                Zugewiesenes Gerät: <span className="text-muted-foreground">{selected.client.name}</span>{" "}
                 (Zuordnung im Tab &bdquo;Geräte&ldquo; ändern)
               </p>
             )}
 
             {error && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
             )}
 
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" onClick={() => setSelected(null)} disabled={saving}>
                 Abbrechen
               </Button>
-              <Button type="submit" disabled={saving} className="bg-indigo-600 hover:bg-indigo-700 min-w-28">
+              <Button type="submit" disabled={saving} className="min-w-28">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
               </Button>
             </div>

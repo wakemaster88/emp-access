@@ -211,24 +211,24 @@ export function OperatingCouplingCard({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-slate-100">
-          <CalendarClock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+        <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground/90">
+          <CalendarClock className="h-4 w-4 text-primary" />
           Raum und Betriebszeit
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Raum */}
         <div className="flex items-start gap-2 text-sm">
-          <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
           {room ? (
             <p>
-              <span className="text-slate-500">Raum: </span>
-              <Link href="/raeume" className="font-medium text-slate-800 hover:underline dark:text-slate-200">
+              <span className="text-muted-foreground">Raum: </span>
+              <Link href="/raeume" className="font-medium text-foreground hover:underline">
                 {room.name}
               </Link>
             </p>
           ) : (
-            <p className="text-slate-500">
+            <p className="text-muted-foreground">
               Keinem Raum zugeordnet. Über „Bearbeiten“ einen Raum wählen – erst dann hat das Gerät
               eine Betriebszeit.
             </p>
@@ -241,10 +241,10 @@ export function OperatingCouplingCard({
             className={cn(
               "flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs",
               open === true
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                ? "bg-success/10 text-success"
                 : open === false
-                  ? "bg-slate-50 text-slate-500 dark:bg-slate-800/50 dark:text-slate-400"
-                  : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+                  ? "bg-muted/50 text-muted-foreground"
+                  : "bg-warning/10 text-warning",
             )}
           >
             {open === null ? (
@@ -269,11 +269,11 @@ export function OperatingCouplingCard({
 
         {/* Regeln, die dieses Geraet schalten */}
         <div className="space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Regeln für dieses Gerät
           </p>
           {rules.length === 0 ? (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted-foreground/70">
               Noch keine Regel schaltet dieses Gerät.
             </p>
           ) : (
@@ -281,16 +281,16 @@ export function OperatingCouplingCard({
               <div
                 key={rule.id}
                 className={cn(
-                  "flex items-center gap-2 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs dark:border-slate-700",
+                  "flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs",
                   !rule.isActive && "opacity-60",
                 )}
               >
                 <Workflow className="h-3.5 w-3.5 shrink-0 text-violet-500" />
                 <div className="min-w-0 flex-1">
-                  <Link href="/regeln" className="block truncate font-medium text-slate-800 hover:underline dark:text-slate-200">
+                  <Link href="/regeln" className="block truncate font-medium text-foreground hover:underline">
                     {rule.name}
                   </Link>
-                  <p className="truncate text-slate-400">
+                  <p className="truncate text-muted-foreground/70">
                     {describeRuleTrigger(rule)}
                     {(rule.trigger === "OPENING" || rule.trigger === "CLOSING") &&
                       ` (${rule.operatingScheduleName ?? "Betriebszeit des Raums"})`}
@@ -311,7 +311,7 @@ export function OperatingCouplingCard({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 w-7 shrink-0 p-0 text-slate-400 hover:text-red-600"
+                    className="h-7 w-7 shrink-0 p-0 text-muted-foreground/70 hover:text-destructive"
                     disabled={deleting !== null}
                     onClick={() => deleteRule(rule)}
                     title="Regel löschen"
@@ -330,10 +330,10 @@ export function OperatingCouplingCard({
 
         {/* Kopplung anlegen */}
         {canCouple && (
-          <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <div className="space-y-3 rounded-lg border border-border p-3">
             <div>
               <p className="text-sm font-medium">Mit der Betriebszeit koppeln</p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Legt je Zeitpunkt eine Regel an. Danach lässt sie sich unter „Regeln“ wie jede
                 andere anpassen, pausieren oder löschen.
               </p>
@@ -363,7 +363,7 @@ export function OperatingCouplingCard({
               <select
                 value={scheduleId}
                 onChange={(e) => setScheduleId(e.target.value)}
-                className="h-8 w-full rounded-md border border-slate-200 bg-transparent px-2 text-xs dark:border-slate-700"
+                className="h-8 w-full rounded-md border border-border bg-transparent px-2 text-xs"
               >
                 <option value="">
                   {room?.schedule
@@ -377,7 +377,7 @@ export function OperatingCouplingCard({
                 ))}
               </select>
               {schedules.length === 0 && (
-                <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                <p className="text-[11px] text-warning">
                   Noch keine Betriebszeit angelegt – zuerst unter „Betriebszeiten“ anlegen.
                 </p>
               )}
@@ -434,7 +434,7 @@ function CouplingRow({
           className="h-8 w-20 text-xs"
           aria-label="Verschiebung in Minuten"
         />
-        <span className="text-slate-400" title="Negativ = vorher, positiv = nachher">
+        <span className="text-muted-foreground/70" title="Negativ = vorher, positiv = nachher">
           Min.
         </span>
       </div>

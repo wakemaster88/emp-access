@@ -72,7 +72,7 @@ function WeekdayPicker({
             onClick={() => onChange(mask ^ (1 << index))}
             className={
               on
-                ? "h-7 w-9 rounded-md bg-indigo-600 text-[11px] font-medium text-white"
+                ? "h-7 w-9 rounded-md bg-primary text-[11px] font-medium text-white"
                 : "h-7 w-9 rounded-md border border-neutral-200 text-[11px] text-neutral-500 dark:border-neutral-800"
             }
           >
@@ -561,7 +561,7 @@ export function RuleDialog({
             size="sm"
             onClick={save}
             disabled={saving || disabled}
-            className="h-8 min-w-24 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-24"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

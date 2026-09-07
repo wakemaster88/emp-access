@@ -51,8 +51,8 @@ function OperatingLine({
       className={cn(
         "mt-2 flex items-center gap-1.5 rounded px-2 py-1 text-[11px]",
         open
-          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-          : "bg-slate-50 text-slate-500 dark:bg-slate-800/50 dark:text-slate-400",
+          ? "bg-success/10 text-success "
+          : "bg-muted/50 text-muted-foreground dark:bg-muted/50 dark:text-muted-foreground",
       )}
       title={`Betriebszeit: ${schedule.name}`}
     >
@@ -97,29 +97,29 @@ export function RoomPanel({
   const anythingOn = room.devices.some((d) => statuses.get(d.id)?.output === true);
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start gap-2">
           <span
             className={cn(
               "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
               anythingOn
-                ? "bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-                : "bg-indigo-50 text-indigo-500 dark:bg-indigo-950/30",
+                ? "bg-warning/10 text-warning "
+                : "bg-primary/10 text-primary ",
             )}
           >
             <Building2 className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+            <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground/90">
               {room.name}
               {room.number && (
-                <span className="font-mono text-[11px] font-normal text-slate-400">
+                <span className="font-mono text-[11px] font-normal text-muted-foreground/70">
                   {room.number}
                 </span>
               )}
             </p>
-            <p className="truncate text-[11px] text-slate-400">
+            <p className="truncate text-[11px] text-muted-foreground/70">
               {location || "ohne Gebäudeangabe"}
               {room.doorCount > 0 && (
                 <span>
@@ -134,7 +134,7 @@ export function RoomPanel({
               type="button"
               onClick={onEdit}
               title="Geräte, Kameras und Beschallung dieses Raums zuordnen"
-              className="shrink-0 p-1 text-slate-400 hover:text-indigo-500"
+              className="shrink-0 p-1 text-muted-foreground/70 hover:text-primary"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
@@ -146,17 +146,17 @@ export function RoomPanel({
         )}
 
         {room.lastEvent && (
-          <p className="mt-2 flex items-center gap-1.5 rounded bg-slate-50 px-2 py-1 text-[11px] text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
-            <Radio className="h-3 w-3 shrink-0 text-sky-500" />
+          <p className="mt-2 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px] text-muted-foreground dark:bg-muted/50 dark:text-muted-foreground">
+            <Radio className="h-3 w-3 shrink-0 text-info" />
             {eventTypeLabel(room.lastEvent.type)} {fmtAgo(room.lastEvent.startedAt, nowMs)}
-            <span className="truncate text-slate-400">· {room.lastEvent.cameraName}</span>
+            <span className="truncate text-muted-foreground/70">· {room.lastEvent.cameraName}</span>
           </p>
         )}
       </CardHeader>
 
       <CardContent className="space-y-3">
         {room.devices.length === 0 && room.zones.length === 0 ? (
-          <p className="rounded-md border border-dashed border-slate-200 py-4 text-center text-[11px] text-slate-400 dark:border-slate-700">
+          <p className="rounded-md border border-dashed border-border py-4 text-center text-[11px] text-muted-foreground/70 dark:border-border">
             Noch kein Gerät in diesem Raum.
           </p>
         ) : (
@@ -188,9 +188,9 @@ export function RoomPanel({
             {room.cameras.map((camera) => (
               <div
                 key={camera.id}
-                className="overflow-hidden rounded-md border border-slate-200 dark:border-slate-700"
+                className="overflow-hidden rounded-md border border-border"
               >
-                <div className="relative flex aspect-video items-center justify-center bg-slate-100 dark:bg-slate-900">
+                <div className="relative flex aspect-video items-center justify-center bg-muted dark:bg-card">
                   {camera.snapshotAt ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -205,11 +205,11 @@ export function RoomPanel({
                   )}
                 </div>
                 <div className="flex items-center gap-1 px-1.5 py-1">
-                  <span className="truncate text-[10px] text-slate-600 dark:text-slate-300">
+                  <span className="truncate text-[10px] text-muted-foreground">
                     {camera.name}
                   </span>
                   <span
-                    className="ml-auto shrink-0 text-[10px] text-slate-400"
+                    className="ml-auto shrink-0 text-[10px] text-muted-foreground/70"
                     title={
                       camera.snapshotAt ? `Bild von ${fmtAgo(camera.snapshotAt, nowMs)}` : undefined
                     }
@@ -229,7 +229,7 @@ export function RoomPanel({
                 key={rule.id}
                 href="/regeln"
                 className={cn(
-                  "flex items-center gap-1.5 rounded px-2 py-1 text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800",
+                  "flex items-center gap-1.5 rounded px-2 py-1 text-[11px] hover:bg-muted",
                   rule.isActive ? "" : "opacity-50",
                 )}
                 title={
@@ -239,8 +239,8 @@ export function RoomPanel({
                 }
               >
                 <Workflow className="h-3 w-3 shrink-0 text-violet-500" />
-                <span className="truncate text-slate-600 dark:text-slate-300">{rule.name}</span>
-                <span className="ml-auto shrink-0 text-slate-400">
+                <span className="truncate text-muted-foreground">{rule.name}</span>
+                <span className="ml-auto shrink-0 text-muted-foreground/70">
                   {triggerLabel(rule.trigger)}
                 </span>
               </Link>
@@ -253,13 +253,13 @@ export function RoomPanel({
             {room.locks.map((lock) => (
               <div
                 key={lock.id}
-                className="flex items-center gap-1.5 rounded bg-slate-50 px-2 py-1 text-[11px] dark:bg-slate-800/50"
+                className="flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-[11px] dark:bg-muted/50"
               >
-                <Lock className="h-3 w-3 shrink-0 text-slate-400" />
-                <span className="truncate text-slate-600 dark:text-slate-300">{lock.label}</span>
+                <Lock className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+                <span className="truncate text-muted-foreground">{lock.label}</span>
                 {lock.deviceName && (
                   <span
-                    className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-indigo-500"
+                    className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-primary"
                     title="Wird elektronisch geöffnet"
                   >
                     <Zap className="h-2.5 w-2.5" />

@@ -230,15 +230,15 @@ export default function MonitorPage() {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
   return (
-    <div ref={containerRef} className="bg-slate-50 dark:bg-slate-950 min-h-[100dvh]">
+    <div ref={containerRef} className="bg-background min-h-[100dvh]">
 
       <Header title="Live-Monitor" />
 
-      <div className="p-6 space-y-4">
+      <div className="page-content space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+            <div className="h-3 w-3 rounded-full bg-success animate-pulse" />
+            <span className="text-sm font-medium text-muted-foreground">
               Live — {scans.length} Scans geladen
             </span>
           </div>
@@ -253,7 +253,7 @@ export default function MonitorPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 max-h-72 overflow-y-auto">
-                <DropdownMenuLabel className="text-xs text-slate-500">Feed nach Gerät filtern</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Feed nach Gerät filtern</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuCheckboxItem
                   checked={selectedDeviceIds.length === 0}
@@ -283,10 +283,10 @@ export default function MonitorPage() {
                       }}
                     >
                       <span className="flex items-center gap-2 truncate">
-                        <span className={`h-2 w-2 rounded-full shrink-0 ${d.lastUpdate && d.lastUpdate > fiveMinAgo ? "bg-emerald-500" : "bg-slate-400"}`} />
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${d.lastUpdate && d.lastUpdate > fiveMinAgo ? "bg-success" : "bg-slate-400"}`} />
                         {d.name}
                       </span>
-                      <span className="ml-auto text-xs text-slate-400">{d.type === "SHELLY" ? "Shelly" : "Pi"}</span>
+                      <span className="ml-auto text-xs text-muted-foreground/70">{d.type === "SHELLY" ? "Shelly" : "Pi"}</span>
                     </DropdownMenuCheckboxItem>
                   );
                 })}
@@ -310,13 +310,13 @@ export default function MonitorPage() {
         {counts.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {counts.map((c) => (
-              <Card key={c.areaId} className="border-slate-200 dark:border-slate-800">
+              <Card key={c.areaId}>
                 <CardContent className="p-4">
-                  <p className="text-sm text-slate-500">Resource {c.areaId}</p>
-                  <p className="text-4xl font-bold text-slate-900 dark:text-white mt-1">{c.current}</p>
-                  <div className="flex gap-4 mt-2 text-xs text-slate-400">
-                    <span className="text-emerald-600">↑ {c.entries} rein</span>
-                    <span className="text-rose-600">↓ {c.exits} raus</span>
+                  <p className="text-sm text-muted-foreground">Resource {c.areaId}</p>
+                  <p className="text-4xl font-bold text-foreground mt-1">{c.current}</p>
+                  <div className="flex gap-4 mt-2 text-xs text-muted-foreground/70">
+                    <span className="text-success">↑ {c.entries} rein</span>
+                    <span className="text-destructive">↓ {c.exits} raus</span>
                   </div>
                 </CardContent>
               </Card>
@@ -328,7 +328,7 @@ export default function MonitorPage() {
           const openable = devices.filter((d) => d.category && OPENABLE_CATEGORIES.has(d.category));
           if (openable.length === 0) return null;
           return (
-            <Card className="border-slate-200 dark:border-slate-800">
+            <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Schnell-Öffnen</CardTitle>
               </CardHeader>
@@ -347,8 +347,8 @@ export default function MonitorPage() {
                         onClick={() => handleQuickOpen(d.id)}
                         className={`gap-1.5 ${
                           wasOpened
-                            ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
-                            : "hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                            ? "bg-success hover:bg-success/90 text-success-foreground border-success"
+                            : "hover:bg-success/10 "
                         }`}
                       >
                         {isLoading ? (
@@ -361,7 +361,7 @@ export default function MonitorPage() {
                         <span className="flex items-center gap-1.5">
                           <span
                             className={`h-1.5 w-1.5 rounded-full ${
-                              online ? "bg-emerald-500" : "bg-slate-400"
+                              online ? "bg-success" : "bg-slate-400"
                             }`}
                           />
                           {d.name}
@@ -375,14 +375,14 @@ export default function MonitorPage() {
           );
         })()}
 
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Scan-Feed</CardTitle>
           </CardHeader>
           <CardContent>
             <div ref={feedRef} className="space-y-2 max-h-[60vh] overflow-y-auto">
               {scans.length === 0 && (
-                <p className="text-center text-slate-500 py-12">Warte auf Scans...</p>
+                <p className="text-center text-muted-foreground py-12">Warte auf Scans...</p>
               )}
               {scans.map((scan) => {
                 const isNew = newIds.has(scan.id);
@@ -402,73 +402,73 @@ export default function MonitorPage() {
                   key={scan.id}
                   className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
                     scan.result === "GRANTED"
-                      ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/50"
+                      ? "bg-success/10 border-success/30 "
                       : scan.result === "DENIED"
-                        ? "bg-rose-50 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50"
-                        : "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50"
+                        ? "bg-destructive/10 border-destructive/30 "
+                        : "bg-warning/10 border-warning/30 "
                   } ${isNew ? "animate-scan-flash ring-2 ring-offset-1" : ""} ${
-                    isNew && scan.result === "GRANTED" ? "ring-emerald-400" :
-                    isNew && scan.result === "DENIED" ? "ring-rose-400" :
-                    isNew ? "ring-amber-400" : ""
+                    isNew && scan.result === "GRANTED" ? "ring-success" :
+                    isNew && scan.result === "DENIED" ? "ring-destructive" :
+                    isNew ? "ring-warning" : ""
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {displayImage ? (
-                      <img src={displayImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-slate-200 dark:ring-slate-700" />
+                      <img src={displayImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-border dark:ring-slate-700" />
                     ) : (
                       <Badge
                         className={
                           scan.result === "GRANTED"
-                            ? "bg-emerald-500 text-white"
+                            ? "bg-success text-success-foreground"
                             : scan.result === "DENIED"
-                              ? "bg-rose-500 text-white"
-                              : "bg-amber-500 text-white"
+                              ? "bg-destructive text-white"
+                              : "bg-warning text-warning-foreground"
                         }
                       >
                         {scan.result === "GRANTED" ? "✓" : scan.result === "DENIED" ? "✕" : "⚠"}
                       </Badge>
                     )}
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                      <p className="text-sm font-medium text-foreground truncate">
                         {displayName}
                         {noteData.age != null && (
-                          <span className="ml-1.5 text-xs font-normal text-slate-400">({noteData.age})</span>
+                          <span className="ml-1.5 text-xs font-normal text-muted-foreground/70">({noteData.age})</span>
                         )}
                       </p>
                       {denyReason && (
-                        <p className="text-xs font-semibold text-rose-600 dark:text-rose-400 truncate">
+                        <p className="text-xs font-semibold text-destructive truncate">
                           {denyReason}
                         </p>
                       )}
-                      <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 flex-wrap">
+                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5 flex-wrap">
                         {scan.ticket?.ticketTypeName && (
                           <span className="inline-flex items-center gap-1 shrink-0">
-                            <Ticket className="h-3 w-3 text-slate-400 shrink-0" aria-hidden />
+                            <Ticket className="h-3 w-3 text-muted-foreground/70 shrink-0" aria-hidden />
                             <span className="truncate">{scan.ticket.ticketTypeName}</span>
                           </span>
                         )}
                         {scan.ticket?.ticketTypeName && scan.ticket?.accessArea?.name && (
-                          <span className="text-slate-400 shrink-0">·</span>
+                          <span className="text-muted-foreground/70 shrink-0">·</span>
                         )}
                         {scan.ticket?.accessArea?.name && (
                           <span className="inline-flex items-center gap-1 shrink-0 min-w-0">
-                            <MapPin className="h-3 w-3 text-slate-400 shrink-0" aria-hidden />
+                            <MapPin className="h-3 w-3 text-muted-foreground/70 shrink-0" aria-hidden />
                             <span className="truncate">{scan.ticket.accessArea.name}</span>
                           </span>
                         )}
                         {(scan.ticket?.ticketTypeName || scan.ticket?.accessArea?.name) && scan.device?.name && (
-                          <span className="text-slate-400 shrink-0">·</span>
+                          <span className="text-muted-foreground/70 shrink-0">·</span>
                         )}
                         {scan.device?.name && (
                           <span className="inline-flex items-center gap-1 shrink-0 min-w-0">
-                            <Wifi className="h-3 w-3 text-slate-400 shrink-0" aria-hidden />
+                            <Wifi className="h-3 w-3 text-muted-foreground/70 shrink-0" aria-hidden />
                             <span className="truncate">{scan.device.name}</span>
                           </span>
                         )}
                         {isWakesys && (
                           <>
-                            {scan.device?.name && <span className="text-slate-400 shrink-0">·</span>}
-                            <span className="inline-flex items-center gap-1 shrink-0 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                            {scan.device?.name && <span className="text-muted-foreground/70 shrink-0">·</span>}
+                            <span className="inline-flex items-center gap-1 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
                               {scan.code}
                             </span>
                           </>
@@ -480,7 +480,7 @@ export default function MonitorPage() {
                     {isWakesys && (
                       <Badge
                         variant="outline"
-                        className="text-[10px] font-bold uppercase tracking-wider border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-300"
+                        className="text-[10px] font-bold uppercase tracking-wider border-warning/30 bg-warning/10 text-warning"
                       >
                         Wakesys
                       </Badge>
@@ -491,7 +491,7 @@ export default function MonitorPage() {
                         durationMinutes={scan.ticket.validityDurationMinutes}
                       />
                     )}
-                    <span className="text-xs text-slate-400 font-mono">
+                    <span className="text-xs text-muted-foreground/70 font-mono">
                       {fmtTime(scan.scanTime)}
                     </span>
                   </div>
@@ -549,7 +549,7 @@ function InternalCountdown({ firstScanAt, durationMinutes }: { firstScanAt: stri
   return (
     <span className={`text-xs font-mono px-1.5 py-0.5 rounded tabular-nums ${
       expired
-        ? "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
+        ? "bg-destructive/10 text-destructive "
         : "bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
     }`}>
       {remaining}

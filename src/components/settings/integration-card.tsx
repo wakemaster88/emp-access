@@ -101,7 +101,7 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   EMP_CONTROL: {
     label: "emp-control",
     description: "Personalmanagement-System (bidirektional)",
-    color: "bg-indigo-500",
+    color: "bg-primary",
     fields: {
       token: "API Token (optional – nur für bidirektionale Sync)",
       baseUrl: "System-URL (optional – nur für bidirektionale Sync)",
@@ -112,7 +112,7 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
   NUKI: {
     label: "Nuki",
     description: "Smart Locks – Sync, Steuerung & Live-Events via Nuki Web API",
-    color: "bg-rose-500",
+    color: "bg-destructive",
     fields: {
       token: "Nuki Web API Token (Nuki Web → Account → API)",
     },
@@ -182,41 +182,41 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
     : webhookBaseUrl;
 
   const empControlApiDescription = (
-    <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
-      <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
+    <div className="text-[11px] text-muted-foreground space-y-1 mt-2">
+      <p className="font-medium text-muted-foreground">Webhook-API</p>
       <p><strong>POST</strong> {webhookUrl || "/api/webhook/emp-control"}</p>
-      <p><strong>Header:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
-      <p><strong>Body (JSON):</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaIds": [1, 2, 3], "deviceIds": [22] } ] }`}</code></p>
-      <p><strong>Ressourcen:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> (Array) – IDs der Access Areas, bei denen der Mitarbeiter Zugang hat. Alternativ: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaId</code> (einzeln) oder <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">resourceIds</code>. IDs kommen aus <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">GET /api/areas</code>.</p>
-      <p><strong>Einzelne Geräte:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">deviceIds</code> (Array, alternativ <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">deviceId</code>) – für Mitarbeiter, die genau ein Gerät bedienen sollen, ohne dass dafür ein eigener Bereich nötig ist. Wirkt <em>zusätzlich</em> zu den Bereichen und gilt in der Mitarbeiter-App wie am RFID-Leser. IDs kommen aus <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">GET /api/devices</code>.</p>
-      <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">emp-&lt;id&gt;</code>) und verknüpft es mit allen angegebenen Ressourcen.</p>
-      <p><strong>Sync-Regel:</strong> Fehlt <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">areaIds</code> bzw. <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">deviceIds</code> im Payload, bleibt die bestehende Zuweisung unverändert. Eine leere Liste entfernt alle Einträge. Unbekannte IDs werden übersprungen und in der Antwort unter <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">unknown</code> zurückgemeldet.</p>
+      <p><strong>Header:</strong> <code className="bg-muted px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code> oder <code className="bg-muted px-1 rounded">X-Webhook-Secret: &lt;Secret&gt;</code></p>
+      <p><strong>Body (JSON):</strong> <code className="bg-muted px-1 rounded text-[10px] break-all">{`{ "employees": [ { "id": 1, "firstName", "lastName", "rfidCode", "contractStart", "contractEnd", "active", "areaIds": [1, 2, 3], "deviceIds": [22] } ] }`}</code></p>
+      <p><strong>Ressourcen:</strong> <code className="bg-muted px-1 rounded">areaIds</code> (Array) – IDs der Access Areas, bei denen der Mitarbeiter Zugang hat. Alternativ: <code className="bg-muted px-1 rounded">areaId</code> (einzeln) oder <code className="bg-muted px-1 rounded">resourceIds</code>. IDs kommen aus <code className="bg-muted px-1 rounded">GET /api/areas</code>.</p>
+      <p><strong>Einzelne Geräte:</strong> <code className="bg-muted px-1 rounded">deviceIds</code> (Array, alternativ <code className="bg-muted px-1 rounded">deviceId</code>) – für Mitarbeiter, die genau ein Gerät bedienen sollen, ohne dass dafür ein eigener Bereich nötig ist. Wirkt <em>zusätzlich</em> zu den Bereichen und gilt in der Mitarbeiter-App wie am RFID-Leser. IDs kommen aus <code className="bg-muted px-1 rounded">GET /api/devices</code>.</p>
+      <p>Der Webhook legt pro Mitarbeiter ein Ticket an (uuid: <code className="bg-muted px-1 rounded">emp-&lt;id&gt;</code>) und verknüpft es mit allen angegebenen Ressourcen.</p>
+      <p><strong>Sync-Regel:</strong> Fehlt <code className="bg-muted px-1 rounded">areaIds</code> bzw. <code className="bg-muted px-1 rounded">deviceIds</code> im Payload, bleibt die bestehende Zuweisung unverändert. Eine leere Liste entfernt alle Einträge. Unbekannte IDs werden übersprungen und in der Antwort unter <code className="bg-muted px-1 rounded">unknown</code> zurückgemeldet.</p>
     </div>
   );
 
   const nukiApiDescription = (
-    <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
-      <p className="font-medium text-slate-600 dark:text-slate-300">Nuki Web API</p>
+    <div className="text-[11px] text-muted-foreground space-y-1 mt-2">
+      <p className="font-medium text-muted-foreground">Nuki Web API</p>
       <p>1. Token unter <a className="underline" href="https://web.nuki.io" target="_blank" rel="noreferrer">web.nuki.io</a> → Account → API generieren und oben einfügen.</p>
-      <p>2. Auf <strong>Synchronisieren</strong> klicken – alle Smart Locks aus Nuki werden automatisch als Geräte (Typ <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">NUKI_SMARTLOCK</code>, Kategorie <em>Tür</em>) angelegt und mit Akkustand/Firmware befüllt.</p>
+      <p>2. Auf <strong>Synchronisieren</strong> klicken – alle Smart Locks aus Nuki werden automatisch als Geräte (Typ <code className="bg-muted px-1 rounded">NUKI_SMARTLOCK</code>, Kategorie <em>Tür</em>) angelegt und mit Akkustand/Firmware befüllt.</p>
       <p>3. Sync registriert automatisch einen Webhook bei Nuki (sofern die Seite über HTTPS erreichbar ist) – Tür-Events landen dann als <em>Scan</em> in EMP. URL und Secret siehst du unten.</p>
-      <p><strong>Aktionen:</strong> Über das Geräte-Menü kannst du die Tür auf/zu schalten (Web-API: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">unlatch</code>/<code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">lock</code>).</p>
+      <p><strong>Aktionen:</strong> Über das Geräte-Menü kannst du die Tür auf/zu schalten (Web-API: <code className="bg-muted px-1 rounded">unlatch</code>/<code className="bg-muted px-1 rounded">lock</code>).</p>
       <p><strong>Voraussetzung:</strong> Smart Lock Pro (4. Gen) oder Ultra mit WLAN bzw. Smart Lock + Nuki Bridge.</p>
     </div>
   );
 
   const annyApiDescription = (
-    <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 mt-2">
-      <p className="font-medium text-slate-600 dark:text-slate-300">Webhook-API</p>
+    <div className="text-[11px] text-muted-foreground space-y-1 mt-2">
+      <p className="font-medium text-muted-foreground">Webhook-API</p>
       <p><strong>POST</strong> {webhookUrl || "/api/integrations/anny/webhook"}</p>
-      <p><strong>Auth:</strong> Secret ist in der URL enthalten (<code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">?secret=…</code>). Alternativ als Header: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code></p>
+      <p><strong>Auth:</strong> Secret ist in der URL enthalten (<code className="bg-muted px-1 rounded">?secret=…</code>). Alternativ als Header: <code className="bg-muted px-1 rounded">Authorization: Bearer &lt;Secret&gt;</code></p>
       <p><strong>Body (JSON):</strong></p>
       <ul className="list-disc list-inside space-y-0.5 pl-1">
-        <li><code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">{`{ "booking": { ... } }`}</code> — einzelne Buchung</li>
-        <li><code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">{`{ "bookings": [ ... ] }`}</code> — mehrere Buchungen</li>
-        <li><code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">{`{ "data": { "booking": { ... } } }`}</code> — anny.co Webhook-Format</li>
+        <li><code className="bg-muted px-1 rounded text-[10px]">{`{ "booking": { ... } }`}</code> — einzelne Buchung</li>
+        <li><code className="bg-muted px-1 rounded text-[10px]">{`{ "bookings": [ ... ] }`}</code> — mehrere Buchungen</li>
+        <li><code className="bg-muted px-1 rounded text-[10px]">{`{ "data": { "booking": { ... } } }`}</code> — anny.co Webhook-Format</li>
       </ul>
-      <p><strong>Booking-Felder:</strong> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-[10px]">id, number, start_date, end_date, status, customer (id, full_name, first_name, last_name), resource (id, name), service (id, name)</code></p>
+      <p><strong>Booking-Felder:</strong> <code className="bg-muted px-1 rounded text-[10px]">id, number, start_date, end_date, status, customer (id, full_name, first_name, last_name), resource (id, name), service (id, name)</code></p>
       <p>Der Webhook ordnet Buchungen automatisch Services, Abos oder Bereichen zu und erstellt/aktualisiert Tickets. Stornierte Buchungen werden ignoriert.</p>
     </div>
   );
@@ -409,7 +409,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
   }
 
   return (
-    <Card className={cn("border-slate-200 dark:border-slate-800 transition-all", open && "ring-1 ring-indigo-500/30")}>
+    <Card className={cn("border-border transition-all", open && "ring-1 ring-primary/30")}>
       <CardHeader
         className="cursor-pointer select-none"
         onClick={() => setOpen(!open)}
@@ -423,7 +423,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               <CardTitle className="text-base flex items-center gap-2">
                 {meta.label}
                 {isConfigured ? (
-                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs font-normal gap-1">
+                  <Badge variant="success" className="text-xs font-normal gap-1">
                     <CheckCircle2 className="h-3 w-3" /> Verbunden
                   </Badge>
                 ) : (
@@ -434,28 +434,28 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
               </CardTitle>
               <CardDescription className="text-xs mt-0.5">{meta.description}</CardDescription>
               {provider === "EMP_CONTROL" && (
-                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{webhookUrl || "/api/webhook/emp-control"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  <p><strong>Webhook:</strong> POST <code className="bg-muted px-1 rounded">{webhookUrl || "/api/webhook/emp-control"}</code> – Mitarbeiter pushen. Details beim Öffnen.</p>
                 </div>
               )}
               {provider === "ANNY" && isConfigured && (
-                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                  <p><strong>Webhook:</strong> POST <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{webhookUrl || "/api/integrations/anny/webhook"}</code> – Buchungen empfangen. Details beim Öffnen.</p>
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  <p><strong>Webhook:</strong> POST <code className="bg-muted px-1 rounded">{webhookUrl || "/api/integrations/anny/webhook"}</code> – Buchungen empfangen. Details beim Öffnen.</p>
                 </div>
               )}
               {provider === "NUKI" && isConfigured && (
-                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                <div className="mt-2 text-[11px] text-muted-foreground">
                   <p><strong>Sync:</strong> Smart Locks → Geräte. <strong>Webhook:</strong> Tür-Events → Scans. Details beim Öffnen.</p>
                 </div>
               )}
               {provider === "LOQED" && isConfigured && (
-                <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                <div className="mt-2 text-[11px] text-muted-foreground">
                   <p><strong>Sync:</strong> Schlösser → Geräte. <strong>Webhook:</strong> Riegelbewegungen → Scans. Details beim Öffnen.</p>
                 </div>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 text-slate-400">
+          <div className="flex items-center gap-2 text-muted-foreground/70">
             {initialData?.lastUpdate && (
               <span className="text-xs hidden sm:flex items-center gap-1">
                 <RefreshCw className="h-3 w-3" />
@@ -469,7 +469,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
 
       {open && (
         <>
-          <Separator className="dark:bg-slate-800" />
+          <Separator className="dark:bg-muted" />
           <CardContent className="pt-4 space-y-4">
             <div className="space-y-2">
               <Label htmlFor={`${provider}-token`}>{meta.fields.token}</Label>
@@ -521,18 +521,18 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
             )}
 
             {provider === "BINARYTEC" && (
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-2">
-                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Binarytec API (nur Check, kein Sync)</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-500">
+              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Binarytec API (nur Check, kein Sync)</p>
+                <p className="text-[11px] text-muted-foreground">
                   Wenn Binarytec konfiguriert ist, prüft der Raspberry Pi Scans <strong>nur</strong> per Binarytec (Check-Access). Keine EMP-Tickets, kein Ticket-Sync. <strong>resourceId</strong> im Zusatz (JSON) ist erforderlich.
                 </p>
               </div>
             )}
 
             {provider === "WAKESYS" && (
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-2">
-                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Interface-IDs (Wakesys)</p>
-                <ul className="text-[11px] text-slate-500 dark:text-slate-500 grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono">
+              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Interface-IDs (Wakesys)</p>
+                <ul className="text-[11px] text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono">
                   <li>1 = Admin</li>
                   <li>2 = Seilbahn A</li>
                   <li>3 = Seilbahn B</li>
@@ -543,15 +543,15 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   <li>8 = Kasse Büro</li>
                   <li>19 = Drehkreuz</li>
                 </ul>
-                <p className="text-[11px] text-slate-500 dark:text-slate-500 mt-1">
-                  Zusatz z. B.: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">{`{"interfaceIds": [2, 3, 4]}`}</code> (Reihenfolge = Fallback)
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Zusatz z. B.: <code className="bg-border dark:bg-accent px-1 rounded">{`{"interfaceIds": [2, 3, 4]}`}</code> (Reihenfolge = Fallback)
                 </p>
               </div>
             )}
 
             {provider === "WAKESYS" && isConfigured && (
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
-                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">RFID / Code testen</p>
+              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-3">
+                <p className="text-xs font-medium text-muted-foreground">RFID / Code testen</p>
                 <div className="flex items-center gap-2">
                   <Input
                     placeholder="RFID-Code eingeben…"
@@ -576,26 +576,26 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   <div className={cn(
                     "rounded-lg border p-3 space-y-1",
                     testResult.valid
-                      ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30"
-                      : "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30",
+                      ? "border-success/30 bg-success/10"
+                      : "border-destructive/30 bg-destructive/10",
                   )}>
                     <div className="flex items-center gap-2">
                       {testResult.valid ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                       ) : (
-                        <XCircle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <XCircle className="h-4 w-4 text-destructive shrink-0" />
                       )}
-                      <span className={cn("text-sm font-bold", testResult.valid ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400")}>
+                      <span className={cn("text-sm font-bold", testResult.valid ? "text-success" : "text-destructive")}>
                         {testResult.valid ? "Gültig" : "Nicht gültig"}
                       </span>
                     </div>
                     {testResult.valid && (
                       <div className="flex items-start gap-3 pl-6">
                         {testResult.picture && (
-                          <img src={testResult.picture} alt="" className="h-14 w-14 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700" />
+                          <img src={testResult.picture} alt="" className="h-14 w-14 rounded-lg object-cover shrink-0 border border-border" />
                         )}
-                        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-0.5">
-                          {testResult.name && <p><strong>Name:</strong> {testResult.name}{testResult.age != null && <span className="ml-1 text-slate-400">({testResult.age} Jahre)</span>}</p>}
+                        <div className="text-xs text-muted-foreground space-y-0.5">
+                          {testResult.name && <p><strong>Name:</strong> {testResult.name}{testResult.age != null && <span className="ml-1 text-muted-foreground/70">({testResult.age} Jahre)</span>}</p>}
                           {testResult.cardName && <p><strong>Karte:</strong> {testResult.cardName}</p>}
                           {testResult.category && <p><strong>Kategorie:</strong> {testResult.category}</p>}
                           {testResult.validUntil && <p><strong>Gültig bis:</strong> {testResult.validUntil}</p>}
@@ -604,29 +604,29 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       </div>
                     )}
                     {testResult.message && !testResult.valid && (
-                      <p className="text-xs text-rose-600 dark:text-rose-400 pl-6">{testResult.message}</p>
+                      <p className="text-xs text-destructive pl-6">{testResult.message}</p>
                     )}
                   </div>
                 )}
                 {testResult?.valid && testResult.matchingTickets && testResult.matchingTickets.length > 0 && (
-                  <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 p-3 space-y-2">
-                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-400">
+                  <div className="rounded-lg border border-primary/30 bg-primary/8 p-3 space-y-2">
+                    <p className="text-xs font-medium text-primary">
                       {testResult.matchingTickets.length} passende{testResult.matchingTickets.length === 1 ? "s" : ""} Ticket{testResult.matchingTickets.length === 1 ? "" : "s"} im System
                     </p>
                     <div className="space-y-1.5">
                       {testResult.matchingTickets.map((t) => (
-                        <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/50 px-3 py-2">
+                        <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg bg-card border border-indigo-100 px-3 py-2">
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
+                            <p className="text-sm font-medium text-foreground/80 truncate">
                               {[t.firstName, t.lastName].filter(Boolean).join(" ") || t.name}
                             </p>
-                            <p className="text-[11px] text-slate-500 truncate">
+                            <p className="text-[11px] text-muted-foreground truncate">
                               {t.ticketTypeName || (t.subscriptionId ? "Abo" : "Ticket")}
-                              {t.rfidCode && <> · RFID: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">{t.rfidCode}</code></>}
+                              {t.rfidCode && <> · RFID: <code className="bg-muted px-1 rounded">{t.rfidCode}</code></>}
                             </p>
                           </div>
                           {t.rfidCode === testResult.code ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] shrink-0 gap-1">
+                            <Badge variant="success" className="text-[10px] shrink-0 gap-1">
                               <CheckCircle2 className="h-3 w-3" /> Verknüpft
                             </Badge>
                           ) : (
@@ -647,22 +647,22 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   </div>
                 )}
                 {testResult?.valid && testResult.matchingTickets?.length === 0 && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Kein passendes Ticket im System gefunden.</p>
+                  <p className="text-xs text-muted-foreground">Kein passendes Ticket im System gefunden.</p>
                 )}
               </div>
             )}
 
             {webhook && (
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3 space-y-3">
-                <p className="text-xs font-medium text-slate-600 dark:text-slate-400">{webhook.title}</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-500">{webhook.hint}</p>
+              <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-3">
+                <p className="text-xs font-medium text-muted-foreground">{webhook.title}</p>
+                <p className="text-[11px] text-muted-foreground">{webhook.hint}</p>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <Label className="text-[11px] text-slate-500 shrink-0">URL</Label>
+                    <Label className="text-[11px] text-muted-foreground shrink-0">URL</Label>
                     <Input
                       readOnly
                       value={webhookUrl}
-                      className="font-mono text-xs h-8 bg-white dark:bg-slate-900"
+                      className="font-mono text-xs h-8 bg-card"
                     />
                     <Button
                       type="button"
@@ -671,18 +671,18 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                       className="h-8 w-8 shrink-0"
                       onClick={() => copyToClipboard(webhookUrl, "wh-url")}
                     >
-                      {copied === "wh-url" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied === "wh-url" ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Label className="text-[11px] text-slate-500 shrink-0">Secret</Label>
+                    <Label className="text-[11px] text-muted-foreground shrink-0">Secret</Label>
                     {webhookSecret ? (
                       <>
                         <Input
                           readOnly
                           type="password"
                           value={webhookSecret}
-                          className="font-mono text-xs h-8 bg-white dark:bg-slate-900"
+                          className="font-mono text-xs h-8 bg-card"
                         />
                         <Button
                           type="button"
@@ -691,11 +691,11 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                           className="h-8 w-8 shrink-0"
                           onClick={() => copyToClipboard(webhookSecret, "wh-secret")}
                         >
-                          {copied === "wh-secret" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                          {copied === "wh-secret" ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
                         </Button>
                       </>
                     ) : (
-                      <span className="text-xs text-slate-400">Nach dem Speichern wird ein Webhook-Secret erzeugt und hier angezeigt.</span>
+                      <span className="text-xs text-muted-foreground/70">Nach dem Speichern wird ein Webhook-Secret erzeugt und hier angezeigt.</span>
                     )}
                   </div>
                 </div>
@@ -708,35 +708,35 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
             )}
 
             {error && (
-              <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
                 {error}
               </p>
             )}
 
             {syncResult && (
-              <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg">
+              <p className="text-sm text-success bg-success/10 px-3 py-2 rounded-lg">
                 Sync abgeschlossen: {syncResult}
               </p>
             )}
 
             {unmapped.length > 0 && (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
-                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-warning">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   <p className="text-xs font-medium">
                     {unmapped.length} ANNY-Service{unmapped.length > 1 ? "s" : ""} ohne Zuordnung — Buchungen wurden nicht importiert
                   </p>
                 </div>
-                <p className="text-[11px] text-amber-600 dark:text-amber-500">
+                <p className="text-[11px] text-warning">
                   Erstelle einen Service unter &quot;Services&quot; und hinterlege den ANNY-Namen, dann erneut synchronisieren.
                 </p>
                 <div className="space-y-1">
                   {unmapped.map((u) => (
-                    <div key={u.annyName} className="flex items-center justify-between text-xs bg-white dark:bg-slate-900 rounded px-2.5 py-1.5 border border-amber-100 dark:border-amber-900/50">
+                    <div key={u.annyName} className="flex items-center justify-between text-xs bg-card rounded px-2.5 py-1.5 border border-amber-100">
                       <div className="min-w-0">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{u.annyName}</span>
+                        <span className="font-medium text-foreground/80">{u.annyName}</span>
                         {u.customerSample.length > 0 && (
-                          <span className="text-slate-400 ml-1.5">({u.customerSample.join(", ")}{u.count > u.customerSample.length ? ", …" : ""})</span>
+                          <span className="text-muted-foreground/70 ml-1.5">({u.customerSample.join(", ")}{u.count > u.customerSample.length ? ", …" : ""})</span>
                         )}
                       </div>
                       <Badge variant="secondary" className="text-[10px] shrink-0 ml-2">
@@ -754,7 +754,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                 size="sm"
                 onClick={handleDelete}
                 disabled={deleting || !initialData}
-                className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-1.5" />
                 Entfernen
@@ -778,7 +778,7 @@ export function IntegrationCard({ provider, initialData }: IntegrationCardProps)
                   disabled={saving || (provider === "WAKESYS" ? !data.baseUrl?.trim() : provider === "EMP_CONTROL" ? false : !data.token)}
                   className={cn(
                     "min-w-24",
-                    saved ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600 hover:bg-indigo-700"
+                    saved ? "bg-success hover:bg-success/90" : "bg-primary hover:bg-primary/90"
                   )}
                 >
                   {saving ? (

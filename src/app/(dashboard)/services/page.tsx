@@ -56,12 +56,12 @@ export default async function ServicesPage() {
   return (
     <>
       <Header title="Services" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Services ({services.length})</CardTitle>
             <CardDescription>
-              Services gruppieren <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Tickets</Link> und verknüpfen sie mit <Link href="/areas" className="text-indigo-600 dark:text-indigo-400 hover:underline">Resourcen</Link> (Zugangsbereichen).
+              Services gruppieren <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> und verknüpfen sie mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> (Zugangsbereichen).
             </CardDescription>
           </CardHeader>
           <CardContent>

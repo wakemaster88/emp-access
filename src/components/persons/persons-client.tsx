@@ -313,22 +313,22 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
     return (
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {isBlack
               ? "Blacklist z. B. für Hausverbot. Mit Kamera + „Bei Erkennung schalten“ kann ein Alarm-Shelly ausgelöst werden."
               : "Whitelist für Personen, deren Erscheinungen protokolliert und/oder mit Automation verknüpft werden sollen."}
           </p>
           <Button
             onClick={() => openAdd(kind)}
-            className={cn("gap-1.5 shrink-0", isBlack ? "bg-rose-600 hover:bg-rose-700" : "bg-indigo-600 hover:bg-indigo-700")}
+            className={cn("gap-1.5 shrink-0", isBlack ? "bg-destructive hover:bg-destructive/90" : "bg-primary hover:bg-primary/90")}
           >
             <Plus className="h-4 w-4" /> Person hinzufügen
           </Button>
         </div>
 
         {items.length === 0 ? (
-          <Card className="border-dashed border-slate-300 dark:border-slate-700">
-            <CardContent className="py-12 text-center text-slate-500">
+          <Card className="border-dashed border-input">
+            <CardContent className="py-12 text-center text-muted-foreground">
               {isBlack ? <ShieldAlert className="h-10 w-10 mx-auto mb-3 text-slate-300" /> : <ShieldCheck className="h-10 w-10 mx-auto mb-3 text-slate-300" />}
               <p className="font-medium">Noch keine Einträge</p>
             </CardContent>
@@ -338,7 +338,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
             {items.map((p) => {
               const personSightings = p.recentSightings ?? [];
               return (
-                <Card key={p.id} className={cn("border-slate-200 dark:border-slate-800", !p.isActive && "opacity-60")}>
+                <Card key={p.id} className={cn("border-border", !p.isActive && "opacity-60")}>
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -347,8 +347,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                           <Badge className={cn(
                             "text-xs",
                             isBlack
-                              ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
-                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                              ? "bg-destructive/12 text-destructive"
+                              : "bg-success/12 text-success"
                           )}>
                             {isBlack ? "Blacklist" : "Whitelist"}
                           </Badge>
@@ -367,14 +367,14 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                             </Badge>
                           )}
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           {p._count.sightings} Sichtung{p._count.sightings !== 1 ? "en" : ""}
                           {" · "}
                           {p._count.faceEmbeddings} Face-Sample{p._count.faceEmbeddings !== 1 ? "s" : ""}
                           {p.notes ? <> · {p.notes}</> : null}
                         </p>
                         {p._count.faceEmbeddings === 0 && (
-                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                          <p className="text-xs text-warning mt-1">
                             Noch kein Erkennungsprofil – Sichtung zuordnen erzeugt Samples.
                           </p>
                         )}
@@ -395,29 +395,29 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                         <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => openEdit(p)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="outline" size="sm" className="h-8 px-2 text-rose-600" onClick={() => remove(p)}>
+                        <Button variant="outline" size="sm" className="h-8 px-2 text-destructive" onClick={() => remove(p)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
 
                     {personSightings.length > 0 ? (
-                      <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                        <p className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1.5">
+                      <div className="border-t border-border/60 pt-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
                           <History className="h-3.5 w-3.5" /> Letzte Sichtungen
                         </p>
                         <div className="flex gap-2 overflow-x-auto pb-1">
                           {personSightings.map((s) => (
                             <div
                               key={s.id}
-                              className="shrink-0 w-28 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-50 dark:bg-slate-900"
+                              className="shrink-0 w-28 rounded-md border border-border overflow-hidden bg-muted/50"
                             >
                               {s.hasSnapshot ? (
                                 <a
                                   href={`/api/person-sightings/${s.id}/snapshot`}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="block aspect-square bg-slate-100 dark:bg-slate-950"
+                                  className="block aspect-square bg-muted dark:bg-background"
                                 >
                                   <img
                                     src={`/api/person-sightings/${s.id}/snapshot`}
@@ -433,7 +433,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                                 </div>
                               )}
                               <div className="px-1.5 py-1 space-y-0.5">
-                                <p className="text-[10px] font-mono text-slate-500 leading-tight">
+                                <p className="text-[10px] font-mono text-muted-foreground leading-tight">
                                   {new Date(s.seenAt).toLocaleString("de-DE", {
                                     day: "2-digit",
                                     month: "2-digit",
@@ -441,7 +441,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                                     minute: "2-digit",
                                   })}
                                 </p>
-                                <p className="text-[10px] text-slate-400 truncate">
+                                <p className="text-[10px] text-muted-foreground/70 truncate">
                                   {s.camera?.name ?? (s.source === "MANUAL" ? "Manuell" : "–")}
                                 </p>
                               </div>
@@ -451,7 +451,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                         {p._count.sightings > personSightings.length && (
                           <button
                             type="button"
-                            className="mt-2 text-xs text-indigo-600 hover:underline"
+                            className="mt-2 text-xs text-primary hover:underline"
                             onClick={() => setTab("history")}
                           >
                             Alle {p._count.sightings} in Historie anzeigen
@@ -459,8 +459,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                         )}
                       </div>
                     ) : (
-                      <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                        <p className="text-xs text-slate-400">Noch keine zugeordneten Sichtungen.</p>
+                      <div className="border-t border-border/60 pt-3">
+                        <p className="text-xs text-muted-foreground/70">Noch keine zugeordneten Sichtungen.</p>
                       </div>
                     )}
                   </CardContent>
@@ -497,25 +497,25 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
           <PersonList items={blacklist} kind="BLACKLIST" />
         </TabsContent>
         <TabsContent value="history" className="space-y-4 mt-4">
-          <Card className="border-slate-200 dark:border-slate-800">
+          <Card>
             <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
               <CardTitle className="text-base">Sichtung manuell erfassen</CardTitle>
               <Button size="sm" variant="outline" onClick={() => { setSightPersonId(""); setSightNotes(""); setSightOpen(true); }}>
                 <UserRound className="h-4 w-4 mr-1.5" /> Person melden
               </Button>
             </CardHeader>
-            <CardContent className="text-sm text-slate-500">
+            <CardContent className="text-sm text-muted-foreground">
               Der Hub erkennt Gesichter lokal und matcht gegen die Gallery.
               Unbekannte Sichtungen zuordnen → Face-Sample fürs Wiedererkennen.
             </CardContent>
           </Card>
 
-          <Card className="border-slate-200 dark:border-slate-800">
+          <Card>
             <CardContent className="p-0 sm:p-6">
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+              <div className="rounded-lg border border-border overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-50/80 dark:bg-slate-900/50">
+                    <TableRow className="bg-muted/40">
                       <TableHead className="w-16">Bild</TableHead>
                       <TableHead>Zeit</TableHead>
                       <TableHead>Person</TableHead>
@@ -529,7 +529,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                   <TableBody>
                     {sightings.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-sm text-slate-400">
+                        <TableCell colSpan={8} className="text-center py-10 text-sm text-muted-foreground/70">
                           Noch keine Sichtungen.
                         </TableCell>
                       </TableRow>
@@ -541,7 +541,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                             <button
                               type="button"
                               onClick={() => openAssign(s)}
-                              className="block h-12 w-12 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+                              className="block h-12 w-12 overflow-hidden rounded-md border border-border bg-muted dark:border-border dark:bg-card"
                             >
                               <img
                                 src={`/api/person-sightings/${s.id}/snapshot`}
@@ -552,30 +552,30 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                               />
                             </button>
                           ) : (
-                            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-border text-slate-300 dark:border-border">
                               <UserRound className="h-4 w-4" />
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-slate-500 whitespace-nowrap">
+                        <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                           {new Date(s.seenAt).toLocaleString("de-DE")}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {s.listedPerson?.name ?? <span className="text-slate-400">unbekannt</span>}
+                          {s.listedPerson?.name ?? <span className="text-muted-foreground/70">unbekannt</span>}
                         </TableCell>
                         <TableCell>
                           {s.listType === "BLACKLIST" ? (
-                            <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 text-xs">Black</Badge>
+                            <Badge variant="danger" className="text-xs">Black</Badge>
                           ) : s.listType === "WHITELIST" ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">White</Badge>
+                            <Badge variant="success" className="text-xs">White</Badge>
                           ) : (
-                            <span className="text-slate-400 text-xs">–</span>
+                            <span className="text-muted-foreground/70 text-xs">–</span>
                           )}
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell text-sm text-slate-500">
+                        <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                           {s.camera?.name ?? "–"}
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500">
+                        <TableCell className="text-xs text-muted-foreground">
                           {s.matchMethod === "FACE_EMBEDDING" ? (
                             <span className="inline-flex items-center gap-1">
                               <Badge variant="outline" className="text-[10px] px-1.5 py-0">Auto</Badge>
@@ -589,9 +589,9 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-xs">
                           {!s.shellyTriggered ? "–" : s.shellyOk ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3 w-3" /> OK</span>
+                            <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 className="h-3 w-3" /> OK</span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-rose-600"><XCircle className="h-3 w-3" /> Fehler</span>
+                            <span className="inline-flex items-center gap-1 text-destructive"><XCircle className="h-3 w-3" /> Fehler</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -610,7 +610,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                              className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
                               disabled={deletingId === s.id}
                               onClick={() => deleteSighting(s)}
                               title="Löschen"
@@ -638,7 +638,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Name <span className="text-rose-500">*</span></Label>
+              <Label>Name <span className="text-destructive">*</span></Label>
               <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="z.B. Max Mustermann" />
             </div>
             <div className="space-y-1.5">
@@ -662,28 +662,28 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Face-Wiedererkennen läuft immer auf allen Kameras. Optional eine Heim-/Referenzkamera markieren.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Historie führen</p>
-                <p className="text-xs text-slate-500">Sichtungen dieser Person protokollieren</p>
+                <p className="text-xs text-muted-foreground">Sichtungen dieser Person protokollieren</p>
               </div>
               <Switch checked={form.trackHistory} onCheckedChange={(v) => setForm((f) => ({ ...f, trackHistory: v }))} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Push bei Erkennung</p>
-                <p className="text-xs text-slate-500">Web-Push an registrierte Geräte bei Face-Match</p>
+                <p className="text-xs text-muted-foreground">Web-Push an registrierte Geräte bei Face-Match</p>
               </div>
               <Switch checked={form.notifyOnDetection} onCheckedChange={(v) => setForm((f) => ({ ...f, notifyOnDetection: v }))} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Bei Face-Match Shelly schalten</p>
-                <p className="text-xs text-slate-500">Nur wenn diese Person lokal wiedererkannt wird</p>
+                <p className="text-xs text-muted-foreground">Nur wenn diese Person lokal wiedererkannt wird</p>
               </div>
               <Switch checked={form.triggerOnDetection} onCheckedChange={(v) => setForm((f) => ({ ...f, triggerOnDetection: v }))} />
             </div>
@@ -732,7 +732,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
               <Label>Aktiv</Label>
               <Switch checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
             </div>
-            {error && <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>}
+            {error && <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Abbrechen</Button>
@@ -786,7 +786,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
           {assignSighting && (
             <div className="space-y-4">
               {assignSighting.hasSnapshot && (
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
+                <div className="overflow-hidden rounded-lg border border-border bg-muted dark:border-border dark:bg-card">
                   <img
                     src={`/api/person-sightings/${assignSighting.id}/snapshot`}
                     alt="Sichtung"
@@ -795,7 +795,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                   />
                 </div>
               )}
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 {new Date(assignSighting.seenAt).toLocaleString("de-DE")}
                 {assignSighting.camera ? ` · ${assignSighting.camera.name}` : ""}
               </p>
@@ -839,7 +839,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
               ) : (
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label>Name <span className="text-rose-500">*</span></Label>
+                    <Label>Name <span className="text-destructive">*</span></Label>
                     <Input
                       value={assignName}
                       onChange={(e) => setAssignName(e.target.value)}
@@ -856,19 +856,19 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
                       </SelectContent>
                     </Select>
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     Zuordnen erzeugt ein Face-Sample. Erkennung gilt danach auf allen Kameras.
                   </p>
                 </div>
               )}
               {assignMode === "existing" && (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Zuordnen erzeugt ein zusätzliches Face-Sample für diese Person.
                 </p>
               )}
 
               {assignError && (
-                <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+                <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
                   {assignError}
                 </p>
               )}

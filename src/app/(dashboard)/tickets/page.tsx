@@ -169,8 +169,8 @@ export default async function TicketsPage({ searchParams }: Props) {
   return (
     <>
       <Header title="Tickets" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content">
+        <Card>
           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 flex-wrap">
             <div className="flex items-center gap-3">
               <CardTitle className="text-base sm:text-lg">
@@ -195,7 +195,7 @@ export default async function TicketsPage({ searchParams }: Props) {
               {areas.length > 0 && (
                 <AreaFilter areas={areas} current={area} />
               )}
-              <Button asChild variant="outline" size="sm" className={showInactive ? "border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400" : ""}>
+              <Button asChild variant="outline" size="sm" className={showInactive ? "border-primary/40 text-primary" : ""}>
                 <Link href={toggleHref}>
                   {showInactive
                     ? <><EyeOff className="h-4 w-4 mr-1.5" /><span className="hidden xs:inline">Nur aktive</span><span className="xs:hidden">Aktive</span></>

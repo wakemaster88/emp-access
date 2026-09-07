@@ -148,12 +148,12 @@ export default async function VouchersPage({ searchParams }: Props) {
   return (
     <>
       <Header title="Gutscheine" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6 space-y-4">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content space-y-4">
+        <Card>
           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 flex-wrap">
             <div className="flex items-center gap-3">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <Gift className="h-5 w-5 text-indigo-500" />
+                <Gift className="h-5 w-5 text-primary" />
                 Gutscheine ({enrichedVouchers.length})
               </CardTitle>
             </div>
@@ -175,7 +175,7 @@ export default async function VouchersPage({ searchParams }: Props) {
                     asChild
                     variant={isActive ? "default" : "outline"}
                     size="sm"
-                    className={isActive ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+                    className={isActive ? "bg-primary hover:bg-primary/90" : ""}
                   >
                     <Link href={href}>
                       <Icon className="h-3.5 w-3.5 mr-1.5" />

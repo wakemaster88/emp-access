@@ -261,7 +261,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
       <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <IdCard className="h-5 w-5 text-indigo-500" />
+            <IdCard className="h-5 w-5 text-primary" />
             {isNew ? "Neuen Mitarbeiter anlegen" : (form.firstName || form.lastName)
               ? `${form.firstName} ${form.lastName}`.trim()
               : form.name || "Mitarbeiter bearbeiten"}
@@ -269,7 +269,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
         </DialogHeader>
 
         {loading ? (
-          <div className="py-10 text-center text-slate-500 text-sm">
+          <div className="py-10 text-center text-muted-foreground text-sm">
             <Loader2 className="h-5 w-5 animate-spin inline-block mr-2" />
             Lade…
           </div>
@@ -277,7 +277,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
           <div className="space-y-5">
             {/* Persoenliche Daten */}
             <section className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Person</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Person</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="emp-firstname">Vorname</Label>
@@ -324,7 +324,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
 
             {/* Vertrag */}
             <section className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vertrag</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vertrag</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="emp-start">Vertrag ab</Label>
@@ -342,17 +342,17 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
             {/* Bereiche */}
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                   <MapPin className="h-3.5 w-3.5" /> Bereiche ({form.areaIds.length})
                 </h3>
                 <Badge variant="secondary" className="text-[10px]">{areas.length} verfügbar</Badge>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Klassischer Bereich-Zugang. Mitarbeiter darf an Geräten der zugewiesenen Bereiche scannen.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2 bg-slate-50/50 dark:bg-slate-900/30">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto rounded-lg border border-border p-2 bg-muted/50 dark:bg-card/30">
                 {areas.length === 0 && (
-                  <p className="col-span-full text-xs text-slate-400 text-center py-4">Keine Bereiche angelegt</p>
+                  <p className="col-span-full text-xs text-muted-foreground/70 text-center py-4">Keine Bereiche angelegt</p>
                 )}
                 {areas.map((a) => {
                   const checked = form.areaIds.includes(a.id);
@@ -364,13 +364,13 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                       className={cn(
                         "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-left transition-colors",
                         checked
-                          ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300 ring-1 ring-sky-300 dark:ring-sky-700"
-                          : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          ? "bg-info/10 text-info ring-1 ring-sky-300 "
+                          : "bg-card text-muted-foreground hover:bg-muted"
                       )}
                     >
                       <div className={cn(
                         "h-4 w-4 rounded border flex items-center justify-center shrink-0",
-                        checked ? "bg-sky-500 border-sky-500" : "border-slate-300 dark:border-slate-600"
+                        checked ? "bg-info border-info" : "border-input"
                       )}>
                         {checked && <Check className="h-3 w-3 text-white" />}
                       </div>
@@ -386,17 +386,17 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
             {/* Direkt-Geraete */}
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                   <Cpu className="h-3.5 w-3.5" /> Direkt-Geräte ({form.deviceIds.length})
                 </h3>
                 <Badge variant="secondary" className="text-[10px]">{devices.length} verfügbar</Badge>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Zusätzlicher Zugang zu einzelnen Geräten – auch ohne Bereich-Zugehörigkeit (z.B. nur Nebeneingang).
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2 bg-slate-50/50 dark:bg-slate-900/30">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto rounded-lg border border-border p-2 bg-muted/50 dark:bg-card/30">
                 {devices.length === 0 && (
-                  <p className="col-span-full text-xs text-slate-400 text-center py-4">Keine Geräte angelegt</p>
+                  <p className="col-span-full text-xs text-muted-foreground/70 text-center py-4">Keine Geräte angelegt</p>
                 )}
                 {devices.map((d) => {
                   const checked = form.deviceIds.includes(d.id);
@@ -408,19 +408,19 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                       className={cn(
                         "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-left transition-colors",
                         checked
-                          ? "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300 ring-1 ring-rose-300 dark:ring-rose-700"
-                          : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          ? "bg-destructive/10 text-destructive ring-1 ring-rose-300 "
+                          : "bg-card text-muted-foreground hover:bg-muted"
                       )}
                     >
                       <div className={cn(
                         "h-4 w-4 rounded border flex items-center justify-center shrink-0",
-                        checked ? "bg-rose-500 border-rose-500" : "border-slate-300 dark:border-slate-600"
+                        checked ? "bg-destructive border-destructive" : "border-input"
                       )}>
                         {checked && <Check className="h-3 w-3 text-white" />}
                       </div>
                       <div className="min-w-0">
                         <p className="truncate">{d.name}</p>
-                        <p className="text-[10px] text-slate-400">{d.type}{d.category ? ` · ${d.category}` : ""}</p>
+                        <p className="text-[10px] text-muted-foreground/70">{d.type}{d.category ? ` · ${d.category}` : ""}</p>
                       </div>
                     </button>
                   );
@@ -433,10 +433,10 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
             {/* Wochenplan */}
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5" /> Zeitsteuerung
                 </h3>
-                <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                   <input
                     type="checkbox"
                     checked={form.scheduleEnabled}
@@ -452,7 +452,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                   onChange={(s) => setForm({ ...form, weekSchedule: s })}
                 />
               ) : (
-                <p className="text-xs text-slate-400 italic px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-700">
+                <p className="text-xs text-muted-foreground/70 italic px-3 py-2 rounded-lg bg-muted/50/30 border border-dashed border-border">
                   Ohne Wochenplan ist der Zugang an allen Wochentagen rund um die Uhr (innerhalb des Vertrags) erlaubt.
                 </p>
               )}
@@ -463,28 +463,28 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                 <Separator />
                 <section className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                       <Smartphone className="h-3.5 w-3.5" /> Mobile PWA
                     </h3>
                     {form.mobileToken && (
-                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px]">
+                      <Badge variant="success" className="text-[10px]">
                         Aktiv
                       </Badge>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     Der Mitarbeiter kann diese URL/QR scannen und auf seinem Handy zum Home-Bildschirm hinzuf&uuml;gen. Dort hat er Buttons f&uuml;r alle freigegebenen Ger&auml;te.
                   </p>
 
                   {form.mobileToken && mobileUrl ? (
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 space-y-3">
+                    <div className="rounded-xl border border-border bg-card p-3 space-y-3">
                       <div className="flex items-start gap-3">
-                        <div className="rounded-lg bg-white p-2 border border-slate-200 shrink-0">
+                        <div className="rounded-lg bg-white p-2 border border-border shrink-0">
                           <canvas ref={qrRef} className="rounded" />
                         </div>
                         <div className="flex-1 min-w-0 space-y-2">
                           <div className="space-y-1">
-                            <Label className="text-[10px] uppercase tracking-wide text-slate-500">Persoenliche URL</Label>
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Persoenliche URL</Label>
                             <div className="flex items-center gap-1">
                               <Input
                                 value={mobileUrl}
@@ -500,7 +500,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                                 onClick={copyMobileUrl}
                                 title="Kopieren"
                               >
-                                {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                                {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
                               </Button>
                               <Button
                                 type="button"
@@ -534,20 +534,20 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                               size="sm"
                               onClick={() => handleTokenAction("revoke")}
                               disabled={tokenBusy}
-                              className="h-7 text-xs gap-1 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                              className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
                             >
                               Zugang entziehen
                             </Button>
                           </div>
-                          <p className="text-[10px] text-slate-400">
+                          <p className="text-[10px] text-muted-foreground/70">
                             Wer den Link hat, hat Zugriff. Bei Verlust &bdquo;Neuen Link erzeugen&ldquo; klicken &mdash; alter Link wird sofort unguelig.
                           </p>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 p-4 text-center space-y-2">
-                      <p className="text-xs text-slate-500">Noch kein Mobile-Link erstellt.</p>
+                    <div className="rounded-xl border border-dashed border-border bg-muted/50 dark:bg-card/30 p-4 text-center space-y-2">
+                      <p className="text-xs text-muted-foreground">Noch kein Mobile-Link erstellt.</p>
                       <Button
                         type="button"
                         variant="outline"
@@ -566,7 +566,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
             )}
 
             {error && (
-              <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
                 {error}
               </p>
             )}
@@ -579,7 +579,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
               variant="ghost"
               onClick={handleDelete}
               disabled={deleting || saving}
-              className="mr-auto text-slate-400 hover:text-rose-500"
+              className="mr-auto text-muted-foreground/70 hover:text-destructive"
             >
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
               Löschen
@@ -602,7 +602,7 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Abbrechen
           </Button>
-          <Button onClick={handleSave} disabled={saving || loading} className="bg-indigo-600 hover:bg-indigo-700 gap-1.5">
+          <Button onClick={handleSave} disabled={saving || loading} className="gap-1.5">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Speichern
           </Button>

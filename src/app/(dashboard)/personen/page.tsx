@@ -91,7 +91,7 @@ export default async function PersonenPage() {
   return (
     <>
       <Header title="Personen" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <PersonsClient
           people={people.map((p) => {
             const { sightings: recentSightings, ...rest } = p;

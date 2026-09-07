@@ -69,11 +69,11 @@ function CheckList({
   emptyText: string;
 }) {
   if (items.length === 0) {
-    return <p className="text-[11px] text-slate-400 py-4 text-center">{emptyText}</p>;
+    return <p className="text-[11px] text-muted-foreground/70 py-4 text-center">{emptyText}</p>;
   }
 
   return (
-    <div className="max-h-[320px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 dark:border-slate-800 p-1">
+    <div className="max-h-[320px] overflow-y-auto space-y-0.5 rounded-lg border border-border p-1">
       {items.map((name) => {
         const isSelected = selected.has(name);
         const usedBy = mappings[name];
@@ -91,7 +91,7 @@ function CheckList({
               "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
               isSelected
                 ? "bg-violet-50 dark:bg-violet-900/20"
-                : "hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                : "hover:bg-muted/50",
               isUsedElsewhere && "opacity-40 cursor-not-allowed"
             )}
           >
@@ -99,11 +99,11 @@ function CheckList({
               "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
               isSelected
                 ? "bg-violet-500 border-violet-500"
-                : "border-slate-300 dark:border-slate-600"
+                : "border-input"
             )}>
               {isSelected && <Check className="h-3 w-3 text-white" />}
             </div>
-            <span className="text-xs text-slate-700 dark:text-slate-300 truncate flex-1">{name}</span>
+            <span className="text-xs text-foreground/80 truncate flex-1">{name}</span>
             {isUsedElsewhere && usedAreaName && (
               <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">→ {usedAreaName}</Badge>
             )}
@@ -242,8 +242,8 @@ export function AreaDialog({
   const tabClass = (active: boolean) =>
     `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
       active
-        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-        : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+        ? "bg-card text-foreground shadow-sm"
+        : "text-muted-foreground hover:text-foreground"
     }`;
 
   return (
@@ -254,7 +254,7 @@ export function AreaDialog({
         </DialogHeader>
 
         {hasAnny && !isNew && (
-          <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+          <div className="flex gap-0.5 bg-muted rounded-lg p-0.5">
             <button type="button" onClick={() => setTab("settings")} className={tabClass(tab === "settings")}>
               <Settings2 className="h-3 w-3" />
               Einstellungen
@@ -273,7 +273,7 @@ export function AreaDialog({
         {tab === "settings" && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="a-name" className="text-xs">Name <span className="text-rose-500">*</span></Label>
+              <Label htmlFor="a-name" className="text-xs">Name <span className="text-destructive">*</span></Label>
               <Input
                 id="a-name"
                 value={form.name}
@@ -314,10 +314,10 @@ export function AreaDialog({
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
+            <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
               <div>
                 <p className="text-xs font-medium">Wiedereinlass</p>
-                <p className="text-[11px] text-slate-500">Mehrfach scannen</p>
+                <p className="text-[11px] text-muted-foreground">Mehrfach scannen</p>
               </div>
               <Switch checked={form.allowReentry} onCheckedChange={(v) => set("allowReentry", v)} />
             </div>
@@ -329,10 +329,10 @@ export function AreaDialog({
               description="Dasselbe Ticket kommt erst nach dieser Zeit wieder herein – an allen Eingängen der Resource und auch dann, wenn zwischendurch am Ausgang gescannt wurde. Mitarbeiter sind ausgenommen."
             />
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
+            <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
               <div>
                 <p className="text-xs font-medium">Im Dashboard anzeigen</p>
-                <p className="text-[11px] text-slate-500">Auf der Übersicht zeigen</p>
+                <p className="text-[11px] text-muted-foreground">Auf der Übersicht zeigen</p>
               </div>
               <Switch checked={form.showOnDashboard} onCheckedChange={(v) => set("showOnDashboard", v)} />
             </div>
@@ -352,7 +352,7 @@ export function AreaDialog({
 
         {tab === "resources" && (
           <div className="space-y-2">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               Verknüpfe anny Ressourcen mit dieser Resource. Die Verfügbarkeiten werden im Dashboard angezeigt.
             </p>
             <CheckList
@@ -369,7 +369,7 @@ export function AreaDialog({
 
         {tab === "services" && (
           <div className="space-y-2">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               Verknüpfe anny Services mit dieser Resource. Tickets werden beim Sync automatisch zugewiesen.
             </p>
             <CheckList
@@ -385,10 +385,10 @@ export function AreaDialog({
         )}
 
         {error && (
-          <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
+          <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
         )}
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         <div className="flex items-center justify-between">
           {!isNew ? (
@@ -396,7 +396,7 @@ export function AreaDialog({
               type="button" variant="ghost" size="sm"
               onClick={handleDelete}
               disabled={deleting || saving}
-              className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs"
+              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs"
             >
               {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
               Löschen
@@ -411,7 +411,7 @@ export function AreaDialog({
               size="sm"
               onClick={handleSave}
               disabled={saving || deleting || !form.name.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8"
+              className="min-w-24 h-8"
             >
               {saving
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />

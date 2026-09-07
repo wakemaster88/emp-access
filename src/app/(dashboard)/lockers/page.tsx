@@ -106,13 +106,13 @@ export default async function LockersPage() {
   return (
     <>
       <Header title="Schließfächer" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Schließfächer ({lockers.length})</CardTitle>
             <CardDescription>
               Vermietung läuft jahresweise: pro Jahr wird ein{" "}
-              <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+              <Link href="/tickets" className="text-primary hover:underline">
                 Abo-Ticket
               </Link>{" "}
               hinterlegt – die Historie bleibt erhalten.

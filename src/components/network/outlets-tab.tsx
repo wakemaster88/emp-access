@@ -102,19 +102,19 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4">
         <CardTitle className="text-base sm:text-xl">Anschlüsse ({outlets.length})</CardTitle>
-        <Button onClick={openAdd} className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm">
+        <Button onClick={openAdd} className="gap-2 shadow-sm">
           <Plus className="h-4 w-4" />
           Anschluss hinzufügen
         </Button>
       </CardHeader>
       <CardContent className="p-0 sm:px-6 sm:pb-6">
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+        <div className="rounded-lg border border-border overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
+              <TableRow className="border-border hover:bg-transparent bg-muted/40">
                 <TableHead className="min-w-[140px]">Beschriftung</TableHead>
                 <TableHead>Typ</TableHead>
                 <TableHead className="hidden sm:table-cell">Standort</TableHead>
@@ -126,9 +126,9 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
               {outlets.length === 0 && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={5} className="text-center py-16">
-                    <div className="flex flex-col items-center gap-3 text-slate-500">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       <Cable className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                      <p className="font-medium text-slate-600 dark:text-slate-400">Keine Anschlüsse erfasst</p>
+                      <p className="font-medium text-muted-foreground">Keine Anschlüsse erfasst</p>
                       <p className="text-sm">
                         Erfasse Wanddosen und Patchpanel-Ports, um die Verkabelung zu dokumentieren.
                       </p>
@@ -137,13 +137,13 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                 </TableRow>
               )}
               {outlets.map((o) => (
-                <TableRow key={o.id} className="border-slate-200 dark:border-slate-700">
+                <TableRow key={o.id} className="border-border">
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                      <div className="h-8 w-8 rounded-lg bg-info/10 text-info flex items-center justify-center shrink-0">
                         <Cable className="h-4 w-4" />
                       </div>
-                      <p className="font-medium text-sm text-slate-900 dark:text-slate-100">{o.label}</p>
+                      <p className="font-medium text-sm text-foreground">{o.label}</p>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -153,8 +153,8 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {o.location ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                        <MapPin className="h-3 w-3 text-slate-400" />
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <MapPin className="h-3 w-3 text-muted-foreground/70" />
                         {o.location}
                       </span>
                     ) : (
@@ -165,13 +165,13 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                     {o.port ? (
                       <Link
                         href={`/network/${o.port.deviceId}`}
-                        className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                       >
                         <EthernetPort className="h-3 w-3" />
                         {o.port.deviceName} · Port {o.port.number}
                       </Link>
                     ) : (
-                      <span className="text-xs text-slate-400">Nicht verbunden</span>
+                      <span className="text-xs text-muted-foreground/70">Nicht verbunden</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -179,7 +179,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-slate-400 hover:text-indigo-600"
+                        className="h-8 w-8 text-muted-foreground/70 hover:text-primary"
                         onClick={() => openEdit(o)}
                       >
                         <Pencil className="h-4 w-4" />
@@ -187,7 +187,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                        className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
                         onClick={() => handleDelete(o)}
                         disabled={deletingId === o.id}
                       >
@@ -212,7 +212,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Beschriftung <span className="text-rose-500">*</span></Label>
+                <Label>Beschriftung <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.label}
                   onChange={(e) => set("label", e.target.value)}
@@ -241,12 +241,12 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
               <Label>Notizen</Label>
               <Input value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="optional" />
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted-foreground/70">
               Die Verbindung zu einem Switch-Port stellst du auf der Switch-Detailseite am jeweiligen Port her.
             </p>
 
             {error && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
             )}
 
             <div className="flex justify-end gap-2 pt-1">
@@ -256,7 +256,7 @@ export function OutletsTab({ outlets }: { outlets: OutletRow[] }) {
               <Button
                 type="submit"
                 disabled={saving || !form.label.trim()}
-                className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
+                className="min-w-28"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>

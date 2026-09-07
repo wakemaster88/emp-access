@@ -150,7 +150,7 @@ export function ScheduleDialog({
 
             <TabsContent value="seasons" className="mt-2 space-y-2">
               {seasons.length === 0 && (
-                <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
                   Ohne Saison gilt dieses Profil als dauerhaft geschlossen.
                 </p>
               )}
@@ -200,7 +200,7 @@ export function ScheduleDialog({
             size="sm"
             onClick={save}
             disabled={saving || disabled}
-            className="h-8 min-w-24 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-24"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

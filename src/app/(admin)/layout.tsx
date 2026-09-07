@@ -1,22 +1,32 @@
 "use client";
 
 import { signOut, useSession } from "next-auth/react";
-import { Sidebar } from "@/components/layout/sidebar";
 import { SessionProvider } from "next-auth/react";
+import { DashboardShellInner } from "@/components/layout/dashboard-shell-inner";
+import { ShellLoading } from "@/components/layout/shell-loading";
 
+/**
+ * Superadmin-Bereich: derselbe Rahmen wie das Mandanten-Dashboard
+ * (Seitenleiste, Handy-Menü, Tab-Leiste), nur mit Admin-Navigation.
+ */
 function AdminShell({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession();
-  if (!session?.user) return null;
+  const { data: session, status } = useSession();
+
+  if (status === "loading") return <ShellLoading />;
+
+  if (status === "unauthenticated" || !session?.user) {
+    if (typeof window !== "undefined") window.location.href = "/login";
+    return null;
+  }
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <Sidebar
-        userName={session.user.name || "Admin"}
-        role={session.user.role || "SUPER_ADMIN"}
-        onSignOut={() => signOut({ callbackUrl: "/login" })}
-      />
-      <main className="flex-1 overflow-y-auto">{children}</main>
-    </div>
+    <DashboardShellInner
+      userName={session.user.name || "Admin"}
+      role={session.user.role || "SUPER_ADMIN"}
+      onSignOut={() => signOut({ callbackUrl: "/login" })}
+    >
+      {children}
+    </DashboardShellInner>
   );
 }
 

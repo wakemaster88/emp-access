@@ -70,7 +70,7 @@ export function KeyBulkDialog({ lockOptions, open, onClose }: Props) {
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="inline-flex items-center gap-1.5 text-base">
-            <Layers className="h-4 w-4 text-indigo-500" />
+            <Layers className="h-4 w-4 text-primary" />
             Schlüsselserie anlegen
           </DialogTitle>
         </DialogHeader>
@@ -79,7 +79,7 @@ export function KeyBulkDialog({ lockOptions, open, onClose }: Props) {
           <div className="grid grid-cols-4 gap-2">
             <div className="col-span-2 space-y-1">
               <Label htmlFor="b-prefix" className="text-xs">
-                Präfix <span className="text-rose-500">*</span>
+                Präfix <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="b-prefix"
@@ -154,7 +154,7 @@ export function KeyBulkDialog({ lockOptions, open, onClose }: Props) {
                 id="b-level"
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
               >
                 {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
@@ -166,7 +166,7 @@ export function KeyBulkDialog({ lockOptions, open, onClose }: Props) {
           </div>
 
           {preview.length > 0 && (
-            <p className="rounded bg-slate-50 px-2 py-1.5 font-mono text-[11px] text-slate-500 dark:bg-slate-800/50">
+            <p className="rounded bg-muted/50 px-2 py-1.5 font-mono text-[11px] text-muted-foreground dark:bg-muted/50">
               {preview.join(", ")}
               {count > preview.length ? ` … (${count} Stück)` : ""}
             </p>
@@ -201,7 +201,7 @@ export function KeyBulkDialog({ lockOptions, open, onClose }: Props) {
             size="sm"
             onClick={save}
             disabled={saving || !prefix.trim()}
-            className="h-8 min-w-32 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-32"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

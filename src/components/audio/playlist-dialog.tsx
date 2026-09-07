@@ -109,7 +109,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
-            <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+            <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
               <Switch checked={shuffle} onCheckedChange={setShuffle} />
               Zufällige Reihenfolge
             </label>
@@ -126,14 +126,14 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                 onChange={(e) => setCrossfadeSec(Math.min(12, Math.max(0, Number(e.target.value))))}
                 className="w-20"
               />
-              <span className="text-sm text-slate-500">s</span>
+              <span className="text-sm text-muted-foreground">s</span>
             </div>
           </div>
 
           <div>
             <Label className="mb-2 block">Titel ({trackIds.length})</Label>
             {trackIds.length === 0 ? (
-              <p className="text-xs text-slate-500 italic py-3 text-center border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
+              <p className="text-xs text-muted-foreground italic py-3 text-center border border-dashed border-input rounded-lg">
                 Noch keine Titel · unten aus der Mediathek hinzufügen
               </p>
             ) : (
@@ -144,7 +144,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                   return (
                     <div
                       key={id}
-                      className="flex items-center gap-1.5 p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50"
+                      className="flex items-center gap-1.5 p-2 rounded-lg border border-border bg-muted/40"
                     >
                       {/* Vorher zwei gedrehte Griff-Symbole mit 16 px
                           Trefferfläche – am Telefon Glückssache. Pfeile sagen
@@ -170,7 +170,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                         size="icon"
                         onClick={() => setTrackIds((prev) => prev.filter((t) => t !== id))}
                         aria-label={`${track.title} aus der Playlist entfernen`}
-                        className="h-10 w-10 shrink-0 text-red-600 hover:bg-red-50 sm:h-8 sm:w-8 dark:hover:bg-red-950"
+                        className="h-10 w-10 shrink-0 text-destructive hover:bg-destructive/10 sm:h-8 sm:w-8"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -193,9 +193,9 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
                     key={track.id}
                     type="button"
                     onClick={() => setTrackIds((prev) => [...prev, track.id])}
-                    className="flex min-h-10 w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-100 sm:min-h-0 dark:hover:bg-slate-800"
+                    className="flex min-h-10 w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-muted sm:min-h-0 dark:hover:bg-muted"
                   >
-                    <Plus className="h-4 w-4 shrink-0 text-slate-400" />
+                    <Plus className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                     <span className="truncate">{track.title}</span>
                   </button>
                 ))}
@@ -204,7 +204,7 @@ export function PlaylistDialog({ open, onClose, onSaved, playlist, tracks }: Pro
           )}
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-lg border border-red-200 dark:border-red-900/40">
+            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
               {error}
             </p>
           )}
@@ -241,7 +241,7 @@ function MoveButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="flex h-7 w-9 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent sm:h-6 sm:w-8 dark:hover:bg-slate-800"
+      className="flex h-7 w-9 items-center justify-center rounded text-muted-foreground/70 hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent sm:h-6 sm:w-8 dark:hover:bg-muted"
     >
       <Icon className="h-4 w-4" />
     </button>
