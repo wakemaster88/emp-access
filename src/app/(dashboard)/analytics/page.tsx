@@ -10,7 +10,7 @@ export default async function AnalyticsPage() {
   return (
     <>
       <Header title="Auswertung" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <AnalyticsClient />
       </div>
     </>

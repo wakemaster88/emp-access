@@ -70,14 +70,14 @@ function fmtBookingTime(iso: string | null): string {
 }
 
 function annyStatusLabel(status: string | null): { label: string; color: string } {
-  if (!status) return { label: "–", color: "text-slate-400" };
+  if (!status) return { label: "–", color: "text-muted-foreground/70" };
   const s = status.toLowerCase();
-  if (s === "confirmed" || s === "pending") return { label: "Bestätigt", color: "text-emerald-600 dark:text-emerald-400" };
-  if (s === "checked_in") return { label: "Eingecheckt", color: "text-sky-600 dark:text-sky-400" };
-  if (s === "checked_out" || s === "completed") return { label: "Abgeschlossen", color: "text-slate-500" };
-  if (s === "cancelled" || s === "canceled") return { label: "Storniert", color: "text-rose-600 dark:text-rose-400" };
-  if (s === "no_show") return { label: "Nicht erschienen", color: "text-amber-600 dark:text-amber-400" };
-  return { label: status, color: "text-slate-500" };
+  if (s === "confirmed" || s === "pending") return { label: "Bestätigt", color: "text-success" };
+  if (s === "checked_in") return { label: "Eingecheckt", color: "text-info" };
+  if (s === "checked_out" || s === "completed") return { label: "Abgeschlossen", color: "text-muted-foreground" };
+  if (s === "cancelled" || s === "canceled") return { label: "Storniert", color: "text-destructive" };
+  if (s === "no_show") return { label: "Nicht erschienen", color: "text-warning" };
+  return { label: status, color: "text-muted-foreground" };
 }
 import { CameraCapture } from "./camera-capture";
 
@@ -372,16 +372,16 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
   }
 
   const statusColor = {
-    VALID: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-    REDEEMED: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400",
-    INVALID: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
-    PROTECTED: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    VALID: "bg-success/12 text-success",
+    REDEEMED: "bg-info/12 text-info",
+    INVALID: "bg-destructive/12 text-destructive",
+    PROTECTED: "bg-warning/14 text-warning",
   }[ticket?.status ?? "VALID"] ?? "";
 
   const resultIcon = (result: string) => {
-    if (result === "GRANTED") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
-    if (result === "PROTECTED") return <ShieldAlert className="h-4 w-4 text-amber-500" />;
-    return <XCircle className="h-4 w-4 text-rose-500" />;
+    if (result === "GRANTED") return <CheckCircle2 className="h-4 w-4 text-success" />;
+    if (result === "PROTECTED") return <ShieldAlert className="h-4 w-4 text-warning" />;
+    return <XCircle className="h-4 w-4 text-destructive" />;
   };
 
   const resultLabel = (result: string) => {
@@ -397,7 +397,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
         <div className="px-5 pt-5 pb-3">
           <div className="flex items-start gap-3">
             <div
-              className={`relative group h-14 w-14 rounded-xl ${needsPhoto ? "ring-2 ring-amber-400 ring-offset-2 dark:ring-offset-slate-950" : ""} bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer overflow-hidden hover:border-indigo-400 transition-all shrink-0`}
+              className={`relative group h-14 w-14 rounded-xl ${needsPhoto ? "ring-2 ring-warning ring-offset-2 dark:ring-offset-slate-950" : ""} bg-muted border border-border flex items-center justify-center cursor-pointer overflow-hidden hover:border-primary/60 transition-all shrink-0`}
               onClick={() => setCameraOpen(true)}
             >
               {profileImage ? (
@@ -408,7 +408,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                   </div>
                 </>
               ) : (
-                <Camera className={`h-5 w-5 ${needsPhoto ? "text-amber-500" : "text-slate-400"}`} />
+                <Camera className={`h-5 w-5 ${needsPhoto ? "text-warning" : "text-muted-foreground/70"}`} />
               )}
               {profileImage && (
                 <button
@@ -434,23 +434,23 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                   {ticket?.status === "VALID" ? "Gültig" : ticket?.status === "REDEEMED" ? "Eingelöst" : ticket?.status === "INVALID" ? "Ungültig" : "Geschützt"}
                 </Badge>
                 {needsPhoto && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  <Badge className="text-[10px] px-1.5 py-0 bg-warning/14 text-warning">
                     Foto fehlt
                   </Badge>
                 )}
                 {needsCard && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  <Badge className="text-[10px] px-1.5 py-0 bg-warning/14 text-warning">
                     Karte fehlt
                   </Badge>
                 )}
               </div>
               {ticket?.ticketTypeName && (
-                <p className="text-xs text-slate-400 mt-0.5 truncate">{ticket.ticketTypeName}</p>
+                <p className="text-xs text-muted-foreground/70 mt-0.5 truncate">{ticket.ticketTypeName}</p>
               )}
               {ticket?.source === "EMP_CONTROL" && ticket.ticketAreas && ticket.ticketAreas.length > 0 && (
                 <div className="flex items-center gap-1 flex-wrap mt-1">
                   {ticket.ticketAreas.map((ta) => (
-                    <Badge key={ta.accessArea.id} variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400 font-normal gap-0.5">
+                    <Badge key={ta.accessArea.id} variant="outline" className="text-[9px] px-1.5 py-0 border-success/30 text-success font-normal gap-0.5">
                       <MapPin className="h-2 w-2" />
                       {ta.accessArea.name}
                     </Badge>
@@ -468,12 +468,12 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
           const tabClass = (active: boolean) =>
             `flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium transition-colors border-b-2 ${
               active
-                ? "border-indigo-500 text-indigo-600 dark:text-indigo-400"
-                : "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`;
 
           return (
-            <div className="flex border-b border-slate-200 dark:border-slate-800 px-5">
+            <div className="flex border-b border-border px-5">
               <button type="button" onClick={() => setTab("edit")} className={tabClass(tab === "edit")}>
                 <Pencil className="h-3 w-3" />
                 Bearbeiten
@@ -504,11 +504,11 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
             {/* 1. Code (primary) */}
             <div className="space-y-1">
               <Label htmlFor="e-code" className="text-xs flex items-center gap-1 font-medium">
-                <ScanLine className="h-3.5 w-3.5 text-indigo-500" />Code
+                <ScanLine className="h-3.5 w-3.5 text-primary" />Code
               </Label>
               <Input id="e-code" value={form.code} onChange={(e) => set("code", e.target.value)} className="font-mono text-sm h-10" placeholder="Scannen oder eingeben …" autoComplete="off" autoFocus={autoFocusCode} />
               {needsCard && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-500">
+                <p className="text-[11px] text-warning">
                   Dieser Tarif verlangt eine Karte. Ohne Code ist das Ticket nicht
                   scanbar – hängt die Karte noch am alten Ticket, hier einscannen
                   und „Bändchen umhängen“ bestätigen.
@@ -532,7 +532,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
             <div className="space-y-1">
               <Label htmlFor="e-email" className="text-xs flex items-center gap-1.5">
                 Email
-                <span className="text-slate-400 font-normal text-[10px]">– für automatische Mails</span>
+                <span className="text-muted-foreground/70 font-normal text-[10px]">– für automatische Mails</span>
               </Label>
               <Input
                 id="e-email"
@@ -575,21 +575,21 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
             </div>
 
             {/* 4. Details (einklappbar) */}
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="rounded-lg border border-border overflow-hidden">
               <button
                 type="button"
                 onClick={() => setDetailsOpen(!detailsOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
               >
                 <span>Details (Resource, Status, Gültigkeit)</span>
                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", detailsOpen && "rotate-180")} />
               </button>
 
               {detailsOpen && (
-                <div className="px-3 pb-3 space-y-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+                <div className="px-3 pb-3 space-y-2 border-t border-border/60 pt-2">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <Label className="text-[11px] text-slate-500">Resource</Label>
+                      <Label className="text-[11px] text-muted-foreground">Resource</Label>
                       <Select value={form.accessAreaId} onValueChange={(v) => set("accessAreaId", v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Keine" /></SelectTrigger>
                         <SelectContent>
@@ -601,7 +601,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[11px] text-slate-500">Abo</Label>
+                      <Label className="text-[11px] text-muted-foreground">Abo</Label>
                       <Select value={form.subscriptionId} onValueChange={(v) => {
                         set("subscriptionId", v);
                         if (v !== "none") {
@@ -624,7 +624,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <Label className="text-[11px] text-slate-500">Status</Label>
+                      <Label className="text-[11px] text-muted-foreground">Status</Label>
                       <Select value={form.status} onValueChange={(v) => set("status", v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -636,7 +636,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[11px] text-slate-500">Gültigkeit</Label>
+                      <Label className="text-[11px] text-muted-foreground">Gültigkeit</Label>
                       <Select value={form.validityType} onValueChange={(v) => set("validityType", v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -650,7 +650,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
 
                   {vereine.length > 0 && (
                     <div className="space-y-1">
-                      <Label className="text-[11px] text-slate-500">Verein (Bulk-Zutritt)</Label>
+                      <Label className="text-[11px] text-muted-foreground">Verein (Bulk-Zutritt)</Label>
                       <Select value={form.vereinId} onValueChange={(v) => set("vereinId", v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Kein Verein" /></SelectTrigger>
                         <SelectContent>
@@ -660,17 +660,17 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-[10px] text-slate-400">Mitglied erbt automatisch alle Resourcen des Vereins.</p>
+                      <p className="text-[10px] text-muted-foreground/70">Mitglied erbt automatisch alle Resourcen des Vereins.</p>
                     </div>
                   )}
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <Label htmlFor="e-start" className="text-[11px] text-slate-500">Gültig ab</Label>
+                      <Label htmlFor="e-start" className="text-[11px] text-muted-foreground">Gültig ab</Label>
                       <Input id="e-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} className="h-8 text-xs" />
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor="e-end" className="text-[11px] text-slate-500">Gültig bis</Label>
+                      <Label htmlFor="e-end" className="text-[11px] text-muted-foreground">Gültig bis</Label>
                       <Input id="e-end" type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} className="h-8 text-xs" />
                     </div>
                   </div>
@@ -678,11 +678,11 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                   {form.validityType === "TIME_SLOT" && (
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <Label htmlFor="e-slot-start" className="text-[11px] text-slate-500">Slot von</Label>
+                        <Label htmlFor="e-slot-start" className="text-[11px] text-muted-foreground">Slot von</Label>
                         <Input id="e-slot-start" type="time" value={form.slotStart} onChange={(e) => set("slotStart", e.target.value)} className="h-8 text-xs" />
                       </div>
                       <div className="space-y-1">
-                        <Label htmlFor="e-slot-end" className="text-[11px] text-slate-500">Slot bis</Label>
+                        <Label htmlFor="e-slot-end" className="text-[11px] text-muted-foreground">Slot bis</Label>
                         <Input id="e-slot-end" type="time" value={form.slotEnd} onChange={(e) => set("slotEnd", e.target.value)} className="h-8 text-xs" />
                       </div>
                     </div>
@@ -690,7 +690,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
 
                   {form.validityType === "DURATION" && (
                     <div className="space-y-1">
-                      <Label htmlFor="e-duration" className="text-[11px] text-slate-500">Dauer (Minuten)</Label>
+                      <Label htmlFor="e-duration" className="text-[11px] text-muted-foreground">Dauer (Minuten)</Label>
                       <div className="flex gap-2 items-center">
                         <Input id="e-duration" type="number" min="1" placeholder="z.B. 120" value={form.validityDurationMinutes} onChange={(e) => set("validityDurationMinutes", e.target.value)} className="h-8 text-xs flex-1" />
                         <Button type="button" variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={() => set("validityDurationMinutes", "1440")}>
@@ -698,7 +698,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                         </Button>
                       </div>
                       {ticket?.firstScanAt && (
-                        <p className="text-[10px] text-slate-400">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
+                        <p className="text-[10px] text-muted-foreground/70">1. Scan: {fmtDateTime(ticket.firstScanAt)}</p>
                       )}
                     </div>
                   )}
@@ -707,11 +707,11 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
             </div>
 
             {pendingConflict && (
-              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-lg p-3 text-sm space-y-2">
-                <p className="font-semibold text-amber-800 dark:text-amber-200">
+              <div className="bg-warning/10 border border-warning/40/60 rounded-lg p-3 text-sm space-y-2">
+                <p className="font-semibold text-warning">
                   Code bereits vergeben
                 </p>
-                <p className="text-amber-700 dark:text-amber-100/90">
+                <p className="text-warning">
                   Der Code ist aktuell Ticket{" "}
                   <span className="font-semibold">{pendingConflict.label}</span>
                   {pendingConflict.type ? (
@@ -736,7 +736,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                     size="sm"
                     onClick={confirmTransfer}
                     disabled={saving}
-                    className="flex-1 h-8 bg-amber-600 hover:bg-amber-700 text-white"
+                    className="flex-1 h-8 bg-warning hover:bg-warning/90 text-warning-foreground"
                   >
                     {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Code umhängen"}
                   </Button>
@@ -745,18 +745,18 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
             )}
 
             {error && (
-              <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
             )}
 
             <div className="flex items-center justify-between pt-1">
               <Button type="button" variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || saving}
-                className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs">
+                className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs">
                 {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
                 Löschen
               </Button>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-8">Abbrechen</Button>
-                <Button type="submit" size="sm" disabled={saving || deleting || pendingConflict !== null || (!form.firstName.trim() && !form.lastName.trim())} className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8">
+                <Button type="submit" size="sm" disabled={saving || deleting || pendingConflict !== null || (!form.firstName.trim() && !form.lastName.trim())} className="min-w-24 h-8">
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Save className="h-3.5 w-3.5 mr-1" />Speichern</>}
                 </Button>
               </div>
@@ -767,7 +767,7 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
         {tab === "bookings" && ticket?.source === "ANNY" && (() => {
           const entries = parseAnnyEntries(ticket.qrCode);
           return (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[350px] overflow-y-auto px-5 py-2">
+            <div className="divide-y divide-border/60 max-h-[350px] overflow-y-auto px-5 py-2">
               {entries.map((entry, i) => {
                 const st = annyStatusLabel(entry.status);
                 const startTime = fmtBookingTime(entry.start);
@@ -780,9 +780,9 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
                       <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400">{i + 1}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <p className="text-xs font-medium text-foreground/80">
                         {fmtBookingDate(entry.start)}
-                        {timeRange && <span className="text-slate-400 font-mono ml-1.5">{timeRange}</span>}
+                        {timeRange && <span className="text-muted-foreground/70 font-mono ml-1.5">{timeRange}</span>}
                       </p>
                     </div>
                     <span className={`text-[11px] font-medium shrink-0 ${st.color}`}>{st.label}</span>
@@ -797,24 +797,24 @@ export function EditTicketDialog({ ticket, areas, subscriptions = [], services =
           <div className="px-5 py-2">
             {scansLoading && (
               <div className="flex items-center justify-center py-6">
-                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" />
               </div>
             )}
             {!scansLoading && scans.length === 0 && (
-              <p className="text-xs text-slate-400 text-center py-6">Keine Scans vorhanden</p>
+              <p className="text-xs text-muted-foreground/70 text-center py-6">Keine Scans vorhanden</p>
             )}
             {!scansLoading && scans.length > 0 && (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[350px] overflow-y-auto">
+              <div className="divide-y divide-border/60 max-h-[350px] overflow-y-auto">
                 {scans.map((scan) => (
                   <div key={scan.id} className="flex items-center gap-2.5 py-2 px-1">
                     {resultIcon(scan.result)}
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <p className="text-xs font-medium text-foreground/80">
                         {resultLabel(scan.result)}
-                        {scan.device?.name && <span className="text-slate-400 ml-1.5">· {scan.device.name}</span>}
+                        {scan.device?.name && <span className="text-muted-foreground/70 ml-1.5">· {scan.device.name}</span>}
                       </p>
                     </div>
-                    <span className="text-[11px] text-slate-400 font-mono shrink-0">
+                    <span className="text-[11px] text-muted-foreground/70 font-mono shrink-0">
                       {fmtDateTime(scan.scanTime)}
                     </span>
                   </div>

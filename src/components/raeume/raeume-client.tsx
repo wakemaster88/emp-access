@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Cctv, Cpu, Search, TriangleAlert, Volume2 } from "lucide-react";
+import { Building2, Cctv, Cpu, Search, TriangleAlert, Volume2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { RoomPanel } from "@/components/raeume/room-panel";
 import { RoomEquipmentDialog, type Placed } from "@/components/raeume/room-equipment-dialog";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
@@ -121,7 +123,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
 
   return (
     <div className="space-y-4">
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardHeader className="pb-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -131,20 +133,20 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
               </CardTitle>
               <CardDescription>
                 Steuerung je Raum. Räume, Türen und Schlösser werden in der{" "}
-                <Link href="/schliessanlage" className="underline hover:text-indigo-500">
+                <Link href="/schliessanlage" className="underline hover:text-primary">
                   Schließanlage
                 </Link>{" "}
                 gepflegt.
               </CardDescription>
             </div>
             <div className="relative w-full sm:w-64">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Raum oder Gerät suchen…"
-                className="h-9 w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-card"
               />
             </div>
           </div>
@@ -153,12 +155,12 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
 
         {looseCount > 0 && (
           <CardContent className="pt-0">
-            <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-3 dark:border-amber-900 dark:bg-amber-950/10">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+            <div className="rounded-md border border-dashed border-warning/30 bg-warning/10 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-warning">
                 <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
                 Noch keinem Raum zugeordnet
               </p>
-              <p className="mt-1 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+              <p className="mt-1 text-[11px] text-warning/80">
                 {data.looseDevices.length} Geräte, {data.looseCameras.length} Kameras und{" "}
                 {data.looseZones.length} Beschallungszonen erscheinen erst in einem Raum, wenn du
                 sie dort zuordnest. Das geht über den Stift an einer Raumkarte. Erst mit Raum
@@ -169,32 +171,32 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
                   <span
                     key={`d${device.id}`}
                     title={deviceMetaLabel(device.type, device.category)}
-                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
                   >
-                    <Cpu className="h-2.5 w-2.5 text-slate-400" />
+                    <Cpu className="h-2.5 w-2.5 text-muted-foreground/70" />
                     {device.name}
                   </span>
                 ))}
                 {data.looseCameras.slice(0, 6).map((camera) => (
                   <span
                     key={`c${camera.id}`}
-                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
                   >
-                    <Cctv className="h-2.5 w-2.5 text-slate-400" />
+                    <Cctv className="h-2.5 w-2.5 text-muted-foreground/70" />
                     {camera.name}
                   </span>
                 ))}
                 {data.looseZones.slice(0, 6).map((zone) => (
                   <span
                     key={`z${zone.id}`}
-                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
                   >
-                    <Volume2 className="h-2.5 w-2.5 text-slate-400" />
+                    <Volume2 className="h-2.5 w-2.5 text-muted-foreground/70" />
                     {zone.name}
                   </span>
                 ))}
                 {data.looseDevices.length > 12 && (
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-muted-foreground/70">
                     und {data.looseDevices.length - 12} weitere
                   </span>
                 )}
@@ -205,21 +207,20 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
       </Card>
 
       {data.rooms.length === 0 ? (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardContent className="py-10 text-center">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Noch keine Räume angelegt.
-            </p>
-            <Link
-              href="/schliessanlage"
-              className="mt-1 inline-block text-xs text-indigo-500 underline"
-            >
-              In der Schließanlage anlegen
-            </Link>
-          </CardContent>
+        <Card className="py-0">
+          <EmptyState
+            icon={Building2}
+            title="Noch keine Räume angelegt"
+            description="Räume, Türen und Schlösser werden in der Schließanlage gepflegt und erscheinen dann hier als Leitstand."
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href="/schliessanlage">In der Schließanlage anlegen</Link>
+              </Button>
+            }
+          />
         </Card>
       ) : visibleRooms.length === 0 ? (
-        <p className="py-10 text-center text-sm text-slate-400">Keine Treffer.</p>
+        <p className="py-10 text-center text-sm text-muted-foreground/70">Keine Treffer.</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {visibleRooms.map((room) => (

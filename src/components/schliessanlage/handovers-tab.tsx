@@ -86,14 +86,14 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="pb-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <CardTitle className="text-base sm:text-xl">
               {handovers.length} Protokolle
               {overdueCount > 0 && (
-                <span className="ml-2 inline-flex items-center gap-1 text-sm font-normal text-rose-600">
+                <span className="ml-2 inline-flex items-center gap-1 text-sm font-normal text-destructive">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   {overdueCount} überfällig
                 </span>
@@ -108,7 +108,7 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
             <Button
               size="sm"
               onClick={() => setCreateOpen(true)}
-              className="h-8 bg-indigo-600 hover:bg-indigo-700"
+              className="h-8 bg-primary hover:bg-primary/90"
             >
               <Plus className="mr-1 h-3.5 w-3.5" />
               Ausgeben
@@ -122,13 +122,13 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
 
         <div className="flex flex-wrap gap-2">
           <div className="relative min-w-48 flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Empfänger oder Schlüsselnummer suchen…"
-              className="h-9 w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900"
+              className="h-9 w-full rounded-md border border-border bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-card"
             />
           </div>
           <button
@@ -137,8 +137,8 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
             className={cn(
               "h-9 rounded-md border px-3 text-xs font-medium transition-colors",
               onlyOpen
-                ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
-                : "border-slate-200 text-slate-500 dark:border-slate-700",
+                ? "border-warning/30 bg-warning/10 text-warning "
+                : "border-border text-muted-foreground dark:border-border",
             )}
           >
             Nur offene
@@ -168,20 +168,20 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                   className={cn(
                     "rounded-md border p-3",
                     overdue
-                      ? "border-rose-200 bg-rose-50/40 dark:border-rose-900/40 dark:bg-rose-950/10"
-                      : "border-slate-200 dark:border-slate-700",
+                      ? "border-destructive/30 bg-destructive/10 "
+                      : "border-border",
                   )}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                        <span className="text-sm font-medium text-foreground/90">
                           {h.holderName}
                         </span>
                         <HandoverStatusBadge status={h.status} />
                         {signed && (
                           <span
-                            className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400"
+                            className="inline-flex items-center gap-0.5 text-[10px] text-success"
                             title={`Signiert von ${signature!.signedName} am ${fmtDateTime(signature!.signedAt)}`}
                           >
                             <CheckCircle2 className="h-3 w-3" />
@@ -189,13 +189,13 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                           </span>
                         )}
                         {overdue && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-rose-600">
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-destructive">
                             <AlertTriangle className="h-3 w-3" />
                             überfällig seit {fmtDate(h.dueAt)}
                           </span>
                         )}
                       </div>
-                      <p className="mt-0.5 text-[11px] text-slate-400">
+                      <p className="mt-0.5 text-[11px] text-muted-foreground/70">
                         Protokoll #{h.id} · ausgegeben {fmtDate(h.issuedAt)}
                         {h.issuedByName ? ` von ${h.issuedByName}` : ""}
                         {h.dueAt && !overdue ? ` · Rückgabe bis ${fmtDate(h.dueAt)}` : ""}
@@ -208,10 +208,10 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                             className={cn(
                               "inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px]",
                               item.itemStatus === "RETURNED"
-                                ? "bg-emerald-100 text-emerald-700 line-through dark:bg-emerald-950/30 dark:text-emerald-300"
+                                ? "bg-success/10 text-success line-through "
                                 : item.itemStatus === "LOST"
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
-                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+                                  ? "bg-destructive/10 text-destructive "
+                                  : "bg-warning/10 text-warning ",
                             )}
                             title={item.keyLabel ?? undefined}
                           >
@@ -219,7 +219,7 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                           </span>
                         ))}
                       </div>
-                      {h.notes && <p className="mt-1 text-[11px] text-slate-400">{h.notes}</p>}
+                      {h.notes && <p className="mt-1 text-[11px] text-muted-foreground/70">{h.notes}</p>}
                     </div>
 
                     {!readonly && (
@@ -261,7 +261,7 @@ export function HandoversTab({ handovers, keys, holders, employees, policies, re
                           <button
                             type="button"
                             onClick={() => remove(h)}
-                            className="p-1 text-slate-400 hover:text-rose-500"
+                            className="p-1 text-muted-foreground/70 hover:text-destructive"
                             title="Protokoll löschen"
                           >
                             <Trash2 className="h-3.5 w-3.5" />

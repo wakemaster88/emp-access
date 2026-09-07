@@ -59,33 +59,33 @@ export function ShellyStatusBadge({ deviceId, category }: ShellyStatusBadgeProps
     <div className="flex flex-wrap items-center gap-2">
       {/* Online / Offline */}
       {status.online ? (
-        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1.5">
+        <Badge variant="success" className="gap-1.5">
           <Wifi className="h-3 w-3" /> Online
-          {status.source === "local" && <span className="text-emerald-500/70 text-[10px]">(lokal)</span>}
-          {status.source === "cloud" && <span className="text-emerald-500/70 text-[10px]">(cloud)</span>}
+          {status.source === "local" && <span className="text-success/70 text-[10px]">(lokal)</span>}
+          {status.source === "cloud" && <span className="text-success/70 text-[10px]">(cloud)</span>}
         </Badge>
       ) : (
-        <Badge variant="secondary" className="gap-1.5 text-slate-400">
+        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70">
           <WifiOff className="h-3 w-3" /> Offline
         </Badge>
       )}
 
       {/* Ein / Aus */}
       {status.output === true && (
-        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5">
+        <Badge variant="warning" className="gap-1.5">
           <Power className="h-3 w-3" /> {onLabel}
         </Badge>
       )}
       {status.output === false && (
-        <Badge variant="secondary" className="gap-1.5 text-slate-400">
+        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70">
           <PowerOff className="h-3 w-3" /> {offLabel}
         </Badge>
       )}
 
       {/* Leistung */}
       {status.power !== undefined && status.power > 0 && (
-        <Badge variant="outline" className="gap-1 text-xs text-slate-500 dark:text-slate-400">
-          <Zap className="h-3 w-3 text-amber-500" />
+        <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
+          <Zap className="h-3 w-3 text-warning" />
           {status.power.toFixed(1)} W
         </Badge>
       )}
@@ -96,7 +96,7 @@ export function ShellyStatusBadge({ deviceId, category }: ShellyStatusBadgeProps
         size="sm"
         onClick={fetch_status}
         disabled={loading}
-        className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+        className="h-6 w-6 p-0 text-muted-foreground/70 hover:text-foreground"
         title="Status aktualisieren"
       >
         <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />

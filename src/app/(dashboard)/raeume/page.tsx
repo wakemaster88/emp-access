@@ -288,7 +288,7 @@ export default async function RaeumePage() {
   return (
     <>
       <Header title="Räume" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <RaeumeClient
           data={{
             rooms: roomPanels,

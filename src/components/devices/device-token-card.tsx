@@ -66,18 +66,18 @@ export function DeviceTokenCard({ deviceId, hasToken }: Props) {
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="pt-6 space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4 text-indigo-600" />
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Geräte-Token</h3>
+            <KeyRound className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Geräte-Token</h3>
             {hasToken ? (
-              <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1">
+              <Badge variant="success" className="gap-1">
                 <ShieldCheck className="h-3 w-3" /> eigenes Token
               </Badge>
             ) : (
-              <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1">
+              <Badge variant="warning" className="gap-1">
                 <ShieldOff className="h-3 w-3" /> nutzt Account-Token
               </Badge>
             )}
@@ -93,25 +93,25 @@ export function DeviceTokenCard({ deviceId, hasToken }: Props) {
             )}
           </div>
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Ein eigenes Token gilt nur für dieses Gerät und nur für die Geräte-Schnittstelle.
           Geht der Pi verloren, wird nur dieses Token ersetzt – nicht das Account-Token aller Geräte.
           Nach dem Erzeugen enthält der Konfigurations-QR dieses Token.
         </p>
         {freshToken && (
-          <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 p-3 space-y-2">
-            <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+          <div className="rounded-lg border border-success/30 bg-success/10 p-3 space-y-2">
+            <p className="text-xs font-medium text-success">
               Neues Token – wird nur jetzt angezeigt:
             </p>
             <div className="flex items-center gap-2">
-              <code className="text-xs break-all flex-1 text-slate-800 dark:text-slate-200">{freshToken}</code>
+              <code className="text-xs break-all flex-1 text-foreground/90">{freshToken}</code>
               <Button size="sm" variant="outline" onClick={copyToken}>
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
           </div>
         )}
-        {error && <p className="text-xs text-rose-600">{error}</p>}
+        {error && <p className="text-xs text-destructive">{error}</p>}
       </CardContent>
     </Card>
   );

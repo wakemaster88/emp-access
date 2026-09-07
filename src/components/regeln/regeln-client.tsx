@@ -80,7 +80,7 @@ function RuleCard({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-emerald-600"
+              className="h-7 w-7 p-0 text-neutral-400 hover:text-success"
               disabled={busy}
               onClick={onRun}
               title="Jetzt ausführen"
@@ -108,7 +108,7 @@ function RuleCard({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-red-600"
+              className="h-7 w-7 p-0 text-neutral-400 hover:text-destructive"
               onClick={onDelete}
               title="Löschen"
             >
@@ -127,7 +127,7 @@ function RuleCard({
           <dt className="w-16 shrink-0 text-neutral-500">Dann</dt>
           <dd>
             {rule.actions.length === 0 ? (
-              <span className="text-amber-600">keine Aktion hinterlegt</span>
+              <span className="text-warning">keine Aktion hinterlegt</span>
             ) : (
               <ul className="space-y-0.5">
                 {rule.actions.map((action) => (
@@ -255,7 +255,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
         {!data.readonly && (
           <Button
             size="sm"
-            className="h-8 bg-indigo-600 text-xs hover:bg-indigo-700"
+            className="h-8 text-xs"
             onClick={() => setCreating(true)}
           >
             <Plus className="mr-1 h-3.5 w-3.5" />
@@ -266,7 +266,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
 
       <ErrorLine message={error} />
       {notice && (
-        <p className="rounded bg-emerald-50 px-2 py-1.5 text-xs text-emerald-700 dark:bg-emerald-950/30">
+        <p className="rounded bg-success/10 px-2 py-1.5 text-xs text-success">
           {notice}
         </p>
       )}
@@ -325,9 +325,9 @@ export function RegelnClient({ data }: { data: RegelnData }) {
               {data.runs.map((run) => (
                 <div key={run.id} className="flex items-start gap-2 px-3 py-2 text-xs">
                   {run.success ? (
-                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
                   ) : (
-                    <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
+                    <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -337,7 +337,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
                       </span>
                     </div>
                     {run.errorMessage && (
-                      <p className="mt-0.5 text-rose-600">{run.errorMessage}</p>
+                      <p className="mt-0.5 text-destructive">{run.errorMessage}</p>
                     )}
                   </div>
                   <span className="shrink-0 text-neutral-400">{fmtAgo(run.triggeredAt, nowMs)}</span>

@@ -103,22 +103,22 @@ function CheckList({
     : items;
 
   if (items.length === 0) {
-    return <p className="text-[11px] text-slate-400 py-4 text-center">{emptyText}</p>;
+    return <p className="text-[11px] text-muted-foreground/70 py-4 text-center">{emptyText}</p>;
   }
 
   return (
     <div className="space-y-2">
       {searchable && (
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
           <input
             type="text" placeholder="Suchen…" value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
       )}
-      <div className="max-h-[260px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 dark:border-slate-800 p-1">
+      <div className="max-h-[260px] overflow-y-auto space-y-0.5 rounded-lg border border-border p-1">
         {filtered.map(({ key, label, sublabel, disabled }) => {
           const isSelected = selected.has(key);
           return (
@@ -128,24 +128,24 @@ function CheckList({
               className={cn(
                 "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                 disabled && "opacity-50 cursor-not-allowed",
-                !disabled && isSelected ? "bg-violet-50 dark:bg-violet-900/20" : !disabled && "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                !disabled && isSelected ? "bg-violet-50 dark:bg-violet-900/20" : !disabled && "hover:bg-muted/50"
               )}
             >
               <div className={cn(
                 "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
-                isSelected ? "bg-violet-500 border-violet-500" : "border-slate-300 dark:border-slate-600"
+                isSelected ? "bg-violet-500 border-violet-500" : "border-input"
               )}>
                 {isSelected && <Check className="h-3 w-3 text-white" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-slate-700 dark:text-slate-300 truncate">{label}</p>
-                {sublabel && <p className="text-[10px] text-slate-400 truncate">{sublabel}</p>}
+                <p className="text-xs text-foreground/80 truncate">{label}</p>
+                {sublabel && <p className="text-[10px] text-muted-foreground/70 truncate">{sublabel}</p>}
               </div>
             </button>
           );
         })}
         {filtered.length === 0 && (
-          <p className="text-[11px] text-slate-400 py-4 text-center">Keine Treffer</p>
+          <p className="text-[11px] text-muted-foreground/70 py-4 text-center">Keine Treffer</p>
         )}
       </div>
     </div>
@@ -332,8 +332,8 @@ export function VereinDialog({
 
   const tabClass = (active: boolean) =>
     `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
-      active ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-             : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+      active ? "bg-card text-foreground shadow-sm"
+             : "text-muted-foreground hover:text-foreground"
     }`;
 
   const accessCount = selectedAccessTickets.size;
@@ -345,7 +345,7 @@ export function VereinDialog({
           <DialogTitle className="text-base">{isNew ? "Neuen Verein anlegen" : "Verein bearbeiten"}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+        <div className="flex gap-0.5 bg-muted rounded-lg p-0.5">
           <button type="button" onClick={() => setTab("settings")} className={tabClass(tab === "settings")}>
             <Settings2 className="h-3 w-3" /> Einstellungen
           </button>
@@ -362,7 +362,7 @@ export function VereinDialog({
         {tab === "settings" && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="v-name" className="text-xs">Name <span className="text-rose-500">*</span></Label>
+              <Label htmlFor="v-name" className="text-xs">Name <span className="text-destructive">*</span></Label>
               <Input id="v-name" value={name} onChange={(e) => setName(e.target.value)}
                      placeholder="z. B. Eisenbahnverein Musterstadt" required autoFocus className="h-9" />
             </div>
@@ -372,14 +372,14 @@ export function VereinDialog({
                      placeholder="Optional, z. B. Ansprechpartner / Notiz" className="h-9" />
             </div>
 
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-2">
+            <div className="rounded-lg border border-border p-2.5 space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                  <TicketIcon className="h-3 w-3 text-slate-400" />
+                <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                  <TicketIcon className="h-3 w-3 text-muted-foreground/70" />
                   Bulk-Zutritt über {accessCount === 1 ? "1 Ticket" : `${accessCount} Tickets`}
                 </p>
                 <button type="button" onClick={() => setTab("accessTickets")}
-                        className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline">
+                        className="text-[10px] text-primary hover:underline">
                   Bearbeiten
                 </button>
               </div>
@@ -390,17 +390,17 @@ export function VereinDialog({
                     if (!t) return null;
                     return (
                       <div key={idStr} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 truncate min-w-0">
-                          <TicketIcon className="h-3 w-3 text-slate-400 shrink-0" />
+                        <span className="inline-flex items-center gap-1 text-foreground/80 truncate min-w-0">
+                          <TicketIcon className="h-3 w-3 text-muted-foreground/70 shrink-0" />
                           <span className="truncate">{ticketDisplayName(t)}</span>
                           {t.areaNames.length > 0 && (
-                            <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 shrink-0">
+                            <span className="text-[10px] text-muted-foreground/70 inline-flex items-center gap-0.5 shrink-0">
                               <MapPin className="h-2.5 w-2.5" />
                               {t.areaNames.join(", ")}
                             </span>
                           )}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 shrink-0">
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
                           <Clock className="h-2.5 w-2.5" />
                           {formatTicketValidity(t)}
                         </span>
@@ -409,25 +409,25 @@ export function VereinDialog({
                   })}
                 </div>
               ) : (
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-muted-foreground/70">
                   Noch keine Zutritts-Tickets zugeordnet. Im Tab „Tickets“ ein Ticket (z. B. „Bahnmiete“) auswählen.
                 </p>
               )}
             </div>
 
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-1">
+            <div className="rounded-lg border border-border p-2.5 space-y-1">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-                  <Users className="h-3 w-3 text-slate-400" />
+                <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Users className="h-3 w-3 text-muted-foreground/70" />
                   {selectedMembers.size === 1 ? "1 Mitglied" : `${selectedMembers.size} Mitglieder`}
                 </p>
                 <button type="button" onClick={() => setTab("members")}
-                        className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline">
+                        className="text-[10px] text-primary hover:underline">
                   Bearbeiten
                 </button>
               </div>
               {selectedMembers.size === 0 && (
-                <p className="text-[11px] text-slate-400">Noch keine Mitglieds-Tickets zugeordnet.</p>
+                <p className="text-[11px] text-muted-foreground/70">Noch keine Mitglieds-Tickets zugeordnet.</p>
               )}
             </div>
           </div>
@@ -435,7 +435,7 @@ export function VereinDialog({
 
         {tab === "accessTickets" && (
           <div className="space-y-2">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               Wähle <strong>Zutritts-Tickets</strong>. Mitglieder erben die Areas dieser Tickets beim Scan –
               die zeitliche Restriktion (Datum, Tageszeit, Dauer) ergibt sich direkt aus dem jeweiligen Ticket.
             </p>
@@ -448,7 +448,7 @@ export function VereinDialog({
             />
             {accessCount > 0 && (
               <button type="button" onClick={() => setSelectedAccessTickets(new Set())}
-                      className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors">
+                      className="text-[10px] text-muted-foreground/70 hover:text-destructive transition-colors">
                 Alle abwählen
               </button>
             )}
@@ -457,14 +457,14 @@ export function VereinDialog({
 
         {tab === "members" && (
           <div className="space-y-3">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               Wähle Tickets, die diesem Verein angehören. Tickets, die bereits einem anderen Verein zugeordnet sind, werden hier verschoben.
             </p>
 
             {!isNew ? (
-              <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 p-2.5 space-y-2 bg-slate-50/40 dark:bg-slate-900/30">
-                <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 inline-flex items-center gap-1.5">
-                  <UserPlus className="h-3 w-3 text-slate-400" />
+              <div className="rounded-lg border border-dashed border-input p-2.5 space-y-2 bg-muted/50 dark:bg-card/30">
+                <p className="text-[11px] font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <UserPlus className="h-3 w-3 text-muted-foreground/70" />
                   Mitglied ohne Tickettyp anlegen
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -485,7 +485,7 @@ export function VereinDialog({
                 </div>
                 <div className="flex gap-1.5">
                   <div className="relative flex-1">
-                    <ScanLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                    <ScanLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/70" />
                     <Input
                       value={qaCode}
                       onChange={(e) => setQaCode(e.target.value)}
@@ -506,20 +506,20 @@ export function VereinDialog({
                   </Button>
                 </div>
                 {qaError && (
-                  <p className="text-[10px] text-rose-600">{qaError}</p>
+                  <p className="text-[10px] text-destructive">{qaError}</p>
                 )}
                 {qaSuccess && !qaError && (
-                  <p className="text-[10px] text-emerald-600 inline-flex items-center gap-1">
+                  <p className="text-[10px] text-success inline-flex items-center gap-1">
                     <Check className="h-3 w-3" />
                     {qaSuccess} – nicht erneut anlegen.
                   </p>
                 )}
-                <p className="text-[10px] text-slate-400 leading-snug">
+                <p className="text-[10px] text-muted-foreground/70 leading-snug">
                   Ohne Tickettyp/Areas. Zutritt kommt ausschließlich über die Vereins-Zutritts-Tickets im Tab „Tickets“.
                 </p>
               </div>
             ) : (
-              <p className="text-[10px] text-slate-400 italic">
+              <p className="text-[10px] text-muted-foreground/70 italic">
                 Verein erst speichern, danach können Mitglieder direkt hier angelegt werden.
               </p>
             )}
@@ -535,7 +535,7 @@ export function VereinDialog({
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[10px]">{selectedMembers.size} ausgewählt</Badge>
                 <button type="button" onClick={() => setSelectedMembers(new Set())}
-                        className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors">
+                        className="text-[10px] text-muted-foreground/70 hover:text-destructive transition-colors">
                   Alle abwählen
                 </button>
               </div>
@@ -544,15 +544,15 @@ export function VereinDialog({
         )}
 
         {error && (
-          <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
+          <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
         )}
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         <div className="flex items-center justify-between">
           {!isNew ? (
             <Button type="button" variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || saving}
-                    className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs">
+                    className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs">
               {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
               Löschen
             </Button>
@@ -563,7 +563,7 @@ export function VereinDialog({
             </Button>
             <Button type="button" size="sm" onClick={handleSave}
                     disabled={saving || deleting || !name.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8">
+                    className="min-w-24 h-8">
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
             </Button>

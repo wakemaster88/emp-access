@@ -84,24 +84,24 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="inline-flex items-center gap-1.5 text-base">
-            <QrCode className="h-4 w-4 text-indigo-500" />
+            <QrCode className="h-4 w-4 text-primary" />
             Belehrung &amp; Haftung signieren
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-muted-foreground">
             {handover.holderName} scannt den Code, liest die Belehrung und unterschreibt direkt auf
             dem eigenen Gerät. Text und Schlüsselliste werden beim Erzeugen eingefroren.
           </p>
 
           {signed && signature ? (
-            <div className="space-y-2 rounded-md border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/10">
-              <p className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+            <div className="space-y-2 rounded-md border border-success/30 bg-success/10 p-3">
+              <p className="inline-flex items-center gap-1.5 text-sm font-medium text-success">
                 <CheckCircle2 className="h-4 w-4" />
                 Unterschrieben
               </p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 {signature.signedName} · {fmtDateTime(signature.signedAt)}
               </p>
               <Button asChild size="sm" variant="outline" className="h-8">
@@ -127,7 +127,7 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
                     readOnly
                     value={signatureUrl(signature.token)}
                     onFocus={(e) => e.currentTarget.select()}
-                    className="h-8 flex-1 rounded border border-slate-200 bg-slate-50 px-2 font-mono text-[11px] dark:border-slate-700 dark:bg-slate-800"
+                    className="h-8 flex-1 rounded border border-border bg-muted/50 px-2 font-mono text-[11px] dark:border-border dark:bg-muted"
                   />
                   <Button
                     size="sm"
@@ -140,14 +140,14 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
                   </Button>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-muted-foreground/70">
                 Gültig bis {fmtDateTime(signature.expiresAt)}
               </p>
             </div>
           ) : (
             <div className="space-y-2">
               {expired && (
-                <p className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                <p className="rounded bg-warning/10 px-2 py-1.5 text-xs text-warning">
                   Der bisherige Link ist abgelaufen. Erzeuge einen neuen.
                 </p>
               )}
@@ -155,7 +155,7 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
                 size="sm"
                 onClick={createLink}
                 disabled={creating}
-                className="h-9 w-full bg-indigo-600 hover:bg-indigo-700"
+                className="h-9 w-full"
               >
                 {creating ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -172,7 +172,7 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
           <ErrorLine message={error} />
         </div>
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         <div className="flex justify-end">
           <Button variant="outline" size="sm" onClick={onClose} className="h-8">

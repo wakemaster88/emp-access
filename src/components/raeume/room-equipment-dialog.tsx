@@ -178,7 +178,7 @@ export function RoomEquipmentDialog({
             size="sm"
             onClick={save}
             disabled={saving}
-            className="h-8 min-w-24 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-24"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

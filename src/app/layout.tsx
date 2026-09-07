@@ -1,12 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SwRegister } from "@/components/layout/sw-register";
 import { appleStartupImages } from "@/lib/pwa-splash";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+// Codes, IP-Adressen, Tokens und Uhrzeiten laufen in einer Monospace-Schrift.
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap" });
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -17,8 +19,8 @@ export const viewport: Viewport = {
   // Android/Chrome: Tastatur verkleinert den Viewport statt ihn zu ueberdecken.
   interactiveWidget: "resizes-content",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f8fa" },
+    { media: "(prefers-color-scheme: dark)", color: "#12141c" },
   ],
 };
 
@@ -50,8 +52,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de" suppressHydrationWarning className="touch-manipulation">
-      <body className={`${inter.className} antialiased min-h-[100dvh] safe-area-padding`}>
+    <html lang="de" suppressHydrationWarning className={`touch-manipulation ${inter.variable} ${mono.variable}`}>
+      <body className="font-sans antialiased min-h-[100dvh] safe-area-padding">
         <ThemeProvider>
           <TooltipProvider delayDuration={0}>
             {children}

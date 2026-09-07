@@ -108,7 +108,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
   const maxRows = 3;
 
   function AccessTicketBadges({ tickets }: { tickets: AccessTicketRef[] }) {
-    if (!tickets?.length) return <span className="text-slate-400 text-sm">–</span>;
+    if (!tickets?.length) return <span className="text-muted-foreground/70 text-sm">–</span>;
     const show = tickets.slice(0, maxRows);
     const rest = tickets.length - maxRows;
     return (
@@ -125,22 +125,22 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
               className="flex items-center gap-1.5 min-w-0"
               title={tooltip}
             >
-              <TicketIcon className="h-3 w-3 text-slate-400 shrink-0" />
-              <span className="truncate text-slate-700 dark:text-slate-300">{t.name}</span>
+              <TicketIcon className="h-3 w-3 text-muted-foreground/70 shrink-0" />
+              <span className="truncate text-foreground/80">{t.name}</span>
               {t.areaNames.length > 0 && (
-                <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 shrink-0">
+                <span className="text-[10px] text-muted-foreground/70 inline-flex items-center gap-0.5 shrink-0">
                   <MapPin className="h-2.5 w-2.5" />
                   {t.areaNames.length}
                 </span>
               )}
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums shrink-0 ml-auto">
+              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 ml-auto">
                 {validity}
               </span>
             </div>
           );
         })}
         {rest > 0 && (
-          <span className="text-[10px] text-slate-400 pl-4">+{rest} weitere</span>
+          <span className="text-[10px] text-muted-foreground/70 pl-4">+{rest} weitere</span>
         )}
       </div>
     );
@@ -153,7 +153,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
           <Button
             onClick={() => { setSelected(null); setSelectedAccessTicketIds([]); setSelectedMembers([]); setAddOpen(true); }}
             type="button"
-            className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm"
+            className="bg-primary hover:bg-primary/90 gap-2 shadow-sm"
           >
             <Plus className="h-4 w-4" />
             Verein anlegen
@@ -161,26 +161,26 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+      <div className="rounded-lg border border-border overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-              <TableHead className="hidden sm:table-cell w-10 text-slate-500 font-medium">#</TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">
+            <TableRow className="border-border hover:bg-transparent bg-muted/40">
+              <TableHead className="hidden sm:table-cell w-10 text-muted-foreground font-medium">#</TableHead>
+              <TableHead className="text-muted-foreground font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <Users className="h-4 w-4 text-slate-400" />
+                  <Users className="h-4 w-4 text-muted-foreground/70" />
                   Verein
                 </span>
               </TableHead>
-              <TableHead className="hidden md:table-cell w-[280px] text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="hidden md:table-cell w-[280px] text-muted-foreground font-medium">
                 <span className="inline-flex items-center gap-1.5">
-                  <TicketIcon className="h-4 w-4 text-slate-400" />
+                  <TicketIcon className="h-4 w-4 text-muted-foreground/70" />
                   Zutritts-Tickets
                 </span>
               </TableHead>
-              <TableHead className="w-[110px] text-right text-slate-600 dark:text-slate-400 font-medium">
+              <TableHead className="w-[110px] text-right text-muted-foreground font-medium">
                 <span className="inline-flex items-center justify-end gap-1.5">
-                  <Users className="h-4 w-4 text-slate-400" />
+                  <Users className="h-4 w-4 text-muted-foreground/70" />
                   Mitglieder
                 </span>
               </TableHead>
@@ -188,11 +188,11 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
           </TableHeader>
           <TableBody>
             {vereine.length === 0 && (
-              <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-700">
+              <TableRow className="hover:bg-transparent border-border">
                 <TableCell colSpan={4} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3 text-slate-500">
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
                     <Users className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                    <p className="font-medium text-slate-600 dark:text-slate-400">Noch keine Vereine angelegt</p>
+                    <p className="font-medium text-muted-foreground">Noch keine Vereine angelegt</p>
                     <p className="text-sm">Lege einen Verein an, um Mitgliedern Bulk-Zutritt über Tickets (z. B. „Bahnmiete“) zu geben.</p>
                   </div>
                 </TableCell>
@@ -225,13 +225,13 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                 <TableRow
                   key={v.id}
                   className={cn(
-                    "border-slate-200 dark:border-slate-700 transition-colors group",
-                    readonly ? "hover:bg-slate-50 dark:hover:bg-slate-900/50" : "hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20",
+                    "border-border transition-colors group",
+                    readonly ? "hover:bg-muted/40" : "hover:bg-primary/10 ",
                   )}
                 >
                   <TableCell colSpan={4} className="p-0">
                     <div className="flex items-center w-full">
-                      <div className="hidden sm:flex w-10 shrink-0 items-center justify-center px-3 py-3 text-slate-400 text-sm tabular-nums">
+                      <div className="hidden sm:flex w-10 shrink-0 items-center justify-center px-3 py-3 text-muted-foreground/70 text-sm tabular-nums">
                         {i + 1}
                       </div>
                       <div
@@ -239,12 +239,12 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                         onClick={() => !readonly && openEdit(v)}
                       >
                         <div className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2 font-medium text-slate-900 dark:text-slate-100 min-w-0">
-                            <Users className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                          <span className="flex items-center gap-2 font-medium text-foreground min-w-0">
+                            <Users className="h-4 w-4 text-primary shrink-0" />
                             <span className="truncate">{v.name}</span>
                           </span>
                           {v.description && (
-                            <p className="ml-6 text-[11px] text-slate-400 truncate">{v.description}</p>
+                            <p className="ml-6 text-[11px] text-muted-foreground/70 truncate">{v.description}</p>
                           )}
                           <div className="md:hidden mt-1 ml-6">
                             <AccessTicketBadges tickets={v.accessTickets} />
@@ -258,7 +258,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                         {members.length > 0 ? (
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleExpand(v.id); }}
-                            className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
                           >
                             {members.length}
                             {isExpanded
@@ -267,42 +267,42 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                             }
                           </button>
                         ) : (
-                          <span className="text-sm text-slate-400">0</span>
+                          <span className="text-sm text-muted-foreground/70">0</span>
                         )}
                       </div>
                     </div>
 
                     {isExpanded && members.length > 0 && (
-                      <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 px-3 sm:px-6 py-4">
+                      <div className="border-t border-border/60 bg-muted/50 dark:bg-card/30 px-3 sm:px-6 py-4">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
                           <div className="flex gap-2 text-xs">
-                            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1">
+                            <Badge variant="success" className="gap-1">
                               <CheckCircle2 className="h-3 w-3" />
                               {validCount} gültig
                             </Badge>
-                            <Badge className="bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 gap-1">
+                            <Badge className="bg-destructive/10 text-destructive gap-1">
                               <XCircle className="h-3 w-3" />
                               {expiredCount} inaktiv
                             </Badge>
                           </div>
                           {members.length > 5 && (
                             <div className="relative sm:ml-auto">
-                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
                               <input
                                 type="text"
                                 placeholder="Suchen..."
                                 value={searchMap[v.id] ?? ""}
                                 onChange={(e) => setSearchMap((prev) => ({ ...prev, [v.id]: e.target.value }))}
-                                className="pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg w-full sm:w-48 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="pl-8 pr-3 py-1.5 text-xs bg-card border border-border rounded-lg w-full sm:w-48 focus:outline-none focus:ring-1 focus:ring-ring"
                               />
                             </div>
                           )}
                         </div>
 
-                        <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <div className="rounded-lg border border-border overflow-hidden">
                           <table className="w-full text-sm">
                             <thead>
-                              <tr className="bg-slate-100/80 dark:bg-slate-800/50 text-xs text-slate-500 dark:text-slate-400">
+                              <tr className="bg-muted/80 dark:bg-muted/50 text-xs text-muted-foreground">
                                 <th className="text-left px-3 py-2 font-medium">Name</th>
                                 <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Typ</th>
                                 <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">RFID / Barcode</th>
@@ -313,28 +313,28 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                               {sortedMembers.map((m) => {
                                 const va = memberValidity(m);
                                 return (
-                                  <tr key={m.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800/40">
+                                  <tr key={m.id} className="border-t border-border/60 hover:bg-white dark:hover:bg-muted/40">
                                     <td className="px-3 py-2">
-                                      <span className="font-medium text-slate-800 dark:text-slate-200">
+                                      <span className="font-medium text-foreground/90">
                                         {m.firstName ?? ""} {m.lastName ?? ""}
                                       </span>
                                       {!m.firstName && !m.lastName && (
-                                        <span className="text-slate-500">{m.name}</span>
+                                        <span className="text-muted-foreground">{m.name}</span>
                                       )}
                                     </td>
-                                    <td className="px-3 py-2 text-slate-500 hidden sm:table-cell">
+                                    <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">
                                       {m.ticketTypeName ?? "–"}
                                     </td>
-                                    <td className="px-3 py-2 text-slate-500 hidden lg:table-cell">
+                                    <td className="px-3 py-2 text-muted-foreground hidden lg:table-cell">
                                       <div className="flex items-center gap-2">
                                         {m.rfidCode && (
-                                          <span className="inline-flex items-center gap-1 text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                          <span className="inline-flex items-center gap-1 text-xs bg-muted px-1.5 py-0.5 rounded">
                                             <Fingerprint className="h-3 w-3" />
                                             {m.rfidCode}
                                           </span>
                                         )}
                                         {m.barcode && (
-                                          <span className="inline-flex items-center gap-1 text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                          <span className="inline-flex items-center gap-1 text-xs bg-muted px-1.5 py-0.5 rounded">
                                             <ScanLine className="h-3 w-3" />
                                             {m.barcode}
                                           </span>
@@ -344,15 +344,15 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                                     </td>
                                     <td className="px-3 py-2 text-right">
                                       {va === "valid" ? (
-                                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs">Gültig</Badge>
+                                        <Badge variant="success" className="text-xs">Gültig</Badge>
                                       ) : va === "paused" ? (
                                         <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 text-xs">Pausiert</Badge>
                                       ) : va === "canceled" ? (
-                                        <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 text-xs">Gekündigt</Badge>
+                                        <Badge variant="danger" className="text-xs">Gekündigt</Badge>
                                       ) : va === "expired" ? (
-                                        <Badge className="bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 text-xs">Abgelaufen</Badge>
+                                        <Badge className="bg-destructive/10 text-destructive text-xs">Abgelaufen</Badge>
                                       ) : (
-                                        <Badge className="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-xs">Ungültig</Badge>
+                                        <Badge className="bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground text-xs">Ungültig</Badge>
                                       )}
                                     </td>
                                   </tr>
@@ -360,7 +360,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                               })}
                               {sortedMembers.length === 0 && (
                                 <tr>
-                                  <td colSpan={4} className="px-3 py-6 text-center text-slate-400 text-xs">Keine Treffer</td>
+                                  <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground/70 text-xs">Keine Treffer</td>
                                 </tr>
                               )}
                             </tbody>

@@ -43,10 +43,10 @@ export function ExpiringAbosCard({
   );
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800 mb-6">
+    <Card className="mb-6">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
-          <CalendarClock className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <CalendarClock className="h-5 w-5 text-warning shrink-0" />
           <div>
             <CardTitle className="text-base sm:text-lg">Nächste Abläufe</CardTitle>
             <CardDescription className="mt-1">
@@ -57,11 +57,11 @@ export function ExpiringAbosCard({
       </CardHeader>
       <CardContent className="pt-0">
         {rows.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400 py-2">
+          <p className="text-sm text-muted-foreground py-2">
             Keine Abo-Tickets mit gesetztem Enddatum in der Zukunft.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
+          <ul className="divide-y divide-border/60 rounded-xl border border-border/60 overflow-hidden">
             {rows.map((t) => {
               const endStr = t.endDate.toLocaleDateString("de-DE", {
                 day: "2-digit",
@@ -71,23 +71,23 @@ export function ExpiringAbosCard({
               const inner = (
                 <>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+                    <p className="text-sm font-semibold text-foreground truncate">
                       {personName(t)}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    <p className="text-xs text-muted-foreground truncate">
                       {t.subscription.name}
                       {t.ticketTypeName ? ` · ${t.ticketTypeName}` : ""}
                     </p>
                   </div>
                   <div className="shrink-0 text-right flex items-center gap-2">
                     <div>
-                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Ende</p>
-                      <p className="text-sm font-mono font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
+                      <p className="text-xs font-medium text-muted-foreground">Ende</p>
+                      <p className="text-sm font-mono font-semibold text-warning tabular-nums">
                         {endStr}
                       </p>
                     </div>
                     {!readonly && (
-                      <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/70 shrink-0" />
                     )}
                   </div>
                 </>
@@ -95,7 +95,7 @@ export function ExpiringAbosCard({
 
               const className = cn(
                 "flex items-center justify-between gap-3 px-3 py-2.5 transition-colors",
-                !readonly && "hover:bg-slate-50 dark:hover:bg-slate-800/60",
+                !readonly && "hover:bg-muted/50/60",
               );
 
               if (readonly) {

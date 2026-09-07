@@ -68,13 +68,13 @@ export function CoverFields({ category, values, onChange }: Props) {
   const error = validateCoverValues(values);
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Antrieb</p>
-      <p className="text-xs text-slate-500">
+    <div className="rounded-xl border border-border p-3 space-y-3">
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Antrieb</p>
+      <p className="text-xs text-muted-foreground">
         Zwei getrennte Relais am selben Shelly – ein Kanal je Fahrtrichtung. Die
         Steuerung schaltet vor jeder Fahrt zuerst die Gegenrichtung ab.
       </p>
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-muted-foreground/70">
         Steht der Shelly selbst im Rollladen-Modus (Geräteprofil „Cover“), werden
         Kanäle und Fahrzeit nicht verwendet: Dann fährt das Gerät über seine
         eigenen Cover-Befehle und verriegelt die Richtungen in der Firmware. Das
@@ -130,7 +130,7 @@ export function CoverFields({ category, values, onChange }: Props) {
           onChange={(e) => onChange({ coverRuntimeSec: e.target.value })}
           className="font-mono"
         />
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground/70">
           Wie lange der Antrieb für eine volle Fahrt braucht, plus etwas Reserve.
           Der Shelly schaltet das Relais nach dieser Zeit selbst ab – auch wenn
           die Verbindung zwischendurch abreißt.
@@ -138,7 +138,7 @@ export function CoverFields({ category, values, onChange }: Props) {
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+        <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
           <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>

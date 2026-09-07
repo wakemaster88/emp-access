@@ -110,7 +110,7 @@ export function ExceptionEditor({
             variant="ghost"
             size="sm"
             disabled={disabled}
-            className="h-8 w-8 p-0 text-neutral-400 hover:text-red-600"
+            className="h-8 w-8 p-0 text-neutral-400 hover:text-destructive"
             onClick={() => onChange(exceptions.filter((_, i) => i !== index))}
             title="Ausnahme entfernen"
           >
@@ -118,7 +118,7 @@ export function ExceptionEditor({
           </Button>
 
           {duplicates.has(exception.date) && (
-            <p className="w-full text-[11px] text-amber-600">
+            <p className="w-full text-[11px] text-warning">
               Dieses Datum kommt mehrfach vor – gespeichert wird nur der erste Eintrag.
             </p>
           )}

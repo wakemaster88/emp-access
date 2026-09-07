@@ -7,7 +7,9 @@ import { NetworkTabs } from "@/components/network/network-tabs";
 import { HubLogButton } from "@/components/network/hub-log-button";
 import { HubRestartButton } from "@/components/network/hub-restart-button";
 import { Badge } from "@/components/ui/badge";
-import { Network, Server, EthernetPort, Cable, Cpu } from "lucide-react";
+import { Network, Server, EthernetPort, Cable, Cpu, type LucideIcon } from "lucide-react";
+import { StatCard, type StatTone } from "@/components/ui/stat-card";
+import { StatusDot } from "@/components/ui/status-dot";
 import { macVendor, isVirtualMac } from "@/lib/oui";
 
 export default async function NetworkPage() {
@@ -110,11 +112,11 @@ export default async function NetworkPage() {
     0
   );
 
-  const stats = [
-    { label: "Switches & Router", value: networkDevices.length, icon: Server, color: "text-indigo-600 dark:text-indigo-400 bg-indigo-500/10" },
-    { label: "VLANs", value: vlans.length, icon: Network, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10" },
-    { label: "Ports (belegt)", value: totalPorts > 0 ? `${usedPorts} / ${totalPorts}` : "0", icon: EthernetPort, color: "text-amber-600 dark:text-amber-400 bg-amber-500/10" },
-    { label: "Anschlüsse", value: outlets.length, icon: Cable, color: "text-sky-600 dark:text-sky-400 bg-sky-500/10" },
+  const stats: { label: string; value: string | number; icon: LucideIcon; tone: StatTone }[] = [
+    { label: "Switches & Router", value: networkDevices.length, icon: Server, tone: "primary" },
+    { label: "VLANs", value: vlans.length, icon: Network, tone: "success" },
+    { label: "Ports (belegt)", value: totalPorts > 0 ? `${usedPorts} / ${totalPorts}` : "0", icon: EthernetPort, tone: "warning" },
+    { label: "Anschlüsse", value: outlets.length, icon: Cable, tone: "info" },
   ];
 
   const fiveMinAgo = new Date();
@@ -184,28 +186,28 @@ export default async function NetworkPage() {
   return (
     <>
       <Header title="Netzwerk" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="page-content space-y-4 sm:space-y-6">
         {/* Lokaler Hub-Status */}
         {hubAgents.length > 0 && (
-          <Card className="border-slate-200 dark:border-slate-800">
+          <Card>
             <CardContent className="flex flex-wrap items-center gap-3 p-4">
-              <div className="h-10 w-10 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+              <div className="h-10 w-10 rounded-xl bg-chart-5/12 text-chart-5 flex items-center justify-center shrink-0">
                 <Cpu className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Lokaler Hub</p>
+                <p className="text-sm font-medium text-foreground">Lokaler Hub</p>
                 <div className="flex flex-wrap items-center gap-2 mt-0.5">
                   {hubAgents.map((h) => {
                     const online = !!h.lastSeenAt && h.lastSeenAt > fiveMinAgo;
                     return (
-                      <span key={h.id} className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                      <span key={h.id} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                         {online ? (
-                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs h-5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {h.name}
+                          <Badge variant="success" className="gap-1 text-xs h-5">
+                            <StatusDot tone="success" size="xs" pulse /> {h.name}
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-slate-400 gap-1 text-xs h-5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> {h.name}
+                          <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
+                            <StatusDot tone="neutral" size="xs" /> {h.name}
                           </Badge>
                         )}
                         {h.version && <span className="font-mono">({h.version})</span>}
@@ -244,17 +246,7 @@ export default async function NetworkPage() {
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {stats.map((s) => (
-            <Card key={s.label} className="border-slate-200 dark:border-slate-800">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${s.color}`}>
-                  <s.icon className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight">{s.value}</p>
-                  <p className="text-xs text-slate-500 truncate">{s.label}</p>
-                </div>
-              </CardContent>
-            </Card>
+            <StatCard key={s.label} label={s.label} value={s.value} icon={s.icon} tone={s.tone} />
           ))}
         </div>
 

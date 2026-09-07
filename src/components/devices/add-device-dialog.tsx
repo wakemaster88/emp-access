@@ -53,16 +53,16 @@ const DEVICE_TYPES = [
     label: "Raspberry Pi",
     description: "Drehkreuz, Tür, Sensor …",
     icon: Cpu,
-    color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800",
-    activeColor: "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40",
+    color: "bg-primary/10 text-primary border-primary/30",
+    activeColor: "border-primary bg-primary/10",
   },
   {
     value: "SHELLY",
     label: "Shelly",
     description: "Relais, Schalter, Licht …",
     icon: Wifi,
-    color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-    activeColor: "border-amber-500 bg-amber-50 dark:bg-amber-950/40",
+    color: "bg-warning/10 text-warning border-warning/30",
+    activeColor: "border-warning bg-warning/10",
   },
   {
     value: "AUDIO_PLAYER",
@@ -75,14 +75,14 @@ const DEVICE_TYPES = [
 ];
 
 const DEVICE_CATEGORIES = [
-  { value: "DREHKREUZ",   label: "Drehkreuz",   icon: GitMerge,    color: "text-indigo-600 dark:text-indigo-400",   bg: "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800" },
-  { value: "TUER",        label: "Tür",          icon: DoorOpen,    color: "text-sky-600 dark:text-sky-400",         bg: "bg-sky-50 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800" },
-  { value: "SENSOR",      label: "Sensor",       icon: Activity,    color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800" },
-  { value: "SCHALTER",    label: "Schalter",     icon: ToggleRight, color: "text-amber-600 dark:text-amber-400",     bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800" },
+  { value: "DREHKREUZ",   label: "Drehkreuz",   icon: GitMerge,    color: "text-primary",   bg: "bg-primary/8 border-primary/30" },
+  { value: "TUER",        label: "Tür",          icon: DoorOpen,    color: "text-info",         bg: "bg-info/10 border-info/30" },
+  { value: "SENSOR",      label: "Sensor",       icon: Activity,    color: "text-success", bg: "bg-success/10 border-success/30" },
+  { value: "SCHALTER",    label: "Schalter",     icon: ToggleRight, color: "text-warning",     bg: "bg-warning/10 border-warning/30" },
   { value: "BELEUCHTUNG", label: "Beleuchtung",  icon: Lightbulb,   color: "text-yellow-600 dark:text-yellow-400",  bg: "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800" },
   { value: "MARKISE",     label: "Markise",      icon: Umbrella,    color: "text-teal-600 dark:text-teal-400",      bg: "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800" },
-  { value: "ROLLTOR",     label: "Rolltor",      icon: Blinds,      color: "text-slate-600 dark:text-slate-300",    bg: "bg-slate-100 dark:bg-slate-800/50 border-slate-300 dark:border-slate-700" },
-  { value: "TASTER",      label: "Taster",       icon: CircleDot,   color: "text-rose-600 dark:text-rose-400",      bg: "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800" },
+  { value: "ROLLTOR",     label: "Rolltor",      icon: Blinds,      color: "text-muted-foreground",    bg: "bg-muted/50 border-input" },
+  { value: "TASTER",      label: "Taster",       icon: CircleDot,   color: "text-destructive",      bg: "bg-destructive/10 border-destructive/30" },
 ];
 
 // Per-category feature flags
@@ -225,7 +225,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
       <DialogTrigger asChild>
-        <Button className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm">
+        <Button className="gap-2 shadow-sm">
           <Plus className="h-4 w-4" />
           Gerät hinzufügen
         </Button>
@@ -240,7 +240,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
 
           {/* 1. Hardware-Typ */}
           <div className="space-y-2">
-            <Label>Hardware <span className="text-rose-500">*</span></Label>
+            <Label>Hardware <span className="text-destructive">*</span></Label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {DEVICE_TYPES.map((t) => {
                 const Icon = t.icon;
@@ -268,18 +268,18 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
                     }}
                     className={cn(
                       "flex flex-col items-center gap-2 rounded-xl border-2 p-4 text-center transition-all",
-                      selected ? t.activeColor : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                      selected ? t.activeColor : "border-border hover:border-input dark:hover:border-slate-600"
                     )}
                   >
                     <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", t.color)}>
                       <Icon className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="font-medium text-sm text-slate-800 dark:text-slate-200">{t.label}</p>
-                      <p className="text-xs text-slate-500">{t.description}</p>
+                      <p className="font-medium text-sm text-foreground/90">{t.label}</p>
+                      <p className="text-xs text-muted-foreground">{t.description}</p>
                     </div>
                     {selected && (
-                      <Badge className="text-xs bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                      <Badge className="text-xs bg-primary/10 text-primary">
                         Ausgewählt
                       </Badge>
                     )}
@@ -292,7 +292,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
           {/* 2. Funktion/Kategorie – ein Abspieler bedient immer eine Zone */}
           {form.type && !isAudio && (
             <div className="space-y-2">
-              <Label>Funktion <span className="text-rose-500">*</span></Label>
+              <Label>Funktion <span className="text-destructive">*</span></Label>
               <div className="grid grid-cols-4 gap-2">
                 {availableCategories.map((c) => {
                   const Icon = c.icon;
@@ -304,11 +304,11 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
                       onClick={() => set("category", c.value)}
                       className={cn(
                         "flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 text-center transition-all",
-                        selected ? c.bg + " border-current" : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                        selected ? c.bg + " border-current" : "border-border hover:border-input dark:hover:border-slate-600"
                       )}
                     >
-                      <Icon className={cn("h-5 w-5", selected ? c.color : "text-slate-400")} />
-                      <p className={cn("text-xs font-medium leading-tight", selected ? c.color : "text-slate-500")}>{c.label}</p>
+                      <Icon className={cn("h-5 w-5", selected ? c.color : "text-muted-foreground/70")} />
+                      <p className={cn("text-xs font-medium leading-tight", selected ? c.color : "text-muted-foreground")}>{c.label}</p>
                     </button>
                   );
                 })}
@@ -319,11 +319,11 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
           {/* 3. Konfiguration */}
           {form.type && cat && (
             <>
-              <Separator className="dark:bg-slate-800" />
+              <Separator className="dark:bg-muted" />
 
               {/* Name */}
               <div className="space-y-1.5">
-                <Label htmlFor="d-name">Name <span className="text-rose-500">*</span></Label>
+                <Label htmlFor="d-name">Name <span className="text-destructive">*</span></Label>
                 <Input
                   id="d-name"
                   value={form.name}
@@ -348,7 +348,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
               <div className="space-y-1.5">
                 <Label htmlFor="d-ip">
                   IP-Adresse
-                  {isShelly && <span className="text-slate-400 font-normal ml-1">(lokale Steuerung)</span>}
+                  {isShelly && <span className="text-muted-foreground/70 font-normal ml-1">(lokale Steuerung)</span>}
                 </Label>
                 <Input
                   id="d-ip"
@@ -376,23 +376,23 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
 
               {/* Shelly Cloud */}
               {isShelly && (
-                <div className="rounded-xl border border-amber-200 dark:border-amber-900/30 bg-amber-50 dark:bg-amber-950/20 p-4 space-y-3">
+                <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 space-y-3">
                   <div className="flex items-center gap-2">
-                    <Wifi className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Shelly Cloud (optional)</p>
+                    <Wifi className="h-4 w-4 text-warning" />
+                    <p className="text-sm font-medium text-warning">Shelly Cloud (optional)</p>
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="d-shelly-id" className="text-sm">Shelly ID</Label>
                     <Input id="d-shelly-id" value={form.shellyId} onChange={(e) => set("shellyId", e.target.value)}
-                      placeholder="shellyplus1-abc123" className="font-mono text-sm bg-white dark:bg-slate-900" />
+                      placeholder="shellyplus1-abc123" className="font-mono text-sm bg-card" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="d-shelly-key" className="text-sm">Auth Key</Label>
                     <Input id="d-shelly-key" type="password" value={form.shellyAuthKey}
                       onChange={(e) => set("shellyAuthKey", e.target.value)}
-                      placeholder="••••••••" className="font-mono text-sm bg-white dark:bg-slate-900" />
+                      placeholder="••••••••" className="font-mono text-sm bg-card" />
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
+                  <div className="flex items-center gap-2 text-xs text-warning">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     Shelly ID und Auth Key in der Shelly Cloud unter Geräteeinstellungen.
                   </div>
@@ -418,8 +418,8 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
 
               {/* Zugangsbereiche – nur für Drehkreuz & Tür */}
               {CAT_HAS_ACCESS.has(cat) && (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Resource &amp; Richtung</p>
+                <div className="rounded-xl border border-border p-4 space-y-3">
+                  <p className="text-sm font-medium text-foreground/80">Resource &amp; Richtung</p>
 
                   <div className="grid grid-cols-3 gap-2">
                     {DIRECTIONS.map((d) => {
@@ -433,8 +433,8 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
                           className={cn(
                             "flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-2.5 text-center transition-all",
                             selected
-                              ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300"
-                              : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border text-muted-foreground hover:border-input dark:hover:border-slate-600"
                           )}
                           title={d.hint}
                         >
@@ -495,7 +495,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
                           </Select>
                         </div>
                       </div>
-                      <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                      <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
                         <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                         <span>Bidirektionale Geräte können nicht eindeutig zwischen Eintritt und Austritt unterscheiden. Wenn möglich, lieber separate Geräte für Eingang und Ausgang anlegen.</span>
                       </div>
@@ -515,7 +515,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
                       {rooms.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground/70">
                     Schaltzeiten laufen über Regeln: „Einschalten bei Betriebsbeginn“ richtet sich nach der Betriebszeit dieses Raums.
                   </p>
                 </div>
@@ -523,7 +523,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
 
               {/* Sensor-Hinweis */}
               {cat === "SENSOR" && (
-                <div className="flex items-start gap-2 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2 text-xs text-success bg-success/10 border border-success/30 rounded-lg px-3 py-2.5">
                   <Activity className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <span>Sensoren zeigen nur Werte an – keine Steuerung oder Zugangsverwaltung.</span>
                 </div>
@@ -531,19 +531,19 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
 
               {/* Toggles */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                <div className="flex items-center justify-between rounded-lg border border-border p-3">
                   <div>
                     <p className="text-sm font-medium">Sofort aktivieren</p>
-                    <p className="text-xs text-slate-500">Gerät ist ab sofort in Betrieb</p>
+                    <p className="text-xs text-muted-foreground">Gerät ist ab sofort in Betrieb</p>
                   </div>
                   <Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} />
                 </div>
 
                 {CAT_HAS_REENTRY.has(cat) && (
-                  <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                  <div className="flex items-center justify-between rounded-lg border border-border p-3">
                     <div>
                       <p className="text-sm font-medium">Mehrfachzugang</p>
-                      <p className="text-xs text-slate-500">Ticket kann mehrfach gescannt werden</p>
+                      <p className="text-xs text-muted-foreground">Ticket kann mehrfach gescannt werden</p>
                     </div>
                     <Switch checked={form.allowReentry} onCheckedChange={(v) => set("allowReentry", v)} />
                   </div>
@@ -558,7 +558,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
               </div>
 
               {error && (
-                <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
+                <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
               )}
 
               <div className="flex justify-end gap-2 pt-1">
@@ -568,7 +568,7 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
                 <Button
                   type="submit"
                   disabled={saving || !form.name.trim() || !form.type || !form.category}
-                  className="bg-indigo-600 hover:bg-indigo-700 min-w-32"
+                  className="min-w-32"
                 >
                   {saving
                     ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -579,10 +579,10 @@ export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
           )}
 
           {!form.type && (
-            <p className="text-center text-sm text-slate-400 pb-2">Bitte zuerst einen Gerätetyp wählen</p>
+            <p className="text-center text-sm text-muted-foreground/70 pb-2">Bitte zuerst einen Gerätetyp wählen</p>
           )}
           {form.type && !form.category && (
-            <p className="text-center text-sm text-slate-400 pb-2">Bitte eine Funktion wählen</p>
+            <p className="text-center text-sm text-muted-foreground/70 pb-2">Bitte eine Funktion wählen</p>
           )}
         </form>
       </DialogContent>

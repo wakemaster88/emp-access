@@ -51,7 +51,7 @@ export function ReturnDialog({ handover, open, onClose }: Props) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="inline-flex items-center gap-1.5 text-base">
-            <ArrowLeftCircle className="h-4 w-4 text-sky-500" />
+            <ArrowLeftCircle className="h-4 w-4 text-info" />
             Rücknahme von {handover.holderName}
           </DialogTitle>
         </DialogHeader>
@@ -67,12 +67,12 @@ export function ReturnDialog({ handover, open, onClose }: Props) {
                     selected.length === openItems.length ? [] : openItems.map((i) => i.id),
                   )
                 }
-                className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                className="text-[11px] text-muted-foreground/70 hover:text-foreground"
               >
                 {selected.length === openItems.length ? "Keine" : "Alle"}
               </button>
             </div>
-            <div className="space-y-0.5 rounded-md border border-slate-200 p-1 dark:border-slate-700">
+            <div className="space-y-0.5 rounded-md border border-border p-1 dark:border-border">
               {openItems.map((item) => {
                 const isSel = selected.includes(item.id);
                 return (
@@ -83,24 +83,24 @@ export function ReturnDialog({ handover, open, onClose }: Props) {
                     className={cn(
                       "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
                       isSel
-                        ? "bg-sky-50 dark:bg-sky-950/20"
-                        : "hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                        ? "bg-info/10"
+                        : "hover:bg-muted/50",
                     )}
                   >
                     <span
                       className={cn(
                         "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                        isSel ? "border-sky-500 bg-sky-500" : "border-slate-300 dark:border-slate-600",
+                        isSel ? "border-info bg-info" : "border-input",
                       )}
                     >
                       {isSel && <Check className="h-2.5 w-2.5 text-white" />}
                     </span>
-                    <span className="font-mono text-xs text-slate-700 dark:text-slate-300">
+                    <span className="font-mono text-xs text-foreground/80">
                       {item.keyNumber}
                     </span>
                     <LevelBadge level={item.level} />
                     {item.keyLabel && (
-                      <span className="truncate text-[11px] text-slate-400">{item.keyLabel}</span>
+                      <span className="truncate text-[11px] text-muted-foreground/70">{item.keyLabel}</span>
                     )}
                   </button>
                 );
@@ -117,8 +117,8 @@ export function ReturnDialog({ handover, open, onClose }: Props) {
                 className={cn(
                   "h-9 rounded-md border text-xs font-medium transition-colors",
                   itemStatus === "RETURNED"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
-                    : "border-slate-200 text-slate-500 dark:border-slate-700",
+                    ? "border-success/30 bg-success/10 text-success "
+                    : "border-border text-muted-foreground dark:border-border",
                 )}
               >
                 Zurückgegeben
@@ -129,15 +129,15 @@ export function ReturnDialog({ handover, open, onClose }: Props) {
                 className={cn(
                   "h-9 rounded-md border text-xs font-medium transition-colors",
                   itemStatus === "LOST"
-                    ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300"
-                    : "border-slate-200 text-slate-500 dark:border-slate-700",
+                    ? "border-destructive/30 bg-destructive/10 text-destructive "
+                    : "border-border text-muted-foreground dark:border-border",
                 )}
               >
                 Als verloren melden
               </button>
             </div>
             {itemStatus === "LOST" && (
-              <p className="text-[10px] text-rose-600">
+              <p className="text-[10px] text-destructive">
                 Verlorene Schlüssel bleiben gesperrt und wandern nicht zurück in den Bestand.
               </p>
             )}
@@ -167,7 +167,7 @@ export function ReturnDialog({ handover, open, onClose }: Props) {
             size="sm"
             onClick={save}
             disabled={saving || selected.length === 0}
-            className="h-8 min-w-28 bg-sky-600 hover:bg-sky-700"
+            className="h-8 min-w-28 bg-info hover:bg-info/90"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

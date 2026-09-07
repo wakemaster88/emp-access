@@ -62,7 +62,7 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="d-name" className="text-xs">
-              Bezeichnung <span className="text-rose-500">*</span>
+              Bezeichnung <span className="text-destructive">*</span>
             </Label>
             <Input
               id="d-name"
@@ -94,7 +94,7 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
                 id="d-room"
                 value={roomId ?? ""}
                 onChange={(e) => setRoomId(e.target.value ? Number(e.target.value) : null)}
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
               >
                 <option value="">— ohne Raum —</option>
                 {rooms.map((r) => (
@@ -127,7 +127,7 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
             size="sm"
             onClick={save}
             disabled={saving || !name.trim()}
-            className="h-8 min-w-24 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-24"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

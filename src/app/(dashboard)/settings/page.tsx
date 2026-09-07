@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { IntegrationCard } from "@/components/settings/integration-card";
 import { Card, CardContent } from "@/components/ui/card";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Plug, Key, Info, Wifi, Globe, MessageCircle, Sprout, Bell, Trash2, Smartphone } from "lucide-react";
 import { ShellyCloudCard } from "@/components/settings/shelly-cloud-card";
@@ -75,35 +76,30 @@ export default async function SettingsPage() {
   return (
     <>
       <Header title="Einstellungen" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6 space-y-8 max-w-3xl">
+      <div className="page-content space-y-8 max-w-3xl">
 
         {/* Account Info */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Key className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Account
-            </h2>
-          </div>
-          <Card className="border-slate-200 dark:border-slate-800">
+          <SectionHeading icon={Key} title="Account" />
+          <Card>
             <CardContent className="pt-5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-500">Mandant</span>
-                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{account?.name}</span>
+                <span className="text-sm text-muted-foreground">Mandant</span>
+                <span className="text-sm font-medium text-foreground">{account?.name}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-500">Subdomain</span>
+                <span className="text-sm text-muted-foreground">Subdomain</span>
                 <Badge variant="secondary" className="font-mono text-xs">{account?.subdomain}</Badge>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-500">API Token (Geräte)</span>
+                <span className="text-sm text-muted-foreground">API Token (Geräte)</span>
                 <Badge variant="outline" className="font-mono text-xs max-w-[220px] truncate">
                   {account?.apiToken}
                 </Badge>
               </div>
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 mt-2">
-                <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <p className="text-xs text-amber-700 dark:text-amber-400">
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 mt-2">
+                <Info className="h-4 w-4 text-warning shrink-0" />
+                <p className="text-xs text-warning">
                   Dieser Token wird von Raspberry Pi und Shelly-Geräten zur Authentifizierung verwendet.
                 </p>
               </div>
@@ -113,12 +109,7 @@ export default async function SettingsPage() {
 
         {/* Eigene API */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Globe className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Eigene API
-            </h2>
-          </div>
+          <SectionHeading icon={Globe} title="Eigene API" />
           <OwnApiCard
             baseUrl={baseUrl}
             apiToken={account?.apiToken ?? ""}
@@ -127,17 +118,7 @@ export default async function SettingsPage() {
 
         {/* Shelly Cloud */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Wifi className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Shelly Cloud
-            </h2>
-            {shellyConfig && (
-              <Badge className="ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
-                Verbunden · {existingShellyIds.length} Gerät{existingShellyIds.length !== 1 ? "e" : ""} importiert
-              </Badge>
-            )}
-          </div>
+          <SectionHeading icon={Wifi} title="Shelly Cloud" aside={shellyConfig && ( <Badge className="bg-success/12 text-success text-xs"> Verbunden · {existingShellyIds.length} Gerät{existingShellyIds.length !== 1 ? "e" : ""} importiert </Badge> )} />
           <ShellyCloudCard
             savedServer={shellyConfig?.baseUrl ?? null}
             savedAuthKey={shellyConfig?.token ?? null}
@@ -147,17 +128,7 @@ export default async function SettingsPage() {
 
         {/* GARDENA smart system */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Sprout className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              GARDENA smart system
-            </h2>
-            {gardenaConnections.length > 0 && (
-              <Badge className="ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
-                {gardenaConnections.length} Verbindung{gardenaConnections.length !== 1 ? "en" : ""} · {existingGardenaIds.length} Gerät{existingGardenaIds.length !== 1 ? "e" : ""}
-              </Badge>
-            )}
-          </div>
+          <SectionHeading icon={Sprout} title="GARDENA smart system" aside={gardenaConnections.length > 0 && ( <Badge className="bg-success/12 text-success text-xs"> {gardenaConnections.length} Verbindung{gardenaConnections.length !== 1 ? "en" : ""} · {existingGardenaIds.length} Gerät{existingGardenaIds.length !== 1 ? "e" : ""} </Badge> )} />
           <GardenaCard
             connections={gardenaConnections}
             existingServiceIds={existingGardenaIds}
@@ -166,58 +137,33 @@ export default async function SettingsPage() {
 
         {/* Löschfristen / Datenschutz */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Datenschutz
-            </h2>
-          </div>
+          <SectionHeading icon={Trash2} title="Datenschutz" />
           <DataRetentionCard initial={dataRetention} />
         </section>
 
         {/* App auf dem Handy */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Smartphone className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              App auf dem Handy
-            </h2>
-          </div>
+          <SectionHeading icon={Smartphone} title="App auf dem Handy" />
           <InstallPrompt variant="card" />
         </section>
 
         {/* Push-Benachrichtigungen */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Push-Benachrichtigungen
-            </h2>
-          </div>
+          <SectionHeading icon={Bell} title="Push-Benachrichtigungen" />
           <PushCard />
         </section>
 
         {/* Telegram Bot */}
         <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <MessageCircle className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              Telegram Bot
-            </h2>
-            {telegramConfig?.isActive && (
-              <Badge className="ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">
-                Verbunden
-              </Badge>
-            )}
-          </div>
+          <SectionHeading icon={MessageCircle} title="Telegram Bot" aside={telegramConfig?.isActive && ( <Badge className="bg-success/12 text-success text-xs"> Verbunden </Badge> )} />
           <TelegramCard initialConfig={telegramConfig ?? null} />
         </section>
 
         {/* Integrations */}
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <Plug className="h-5 w-5 text-slate-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+            <Plug className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               Schnittstellen
             </h2>
             <Badge variant="secondary" className="ml-auto text-xs">

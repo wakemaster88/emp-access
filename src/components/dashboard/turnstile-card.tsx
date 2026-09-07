@@ -142,16 +142,16 @@ function Kpi({
   return (
     <div className="px-3 py-2.5 min-w-0">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{label}</span>
+        <span className="text-[11px] font-medium text-muted-foreground truncate">{label}</span>
         {icon}
       </div>
       <div className="flex items-baseline gap-1.5 mt-1">
-        <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums leading-none">{value}</p>
+        <p className="text-2xl font-bold text-foreground tabular-nums leading-none">{value}</p>
         {delta != null && (
           <span
             className={cn(
               "flex items-center text-[10px] font-semibold tabular-nums",
-              delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500",
+              delta >= 0 ? "text-success" : "text-destructive",
             )}
           >
             {delta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
@@ -159,7 +159,7 @@ function Kpi({
           </span>
         )}
       </div>
-      {hint && <p className="text-[10px] text-slate-400 mt-1 truncate">{hint}</p>}
+      {hint && <p className="text-[10px] text-muted-foreground/70 mt-1 truncate">{hint}</p>}
     </div>
   );
 }
@@ -176,20 +176,20 @@ function BarList({
 }) {
   const max = rows.reduce((m, r) => Math.max(m, r.value), 0);
   if (rows.length === 0) {
-    return <p className="py-8 text-center text-xs text-slate-400">{emptyText}</p>;
+    return <p className="py-8 text-center text-xs text-muted-foreground/70">{emptyText}</p>;
   }
   return (
     <div className="space-y-2">
       {rows.map((row) => (
         <div key={row.key} className="space-y-1">
           <div className="flex items-center gap-2 text-[11px]">
-            <span className="font-medium text-slate-700 dark:text-slate-300 truncate flex-1 min-w-0">{row.label}</span>
-            {row.sub && <span className="text-slate-400 tabular-nums shrink-0">{row.sub}</span>}
-            <span className="font-semibold text-slate-700 dark:text-slate-200 tabular-nums shrink-0">
+            <span className="font-medium text-foreground/80 truncate flex-1 min-w-0">{row.label}</span>
+            {row.sub && <span className="text-muted-foreground/70 tabular-nums shrink-0">{row.sub}</span>}
+            <span className="font-semibold text-foreground/80 tabular-nums shrink-0">
               {fmtNum(row.value)}
             </span>
           </div>
-          <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div className={cn("h-full rounded-full", barClass)} style={{ width: `${max > 0 ? (row.value / max) * 100 : 0}%` }} />
           </div>
         </div>
@@ -200,7 +200,7 @@ function BarList({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
+    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-2">
       {children}
     </p>
   );
@@ -273,8 +273,8 @@ export function TurnstileCard({ date }: { date: string }) {
 
   return (
     <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-800">
-        <span className="text-sm font-semibold flex items-center gap-1.5 text-slate-900 dark:text-slate-100 min-w-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60">
+        <span className="text-sm font-semibold flex items-center gap-1.5 text-foreground min-w-0">
           <RotateCw className="h-3.5 w-3.5 text-teal-500 shrink-0" />
           <span className="truncate">Drehkreuz {area.name}</span>
         </span>
@@ -297,11 +297,11 @@ export function TurnstileCard({ date }: { date: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800">
+      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 border-b border-border/60">
         <Kpi
           label="Fahrten"
           value={fmtNum(totals.rides)}
-          icon={<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />}
+          icon={<CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />}
           delta={ridesDelta}
           hint={
             average
@@ -314,7 +314,7 @@ export function TurnstileCard({ date }: { date: string }) {
         <Kpi
           label="Gäste"
           value={fmtNum(totals.guests)}
-          icon={<Users className="h-3.5 w-3.5 text-indigo-500 shrink-0" />}
+          icon={<Users className="h-3.5 w-3.5 text-primary shrink-0" />}
           delta={guestsDelta}
           hint={
             totals.guests > 0
@@ -335,18 +335,18 @@ export function TurnstileCard({ date }: { date: string }) {
         <Kpi
           label="Scans"
           value={fmtNum(totals.scans)}
-          icon={<ScanLine className="h-3.5 w-3.5 text-sky-500 shrink-0" />}
+          icon={<ScanLine className="h-3.5 w-3.5 text-info shrink-0" />}
           hint={
             totals.scans > 0
               ? totals.denied > 0
-                ? <><span className="text-emerald-600 font-medium">{totals.grantRate}%</span> Erfolg · {fmtNum(totals.denied)} abgelehnt</>
-                : <><span className="text-emerald-600 font-medium">{totals.grantRate}%</span> Erfolg, keine Ablehnung</>
+                ? <><span className="text-success font-medium">{totals.grantRate}%</span> Erfolg · {fmtNum(totals.denied)} abgelehnt</>
+                : <><span className="text-success font-medium">{totals.grantRate}%</span> Erfolg, keine Ablehnung</>
               : "Keine Scans"
           }
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100 dark:divide-slate-800">
+      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-border/60">
         <div className="lg:col-span-2 px-3 py-3">
           <SectionTitle>
             <span className="flex items-center gap-1.5">
@@ -355,7 +355,7 @@ export function TurnstileCard({ date }: { date: string }) {
             </span>
           </SectionTitle>
           {totals.scans === 0 ? (
-            <p className="py-14 text-center text-xs text-slate-400">Keine Scans an diesem Tag.</p>
+            <p className="py-14 text-center text-xs text-muted-foreground/70">Keine Scans an diesem Tag.</p>
           ) : (
             <>
               <div className="h-[190px]">
@@ -371,8 +371,8 @@ export function TurnstileCard({ date }: { date: string }) {
                 </ResponsiveContainer>
               </div>
               {totals.peakHour && (
-                <p className="text-[10px] text-slate-500 mt-1 text-center">
-                  Spitze um <span className="font-semibold text-slate-700 dark:text-slate-300">{totals.peakHour.hour}</span> mit {fmtNum(totals.peakHour.count)} Scans
+                <p className="text-[10px] text-muted-foreground mt-1 text-center">
+                  Spitze um <span className="font-semibold text-foreground/80">{totals.peakHour.hour}</span> mit {fmtNum(totals.peakHour.count)} Scans
                 </p>
               )}
             </>
@@ -382,7 +382,7 @@ export function TurnstileCard({ date }: { date: string }) {
         <div className="px-3 py-3">
           <SectionTitle>
             <span className="flex items-center gap-1.5">
-              <TicketIcon className="h-3 w-3 text-indigo-500" />
+              <TicketIcon className="h-3 w-3 text-primary" />
               Ticket-Typen
             </span>
           </SectionTitle>
@@ -394,12 +394,12 @@ export function TurnstileCard({ date }: { date: string }) {
               sub: `${fmtNum(t.guests)} Gäste`,
             }))}
             emptyText="Keine Fahrten an diesem Tag."
-            barClass="bg-indigo-500"
+            barClass="bg-primary"
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100 dark:divide-slate-800 border-t border-slate-100 dark:border-slate-800">
+      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-border/60 border-t border-border/60">
         <div className="px-3 py-3">
           <SectionTitle>Leser</SectionTitle>
           <div className="space-y-2">
@@ -410,17 +410,17 @@ export function TurnstileCard({ date }: { date: string }) {
                 <div key={d.id} className="space-y-1">
                   <div className="flex items-center gap-1.5 text-[11px]">
                     <span
-                      className={cn("h-1.5 w-1.5 rounded-full shrink-0", d.online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")}
+                      className={cn("h-1.5 w-1.5 rounded-full shrink-0", d.online ? "bg-success" : "bg-slate-300 dark:bg-slate-600")}
                       title={d.online ? "Online" : "Kein Heartbeat"}
                     />
-                    <span className="font-medium text-slate-700 dark:text-slate-300 truncate flex-1 min-w-0">{d.name}</span>
-                    <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{DIRECTION_LABEL[d.direction]}</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-200 tabular-nums shrink-0">{fmtNum(d.rides)}</span>
+                    <span className="font-medium text-foreground/80 truncate flex-1 min-w-0">{d.name}</span>
+                    <span className="text-[9px] text-muted-foreground/70 shrink-0 hidden sm:inline">{DIRECTION_LABEL[d.direction]}</span>
+                    <span className="font-semibold text-foreground/80 tabular-nums shrink-0">{fmtNum(d.rides)}</span>
                   </div>
-                  <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden flex">
                     <div className="bg-teal-500 h-full" style={{ width: `${totals.rides > 0 ? (d.rides / totals.rides) * 100 : 0}%` }} />
                   </div>
-                  <p className="text-[9px] text-slate-400">
+                  <p className="text-[9px] text-muted-foreground/70">
                     {d.total > 0 ? <>{rate}% erfolgreich{last && <> · letzter Scan {last}</>}</> : "Keine Scans an diesem Tag"}
                   </p>
                 </div>
@@ -441,7 +441,7 @@ export function TurnstileCard({ date }: { date: string }) {
         <div className="px-3 py-3">
           <SectionTitle>7 Tage</SectionTitle>
           {maxTrendRides === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-400">Keine Fahrten in den letzten 7 Tagen.</p>
+            <p className="py-8 text-center text-xs text-muted-foreground/70">Keine Fahrten in den letzten 7 Tagen.</p>
           ) : (
             <div className="space-y-1.5">
               {weekTrend.map((d) => (
@@ -449,26 +449,26 @@ export function TurnstileCard({ date }: { date: string }) {
                   <span
                     className={cn(
                       "text-[10px] w-7 shrink-0 uppercase",
-                      d.date === data.date ? "font-bold text-slate-700 dark:text-slate-200" : "text-slate-400",
+                      d.date === data.date ? "font-bold text-foreground/80" : "text-muted-foreground/70",
                     )}
                   >
                     {d.dayName}
                   </span>
-                  <div className="h-2 flex-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-2 flex-1 bg-muted rounded-full overflow-hidden">
                     <div
                       className={cn("h-full rounded-full", d.date === data.date ? "bg-teal-500" : "bg-teal-500/40")}
                       style={{ width: `${(d.rides / maxTrendRides) * 100}%` }}
                     />
                   </div>
-                  <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400 w-9 text-right shrink-0">
+                  <span className="text-[10px] tabular-nums text-muted-foreground w-9 text-right shrink-0">
                     {fmtNum(d.rides)}
                   </span>
-                  <span className="text-[10px] tabular-nums text-slate-400 w-7 text-right shrink-0 hidden sm:inline">
+                  <span className="text-[10px] tabular-nums text-muted-foreground/70 w-7 text-right shrink-0 hidden sm:inline">
                     {fmtNum(d.guests)}
                   </span>
                 </div>
               ))}
-              <p className="text-[9px] text-slate-400 pt-1">Fahrten · Gäste je Tag</p>
+              <p className="text-[9px] text-muted-foreground/70 pt-1">Fahrten · Gäste je Tag</p>
             </div>
           )}
         </div>

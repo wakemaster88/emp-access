@@ -43,22 +43,22 @@ import {
 function StatusBadge({ online }: { online: boolean | null }) {
   if (online === true) {
     return (
-      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1 text-[11px] h-5 px-1.5 font-medium">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <Badge className="bg-success/10 text-success gap-1 text-[11px] h-5 px-1.5 font-medium">
+        <span className="h-1.5 w-1.5 rounded-full bg-success" />
         Online
       </Badge>
     );
   }
   if (online === false) {
     return (
-      <Badge variant="secondary" className="text-slate-500 gap-1 text-[11px] h-5 px-1.5 font-medium">
+      <Badge variant="secondary" className="text-muted-foreground gap-1 text-[11px] h-5 px-1.5 font-medium">
         <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
         Offline
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="text-slate-400 gap-1 text-[11px] h-5 px-1.5 font-normal">
+    <Badge variant="outline" className="text-muted-foreground/70 gap-1 text-[11px] h-5 px-1.5 font-normal">
       ?
     </Badge>
   );
@@ -81,19 +81,19 @@ function IpCell({
     <span
       className={cn(
         "inline-flex items-center gap-1 font-mono text-xs",
-        conflict ? "text-rose-600 dark:text-rose-400 font-semibold" : "text-slate-500"
+        conflict ? "text-destructive font-semibold" : "text-muted-foreground"
       )}
     >
       {isStatic && (
         <Lock
-          className="h-3 w-3 text-amber-500 shrink-0"
+          className="h-3 w-3 text-warning shrink-0"
           aria-label="Feste IP"
         />
       )}
       {ip}
       {verified && (
         <BadgeCheck
-          className="h-3.5 w-3.5 text-emerald-500 shrink-0"
+          className="h-3.5 w-3.5 text-success shrink-0"
           aria-label="IP vom Scan bestätigt"
         />
       )}
@@ -661,16 +661,16 @@ export function ClientsTab({
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="flex flex-col gap-3 pb-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <CardTitle className="text-base sm:text-xl">
               Geräte im Netzwerk ({visibleCount})
             </CardTitle>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {lastScanAt
-                ? <>Letzter Hub-Scan: <span className="text-slate-700 dark:text-slate-300 font-medium">{formatLastScan(lastScanAt)}</span></>
+                ? <>Letzter Hub-Scan: <span className="text-foreground/80 font-medium">{formatLastScan(lastScanAt)}</span></>
                 : "Noch kein Hub-Scan in der Cloud"}
             </p>
           </div>
@@ -687,17 +687,17 @@ export function ClientsTab({
                 : <RefreshCw className="h-4 w-4" />}
               {scanning ? "Scannt …" : "Netzwerk scannen"}
             </Button>
-            <Button onClick={() => openAdd()} className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm">
+            <Button onClick={() => openAdd()} className="bg-primary hover:bg-primary/90 gap-2 shadow-sm">
               <Plus className="h-4 w-4" />
               Gerät hinzufügen
             </Button>
           </div>
         </div>
         {scanMsg && (
-          <p className="text-xs text-slate-500">{scanMsg}</p>
+          <p className="text-xs text-muted-foreground">{scanMsg}</p>
         )}
         <div className="flex flex-col gap-2 w-full min-w-0">
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 self-start flex-wrap">
+          <div className="flex items-center gap-1 rounded-lg bg-muted p-1 self-start flex-wrap">
             {FILTERS.map((f) => (
               <button
                 key={f.value}
@@ -706,8 +706,8 @@ export function ClientsTab({
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
                   filter === f.value
-                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 {f.label}
@@ -715,7 +715,7 @@ export function ClientsTab({
             ))}
           </div>
           {vlans.length > 0 && (
-            <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 overflow-x-auto max-w-full">
+            <div className="flex items-center gap-1 rounded-lg bg-muted p-1 overflow-x-auto max-w-full">
               {VLAN_FILTERS.map((f) => (
                 <button
                   key={String(f.value)}
@@ -724,8 +724,8 @@ export function ClientsTab({
                   className={cn(
                     "rounded-md px-2.5 py-1 text-xs font-medium transition-all whitespace-nowrap shrink-0",
                     vlanFilter === f.value
-                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   {f.label}
@@ -737,7 +737,7 @@ export function ClientsTab({
       </CardHeader>
       <CardContent className="p-0 sm:px-6 sm:pb-6 space-y-3">
         {duplicateIps.size > 0 && filter !== "managed" && (
-          <div className="mx-4 sm:mx-0 flex items-start gap-2 rounded-lg border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-800 dark:text-rose-300">
+          <div className="mx-4 sm:mx-0 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>
               <strong>IP-Doppelbelegung:</strong>{" "}
@@ -746,10 +746,10 @@ export function ClientsTab({
           </div>
         )}
 
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+        <div className="rounded-lg border border-border overflow-x-auto">
           <Table className="table-fixed w-full min-w-[640px]">
             <TableHeader>
-              <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
+              <TableRow className="border-border hover:bg-transparent bg-muted/40">
                 <TableHead className="w-[88px]">Status</TableHead>
                 <TableHead className="w-[28%]">Gerät</TableHead>
                 <TableHead className="w-[140px]">IP</TableHead>
@@ -763,13 +763,13 @@ export function ClientsTab({
               {visibleCount === 0 && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={7} className="text-center py-16">
-                    <div className="flex flex-col items-center gap-3 text-slate-500">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       {filter === "unknown" ? (
                         <Radar className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                       ) : (
                         <MonitorSmartphone className="h-12 w-12 text-slate-300 dark:text-slate-600" />
                       )}
-                      <p className="font-medium text-slate-600 dark:text-slate-400">
+                      <p className="font-medium text-muted-foreground">
                         {filter === "unknown"
                           ? "Keine unbekannten Scan-Funde"
                           : "Keine Geräte erfasst"}
@@ -788,7 +788,7 @@ export function ClientsTab({
                 const vlanCount = group.areas.reduce((n, a) => n + a.items.length, 0);
                 return (
                   <Fragment key={group.meta.vlanDbId ?? "none"}>
-                    <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-100/80 dark:bg-slate-900/80">
+                    <TableRow className="border-border hover:bg-transparent bg-muted/80 dark:bg-card/80">
                       <TableCell colSpan={7} className="py-2">
                         <div className="flex flex-wrap items-center gap-2">
                           {group.meta.vlanDbId != null ? (
@@ -799,9 +799,9 @@ export function ClientsTab({
                             <Badge variant="secondary" className="text-xs">Ohne VLAN</Badge>
                           )}
                           {group.meta.subnet && (
-                            <span className="text-[11px] font-mono text-slate-400">{group.meta.subnet}</span>
+                            <span className="text-[11px] font-mono text-muted-foreground/70">{group.meta.subnet}</span>
                           )}
-                          <span className="text-[11px] text-slate-400">{vlanCount} Geräte</span>
+                          <span className="text-[11px] text-muted-foreground/70">{vlanCount} Geräte</span>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -809,13 +809,13 @@ export function ClientsTab({
                     {group.areas.map((areaGroup) => (
                       <Fragment key={`${group.meta.vlanDbId ?? "none"}-${areaGroup.meta.areaId ?? "none"}`}>
                         {group.showAreas && (
-                          <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/90 dark:bg-slate-900/40">
+                          <TableRow className="border-border hover:bg-transparent bg-muted/50 dark:bg-card/40">
                             <TableCell colSpan={7} className="py-1.5 pl-6">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                <span className="text-xs font-medium text-muted-foreground">
                                   {areaGroup.meta.name}
                                 </span>
-                                <span className="text-[11px] text-slate-400">
+                                <span className="text-[11px] text-muted-foreground/70">
                                   {areaGroup.items.length} Geräte
                                 </span>
                               </div>
@@ -842,27 +842,27 @@ export function ClientsTab({
                                 : scanned === true || deviceOnline === true;
                             const verified = ipVerified(c.macAddress, ip);
                             return (
-                              <TableRow key={`c-${c.id}`} className="border-slate-200 dark:border-slate-700">
+                              <TableRow key={`c-${c.id}`} className="border-border">
                                 <TableCell>
                                   <StatusBadge online={online} />
                                 </TableCell>
                                 <TableCell className="max-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <div className="h-7 w-7 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                    <div className="h-7 w-7 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
                                       <Icon className="h-3.5 w-3.5" />
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                      <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate" title={c.name}>
+                                      <p className="font-medium text-sm text-foreground truncate" title={c.name}>
                                         {c.name}
                                       </p>
-                                      <p className="text-[11px] text-slate-400 truncate">
+                                      <p className="text-[11px] text-muted-foreground/70 truncate">
                                         {CLIENT_TYPES.find((t) => t.value === c.type)?.label ?? c.type}
                                         {c.device && (
                                           <>
                                             {" · "}
                                             <Link
                                               href={`/devices/${c.device.id}`}
-                                              className="text-indigo-500 hover:underline"
+                                              className="text-primary hover:underline"
                                             >
                                               {c.device.name}
                                             </Link>
@@ -875,21 +875,21 @@ export function ClientsTab({
                                 <TableCell>
                                   <IpCell ip={ip} verified={verified} isStatic={c.isStatic} />
                                 </TableCell>
-                                <TableCell className="hidden xl:table-cell font-mono text-xs text-slate-500 truncate">
+                                <TableCell className="hidden xl:table-cell font-mono text-xs text-muted-foreground truncate">
                                   {c.macAddress || <span className="text-slate-300">–</span>}
                                 </TableCell>
                                 <TableCell className="hidden lg:table-cell">
                                   {c.port ? (
                                     <Link
                                       href={`/network/${c.port.deviceId}`}
-                                      className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-full"
+                                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline truncate max-w-full"
                                       title={`${c.port.deviceName} · Port ${c.port.number}`}
                                     >
                                       <EthernetPort className="h-3 w-3 shrink-0" />
                                       <span className="truncate">P{c.port.number}</span>
                                     </Link>
                                   ) : (
-                                    <span className="text-xs text-slate-400">–</span>
+                                    <span className="text-xs text-muted-foreground/70">–</span>
                                   )}
                                 </TableCell>
                                 <TableCell className="max-w-0">
@@ -898,7 +898,7 @@ export function ClientsTab({
                                       {row.areaName}
                                     </Badge>
                                   ) : (
-                                    <span className="text-xs text-slate-400">–</span>
+                                    <span className="text-xs text-muted-foreground/70">–</span>
                                   )}
                                 </TableCell>
                                 <TableCell>
@@ -906,7 +906,7 @@ export function ClientsTab({
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-slate-400 hover:text-indigo-600"
+                                      className="h-7 w-7 text-muted-foreground/70 hover:text-primary"
                                       onClick={() => openEdit(c)}
                                     >
                                       <Pencil className="h-3.5 w-3.5" />
@@ -914,7 +914,7 @@ export function ClientsTab({
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-slate-400 hover:text-rose-600"
+                                      className="h-7 w-7 text-muted-foreground/70 hover:text-destructive"
                                       onClick={() => handleDelete(c)}
                                       disabled={deletingId === c.id}
                                     >
@@ -934,24 +934,24 @@ export function ClientsTab({
                               ? new Date(d.lastUpdate).getTime() > fiveMinAgo
                               : null;
                             return (
-                              <TableRow key={`iot-${d.id}`} className="border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
+                              <TableRow key={`iot-${d.id}`} className="border-border bg-muted/50 dark:bg-card/30">
                                 <TableCell>
                                   <StatusBadge online={online} />
                                 </TableCell>
                                 <TableCell className="max-w-0">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <div className="h-7 w-7 rounded-md bg-slate-500/10 text-slate-500 flex items-center justify-center shrink-0">
+                                    <div className="h-7 w-7 rounded-md bg-slate-500/10 text-muted-foreground flex items-center justify-center shrink-0">
                                       <Cpu className="h-3.5 w-3.5" />
                                     </div>
                                     <div className="min-w-0 flex-1">
                                       <Link
                                         href={`/devices/${d.id}`}
-                                        className="font-medium text-sm text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 truncate block"
+                                        className="font-medium text-sm text-foreground/80 hover:text-primary truncate block"
                                         title={d.name}
                                       >
                                         {d.name}
                                       </Link>
-                                      <p className="text-[11px] text-slate-400 truncate">IoT (nicht zugeordnet)</p>
+                                      <p className="text-[11px] text-muted-foreground/70 truncate">IoT (nicht zugeordnet)</p>
                                     </div>
                                   </div>
                                 </TableCell>
@@ -962,7 +962,7 @@ export function ClientsTab({
                                   <span className="text-slate-300 text-xs">–</span>
                                 </TableCell>
                                 <TableCell className="hidden lg:table-cell">
-                                  <span className="text-xs text-slate-400">–</span>
+                                  <span className="text-xs text-muted-foreground/70">–</span>
                                 </TableCell>
                                 <TableCell>
                                   {row.areaId != null ? (
@@ -970,7 +970,7 @@ export function ClientsTab({
                                       {row.areaName}
                                     </Badge>
                                   ) : (
-                                    <span className="text-xs text-slate-400">–</span>
+                                    <span className="text-xs text-muted-foreground/70">–</span>
                                   )}
                                 </TableCell>
                                 <TableCell>
@@ -999,7 +999,7 @@ export function ClientsTab({
                           return (
                             <TableRow
                               key={`scan-${d.id}`}
-                              className="border-slate-200 dark:border-slate-700 bg-violet-50/40 dark:bg-violet-950/20"
+                              className="border-border bg-violet-50/40 dark:bg-violet-950/20"
                             >
                               <TableCell>
                                 <StatusBadge online={active} />
@@ -1010,10 +1010,10 @@ export function ClientsTab({
                                     <Radar className="h-3.5 w-3.5" />
                                   </div>
                                   <div className="min-w-0 flex-1">
-                                    <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate" title={label}>
+                                    <p className="font-medium text-sm text-foreground truncate" title={label}>
                                       {label}
                                     </p>
-                                    <p className="text-[11px] text-slate-400 truncate">
+                                    <p className="text-[11px] text-muted-foreground/70 truncate">
                                       neu vom Scan
                                       {d.deviceType ? ` · ${d.deviceType}` : ""}
                                     </p>
@@ -1027,11 +1027,11 @@ export function ClientsTab({
                                   conflict={!!d.ipAddress && duplicateIps.has(d.ipAddress)}
                                 />
                               </TableCell>
-                              <TableCell className="hidden xl:table-cell font-mono text-xs text-slate-500 truncate">
+                              <TableCell className="hidden xl:table-cell font-mono text-xs text-muted-foreground truncate">
                                 {d.macAddress}
                               </TableCell>
                               <TableCell className="hidden lg:table-cell">
-                                <span className="text-xs text-slate-400">–</span>
+                                <span className="text-xs text-muted-foreground/70">–</span>
                               </TableCell>
                               <TableCell>
                                 {row.areaId != null ? (
@@ -1039,7 +1039,7 @@ export function ClientsTab({
                                     {row.areaName}
                                   </Badge>
                                 ) : (
-                                  <span className="text-xs text-slate-400">–</span>
+                                  <span className="text-xs text-muted-foreground/70">–</span>
                                 )}
                               </TableCell>
                               <TableCell>
@@ -1076,7 +1076,7 @@ export function ClientsTab({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                <Label>Name <span className="text-rose-500">*</span></Label>
+                <Label>Name <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.name}
                   onChange={(e) => set("name", e.target.value)}
@@ -1106,16 +1106,16 @@ export function ClientsTab({
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Feste IP</p>
-                <p className="text-xs text-slate-500">Statisch vergeben statt DHCP</p>
+                <p className="text-xs text-muted-foreground">Statisch vergeben statt DHCP</p>
               </div>
               <Switch checked={form.isStatic} onCheckedChange={(v) => set("isStatic", v)} />
             </div>
 
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Zuordnung</p>
+            <div className="rounded-xl border border-border p-4 space-y-3">
+              <p className="text-sm font-medium text-foreground/80">Zuordnung</p>
               <div className="space-y-1.5">
                 <Label className="text-xs">Verknüpftes IoT-Gerät</Label>
                 <Select value={form.deviceId} onValueChange={(v) => set("deviceId", v)}>
@@ -1183,7 +1183,7 @@ export function ClientsTab({
             </div>
 
             {error && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
             )}
 
             <div className="flex justify-end gap-2 pt-1">
@@ -1193,7 +1193,7 @@ export function ClientsTab({
               <Button
                 type="submit"
                 disabled={saving || !form.name.trim()}
-                className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
+                className="min-w-28"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (editing ? "Speichern" : "Erstellen")}
               </Button>
@@ -1208,7 +1208,7 @@ export function ClientsTab({
             <DialogTitle>Gerät übernehmen</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAdopt} className="space-y-4">
-            <div className="rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-3 text-xs font-mono text-slate-500 space-y-0.5">
+            <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs font-mono text-muted-foreground space-y-0.5">
               <p>IP: {adopting?.ipAddress ?? "–"}</p>
               <p>MAC: {adopting?.macAddress}</p>
               {adopting?.hostname && <p>Hostname: {adopting.hostname}</p>}
@@ -1217,7 +1217,7 @@ export function ClientsTab({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Name <span className="text-rose-500">*</span></Label>
+              <Label>Name <span className="text-destructive">*</span></Label>
               <Input
                 value={adoptForm.name}
                 onChange={(e) => setAdoptForm((f) => ({ ...f, name: e.target.value }))}
@@ -1253,7 +1253,7 @@ export function ClientsTab({
             )}
 
             {adoptError && (
-              <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{adoptError}</p>
+              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{adoptError}</p>
             )}
 
             <div className="flex justify-end gap-2 pt-1">
@@ -1263,7 +1263,7 @@ export function ClientsTab({
               <Button
                 type="submit"
                 disabled={adoptSaving || !adoptForm.name.trim()}
-                className="bg-indigo-600 hover:bg-indigo-700 min-w-28"
+                className="min-w-28"
               >
                 {adoptSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Übernehmen"}
               </Button>

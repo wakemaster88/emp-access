@@ -153,7 +153,7 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
 
   return (
     <div className="space-y-3">
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardContent className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="sm:min-w-[160px]">
@@ -195,13 +195,13 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
             />
           </div>
 
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-muted-foreground mt-2">
             MP3, WAV, OGG oder FLAC bis 50 MB. Die Dateien gehen direkt in den Blob-Storage;
             die Zonen-Pis laden sie einmalig und spielen danach lokal ab.
           </p>
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-lg border border-red-200 dark:border-red-900/40 mt-3">
+            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30 mt-3">
               {error}
             </p>
           )}
@@ -209,13 +209,13 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
       </Card>
 
       {tracks.length === 0 ? (
-        <Card className="border-dashed border-slate-300 dark:border-slate-700">
+        <Card className="border-dashed border-input">
           <CardContent className="py-10 text-center">
-            <Music className="h-10 w-10 mx-auto text-slate-400 mb-3" />
-            <h3 className="font-semibold text-slate-700 dark:text-slate-300">
+            <Music className="h-10 w-10 mx-auto text-muted-foreground/70 mb-3" />
+            <h3 className="font-semibold text-foreground/80">
               Mediathek ist leer
             </h3>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Lade Musik, Jingles und Gongs hoch, um Playlists zusammenzustellen.
             </p>
           </CardContent>
@@ -225,7 +225,7 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
           {tracks.length >= SEARCH_THRESHOLD && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="relative sm:min-w-[200px] sm:flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -252,16 +252,16 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
           )}
 
           {visible.length === 0 ? (
-            <Card className="border-dashed border-slate-300 dark:border-slate-700">
+            <Card className="border-dashed border-input">
               <CardContent className="py-8 text-center">
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-muted-foreground">
                   Kein Titel passt zur Suche.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <Card className="border-slate-200 dark:border-slate-800">
-              <CardContent className="p-0 divide-y divide-slate-100 dark:divide-slate-800">
+            <Card>
+              <CardContent className="p-0 divide-y divide-border/60">
                 {visible.map((track) => (
                   <TrackItem
                     key={track.id}
@@ -275,7 +275,7 @@ export function LibraryPanel({ tracks, onChanged }: Props) {
             </Card>
           )}
 
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             {visible.length === tracks.length
               ? `${tracks.length} Titel`
               : `${visible.length} von ${tracks.length} Titeln`}
@@ -327,7 +327,7 @@ function TrackItem({
             {KIND_LABELS[track.kind]}
           </Badge>
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           {track.artist ? `${track.artist} · ` : ""}
           {formatDuration(track.durationSec)}
           {track.sizeBytes ? ` · ${(track.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}
@@ -340,7 +340,7 @@ function TrackItem({
         onClick={onRemove}
         aria-label={`${track.title} löschen`}
         title="Löschen"
-        className="h-10 w-10 shrink-0 text-red-600 hover:bg-red-50 sm:h-8 sm:w-8 dark:hover:bg-red-950"
+        className="h-10 w-10 shrink-0 text-destructive hover:bg-destructive/10 sm:h-8 sm:w-8"
       >
         <Trash2 className="h-4 w-4" />
       </Button>

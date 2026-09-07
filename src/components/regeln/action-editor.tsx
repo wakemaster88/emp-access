@@ -48,8 +48,8 @@ const selectClass =
   "h-8 w-full rounded-md border border-neutral-200 bg-transparent px-2 text-xs dark:border-neutral-800";
 
 const KIND_ICONS: Record<RuleActionKind, React.ReactNode> = {
-  DEVICE: <Zap className="h-3.5 w-3.5 text-amber-500" />,
-  NOTIFY: <Bell className="h-3.5 w-3.5 text-sky-500" />,
+  DEVICE: <Zap className="h-3.5 w-3.5 text-warning" />,
+  NOTIFY: <Bell className="h-3.5 w-3.5 text-info" />,
   AUDIO: <Volume2 className="h-3.5 w-3.5 text-violet-500" />,
 };
 
@@ -129,7 +129,7 @@ function DeviceFields({
       </div>
 
       {device && controls.length === 0 && (
-        <p className="text-[11px] text-amber-600 sm:col-span-3">
+        <p className="text-[11px] text-warning sm:col-span-3">
           Dieses Gerät lässt sich nicht schalten (Sensor).
         </p>
       )}
@@ -287,7 +287,7 @@ export function ActionEditor({
   return (
     <div className="space-y-2">
       {actions.length === 0 && (
-        <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+        <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
           Ohne Aktion passiert beim Auslösen nichts.
         </p>
       )}
@@ -336,7 +336,7 @@ export function ActionEditor({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 text-neutral-400 hover:text-red-600"
+                className="h-6 w-6 p-0 text-neutral-400 hover:text-destructive"
                 disabled={disabled}
                 onClick={() => onChange(actions.filter((_, i) => i !== index))}
                 title="Entfernen"

@@ -147,7 +147,7 @@ function DayRow({
                 }
               />
               {period.closesAt < period.opensAt && (
-                <span className="text-[11px] text-amber-600" title="Endet am Folgetag">
+                <span className="text-[11px] text-warning" title="Endet am Folgetag">
                   über Nacht
                 </span>
               )}
@@ -156,7 +156,7 @@ function DayRow({
                   variant="ghost"
                   size="sm"
                   disabled={disabled}
-                  className="h-7 w-7 p-0 text-neutral-400 hover:text-red-600"
+                  className="h-7 w-7 p-0 text-neutral-400 hover:text-destructive"
                   onClick={() => onChange(periods.filter((_, i) => i !== index))}
                   title="Zeitraum entfernen"
                 >
@@ -262,7 +262,7 @@ export function SeasonEditor({
           variant="ghost"
           size="sm"
           disabled={disabled}
-          className="h-8 w-8 p-0 text-neutral-400 hover:text-red-600"
+          className="h-8 w-8 p-0 text-neutral-400 hover:text-destructive"
           onClick={onRemove}
           title="Saison entfernen"
         >

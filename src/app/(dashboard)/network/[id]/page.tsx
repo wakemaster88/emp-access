@@ -66,26 +66,26 @@ export default async function NetworkDeviceDetailPage({ params }: Props) {
   return (
     <>
       <Header title={device.name} accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="page-content space-y-4 sm:space-y-6">
         <Link
           href="/network"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary"
         >
           <ArrowLeft className="h-4 w-4" />
           Zurück zum Netzwerk
         </Link>
 
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="flex flex-wrap items-center gap-4 p-4 sm:p-6">
-            <div className="h-12 w-12 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <Server className="h-6 w-6" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{device.name}</h2>
+                <h2 className="text-lg font-bold text-foreground">{device.name}</h2>
                 <Badge variant="secondary" className="text-xs">{TYPE_LABEL[device.type] ?? device.type}</Badge>
               </div>
-              <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-muted-foreground">
                 {[device.vendor, device.model].filter(Boolean).length > 0 && (
                   <span>{[device.vendor, device.model].filter(Boolean).join(" ")}</span>
                 )}
@@ -107,13 +107,13 @@ export default async function NetworkDeviceDetailPage({ params }: Props) {
                 </span>
               </div>
               {device.notes && (
-                <p className="text-xs text-slate-400 mt-1">{device.notes}</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">{device.notes}</p>
               )}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Ports</CardTitle>
           </CardHeader>

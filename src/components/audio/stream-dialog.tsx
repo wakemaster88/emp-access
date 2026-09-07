@@ -85,13 +85,13 @@ export function StreamDialog({ open, onClose, onSaved, stream }: Props) {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://stream.example.com/live.mp3"
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               Direkte Audio-Adresse (http oder https). In der Zone wählst du
               danach nur noch den Namen.
             </p>
           </div>
           {error && (
-            <p className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-600 dark:border-red-900/40 dark:bg-red-950/20">
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
               {error}
             </p>
           )}

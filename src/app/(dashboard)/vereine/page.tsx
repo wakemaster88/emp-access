@@ -102,12 +102,12 @@ export default async function VereinePage() {
   return (
     <>
       <Header title="Vereine" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Vereine ({vereine.length})</CardTitle>
             <CardDescription>
-              Vereine bündeln <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Mitglieds-Tickets</Link> und erben beim Scan automatisch den Zutritt der hinterlegten <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Zutritts-Tickets</Link> (z. B. „Bahnmiete“).
+              Vereine bündeln <Link href="/tickets" className="text-primary hover:underline">Mitglieds-Tickets</Link> und erben beim Scan automatisch den Zutritt der hinterlegten <Link href="/tickets" className="text-primary hover:underline">Zutritts-Tickets</Link> (z. B. „Bahnmiete“).
             </CardDescription>
           </CardHeader>
           <CardContent>

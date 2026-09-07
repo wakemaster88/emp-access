@@ -164,28 +164,28 @@ export function TwoFactorCard({
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="p-5 md:p-6 space-y-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             <div
               className={
                 enabled
-                  ? "h-10 w-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0"
-                  : "h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0"
+                  ? "h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center shrink-0"
+                  : "h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0"
               }
             >
               {enabled ? (
-                <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <ShieldCheck className="h-5 w-5 text-success" />
               ) : (
-                <ShieldOff className="h-5 w-5 text-slate-500" />
+                <ShieldOff className="h-5 w-5 text-muted-foreground" />
               )}
             </div>
             <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              <h2 className="text-base font-semibold text-foreground">
                 Zwei-Faktor-Authentifizierung
               </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-sm text-muted-foreground mt-0.5">
                 Zusätzlich zum Passwort ein Einmalcode aus einer Authenticator-App.
               </p>
             </div>
@@ -193,8 +193,8 @@ export function TwoFactorCard({
           <Badge
             className={
               enabled
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0"
-                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 shrink-0"
+                ? "bg-success/12 text-success shrink-0"
+                : "bg-muted text-muted-foreground shrink-0"
             }
           >
             {enabled ? "Aktiv" : "Inaktiv"}
@@ -202,7 +202,7 @@ export function TwoFactorCard({
         </div>
 
         {error && (
-          <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+          <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
             {error}
           </p>
         )}
@@ -211,7 +211,7 @@ export function TwoFactorCard({
           <div className="space-y-4">
             {enabled ? (
               <>
-                <div className="rounded-lg bg-slate-50 dark:bg-slate-900 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 space-y-1">
+                <div className="rounded-lg bg-muted/50 px-4 py-3 text-sm text-muted-foreground space-y-1">
                   {enabledAt && (
                     <p>
                       Eingerichtet am{" "}
@@ -224,7 +224,7 @@ export function TwoFactorCard({
                       })}
                     </p>
                   )}
-                  <p className={codesLeft <= 2 ? "text-amber-600 dark:text-amber-400 font-medium" : undefined}>
+                  <p className={codesLeft <= 2 ? "text-warning font-medium" : undefined}>
                     {codesLeft} Wiederherstellungscode{codesLeft === 1 ? "" : "s"} übrig
                   </p>
                 </div>
@@ -235,7 +235,7 @@ export function TwoFactorCard({
                   </Button>
                   <Button
                     variant="outline"
-                    className="text-rose-600 hover:text-rose-700 border-rose-200 dark:border-rose-900"
+                    className="text-destructive hover:text-destructive border-destructive/30"
                     onClick={() => { resetInputs(); setStage("disable"); }}
                   >
                     <ShieldOff className="h-4 w-4 mr-1.5" />
@@ -245,14 +245,14 @@ export function TwoFactorCard({
               </>
             ) : (
               <>
-                <div className="flex items-start gap-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                <div className="flex items-start gap-3 rounded-lg bg-warning/10 px-4 py-3">
+                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                  <p className="text-sm text-muted-foreground">
                     Ohne zweiten Faktor genügt ein erratenes oder abgegriffenes Passwort, um an alle Tickets,
                     Geräte und Kameras zu kommen.
                   </p>
                 </div>
-                <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { resetInputs(); setStage("start"); }}>
+                <Button onClick={() => { resetInputs(); setStage("start"); }}>
                   <Smartphone className="h-4 w-4 mr-1.5" />
                   Einrichten
                 </Button>
@@ -282,7 +282,7 @@ export function TwoFactorCard({
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={busy}>
+              <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
                 Weiter
               </Button>
@@ -301,22 +301,22 @@ export function TwoFactorCard({
               activate();
             }}
           >
-            <p className="text-sm text-slate-600 dark:text-slate-300">
+            <p className="text-sm text-muted-foreground">
               QR-Code in der Authenticator-App scannen (Google Authenticator, Microsoft Authenticator, 1Password,
               Aegis …) und anschließend den angezeigten Code eintragen.
             </p>
             <div className="flex flex-col sm:flex-row gap-5 items-start">
-              <div className="bg-white p-3 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+              <div className="bg-white p-3 rounded-xl border border-border shrink-0">
                 <canvas ref={canvasRef} className="rounded" />
               </div>
               <div className="space-y-2 min-w-0">
-                <p className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold">
                   Oder manuell eintragen
                 </p>
-                <code className="block font-mono text-sm bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-lg break-all select-all">
+                <code className="block font-mono text-sm bg-muted px-3 py-2 rounded-lg break-all select-all">
                   {setup.secretFormatted}
                 </code>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-muted-foreground/70">
                   Zeitbasiert, 6 Stellen, 30 Sekunden. Konto: {email}
                 </p>
               </div>
@@ -335,7 +335,7 @@ export function TwoFactorCard({
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={busy}>
+              <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
                 Aktivieren
               </Button>
@@ -348,9 +348,9 @@ export function TwoFactorCard({
 
         {stage === "codes" && recoveryCodes && (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+            <div className="flex items-start gap-3 rounded-lg bg-warning/10 px-4 py-3">
+              <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+              <p className="text-sm text-muted-foreground">
                 Diese Codes werden nur jetzt angezeigt. Jeder funktioniert genau einmal und ersetzt bei
                 verlorenem Handy den Code aus der App. Bitte ausdrucken oder in den Passwortmanager legen.
               </p>
@@ -359,7 +359,7 @@ export function TwoFactorCard({
               {recoveryCodes.map((c) => (
                 <code
                   key={c}
-                  className="font-mono text-sm text-center bg-slate-100 dark:bg-slate-800 px-2 py-1.5 rounded select-all"
+                  className="font-mono text-sm text-center bg-muted px-2 py-1.5 rounded select-all"
                 >
                   {c}
                 </code>
@@ -367,14 +367,14 @@ export function TwoFactorCard({
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={copyCodes}>
-                {copied ? <Check className="h-4 w-4 mr-1.5 text-emerald-600" /> : <Copy className="h-4 w-4 mr-1.5" />}
+                {copied ? <Check className="h-4 w-4 mr-1.5 text-success" /> : <Copy className="h-4 w-4 mr-1.5" />}
                 {copied ? "Kopiert" : "Kopieren"}
               </Button>
               <Button variant="outline" onClick={downloadCodes}>
                 <Download className="h-4 w-4 mr-1.5" />
                 Herunterladen
               </Button>
-              <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={backToOverview}>
+              <Button onClick={backToOverview}>
                 Fertig
               </Button>
             </div>
@@ -389,7 +389,7 @@ export function TwoFactorCard({
               disable();
             }}
           >
-            <p className="text-sm text-slate-600 dark:text-slate-300">
+            <p className="text-sm text-muted-foreground">
               Zum Abschalten Passwort und einen gültigen Code eingeben.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -437,7 +437,7 @@ export function TwoFactorCard({
               regenerate();
             }}
           >
-            <p className="text-sm text-slate-600 dark:text-slate-300">
+            <p className="text-sm text-muted-foreground">
               Neue Codes erzeugen – die bisherigen verlieren sofort ihre Gültigkeit.
             </p>
             <div className="space-y-2 max-w-sm">
@@ -453,7 +453,7 @@ export function TwoFactorCard({
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={busy}>
+              <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
                 Codes erzeugen
               </Button>

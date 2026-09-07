@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table,
   TableBody,
@@ -13,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { EditTicketDialog, type TicketData } from "./edit-ticket-dialog";
 import { fmtDateShort, fmtDateTimeShort, isDateOnly } from "@/lib/utils";
-import { UserCheck, MapPin, CreditCard, Package } from "lucide-react";
+import { UserCheck, MapPin, CreditCard, Package, SearchX, Ticket } from "lucide-react";
 
 interface Area {
   id: number;
@@ -77,7 +78,7 @@ function sourceBadge(source: string | null | undefined) {
       })();
   if (!source) {
     return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-300 text-slate-600 dark:border-slate-600 dark:text-slate-400 font-normal">
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-input text-muted-foreground dark:border-input dark:text-muted-foreground font-normal">
         {label}
       </Badge>
     );
@@ -92,7 +93,7 @@ function sourceBadge(source: string | null | undefined) {
   }
   if (s === "WAKESYS" || s === "EMP_CONTROL" || s === "BINARYTEC" || s === "SHELLY") {
     return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-indigo-300 text-indigo-600 dark:border-indigo-700 dark:text-indigo-400 font-normal">
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/40 text-primary font-normal">
         {label}
       </Badge>
     );
@@ -121,25 +122,25 @@ function isExpired(ticket: { endDate?: string | Date | null }): boolean {
 
 function statusBadge(status: string, ticket?: { endDate?: string | Date | null; extras?: Record<string, unknown> | null }) {
   if (ticket && (status === "VALID" || status === "REDEEMED") && isExpired(ticket)) {
-    return <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">Abgelaufen</Badge>;
+    return <Badge variant="danger">Abgelaufen</Badge>;
   }
   switch (status) {
     case "VALID":
-      return <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Gültig</Badge>;
+      return <Badge variant="success">Gültig</Badge>;
     case "REDEEMED":
-      return <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">Eingelöst</Badge>;
+      return <Badge variant="info">Eingelöst</Badge>;
     case "INVALID":
       return <Badge variant="destructive">Ungültig</Badge>;
     case "PAUSED":
       // Zahlungs-Pause (Auto-Pause bei offener Rechnung) deutlich kennzeichnen.
       if (ticket?.extras && (ticket.extras as Record<string, unknown>).paymentPause) {
-        return <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Zahlung offen</Badge>;
+        return <Badge variant="danger">Zahlung offen</Badge>;
       }
       return <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">Pausiert</Badge>;
     case "CANCELED":
-      return <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">Gekündigt</Badge>;
+      return <Badge variant="danger">Gekündigt</Badge>;
     case "PROTECTED":
-      return <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Geschützt</Badge>;
+      return <Badge variant="warning">Geschützt</Badge>;
     default:
       return <Badge variant="secondary">{status}</Badge>;
   }
@@ -171,10 +172,10 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
   if (vt === "TIME_SLOT") {
     const slot = ticket.slotStart && ticket.slotEnd ? `${ticket.slotStart}–${ticket.slotEnd}` : "Zeitslot";
     return (
-      <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+      <span className="text-xs text-muted-foreground whitespace-nowrap">
         {dateRangeStr && <span>{dateRangeStr}</span>}
         {dateRangeStr && " · "}
-        <span className="text-indigo-600 dark:text-indigo-400">{slot} Uhr</span>
+        <span className="text-primary">{slot} Uhr</span>
       </span>
     );
   }
@@ -182,19 +183,19 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
   if (vt === "DURATION") {
     const dur = ticket.validityDurationMinutes ? `${formatDuration(ticket.validityDurationMinutes)} ab Scan` : "Dauer ab Scan";
     return (
-      <span className="text-xs text-slate-600 dark:text-slate-400">
+      <span className="text-xs text-muted-foreground">
         {dateRangeStr && <span className="whitespace-nowrap">{dateRangeStr}</span>}
         {dateRangeStr && " · "}
         <span className="text-violet-600 dark:text-violet-400">{dur}</span>
         {ticket.firstScanAt && (
-          <span className="block text-[10px] text-slate-400 mt-0.5">Start: {fmtDateTimeShort(ticket.firstScanAt)}</span>
+          <span className="block text-[10px] text-muted-foreground/70 mt-0.5">Start: {fmtDateTimeShort(ticket.firstScanAt)}</span>
         )}
       </span>
     );
   }
 
   return (
-    <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
+    <span className="text-xs text-muted-foreground whitespace-nowrap">
       {dateRangeStr ?? "–"}
     </span>
   );
@@ -357,8 +358,12 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
           <TableBody>
             {tickets.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-slate-500 py-12">
-                  {searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
+                <TableCell colSpan={7} className="p-0">
+                  <EmptyState
+                    icon={searchCode ? SearchX : Ticket}
+                    title={searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
+                    description={searchCode ? "Prüfe den Code oder setze den Filter zurück." : "Neue Tickets erscheinen hier, sobald sie angelegt oder synchronisiert wurden."}
+                  />
                 </TableCell>
               </TableRow>
             )}
@@ -369,15 +374,15 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
               const hasPairs = ticketCount > personCount;
               return (
               <React.Fragment key={`${groupType}:${groupName}`}>
-                <TableRow className="bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      {groupType === "subscription" && <CreditCard className="h-3 w-3 text-indigo-500" />}
+                      {groupType === "subscription" && <CreditCard className="h-3 w-3 text-primary" />}
                       {groupType === "service" && <Package className="h-3 w-3 text-violet-500" />}
                       {groupName}
-                      {groupType === "subscription" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-indigo-200 text-indigo-500 dark:border-indigo-800 dark:text-indigo-400 font-normal ml-1">Abo</Badge>}
+                      {groupType === "subscription" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-primary/30 text-primary font-normal ml-1">Abo</Badge>}
                       {groupType === "service" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-violet-200 text-violet-500 dark:border-violet-800 dark:text-violet-400 font-normal ml-1">Service</Badge>}
-                      <span className="font-normal text-slate-400 dark:text-slate-500">
+                      <span className="font-normal text-muted-foreground/70">
                         ({personCount} {personCount === 1 ? "Person" : "Personen"}
                         {hasPairs ? ` / ${ticketCount} Tickets` : ""})
                       </span>
@@ -404,8 +409,8 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                     key={isPair ? `pair:${allMembers.map((m) => m.id).join(",")}` : ticket.id}
                     className={
                       readonly
-                        ? "hover:bg-slate-50 dark:hover:bg-slate-900/50"
-                        : "hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
+                        ? "hover:bg-muted/40"
+                        : "hover:bg-muted/40 cursor-pointer"
                     }
                     onClick={() => !readonly && setSelected(ticket)}
                   >
@@ -415,39 +420,39 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
                         ) : null}
                         <div className="min-w-0">
-                          <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                          <p className="font-medium text-foreground truncate">
                             {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                            {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-slate-400">({a})</span> : null; })()}
+                            {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground/70">({a})</span> : null; })()}
                           </p>
                           {(ticket.ticketTypeName || ticket.subscription?.name) && (
-                            <p className="text-xs text-slate-400 truncate">
+                            <p className="text-xs text-muted-foreground/70 truncate">
                               {ticket.ticketTypeName}
                               {ticket.ticketTypeName && ticket.subscription?.name && " · "}
                               {ticket.subscription?.name && (
-                                <span className="text-indigo-500 dark:text-indigo-400">{ticket.subscription.name}</span>
+                                <span className="text-primary">{ticket.subscription.name}</span>
                               )}
                             </p>
                           )}
                           {isPair && pairAreaNames.length > 0 && (
                             <p className="text-[10px] text-violet-500 dark:text-violet-400 mt-0.5 truncate">
                               {pairAreaNames.join(" + ")}
-                              <span className="text-slate-400 dark:text-slate-500"> · {allMembers.length} Tickets</span>
+                              <span className="text-muted-foreground/70"> · {allMembers.length} Tickets</span>
                             </p>
                           )}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell text-xs font-mono text-slate-500">
+                    <TableCell className="hidden lg:table-cell text-xs font-mono text-muted-foreground">
                       {displayCode(ticket)}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm">
                       {sourceBadge(ticket.source)}
                     </TableCell>
-                    <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                    <TableCell className="hidden xl:table-cell text-sm text-muted-foreground">
                       {ticket.ticketTypeName || "–"}
                     </TableCell>
                     <TableCell>{statusBadge(ticket.status, ticket)}</TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       <ValidityInfo ticket={ticket} />
                     </TableCell>
                     <TableCell className="text-right font-medium">
@@ -455,12 +460,12 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                         <Link
                           href={`/scans`}
                           onClick={(e) => e.stopPropagation()}
-                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                          className="text-primary hover:underline"
                         >
                           {totalScans}
                         </Link>
                       ) : (
-                        <span className="text-slate-400">0</span>
+                        <span className="text-muted-foreground/70">0</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -472,12 +477,12 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
 
             {employeeTickets.length > 0 && (
               <>
-                <TableRow className="bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/20">
-                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                <TableRow className="bg-success/10 hover:bg-success/10">
+                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-success">
                     <span className="flex items-center gap-1.5">
                       <UserCheck className="h-3.5 w-3.5" />
                       Mitarbeiter
-                      <span className="font-normal text-emerald-500 dark:text-emerald-500/70">
+                      <span className="font-normal text-success">
                         ({employeeTickets.length})
                       </span>
                     </span>
@@ -488,7 +493,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                   return (
                     <TableRow
                       key={ticket.id}
-                      className={readonly ? "" : "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/50"}
+                      className={readonly ? "" : "cursor-pointer hover:bg-muted/40"}
                       onClick={() => !readonly && setSelected(ticket)}
                     >
                       <TableCell>
@@ -496,21 +501,21 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           {ticket.profileImage ? (
                             <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
                           ) : (
-                            <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
-                              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                            <div className="h-8 w-8 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+                              <span className="text-xs font-bold text-success">
                                 {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
                               </span>
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                            <p className="font-medium text-foreground truncate">
                               {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-slate-400">({a})</span> : null; })()}
+                              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground/70">({a})</span> : null; })()}
                             </p>
                             {empAreas.length > 0 && (
                               <div className="flex items-center gap-1 flex-wrap mt-0.5">
                                 {empAreas.map((a) => (
-                                  <Badge key={a.id} variant="outline" className="text-[9px] px-1 py-0 border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400 font-normal gap-0.5">
+                                  <Badge key={a.id} variant="outline" className="text-[9px] px-1 py-0 border-success/30 text-success font-normal gap-0.5">
                                     <MapPin className="h-2 w-2" />
                                     {a.name}
                                   </Badge>
@@ -520,26 +525,26 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs font-mono text-slate-500">
+                      <TableCell className="hidden lg:table-cell text-xs font-mono text-muted-foreground">
                         {displayCode(ticket)}
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-sm">
                         {sourceBadge(ticket.source)}
                       </TableCell>
-                      <TableCell className="hidden xl:table-cell text-sm text-slate-500">
+                      <TableCell className="hidden xl:table-cell text-sm text-muted-foreground">
                         Mitarbeiter
                       </TableCell>
                       <TableCell>{statusBadge(ticket.status, ticket)}</TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-slate-500">
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                         <ValidityInfo ticket={ticket} />
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {ticket._count.scans > 0 ? (
-                          <Link href="/scans" onClick={(e) => e.stopPropagation()} className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                          <Link href="/scans" onClick={(e) => e.stopPropagation()} className="text-primary hover:underline">
                             {ticket._count.scans}
                           </Link>
                         ) : (
-                          <span className="text-slate-400">0</span>
+                          <span className="text-muted-foreground/70">0</span>
                         )}
                       </TableCell>
                     </TableRow>

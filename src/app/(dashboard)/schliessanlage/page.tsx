@@ -200,7 +200,7 @@ export default async function SchliessanlagePage() {
   return (
     <>
       <Header title="Schließanlage" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <SchliessanlageClient
           data={{
             rooms: roomRows,

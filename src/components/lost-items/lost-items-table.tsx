@@ -81,8 +81,8 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
               className={cn(
                 "px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors",
                 filter === f.id
-                  ? "bg-indigo-600 border-indigo-600 text-white"
-                  : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  ? "bg-primary border-primary text-white"
+                  : "border-border text-muted-foreground hover:bg-muted/50"
               )}
             >
               {f.label}
@@ -93,7 +93,7 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
           <Button
             onClick={() => setAddOpen(true)}
             type="button"
-            className="bg-indigo-600 hover:bg-indigo-700 gap-2 shadow-sm sm:ml-auto"
+            className="bg-primary hover:bg-primary/90 gap-2 shadow-sm sm:ml-auto"
           >
             <Plus className="h-4 w-4" />
             Eintrag anlegen
@@ -101,25 +101,25 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
         )}
       </div>
 
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+      <div className="rounded-lg border border-border overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-slate-200 dark:border-slate-700 hover:bg-transparent bg-slate-50/80 dark:bg-slate-900/50">
-              <TableHead className="w-16 text-slate-600 dark:text-slate-400 font-medium">Bild</TableHead>
-              <TableHead className="text-slate-600 dark:text-slate-400 font-medium">Beschreibung</TableHead>
-              <TableHead className="hidden sm:table-cell w-[120px] text-slate-600 dark:text-slate-400 font-medium">Datum</TableHead>
-              <TableHead className="hidden md:table-cell w-[200px] text-slate-600 dark:text-slate-400 font-medium">Kontakt</TableHead>
-              <TableHead className="w-[120px] text-right text-slate-600 dark:text-slate-400 font-medium">Status</TableHead>
-              {!readonly && <TableHead className="w-[130px] text-right text-slate-600 dark:text-slate-400 font-medium" />}
+            <TableRow className="border-border hover:bg-transparent bg-muted/40">
+              <TableHead className="w-16 text-muted-foreground font-medium">Bild</TableHead>
+              <TableHead className="text-muted-foreground font-medium">Beschreibung</TableHead>
+              <TableHead className="hidden sm:table-cell w-[120px] text-muted-foreground font-medium">Datum</TableHead>
+              <TableHead className="hidden md:table-cell w-[200px] text-muted-foreground font-medium">Kontakt</TableHead>
+              <TableHead className="w-[120px] text-right text-muted-foreground font-medium">Status</TableHead>
+              {!readonly && <TableHead className="w-[130px] text-right text-muted-foreground font-medium" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow className="hover:bg-transparent border-slate-200 dark:border-slate-700">
+              <TableRow className="hover:bg-transparent border-border">
                 <TableCell colSpan={readonly ? 5 : 6} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3 text-slate-500">
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
                     <PackageSearch className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                    <p className="font-medium text-slate-600 dark:text-slate-400">
+                    <p className="font-medium text-muted-foreground">
                       {filter === "all" ? "Noch keine Einträge erfasst" : "Keine Einträge in dieser Ansicht"}
                     </p>
                   </div>
@@ -133,8 +133,8 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                 <TableRow
                   key={item.id}
                   className={cn(
-                    "border-slate-200 dark:border-slate-700 transition-colors",
-                    !readonly && "cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20",
+                    "border-border transition-colors",
+                    !readonly && "cursor-pointer hover:bg-primary/10 ",
                     item.pickedUp && "opacity-60"
                   )}
                   onClick={() => !readonly && setSelected(item)}
@@ -145,14 +145,14 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                       <img
                         src={item.image}
                         alt={item.description}
-                        className="h-12 w-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
+                        className="h-12 w-12 rounded-lg object-cover border border-border"
                       />
                     ) : (
-                      <div className="h-12 w-12 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                      <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center">
                         {isLostReport ? (
-                          <User className="h-5 w-5 text-slate-400" />
+                          <User className="h-5 w-5 text-muted-foreground/70" />
                         ) : (
-                          <ImageOff className="h-5 w-5 text-slate-400" />
+                          <ImageOff className="h-5 w-5 text-muted-foreground/70" />
                         )}
                       </div>
                     )}
@@ -165,36 +165,36 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
                           "shrink-0 text-[10px] px-1.5 py-0",
                           isLostReport
                             ? "border-violet-300 text-violet-700 dark:border-violet-800 dark:text-violet-300"
-                            : "border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-300"
+                            : "border-warning/30 text-warning "
                         )}
                       >
                         {isLostReport ? "Verlust" : "Fund"}
                       </Badge>
-                      <p className="font-medium text-slate-900 dark:text-slate-100 line-clamp-2">{item.description}</p>
+                      <p className="font-medium text-foreground line-clamp-2">{item.description}</p>
                     </div>
-                    <p className="sm:hidden text-[11px] text-slate-400 mt-0.5">{formatDate(item.foundDate)}</p>
+                    <p className="sm:hidden text-[11px] text-muted-foreground/70 mt-0.5">{formatDate(item.foundDate)}</p>
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell text-slate-600 dark:text-slate-400 tabular-nums">
+                  <TableCell className="hidden sm:table-cell text-muted-foreground tabular-nums">
                     {formatDate(item.foundDate)}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-slate-600 dark:text-slate-400">
+                  <TableCell className="hidden md:table-cell text-muted-foreground">
                     {contact ? (
                       <span className="inline-flex items-center gap-1.5 text-sm">
-                        <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
                         <span className="truncate max-w-[170px]">{contact}</span>
                       </span>
                     ) : (
-                      <span className="text-slate-400">–</span>
+                      <span className="text-muted-foreground/70">–</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right">
                     {item.pickedUp ? (
-                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1">
+                      <Badge variant="success" className="gap-1">
                         <CheckCircle2 className="h-3 w-3" />
                         Erledigt
                       </Badge>
                     ) : (
-                      <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 gap-1">
+                      <Badge className="bg-warning/10 text-warning gap-1">
                         <Clock className="h-3 w-3" />
                         Offen
                       </Badge>

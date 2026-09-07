@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { neonConfig } from "@neondatabase/serverless";
 import { TENANT_MODELS } from "./tenant-models";
 
@@ -13,9 +14,12 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const adapter = new PrismaNeon({
-    connectionString: process.env.DATABASE_URL!,
-  });
+  const connectionString = process.env.DATABASE_URL!;
+  // Der Neon-Adapter spricht nur mit Neon (HTTP/WebSocket-Proxy). Gegen ein
+  // gewoehnliches Postgres – lokal in der Entwicklung – laeuft der pg-Treiber.
+  const adapter = /neon\.tech/.test(connectionString)
+    ? new PrismaNeon({ connectionString })
+    : new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }
 

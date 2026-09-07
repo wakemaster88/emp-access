@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StatCard } from "@/components/ui/stat-card";
 import { EaboAnalytics } from "@/components/analytics/e-abo-analytics";
 import {
   BarChart,
@@ -112,29 +113,6 @@ function fmtRange(start: string, end: string, mode: string): string {
 const COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#5b21b6"];
 const PIE_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
 
-function StatCard({ icon: Icon, label, value, sub, color }: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string | number;
-  sub?: string;
-  color: string;
-}) {
-  return (
-    <Card className="border-slate-200 dark:border-slate-800 py-0">
-      <CardContent className="p-3 sm:p-4 flex items-center gap-3">
-        <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", color)}>
-          <Icon className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">{value}</p>
-          <p className="text-[11px] text-slate-500 truncate">{label}</p>
-          {sub && <p className="text-[10px] text-slate-400 truncate">{sub}</p>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export function AnalyticsClient() {
   const [mode, setMode] = useState<Mode>("week");
   const [date, setDate] = useState(toLocaleDateStr(new Date()));
@@ -203,7 +181,7 @@ export function AnalyticsClient() {
         <TabsContent value="general" className="space-y-4 mt-0">
       {/* Period selector */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+        <div className="flex gap-0.5 bg-muted rounded-lg p-0.5">
           {modes.map((m) => (
             <button
               key={m.id}
@@ -212,8 +190,8 @@ export function AnalyticsClient() {
               className={cn(
                 "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                 mode === m.id
-                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               {m.label}
@@ -233,7 +211,7 @@ export function AnalyticsClient() {
               <ChevronRight className="h-4 w-4" />
             </Button>
             {data && (
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300 ml-1">
+              <span className="text-sm font-medium text-foreground/80 ml-1">
                 {fmtRange(data.rangeStart, data.rangeEnd, data.mode)}
               </span>
             )}
@@ -246,7 +224,7 @@ export function AnalyticsClient() {
               value={customFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
             />
-            <span className="text-xs text-slate-400">–</span>
+            <span className="text-xs text-muted-foreground/70">–</span>
             <Input
               type="date"
               className="h-8 text-xs w-36"
@@ -256,43 +234,43 @@ export function AnalyticsClient() {
           </div>
         )}
 
-        {loading && <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />}
+        {loading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
       </div>
 
       {/* Summary cards */}
       {s && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard icon={ScanLine} label="Scans gesamt" value={s.totalScans} color="bg-indigo-500" />
+          <StatCard icon={ScanLine} label="Scans gesamt" value={s.totalScans} tone="primary" />
           <StatCard
             icon={ShieldCheck}
             label="Erlaubt"
             value={s.grantedScans}
-            sub={`${s.grantRate}% Erfolgsrate`}
-            color="bg-emerald-500"
+            hint={`${s.grantRate}% Erfolgsrate`}
+            tone="success"
           />
-          <StatCard icon={ShieldX} label="Abgelehnt" value={s.deniedScans} color="bg-rose-500" />
+          <StatCard icon={ShieldX} label="Abgelehnt" value={s.deniedScans} tone="danger" />
           <StatCard
             icon={Ticket}
             label="Aktive Tickets"
             value={s.totalTickets}
-            sub={`${s.annyTickets} via ANNY`}
-            color="bg-violet-500"
+            hint={`${s.annyTickets} via ANNY`}
+            tone="violet"
           />
         </div>
       )}
 
       {/* Main chart: Scans timeline */}
       {data && data.timeline.length > 0 && (
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="p-3 sm:p-5">
             <div className="flex items-center gap-2 mb-3">
-              <BarChart3 className="h-4 w-4 text-indigo-500" />
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Scan-Verlauf</h3>
+              <BarChart3 className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground/80">Scan-Verlauf</h3>
               <div className="flex items-center gap-3 ml-auto">
-                <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Erlaubt
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-success" /> Erlaubt
                 </span>
-                <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                   <span className="h-2 w-2 rounded-full bg-rose-400" /> Abgelehnt
                 </span>
               </div>
@@ -347,11 +325,11 @@ export function AnalyticsClient() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Tickets by type */}
           {data.byType.length > 0 && (
-            <Card className="border-slate-200 dark:border-slate-800">
+            <Card>
               <CardContent className="p-3 sm:p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <Users className="h-4 w-4 text-violet-500" />
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Tickets nach Typ</h3>
+                  <h3 className="text-sm font-semibold text-foreground/80">Tickets nach Typ</h3>
                 </div>
                 <div className="h-[200px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -389,7 +367,7 @@ export function AnalyticsClient() {
                         className="h-2.5 w-2.5 rounded-full shrink-0"
                         style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
                       />
-                      <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate flex-1">{t.name}</span>
+                      <span className="text-[11px] text-muted-foreground truncate flex-1">{t.name}</span>
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t.count}</Badge>
                     </div>
                   ))}
@@ -400,11 +378,11 @@ export function AnalyticsClient() {
 
           {/* Scans by device */}
           {data.byDevice.length > 0 && (
-            <Card className="border-slate-200 dark:border-slate-800">
+            <Card>
               <CardContent className="p-3 sm:p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <ScanLine className="h-4 w-4 text-indigo-500" />
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Scans nach Gerät</h3>
+                  <ScanLine className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-foreground/80">Scans nach Gerät</h3>
                 </div>
                 <div className="h-[200px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -443,11 +421,11 @@ export function AnalyticsClient() {
 
           {/* Peak hours */}
           {s && s.totalScans > 0 && (
-            <Card className="border-slate-200 dark:border-slate-800">
+            <Card>
               <CardContent className="p-3 sm:p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <Clock className="h-4 w-4 text-amber-500" />
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Stoßzeiten</h3>
+                  <Clock className="h-4 w-4 text-warning" />
+                  <h3 className="text-sm font-semibold text-foreground/80">Stoßzeiten</h3>
                 </div>
                 <div className="h-[200px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -488,11 +466,11 @@ export function AnalyticsClient() {
 
       {/* Area utilization */}
       {data && data.byArea.length > 0 && (
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="p-3 sm:p-5">
             <div className="flex items-center gap-2 mb-3">
-              <BarChart3 className="h-4 w-4 text-emerald-500" />
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Auslastung nach Bereich</h3>
+              <BarChart3 className="h-4 w-4 text-success" />
+              <h3 className="text-sm font-semibold text-foreground/80">Auslastung nach Bereich</h3>
             </div>
             <div className="h-[180px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -528,10 +506,10 @@ export function AnalyticsClient() {
 
       {/* Empty state */}
       {data && s && s.totalScans === 0 && s.totalTickets === 0 && (
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="py-16 text-center">
             <BarChart3 className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-            <p className="text-sm text-slate-500">Keine Daten für diesen Zeitraum</p>
+            <p className="text-sm text-muted-foreground">Keine Daten für diesen Zeitraum</p>
           </CardContent>
         </Card>
       )}

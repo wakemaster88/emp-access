@@ -97,14 +97,14 @@ function CoverMotionBadge({
 
   if (cover.motion === "conflict") {
     return (
-      <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 gap-1.5 text-xs">
+      <Badge variant="danger" className="gap-1.5 text-xs">
         <AlertTriangle className="h-3 w-3" /> {label} – sofort stoppen
       </Badge>
     );
   }
   if (cover.motion === "opening" || cover.motion === "closing") {
     return (
-      <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5 text-xs">
+      <Badge variant="warning" className="gap-1.5 text-xs">
         {cover.motion === "opening"
           ? <ArrowUpFromLine className="h-3 w-3" />
           : <ArrowDownToLine className="h-3 w-3" />}
@@ -113,7 +113,7 @@ function CoverMotionBadge({
     );
   }
   return (
-    <Badge variant="secondary" className="gap-1.5 text-slate-500 text-xs">
+    <Badge variant="secondary" className="gap-1.5 text-muted-foreground text-xs">
       <Square className="h-3 w-3" /> {label}
     </Badge>
   );
@@ -122,23 +122,23 @@ function CoverMotionBadge({
 // ─── Action definitions ───────────────────────────────────────────────────────
 
 const ACCESS_ACTIONS = [
-  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, base: "bg-rose-600 hover:bg-rose-700 text-white",    activeTask: 2 },
-  { key: "open",       label: "Öffnen",       icon: DoorOpen,      base: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
-  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   base: "bg-amber-500 hover:bg-amber-600 text-white",   activeTask: 3 },
+  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, base: "bg-destructive hover:bg-destructive/90 text-white",    activeTask: 2 },
+  { key: "open",       label: "Öffnen",       icon: DoorOpen,      base: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
+  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   base: "bg-warning hover:bg-warning/90 text-warning-foreground",   activeTask: 3 },
   { key: "reset",      label: "Reset",        icon: RotateCcw,     base: "bg-slate-600 hover:bg-slate-700 text-white",   activeTask: 0 },
 ];
 const TUER_ACTIONS = ACCESS_ACTIONS.filter((a) => a.key !== "emergency");
 // Nuki Smart Lock: nur Öffnen/Abschließen – Web-API kennt kein "deaktivieren"
 // und kein "reset", LOCK ist gleich Abschließen.
 const NUKI_ACTIONS = [
-  { key: "open",       label: "Öffnen",      icon: DoorOpen, base: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
+  { key: "open",       label: "Öffnen",      icon: DoorOpen, base: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
   { key: "deactivate", label: "Abschließen", icon: Lock,     base: "bg-slate-700 hover:bg-slate-800 text-white",     activeTask: 3 },
 ];
 // LOQED: drei echte Riegelzustände. "Entriegeln" ist die Tagverriegelung –
 // Tür zu, aber von innen per Klinke zu öffnen.
 const LOQED_ACTIONS = [
-  { key: "open",       label: "Öffnen",      icon: DoorOpen,  base: "bg-emerald-600 hover:bg-emerald-700 text-white", activeTask: 1 },
-  { key: "reset",      label: "Entriegeln",  icon: LockOpen,  base: "bg-amber-500 hover:bg-amber-600 text-white",     activeTask: 0 },
+  { key: "open",       label: "Öffnen",      icon: DoorOpen,  base: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
+  { key: "reset",      label: "Entriegeln",  icon: LockOpen,  base: "bg-warning hover:bg-warning/90 text-warning-foreground",     activeTask: 0 },
   { key: "deactivate", label: "Abschließen", icon: Lock,      base: "bg-slate-700 hover:bg-slate-800 text-white",     activeTask: 3 },
 ];
 
@@ -272,12 +272,12 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
       ) : shellyStatus ? (
         <>
           {shellyStatus.online ? (
-            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1.5 text-xs">
+            <Badge variant="success" className="gap-1.5 text-xs">
               <Wifi className="h-3 w-3" /> Online
               <span className="opacity-50 text-[10px]">({shellyStatus.source})</span>
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1.5 text-slate-400 text-xs">
+            <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
               <WifiOff className="h-3 w-3" /> Offline
             </Badge>
           )}
@@ -289,12 +289,12 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             // ein Schaltkanal, waere dessen Zustand hier irrefuehrend.
             null
           ) : shellyStatus.output === true ? (
-            <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 gap-1.5 text-xs">
+            <Badge variant="warning" className="gap-1.5 text-xs">
               <Power className="h-3 w-3" />
               {device.category === "BELEUCHTUNG" ? "Eingeschaltet" : isPulse ? "Läuft" : "Ein"}
             </Badge>
           ) : shellyStatus.output === false ? (
-            <Badge variant="secondary" className="gap-1.5 text-slate-500 text-xs">
+            <Badge variant="secondary" className="gap-1.5 text-muted-foreground text-xs">
               <PowerOff className="h-3 w-3" />
               {device.category === "BELEUCHTUNG" ? "Ausgeschaltet" : "Aus"}
             </Badge>
@@ -307,8 +307,8 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
           )}
 
           {shellyStatus.power !== undefined && shellyStatus.power > 0.5 && (
-            <Badge variant="outline" className="gap-1 text-xs text-slate-500">
-              <Zap className="h-3 w-3 text-amber-500" />
+            <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
+              <Zap className="h-3 w-3 text-warning" />
               {shellyStatus.power.toFixed(1)} W
             </Badge>
           )}
@@ -323,7 +323,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
           </button>
         </>
       ) : (
-        <Badge variant="secondary" className="gap-1.5 text-slate-400 text-xs">
+        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
           <WifiOff className="h-3 w-3" /> Nicht erreichbar
         </Badge>
       )}
@@ -344,21 +344,21 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
       ) : gardenaStatus && gardenaStatus.source !== "unavailable" ? (
         <>
           {gardenaStatus.online ? (
-            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1.5 text-xs">
+            <Badge variant="success" className="gap-1.5 text-xs">
               <Wifi className="h-3 w-3" /> Online
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1.5 text-slate-400 text-xs">
+            <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
               <WifiOff className="h-3 w-3" /> Offline
             </Badge>
           )}
 
           {gardenaStatus.watering ? (
-            <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 gap-1.5 text-xs">
+            <Badge variant="info" className="gap-1.5 text-xs">
               <Droplets className="h-3 w-3" /> {gardenaActivityLabel(gardenaStatus.activity)}
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1.5 text-slate-500 text-xs">
+            <Badge variant="secondary" className="gap-1.5 text-muted-foreground text-xs">
               <Square className="h-3 w-3" /> {gardenaActivityLabel(gardenaStatus.activity)}
             </Badge>
           )}
@@ -366,7 +366,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
           {hasBattery && gardenaBattery != null && (
             <Badge variant="outline" className={cn(
               "gap-1 text-xs",
-              gardenaBattery < 20 ? "text-rose-600 dark:text-rose-400" : "text-slate-500",
+              gardenaBattery < 20 ? "text-destructive" : "text-muted-foreground",
             )}>
               {gardenaBattery < 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />}
               {gardenaBattery}%
@@ -383,7 +383,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
           </button>
         </>
       ) : (
-        <Badge variant="secondary" className="gap-1.5 text-slate-400 text-xs">
+        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
           <WifiOff className="h-3 w-3" /> Nicht erreichbar
         </Badge>
       )}
@@ -396,7 +396,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
     // Sensor: no controls
     if (isSensor) {
       return (
-        <span className="flex items-center gap-1.5 text-xs text-slate-400 px-1 italic">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70 px-1 italic">
           <Activity className="h-3.5 w-3.5" /> Sensor – nur Anzeige
         </span>
       );
@@ -419,14 +419,14 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
       const watering = gardenaStatus?.watering === true;
       return (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-slate-500 mr-1">Bewässern:</span>
+          <span className="text-xs font-medium text-muted-foreground mr-1">Bewässern:</span>
           {GARDENA_DURATIONS.map((min) => (
             <Button
               key={min}
               size="sm"
               onClick={() => handleAction("open", min)}
               disabled={loading !== null}
-              className="bg-sky-600 hover:bg-sky-700 text-white gap-1.5"
+              className="bg-info hover:bg-info/90 text-info-foreground gap-1.5"
             >
               {loading === `open:${min}`
                 ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -442,7 +442,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
               "gap-1.5",
               watering
                 ? "bg-slate-700 hover:bg-slate-800 text-white"
-                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700",
+                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground border border-input",
             )}
           >
             {loading === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
@@ -460,7 +460,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
 
       if (cover && !cover.configured) {
         return (
-          <span className="flex items-center gap-1.5 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <span className="flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning">
             <Settings2 className="h-3.5 w-3.5 shrink-0" />
             Kanäle für Auf und Zu fehlen – bitte unter „Bearbeiten“ zuordnen.
           </span>
@@ -473,7 +473,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             size="sm"
             onClick={() => handleAction("open")}
             disabled={loading !== null}
-            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
           >
             {loading === "open"
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -489,7 +489,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
               "gap-1.5",
               moving
                 ? "bg-slate-700 hover:bg-slate-800 text-white"
-                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700",
+                : "bg-muted text-muted-foreground border border-input hover:bg-accent",
             )}
           >
             {loading === "stop"
@@ -502,7 +502,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             size="sm"
             onClick={() => handleAction("close")}
             disabled={loading !== null}
-            className="gap-1.5 bg-sky-700 hover:bg-sky-800 text-white"
+            className="gap-1.5 bg-info hover:bg-info/90 text-info-foreground"
           >
             {loading === "close"
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -524,7 +524,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             size="sm"
             onClick={() => handleAction("open")}
             disabled={loading !== null}
-            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
           >
             {loading === "open"
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -540,14 +540,14 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
               "gap-1.5",
               running
                 ? "bg-slate-700 hover:bg-slate-800 text-white"
-                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700",
+                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground border border-input",
             )}
           >
             {loading === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <PowerOff className="h-4 w-4" />}
             Ausschalten
           </Button>
 
-          <span className="flex items-center text-xs text-slate-400 px-1">
+          <span className="flex items-center text-xs text-muted-foreground/70 px-1">
             schaltet für {formatPulseDuration(seconds)} ein
           </span>
         </>
@@ -571,7 +571,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             "gap-1.5 transition-all",
             isOn
               ? "bg-slate-700 hover:bg-slate-800 text-white"
-              : "bg-emerald-600 hover:bg-emerald-700 text-white",
+              : "bg-success hover:bg-success/90 text-success-foreground",
           )}
         >
           {loading === action
@@ -632,7 +632,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
       {actionError && (
         <p
           role="alert"
-          className="mt-2 flex items-start gap-2 rounded-lg border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-950/20 px-3 py-2 text-xs text-rose-700 dark:text-rose-400"
+          className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/30/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
         >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           {actionError}

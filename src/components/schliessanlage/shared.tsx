@@ -71,25 +71,25 @@ export function canOpenLock(type: string, category: string | null): boolean {
 }
 
 const LEVEL_CLASSES: Record<string, string> = {
-  SINGLE: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-  GROUP: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+  SINGLE: "bg-muted text-muted-foreground",
+  GROUP: "bg-info/12 text-info",
   MAIN: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-  GRAND: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  GRAND: "bg-warning/14 text-warning",
 };
 
 const KEY_STATUS_CLASSES: Record<string, string> = {
-  AVAILABLE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  ISSUED: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  LOST: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
-  DESTROYED: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+  AVAILABLE: "bg-success/12 text-success",
+  ISSUED: "bg-warning/10 text-warning ",
+  LOST: "bg-destructive/12 text-destructive",
+  DESTROYED: "bg-border text-muted-foreground dark:bg-accent dark:text-foreground/80",
 };
 
 const HANDOVER_STATUS_CLASSES: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-  ISSUED: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  PARTIALLY_RETURNED: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
-  RETURNED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  LOST: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+  DRAFT: "bg-muted text-muted-foreground",
+  ISSUED: "bg-warning/10 text-warning ",
+  PARTIALLY_RETURNED: "bg-info/12 text-info",
+  RETURNED: "bg-success/12 text-success",
+  LOST: "bg-destructive/12 text-destructive",
 };
 
 export function LevelBadge({ level }: { level: string }) {
@@ -179,7 +179,7 @@ export async function apiRequest<T = unknown>(
 export function ErrorLine({ message }: { message: string }) {
   if (!message) return null;
   return (
-    <p className="rounded bg-rose-50 px-2 py-1.5 text-xs text-rose-600 dark:bg-rose-950/30">
+    <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
       {message}
     </p>
   );
@@ -187,7 +187,7 @@ export function ErrorLine({ message }: { message: string }) {
 
 export function EmptyHint({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-md border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+    <p className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground/70 dark:border-border">
       {children}
     </p>
   );

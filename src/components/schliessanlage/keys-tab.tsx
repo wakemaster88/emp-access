@@ -45,7 +45,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
   const issuedCount = keys.filter((k) => k.status === "ISSUED").length;
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardHeader className="pb-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -66,7 +66,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
               <Button
                 size="sm"
                 onClick={() => setDialog({ keyItem: null })}
-                className="h-8 bg-indigo-600 hover:bg-indigo-700"
+                className="h-8 bg-primary hover:bg-primary/90"
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Schlüssel
@@ -79,19 +79,19 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
           <div className="relative min-w-48 flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Nummer, Bezeichnung oder Schloss suchen…"
-              className="h-9 w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900"
+              className="h-9 w-full rounded-md border border-border bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-card"
             />
           </div>
           <select
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value)}
-            className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className="h-9 rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
           >
             <option value="">Alle Arten</option>
             {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
@@ -103,7 +103,7 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className="h-9 rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
           >
             <option value="">Alle Status</option>
             {Object.entries(KEY_STATUS_LABELS).map(([value, text]) => (
@@ -142,17 +142,17 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                     <TableCell className="font-mono text-xs font-medium">
                       <span className="inline-flex items-center gap-1.5">
                         {k.level === "GRAND" ? (
-                          <Crown className="h-3.5 w-3.5 text-amber-500" />
+                          <Crown className="h-3.5 w-3.5 text-warning" />
                         ) : (
-                          <KeyRound className="h-3.5 w-3.5 text-slate-400" />
+                          <KeyRound className="h-3.5 w-3.5 text-muted-foreground/70" />
                         )}
                         {k.keyNumber}
                       </span>
                     </TableCell>
                     <TableCell className="text-xs">
-                      {k.label || <span className="text-slate-400">—</span>}
+                      {k.label || <span className="text-muted-foreground/70">—</span>}
                       {k.notes && (
-                        <span className="ml-1 text-[10px] text-slate-400">· {k.notes}</span>
+                        <span className="ml-1 text-[10px] text-muted-foreground/70">· {k.notes}</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -161,9 +161,9 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                     <TableCell>
                       <KeyStatusBadge status={k.status} />
                     </TableCell>
-                    <TableCell className="text-xs text-slate-500 dark:text-slate-400">
+                    <TableCell className="text-xs text-muted-foreground">
                       {k.lockLabels.length === 0 ? (
-                        <span className="text-slate-400">kein Schloss</span>
+                        <span className="text-muted-foreground/70">kein Schloss</span>
                       ) : k.lockLabels.length <= 2 ? (
                         k.lockLabels.join(" · ")
                       ) : (

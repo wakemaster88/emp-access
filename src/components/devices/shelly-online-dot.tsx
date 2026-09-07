@@ -35,18 +35,18 @@ export function ShellyOnlineDot({ deviceId }: Props) {
   return (
     <div className="flex items-center gap-1.5">
       {online ? (
-        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        <Badge variant="success" className="gap-1 text-xs">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" />
           Online
         </Badge>
       ) : (
-        <Badge variant="secondary" className="text-slate-400 gap-1 text-xs">
+        <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs">
           <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
           Offline
         </Badge>
       )}
       {online && output !== null && (
-        <span className={`text-xs font-medium ${output ? "text-amber-600 dark:text-amber-400" : "text-slate-400"}`}>
+        <span className={`text-xs font-medium ${output ? "text-warning" : "text-muted-foreground/70"}`}>
           {output ? "Ein" : "Aus"}
         </span>
       )}

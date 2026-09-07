@@ -205,7 +205,7 @@ export function ZoneDialog({
               </SelectContent>
             </Select>
             {availableDevices.length === 0 && (
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Noch kein freies Audio-Gerät. Unter „Geräte&quot; einen Abspieler vom Typ
                 AUDIO_PLAYER anlegen.
               </p>
@@ -227,7 +227,7 @@ export function ZoneDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Über den Raum bekommt die Zone ihre Betriebszeit: Zeitpläne mit „Betriebsbeginn“
               oder „Betriebsende“ richten sich danach, und die Zone erscheint im Raum-Leitstand.
             </p>
@@ -250,7 +250,7 @@ export function ZoneDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {SOURCES.find((s) => s.value === defaultSource)?.hint}
             </p>
           </div>
@@ -288,7 +288,7 @@ export function ZoneDialog({
               </SelectContent>
             </Select>
             {streams.length === 0 && (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Noch kein Sender. Unter dem Reiter „Webradio“ anlegen, dann hier
                 auswählen.
               </p>
@@ -303,7 +303,7 @@ export function ZoneDialog({
               onChange={(e) => setSyncGroup(e.target.value)}
               placeholder="z. B. aussen"
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Zonen mit gleicher Sync-Gruppe spielen synchron – nötig, wenn man sie
               gleichzeitig hört.
             </p>
@@ -341,14 +341,14 @@ export function ZoneDialog({
               />
             </div>
           </div>
-          <p className="text-xs text-slate-500 -mt-1">
+          <p className="text-xs text-muted-foreground -mt-1">
             In der Ruhezeit läuft keine Musik. Durchsagen werden trotzdem abgespielt.
           </p>
 
-          <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+          <div className="space-y-2 rounded-lg border border-border p-3 dark:border-border">
             <div>
               <Label>Senden vom Handy</Label>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Ein Sender übernimmt die Zone, sobald er sich verbindet. Die eingestellte
                 Quelle läuft danach von selbst weiter. Durchsagen haben weiter Vorrang.
               </p>
@@ -378,26 +378,26 @@ export function ZoneDialog({
                   onChange={(e) => setExternalName(e.target.value)}
                   placeholder={name.trim() || "Name der Zone"}
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   So erscheint die Zone auf dem Handy. Leer heißt: der Name der Zone.
                 </p>
               </div>
             )}
 
             {deviceId === NONE && (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Erst mit einem zugeordneten Abspieler möglich.
               </p>
             )}
           </div>
 
-          <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+          <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
             <Switch checked={isActive} onCheckedChange={setIsActive} />
             Zone aktiv
           </label>
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-lg border border-red-200 dark:border-red-900/40">
+            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
               {error}
             </p>
           )}
@@ -439,7 +439,7 @@ function ReceiverSwitch({
     <label
       className={cn(
         "flex min-h-10 items-start gap-2.5 text-sm sm:min-h-0",
-        available ? "text-slate-600 dark:text-slate-300" : "text-slate-400"
+        available ? "text-muted-foreground" : "text-muted-foreground/70"
       )}
     >
       <Switch
@@ -450,7 +450,7 @@ function ReceiverSwitch({
       />
       <span className="min-w-0">
         {label}
-        <span className="block text-xs text-slate-500">
+        <span className="block text-xs text-muted-foreground">
           {available
             ? hint
             : "Auf dem Abspieler nicht eingerichtet – install-audio.sh erneut ausführen"}

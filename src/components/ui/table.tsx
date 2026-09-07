@@ -4,11 +4,16 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Tabelle im Leitstand-Stil: gesperrte, kleine Kopfzeile, ruhige Zeilen,
+ * Zahlen bündig. Der Container scrollt horizontal, damit breite Tabellen
+ * auf dem Handy nicht die Seite sprengen.
+ */
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative w-full overflow-x-auto scrollbar-thin"
     >
       <table
         data-slot="table"
@@ -23,7 +28,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn("[&_tr]:border-b [&_tr]:hover:bg-transparent", className)}
       {...props}
     />
   )
@@ -57,7 +62,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
+        "hover:bg-muted/40 data-[state=selected]:bg-muted border-b border-border/70 transition-colors",
         className
       )}
       {...props}
@@ -70,7 +75,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "text-muted-foreground h-10 px-2 text-left align-middle text-[11px] font-semibold uppercase tracking-[0.08em] whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}

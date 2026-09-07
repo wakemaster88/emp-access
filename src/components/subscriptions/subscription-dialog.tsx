@@ -67,11 +67,11 @@ function CheckList({
   emptyText: string;
 }) {
   if (items.length === 0) {
-    return <p className="text-[11px] text-slate-400 py-4 text-center">{emptyText}</p>;
+    return <p className="text-[11px] text-muted-foreground/70 py-4 text-center">{emptyText}</p>;
   }
 
   return (
-    <div className="max-h-[320px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 dark:border-slate-800 p-1">
+    <div className="max-h-[320px] overflow-y-auto space-y-0.5 rounded-lg border border-border p-1">
       {items.map(({ key, label }) => {
         const isSelected = selected.has(key);
         return (
@@ -83,18 +83,18 @@ function CheckList({
               "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
               isSelected
                 ? "bg-violet-50 dark:bg-violet-900/20"
-                : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                : "hover:bg-muted/50"
             )}
           >
             <div className={cn(
               "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
               isSelected
                 ? "bg-violet-500 border-violet-500"
-                : "border-slate-300 dark:border-slate-600"
+                : "border-input"
             )}>
               {isSelected && <Check className="h-3 w-3 text-white" />}
             </div>
-            <span className="text-xs text-slate-700 dark:text-slate-300 truncate flex-1">{label}</span>
+            <span className="text-xs text-foreground/80 truncate flex-1">{label}</span>
           </button>
         );
       })}
@@ -253,8 +253,8 @@ export function SubscriptionDialog({
   const tabClass = (active: boolean) =>
     `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
       active
-        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm"
-        : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+        ? "bg-card text-foreground shadow-sm"
+        : "text-muted-foreground hover:text-foreground"
     }`;
 
   return (
@@ -264,7 +264,7 @@ export function SubscriptionDialog({
           <DialogTitle className="text-base">{isNew ? "Neues Abo anlegen" : "Abo bearbeiten"}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+        <div className="flex gap-0.5 bg-muted rounded-lg p-0.5">
           <button type="button" onClick={() => setTab("settings")} className={tabClass(tab === "settings")}>
             <Settings2 className="h-3 w-3" />
             Einstellungen
@@ -284,7 +284,7 @@ export function SubscriptionDialog({
         {tab === "settings" && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="s-name" className="text-xs">Name <span className="text-rose-500">*</span></Label>
+              <Label htmlFor="s-name" className="text-xs">Name <span className="text-destructive">*</span></Label>
               <Input
                 id="s-name"
                 value={name}
@@ -296,8 +296,8 @@ export function SubscriptionDialog({
               />
             </div>
 
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-2">
-              <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400">Standard-Gültigkeit für neue Tickets</p>
+            <div className="rounded-lg border border-border p-2.5 space-y-2">
+              <p className="text-[11px] font-medium text-muted-foreground">Standard-Gültigkeit für neue Tickets</p>
               <div className="space-y-1.5">
                 <Label className="text-xs">Gültigkeitstyp</Label>
                 <Select value={defaultValidityType} onValueChange={setDefaultValidityType}>
@@ -343,35 +343,35 @@ export function SubscriptionDialog({
                       1 Tag
                     </Button>
                   </div>
-                  <p className="text-[10px] text-slate-400">1 Tag = 1440 Minuten</p>
+                  <p className="text-[10px] text-muted-foreground/70">1 Tag = 1440 Minuten</p>
                 </div>
               )}
             </div>
 
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+            <div className="rounded-lg border border-border divide-y divide-border">
               <div className="flex items-center justify-between p-2.5">
                 <div>
-                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <Camera className="h-3.5 w-3.5 text-amber-500" /> Foto erforderlich
+                  <p className="text-xs font-medium text-foreground/80 flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-warning" /> Foto erforderlich
                   </p>
-                  <p className="text-[11px] text-slate-500">Kamera öffnet automatisch wenn kein Bild vorhanden</p>
+                  <p className="text-[11px] text-muted-foreground">Kamera öffnet automatisch wenn kein Bild vorhanden</p>
                 </div>
                 <Switch checked={requiresPhoto} onCheckedChange={setRequiresPhoto} />
               </div>
               <div className="flex items-center justify-between p-2.5">
                 <div>
-                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <ScanLine className="h-3.5 w-3.5 text-amber-500" /> RFID erforderlich
+                  <p className="text-xs font-medium text-foreground/80 flex items-center gap-1.5">
+                    <ScanLine className="h-3.5 w-3.5 text-warning" /> RFID erforderlich
                   </p>
-                  <p className="text-[11px] text-slate-500">Warnung im Dashboard wenn kein RFID-Band verknüpft</p>
+                  <p className="text-[11px] text-muted-foreground">Warnung im Dashboard wenn kein RFID-Band verknüpft</p>
                 </div>
                 <Switch checked={requiresRfid} onCheckedChange={setRequiresRfid} />
               </div>
             </div>
 
             {subscription && (
-              <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5 space-y-1">
-                <p className="text-[11px] text-slate-500">Zusammenfassung</p>
+              <div className="rounded-lg border border-border p-2.5 space-y-1">
+                <p className="text-[11px] text-muted-foreground">Zusammenfassung</p>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedAnny.size > 0 && (
                     <Badge variant="secondary" className="text-[10px]">
@@ -384,7 +384,7 @@ export function SubscriptionDialog({
                     </Badge>
                   )}
                   {selectedAnny.size === 0 && selectedAreas.size === 0 && (
-                    <span className="text-[10px] text-slate-400">Keine Verknüpfungen</span>
+                    <span className="text-[10px] text-muted-foreground/70">Keine Verknüpfungen</span>
                   )}
                 </div>
               </div>
@@ -394,7 +394,7 @@ export function SubscriptionDialog({
 
         {tab === "anny" && (
           <div className="space-y-2">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               Wähle anny Abos, Services und Ressourcen, die diesem Abo zugeordnet werden. Tickets mit diesen Namen werden beim Sync automatisch verknüpft.
             </p>
             <CheckList
@@ -409,7 +409,7 @@ export function SubscriptionDialog({
                 <button
                   type="button"
                   onClick={() => setSelectedAnny(new Set())}
-                  className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors"
+                  className="text-[10px] text-muted-foreground/70 hover:text-destructive transition-colors"
                 >
                   Alle abwählen
                 </button>
@@ -420,7 +420,7 @@ export function SubscriptionDialog({
 
         {tab === "areas" && (
           <div className="space-y-2">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               Wähle die Resourcen, zu denen dieses Abo Zugang gewährt. Abo-Tickets erscheinen im Dashboard in allen ausgewählten Resourcen.
             </p>
             <CheckList
@@ -435,7 +435,7 @@ export function SubscriptionDialog({
                 <button
                   type="button"
                   onClick={() => setSelectedAreas(new Set())}
-                  className="text-[10px] text-slate-400 hover:text-rose-500 transition-colors"
+                  className="text-[10px] text-muted-foreground/70 hover:text-destructive transition-colors"
                 >
                   Alle abwählen
                 </button>
@@ -445,10 +445,10 @@ export function SubscriptionDialog({
         )}
 
         {error && (
-          <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 rounded-lg">{error}</p>
+          <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
         )}
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         <div className="flex items-center justify-between">
           {!isNew ? (
@@ -456,7 +456,7 @@ export function SubscriptionDialog({
               type="button" variant="ghost" size="sm"
               onClick={handleDelete}
               disabled={deleting || saving}
-              className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 h-8 text-xs"
+              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs"
             >
               {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
               Löschen
@@ -471,7 +471,7 @@ export function SubscriptionDialog({
               size="sm"
               onClick={handleSave}
               disabled={saving || deleting || !name.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 min-w-24 h-8"
+              className="min-w-24 h-8"
             >
               {saving
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />

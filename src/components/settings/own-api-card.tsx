@@ -115,17 +115,17 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
   }
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="pt-5 space-y-4">
-        <p className="text-sm text-slate-600 dark:text-slate-400">
+        <p className="text-sm text-muted-foreground">
           Andere Systeme können mit dem API-Token auf Ressourcen und Geräte zugreifen. Token hier setzen oder neu generieren – wird in der Datenbank gespeichert.
         </p>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-slate-500">Base-URL</span>
+            <span className="text-sm text-muted-foreground">Base-URL</span>
             <div className="flex items-center gap-1 min-w-0">
-              <code className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded truncate max-w-[240px]">
+              <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[240px]">
                 {baseUrl}
               </code>
               <Button
@@ -134,12 +134,12 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
                 className="h-8 w-8 shrink-0"
                 onClick={() => copy(baseUrl, "url")}
               >
-                {copied === "url" ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                {copied === "url" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-slate-500">API-Token</span>
+            <span className="text-sm text-muted-foreground">API-Token</span>
             <div className="flex items-center gap-1 min-w-0">
               <Badge variant="outline" className="font-mono text-xs max-w-[180px] truncate">
                 {displayToken || "—"}
@@ -151,13 +151,13 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
                 onClick={() => copy(displayToken, "token")}
                 disabled={!displayToken}
               >
-                {copied === "token" ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                {copied === "token" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-3">
+        <div className="rounded-lg border border-border p-3 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -200,8 +200,8 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
             <p
               className={
                 feedback.type === "ok"
-                  ? "text-xs text-emerald-600 dark:text-emerald-400"
-                  : "text-xs text-rose-600 dark:text-rose-400"
+                  ? "text-xs text-success"
+                  : "text-xs text-destructive"
               }
             >
               {feedback.text}
@@ -209,29 +209,29 @@ export function OwnApiCard({ baseUrl, apiToken }: OwnApiCardProps) {
           )}
         </div>
 
-        <div className="rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-          <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Authentifizierung</p>
-          <p className="text-xs text-slate-500 dark:text-slate-500">
-            Header: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">Authorization: Bearer {'<token>'}</code>
-            {" "}oder Query: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">?token={'<token>'}</code>
+        <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Authentifizierung</p>
+          <p className="text-xs text-muted-foreground">
+            Header: <code className="bg-border dark:bg-accent px-1 rounded">Authorization: Bearer {'<token>'}</code>
+            {" "}oder Query: <code className="bg-border dark:bg-accent px-1 rounded">?token={'<token>'}</code>
           </p>
-          <p className="text-xs text-slate-500">
-            Token ändern (eingeloggt): <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">PATCH /api/settings/account</code> mit{" "}
-            <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">{`{ "regenerate": true }`}</code> oder{" "}
-            <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded text-[10px]">{`{ "apiToken": "…" }`}</code>
+          <p className="text-xs text-muted-foreground">
+            Token ändern (eingeloggt): <code className="bg-border dark:bg-accent px-1 rounded">PATCH /api/settings/account</code> mit{" "}
+            <code className="bg-border dark:bg-accent px-1 rounded text-[10px]">{`{ "regenerate": true }`}</code> oder{" "}
+            <code className="bg-border dark:bg-accent px-1 rounded text-[10px]">{`{ "apiToken": "…" }`}</code>
           </p>
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Endpunkte (Lesen & Geräte steuern)</p>
+          <p className="text-xs font-medium text-muted-foreground">Endpunkte (Lesen & Geräte steuern)</p>
           <ul className="space-y-1.5 text-xs">
             {ENDPOINTS.map((ep) => (
               <li key={ep.path} className="flex flex-wrap items-baseline gap-2">
                 <Badge variant="secondary" className="font-mono text-[10px]">
                   {ep.method}
                 </Badge>
-                <code className="text-slate-600 dark:text-slate-400">{ep.path}</code>
-                <span className="text-slate-500 dark:text-slate-500">– {ep.desc}</span>
+                <code className="text-muted-foreground">{ep.path}</code>
+                <span className="text-muted-foreground">– {ep.desc}</span>
               </li>
             ))}
           </ul>

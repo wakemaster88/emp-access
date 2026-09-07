@@ -273,7 +273,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
         <form onSubmit={handleSave} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="d-name">Name <span className="text-rose-500">*</span></Label>
+            <Label htmlFor="d-name">Name <span className="text-destructive">*</span></Label>
             <Input id="d-name" value={form.name} onChange={(e) => set("name", e.target.value)} required autoFocus />
           </div>
 
@@ -293,8 +293,8 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                     className={cn(
                       "flex flex-col items-center gap-1.5 rounded-lg border-2 px-1 py-2.5 text-center transition-all",
                       selected
-                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300"
-                        : "border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300 dark:hover:border-slate-600"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground/70 hover:border-input dark:hover:border-slate-600"
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -321,7 +321,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                 {rooms.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted-foreground/70">
               Regeln mit „Betriebsbeginn“ und „Betriebsende“ richten sich nach der Betriebszeit dieses Raums.
               {rooms.length === 0 && " Räume werden in der Schließanlage angelegt."}
             </p>
@@ -360,16 +360,16 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
           {/* GARDENA – Service-ID (Info) */}
           {isGardena && device?.gardenaServiceId && (
-            <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/30 bg-emerald-50/60 dark:bg-emerald-950/20 p-3 space-y-1">
-              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">GARDENA Service-ID</p>
-              <p className="text-xs font-mono text-slate-500 break-all">{device.gardenaServiceId}</p>
+            <div className="rounded-xl border border-success/30 bg-success/10 p-3 space-y-1">
+              <p className="text-xs font-medium text-success">GARDENA Service-ID</p>
+              <p className="text-xs font-mono text-muted-foreground break-all">{device.gardenaServiceId}</p>
             </div>
           )}
 
           {/* Zugangsbereiche – nur Drehkreuz & Tür */}
           {CAT_HAS_ACCESS.has(form.category) && (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Resource &amp; Richtung</p>
+            <div className="rounded-xl border border-border p-3 space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Resource &amp; Richtung</p>
 
               <div className="grid grid-cols-3 gap-2">
                 {DIRECTIONS.map((d) => {
@@ -383,8 +383,8 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                       className={cn(
                         "flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-2.5 text-center transition-all",
                         selected
-                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300"
-                          : "border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300 dark:hover:border-slate-600"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:border-input dark:hover:border-slate-600"
                       )}
                       title={d.hint}
                     >
@@ -445,7 +445,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                       </Select>
                     </div>
                   </div>
-                  <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                  <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <span>Bidirektionale Geräte können nicht eindeutig zwischen Eintritt und Austritt unterscheiden. Wenn möglich, lieber separate Geräte für Eingang und Ausgang anlegen.</span>
                   </div>
@@ -456,8 +456,8 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
           {/* Kamera-Zuordnung – nur Drehkreuz & Tür (Zugangsgeräte mit Scans) */}
           {CAT_HAS_ACCESS.has(form.category) && (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+            <div className="rounded-xl border border-border p-3 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <Cctv className="h-3.5 w-3.5" /> Kamera
               </p>
               <Select value={form.cameraId} onValueChange={(v) => set("cameraId", v)}>
@@ -467,7 +467,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
                   {cameras.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-muted-foreground/70">
                 Kamera, die diesen Zugang im Blick hat. Scans dieses Geräts werden mit dem Kamerabild verknüpft.
               </p>
             </div>
@@ -475,36 +475,36 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
 
           {/* Sensor-Hinweis */}
           {form.category === "SENSOR" && (
-            <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 text-xs text-success bg-success/10 border border-success/30 rounded-lg px-3 py-2">
               <Activity className="h-3.5 w-3.5 shrink-0" />
               Sensor – zeigt Werte an, keine Steuerung oder Zugangsverwaltung.
             </div>
           )}
 
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div>
               <p className="text-sm font-medium">Aktiv</p>
-              <p className="text-xs text-slate-500">Gerät ist in Betrieb</p>
+              <p className="text-xs text-muted-foreground">Gerät ist in Betrieb</p>
             </div>
             <Switch checked={form.isActive} onCheckedChange={(v) => set("isActive", v)} />
           </div>
 
           {/* Offline-Push – nur für überwachbare Typen (Pi, Shelly, GARDENA) */}
           {device?.type !== "NUKI_SMARTLOCK" && (
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Offline-Benachrichtigung</p>
-                <p className="text-xs text-slate-500">Push senden, wenn das Gerät offline geht</p>
+                <p className="text-xs text-muted-foreground">Push senden, wenn das Gerät offline geht</p>
               </div>
               <Switch checked={form.offlineAlertsEnabled} onCheckedChange={(v) => set("offlineAlertsEnabled", v)} />
             </div>
           )}
 
           {CAT_HAS_REENTRY.has(form.category) && (
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Mehrfachzugang</p>
-                <p className="text-xs text-slate-500">Ticket mehrfach verwendbar</p>
+                <p className="text-xs text-muted-foreground">Ticket mehrfach verwendbar</p>
               </div>
               <Switch checked={form.allowReentry} onCheckedChange={(v) => set("allowReentry", v)} />
             </div>
@@ -518,20 +518,20 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [],
           )}
 
           {error && (
-            <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>
+            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
           )}
 
-          <Separator className="dark:bg-slate-800" />
+          <Separator className="dark:bg-muted" />
 
           <div className="flex items-center justify-between">
             <Button type="button" variant="ghost" size="sm" onClick={handleDelete} disabled={deleting || saving}
-              className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20">
+              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10">
               {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
               Löschen
             </Button>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting}>Abbrechen</Button>
-              <Button type="submit" disabled={saving || deleting || !form.name.trim()} className="bg-indigo-600 hover:bg-indigo-700 min-w-28">
+              <Button type="submit" disabled={saving || deleting || !form.name.trim()} className="min-w-28">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4 mr-1.5" />Speichern</>}
               </Button>
             </div>
@@ -563,12 +563,12 @@ export function ScanLockField({
 }) {
   const seconds = Number(value);
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+    <div className="rounded-lg border border-border p-3 space-y-2">
       <div>
         <p className="text-sm font-medium flex items-center gap-1.5">
           <Timer className="h-4 w-4" /> {title}
         </p>
-        <p className="text-xs text-slate-500">{description}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
       </div>
       <Input
         type="number"
@@ -584,14 +584,14 @@ export function ScanLockField({
             key={s}
             type="button"
             onClick={() => onChange(String(s))}
-            className="rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:border-primary/60 hover:text-primary transition-colors"
           >
             {formatScanLockPreset(s)}
           </button>
         ))}
       </div>
       {Number.isFinite(seconds) && seconds > 0 && (
-        <p className="text-xs text-slate-400">Sperre {formatScanLockPreset(seconds)} für dasselbe Ticket.</p>
+        <p className="text-xs text-muted-foreground/70">Sperre {formatScanLockPreset(seconds)} für dasselbe Ticket.</p>
       )}
     </div>
   );

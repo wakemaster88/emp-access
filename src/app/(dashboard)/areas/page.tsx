@@ -69,12 +69,12 @@ export default async function AreasPage() {
   return (
     <>
       <Header title="Ressourcen" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Ressourcen ({areas.length})</CardTitle>
             <CardDescription>
-              Resourcen definieren Zugangsbereiche. <Link href="/services" className="text-indigo-600 dark:text-indigo-400 hover:underline">Services</Link> und <Link href="/subscriptions" className="text-indigo-600 dark:text-indigo-400 hover:underline">Abos</Link> verknüpfen Resourcen mit <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Tickets</Link>.
+              Resourcen definieren Zugangsbereiche. <Link href="/services" className="text-primary hover:underline">Services</Link> und <Link href="/subscriptions" className="text-primary hover:underline">Abos</Link> verknüpfen Resourcen mit <Link href="/tickets" className="text-primary hover:underline">Tickets</Link>.
             </CardDescription>
           </CardHeader>
           <CardContent>

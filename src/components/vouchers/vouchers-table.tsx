@@ -79,27 +79,27 @@ interface Props {
 function statusBadge(v: VoucherRow) {
   if (v.disabledAt) {
     return (
-      <Badge className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 font-normal">
+      <Badge className="bg-border dark:bg-muted text-muted-foreground border-input font-normal">
         Deaktiviert
       </Badge>
     );
   }
   if (v.redeemedAt) {
     return (
-      <Badge className="bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 font-normal">
+      <Badge className="bg-success/10 text-success border-success/30 font-normal">
         Eingelöst
       </Badge>
     );
   }
   if (v.expiresAt && new Date(v.expiresAt) < new Date()) {
     return (
-      <Badge className="bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 font-normal">
+      <Badge className="bg-destructive/10 text-destructive border-destructive/30 font-normal">
         Abgelaufen
       </Badge>
     );
   }
   return (
-    <Badge className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 font-normal">
+    <Badge className="bg-warning/10 text-warning border-warning/30 font-normal">
       Offen
     </Badge>
   );
@@ -211,7 +211,7 @@ export function VouchersTable({
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -222,13 +222,13 @@ export function VouchersTable({
       </div>
 
       {error ? (
-        <div className="rounded-md border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {error}
         </div>
       ) : null}
 
       {vouchers.length === 0 ? (
-        <div className="text-center py-12 text-sm text-slate-500 dark:text-slate-400">
+        <div className="text-center py-12 text-sm text-muted-foreground">
           {currentQuery
             ? `Keine Gutscheine für "${currentQuery}" gefunden.`
             : currentStatus === "redeemed"
@@ -245,11 +245,11 @@ export function VouchersTable({
         <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table className="min-w-full">
             <TableHeader>
-              <TableRow className="bg-slate-50 dark:bg-slate-900/50">
+              <TableRow className="bg-muted/40">
                 <TableHead>
                   <button
                     onClick={() => toggleSort("code")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-indigo-600 dark:hover:text-indigo-400"
+                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
                   >
                     Code {sortIcon("code")}
                   </button>
@@ -257,7 +257,7 @@ export function VouchersTable({
                 <TableHead>
                   <button
                     onClick={() => toggleSort("ticketType")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-indigo-600 dark:hover:text-indigo-400"
+                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
                   >
                     Ticket-Typ {sortIcon("ticketType")}
                   </button>
@@ -268,7 +268,7 @@ export function VouchersTable({
                 <TableHead>
                   <button
                     onClick={() => toggleSort("createdAt")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-indigo-600 dark:hover:text-indigo-400"
+                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
                   >
                     Erstellt {sortIcon("createdAt")}
                   </button>
@@ -276,7 +276,7 @@ export function VouchersTable({
                 <TableHead>
                   <button
                     onClick={() => toggleSort("redeemedAt")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-indigo-600 dark:hover:text-indigo-400"
+                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
                   >
                     Eingelöst {sortIcon("redeemedAt")}
                   </button>
@@ -284,7 +284,7 @@ export function VouchersTable({
                 <TableHead>
                   <button
                     onClick={() => toggleSort("expiresAt")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-indigo-600 dark:hover:text-indigo-400"
+                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
                   >
                     Verfällt {sortIcon("expiresAt")}
                   </button>
@@ -303,12 +303,12 @@ export function VouchersTable({
                     <button
                       type="button"
                       onClick={() => copy(v.id, v.code)}
-                      className="inline-flex items-center gap-1 hover:text-indigo-600 dark:hover:text-indigo-400 group"
+                      className="inline-flex items-center gap-1 hover:text-primary group"
                       title="Kopieren"
                     >
                       <span>{v.code}</span>
                       {copiedId === v.id ? (
-                        <Check className="h-3 w-3 text-emerald-500" />
+                        <Check className="h-3 w-3 text-success" />
                       ) : (
                         <Copy className="h-3 w-3 opacity-0 group-hover:opacity-60" />
                       )}
@@ -316,7 +316,7 @@ export function VouchersTable({
                   </TableCell>
                   <TableCell className="text-sm">
                     {v.ticketTypeName ?? v.serviceName ?? (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-muted-foreground/70">—</span>
                     )}
                     {v.discountPercent ? (
                       <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
@@ -326,42 +326,42 @@ export function VouchersTable({
                   </TableCell>
                   <TableCell className="text-sm">
                     {v.accessAreaName ?? (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-muted-foreground/70">—</span>
                     )}
                   </TableCell>
                   <TableCell className="text-sm">
-                    <span className="text-slate-600 dark:text-slate-300">
+                    <span className="text-muted-foreground">
                       {validityLabel(v)}
                     </span>
                   </TableCell>
                   <TableCell>{statusBadge(v)}</TableCell>
-                  <TableCell className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {fmtDateTimeShort(v.createdAt)}
                   </TableCell>
-                  <TableCell className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {v.redeemedAt ? (
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span className="text-success font-medium">
                         {fmtDateTimeShort(v.redeemedAt)}
                       </span>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-muted-foreground/70">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {v.expiresAt ? (
                       new Date(v.expiresAt) < new Date() && !v.redeemedAt ? (
-                        <span className="text-rose-600 dark:text-rose-400">
+                        <span className="text-destructive">
                           {fmtDateTimeShort(v.expiresAt)}
                         </span>
                       ) : (
                         fmtDateTimeShort(v.expiresAt)
                       )
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-muted-foreground/70">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs text-slate-500 dark:text-slate-400 max-w-[200px] truncate">
-                    {v.notes ?? <span className="text-slate-400">—</span>}
+                  <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                    {v.notes ?? <span className="text-muted-foreground/70">—</span>}
                   </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1">
@@ -381,7 +381,7 @@ export function VouchersTable({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700"
+                          className="h-7 w-7 p-0 text-success hover:text-success"
                           title="Reaktivieren"
                           disabled={busyId === v.id}
                           onClick={() => toggleDisabled(v, false)}
@@ -396,7 +396,7 @@ export function VouchersTable({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 w-7 p-0 text-rose-600 hover:text-rose-700"
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                           title={v.redeemedAt ? "Bereits eingelöst – Deaktivieren möglich" : "Deaktivieren"}
                           disabled={busyId === v.id}
                           onClick={() => setConfirmDisable(v)}
@@ -586,7 +586,7 @@ function EditVoucherDialog({
             Code{" "}
             <span className="font-mono font-medium">{voucher?.code}</span>
             {isReadOnlyCore ? (
-              <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+              <span className="block text-xs text-warning mt-1">
                 Bereits eingelöst – nur Notiz und Verfallsdatum änderbar.
               </span>
             ) : null}
@@ -718,7 +718,7 @@ function EditVoucherDialog({
           </div>
 
           {error ? (
-            <div className="rounded-md border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           ) : null}

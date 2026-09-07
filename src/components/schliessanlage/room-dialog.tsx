@@ -91,7 +91,7 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="r-name" className="text-xs">
-              Name <span className="text-rose-500">*</span>
+              Name <span className="text-destructive">*</span>
             </Label>
             <Input
               id="r-name"
@@ -185,7 +185,7 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
             size="sm"
             onClick={save}
             disabled={saving || !name.trim()}
-            className="h-8 min-w-24 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-24"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

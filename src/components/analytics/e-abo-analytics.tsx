@@ -149,15 +149,15 @@ function StatMini({
   color: string;
 }) {
   return (
-    <Card className="border-slate-200 dark:border-slate-800 py-0">
+    <Card className="py-0">
       <CardContent className="p-3 sm:p-4 flex items-center gap-3">
         <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center shrink-0", color)}>
           <Icon className="h-4 w-4 text-white" />
         </div>
         <div className="min-w-0">
-          <p className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">{value}</p>
-          <p className="text-[10px] text-slate-500 truncate">{label}</p>
-          {sub && <p className="text-[9px] text-slate-400 truncate">{sub}</p>}
+          <p className="text-base sm:text-lg font-bold text-foreground tabular-nums">{value}</p>
+          <p className="text-[10px] text-muted-foreground truncate">{label}</p>
+          {sub && <p className="text-[9px] text-muted-foreground/70 truncate">{sub}</p>}
         </div>
       </CardContent>
     </Card>
@@ -193,8 +193,8 @@ export function EaboAnalytics() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-indigo-200/60 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-400">
-        <strong className="text-slate-800 dark:text-slate-200">E-Abo Auswertung:</strong> Zählt Scans nur
+      <div className="rounded-lg border border-primary/30/60 bg-primary/10 px-3 py-2.5 text-xs text-muted-foreground">
+        <strong className="text-foreground/90">E-Abo Auswertung:</strong> Zählt Scans nur
         innerhalb der jeweiligen Ticket-Gültigkeit (Start–Ende bzw. Abo-Standardzeitraum). So siehst du
         Besuchsverhalten pro elektronischem Abonnement.
       </div>
@@ -226,13 +226,13 @@ export function EaboAnalytics() {
 
       {loading && !data && (
         <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
 
       {!loading && subs.length === 0 && (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardContent className="py-12 text-center text-sm text-slate-500">
+        <Card>
+          <CardContent className="py-12 text-center text-sm text-muted-foreground">
             Noch keine Abos angelegt. Unter <strong>Abos</strong> kannst du Produkte definieren und Tickets
             zuordnen.
           </CardContent>
@@ -240,8 +240,8 @@ export function EaboAnalytics() {
       )}
 
       {data && !selectedId && overview && overview.length === 0 && subs.length > 0 && (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardContent className="py-12 text-center text-sm text-slate-500">
+        <Card>
+          <CardContent className="py-12 text-center text-sm text-muted-foreground">
             Keine Tickets mit Abo-Zuordnung. Verknüpfe Tickets unter <strong>Tickets</strong> oder per
             Integration mit einem Abo.
           </CardContent>
@@ -249,11 +249,11 @@ export function EaboAnalytics() {
       )}
 
       {data && !selectedId && overview && overview.length > 0 && (
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="p-0 sm:p-0">
-            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-indigo-500" />
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Übersicht aller Abos</h3>
+            <div className="px-4 py-3 border-b border-border/60 flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground/90">Übersicht aller Abos</h3>
             </div>
             <Table>
               <TableHeader>
@@ -272,10 +272,10 @@ export function EaboAnalytics() {
                     <TableCell className="font-medium">{row.name}</TableCell>
                     <TableCell className="text-right tabular-nums">{row.ticketCount}</TableCell>
                     <TableCell className="text-right tabular-nums hidden sm:table-cell">{row.activeTickets}</TableCell>
-                    <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                    <TableCell className="text-right tabular-nums text-success">
                       {row.grantedScans}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-rose-600 dark:text-rose-400 hidden md:table-cell">
+                    <TableCell className="text-right tabular-nums text-destructive hidden md:table-cell">
                       {row.deniedScans}
                     </TableCell>
                     <TableCell className="text-right tabular-nums hidden lg:table-cell">
@@ -285,7 +285,7 @@ export function EaboAnalytics() {
                 ))}
               </TableBody>
             </Table>
-            <p className="text-[11px] text-slate-500 px-4 py-2 border-t border-slate-100 dark:border-slate-800">
+            <p className="text-[11px] text-muted-foreground px-4 py-2 border-t border-border/60">
               Wähle oben ein Abo für Tagesverlauf, Wochentage, Geräte und Besucherliste.
             </p>
           </CardContent>
@@ -295,18 +295,18 @@ export function EaboAnalytics() {
       {data && selectedId && s && (
         <>
           <div>
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground/90 flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-violet-500" />
               {data.selectedSubscription?.name ?? "Abo"}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Auswertungsfenster (Gültigkeiten): {fmtDate(data.rangeStart)} – {fmtDate(data.rangeEnd)}
             </p>
           </div>
 
           {s.totalTickets === 0 ? (
-            <Card className="border-slate-200 dark:border-slate-800">
-              <CardContent className="py-10 text-center text-sm text-slate-500">
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
                 Für dieses Abo sind keine Tickets vorhanden.
               </CardContent>
             </Card>
@@ -325,41 +325,41 @@ export function EaboAnalytics() {
                   label="Besuche (erlaubt)"
                   value={s.totalVisits}
                   sub={`${s.grantRate}% aller Scans erlaubt`}
-                  color="bg-emerald-500"
+                  color="bg-success"
                 />
                 <StatMini
                   icon={ShieldX}
                   label="Abgelehnt"
                   value={s.deniedCount}
                   sub="im Gültigkeitszeitraum"
-                  color="bg-rose-500"
+                  color="bg-destructive"
                 />
                 <StatMini
                   icon={ShieldCheck}
                   label="Inhaber mit Besuch"
                   value={s.uniqueHoldersWithVisits}
                   sub={`Ø ${s.avgVisitsPerHolder} Besuche`}
-                  color="bg-sky-500"
+                  color="bg-info"
                 />
                 <StatMini
                   icon={TrendingUp}
                   label="Stärkster Tag"
                   value={s.busiestDay ? fmtDate(s.busiestDay) : "–"}
                   sub={s.busiestDayCount ? `${s.busiestDayCount} Scans` : undefined}
-                  color="bg-amber-500"
+                  color="bg-warning"
                 />
                 <StatMini
                   icon={CalendarDays}
                   label="Zeitraum"
                   value={`${fmtDate(data.rangeStart)}`}
                   sub={fmtDate(data.rangeEnd)}
-                  color="bg-indigo-500"
+                  color="bg-primary"
                 />
               </div>
 
-              <Card className="border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/40">
-                <CardContent className="p-3 sm:p-4 text-xs text-slate-600 dark:text-slate-400 space-y-1.5">
-                  <p className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <Card className="bg-muted/50 dark:bg-card/40">
+                <CardContent className="p-3 sm:p-4 text-xs text-muted-foreground space-y-1.5">
+                  <p className="font-medium text-foreground/90 flex items-center gap-1.5">
                     <BarChart3 className="h-3.5 w-3.5" />
                     Kurzanalyse
                   </p>
@@ -387,7 +387,7 @@ export function EaboAnalytics() {
                 </TabsList>
                 <TabsContent value="verlauf" className="mt-3">
                   {data.timeline.length > 0 ? (
-                    <Card className="border-slate-200 dark:border-slate-800">
+                    <Card>
                       <CardContent className="p-3 sm:p-5">
                         <div className="h-[240px] sm:h-[280px]">
                           <ResponsiveContainer width="100%" height="100%">
@@ -434,16 +434,16 @@ export function EaboAnalytics() {
                       </CardContent>
                     </Card>
                   ) : (
-                    <p className="text-sm text-slate-500 py-6 text-center">Keine Scans im angezeigten Zeitraum.</p>
+                    <p className="text-sm text-muted-foreground py-6 text-center">Keine Scans im angezeigten Zeitraum.</p>
                   )}
                 </TabsContent>
                 <TabsContent value="wochentag" className="mt-3">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    <Card className="border-slate-200 dark:border-slate-800">
+                    <Card>
                       <CardContent className="p-3 sm:p-5">
                         <div className="flex items-center gap-2 mb-2">
-                          <Clock className="h-4 w-4 text-amber-500" />
-                          <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          <Clock className="h-4 w-4 text-warning" />
+                          <h4 className="text-xs font-semibold text-foreground/80">
                             Besuche nach Wochentag
                           </h4>
                         </div>
@@ -469,11 +469,11 @@ export function EaboAnalytics() {
                       </CardContent>
                     </Card>
                     {data.byDevice.length > 0 && (
-                      <Card className="border-slate-200 dark:border-slate-800">
+                      <Card>
                         <CardContent className="p-3 sm:p-5">
                           <div className="flex items-center gap-2 mb-2">
-                            <ScanLine className="h-4 w-4 text-indigo-500" />
-                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300">Nach Gerät</h4>
+                            <ScanLine className="h-4 w-4 text-primary" />
+                            <h4 className="text-xs font-semibold text-foreground/80">Nach Gerät</h4>
                           </div>
                           <div className="h-[200px]">
                             <ResponsiveContainer width="100%" height="100%">
@@ -510,7 +510,7 @@ export function EaboAnalytics() {
                   </div>
                 </TabsContent>
                 <TabsContent value="besucher" className="mt-3">
-                  <Card className="border-slate-200 dark:border-slate-800">
+                  <Card>
                     <CardContent className="p-0 sm:p-0">
                       <Table>
                         <TableHeader>
@@ -535,13 +535,13 @@ export function EaboAnalytics() {
                                   {statusLabel(t.status)}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                              <TableCell className="text-right tabular-nums text-success">
                                 {t.grantedVisits}
                               </TableCell>
                               <TableCell className="text-right tabular-nums hidden md:table-cell">
                                 {t.deniedScans}
                               </TableCell>
-                              <TableCell className="hidden lg:table-cell text-xs text-slate-500">
+                              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                                 {fmtDateTime(t.lastVisit)}
                               </TableCell>
                             </TableRow>

@@ -443,11 +443,11 @@ export function AudioClient({
           ) : (
             <div className="grid gap-3">
               {playlists.map((playlist) => (
-                <Card key={playlist.id} className="border-slate-200 dark:border-slate-800">
+                <Card key={playlist.id}>
                   <CardContent className="p-4 flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                        <h3 className="font-semibold text-foreground">
                           {playlist.name}
                         </h3>
                         <Badge variant="secondary" className="text-xs">
@@ -459,7 +459,7 @@ export function AudioClient({
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {playlist.description ? `${playlist.description} · ` : ""}
                         Gesamtlänge {formatDuration(playlist.totalSec || null)}
                         {playlist.crossfadeSec > 0 && ` · ${playlist.crossfadeSec}s Überblendung`}
@@ -510,13 +510,13 @@ export function AudioClient({
           ) : (
             <div className="grid gap-3">
               {streams.map((stream) => (
-                <Card key={stream.id} className="border-slate-200 dark:border-slate-800">
+                <Card key={stream.id}>
                   <CardContent className="p-4 flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                      <h3 className="font-semibold text-foreground">
                         {stream.name}
                       </h3>
-                      <p className="mt-1 truncate text-xs text-slate-500">{stream.url}</p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{stream.url}</p>
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <IconAction
@@ -561,15 +561,15 @@ export function AudioClient({
           ) : (
             <div className="grid gap-3">
               {templates.map((template) => (
-                <Card key={template.id} className="border-slate-200 dark:border-slate-800">
+                <Card key={template.id}>
                   <CardContent className="p-4 flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                        <h3 className="font-semibold text-foreground">
                           {template.name}
                         </h3>
                         {template.priority >= 100 && (
-                          <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-xs">
+                          <Badge variant="danger" className="text-xs">
                             Notfall
                           </Badge>
                         )}
@@ -583,9 +583,9 @@ export function AudioClient({
                         )}
                       </div>
                       {template.text && (
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{template.text}</p>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{template.text}</p>
                       )}
-                      <p className="text-xs text-slate-400 mt-1">
+                      <p className="text-xs text-muted-foreground/70 mt-1">
                         {template.zoneIds.length === 0
                           ? "Alle aktiven Zonen"
                           : `${template.zoneIds.length} Zone${template.zoneIds.length === 1 ? "" : "n"}`}
@@ -641,7 +641,7 @@ export function AudioClient({
           ) : (
             <div className="grid gap-3">
               {schedules.map((schedule) => (
-                <Card key={schedule.id} className="border-slate-200 dark:border-slate-800">
+                <Card key={schedule.id}>
                   <CardContent className="p-4 flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -649,8 +649,8 @@ export function AudioClient({
                           className={cn(
                             "font-semibold",
                             schedule.isActive
-                              ? "text-slate-900 dark:text-slate-100"
-                              : "text-slate-400 line-through"
+                              ? "text-foreground"
+                              : "text-muted-foreground/70 line-through"
                           )}
                         >
                           {schedule.name}
@@ -667,7 +667,7 @@ export function AudioClient({
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {ACTION_LABELS[schedule.action]}
                         {schedule.announcementName && `: ${schedule.announcementName}`}
                         {schedule.playlistName && `: ${schedule.playlistName}`}
@@ -679,7 +679,7 @@ export function AudioClient({
                         {schedule.trigger !== "TIME" &&
                           ` · Betriebszeit: ${schedule.operatingScheduleName ?? "die des Raums"}`}
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="text-xs text-muted-foreground/70 mt-0.5">
                         {schedule.isActive
                           ? nextRunLabel(schedule, zones, operatingSchedules, timeZone)
                           : "Abgeschaltet"}
@@ -699,7 +699,7 @@ export function AudioClient({
                           (warning) => (
                             <p
                               key={warning}
-                              className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400"
+                              className="mt-1.5 flex items-start gap-1.5 text-xs text-warning"
                             >
                               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
                               <span>{warning}</span>
@@ -711,7 +711,7 @@ export function AudioClient({
                       <IconAction
                         icon={schedule.isActive ? CheckCircle2 : XCircle}
                         iconClassName={
-                          schedule.isActive ? "text-emerald-500" : "text-slate-400"
+                          schedule.isActive ? "text-success" : "text-muted-foreground/70"
                         }
                         label={`Zeitplan ${schedule.name} ${schedule.isActive ? "deaktivieren" : "aktivieren"}`}
                         title={schedule.isActive ? "Deaktivieren" : "Aktivieren"}
@@ -846,7 +846,7 @@ export function AudioClient({
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-destructive text-white hover:bg-destructive/90"
             >
               Löschen
             </AlertDialogAction>
@@ -874,7 +874,7 @@ function SectionHeader({
 }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-slate-500">{text}</p>
+      <p className="text-sm text-muted-foreground">{text}</p>
       <Button onClick={onAction} className="w-full gap-1.5 sm:w-auto sm:shrink-0">
         <Plus className="h-4 w-4" /> {actionLabel}
       </Button>
@@ -929,7 +929,7 @@ function IconAction({
       title={title ?? label}
       className={cn(
         "h-10 w-10 sm:h-8 sm:w-8",
-        tone === "danger" && "text-red-600 hover:bg-red-50 dark:hover:bg-red-950",
+        tone === "danger" && "text-destructive hover:bg-destructive/10 ",
         className
       )}
     >
@@ -1006,11 +1006,10 @@ function ZoneCard({
     <Card
       ref={cardRef}
       className={cn(
-        "border-slate-200 transition-shadow dark:border-slate-800",
+        "border-border transition-shadow dark:border-border",
         !zone.isActive && "opacity-60",
-        highlight && "ring-2 ring-indigo-500"
-      )}
-    >
+        highlight && "ring-2 ring-primary"
+      )}>
       <CardContent className="p-4">
         {/*
           Am Telefon stehen die Knöpfe unter dem Namen: nebeneinander blieben
@@ -1019,14 +1018,14 @@ function ZoneCard({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">{zone.name}</h3>
+              <h3 className="font-semibold text-foreground">{zone.name}</h3>
               {zone.deviceId ? (
                 <Badge
                   className={cn(
                     "text-xs",
                     deviceOnline
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                      ? "bg-success/12 text-success"
+                      : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground"
                   )}
                 >
                   {deviceOnline ? "Online" : "Offline"}
@@ -1047,12 +1046,12 @@ function ZoneCard({
                 </Badge>
               )}
               {isPlaying && (
-                <Badge className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-xs gap-1">
+                <Badge className="bg-primary/10 text-primary text-xs gap-1">
                   <Volume2 className="h-3 w-3" /> läuft
                 </Badge>
               )}
               {externalActive && (
-                <Badge className="gap-1 bg-sky-100 text-xs text-sky-700 dark:bg-sky-900/30 dark:text-sky-400">
+                <Badge className="gap-1 bg-info/10 text-xs text-info">
                   {externalActive === "AIRPLAY" ? (
                     <Airplay className="h-3 w-3" />
                   ) : (
@@ -1065,7 +1064,7 @@ function ZoneCard({
               {pendingJobs > 0 && (
                 <Badge
                   variant="outline"
-                  className="gap-1 border-amber-300 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-500"
+                  className="gap-1 border-warning/30 text-xs text-warning"
                 >
                   <Clock className="h-3 w-3" />
                   {pendingJobs} wartet
@@ -1073,7 +1072,7 @@ function ZoneCard({
               )}
             </div>
 
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {currentTitle ??
                 (zone.sourceKind === "PLAYLIST"
                   ? (zone.playlistName ?? "Playlist")
@@ -1105,7 +1104,7 @@ function ZoneCard({
               onClick={monitor.toggle}
               className={cn(
                 monitor.active &&
-                  "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-950/40"
+                  "text-primary bg-primary/10 hover:bg-primary/10 "
               )}
             />
             <IconAction
@@ -1159,7 +1158,7 @@ function ZoneCard({
           </div>
 
           <div className="flex w-full items-center gap-2 sm:w-auto sm:min-w-[180px] sm:flex-1">
-            <Volume2 className="h-4 w-4 shrink-0 text-slate-400" />
+            <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground/70" />
             <input
               type="range"
               min={0}
@@ -1171,14 +1170,14 @@ function ZoneCard({
               style={sliderFill(volume.value)}
               className="touch-slider flex-1"
             />
-            <span className="w-9 text-right text-xs tabular-nums text-slate-500">
+            <span className="w-9 text-right text-xs tabular-nums text-muted-foreground">
               {volume.value}%
             </span>
           </div>
         </div>
 
         {externalActive && (
-          <p className="mt-2 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 text-xs text-sky-800 dark:border-sky-900/40 dark:bg-sky-950/20 dark:text-sky-300">
+          <p className="mt-2 flex items-start gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-xs text-info">
             {externalActive === "AIRPLAY" ? (
               <Airplay className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             ) : (
@@ -1207,7 +1206,7 @@ function ZoneCard({
                 ? `Kopplung offen – ${formatCountdown(pairable)}`
                 : "Bluetooth-Kopplung freigeben"}
             </Button>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-muted-foreground">
               {pairable > 0
                 ? "Zone ist am Handy sichtbar. Nochmal drücken beendet die Freigabe vorzeitig."
                 : "Bekannte Geräte verbinden sich jederzeit, neue nur im Fenster (5 Min)."}
@@ -1216,12 +1215,12 @@ function ZoneCard({
         )}
 
         {monitor.active && (
-          <div className="mt-2 flex flex-col gap-1 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 sm:flex-row sm:items-center sm:gap-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+          <div className="mt-2 flex flex-col gap-1 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
               <Headphones className="h-3.5 w-3.5" />
               Mithören
             </span>
-            <span className="min-w-0 flex-1 truncate text-xs text-slate-600 dark:text-slate-400">
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
               {monitor.title ? `${monitor.title} · ` : ""}
               {monitorHint}
             </span>
@@ -1251,7 +1250,7 @@ function ZoneCard({
         {error && (
           <p
             role="alert"
-            className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-400"
+            className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
           >
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             {error}
@@ -1370,7 +1369,7 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
             </Chip>
           ))}
         </div>
-        <p className="text-xs text-slate-500">Aktualisiert sich automatisch</p>
+        <p className="text-xs text-muted-foreground">Aktualisiert sich automatisch</p>
       </div>
 
       {visible.length === 0 ? (
@@ -1380,8 +1379,8 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
           text="Für diesen Filter gibt es keine Einträge – bei „Nur Probleme“ ist das die gute Nachricht."
         />
       ) : (
-        <Card className="border-slate-200 dark:border-slate-800">
-          <CardContent className="p-0 divide-y divide-slate-100 dark:divide-slate-800">
+        <Card>
+          <CardContent className="p-0 divide-y divide-border/60">
             {visible.map((job) => (
               <JobItem key={job.id} job={job} />
             ))}
@@ -1406,15 +1405,15 @@ function JobItem({ job }: { job: JobRow }) {
         title={stuck ? "Kein Abspieler hat den Befehl geholt" : JOB_STATUS_LABELS[job.status]}
       >
         {failed ? (
-          <XCircle className="h-4 w-4 text-red-500" />
+          <XCircle className="h-4 w-4 text-destructive" />
         ) : done ? (
-          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          <CheckCircle2 className="h-4 w-4 text-success" />
         ) : running ? (
-          <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
         ) : stuck ? (
-          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertTriangle className="h-4 w-4 text-warning" />
         ) : (
-          <Clock className="h-4 w-4 text-amber-500" />
+          <Clock className="h-4 w-4 text-warning" />
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -1429,22 +1428,22 @@ function JobItem({ job }: { job: JobRow }) {
             {triggerLabel(job.triggerKind)}
           </Badge>
           {(waiting || running) && (
-            <span className="text-xs text-slate-500">{JOB_STATUS_LABELS[job.status]}</span>
+            <span className="text-xs text-muted-foreground">{JOB_STATUS_LABELS[job.status]}</span>
           )}
         </div>
         {/* Hänger und Fehlertext auf eigenen Zeilen: in der Kopfzeile mit den
             Abzeichen zusammen war am Telefon nur ein abgeschnittener Rest zu
             sehen – und genau dort steht, was fehlt. */}
         {stuck && (
-          <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+          <p className="mt-0.5 text-xs text-warning">
             Hängt seit {formatRelativeTime(job.createdAt)?.replace("vor ", "") ?? "?"} – kein
             Abspieler hat ihn geholt
           </p>
         )}
         {job.errorMessage && (
-          <p className="mt-0.5 text-xs break-words text-red-600">{job.errorMessage}</p>
+          <p className="mt-0.5 text-xs break-words text-destructive">{job.errorMessage}</p>
         )}
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           {new Date(job.createdAt).toLocaleString("de-DE", {
             dateStyle: "short",
             timeStyle: "medium",
@@ -1465,11 +1464,11 @@ function EmptyState({
   text: string;
 }) {
   return (
-    <Card className="border-dashed border-slate-300 dark:border-slate-700">
+    <Card className="border-dashed border-input">
       <CardContent className="py-10 text-center">
-        <Icon className="h-10 w-10 mx-auto text-slate-400 mb-3" />
-        <h3 className="font-semibold text-slate-700 dark:text-slate-300">{title}</h3>
-        <p className="text-sm text-slate-500 mt-1">{text}</p>
+        <Icon className="h-10 w-10 mx-auto text-muted-foreground/70 mb-3" />
+        <h3 className="font-semibold text-foreground/80">{title}</h3>
+        <p className="text-sm text-muted-foreground mt-1">{text}</p>
       </CardContent>
     </Card>
   );

@@ -36,9 +36,9 @@ export default async function MonitorsPage() {
   return (
     <>
       <Header title="Monitore" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6 max-w-3xl space-y-4">
+      <div className="page-content max-w-3xl space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Erstelle und verwalte öffentliche Monitore für Scan-Ansichten, Check-ins, Ressourcen-Übersichten und Token-Scanner.
           </p>
           <Badge variant="secondary" className="ml-3 shrink-0 text-xs">

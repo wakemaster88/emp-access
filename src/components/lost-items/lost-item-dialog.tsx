@@ -182,15 +182,15 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
 
         <div className="space-y-4">
           {isNew && (
-            <div className="flex gap-1.5 p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
+            <div className="flex gap-1.5 p-1 rounded-lg bg-muted">
               <button
                 type="button"
                 onClick={() => setKind("FOUND")}
                 className={cn(
                   "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   kind === "FOUND"
-                    ? "bg-white dark:bg-slate-900 text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    ? "bg-card text-primary shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Fundsache
@@ -201,8 +201,8 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                 className={cn(
                   "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   kind === "LOST_REPORT"
-                    ? "bg-white dark:bg-slate-900 text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    ? "bg-card text-primary shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Verlustmeldung
@@ -225,7 +225,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   ? "z. B. Schwarze Lederjacke, Größe M, mit Schlüsselbund"
                   : "z. B. Schwarze Jacke, Größe M, am Eingang gefunden"
               }
-              className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
             />
           </div>
 
@@ -305,7 +305,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   <img
                     src={image}
                     alt="Fundsache"
-                    className="h-32 w-32 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
+                    className="h-32 w-32 rounded-lg object-cover border border-border"
                   />
                   <button
                     type="button"
@@ -320,7 +320,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-1.5 h-32 w-32 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 transition-colors"
+                  className="flex flex-col items-center justify-center gap-1.5 h-32 w-32 rounded-lg border-2 border-dashed border-input text-muted-foreground/70 hover:border-primary/60 hover:text-primary transition-colors"
                 >
                   <ImagePlus className="h-6 w-6" />
                   <span className="text-xs">Bild wählen</span>
@@ -330,19 +330,19 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
           )}
 
           {!isNew && (
-            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-foreground/80 cursor-pointer">
               <input
                 type="checkbox"
                 checked={pickedUp}
                 onChange={(e) => setPickedUp(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
               />
               {isLostReport ? "Erledigt" : "Abgeholt"}
             </label>
           )}
 
           {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className="text-sm text-destructive">{error}</p>
           )}
 
           <div className="flex items-center justify-between pt-2">
@@ -352,7 +352,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                 variant="ghost"
                 onClick={handleDelete}
                 disabled={deleting || saving}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 gap-1.5"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
               >
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 Löschen
@@ -366,7 +366,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                 type="button"
                 onClick={handleSave}
                 disabled={saving || deleting}
-                className="bg-indigo-600 hover:bg-indigo-700 gap-1.5"
+                className="gap-1.5"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Speichern

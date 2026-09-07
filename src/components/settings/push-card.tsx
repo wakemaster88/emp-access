@@ -137,17 +137,17 @@ export function PushCard() {
   };
 
   return (
-    <Card className="border-slate-200 dark:border-slate-800">
+    <Card>
       <CardContent className="pt-5 space-y-3">
         {support === "checking" && (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Prüfe Browser-Unterstützung …
           </div>
         )}
 
         {support === "unsupported" && (
           <div className="space-y-2">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               Dieser Browser unterstützt hier keine Push-Benachrichtigungen. Auf iPhone und iPad
               geht es nur als installierte App:
             </p>
@@ -157,7 +157,7 @@ export function PushCard() {
 
         {support === "needs-install" && (
           <div className="space-y-2">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               Auf iPhone und iPad gibt es Push-Benachrichtigungen nur als installierte App.
               Danach hier erneut aktivieren.
             </p>
@@ -166,7 +166,7 @@ export function PushCard() {
         )}
 
         {support === "not-configured" && (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Web-Push ist auf dem Server nicht konfiguriert. Es fehlen die Env-Variablen{" "}
             <code className="text-xs font-mono">NEXT_PUBLIC_VAPID_PUBLIC_KEY</code> und{" "}
             <code className="text-xs font-mono">VAPID_PRIVATE_KEY</code>{" "}
@@ -177,18 +177,18 @@ export function PushCard() {
         {support === "supported" && (
           <>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-500">Dieses Gerät</span>
+              <span className="text-sm text-muted-foreground">Dieses Gerät</span>
               {subscribed ? (
-                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs">Aktiv</Badge>
+                <Badge variant="success" className="text-xs">Aktiv</Badge>
               ) : (
                 <Badge variant="secondary" className="text-xs">Nicht aktiviert</Badge>
               )}
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-500">Registrierte Geräte (Account)</span>
-              <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{deviceCount}</span>
+              <span className="text-sm text-muted-foreground">Registrierte Geräte (Account)</span>
+              <span className="text-sm font-medium text-foreground">{deviceCount}</span>
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted-foreground/70">
               Du erhältst eine Push-Benachrichtigung, sobald ein Gerät offline geht
               und wenn es wieder online ist. Geprüft wird alle 5 Minuten. Welche
               Geräte überwacht werden, stellst du pro Gerät unter „Bearbeiten“ →
@@ -202,7 +202,7 @@ export function PushCard() {
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
                     Test senden
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleUnsubscribe} disabled={loading} className="text-rose-600 hover:text-rose-700 border-rose-200 hover:border-rose-300">
+                  <Button variant="outline" size="sm" onClick={handleUnsubscribe} disabled={loading} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60">
                     <BellOff className="h-4 w-4 mr-1.5" />
                     Deaktivieren
                   </Button>
@@ -215,13 +215,13 @@ export function PushCard() {
               )}
             </div>
 
-            {error && <p className="text-xs text-rose-600">{error}</p>}
+            {error && <p className="text-xs text-destructive">{error}</p>}
             {testResult && (
               <div className={cn(
                 "flex items-center gap-2 p-2.5 rounded-lg text-xs font-medium",
                 testResult === "ok"
-                  ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400"
-                  : "bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400",
+                  ? "bg-success/10 text-success"
+                  : "bg-destructive/10 text-destructive",
               )}>
                 {testResult === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                 {testResult === "ok" ? "Testbenachrichtigung gesendet!" : "Senden fehlgeschlagen"}

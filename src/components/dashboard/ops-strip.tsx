@@ -120,30 +120,30 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
       <Link href="/audio" className="block min-w-0">
         <Card className="py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Audio</span>
+            <span className="text-[11px] font-medium text-muted-foreground">Audio</span>
             {playing > 0 ? (
-              <Volume2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <Volume2 className="h-3.5 w-3.5 text-success shrink-0" />
             ) : (
-              <VolumeX className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <VolumeX className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
             )}
           </div>
-          <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
             {playing}/{ops.audio.zones.length || 0}
-            <span className="text-xs font-medium text-slate-500 ml-1">spielen</span>
+            <span className="text-xs font-medium text-muted-foreground ml-1">spielen</span>
           </p>
           {audioOffline > 0 ? (
-            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 truncate">
+            <p className="text-[10px] text-warning mt-0.5 truncate">
               {audioOffline} Zone{audioOffline === 1 ? "" : "n"} offline
             </p>
           ) : ops.audio.zones.length > 0 ? (
-            <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+            <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
               {ops.audio.zones
                 .slice(0, 3)
                 .map((z) => `${z.name}: ${zoneSubline(z)}`)
                 .join(" · ")}
             </p>
           ) : (
-            <p className="text-[10px] text-slate-400 mt-0.5">Keine Zonen</p>
+            <p className="text-[10px] text-muted-foreground/70 mt-0.5">Keine Zonen</p>
           )}
         </Card>
       </Link>
@@ -151,34 +151,34 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
       <Link href="/bewaesserung" className="block min-w-0">
         <Card className="py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Bewässerung</span>
+            <span className="text-[11px] font-medium text-muted-foreground">Bewässerung</span>
             <Droplets className={cn(
               "h-3.5 w-3.5 shrink-0",
-              watering ? "text-sky-500" : "text-slate-400",
+              watering ? "text-info" : "text-muted-foreground/70",
             )} />
           </div>
           {watering ? (
             <>
-              <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 truncate">
+              <p className="text-lg font-bold text-foreground mt-1 truncate">
                 {watering.name}
               </p>
-              <p className="text-[10px] text-sky-600 dark:text-sky-400 mt-0.5">
+              <p className="text-[10px] text-info mt-0.5">
                 läuft noch {watering.remainingMin} Min.
               </p>
             </>
           ) : ops.irrigation.next ? (
             <>
-              <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+              <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
                 {ops.irrigation.next.startTime}
               </p>
-              <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
                 als nächstes {ops.irrigation.next.name}
               </p>
             </>
           ) : (
             <>
-              <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1">—</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Kein Lauf heute</p>
+              <p className="text-lg font-bold text-foreground mt-1">—</p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">Kein Lauf heute</p>
             </>
           )}
         </Card>
@@ -187,20 +187,20 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
       <Link href="/webcams" className="block min-w-0">
         <Card className={cn(
           "py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow",
-          ops.alerts.open > 0 && "border-rose-200 dark:border-rose-900/50",
+          ops.alerts.open> 0 && "border-destructive/30",
         )}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Drehkreuz</span>
+            <span className="text-[11px] font-medium text-muted-foreground">Drehkreuz</span>
             <AlertTriangle className={cn(
               "h-3.5 w-3.5 shrink-0",
-              ops.alerts.open > 0 ? "text-rose-500" : "text-slate-400",
+              ops.alerts.open > 0 ? "text-destructive" : "text-muted-foreground/70",
             )} />
           </div>
-          <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
             {ops.alerts.open}
-            <span className="text-xs font-medium text-slate-500 ml-1">offen</span>
+            <span className="text-xs font-medium text-muted-foreground ml-1">offen</span>
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
             {latestAlert
               ? latestAlert.source
                 ? `${latestAlert.source}: ${latestAlert.message}`
@@ -213,20 +213,20 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
       <Link href="/fahrzeuge" className="block min-w-0">
         <Card className={cn(
           "py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow",
-          ops.vehicles.unmatchedToday > 0 && "border-amber-200 dark:border-amber-900/50",
+          ops.vehicles.unmatchedToday> 0 && "border-warning/30",
         )}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Fahrzeuge</span>
+            <span className="text-[11px] font-medium text-muted-foreground">Fahrzeuge</span>
             <Car className={cn(
               "h-3.5 w-3.5 shrink-0",
-              ops.vehicles.unmatchedToday > 0 ? "text-amber-500" : "text-slate-400",
+              ops.vehicles.unmatchedToday > 0 ? "text-warning" : "text-muted-foreground/70",
             )} />
           </div>
-          <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
             {ops.vehicles.unmatchedToday}
-            <span className="text-xs font-medium text-slate-500 ml-1">offen</span>
+            <span className="text-xs font-medium text-muted-foreground ml-1">offen</span>
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
             {ops.vehicles.latest[0]?.plate
               ? `zuletzt ${ops.vehicles.latest[0].plate}`
               : "Alle zugeordnet"}
@@ -237,40 +237,40 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
       <Link href="/network" className="block min-w-0 col-span-2 lg:col-span-1">
         <Card className={cn(
           "py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow",
-          hubsMissing && "border-rose-200 dark:border-rose-900/50",
-          !hubsMissing && hubsOutdated && "border-amber-200 dark:border-amber-900/50",
+          hubsMissing && "border-destructive/30",
+          !hubsMissing && hubsOutdated && "border-warning/30",
         )}>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Hub</span>
+            <span className="text-[11px] font-medium text-muted-foreground">Hub</span>
             {hubsMissing ? (
-              <ServerOff className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+              <ServerOff className="h-3.5 w-3.5 text-destructive shrink-0" />
             ) : (
               <Server className={cn(
                 "h-3.5 w-3.5 shrink-0",
-                hubsOutdated ? "text-amber-500" : "text-emerald-500",
+                hubsOutdated ? "text-warning" : "text-success",
               )} />
             )}
           </div>
-          <p className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
             {ops.hubs.online}/{ops.hubs.total}
-            <span className="text-xs font-medium text-slate-500 ml-1">verbunden</span>
+            <span className="text-xs font-medium text-muted-foreground ml-1">verbunden</span>
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">{hubSubline(ops.hubs)}</p>
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">{hubSubline(ops.hubs)}</p>
         </Card>
       </Link>
 
       {ops.devices.offline.length > 0 && (
         <Link href="/devices" className="block min-w-0 col-span-2 lg:col-span-5">
-          <Card className="py-2.5 px-4 gap-0 border-amber-200 dark:border-amber-900/50 hover:shadow-md transition-shadow">
+          <Card className="py-2.5 px-4 gap-0 border-warning/30 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 min-w-0">
-              <WifiOff className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              <WifiOff className="h-3.5 w-3.5 text-warning shrink-0" />
+              <span className="text-xs font-semibold text-warning">
                 {ops.devices.offline.length} Abspieler/Pi offline
               </span>
-              <span className="text-[11px] text-slate-500 truncate">
+              <span className="text-[11px] text-muted-foreground truncate">
                 {ops.devices.offline.map((d) => d.name).join(" · ")}
               </span>
-              <span className="ml-auto text-[10px] text-slate-400 tabular-nums shrink-0">
+              <span className="ml-auto text-[10px] text-muted-foreground/70 tabular-nums shrink-0">
                 {ops.devices.heartbeatOnline}/{ops.devices.heartbeatTotal} online
               </span>
             </div>

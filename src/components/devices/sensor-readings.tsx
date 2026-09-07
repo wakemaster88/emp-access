@@ -25,13 +25,13 @@ import { cn } from "@/lib/utils";
 import type { SensorReading } from "@/lib/shelly-sensor";
 
 const EMPHASIS_BADGE: Record<string, string> = {
-  warn: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  alert: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
+  warn: "bg-warning/14 text-warning",
+  alert: "bg-destructive/12 text-destructive",
 };
 
 const EMPHASIS_TEXT: Record<string, string> = {
-  warn: "text-amber-600 dark:text-amber-400",
-  alert: "text-rose-500",
+  warn: "text-warning",
+  alert: "text-destructive",
 };
 
 function readingIcon(reading: SensorReading) {
@@ -75,7 +75,7 @@ export function SensorReadings({ readings }: { readings: SensorReading[] }) {
                 "gap-1 text-xs h-5",
                 reading.emphasis
                   ? EMPHASIS_BADGE[reading.emphasis]
-                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+                  : "bg-muted text-muted-foreground",
               )}
               title={reading.label}
             >
@@ -90,7 +90,7 @@ export function SensorReadings({ readings }: { readings: SensorReading[] }) {
             key={key}
             className={cn(
               "flex items-center gap-0.5 text-xs",
-              reading.emphasis ? EMPHASIS_TEXT[reading.emphasis] : "text-slate-400",
+              reading.emphasis ? EMPHASIS_TEXT[reading.emphasis] : "text-muted-foreground/70",
             )}
             title={reading.label}
           >

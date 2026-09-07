@@ -115,9 +115,9 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs">
-              Empfänger <span className="text-rose-500">*</span>
+              Empfänger <span className="text-destructive">*</span>
             </Label>
-            <div className="inline-flex gap-0.5 rounded-md border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-900/40">
+            <div className="inline-flex gap-0.5 rounded-md border border-border bg-muted/50 p-0.5 dark:border-border dark:bg-card/40">
               {(
                 [
                   ["existing", "Bekannt", Users],
@@ -132,8 +132,8 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                   className={cn(
                     "inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
                     mode === value
-                      ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300"
-                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400",
+                      ? "bg-white text-primary shadow-sm dark:bg-muted "
+                      : "text-muted-foreground hover:text-foreground dark:text-muted-foreground",
                   )}
                 >
                   <Icon className="h-3 w-3" />
@@ -146,7 +146,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               <select
                 value={holderId ?? ""}
                 onChange={(e) => setHolderId(e.target.value ? Number(e.target.value) : null)}
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
               >
                 <option value="">— Empfänger wählen —</option>
                 {holders.map((h) => (
@@ -161,7 +161,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               <select
                 value={ticketId ?? ""}
                 onChange={(e) => setTicketId(e.target.value ? Number(e.target.value) : null)}
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
               >
                 <option value="">— Mitarbeiter wählen —</option>
                 {employees.map((e) => (
@@ -214,28 +214,28 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
             )}
           </div>
 
-          <Separator className="dark:bg-slate-800" />
+          <Separator className="dark:bg-muted" />
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label className="text-xs">
-                Schlüssel <span className="text-rose-500">*</span>
+                Schlüssel <span className="text-destructive">*</span>
               </Label>
-              <span className="text-[11px] text-slate-400">{keyIds.length} gewählt</span>
+              <span className="text-[11px] text-muted-foreground/70">{keyIds.length} gewählt</span>
             </div>
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
               <input
                 type="text"
                 value={keyQuery}
                 onChange={(e) => setKeyQuery(e.target.value)}
                 placeholder="Verfügbare Schlüssel suchen…"
-                className="h-8 w-full rounded border border-slate-200 bg-white pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800"
+                className="h-8 w-full rounded border border-border bg-white pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-muted"
               />
             </div>
-            <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-md border border-slate-200 p-1 dark:border-slate-700">
+            <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-md border border-border p-1 dark:border-border">
               {availableKeys.length === 0 ? (
-                <p className="py-4 text-center text-[11px] text-slate-400">
+                <p className="py-4 text-center text-[11px] text-muted-foreground/70">
                   Keine verfügbaren Schlüssel.
                 </p>
               ) : (
@@ -249,25 +249,25 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                       className={cn(
                         "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
                         selected
-                          ? "bg-indigo-50 dark:bg-indigo-950/20"
-                          : "hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                          ? "bg-primary/8"
+                          : "hover:bg-muted/50",
                       )}
                     >
                       <span
                         className={cn(
                           "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                           selected
-                            ? "border-indigo-500 bg-indigo-500"
-                            : "border-slate-300 dark:border-slate-600",
+                            ? "border-primary bg-primary"
+                            : "border-input",
                         )}
                       >
                         {selected && <Check className="h-2.5 w-2.5 text-white" />}
                       </span>
-                      <span className="shrink-0 font-mono text-xs text-slate-700 dark:text-slate-300">
+                      <span className="shrink-0 font-mono text-xs text-foreground/80">
                         {k.keyNumber}
                       </span>
                       <LevelBadge level={k.level} />
-                      <span className="truncate text-[11px] text-slate-400">
+                      <span className="truncate text-[11px] text-muted-foreground/70">
                         {k.label || k.lockLabels[0] || ""}
                       </span>
                     </button>
@@ -277,7 +277,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
             </div>
           </div>
 
-          <Separator className="dark:bg-slate-800" />
+          <Separator className="dark:bg-muted" />
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
@@ -315,7 +315,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               id="h-policy"
               value={policyId ?? ""}
               onChange={(e) => setPolicyId(e.target.value ? Number(e.target.value) : null)}
-              className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+              className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
             >
               <option value="">— aktive Vorlage verwenden —</option>
               {activePolicies.map((p) => (
@@ -325,7 +325,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               ))}
             </select>
             {activePolicies.length === 0 && (
-              <p className="text-[10px] text-amber-600">
+              <p className="text-[10px] text-warning">
                 Noch keine aktive Vorlage – der Signatur-Link lässt sich erst danach erzeugen.
               </p>
             )}
@@ -354,7 +354,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
             size="sm"
             onClick={save}
             disabled={saving || !holderValid || keyIds.length === 0}
-            className="h-8 min-w-28 bg-indigo-600 hover:bg-indigo-700"
+            className="h-8 min-w-28"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

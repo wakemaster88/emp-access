@@ -116,8 +116,8 @@ export function ParkingLot({
 
   if (matchedLots.length === 0) {
     return (
-      <Card className="border-dashed border-slate-300 dark:border-slate-700">
-        <CardContent className="py-12 text-center text-slate-500">
+      <Card className="border-dashed border-input">
+        <CardContent className="py-12 text-center text-muted-foreground">
           <ParkingSquare className="h-10 w-10 mx-auto mb-3 text-slate-300" />
           <p className="font-medium">Keine Parkfläche gemeldet</p>
           <p className="text-sm mt-1 max-w-md mx-auto">
@@ -135,13 +135,13 @@ export function ParkingLot({
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Card className="py-3 px-4 gap-0">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-slate-500">Fahrzeuge in Fläche</span>
-            <ParkingSquare className={cn("h-3.5 w-3.5", occupiedCount > 0 ? "text-amber-500" : "text-slate-400")} />
+            <span className="text-[11px] font-medium text-muted-foreground">Fahrzeuge in Fläche</span>
+            <ParkingSquare className={cn("h-3.5 w-3.5", occupiedCount > 0 ? "text-warning" : "text-muted-foreground/70")} />
           </div>
           <p className="text-2xl font-bold tabular-nums mt-1">
             {waitingForHub ? "…" : occupiedCount}
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5">
             {waitingForHub
               ? "warte auf Hub-Tracker"
               : live.parking?.trackerOnline
@@ -151,29 +151,29 @@ export function ParkingLot({
         </Card>
         <Card className="py-3 px-4 gap-0">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-slate-500">Hub</span>
+            <span className="text-[11px] font-medium text-muted-foreground">Hub</span>
             {live.hubOnline ? (
-              <Wifi className="h-3.5 w-3.5 text-emerald-500" />
+              <Wifi className="h-3.5 w-3.5 text-success" />
             ) : (
-              <WifiOff className="h-3.5 w-3.5 text-rose-500" />
+              <WifiOff className="h-3.5 w-3.5 text-destructive" />
             )}
           </div>
-          <p className={cn("text-lg font-bold mt-1", live.hubOnline ? "text-emerald-600" : "text-rose-600")}>
+          <p className={cn("text-lg font-bold mt-1", live.hubOnline ? "text-success" : "text-destructive")}>
             {live.hubOnline ? "online" : "offline"}
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
             {live.hubName ?? "kein Agent"}
           </p>
         </Card>
         <Card className="py-3 px-4 gap-0 col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-slate-500">Letztes Kennzeichen</span>
-            <Car className="h-3.5 w-3.5 text-slate-400" />
+            <span className="text-[11px] font-medium text-muted-foreground">Letztes Kennzeichen</span>
+            <Car className="h-3.5 w-3.5 text-muted-foreground/70" />
           </div>
           <p className="text-lg font-bold font-mono mt-1 truncate">
             {sightings[0]?.plate ?? "—"}
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
             {sightings[0]
               ? `${sightings[0].camera?.name ?? "Kamera"} · ${ago(sightings[0].seenAt)}`
               : "Einfahrt / ALPR"}
@@ -193,10 +193,9 @@ export function ParkingLot({
               key={key}
               className={cn(
                 "overflow-hidden py-0 gap-0",
-                occupiedNow && "border-amber-300 dark:border-amber-800",
-              )}
-            >
-              <div className="relative aspect-video bg-slate-100 dark:bg-slate-900">
+                occupiedNow && "border-warning/30 ",
+              )}>
+              <div className="relative aspect-video bg-muted dark:bg-card">
                 {cam?.snapshotAt ? (
                   <img
                     src={`/api/cameras/${cam.id}/snapshot?t=${encodeURIComponent(cam.snapshotAt)}`}
@@ -204,7 +203,7 @@ export function ParkingLot({
                     className="h-full w-full object-contain bg-slate-950"
                   />
                 ) : (
-                  <div className="h-full w-full flex items-center justify-center text-slate-400">
+                  <div className="h-full w-full flex items-center justify-center text-muted-foreground/70">
                     <Cctv className="h-8 w-8" />
                   </div>
                 )}
@@ -241,14 +240,14 @@ export function ParkingLot({
               <CardContent className="p-3 space-y-1">
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   <p className="text-sm font-semibold truncate">{title}</p>
-                  <span className="text-[10px] text-slate-400 shrink-0">
+                  <span className="text-[10px] text-muted-foreground/70 shrink-0">
                     {lot ? agoMs(lot.lastUpdate) : cam ? ago(cam.lastSeenAt) : ""}
                   </span>
                 </div>
                 {lot?.lastError ? (
-                  <p className="text-[11px] text-rose-500 truncate">{lot.lastError}</p>
+                  <p className="text-[11px] text-destructive truncate">{lot.lastError}</p>
                 ) : (
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-muted-foreground/70">
                     {unmatched
                       ? `Neue Kamera ${lot?.ip} – Bild kommt nach Hub-Update.`
                       : waitingForHub
@@ -266,12 +265,12 @@ export function ParkingLot({
 
       {sightings.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-slate-500">Letzte Kennzeichen (Einfahrt)</p>
+          <p className="text-xs font-medium text-muted-foreground">Letzte Kennzeichen (Einfahrt)</p>
           <div className="grid gap-2">
             {sightings.slice(0, 5).map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2"
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
               >
                 {s.hasSnapshot ? (
                   <img
@@ -282,15 +281,15 @@ export function ParkingLot({
                     className="h-10 w-10 rounded object-cover shrink-0"
                   />
                 ) : (
-                  <div className="h-10 w-10 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                    <Car className="h-4 w-4 text-slate-400" />
+                  <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
+                    <Car className="h-4 w-4 text-muted-foreground/70" />
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-mono font-semibold truncate">
                     {s.plate ?? "ohne Kennzeichen"}
                   </p>
-                  <p className="text-[10px] text-slate-400 truncate">
+                  <p className="text-[10px] text-muted-foreground/70 truncate">
                     {s.allowedVehicle?.name ?? "unbekannt"}
                     {s.camera ? ` · ${s.camera.name}` : ""}
                     {" · "}
@@ -311,7 +310,7 @@ export function ParkingLot({
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-slate-400">Weitere Einträge im Tab Historie.</p>
+          <p className="text-[11px] text-muted-foreground/70">Weitere Einträge im Tab Historie.</p>
         </div>
       )}
     </div>

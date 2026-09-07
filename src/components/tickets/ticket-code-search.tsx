@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 
 interface TicketCodeSearchProps {
@@ -59,9 +60,9 @@ export function TicketCodeSearch({
   );
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-0 flex-1 basis-56 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
         <Input
           ref={inputRef}
           type="text"
@@ -74,13 +75,9 @@ export function TicketCodeSearch({
           autoFocus
         />
       </div>
-      <button
-        type="button"
-        onClick={handleSearch}
-        className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 whitespace-nowrap"
-      >
+      <Button type="button" variant="outline" size="sm" onClick={handleSearch} className="shrink-0">
         Suchen
-      </button>
+      </Button>
       {currentCode && (
         <button
           type="button"
@@ -91,7 +88,7 @@ export function TicketCodeSearch({
             const q = params.toString();
             router.push(`/tickets${q ? `?${q}` : ""}`);
           }}
-          className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          className="text-xs text-muted-foreground/70 hover:text-foreground"
         >
           Filter zurücksetzen
         </button>

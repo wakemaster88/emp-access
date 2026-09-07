@@ -210,8 +210,8 @@ model Admin {
 
   /// Fehlgeschlagene Passwort-Anmeldungen; nach LOGIN_MAX_FAILURES
   /// (src/lib/account-security.ts) ist das Konto fuer LOGIN_LOCK_MINUTES gesperrt.
-  loginFailures          Int       @default(0)
-  loginLockedUntil       DateTime?
+  loginFailures    Int       @default(0)
+  loginLockedUntil DateTime?
 
   @@index([accountId])
   @@index([email])
@@ -486,20 +486,20 @@ model Scan {
 /// und dem zeitlich naechsten Scan des Geraets zugeordnet. Eigene Tabelle,
 /// damit Scan-Listen die Bilddaten nicht mitladen.
 model ScanSnapshot {
-  id         Int      @id @default(autoincrement())
-  scanId     Int      @unique
-  scan       Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
-  cameraId   Int?
-  camera     Camera?  @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  id           Int      @id @default(autoincrement())
+  scanId       Int      @unique
+  scan         Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  cameraId     Int?
+  camera       Camera?  @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   /// JPEG-Bilddaten – nur noch fuer Altbestand; neue Bilder liegen im
   /// Blob-Speicher (`blobPathname`). `scripts/migrate-images-to-blob.ts` zieht um.
-  image      Bytes?
+  image        Bytes?
   blobPathname String?
   /// Zeitpunkt der Aufnahme durch den Hub.
-  capturedAt DateTime @default(now())
-  accountId  Int
-  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
+  capturedAt   DateTime @default(now())
+  accountId    Int
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
 
   @@index([accountId])
   @@index([cameraId])
@@ -855,17 +855,17 @@ model MonitorAlert {
 /// Eigene Tabelle, damit das Polling des Monitors die Bilddaten nicht bei
 /// jedem Durchlauf mitlaedt.
 model MonitorAlertImage {
-  id        Int          @id @default(autoincrement())
-  alertId   Int
-  alert     MonitorAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  id           Int          @id @default(autoincrement())
+  alertId      Int
+  alert        MonitorAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
   /// Anzeigereihenfolge; 0 ist der Blick, in dem der Vorfall erkannt wurde.
-  position  Int          @default(0)
+  position     Int          @default(0)
   /// Woher das Bild stammt, z. B. der Kameraname.
-  label     String?
+  label        String?
   /// JPEG-Bilddaten – nur Altbestand, neue Bilder liegen im Blob-Speicher.
-  image     Bytes?
+  image        Bytes?
   blobPathname String?
-  createdAt DateTime     @default(now())
+  createdAt    DateTime     @default(now())
 
   @@unique([alertId, position])
   @@index([blobPathname])
@@ -1062,19 +1062,19 @@ model PushSubscription {
 }
 
 model TelegramConfig {
-  id              Int      @id @default(autoincrement())
-  botToken        String
-  chatId          String
-  isActive        Boolean  @default(true)
-  dailyReport     Boolean  @default(true)
-  dailyReportTime String   @default("20:00") // HH:mm Berlin time
+  id                    Int       @id @default(autoincrement())
+  botToken              String
+  chatId                String
+  isActive              Boolean   @default(true)
+  dailyReport           Boolean   @default(true)
+  dailyReportTime       String    @default("20:00") // HH:mm Berlin time
   /// Wann der letzte Tagesbericht rausging – verhindert Doppelversand und
   /// erlaubt das Nachholen bei verspaetetem Cron-Tick.
   dailyReportLastSentAt DateTime?
-  accountId       Int
-  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  accountId             Int
+  account               Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@index([accountId])
 }
@@ -1168,10 +1168,6 @@ enum ShellyAction {
   /// Antriebe: beide Fahrtrichtungen abschalten.
   STOP
 }
-
-
-
-
 
 /// Vereinigung mehrerer Mitglieds-Tickets. Über `VereinAccessTicket` werden
 /// dem Verein ein oder mehrere "Zutritts-Tickets" (z. B. Bahnmiete) zugeordnet
@@ -1302,7 +1298,6 @@ model IrrigationRun {
   @@index([deviceId, startedAt])
   @@index([scheduleId])
 }
-
 
 // ── Netzwerk-Verwaltung ──────────────────────────────────────────────────────
 
@@ -1490,24 +1485,24 @@ model NetworkClient {
 /// Netzwerk-Scans, spaeter Kameras/lokale KI. Online-Status ergibt sich aus
 /// `lastSeenAt` (gleiches 5-Minuten-Muster wie bei den Pi-Geraeten).
 model HubAgent {
-  id         Int       @id @default(autoincrement())
+  id                Int       @id @default(autoincrement())
   /// Eindeutiger Name des Agents pro Account (z. B. "imac-technikraum").
-  name       String
-  hostname   String?
+  name              String
+  hostname          String?
   /// Git-Commit/Version des laufenden Hub-Codes (fuer Update-Diagnose).
-  version    String?
+  version           String?
   /// Aktivierte Module, z. B. ["network-scan", "tasks"].
-  modules    Json?
+  modules           Json?
   /// Live-Status vom Hub, z. B. Parkplatz-Belegung aus dem Kiosk-Tracker.
-  status     Json?
-  lastSeenAt DateTime?
+  status            Json?
+  lastSeenAt        DateTime?
   /// Gesetzt, sobald der Offline-Push raus ist; geleert beim Online-Push
   /// (Zustandsuebergang, kein Dauerfeuer) – wie Device.offlineNotifiedAt.
   offlineNotifiedAt DateTime?
-  accountId  Int
-  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  accountId         Int
+  account           Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -2118,41 +2113,41 @@ model AudioAnnouncement {
 /// Zeitgesteuerte Aktion: Oeffnungsmusik, Kursdurchsage, Betriebsschluss.
 /// Wird vom selben Cron-Muster ausgewertet wie die Shelly-Automationen.
 model AudioSchedule {
-  id             Int                 @id @default(autoincrement())
-  accountId      Int
-  account        Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name           String
-  isActive       Boolean             @default(true)
-  action         AudioScheduleAction
+  id                  Int                    @id @default(autoincrement())
+  accountId           Int
+  account             Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name                String
+  isActive            Boolean                @default(true)
+  action              AudioScheduleAction
   /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
   /// Bei Betriebsbeginn/-ende zaehlt der Betriebstag, nicht der Kalendertag,
   /// an dem ein Ende nach Mitternacht faellt.
-  daysOfWeek     Int                 @default(127)
+  daysOfWeek          Int                    @default(127)
   /// Woran sich der Zeitpunkt bemisst: Uhrzeit oder Betriebszeit.
-  trigger        AudioScheduleTrigger @default(TIME)
+  trigger             AudioScheduleTrigger   @default(TIME)
   /// "HH:mm" in der Account-Zeitzone (nur trigger = TIME).
-  timeOfDay      String?
+  timeOfDay           String?
   /// Verschiebung in Minuten gegenueber Betriebsbeginn/-ende (OPENING, CLOSING).
-  offsetMinutes  Int                 @default(0)
+  offsetMinutes       Int                    @default(0)
   /// Welche Betriebszeit gilt; null = die des Raums der jeweiligen Zielzone.
   /// Dieselbe Regel wie bei `RoomRule.operatingScheduleId`.
   operatingScheduleId Int?
-  operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
+  operatingSchedule   OperatingSchedule?     @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
   /// Bedingung an die Betriebszeit der Zielzone: nur waehrend / nur ausserhalb.
   /// Zonen, auf die sie nicht zutrifft, bleiben beim Lauf aussen vor.
-  operating      RuleOperatingCondition @default(ANY)
+  operating           RuleOperatingCondition @default(ANY)
   /// Zielzonen als AudioZone-ID-Array. Leeres Array = alle aktiven Zonen.
-  zoneIds        Json                @default("[]")
-  announcementId Int?
-  announcement   AudioAnnouncement?  @relation(fields: [announcementId], references: [id], onDelete: Cascade)
-  playlistId     Int?
-  playlist       AudioPlaylist?      @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  zoneIds             Json                   @default("[]")
+  announcementId      Int?
+  announcement        AudioAnnouncement?     @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  playlistId          Int?
+  playlist            AudioPlaylist?         @relation(fields: [playlistId], references: [id], onDelete: SetNull)
   /// Ziellautstaerke fuer action = VOLUME (0–100).
-  volume         Int?
+  volume              Int?
   /// Letzter Lauf – Idempotenz-Guard im Cron gegen Doppelausfuehrung.
-  lastRunAt      DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  lastRunAt           DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   @@index([accountId, isActive])
   @@index([announcementId])
@@ -2461,20 +2456,20 @@ model KeySignature {
 /// Betriebszeit-Profil, z. B. "Strandbad" oder "Gastronomie". Ein Raum haengt an
 /// hoechstens einem Profil; Regeln fragen darueber, ob gerade geoeffnet ist.
 model OperatingSchedule {
-  id          Int                  @id @default(autoincrement())
-  accountId   Int
-  account     Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
+  id             Int                  @id @default(autoincrement())
+  accountId      Int
+  account        Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
   /// Vorbelegung fuer neue Raeume. Hoechstens ein Profil je Mandant.
-  isDefault   Boolean              @default(false)
-  sortOrder   Int                  @default(0)
-  seasons     OperatingSeason[]
-  exceptions  OperatingException[]
-  rooms       KeyRoom[]
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  rules       RoomRule[]
+  isDefault      Boolean              @default(false)
+  sortOrder      Int                  @default(0)
+  seasons        OperatingSeason[]
+  exceptions     OperatingException[]
+  rooms          KeyRoom[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  rules          RoomRule[]
   audioSchedules AudioSchedule[]
 
   @@index([accountId])

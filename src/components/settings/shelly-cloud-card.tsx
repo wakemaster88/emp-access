@@ -189,23 +189,23 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
     <Card className={cn(
       "border-2 transition-colors",
       connected
-        ? "border-amber-300 dark:border-amber-700"
-        : "border-slate-200 dark:border-slate-800"
+        ? "border-warning/40"
+        : "border-border"
     )}>
       <CardContent className="pt-5 space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-              <Wifi className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <div className="h-10 w-10 rounded-xl bg-warning/10 flex items-center justify-center">
+              <Wifi className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="font-semibold text-slate-900 dark:text-slate-100">Shelly Cloud</p>
-              <p className="text-xs text-slate-500">Geräte aus der Shelly Cloud verwalten</p>
+              <p className="font-semibold text-foreground">Shelly Cloud</p>
+              <p className="text-xs text-muted-foreground">Geräte aus der Shelly Cloud verwalten</p>
             </div>
           </div>
           {connected ? (
-            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1.5">
+            <Badge variant="success" className="gap-1.5">
               <CheckCircle2 className="h-3 w-3" /> Verbunden
             </Badge>
           ) : (
@@ -215,7 +215,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
           )}
         </div>
 
-        <Separator className="dark:bg-slate-800" />
+        <Separator className="dark:bg-muted" />
 
         {/* Server selection */}
         <div className="space-y-2">
@@ -229,8 +229,8 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
                 className={cn(
                   "rounded-lg border px-3 py-2 text-xs text-center transition-all",
                   serverPreset === s.value
-                    ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 font-medium"
-                    : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300"
+                    ? "border-warning bg-warning/10 text-warning font-medium"
+                    : "border-border text-muted-foreground hover:border-input"
                 )}
               >
                 {s.label}
@@ -255,7 +255,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
               href="https://control.shelly.cloud/"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+              className="text-xs text-primary hover:underline flex items-center gap-1"
             >
               Shelly Cloud öffnen <ExternalLink className="h-3 w-3" />
             </a>
@@ -268,13 +268,13 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
             placeholder="••••••••••••••••••••"
             className="font-mono"
           />
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground/70">
             Shelly Cloud → User Settings → Security → Auth Cloud Key
           </p>
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error}
           </div>
@@ -308,7 +308,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
             <Button
               onClick={handleSave}
               disabled={saving}
-              className="bg-amber-500 hover:bg-amber-600 text-white gap-2"
+              className="bg-warning hover:bg-warning/90 text-warning-foreground gap-2"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Speichern
@@ -336,7 +336,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
               onClick={handleDisconnect}
               variant="ghost"
               size="sm"
-              className="ml-auto text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 gap-1.5"
+              className="ml-auto text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 gap-1.5"
             >
               <Trash2 className="h-4 w-4" />
               Trennen
@@ -345,7 +345,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
         </div>
 
         {syncResult && (
-          <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-success bg-success/10 px-3 py-2 rounded-lg">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
             {syncResult}
           </div>
@@ -354,10 +354,10 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
         {/* Device list */}
         {devices !== null && (
           <>
-            <Separator className="dark:bg-slate-800" />
+            <Separator className="dark:bg-muted" />
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                <p className="text-sm font-medium text-foreground/80">
                   {devices.length} Gerät{devices.length !== 1 ? "e" : ""} gefunden
                 </p>
                 <Badge variant="secondary" className="text-xs">
@@ -366,7 +366,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
               </div>
 
               {devices.length === 0 && (
-                <p className="text-sm text-slate-500 text-center py-4">Keine Shelly-Geräte in diesem Account</p>
+                <p className="text-sm text-muted-foreground text-center py-4">Keine Shelly-Geräte in diesem Account</p>
               )}
 
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -378,8 +378,8 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
                       className={cn(
                         "flex items-center justify-between rounded-lg border px-4 py-3 transition-colors",
                         alreadyImported
-                          ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20"
-                          : "border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50"
+                          ? "border-success/30 bg-success/10 "
+                          : "border-border bg-muted/50 dark:bg-card/50"
                       )}
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -388,8 +388,8 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
                           device.online ? "bg-emerald-400" : "bg-slate-400"
                         )} />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{device.name}</p>
-                          <p className="text-xs text-slate-400 font-mono truncate">
+                          <p className="text-sm font-medium text-foreground/90 truncate">{device.name}</p>
+                          <p className="text-xs text-muted-foreground/70 font-mono truncate">
                             {device.id} {device.ip && `· ${device.ip}`}
                           </p>
                         </div>
@@ -403,8 +403,8 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
                           {device.type}
                         </Badge>
                         {device.online
-                          ? <Wifi className="h-4 w-4 text-emerald-500" />
-                          : <WifiOff className="h-4 w-4 text-slate-400" />}
+                          ? <Wifi className="h-4 w-4 text-success" />
+                          : <WifiOff className="h-4 w-4 text-muted-foreground/70" />}
 
                         {alreadyImported ? (
                           <Button
@@ -412,7 +412,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
                             variant="ghost"
                             onClick={() => handleImport(device)}
                             disabled={importing === device.id}
-                            className="h-7 text-xs gap-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                            className="h-7 text-xs gap-1.5 text-muted-foreground/70 hover:text-foreground"
                             title="Name und IP aus Shelly Cloud aktualisieren"
                           >
                             {importing === device.id
@@ -462,7 +462,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
 
         {/* Hint if not yet tested */}
         {!connected && !devices && !error && (
-          <div className="flex items-start gap-2 text-xs text-slate-400 bg-slate-50 dark:bg-slate-900 rounded-lg px-3 py-2.5">
+          <div className="flex items-start gap-2 text-xs text-muted-foreground/70 bg-muted/50 rounded-lg px-3 py-2.5">
             <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             <span>
               Den Auth Key findest du in der <strong>Shelly Cloud</strong> unter <strong>User Settings → Security → Auth Cloud Key</strong>. Dann auf <strong>Verbindung testen</strong> klicken.
@@ -470,7 +470,7 @@ export function ShellyCloudCard({ savedServer, savedAuthKey, existingDeviceIds }
           </div>
         )}
         {error && error.includes("401") && (
-          <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-lg px-3 py-2.5">
+          <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2.5">
             <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             <span>
               Auth Key prüfen: <strong>Shelly Cloud</strong> → oben rechts Profilbild → <strong>User Settings</strong> → Tab <strong>Security</strong> → <strong>Auth Cloud Key</strong> kopieren.

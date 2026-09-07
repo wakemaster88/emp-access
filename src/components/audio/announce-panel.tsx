@@ -198,11 +198,11 @@ export function AnnouncePanel({
 
   if (activeZones.length === 0) {
     return (
-      <Card className="border-dashed border-slate-300 dark:border-slate-700">
+      <Card className="border-dashed border-input">
         <CardContent className="py-10 text-center">
-          <Volume2 className="h-10 w-10 mx-auto text-slate-400 mb-3" />
-          <h3 className="font-semibold text-slate-700 dark:text-slate-300">Noch keine Zone</h3>
-          <p className="text-sm text-slate-500 mt-1">
+          <Volume2 className="h-10 w-10 mx-auto text-muted-foreground/70 mb-3" />
+          <h3 className="font-semibold text-foreground/80">Noch keine Zone</h3>
+          <p className="text-sm text-muted-foreground mt-1">
             Lege zuerst unter „Zonen&quot; eine Beschallungszone an.
           </p>
         </CardContent>
@@ -212,7 +212,7 @@ export function AnnouncePanel({
 
   return (
     <div className="space-y-3">
-      <Card className="border-slate-200 dark:border-slate-800">
+      <Card>
         <CardContent className="p-4 space-y-4">
           <div>
             <Label className="mb-2 block">Zielzonen · {targetLabel}</Label>
@@ -235,7 +235,7 @@ export function AnnouncePanel({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <Label htmlFor="announce-text">Ansagetext</Label>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 {text.length}/{MAX_ANNOUNCEMENT_CHARS}
               </span>
             </div>
@@ -270,16 +270,16 @@ export function AnnouncePanel({
             {/* Der Schalter selbst ist 18 px hoch; die Zeile drumherum macht
                 daraus am Telefon eine greifbare Fläche. */}
             <div className="flex flex-col justify-end gap-1">
-              <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+              <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
                 <Switch checked={chime} onCheckedChange={setChime} />
                 Gong voranstellen
               </label>
 
-              <label className="flex min-h-10 items-center gap-2 text-sm text-slate-600 sm:min-h-0 dark:text-slate-300">
+              <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
                 <Switch checked={emergency} onCheckedChange={setEmergency} />
                 <span className="flex items-center gap-1">
                   <TriangleAlert
-                    className={cn("h-3.5 w-3.5", emergency ? "text-red-600" : "text-slate-400")}
+                    className={cn("h-3.5 w-3.5", emergency ? "text-destructive" : "text-muted-foreground/70")}
                   />
                   Notfall (unterbricht alles)
                 </span>
@@ -307,7 +307,7 @@ export function AnnouncePanel({
               <Button
                 onClick={stopRecording}
                 variant="outline"
-                className="h-11 gap-1.5 border-red-500 text-red-600 sm:h-9"
+                className="h-11 gap-1.5 border-destructive text-destructive sm:h-9"
               >
                 <Square className="h-4 w-4 fill-current" />
                 Aufnahme beenden ({recordSeconds}s)
@@ -326,12 +326,12 @@ export function AnnouncePanel({
           </div>
 
           {notice && (
-            <p className="text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-900/40">
+            <p className="text-xs text-success bg-success/10 p-2.5 rounded-lg border border-success/30/40">
               {notice}
             </p>
           )}
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-lg border border-red-200 dark:border-red-900/40">
+            <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
               {error}
             </p>
           )}
@@ -339,7 +339,7 @@ export function AnnouncePanel({
       </Card>
 
       {templates.length > 0 && (
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardContent className="p-4">
             <Label className="mb-2 block">Gespeicherte Durchsagen</Label>
             <div className="flex flex-wrap gap-2">
@@ -354,7 +354,7 @@ export function AnnouncePanel({
                   <Megaphone className="h-3.5 w-3.5" />
                   {template.name}
                   {template.priority >= 100 && (
-                    <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-[10px]">
+                    <Badge variant="danger" className="text-[10px]">
                       Notfall
                     </Badge>
                   )}

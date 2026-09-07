@@ -114,7 +114,7 @@ export default async function AudioPage() {
   return (
     <>
       <Header title="Audio" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         <AudioClient
           zones={zones.map((z) => ({
             id: z.id,

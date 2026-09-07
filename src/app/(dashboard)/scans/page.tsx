@@ -55,8 +55,8 @@ export default async function ScansPage({ searchParams }: Props) {
   return (
     <>
       <Header title="Scan-Historie" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
-        <Card className="border-slate-200 dark:border-slate-800">
+      <div className="page-content">
+        <Card>
           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-wrap">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <CardTitle className="text-base sm:text-lg">Letzte Scans ({scans.length})</CardTitle>
@@ -70,14 +70,14 @@ export default async function ScansPage({ searchParams }: Props) {
                       {resultFilter === "GRANTED" ? "Erlaubt" : resultFilter === "DENIED" ? "Abgelehnt" : "Geschützt"}
                     </Badge>
                   )}
-                  <a href="/scans" className="text-xs text-indigo-600 hover:underline">Filter entfernen</a>
+                  <a href="/scans" className="text-xs text-primary hover:underline">Filter entfernen</a>
                 </div>
               )}
             </div>
           </CardHeader>
           <CardContent className="p-3 sm:p-6">
             {scans.length === 0 ? (
-              <p className="text-center text-slate-500 py-12">Keine Scans vorhanden</p>
+              <p className="text-center text-muted-foreground py-12">Keine Scans vorhanden</p>
             ) : (
               <div className="space-y-4">
                 {sortedCodes.map((code) => {

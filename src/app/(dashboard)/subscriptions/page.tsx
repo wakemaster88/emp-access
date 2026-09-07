@@ -100,14 +100,14 @@ export default async function SubscriptionsPage() {
   return (
     <>
       <Header title="Abos" accountName={session.user.accountName} />
-      <div className="p-4 sm:p-6">
+      <div className="page-content">
         {stats && <SubscriptionStats stats={stats} />}
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
-        <Card className="border-slate-200 dark:border-slate-800">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-xl">Alle Abos ({subscriptions.length})</CardTitle>
             <CardDescription>
-              Abos verknüpfen <Link href="/tickets" className="text-indigo-600 dark:text-indigo-400 hover:underline">Tickets</Link> mit <Link href="/areas" className="text-indigo-600 dark:text-indigo-400 hover:underline">Resourcen</Link> und definieren Standard-Gültigkeiten.
+              Abos verknüpfen <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> und definieren Standard-Gültigkeiten.
             </CardDescription>
           </CardHeader>
           <CardContent>

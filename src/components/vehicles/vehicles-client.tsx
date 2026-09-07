@@ -329,7 +329,7 @@ export function VehiclesClient({
         </TabsList>
 
         <TabsContent value="parking" className="space-y-3 mt-4">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Live-Belegung der Parkflächen vom Hub (Kamera Halle). Kennzeichen kommen von der Einfahrt.
           </p>
           <ParkingLot
@@ -347,17 +347,17 @@ export function VehiclesClient({
 
         <TabsContent value="vehicles" className="space-y-3 mt-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               Kennzeichen-Whitelist. Hub speichert Schnappschüsse; Match steuert Shelly und optional Push.
             </p>
-            <Button onClick={openAdd} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 shrink-0">
+            <Button onClick={openAdd} className="gap-1.5 shrink-0">
               <Plus className="h-4 w-4" /> Fahrzeug hinzufügen
             </Button>
           </div>
 
           {vehicles.length === 0 ? (
-            <Card className="border-dashed border-slate-300 dark:border-slate-700">
-              <CardContent className="py-12 text-center text-slate-500">
+            <Card className="border-dashed border-input">
+              <CardContent className="py-12 text-center text-muted-foreground">
                 <Car className="h-10 w-10 mx-auto mb-3 text-slate-300" />
                 <p className="font-medium">Noch keine Fahrzeuge</p>
               </CardContent>
@@ -367,7 +367,7 @@ export function VehiclesClient({
               {vehicles.map((v) => {
                 const recent = v.recentSightings ?? [];
                 return (
-                  <Card key={v.id} className={cn("border-slate-200 dark:border-slate-800", !v.isActive && "opacity-60")}>
+                  <Card key={v.id} className={cn("border-border", !v.isActive && "opacity-60")}>
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -396,7 +396,7 @@ export function VehiclesClient({
                               </Badge>
                             )}
                           </div>
-                          <p className="text-xs text-slate-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             {v._count.sightings} Sichtung{v._count.sightings !== 1 ? "en" : ""}
                             {v.notes ? <> · {v.notes}</> : null}
                           </p>
@@ -408,22 +408,22 @@ export function VehiclesClient({
                           <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => openEdit(v)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="outline" size="sm" className="h-8 px-2 text-rose-600" onClick={() => remove(v)}>
+                          <Button variant="outline" size="sm" className="h-8 px-2 text-destructive" onClick={() => remove(v)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
 
                       {recent.length > 0 ? (
-                        <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                          <p className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1.5">
+                        <div className="border-t border-border/60 pt-3">
+                          <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
                             <History className="h-3.5 w-3.5" /> Letzte Sichtungen
                           </p>
                           <div className="flex gap-2 overflow-x-auto pb-1">
                             {recent.map((s) => (
-                              <div key={s.id} className="shrink-0 w-28 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-50 dark:bg-slate-900">
+                              <div key={s.id} className="shrink-0 w-28 rounded-md border border-border overflow-hidden bg-muted/50">
                                 {s.hasSnapshot ? (
-                                  <a href={`/api/vehicle-sightings/${s.id}/snapshot`} target="_blank" rel="noreferrer" className="block aspect-square bg-slate-100 dark:bg-slate-950">
+                                  <a href={`/api/vehicle-sightings/${s.id}/snapshot`} target="_blank" rel="noreferrer" className="block aspect-square bg-muted dark:bg-background">
                                     <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                                   </a>
                                 ) : (
@@ -432,23 +432,23 @@ export function VehiclesClient({
                                   </div>
                                 )}
                                 <div className="px-1.5 py-1">
-                                  <p className="text-[10px] font-mono text-slate-500">
+                                  <p className="text-[10px] font-mono text-muted-foreground">
                                     {new Date(s.seenAt).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                                   </p>
-                                  <p className="text-[10px] text-slate-400 truncate">{s.camera?.name ?? "–"}</p>
+                                  <p className="text-[10px] text-muted-foreground/70 truncate">{s.camera?.name ?? "–"}</p>
                                 </div>
                               </div>
                             ))}
                           </div>
                           {v._count.sightings > recent.length && (
-                            <button type="button" className="mt-2 text-xs text-indigo-600 hover:underline" onClick={() => setTab("history")}>
+                            <button type="button" className="mt-2 text-xs text-primary hover:underline" onClick={() => setTab("history")}>
                               Alle {v._count.sightings} in Historie anzeigen
                             </button>
                           )}
                         </div>
                       ) : (
-                        <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-                          <p className="text-xs text-slate-400">Noch keine Sichtungen.</p>
+                        <div className="border-t border-border/60 pt-3">
+                          <p className="text-xs text-muted-foreground/70">Noch keine Sichtungen.</p>
                         </div>
                       )}
                     </CardContent>
@@ -460,7 +460,7 @@ export function VehiclesClient({
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4 mt-4">
-          <Card className="border-slate-200 dark:border-slate-800">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Kennzeichen manuell prüfen</CardTitle>
             </CardHeader>
@@ -475,19 +475,19 @@ export function VehiclesClient({
                   Prüfen & ggf. öffnen
                 </Button>
               </form>
-              {manualMsg && <p className="text-sm text-slate-600 mt-2">{manualMsg}</p>}
-              <p className="text-xs text-slate-500 mt-3">
+              {manualMsg && <p className="text-sm text-muted-foreground mt-2">{manualMsg}</p>}
+              <p className="text-xs text-muted-foreground mt-3">
                 Unbekannte Kamerasichtungen kannst du zuordnen oder Kennzeichen nachtragen.
               </p>
             </CardContent>
           </Card>
 
-          <Card className="border-slate-200 dark:border-slate-800">
+          <Card>
             <CardContent className="p-0 sm:p-6">
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+              <div className="rounded-lg border border-border overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-50/80 dark:bg-slate-900/50">
+                    <TableRow className="bg-muted/40">
                       <TableHead className="w-16">Bild</TableHead>
                       <TableHead>Zeit</TableHead>
                       <TableHead>Kennzeichen</TableHead>
@@ -500,7 +500,7 @@ export function VehiclesClient({
                   <TableBody>
                     {sightings.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-10 text-sm text-slate-400">
+                        <TableCell colSpan={7} className="text-center py-10 text-sm text-muted-foreground/70">
                           Noch keine Sichtungen.
                         </TableCell>
                       </TableRow>
@@ -509,30 +509,30 @@ export function VehiclesClient({
                       <TableRow key={s.id}>
                         <TableCell>
                           {s.hasSnapshot ? (
-                            <button type="button" onClick={() => openAssign(s)} className="block h-12 w-12 overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
+                            <button type="button" onClick={() => openAssign(s)} className="block h-12 w-12 overflow-hidden rounded-md border border-border bg-muted dark:border-border dark:bg-card">
                               <img src={`/api/vehicle-sightings/${s.id}/snapshot`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                             </button>
                           ) : (
-                            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-slate-200 text-slate-300 dark:border-slate-700">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-border text-slate-300 dark:border-border">
                               <Car className="h-4 w-4" />
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-slate-500 whitespace-nowrap">
+                        <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                           {new Date(s.seenAt).toLocaleString("de-DE")}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {s.plate ?? <span className="text-slate-400">–</span>}
+                          {s.plate ?? <span className="text-muted-foreground/70">–</span>}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {s.allowedVehicle?.name ?? <span className="text-slate-400">unbekannt</span>}
+                          {s.allowedVehicle?.name ?? <span className="text-muted-foreground/70">unbekannt</span>}
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell text-sm text-slate-500">
+                        <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                           {s.camera?.name ?? "–"}
                         </TableCell>
                         <TableCell>
                           {s.matched ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 gap-1 text-xs">
+                            <Badge variant="success" className="gap-1 text-xs">
                               <CheckCircle2 className="h-3 w-3" /> ja
                             </Badge>
                           ) : (
@@ -548,7 +548,7 @@ export function VehiclesClient({
                                 <Link2 className="h-3.5 w-3.5" /> Zuordnen
                               </Button>
                             )}
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-rose-600" disabled={deletingId === s.id} onClick={() => deleteSighting(s)}>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground/70 hover:text-destructive" disabled={deletingId === s.id} onClick={() => deleteSighting(s)}>
                               {deletingId === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                             </Button>
                           </div>
@@ -570,11 +570,11 @@ export function VehiclesClient({
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Name <span className="text-rose-500">*</span></Label>
+              <Label>Name <span className="text-destructive">*</span></Label>
               <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="z.B. Lieferwagen Müller" />
             </div>
             <div className="space-y-1.5">
-              <Label>Kennzeichen <span className="text-rose-500">*</span></Label>
+              <Label>Kennzeichen <span className="text-destructive">*</span></Label>
               <Input value={form.plate} onChange={(e) => setForm((f) => ({ ...f, plate: e.target.value }))} placeholder="z.B. BOR-AB 123" className="font-mono uppercase" />
             </div>
             <div className="space-y-1.5">
@@ -588,12 +588,12 @@ export function VehiclesClient({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-500">Historie läuft auf allen Kameras. Shelly nur an gewählter Kamera (oder allen).</p>
+              <p className="text-xs text-muted-foreground">Historie läuft auf allen Kameras. Shelly nur an gewählter Kamera (oder allen).</p>
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <p className="text-sm font-medium">Push bei Erkennung</p>
-                <p className="text-xs text-slate-500">Web-Push bei Kennzeichen-Match</p>
+                <p className="text-xs text-muted-foreground">Web-Push bei Kennzeichen-Match</p>
               </div>
               <Switch checked={form.notifyOnDetection} onCheckedChange={(v) => setForm((f) => ({ ...f, notifyOnDetection: v }))} />
             </div>
@@ -616,7 +616,7 @@ export function VehiclesClient({
                       ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Öffnet die Tür automatisch, wenn dieses Kennzeichen erkannt wird (Cooldown gilt).
                 </p>
               </div>
@@ -664,11 +664,11 @@ export function VehiclesClient({
               <Label>Aktiv</Label>
               <Switch checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
             </div>
-            {error && <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{error}</p>}
+            {error && <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Abbrechen</Button>
-            <Button onClick={save} disabled={saving || !form.name.trim() || !form.plate.trim()} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700">
+            <Button onClick={save} disabled={saving || !form.name.trim() || !form.plate.trim()} className="gap-1.5">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editing ? "Speichern" : "Anlegen"}
             </Button>
@@ -684,11 +684,11 @@ export function VehiclesClient({
           {assignSighting && (
             <div className="space-y-4">
               {assignSighting.hasSnapshot && (
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700">
+                <div className="overflow-hidden rounded-lg border border-border bg-muted dark:border-border">
                   <img src={`/api/vehicle-sightings/${assignSighting.id}/snapshot`} alt="" decoding="async" className="max-h-64 w-full object-contain" />
                 </div>
               )}
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 {new Date(assignSighting.seenAt).toLocaleString("de-DE")}
                 {assignSighting.camera ? ` · ${assignSighting.camera.name}` : ""}
               </p>
@@ -723,19 +723,19 @@ export function VehiclesClient({
                     <Input value={assignName} onChange={(e) => setAssignName(e.target.value)} placeholder="optional" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Kennzeichen <span className="text-rose-500">*</span></Label>
+                    <Label>Kennzeichen <span className="text-destructive">*</span></Label>
                     <Input value={assignPlate} onChange={(e) => setAssignPlate(e.target.value)} className="font-mono uppercase" />
                   </div>
                 </div>
               )}
               {assignMode === "plate" && (
                 <div className="space-y-1.5">
-                  <Label>Kennzeichen <span className="text-rose-500">*</span></Label>
+                  <Label>Kennzeichen <span className="text-destructive">*</span></Label>
                   <Input value={assignPlate} onChange={(e) => setAssignPlate(e.target.value)} className="font-mono uppercase" />
-                  <p className="text-xs text-slate-500">Match gegen Whitelist, falls bekannt.</p>
+                  <p className="text-xs text-muted-foreground">Match gegen Whitelist, falls bekannt.</p>
                 </div>
               )}
-              {assignError && <p className="text-sm text-rose-600 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-lg">{assignError}</p>}
+              {assignError && <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{assignError}</p>}
             </div>
           )}
           <DialogFooter>

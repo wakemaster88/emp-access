@@ -32,7 +32,7 @@ export function AreaFilter({ areas, current }: { areas: Area[]; current?: string
   return (
     <Select value={current ?? "all"} onValueChange={handleChange}>
       <SelectTrigger className="w-[180px] h-9 text-sm">
-        <MapPin className="h-3.5 w-3.5 mr-1.5 text-slate-400" />
+        <MapPin className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70" />
         <SelectValue placeholder="Alle Resourcen" />
       </SelectTrigger>
       <SelectContent>

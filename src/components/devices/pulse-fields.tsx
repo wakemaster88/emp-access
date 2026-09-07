@@ -43,9 +43,9 @@ export function PulseFields({ values, onChange }: Props) {
   const seconds = Number(values.pulseSeconds);
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-3">
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Taster</p>
-      <p className="text-xs text-slate-500">
+    <div className="rounded-xl border border-border p-3 space-y-3">
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Taster</p>
+      <p className="text-xs text-muted-foreground">
         Ein Druck schaltet das Relais ein; nach der eingestellten Dauer fällt es
         von selbst wieder ab. Den Timer übernimmt der Shelly – das Relais geht
         also auch dann wieder aus, wenn die Verbindung zwischendurch abreißt.
@@ -70,21 +70,21 @@ export function PulseFields({ values, onChange }: Props) {
               key={s}
               type="button"
               onClick={() => onChange({ pulseSeconds: String(s) })}
-              className="rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+              className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:border-primary/60 hover:text-primary transition-colors"
             >
               {formatPulseDuration(s)}
             </button>
           ))}
         </div>
         {!error && (
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground/70">
             Betätigen schaltet für {formatPulseDuration(seconds)} ein.
           </p>
         )}
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+        <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
           <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
