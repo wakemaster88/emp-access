@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { clampVolume, parseDaysOfWeek, parseTimeOfDay, parseZoneIds } from "@/lib/audio";
+import { clampVolume, parseDaysOfWeek, parseZoneIds } from "@/lib/audio";
+import { parseScheduleTiming, scheduleResponseInclude } from "@/lib/audio-schedule-input";
 
 const ACTIONS = ["ANNOUNCE", "PLAY", "STOP", "VOLUME"] as const;
 type Action = (typeof ACTIONS)[number];
@@ -12,11 +13,8 @@ export async function GET() {
   const { db, accountId } = session;
   const schedules = await db.audioSchedule.findMany({
     where: { accountId: accountId! },
-    include: {
-      announcement: { select: { id: true, name: true } },
-      playlist: { select: { id: true, name: true } },
-    },
-    orderBy: [{ timeOfDay: "asc" }],
+    include: scheduleResponseInclude,
+    orderBy: [{ trigger: "asc" }, { timeOfDay: "asc" }, { offsetMinutes: "asc" }],
   });
   return NextResponse.json(schedules);
 }
@@ -31,10 +29,9 @@ export async function POST(request: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return NextResponse.json({ error: "Name erforderlich" }, { status: 400 });
 
-  const timeOfDay = parseTimeOfDay(body.timeOfDay);
-  if (!timeOfDay) {
-    return NextResponse.json({ error: "Ungültige Uhrzeit (HH:mm)" }, { status: 400 });
-  }
+  // Zeitpunkt: feste Uhrzeit oder Betriebsbeginn/-ende mit Versatz.
+  const timing = await parseScheduleTiming(db, accountId!, body, null);
+  if ("error" in timing) return NextResponse.json({ error: timing.error }, { status: 400 });
 
   if (!ACTIONS.includes(body.action as Action)) {
     return NextResponse.json({ error: "Ungültige Aktion" }, { status: 400 });
@@ -84,16 +81,13 @@ export async function POST(request: NextRequest) {
       action,
       isActive: body.isActive ?? true,
       daysOfWeek: parseDaysOfWeek(body.daysOfWeek),
-      timeOfDay,
+      ...timing,
       zoneIds,
       announcementId,
       playlistId,
       volume: action === "VOLUME" ? clampVolume(body.volume, 50) : null,
     },
-    include: {
-      announcement: { select: { id: true, name: true } },
-      playlist: { select: { id: true, name: true } },
-    },
+    include: scheduleResponseInclude,
   });
 
   return NextResponse.json(schedule, { status: 201 });

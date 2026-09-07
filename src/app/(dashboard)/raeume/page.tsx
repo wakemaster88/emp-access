@@ -6,9 +6,11 @@ import type {
   RoomDevice,
   RoomEvent,
   RoomPanel,
+  RoomZone,
 } from "@/components/raeume/types";
 import { safeAuth } from "@/lib/auth";
 import { superAdminClient, tenantClient, type TenantDb } from "@/lib/prisma";
+import { isPlayerOnline } from "@/lib/audio-constants";
 import { scheduleInclude } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 
@@ -33,6 +35,17 @@ const cameraSelect = {
   enabled: true,
   snapshotAt: true,
   lastSeenAt: true,
+} as const;
+
+const zoneSelect = {
+  id: true,
+  name: true,
+  isActive: true,
+  deviceId: true,
+  isPlaying: true,
+  currentTitle: true,
+  lastStateAt: true,
+  device: { select: { lastUpdate: true } },
 } as const;
 
 type DeviceRecord = {
@@ -68,6 +81,32 @@ function toDevice(d: DeviceRecord): RoomDevice {
   };
 }
 
+type ZoneRecord = {
+  id: number;
+  name: string;
+  isActive: boolean;
+  deviceId: number | null;
+  isPlaying: boolean;
+  currentTitle: string | null;
+  lastStateAt: Date | null;
+  device: { lastUpdate: Date | null } | null;
+};
+
+function toZone(z: ZoneRecord): RoomZone {
+  // Ein Pi, der sich nicht mehr meldet, spielt auch nichts – sonst stuende
+  // "spielt" fuer immer an einer stummen Zone.
+  const online = isPlayerOnline(z.device?.lastUpdate);
+  return {
+    id: z.id,
+    name: z.name,
+    isActive: z.isActive,
+    hasPlayer: z.deviceId !== null,
+    isPlaying: online && z.isPlaying,
+    currentTitle: online ? z.currentTitle : null,
+    lastStateAt: z.lastStateAt ? z.lastStateAt.toISOString() : null,
+  };
+}
+
 function toCamera(c: CameraRecord): RoomCamera {
   return {
     id: c.id,
@@ -90,12 +129,13 @@ export default async function RaeumePage() {
   const since = new Date(now);
   since.setHours(since.getHours() - EVENT_LOOKBACK_HOURS);
 
-  const [rooms, looseDevices, looseCameras, events, schedules, account] = await Promise.all([
+  const [rooms, looseDevices, looseCameras, looseZones, events, schedules, account] = await Promise.all([
     db.keyRoom.findMany({
       where: accountFilter,
       include: {
         devices: { select: deviceSelect, orderBy: { name: "asc" } },
         cameras: { select: cameraSelect, orderBy: { name: "asc" } },
+        audioZones: { select: zoneSelect, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] },
         operatingSchedule: { include: scheduleInclude },
         rules: {
           select: {
@@ -137,6 +177,11 @@ export default async function RaeumePage() {
       where: { ...accountFilter, keyRoomId: null },
       select: cameraSelect,
       orderBy: { name: "asc" },
+    }),
+    db.audioZone.findMany({
+      where: { ...accountFilter, keyRoomId: null },
+      select: zoneSelect,
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
     // Je Kamera nur das jüngste Ereignis. `distinct` ist hier wichtig und
     // nicht bloss sparsam: eine einzelne Kamera meldet ueber tausend
@@ -191,6 +236,7 @@ export default async function RaeumePage() {
     notes: room.notes,
     devices: room.devices.map(toDevice),
     cameras: room.cameras.map(toCamera),
+    zones: room.audioZones.map(toZone),
     locks: room.doors.flatMap((door) =>
       door.locks.map((lock) => {
         const doorLabel = door.doorNumber ? `${door.name} (${door.doorNumber})` : door.name;
@@ -248,6 +294,7 @@ export default async function RaeumePage() {
             rooms: roomPanels,
             looseDevices: looseDevices.map(toDevice),
             looseCameras: looseCameras.map(toCamera),
+            looseZones: looseZones.map(toZone),
             scheduleOptions: schedules,
             timezone: account?.timezone || DEFAULT_TIMEZONE,
             renderedAt: now.toISOString(),

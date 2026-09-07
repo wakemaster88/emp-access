@@ -19,6 +19,15 @@ export const scheduleInclude = {
   _count: { select: { rooms: true } },
 };
 
+/**
+ * Nur das, was `toScheduleSpec` zur Auswertung braucht – fuer Regel-Engine,
+ * Audio-Zeitplaene und Seiten, die "geoeffnet bis" anzeigen.
+ */
+export const scheduleSpecInclude = {
+  seasons: { include: { periods: true }, orderBy: { sortOrder: "asc" as const } },
+  exceptions: true,
+};
+
 /** Form, die `scheduleInclude` liefert – so viel, wie die Auswertung braucht. */
 export interface ScheduleRecord {
   name: string;

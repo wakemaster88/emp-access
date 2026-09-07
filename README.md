@@ -134,7 +134,11 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
 1. Unter **Geräte → Gerät hinzufügen** die Hardware **Audio-Player** wählen
    (Typ `AUDIO_PLAYER`). Die Gerätedetails zeigen danach das Konfigurations-JSON
    für den Pi.
-2. Unter **Audio → Zonen** eine Zone anlegen und das Gerät zuordnen.
+2. Unter **Audio → Zonen** eine Zone anlegen und das Gerät zuordnen. Dazu den
+   **Raum**, den die Zone beschallt: über ihn erbt sie die Betriebszeit des
+   Raums (siehe **Betriebszeiten** und **Räume**), und sie erscheint mit
+   Start/Stopp auf der Raumkarte. Die Zuordnung geht auch im Raum-Dialog unter
+   **Räume** („Beschallung in diesem Raum“).
 3. **Quelle** wählen – das ist, was der Start-Knopf abspielt:
    - *Playlist* → die eingestellte Standard-Playlist
    - *Webradio* → die eingetragene Stream-URL, z. B.
@@ -163,12 +167,21 @@ ankommt, sagt das Mithören nicht. Durchsagen sind nicht dabei, die laufen als
 eigener Job auf dem Pi. Bei Playlists ist es außerdem nicht taktgleich, weil der
 Pi keine Wiedergabeposition meldet, sondern nur alle 60 Sekunden einen Titel.
 
-**Durchsagen zu festen Zeiten** (Tab **Zeitpläne**): Ein Zeitplan besteht aus
-Aktion, Uhrzeit und Wochentagen. Für *Durchsage abspielen* muss die Ansage
-vorher unter **Vorlagen** gespeichert sein – nur Vorlagen stehen in der Auswahl.
-Mehrere Zeiten am Tag sind mehrere Zeitpläne; eine Zeitplanzeile ist ein Termin.
-Neben `ANNOUNCE` gibt es `PLAY` (Playlist starten, z. B. zur Öffnung), `STOP`
-(Betriebsschluss) und `VOLUME`.
+**Zeitpläne** (Tab **Zeitpläne**): Ein Zeitplan besteht aus Aktion, Zeitpunkt
+und Wochentagen. Der Zeitpunkt ist entweder eine **Uhrzeit** oder
+**Betriebsbeginn** bzw. **Betriebsende** mit Verschiebung in Minuten („Stopp,
+Betriebsende −15 Min.“). Welche Betriebszeit gilt, entscheidet der Zeitplan
+selbst oder – Vorgabe – der Raum der jeweiligen Zielzone; Zonen in
+verschiedenen Räumen sind dann zu verschiedenen Zeiten dran. Eine Zone ohne
+Raum mit Betriebszeit bekommt bei Betriebsbeginn/-ende nichts, die Karte warnt
+davor. Dazu eine **Bedingung** wie bei den Regeln: nur während oder nur
+außerhalb der Betriebszeit der Zone.
+
+Für *Durchsage abspielen* muss die Ansage vorher unter **Vorlagen** gespeichert
+sein – nur Vorlagen stehen in der Auswahl. Mehrere Zeiten am Tag sind mehrere
+Zeitpläne; eine Zeitplanzeile ist ein Termin. Neben `ANNOUNCE` gibt es `PLAY`
+(Playlist starten, z. B. zum Betriebsbeginn), `STOP` (Betriebsschluss) und
+`VOLUME`.
 
 Ausgewertet wird minütlich per Cron, und zwar in der Zeitzone des Accounts
 (`Account.timezone`, ohne Eintrag Europe/Berlin) – Sommerzeit wird also

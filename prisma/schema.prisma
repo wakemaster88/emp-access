@@ -295,7 +295,6 @@ model Device {
   cameraId             Int?
   camera               Camera?              @relation("DeviceCamera", fields: [cameraId], references: [id], onDelete: SetNull)
   firmware             String?
-  schedule             Json?
   systemInfo           Json?
   lastUpdate           DateTime?
   /// Offline-Push-Tracking: Zeitpunkt, zu dem fuer die AKTUELLE Offline-
@@ -1916,6 +1915,16 @@ enum AudioScheduleAction {
   VOLUME
 }
 
+/// Woran sich der Zeitpunkt eines Audio-Zeitplans bemisst.
+enum AudioScheduleTrigger {
+  /// Feste Uhrzeit `timeOfDay`.
+  TIME
+  /// Betriebsbeginn der zustaendigen Betriebszeit, plus/minus `offsetMinutes`.
+  OPENING
+  /// Betriebsende, plus/minus `offsetMinutes`.
+  CLOSING
+}
+
 /// Eine Beschallungszone = ein Raspberry-Pi-Abspieler mit angeschlossenem
 /// Verstaerker. Haelt Soll-Zustand (Quelle, Lautstaerken) und den vom Pi
 /// gemeldeten Ist-Zustand.
@@ -1980,6 +1989,11 @@ model AudioZone {
   /// Name des Senders, der uebernommen hat (z. B. "iPhone von Anna").
   externalSender     String?
   lastStateAt        DateTime?
+  /// Raum, den diese Zone beschallt. Ueber ihn erbt die Zone die Betriebszeit,
+  /// auf die sich Zeitplaene mit Betriebsbeginn/-ende beziehen. NULL = keinem
+  /// Raum zugeordnet.
+  keyRoomId          Int?
+  keyRoom            KeyRoom?           @relation(fields: [keyRoomId], references: [id], onDelete: SetNull)
   jobs               AudioJob[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -1988,6 +2002,7 @@ model AudioZone {
   @@index([accountId, sortOrder])
   @@index([playlistId])
   @@index([streamId])
+  @@index([keyRoomId])
 }
 
 /// Audiodatei in der Mediathek. Die Datei liegt im Blob-Storage; die Zonen-Pis
@@ -2110,9 +2125,22 @@ model AudioSchedule {
   isActive       Boolean             @default(true)
   action         AudioScheduleAction
   /// Wochentage als Bitmaske: bit0=Mo, bit1=Di, …, bit6=So. 127 = jeden Tag.
+  /// Bei Betriebsbeginn/-ende zaehlt der Betriebstag, nicht der Kalendertag,
+  /// an dem ein Ende nach Mitternacht faellt.
   daysOfWeek     Int                 @default(127)
-  /// "HH:mm" in der Account-Zeitzone.
-  timeOfDay      String
+  /// Woran sich der Zeitpunkt bemisst: Uhrzeit oder Betriebszeit.
+  trigger        AudioScheduleTrigger @default(TIME)
+  /// "HH:mm" in der Account-Zeitzone (nur trigger = TIME).
+  timeOfDay      String?
+  /// Verschiebung in Minuten gegenueber Betriebsbeginn/-ende (OPENING, CLOSING).
+  offsetMinutes  Int                 @default(0)
+  /// Welche Betriebszeit gilt; null = die des Raums der jeweiligen Zielzone.
+  /// Dieselbe Regel wie bei `RoomRule.operatingScheduleId`.
+  operatingScheduleId Int?
+  operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
+  /// Bedingung an die Betriebszeit der Zielzone: nur waehrend / nur ausserhalb.
+  /// Zonen, auf die sie nicht zutrifft, bleiben beim Lauf aussen vor.
+  operating      RuleOperatingCondition @default(ANY)
   /// Zielzonen als AudioZone-ID-Array. Leeres Array = alle aktiven Zonen.
   zoneIds        Json                @default("[]")
   announcementId Int?
@@ -2129,6 +2157,7 @@ model AudioSchedule {
   @@index([accountId, isActive])
   @@index([announcementId])
   @@index([playlistId])
+  @@index([operatingScheduleId])
 }
 
 /// Kommando an eine Zone plus Verlaufseintrag. Der Zonen-Pi holt offene Jobs
@@ -2180,6 +2209,8 @@ model KeyRoom {
   devices             Device[]
   /// Kameras, die diesen Raum abdecken.
   cameras             Camera[]
+  /// Beschallungszonen, die diesen Raum beschallen.
+  audioZones          AudioZone[]
   /// Betriebszeit, nach der sich dieser Raum richtet. Regeln fragen darueber,
   /// ob gerade geoeffnet ist; ohne Profil gilt der Raum als immer verfuegbar.
   operatingScheduleId Int?
@@ -2444,6 +2475,7 @@ model OperatingSchedule {
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   rules       RoomRule[]
+  audioSchedules AudioSchedule[]
 
   @@index([accountId])
 }

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { EquipmentPicker, type EquipmentItem } from "@/components/schliessanlage/equipment-picker";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
-import type { RoomCamera, RoomDevice, ScheduleOption } from "@/components/raeume/types";
+import type { RoomCamera, RoomDevice, RoomZone, ScheduleOption } from "@/components/raeume/types";
 
 export interface Placed<T> {
   item: T;
@@ -26,6 +26,7 @@ export function RoomEquipmentDialog({
   roomName,
   devices,
   cameras,
+  zones,
   roomNames,
   scheduleOptions,
   currentScheduleId,
@@ -36,6 +37,7 @@ export function RoomEquipmentDialog({
   roomName: string;
   devices: Placed<RoomDevice>[];
   cameras: Placed<RoomCamera>[];
+  zones: Placed<RoomZone>[];
   roomNames: Map<number, string>;
   scheduleOptions: ScheduleOption[];
   currentScheduleId: number | null;
@@ -48,6 +50,9 @@ export function RoomEquipmentDialog({
   );
   const [cameraIds, setCameraIds] = useState<number[]>(
     () => cameras.filter((c) => c.roomId === roomId).map((c) => c.item.id),
+  );
+  const [audioZoneIds, setAudioZoneIds] = useState<number[]>(
+    () => zones.filter((z) => z.roomId === roomId).map((z) => z.item.id),
   );
   const [scheduleId, setScheduleId] = useState<number | null>(currentScheduleId);
   const [saving, setSaving] = useState(false);
@@ -70,6 +75,12 @@ export function RoomEquipmentDialog({
     meta: c.item.kind,
     takenBy: takenBy(c.roomId),
   }));
+  const zoneItems: EquipmentItem[] = zones.map((z) => ({
+    id: z.item.id,
+    label: z.item.name,
+    meta: z.item.hasPlayer ? "Beschallungszone" : "Beschallungszone · ohne Abspieler",
+    takenBy: takenBy(z.roomId),
+  }));
 
   async function save() {
     setSaving(true);
@@ -77,6 +88,7 @@ export function RoomEquipmentDialog({
     const res = await apiRequest(`/api/schliessanlage/rooms/${roomId}`, "PUT", {
       deviceIds,
       cameraIds,
+      audioZoneIds,
       operatingScheduleId: scheduleId,
     });
     setSaving(false);
@@ -138,6 +150,21 @@ export function RoomEquipmentDialog({
               placeholder="Kamera suchen…"
               emptyText="Noch keine Kameras angelegt."
             />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Beschallung in diesem Raum</Label>
+            <EquipmentPicker
+              items={zoneItems}
+              value={audioZoneIds}
+              onChange={setAudioZoneIds}
+              placeholder="Zone suchen…"
+              emptyText="Noch keine Beschallungszone angelegt – unter „Audio“ anlegen."
+            />
+            <p className="text-[11px] text-neutral-500">
+              Zonen im Raum richten sich mit „Betriebsbeginn“ und „Betriebsende“ nach der
+              Betriebszeit dieses Raums.
+            </p>
           </div>
 
           <ErrorLine message={error} />

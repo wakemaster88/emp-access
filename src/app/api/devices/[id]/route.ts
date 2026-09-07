@@ -137,6 +137,23 @@ export async function PUT(
     }
   }
 
+  // Raum-Zuordnung: null/0 loest sie; ein Wert muss ein Raum desselben
+  // Accounts sein.
+  let keyRoomId = existing.keyRoomId;
+  if (body.keyRoomId !== undefined) {
+    const raw = body.keyRoomId;
+    if (raw === null || raw === 0 || raw === "") {
+      keyRoomId = null;
+    } else {
+      const roomId = Number(raw);
+      const room = Number.isInteger(roomId)
+        ? await db.keyRoom.findFirst({ where: { id: roomId, accountId: accountId! }, select: { id: true } })
+        : null;
+      if (!room) return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 400 });
+      keyRoomId = roomId;
+    }
+  }
+
   // Zonen-Stammdaten fuer die Wasserbilanz: Durchsatz (L/h, wie an der Pumpe
   // angezeigt) und Flaeche (m²). null/0 loescht den Wert.
   const parseMetric = (raw: unknown, current: number | null, max: number): number | null => {
@@ -154,6 +171,7 @@ export async function PUT(
       name: body.name ?? existing.name,
       pumpDeviceId,
       cameraId,
+      keyRoomId,
       flowLph,
       areaSqm,
       category,
@@ -173,7 +191,6 @@ export async function PUT(
         ? body.offlineAlertsEnabled
         : existing.offlineAlertsEnabled,
       firmware: body.firmware ?? existing.firmware,
-      schedule: body.schedule !== undefined ? (body.schedule ?? null) : existing.schedule,
     },
   });
 

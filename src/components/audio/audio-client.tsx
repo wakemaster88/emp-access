@@ -43,11 +43,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  AUDIO_OPERATING_LABELS,
+  SCHEDULE_WINDOW_MINUTES,
+  describeScheduleTiming,
   formatDaysOfWeek,
   nextScheduleRunLabel,
   type TtsVoice,
 } from "@/lib/audio-constants";
-import { scheduleWarnings } from "./schedule-warnings";
+import { describeOccurrence, nextOperatingOccurrence } from "@/lib/operating-hours";
+import { scheduleOperatingSpecs, scheduleWarnings } from "./schedule-warnings";
 import { AnnouncePanel } from "./announce-panel";
 import { Chip, sliderFill } from "./ui";
 import { AnnouncementDialog } from "./announcement-dialog";
@@ -73,7 +77,9 @@ import type {
   AnnouncementRow,
   AudioDeviceOption,
   JobRow,
+  OperatingScheduleOption,
   PlaylistRow,
+  RoomOption,
   ScheduleRow,
   StreamRow,
   TrackRow,
@@ -91,8 +97,44 @@ interface Props {
   jobs: JobRow[];
   audioDevices: AudioDeviceOption[];
   ttsVoices: TtsVoice[];
+  /** Räume zur Zuordnung einer Zone. */
+  rooms: RoomOption[];
+  /** Betriebszeiten samt Wochenplan – für Zeitpläne mit Betriebsbeginn/-ende. */
+  operatingSchedules: OperatingScheduleOption[];
   /** Zeitzone des Accounts – Zeitpläne gelten in ihr, nicht in der des Browsers. */
   timeZone: string;
+}
+
+/**
+ * Nächster Termin eines Zeitplans als Klartext. Bei Betriebsbeginn/-ende
+ * hängt er von der Betriebszeit ab – richten sich die Zielzonen nach
+ * verschiedenen, zählt die früheste und die Angabe sagt das dazu.
+ */
+function nextRunLabel(
+  schedule: ScheduleRow,
+  zones: ZoneRow[],
+  operatingSchedules: OperatingScheduleOption[],
+  timeZone: string
+): string {
+  const now = new Date();
+  if (schedule.trigger === "TIME") {
+    return nextScheduleRunLabel(schedule, now, timeZone) ?? "Kein Wochentag gewählt";
+  }
+  const { specs } = scheduleOperatingSpecs(schedule, zones, operatingSchedules);
+  if (specs.length === 0) return "Keine Betriebszeit zuständig";
+  const trigger = {
+    kind: schedule.trigger === "OPENING" ? ("open" as const) : ("close" as const),
+    offsetMinutes: schedule.offsetMinutes,
+    daysOfWeek: schedule.daysOfWeek,
+  };
+  const next = specs
+    .map((spec) => nextOperatingOccurrence(spec, trigger, now, timeZone, SCHEDULE_WINDOW_MINUTES * 60_000))
+    .filter((occ): occ is NonNullable<typeof occ> => occ !== null)
+    .sort((a, b) => a.at.getTime() - b.at.getTime())[0];
+  if (!next) return "Kein Termin in den nächsten Tagen";
+  return specs.length > 1
+    ? `${describeOccurrence(next, now, timeZone)} (je Raum verschieden)`
+    : describeOccurrence(next, now, timeZone);
 }
 
 export function AudioClient({
@@ -105,6 +147,8 @@ export function AudioClient({
   jobs,
   audioDevices,
   ttsVoices,
+  rooms,
+  operatingSchedules,
   timeZone,
 }: Props) {
   const router = useRouter();
@@ -592,7 +636,7 @@ export function AudioClient({
             <EmptyState
               icon={CalendarClock}
               title="Noch kein Zeitplan"
-              text="Automatisiere Öffnungsmusik, Kursdurchsagen und Betriebsschluss."
+              text="Musik zum Betriebsbeginn, Durchsagen vor Betriebsende, Kursansagen zur Uhrzeit."
             />
           ) : (
             <div className="grid gap-3">
@@ -612,11 +656,16 @@ export function AudioClient({
                           {schedule.name}
                         </h3>
                         <Badge variant="secondary" className="text-xs">
-                          {schedule.timeOfDay}
+                          {describeScheduleTiming(schedule)}
                         </Badge>
                         <Badge variant="outline" className="text-xs">
                           {formatDaysOfWeek(schedule.daysOfWeek)}
                         </Badge>
+                        {schedule.operating !== "ANY" && (
+                          <Badge variant="outline" className="text-xs">
+                            {AUDIO_OPERATING_LABELS[schedule.operating]}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
                         {ACTION_LABELS[schedule.action]}
@@ -627,11 +676,12 @@ export function AudioClient({
                         {schedule.zoneIds.length === 0
                           ? "alle Zonen"
                           : `${schedule.zoneIds.length} Zone${schedule.zoneIds.length === 1 ? "" : "n"}`}
+                        {schedule.trigger !== "TIME" &&
+                          ` · Betriebszeit: ${schedule.operatingScheduleName ?? "die des Raums"}`}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {schedule.isActive
-                          ? nextScheduleRunLabel(schedule, new Date(), timeZone) ??
-                            "Kein Wochentag gewählt"
+                          ? nextRunLabel(schedule, zones, operatingSchedules, timeZone)
                           : "Abgeschaltet"}
                         {" · "}
                         {schedule.lastRunAt
@@ -639,7 +689,13 @@ export function AudioClient({
                           : "noch nie ausgeführt"}
                       </p>
                       {schedule.isActive &&
-                        scheduleWarnings(schedule, zones, playlists, announcements).map(
+                        scheduleWarnings(
+                          schedule,
+                          zones,
+                          playlists,
+                          announcements,
+                          operatingSchedules
+                        ).map(
                           (warning) => (
                             <p
                               key={warning}
@@ -710,6 +766,7 @@ export function AudioClient({
           devices={audioDevices}
           playlists={playlists}
           streams={streams}
+          rooms={rooms}
           onClose={() => setZoneDialog({ open: false, zone: null })}
           onSaved={() => {
             setZoneDialog({ open: false, zone: null });
@@ -765,6 +822,7 @@ export function AudioClient({
           zones={zones}
           playlists={playlists}
           announcements={announcements}
+          operatingSchedules={operatingSchedules}
           onClose={() => setScheduleDialog({ open: false, schedule: null })}
           onSaved={() => {
             setScheduleDialog({ open: false, schedule: null });
@@ -976,6 +1034,11 @@ function ZoneCard({
               ) : (
                 <Badge variant="outline" className="text-xs">
                   Kein Abspieler
+                </Badge>
+              )}
+              {zone.roomName && (
+                <Badge variant="outline" className="text-xs" title="Raum – über ihn erbt die Zone die Betriebszeit">
+                  {zone.roomName}
                 </Badge>
               )}
               {zone.syncGroup && (

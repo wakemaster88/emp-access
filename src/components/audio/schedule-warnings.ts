@@ -8,7 +8,13 @@
  * stehen die Gründe an der Karte.
  */
 import { isQuietTime } from "@/lib/audio-constants";
-import type { AnnouncementRow, PlaylistRow, ScheduleRow, ZoneRow } from "./types";
+import type {
+  AnnouncementRow,
+  OperatingScheduleOption,
+  PlaylistRow,
+  ScheduleRow,
+  ZoneRow,
+} from "./types";
 
 function joinNames(names: string[]): string {
   if (names.length <= 2) return names.join(" und ");
@@ -22,11 +28,40 @@ export function scheduleTargetZones(schedule: ScheduleRow, zones: ZoneRow[]): Zo
   return active.filter((zone) => schedule.zoneIds.includes(zone.id));
 }
 
+/**
+ * Betriebszeiten, nach denen sich der Zeitplan richtet: die ausdrücklich
+ * gewählte, sonst je Zielzone die des Raums. `unresolved` sind Zielzonen ohne
+ * Betriebszeit – dort gibt es weder Betriebsbeginn noch -ende.
+ */
+export function scheduleOperatingSpecs(
+  schedule: ScheduleRow,
+  zones: ZoneRow[],
+  options: OperatingScheduleOption[]
+): { specs: OperatingScheduleOption[]; unresolved: ZoneRow[] } {
+  const targets = scheduleTargetZones(schedule, zones);
+  if (schedule.operatingScheduleId != null) {
+    const explicit = options.find((o) => o.id === schedule.operatingScheduleId);
+    return { specs: explicit ? [explicit] : [], unresolved: explicit ? [] : targets };
+  }
+  const specs = new Map<number, OperatingScheduleOption>();
+  const unresolved: ZoneRow[] = [];
+  for (const zone of targets) {
+    const option =
+      zone.operatingScheduleId != null
+        ? options.find((o) => o.id === zone.operatingScheduleId)
+        : undefined;
+    if (option) specs.set(option.id, option);
+    else unresolved.push(zone);
+  }
+  return { specs: [...specs.values()], unresolved };
+}
+
 export function scheduleWarnings(
   schedule: ScheduleRow,
   zones: ZoneRow[],
   playlists: PlaylistRow[],
-  announcements: AnnouncementRow[]
+  announcements: AnnouncementRow[],
+  operatingSchedules: OperatingScheduleOption[] = []
 ): string[] {
   const warnings: string[] = [];
   const targets = scheduleTargetZones(schedule, zones);
@@ -38,6 +73,27 @@ export function scheduleWarnings(
         : "Die ausgewählten Zonen gibt es nicht mehr oder sie sind abgeschaltet."
     );
     return warnings;
+  }
+
+  if (schedule.trigger !== "TIME") {
+    const { unresolved } = scheduleOperatingSpecs(schedule, zones, operatingSchedules);
+    if (unresolved.length > 0) {
+      const kind = schedule.trigger === "OPENING" ? "Betriebsbeginn" : "Betriebsende";
+      warnings.push(
+        unresolved.length === targets.length
+          ? `Keine Betriebszeit zuständig – ohne sie gibt es keinen ${kind}. Zone einem Raum mit Betriebszeit zuordnen oder hier eine Betriebszeit wählen.`
+          : `Ohne Betriebszeit: ${joinNames(unresolved.map((z) => z.name))}. Dort bleibt der Termin aus.`
+      );
+    }
+  }
+
+  if (schedule.operating === "CLOSED") {
+    const { unresolved } = scheduleOperatingSpecs(schedule, zones, operatingSchedules);
+    if (unresolved.length > 0) {
+      warnings.push(
+        `${joinNames(unresolved.map((z) => z.name))} ${unresolved.length === 1 ? "hat" : "haben"} keine Betriebszeit und ${unresolved.length === 1 ? "gilt" : "gelten"} als dauerhaft geöffnet – „nur außerhalb der Betriebszeit“ schließt sie aus.`
+      );
+    }
   }
 
   const withoutPlayer = targets.filter((zone) => zone.deviceId === null);
@@ -75,9 +131,11 @@ export function scheduleWarnings(
       }
     }
 
-    const quiet = targets.filter((zone) =>
-      isQuietTime(zone.quietFrom, zone.quietTo, schedule.timeOfDay)
-    );
+    // Bei Betriebsbeginn/-ende steht die Uhrzeit erst am Tag selbst fest.
+    const timeOfDay = schedule.timeOfDay;
+    const quiet = timeOfDay
+      ? targets.filter((zone) => isQuietTime(zone.quietFrom, zone.quietTo, timeOfDay))
+      : [];
     if (quiet.length > 0) {
       warnings.push(
         `Fällt in die Ruhezeit von ${joinNames(quiet.map((z) => z.name))} – dort bleibt die Musik aus.`

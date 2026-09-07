@@ -4,9 +4,12 @@ import type {
   AudioJobKind,
   AudioJobStatus,
   AudioScheduleAction,
+  AudioScheduleTrigger,
   AudioSourceKind,
   AudioTrackKind,
+  RuleOperatingCondition,
 } from "@prisma/client";
+import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
 
 export interface ZoneRow {
   id: number;
@@ -15,6 +18,11 @@ export interface ZoneRow {
   deviceName: string | null;
   /** Serverseitig aus dem letzten Heartbeat abgeleitet. */
   deviceOnline: boolean;
+  /** Raum, den die Zone beschallt. Über ihn erbt sie die Betriebszeit. */
+  roomId: number | null;
+  roomName: string | null;
+  /** Betriebszeit des Raums, aufgelöst – null, wenn Raum oder Profil fehlt. */
+  operatingScheduleId: number | null;
   isActive: boolean;
   syncGroup: string | null;
   volume: number;
@@ -94,7 +102,17 @@ export interface ScheduleRow {
   isActive: boolean;
   action: AudioScheduleAction;
   daysOfWeek: number;
-  timeOfDay: string;
+  /** Woran sich der Zeitpunkt bemisst: Uhrzeit oder Betriebsbeginn/-ende. */
+  trigger: AudioScheduleTrigger;
+  /** Nur bei trigger = TIME gesetzt. */
+  timeOfDay: string | null;
+  /** Verschiebung in Minuten gegenüber Betriebsbeginn/-ende. */
+  offsetMinutes: number;
+  /** Ausdrücklich gewählte Betriebszeit; null = die des Raums der Zielzone. */
+  operatingScheduleId: number | null;
+  operatingScheduleName: string | null;
+  /** Bedingung an die Betriebszeit der Zielzone. */
+  operating: RuleOperatingCondition;
   zoneIds: number[];
   announcementId: number | null;
   announcementName: string | null;
@@ -145,10 +163,29 @@ export interface AudioDeviceOption {
   backends: string[];
 }
 
+/** Raum zur Auswahl im Zonen-Dialog. */
+export interface RoomOption {
+  id: number;
+  name: string;
+}
+
+/**
+ * Betriebszeit samt Wochenplan, damit die Zeitplan-Karte "heute 19:45" ohne
+ * Rückfrage beim Server anzeigen kann.
+ */
+export interface OperatingScheduleOption {
+  id: number;
+  name: string;
+  seasons: SeasonSpec[];
+  exceptions: ExceptionSpec[];
+}
+
 export type {
   AudioSourceKind,
   AudioScheduleAction,
+  AudioScheduleTrigger,
   AudioTrackKind,
   AudioAnnouncementSource,
   AudioExternalKind,
+  RuleOperatingCondition,
 };

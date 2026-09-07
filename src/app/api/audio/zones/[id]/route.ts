@@ -55,6 +55,21 @@ export async function PUT(
     }
   }
 
+  // Raum-Zuordnung analog.
+  let keyRoomId: number | null | undefined = undefined;
+  if (body.keyRoomId !== undefined) {
+    if (body.keyRoomId === null || body.keyRoomId === "") {
+      keyRoomId = null;
+    } else {
+      const candidate = Number(body.keyRoomId);
+      const room = Number.isInteger(candidate)
+        ? await db.keyRoom.findFirst({ where: { id: candidate, accountId: accountId! }, select: { id: true } })
+        : null;
+      if (!room) return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 404 });
+      keyRoomId = candidate;
+    }
+  }
+
   // Playlist-Zuordnung analog.
   let playlistId: number | null | undefined = undefined;
   if (body.playlistId !== undefined) {
@@ -113,6 +128,7 @@ export async function PUT(
     data: {
       name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined,
       ...(deviceId !== undefined ? { deviceId } : {}),
+      ...(keyRoomId !== undefined ? { keyRoomId } : {}),
       ...(playlistId !== undefined ? { playlistId } : {}),
       ...(streamId !== undefined
         ? { streamId, streamUrl: streamUrlFromStream }
@@ -153,6 +169,7 @@ export async function PUT(
       device: { select: { id: true, name: true, lastUpdate: true } },
       playlist: { select: { id: true, name: true } },
       stream: { select: { id: true, name: true } },
+      keyRoom: { select: { id: true, name: true } },
     },
   });
 
