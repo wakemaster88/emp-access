@@ -3,6 +3,8 @@
  * damit sie auch in Client-Komponenten verwendet werden können.
  */
 
+import { operatingSpanState, type ScheduleSpec } from "./operating-hours";
+
 /** Ansagen, die zu lang sind, blockieren die Zone unnötig lange. */
 export const MAX_ANNOUNCEMENT_CHARS = 600;
 
@@ -283,15 +285,70 @@ export function formatDaysOfWeek(bitmask: number): string {
   return selected.length === 0 ? "Nie" : selected.join(", ");
 }
 
-/** Prüft, ob `time` ("HH:mm") in der Ruhezeit einer Zone liegt. */
-export function isQuietTime(
-  quietFrom: string | null,
-  quietTo: string | null,
-  time: string
-): boolean {
-  if (!quietFrom || !quietTo) return false;
-  if (quietFrom === quietTo) return false;
-  // Fenster über Mitternacht (z. B. 22:00–06:00).
-  if (quietFrom > quietTo) return time >= quietFrom || time < quietTo;
-  return time >= quietFrom && time < quietTo;
+// ── Musik nur zur Betriebszeit ───────────────────────────────────────────────
+
+/** Größter Versatz gegenüber Betriebsbeginn/-ende: zwölf Stunden. */
+export const MAX_OPERATING_OFFSET_MINUTES = 720;
+
+/** Ganze Minuten im erlaubten Bereich, sonst null. Leer zählt als ungültig. */
+export function parseOffsetMinutes(value: unknown): number | null {
+  if (typeof value === "string" && value.trim() === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || Math.abs(n) > MAX_OPERATING_OFFSET_MINUTES) return null;
+  return n;
+}
+
+/**
+ * Musikfenster einer Zone: Musik läuft von Betriebsbeginn plus
+ * `musicOpenOffset` bis Betriebsende plus `musicCloseOffset` (Minuten). Hat die
+ * frühere feste Ruhezeit abgelöst – die Uhrzeiten stehen in der Betriebszeit
+ * des Raums, samt Saison und Ausnahmetagen.
+ */
+export interface MusicWindowSettings {
+  musicOperating: boolean;
+  musicOpenOffset: number;
+  musicCloseOffset: number;
+}
+
+export interface MusicWindowState {
+  /** Darf die Zone jetzt Musik spielen? */
+  allowed: boolean;
+  /** Wann der Zustand kippt; null = bis auf Weiteres. */
+  until: Date | null;
+}
+
+/**
+ * Darf die Zone Musik spielen? Ohne Kopplung oder ohne Betriebszeit immer –
+ * ein Raum ohne Profil soll keine Zone stumm schalten, wie bei den Regeln.
+ */
+export function musicWindowState(
+  zone: MusicWindowSettings,
+  schedule: ScheduleSpec | null | undefined,
+  now: Date,
+  timeZone: string | null | undefined
+): MusicWindowState {
+  if (!zone.musicOperating || !schedule) return { allowed: true, until: null };
+  const state = operatingSpanState(schedule, now, timeZone, {
+    openMinutes: zone.musicOpenOffset,
+    closeMinutes: zone.musicCloseOffset,
+  });
+  return { allowed: state.inside, until: state.until };
+}
+
+/**
+ * "Musik zur Betriebszeit" bzw. "Musik von Betriebsbeginn −30 Min. bis
+ * Betriebsende +30 Min."; null ohne Kopplung.
+ */
+export function describeMusicWindow(zone: MusicWindowSettings): string | null {
+  if (!zone.musicOperating) return null;
+  if (zone.musicOpenOffset === 0 && zone.musicCloseOffset === 0) return "Musik zur Betriebszeit";
+  const open =
+    zone.musicOpenOffset === 0
+      ? "Betriebsbeginn"
+      : `Betriebsbeginn ${formatOffsetMinutes(zone.musicOpenOffset)}`;
+  const close =
+    zone.musicCloseOffset === 0
+      ? "Betriebsende"
+      : `Betriebsende ${formatOffsetMinutes(zone.musicCloseOffset)}`;
+  return `Musik von ${open} bis ${close}`;
 }

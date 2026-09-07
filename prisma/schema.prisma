@@ -1959,10 +1959,14 @@ model AudioZone {
   stream             AudioStream?       @relation(fields: [streamId], references: [id], onDelete: SetNull)
   /// Webradio-/Stream-URL fuer sourceKind = STREAM (Kopie des gewaehlten Senders).
   streamUrl          String?
-  /// Ruhezeit "HH:mm"–"HH:mm" (Account-TZ): in diesem Fenster laeuft keine
-  /// Musik, Durchsagen aber weiterhin. end < start = ueber Mitternacht.
-  quietFrom          String?
-  quietTo            String?
+  /// Musik nur zur Betriebszeit des Raums: von Betriebsbeginn plus
+  /// `musicOpenOffset` bis Betriebsende plus `musicCloseOffset` (Minuten,
+  /// negativ = vorher). Ausserhalb stoppt die eigene Musik und startet nicht,
+  /// Durchsagen laufen weiter. Ohne Raum mit Betriebszeit bleibt der Schalter
+  /// wirkungslos. Loest die fruehere feste Ruhezeit (quietFrom/quietTo) ab.
+  musicOperating     Boolean            @default(false)
+  musicOpenOffset    Int                @default(0)
+  musicCloseOffset   Int                @default(0)
   /// AirPlay-Empfaenger aktiv: ein Sender im WLAN darf die Zone uebernehmen.
   airplayEnabled     Boolean            @default(false)
   /// Bluetooth-Empfaenger (A2DP-Sink) aktiv.

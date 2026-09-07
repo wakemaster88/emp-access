@@ -1,3 +1,3 @@
 """EMP Access – Raspberry Pi Audio Player Client"""
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"

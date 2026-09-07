@@ -8,7 +8,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { deviceTokenMismatch, validateApiToken } from "@/lib/api-auth";
-import { clampVolume, pairableSeconds, parseExternalKind } from "@/lib/audio";
+import { clampVolume, musicWindowState, pairableSeconds, parseExternalKind } from "@/lib/audio";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 
 const JOB_BATCH_SIZE = 20;
 
@@ -36,12 +37,25 @@ export async function GET(request: NextRequest) {
           },
         },
       },
+      account: { select: { timezone: true } },
+      keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
     },
   });
 
   if (!zone) {
     return NextResponse.json({ error: "Zone not found" }, { status: 404 });
   }
+
+  // Musikfenster aus der Betriebszeit des Raums – hier gerechnet, weil der
+  // Abspieler weder Saison noch Ausnahmetage kennt. `until` nennt den
+  // nächsten Wechsel, damit der Pi ihn auch ohne Verbindung einhält.
+  const operating = zone.keyRoom?.operatingSchedule;
+  const music = musicWindowState(
+    zone,
+    operating ? toScheduleSpec(operating) : null,
+    new Date(),
+    zone.account.timezone
+  );
 
   const jobs = await db.audioJob.findMany({
     where: { zoneId: zone.id, status: "PENDING" },
@@ -67,8 +81,7 @@ export async function GET(request: NextRequest) {
       duckVolume: zone.duckVolume,
       sourceKind: zone.sourceKind,
       streamUrl: zone.stream?.url ?? zone.streamUrl,
-      quietFrom: zone.quietFrom,
-      quietTo: zone.quietTo,
+      music: { allowed: music.allowed, until: music.until?.toISOString() ?? null },
       // Empfänger, die diese Zone übernehmen dürfen. null = abgeschaltet, der
       // Abspieler hält den Dienst dann gestoppt. Ältere Abspieler kennen die
       // Felder nicht und übergehen sie.

@@ -26,12 +26,12 @@ import {
   queueAnnouncement,
   queueZoneCommand,
 } from "@/lib/audio";
-import { isQuietTime } from "@/lib/audio-constants";
+import { musicWindowState } from "@/lib/audio-constants";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { sendPushToAccount } from "@/lib/web-push";
 import { getSunTimesForAccount } from "@/lib/sun";
 import { dueOperatingOccurrence, isOperatingAt, type ScheduleSpec } from "@/lib/operating-hours";
-import { toScheduleSpec, type ScheduleRecord } from "@/lib/operating-queries";
+import { scheduleSpecInclude, toScheduleSpec, type ScheduleRecord } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE, isWithinWindow, tzInstant, tzWeekdayBit, tzYmd } from "@/lib/tz-time";
 
 /** Toleranz um den geplanten Zeitpunkt. Der Cron laeuft alle fuenf Minuten. */
@@ -284,21 +284,31 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
 
   const zone = await prisma.audioZone.findFirst({
     where: { id: action.audioZoneId, accountId: rule.accountId },
-    select: { id: true, name: true, isActive: true, quietFrom: true, quietTo: true },
+    select: {
+      id: true,
+      name: true,
+      isActive: true,
+      musicOperating: true,
+      musicOpenOffset: true,
+      musicCloseOffset: true,
+      keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
+    },
   });
   if (!zone) return { ...base, target: `#${action.audioZoneId}`, ok: false, error: "Zone nicht gefunden" };
   if (!zone.isActive) return { ...base, target: zone.name, ok: false, error: "Zone ist deaktiviert" };
 
-  // Der Zonen-Pi setzt die Ruhezeit fuer Musik selbst durch. Eine Playlist in
-  // der Ruhezeit einzureihen wuerde also nur einen Job erzeugen, der verworfen
-  // wird – deshalb hier schon abbrechen. Durchsagen laufen weiterhin.
+  // Der Zonen-Pi haelt das Musikfenster (Betriebszeit des Raums samt Versatz)
+  // selbst ein. Eine Playlist ausserhalb einzureihen wuerde also nur einen
+  // Job erzeugen, der verworfen wird – deshalb hier schon abbrechen.
+  // Durchsagen laufen weiterhin.
   const timezone = rule.account.timezone || DEFAULT_TIMEZONE;
-  const nowHm = new Intl.DateTimeFormat("en-GB", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date());
+  const operating = zone.keyRoom?.operatingSchedule;
+  const musicAllowed = musicWindowState(
+    zone,
+    operating ? toScheduleSpec(operating) : null,
+    new Date(),
+    timezone,
+  ).allowed;
 
   try {
     if (action.audioAnnouncementId) {
@@ -321,8 +331,8 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
     }
 
     if (action.audioPlaylistId) {
-      if (isQuietTime(zone.quietFrom, zone.quietTo, nowHm)) {
-        return { ...base, target: zone.name, ok: false, error: "Ruhezeit der Zone" };
+      if (!musicAllowed) {
+        return { ...base, target: zone.name, ok: false, error: "Außerhalb der Betriebszeit der Zone" };
       }
       const payload = await playlistPayload(prisma, action.audioPlaylistId);
       if (!payload) {

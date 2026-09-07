@@ -10,7 +10,7 @@ zurück.
 - Durchsagen mit Gong, Wiederholung und automatischem Absenken der Musik (Ducking)
 - Notfalldurchsagen (Priorität ≥ 100) unterbrechen eine laufende Ansage
 - Lokaler Dateicache – einmal geladene Titel laufen auch ohne Internet weiter
-- Ruhezeiten je Zone: eigene Musik/Stream wird gestoppt und startet nicht, Durchsagen immer
+- Musik nur zur Betriebszeit je Zone: außerhalb wird eigene Musik/Stream gestoppt und startet nicht, Durchsagen immer
 - AirPlay- und Bluetooth-Empfang: ein Handy übernimmt die Zone auf Zuruf
 - Synchrone Wiedergabe überlappender Außenbereiche über Snapcast
 - Auto-Update per git und systemd-Watchdog wie beim Scanner
@@ -111,8 +111,18 @@ sudo systemctl restart emp-audio
 | `external_ctl` | `default` | Steuergerät, über das `amixer` den Regler erreicht |
 | `external_poll_interval` | `2` | Sekunden, bis eine Übernahme auffällt |
 
-Lautstärke, Ansagelautstärke, Ducking-Pegel und Ruhezeiten kommen aus der Zone
-im Dashboard und müssen hier nicht gepflegt werden.
+Lautstärke, Ansagelautstärke, Ducking-Pegel und das Musikfenster kommen aus der
+Zone im Dashboard und müssen hier nicht gepflegt werden.
+
+### Musik nur zur Betriebszeit
+
+Die Zone kann Musik auf die Betriebszeit ihres Raums begrenzen, je Ende mit
+Versatz in Minuten. Der Pi rechnet dabei nichts selbst: Saison, Wochentage und
+Ausnahmetage kennt nur der Server, der schickt im Zonenabgleich `music` mit
+`allowed` (jetzt) und `until` (nächster Wechsel, ISO-Zeitstempel). Nach `until`
+nimmt der Abspieler den umgekehrten Zustand an, bis der nächste Abgleich kommt
+– so geht die Musik abends auch dann aus, wenn die Verbindung gerade fehlt.
+Ohne `music` im Abgleich (Zone ohne Kopplung) läuft die Musik jederzeit.
 
 ### Sprachanhebung
 
@@ -174,7 +184,7 @@ angehalten und läuft weiter, sobald die Verbindung endet. Umschalten muss man
 nichts, auch nicht zurück.
 
 Durchsagen behalten dabei immer Vorrang – auch gegen einen fremden Sender. Die
-Ruhezeit gilt weiter nur für die eigene Musik: wer abends bewusst etwas
+Betriebszeit gilt weiter nur für die eigene Musik: wer abends bewusst etwas
 aufspielt, wird nicht ausgebremst.
 
 _Kein Spotify Connect: Raspotify und librespot untersagen ausdrücklich

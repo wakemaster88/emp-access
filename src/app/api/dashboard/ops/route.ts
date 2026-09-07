@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { isPlayerOnline, isQuietTime } from "@/lib/audio-constants";
+import { isPlayerOnline, musicWindowState } from "@/lib/audio-constants";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import {
   berlinDayRange,
   berlinHm,
@@ -71,10 +72,13 @@ export async function GET() {
           isPlaying: true,
           currentTitle: true,
           sourceKind: true,
-          quietFrom: true,
-          quietTo: true,
+          musicOperating: true,
+          musicOpenOffset: true,
+          musicCloseOffset: true,
           externalSender: true,
           device: { select: { lastUpdate: true } },
+          account: { select: { timezone: true } },
+          keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
         },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
@@ -192,7 +196,12 @@ export async function GET() {
         sourceKind: z.sourceKind,
         streamName: null,
         externalSender: z.externalSender,
-        quiet: isQuietTime(z.quietFrom, z.quietTo, hm),
+        offHours: !musicWindowState(
+          z,
+          z.keyRoom?.operatingSchedule ? toScheduleSpec(z.keyRoom.operatingSchedule) : null,
+          now,
+          z.account.timezone
+        ).allowed,
         deviceOnline: isPlayerOnline(z.device?.lastUpdate),
       })),
     },

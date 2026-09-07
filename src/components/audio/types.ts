@@ -37,8 +37,10 @@ export interface ZoneRow {
   streamId: number | null;
   streamName: string | null;
   streamUrl: string | null;
-  quietFrom: string | null;
-  quietTo: string | null;
+  /** Musik nur zur Betriebszeit des Raums, je Ende mit Versatz in Minuten. */
+  musicOperating: boolean;
+  musicOpenOffset: number;
+  musicCloseOffset: number;
   /** Empfänger, über die ein Sender die Zone übernehmen darf. */
   airplayEnabled: boolean;
   bluetoothEnabled: boolean;
@@ -167,6 +169,9 @@ export interface AudioDeviceOption {
 export interface RoomOption {
   id: number;
   name: string;
+  /** Betriebszeit des Raums – null, wenn er keine hat. */
+  operatingScheduleId: number | null;
+  operatingScheduleName: string | null;
 }
 
 /**

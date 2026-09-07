@@ -153,6 +153,15 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
    Ducking-Pegel weiter herunter – nicht die Durchsage weiter hoch.
 5. Überlappen sich Zonen akustisch, bei allen dieselbe **Sync-Gruppe**
    eintragen – die Abspieler laufen dann über Snapcast synchron.
+6. **Musik nur zur Betriebszeit**: Die Zone spielt Musik von Betriebsbeginn
+   bis Betriebsende ihres Raums, je Ende mit Versatz in Minuten („Beginn −30,
+   Ende +30“ heißt: eine halbe Stunde vorher an, eine halbe Stunde später
+   aus). Außerhalb stoppt die eigene Musik und startet nicht – auch nicht per
+   Zeitplan oder Regel –, Durchsagen laufen weiter, und wer per AirPlay oder
+   Bluetooth sendet, wird nicht ausgebremst. Saison, Wochentage und
+   Ausnahmetage kommen aus der Betriebszeit; ohne Raum mit Betriebszeit wirkt
+   der Schalter nicht, der Dialog sagt das. Das hat die frühere feste
+   Ruhezeit („22:00–08:00“) abgelöst.
 
 Die Quelle bleibt beim Stoppen erhalten; `sourceKind` in der Datenbank ist
 dagegen der Ist-Zustand, den der Pi nach Neustart oder Durchsage wieder
@@ -193,9 +202,10 @@ Zeitrechnung mit `npx tsx scripts/audio-schedule-check.ts`.
 
 Jede Zeitplankarte zeigt den nächsten Termin („heute 18:30") und den letzten Lauf.
 Dazu warnt sie, wenn der Termin nichts bewirken wird: Zielzone ohne Abspieler,
-Abspieler offline, gelöschte oder leere Playlist, oder ein `PLAY` mitten in der
-Ruhezeit der Zone. Diese Fälle fallen sonst erst zur Uhrzeit auf – und dann
-merkt sie niemand, weil ja gerade nichts passiert.
+Abspieler offline, gelöschte oder leere Playlist, oder ein `PLAY` außerhalb der
+Betriebszeit einer Zone, die Musik nur dann spielt. Diese Fälle fallen sonst
+erst zur Uhrzeit auf – und dann merkt sie niemand, weil ja gerade nichts
+passiert.
 
 Steht nach dem ersten Termin noch „noch nie ausgeführt", liegt es am Cron oder an
 `CRON_SECRET`. Lief er, hinterlässt er einen Eintrag im Tab **Verlauf**, dort mit

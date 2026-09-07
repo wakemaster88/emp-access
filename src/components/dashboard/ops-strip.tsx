@@ -24,7 +24,8 @@ export interface DashboardOps {
       sourceKind: string;
       streamName: string | null;
       externalSender: string | null;
-      quiet: boolean;
+      /** Musik nur zur Betriebszeit, und die ist gerade vorbei. */
+      offHours: boolean;
       deviceOnline: boolean;
     }[];
   };
@@ -97,7 +98,7 @@ function hubSubline(hubs: DashboardOps["hubs"]): string {
 
 function zoneSubline(z: DashboardOps["audio"]["zones"][number]): string {
   if (!z.deviceOnline) return "Offline";
-  if (z.quiet && !z.isPlaying) return "Ruhezeit";
+  if (z.offHours && !z.isPlaying) return "Betriebsruhe";
   if (z.externalSender) return z.externalSender;
   if (z.isPlaying) {
     return z.currentTitle || z.streamName || (z.sourceKind === "STREAM" ? "Webradio" : "Spielt");
