@@ -20,14 +20,26 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AUDIO_OPERATING_LABELS, AUDIO_TRIGGER_LABELS } from "@/lib/audio-constants";
 import { Chip, sliderFill } from "./ui";
 import type {
   AnnouncementRow,
   AudioScheduleAction,
+  AudioScheduleTrigger,
+  OperatingScheduleOption,
   PlaylistRow,
+  RuleOperatingCondition,
   ScheduleRow,
   ZoneRow,
 } from "./types";
+
+const ROOM_SCHEDULE = "__room__";
+
+const TRIGGER_HINTS: Record<AudioScheduleTrigger, string> = {
+  TIME: "Feste Uhrzeit an den gewählten Wochentagen.",
+  OPENING: "Wenn die Betriebszeit der Zone öffnet – wahlweise vorher oder nachher.",
+  CLOSING: "Wenn die Betriebszeit der Zone schließt – wahlweise vorher oder nachher.",
+};
 
 const DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
@@ -46,6 +58,7 @@ interface Props {
   zones: ZoneRow[];
   playlists: PlaylistRow[];
   announcements: AnnouncementRow[];
+  operatingSchedules: OperatingScheduleOption[];
 }
 
 export function ScheduleDialog({
@@ -56,13 +69,22 @@ export function ScheduleDialog({
   zones,
   playlists,
   announcements,
+  operatingSchedules,
 }: Props) {
   const isEdit = !!schedule;
   const templates = announcements.filter((a) => a.isTemplate);
 
   const [name, setName] = useState(schedule?.name ?? "");
   const [action, setAction] = useState<AudioScheduleAction>(schedule?.action ?? "ANNOUNCE");
+  const [trigger, setTrigger] = useState<AudioScheduleTrigger>(schedule?.trigger ?? "TIME");
   const [timeOfDay, setTimeOfDay] = useState(schedule?.timeOfDay ?? "09:00");
+  const [offsetMinutes, setOffsetMinutes] = useState(schedule?.offsetMinutes ?? 0);
+  const [operatingScheduleId, setOperatingScheduleId] = useState<string>(
+    schedule?.operatingScheduleId ? String(schedule.operatingScheduleId) : ROOM_SCHEDULE
+  );
+  const [operating, setOperating] = useState<RuleOperatingCondition>(
+    schedule?.operating ?? "ANY"
+  );
   const [daysOfWeek, setDaysOfWeek] = useState(schedule?.daysOfWeek ?? 127);
   const [zoneIds, setZoneIds] = useState<number[]>(schedule?.zoneIds ?? []);
   const [announcementId, setAnnouncementId] = useState<string>(
@@ -97,13 +119,35 @@ export function ScheduleDialog({
       setError("Bitte eine Playlist auswählen");
       return;
     }
+    if (trigger === "TIME" && !timeOfDay) {
+      setError("Bitte eine Uhrzeit angeben");
+      return;
+    }
+    // Ohne Betriebszeit gibt es weder Betriebsbeginn noch -ende. Zonen ohne
+    // Raum bleiben still – das soll nicht erst am Tag selbst auffallen.
+    if (trigger !== "TIME" && operatingScheduleId === ROOM_SCHEDULE) {
+      const targets = zoneIds.length === 0 ? zones.filter((z) => z.isActive) : zones.filter((z) => zoneIds.includes(z.id));
+      if (targets.length > 0 && targets.every((z) => z.operatingScheduleId == null)) {
+        setError(
+          operatingSchedules.length === 0
+            ? "Noch keine Betriebszeit angelegt – zuerst unter „Betriebszeiten“ anlegen und dem Raum der Zone zuordnen."
+            : "Keine der Zonen hat einen Raum mit Betriebszeit. Entweder die Zone einem Raum zuordnen oder hier eine Betriebszeit wählen."
+        );
+        return;
+      }
+    }
 
     setSaving(true);
     try {
       const payload = {
         name: name.trim(),
         action,
-        timeOfDay,
+        trigger,
+        timeOfDay: trigger === "TIME" ? timeOfDay : null,
+        offsetMinutes: trigger === "TIME" ? 0 : offsetMinutes,
+        operatingScheduleId:
+          operatingScheduleId === ROOM_SCHEDULE ? null : Number(operatingScheduleId),
+        operating,
         daysOfWeek,
         zoneIds,
         announcementId: action === "ANNOUNCE" ? Number(announcementId) : null,
@@ -232,14 +276,96 @@ export function ScheduleDialog({
           )}
 
           <div>
-            <Label htmlFor="as-time">Uhrzeit</Label>
-            <Input
-              id="as-time"
-              type="time"
-              value={timeOfDay}
-              onChange={(e) => setTimeOfDay(e.target.value)}
-              className="w-32"
-            />
+            <Label>Wann</Label>
+            <Select value={trigger} onValueChange={(v) => setTrigger(v as AudioScheduleTrigger)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(AUDIO_TRIGGER_LABELS) as AudioScheduleTrigger[]).map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {AUDIO_TRIGGER_LABELS[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500 mt-1">{TRIGGER_HINTS[trigger]}</p>
+          </div>
+
+          {trigger === "TIME" ? (
+            <div>
+              <Label htmlFor="as-time">Uhrzeit</Label>
+              <Input
+                id="as-time"
+                type="time"
+                value={timeOfDay}
+                onChange={(e) => setTimeOfDay(e.target.value)}
+                className="w-32"
+              />
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="as-offset">Verschiebung (Min.)</Label>
+                <Input
+                  id="as-offset"
+                  type="number"
+                  min={-720}
+                  max={720}
+                  value={offsetMinutes}
+                  onChange={(e) => setOffsetMinutes(Number(e.target.value) || 0)}
+                  className="w-32"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Negativ = vorher, positiv = nachher. „−15“ heißt eine Viertelstunde vor{" "}
+                  {trigger === "OPENING" ? "Betriebsbeginn" : "Betriebsende"}.
+                </p>
+              </div>
+              <div>
+                <Label>Betriebszeit</Label>
+                <Select value={operatingScheduleId} onValueChange={setOperatingScheduleId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ROOM_SCHEDULE}>die des Raums der Zone</SelectItem>
+                    {operatingSchedules.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {operatingSchedules.length === 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                    Noch keine Betriebszeit angelegt – unter „Betriebszeiten“ anlegen.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Label>Bedingung</Label>
+            <Select
+              value={operating}
+              onValueChange={(v) => setOperating(v as RuleOperatingCondition)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(AUDIO_OPERATING_LABELS) as RuleOperatingCondition[]).map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {AUDIO_OPERATING_LABELS[c]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500 mt-1">
+              Gilt je Zone nach der Betriebszeit ihres Raums. Eine Zone ohne Betriebszeit gilt als
+              dauerhaft geöffnet.
+            </p>
           </div>
 
           <div>

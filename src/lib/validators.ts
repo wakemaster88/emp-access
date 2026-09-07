@@ -506,6 +506,8 @@ export const keyRoomCreateSchema = z.object({
   deviceIds: z.array(z.coerce.number().int().positive()).optional(),
   /// Kameras, die diesen Raum abdecken (Vollersetzung).
   cameraIds: z.array(z.coerce.number().int().positive()).optional(),
+  /// Beschallungszonen, die diesen Raum beschallen (Vollersetzung).
+  audioZoneIds: z.array(z.coerce.number().int().positive()).optional(),
   /// Betriebszeit-Profil; null = keines.
   operatingScheduleId: z.coerce.number().int().positive().nullable().optional(),
 });

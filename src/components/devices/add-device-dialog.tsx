@@ -15,13 +15,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Loader2, Cpu, Wifi, AlertCircle,
+  Plus, Loader2, Cpu, Wifi, AlertCircle, Building2,
   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
   LogIn, LogOut, ArrowLeftRight, Umbrella, Blinds, CircleDot, Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { WeekScheduleEditor, emptySchedule } from "@/components/devices/week-schedule-editor";
-import type { WeekSchedule } from "@/lib/schedule";
 import { isCoverCategory } from "@/lib/cover-constants";
 import { isPulseCategory } from "@/lib/pulse-constants";
 import {
@@ -39,8 +37,14 @@ interface Area {
   name: string;
 }
 
+interface Room {
+  id: number;
+  name: string;
+}
+
 interface AddDeviceDialogProps {
   areas: Area[];
+  rooms?: Room[];
 }
 
 const DEVICE_TYPES = [
@@ -84,7 +88,6 @@ const DEVICE_CATEGORIES = [
 // Per-category feature flags
 const CAT_HAS_ACCESS   = new Set(["DREHKREUZ", "TUER"]);
 const CAT_HAS_REENTRY  = new Set(["DREHKREUZ", "TUER"]);
-const CAT_HAS_SCHEDULE = new Set(["BELEUCHTUNG", "SCHALTER"]);
 // Antriebe brauchen zwei schaltbare Relais, ein Taster den Auto-Off-Timer –
 // beides bietet nur der Shelly-Pfad.
 const CAT_SHELLY_ONLY  = new Set(["MARKISE", "ROLLTOR", "TASTER"]);
@@ -101,6 +104,7 @@ const EMPTY = {
   direction: "in" as Direction,
   accessIn: "none",
   accessOut: "none",
+  keyRoomId: "none",
   allowReentry: false,
   scanLockSeconds: "0",
   isActive: true,
@@ -112,11 +116,10 @@ const DIRECTIONS: { value: Direction; label: string; hint: string; icon: typeof 
   { value: "bidir", label: "Bidirektional", hint: "Beide Richtungen – ohne klare Richtungslogik", icon: ArrowLeftRight },
 ];
 
-export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
+export function AddDeviceDialog({ areas, rooms = [] }: AddDeviceDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
-  const [schedule, setSchedule] = useState<WeekSchedule>(emptySchedule());
   const [cover, setCover] = useState<CoverFormValues>(EMPTY_COVER_VALUES);
   const [pulse, setPulse] = useState<PulseFormValues>(EMPTY_PULSE_VALUES);
   const [saving, setSaving] = useState(false);
@@ -128,7 +131,6 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
 
   function reset() {
     setForm(EMPTY);
-    setSchedule(emptySchedule());
     setCover(EMPTY_COVER_VALUES);
     setPulse(EMPTY_PULSE_VALUES);
     setError("");
@@ -159,7 +161,6 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
     setError("");
 
     const hasAccess  = CAT_HAS_ACCESS.has(form.category);
-    const hasSchedule = CAT_HAS_SCHEDULE.has(form.category);
 
     // Resourcen je nach Richtung mappen. Damit kann ein Bedienfehler
     // (z.B. accessIn UND accessOut auf den gleichen Bereich, ohne dass
@@ -193,7 +194,7 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
           allowReentry: hasAccess ? form.allowReentry : false,
           scanLockSeconds: hasAccess ? Number(form.scanLockSeconds) || 0 : 0,
           isActive: form.isActive,
-          schedule: hasSchedule ? schedule : null,
+          keyRoomId: form.keyRoomId !== "none" ? Number(form.keyRoomId) : null,
           ...(isCover ? coverPayload(cover) : {}),
           ...(isPulse ? pulsePayload(pulse) : {}),
         }),
@@ -503,9 +504,21 @@ export function AddDeviceDialog({ areas }: AddDeviceDialogProps) {
                 </div>
               )}
 
-              {/* Zeitsteuerung – Schalter & Beleuchtung */}
-              {CAT_HAS_SCHEDULE.has(cat) && (
-                <WeekScheduleEditor value={schedule} onChange={setSchedule} />
+              {/* Raum – darueber bekommt das Geraet seine Betriebszeit */}
+              {rooms.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Raum</Label>
+                  <Select value={form.keyRoomId} onValueChange={(v) => set("keyRoomId", v)}>
+                    <SelectTrigger><SelectValue placeholder="Kein Raum" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Kein Raum</SelectItem>
+                      {rooms.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">
+                    Schaltzeiten laufen über Regeln: „Einschalten bei Betriebsbeginn“ richtet sich nach der Betriebszeit dieses Raums.
+                  </p>
+                </div>
               )}
 
               {/* Sensor-Hinweis */}

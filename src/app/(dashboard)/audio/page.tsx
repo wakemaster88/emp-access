@@ -10,6 +10,7 @@ import {
   pairableSeconds,
   parseZoneIds,
 } from "@/lib/audio";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,20 @@ export default async function AudioPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [account, zones, tracks, playlists, streams, announcements, schedules, jobs, audioDevices, ttsVoices] =
+  const [
+    account,
+    zones,
+    tracks,
+    playlists,
+    streams,
+    announcements,
+    schedules,
+    jobs,
+    audioDevices,
+    ttsVoices,
+    rooms,
+    operatingSchedules,
+  ] =
     await Promise.all([
       db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
       db.audioZone.findMany({
@@ -30,6 +44,7 @@ export default async function AudioPage() {
           device: { select: { id: true, name: true, lastUpdate: true } },
           playlist: { select: { id: true, name: true } },
           stream: { select: { id: true, name: true, url: true } },
+          keyRoom: { select: { id: true, name: true, operatingScheduleId: true } },
         },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
@@ -60,8 +75,9 @@ export default async function AudioPage() {
         include: {
           announcement: { select: { id: true, name: true } },
           playlist: { select: { id: true, name: true } },
+          operatingSchedule: { select: { id: true, name: true } },
         },
-        orderBy: { timeOfDay: "asc" },
+        orderBy: [{ trigger: "asc" }, { timeOfDay: "asc" }, { offsetMinutes: "asc" }],
       }),
       db.audioJob.findMany({
         where: { accountId },
@@ -83,6 +99,16 @@ export default async function AudioPage() {
         orderBy: { name: "asc" },
       }),
       listTtsVoices(),
+      db.keyRoom.findMany({
+        where: { accountId },
+        select: { id: true, name: true },
+        orderBy: [{ building: "asc" }, { name: "asc" }],
+      }),
+      db.operatingSchedule.findMany({
+        where: { accountId },
+        include: scheduleSpecInclude,
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
     ]);
 
   return (
@@ -96,6 +122,9 @@ export default async function AudioPage() {
             deviceId: z.deviceId,
             deviceName: z.device?.name ?? null,
             deviceOnline: isPlayerOnline(z.device?.lastUpdate),
+            roomId: z.keyRoom?.id ?? null,
+            roomName: z.keyRoom?.name ?? null,
+            operatingScheduleId: z.keyRoom?.operatingScheduleId ?? null,
             isActive: z.isActive,
             syncGroup: z.syncGroup,
             volume: z.volume,
@@ -164,7 +193,12 @@ export default async function AudioPage() {
             isActive: s.isActive,
             action: s.action,
             daysOfWeek: s.daysOfWeek,
+            trigger: s.trigger,
             timeOfDay: s.timeOfDay,
+            offsetMinutes: s.offsetMinutes,
+            operatingScheduleId: s.operatingScheduleId,
+            operatingScheduleName: s.operatingSchedule?.name ?? null,
+            operating: s.operating,
             zoneIds: parseZoneIds(s.zoneIds),
             announcementId: s.announcementId,
             announcementName: s.announcement?.name ?? null,
@@ -190,6 +224,16 @@ export default async function AudioPage() {
             backends: audioBackends(d.systemInfo),
           }))}
           ttsVoices={ttsVoices}
+          rooms={rooms}
+          operatingSchedules={operatingSchedules.map((schedule) => {
+            const spec = toScheduleSpec(schedule);
+            return {
+              id: schedule.id,
+              name: schedule.name,
+              seasons: spec.seasons,
+              exceptions: spec.exceptions,
+            };
+          })}
           timeZone={account?.timezone || "Europe/Berlin"}
         />
       </div>

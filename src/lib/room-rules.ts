@@ -30,7 +30,7 @@ import { isQuietTime } from "@/lib/audio-constants";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { sendPushToAccount } from "@/lib/web-push";
 import { getSunTimesForAccount } from "@/lib/sun";
-import { boundariesForDay, isOperatingAt, type ScheduleSpec } from "@/lib/operating-hours";
+import { dueOperatingOccurrence, isOperatingAt, type ScheduleSpec } from "@/lib/operating-hours";
 import { toScheduleSpec, type ScheduleRecord } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE, isWithinWindow, tzInstant, tzWeekdayBit, tzYmd } from "@/lib/tz-time";
 
@@ -425,14 +425,21 @@ function scheduledTimeFor(rule: LoadedRule, ctx: RuleContext): Date | null {
 
   if (rule.trigger === "OPENING" || rule.trigger === "CLOSING") {
     if (!ctx.schedule) return null;
-    const wanted = rule.trigger === "OPENING" ? "open" : "close";
-    // Bei mehreren Spannen am Tag zaehlt die erste Oeffnung und das letzte
-    // Schliessen – "Betriebsbeginn" meint nicht das Ende der Mittagspause.
-    const matching = boundariesForDay(ctx.schedule, ymd, ctx.timezone).filter(
-      (b) => b.kind === wanted,
+    // Sucht auch am Vor- und Folgetag: ein Betriebsende um 02:00 gehoert zum
+    // gestrigen Betriebstag und ginge sonst verloren. Die Wochentage prueft
+    // `ruleAllows` bereits, deshalb hier alle Tage zulassen.
+    const occurrence = dueOperatingOccurrence(
+      ctx.schedule,
+      {
+        kind: rule.trigger === "OPENING" ? "open" : "close",
+        offsetMinutes: rule.offsetMinutes,
+        daysOfWeek: 127,
+      },
+      ctx.now,
+      ctx.timezone,
+      { beforeMs: FIRE_WINDOW_MS, afterMs: FIRE_WINDOW_MS },
     );
-    const base = wanted === "open" ? matching[0] : matching[matching.length - 1];
-    return base ? new Date(base.at.getTime() + rule.offsetMinutes * 60_000) : null;
+    return occurrence?.at ?? null;
   }
 
   if (rule.trigger === "SUNRISE" || rule.trigger === "SUNSET") {

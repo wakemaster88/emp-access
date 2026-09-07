@@ -2,18 +2,27 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Cctv, Cpu, Search, TriangleAlert } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Cctv, Cpu, Search, TriangleAlert, Volume2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RoomPanel } from "@/components/raeume/room-panel";
 import { RoomEquipmentDialog, type Placed } from "@/components/raeume/room-equipment-dialog";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
 import { useDeviceStatuses, useNow } from "@/components/raeume/status";
-import type { RaeumeData, RoomCamera, RoomDevice } from "@/components/raeume/types";
+import type { ZoneAction } from "@/components/raeume/zone-row";
+import type { RaeumeData, RoomCamera, RoomDevice, RoomZone } from "@/components/raeume/types";
 
 /** Wartezeit, bevor nach einer Schaltaktion neu abgefragt wird. */
 const STATUS_SETTLE_MS = 1200;
 
+/**
+ * Der Abspieler meldet den neuen Zustand erst mit dem naechsten Heartbeat;
+ * so lange warten, bevor die Seite neu laedt.
+ */
+const ZONE_SETTLE_MS = 2500;
+
 export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: boolean }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [equipmentRoom, setEquipmentRoom] = useState<{
     id: number;
@@ -49,6 +58,13 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     ],
     [data.rooms, data.looseCameras],
   );
+  const placedZones: Placed<RoomZone>[] = useMemo(
+    () => [
+      ...data.rooms.flatMap((room) => room.zones.map((item) => ({ item, roomId: room.id }))),
+      ...data.looseZones.map((item) => ({ item, roomId: null })),
+    ],
+    [data.rooms, data.looseZones],
+  );
   const roomNames = useMemo(
     () => new Map(data.rooms.map((room) => [room.id, room.name])),
     [data.rooms],
@@ -65,6 +81,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
         room.floor,
         ...room.devices.map((d) => d.name),
         ...room.cameras.map((c) => c.name),
+        ...room.zones.map((z) => z.name),
       ];
       return haystack.some((v) => v?.toLowerCase().includes(q));
     });
@@ -85,8 +102,22 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     return remoteError ?? null;
   }
 
+  async function handleZoneAction(zone: RoomZone, action: ZoneAction): Promise<string | null> {
+    setError("");
+    const res = await apiRequest<{ error?: string }>(
+      `/api/audio/zones/${zone.id}/control`,
+      "POST",
+      { action },
+    );
+    if (!res.ok) return res.message;
+    setTimeout(() => router.refresh(), ZONE_SETTLE_MS);
+    return null;
+  }
+
   const deviceCount = data.rooms.reduce((sum, r) => sum + r.devices.length, 0);
   const cameraCount = data.rooms.reduce((sum, r) => sum + r.cameras.length, 0);
+  const zoneCount = data.rooms.reduce((sum, r) => sum + r.zones.length, 0);
+  const looseCount = data.looseDevices.length + data.looseCameras.length + data.looseZones.length;
 
   return (
     <div className="space-y-4">
@@ -96,6 +127,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
             <div>
               <CardTitle className="text-base sm:text-xl">
                 {data.rooms.length} Räume · {deviceCount} Geräte · {cameraCount} Kameras
+                {zoneCount > 0 && ` · ${zoneCount} Beschallungszonen`}
               </CardTitle>
               <CardDescription>
                 Steuerung je Raum. Räume, Türen und Schlösser werden in der{" "}
@@ -119,7 +151,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
           <ErrorLine message={error} />
         </CardHeader>
 
-        {(data.looseDevices.length > 0 || data.looseCameras.length > 0) && (
+        {looseCount > 0 && (
           <CardContent className="pt-0">
             <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-3 dark:border-amber-900 dark:bg-amber-950/10">
               <p className="flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300">
@@ -127,9 +159,10 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
                 Noch keinem Raum zugeordnet
               </p>
               <p className="mt-1 text-[11px] text-amber-700/80 dark:text-amber-400/80">
-                {data.looseDevices.length} Geräte und {data.looseCameras.length} Kameras erscheinen
-                erst in einem Raum, wenn du sie dort zuordnest. Das geht über den Stift an einer
-                Raumkarte.
+                {data.looseDevices.length} Geräte, {data.looseCameras.length} Kameras und{" "}
+                {data.looseZones.length} Beschallungszonen erscheinen erst in einem Raum, wenn du
+                sie dort zuordnest. Das geht über den Stift an einer Raumkarte. Erst mit Raum
+                bekommen sie eine Betriebszeit.
               </p>
               <div className="mt-2 flex flex-wrap gap-1">
                 {data.looseDevices.slice(0, 12).map((device) => (
@@ -149,6 +182,15 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
                   >
                     <Cctv className="h-2.5 w-2.5 text-slate-400" />
                     {camera.name}
+                  </span>
+                ))}
+                {data.looseZones.slice(0, 6).map((zone) => (
+                  <span
+                    key={`z${zone.id}`}
+                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    <Volume2 className="h-2.5 w-2.5 text-slate-400" />
+                    {zone.name}
                   </span>
                 ))}
                 {data.looseDevices.length > 12 && (
@@ -189,6 +231,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
               timezone={data.timezone}
               readonly={readonly}
               onAction={handleAction}
+              onZoneAction={handleZoneAction}
               onEdit={() =>
                 setEquipmentRoom({
                   id: room.id,
@@ -207,6 +250,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
           roomName={equipmentRoom.name}
           devices={placedDevices}
           cameras={placedCameras}
+          zones={placedZones}
           roomNames={roomNames}
           scheduleOptions={data.scheduleOptions}
           currentScheduleId={equipmentRoom.scheduleId}

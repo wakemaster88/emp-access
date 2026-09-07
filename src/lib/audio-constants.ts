@@ -211,10 +211,12 @@ export function isScheduleDue(
  * Zeitzone (Ortszeit → UTC), die an den Umstellungstagen mehrdeutig wäre.
  */
 export function nextScheduleRunLabel(
-  schedule: { timeOfDay: string; daysOfWeek: number },
+  schedule: { timeOfDay: string | null; daysOfWeek: number },
   now: Date,
   timeZone: string
 ): string | null {
+  // Ohne Uhrzeit (Betriebsbeginn/-ende) rechnet `operating-hours.ts`.
+  if (!schedule.timeOfDay) return null;
   const today = localWeekdayIndex(now, timeZone);
   if (today < 0) return null;
 
@@ -235,6 +237,41 @@ export function nextScheduleRunLabel(
     return `${WEEKDAY_NAMES[weekday]} ${schedule.timeOfDay}`;
   }
   return null;
+}
+
+export type AudioScheduleTriggerKind = "TIME" | "OPENING" | "CLOSING";
+
+export const AUDIO_TRIGGER_LABELS: Record<AudioScheduleTriggerKind, string> = {
+  TIME: "Uhrzeit",
+  OPENING: "Betriebsbeginn",
+  CLOSING: "Betriebsende",
+};
+
+export const AUDIO_OPERATING_LABELS: Record<"ANY" | "OPEN" | "CLOSED", string> = {
+  ANY: "Betriebszeit egal",
+  OPEN: "nur während der Betriebszeit",
+  CLOSED: "nur außerhalb der Betriebszeit",
+};
+
+/** "+15 Min." / "−1 Std." – Verschiebung gegenüber Betriebsbeginn/-ende. */
+export function formatOffsetMinutes(minutes: number): string {
+  if (minutes === 0) return "pünktlich";
+  const sign = minutes > 0 ? "+" : "−";
+  const abs = Math.abs(minutes);
+  if (abs < 60) return `${sign}${abs} Min.`;
+  const hours = Math.floor(abs / 60);
+  const rest = abs % 60;
+  return rest === 0 ? `${sign}${hours} Std.` : `${sign}${hours}:${String(rest).padStart(2, "0")} Std.`;
+}
+
+/** Kurzform des Zeitpunkts für die Zeitplan-Karte: "10:00" oder "Betriebsende −15 Min.". */
+export function describeScheduleTiming(schedule: {
+  trigger: AudioScheduleTriggerKind;
+  timeOfDay: string | null;
+  offsetMinutes: number;
+}): string {
+  if (schedule.trigger === "TIME") return schedule.timeOfDay ?? "–";
+  return `${AUDIO_TRIGGER_LABELS[schedule.trigger]} ${formatOffsetMinutes(schedule.offsetMinutes)}`;
 }
 
 /** Bitmaske als lesbare Wochentagsliste. */

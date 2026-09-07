@@ -22,6 +22,18 @@ export interface RoomDevice {
   pulseSeconds: number | null;
 }
 
+/** Beschallungszone im Raum – Zustand aus dem letzten Heartbeat des Abspielers. */
+export interface RoomZone {
+  id: number;
+  name: string;
+  isActive: boolean;
+  /** Hat einen Abspieler; ohne ihn lässt sich nichts starten. */
+  hasPlayer: boolean;
+  isPlaying: boolean;
+  currentTitle: string | null;
+  lastStateAt: string | null;
+}
+
 export interface RoomCamera {
   id: number;
   name: string;
@@ -87,6 +99,7 @@ export interface RoomPanel {
   notes: string | null;
   devices: RoomDevice[];
   cameras: RoomCamera[];
+  zones: RoomZone[];
   locks: RoomLock[];
   doorCount: number;
   lastEvent: RoomEvent | null;
@@ -97,9 +110,10 @@ export interface RoomPanel {
 
 export interface RaeumeData {
   rooms: RoomPanel[];
-  /** Geräte und Kameras, die noch keinem Raum zugeordnet sind. */
+  /** Geräte, Kameras und Zonen, die noch keinem Raum zugeordnet sind. */
   looseDevices: RoomDevice[];
   looseCameras: RoomCamera[];
+  looseZones: RoomZone[];
   /** Alle Betriebszeit-Profile des Mandanten, für die Zuordnung. */
   scheduleOptions: ScheduleOption[];
   /** Zeitzone des Mandanten für die Öffnungs-Auswertung. */

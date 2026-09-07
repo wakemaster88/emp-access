@@ -26,7 +26,7 @@ export default async function DevicesPage({ searchParams }: Props) {
   const statusWhere =
     status === "active" ? { isActive: true } : status === "inactive" ? { isActive: false } : {};
 
-  const [devices, areas] = await Promise.all([
+  const [devices, areas, rooms] = await Promise.all([
     db.device.findMany({
       where: { ...baseWhere, ...statusWhere },
       select: {
@@ -50,6 +50,11 @@ export default async function DevicesPage({ searchParams }: Props) {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    isSuperAdmin ? Promise.resolve([]) : db.keyRoom.findMany({
+      where: { accountId: session.user.accountId! },
+      select: { id: true, name: true },
+      orderBy: [{ building: "asc" }, { name: "asc" }],
+    }),
   ]);
 
   return (
@@ -62,7 +67,7 @@ export default async function DevicesPage({ searchParams }: Props) {
               <CardTitle className="text-base sm:text-xl">Geräte ({devices.length})</CardTitle>
               <DeviceStatusFilter current={status} />
             </div>
-            {!isSuperAdmin && <AddDeviceDialog areas={areas} />}
+            {!isSuperAdmin && <AddDeviceDialog areas={areas} rooms={rooms} />}
           </CardHeader>
           <CardContent className="p-0 sm:px-6 sm:pb-6">
             <DevicesTable devices={devices} areas={areas} />

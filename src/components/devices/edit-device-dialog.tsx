@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
   Loader2, Trash2, Save,   GitMerge, DoorOpen, Activity, ToggleRight, Lightbulb,
-  LogIn, LogOut, ArrowLeftRight, AlertCircle, Cctv, Umbrella, Blinds, CircleDot, Timer,
+  LogIn, LogOut, ArrowLeftRight, AlertCircle, Building2, Cctv, Umbrella, Blinds, CircleDot, Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isCoverCategory, DEFAULT_COVER_RUNTIME_SEC } from "@/lib/cover-constants";
@@ -33,6 +33,11 @@ export interface AreaOption {
 }
 
 export interface CameraOption {
+  id: number;
+  name: string;
+}
+
+export interface RoomOption {
   id: number;
   name: string;
 }
@@ -58,7 +63,8 @@ export interface DeviceData {
   scanLockSeconds?: number | null;
   offlineAlertsEnabled: boolean;
   firmware: string | null;
-  schedule: unknown | null;
+  /** Raum, in dem das Gerät hängt – darüber bekommt es seine Betriebszeit. */
+  keyRoomId: number | null;
 }
 
 const CAT_HAS_ACCESS  = new Set(["DREHKREUZ", "TUER"]);
@@ -94,10 +100,11 @@ interface EditDeviceDialogProps {
   device: DeviceData | null;
   areas?: AreaOption[];
   cameras?: CameraOption[];
+  rooms?: RoomOption[];
   onClose: () => void;
 }
 
-export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: EditDeviceDialogProps) {
+export function EditDeviceDialog({ device, areas = [], cameras = [], rooms = [], onClose }: EditDeviceDialogProps) {
   const router = useRouter();
   const [form, setForm] = useState({
     name: "",
@@ -110,6 +117,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
     accessIn: "none",
     accessOut: "none",
     cameraId: "none",
+    keyRoomId: "none",
     allowReentry: false,
     scanLockSeconds: "0",
     offlineAlertsEnabled: false,
@@ -140,6 +148,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
         accessIn: device.accessIn != null ? String(device.accessIn) : "none",
         accessOut: device.accessOut != null ? String(device.accessOut) : "none",
         cameraId: device.cameraId != null ? String(device.cameraId) : "none",
+        keyRoomId: device.keyRoomId != null ? String(device.keyRoomId) : "none",
         allowReentry: device.allowReentry,
         scanLockSeconds: String(device.scanLockSeconds ?? 0),
         offlineAlertsEnabled: device.offlineAlertsEnabled,
@@ -210,6 +219,7 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
           accessIn,
           accessOut,
           cameraId: form.cameraId !== "none" ? Number(form.cameraId) : null,
+          keyRoomId: form.keyRoomId !== "none" ? Number(form.keyRoomId) : null,
           allowReentry: form.allowReentry,
           scanLockSeconds: CAT_HAS_ACCESS.has(form.category) ? Number(form.scanLockSeconds) || 0 : 0,
           offlineAlertsEnabled: form.offlineAlertsEnabled,
@@ -299,6 +309,22 @@ export function EditDeviceDialog({ device, areas = [], cameras = [], onClose }: 
           <div className="space-y-1.5">
             <Label htmlFor="d-ip">IP-Adresse</Label>
             <Input id="d-ip" value={form.ipAddress} onChange={(e) => set("ipAddress", e.target.value)} placeholder="192.168.1.100" className="font-mono" />
+          </div>
+
+          {/* Raum – darueber bekommt das Geraet seine Betriebszeit */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Raum</Label>
+            <Select value={form.keyRoomId} onValueChange={(v) => set("keyRoomId", v)}>
+              <SelectTrigger><SelectValue placeholder="Kein Raum" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Kein Raum</SelectItem>
+                {rooms.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-400">
+              Regeln mit „Betriebsbeginn“ und „Betriebsende“ richten sich nach der Betriebszeit dieses Raums.
+              {rooms.length === 0 && " Räume werden in der Schließanlage angelegt."}
+            </p>
           </div>
 
           {/* Shelly Cloud */}

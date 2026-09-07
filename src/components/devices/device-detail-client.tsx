@@ -18,7 +18,13 @@ import {
 import { formatPulseDuration, isPulseCategory, pulseSeconds } from "@/lib/pulse-constants";
 import type { SensorReading } from "@/lib/shelly-sensor";
 import { SensorReadings } from "./sensor-readings";
-import { EditDeviceDialog, type DeviceData, type AreaOption, type CameraOption } from "./edit-device-dialog";
+import {
+  EditDeviceDialog,
+  type DeviceData,
+  type AreaOption,
+  type CameraOption,
+  type RoomOption,
+} from "./edit-device-dialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +75,7 @@ interface Props {
   device: DeviceData & { task: number };
   areas?: AreaOption[];
   cameras?: CameraOption[];
+  rooms?: RoomOption[];
 }
 
 /**
@@ -137,7 +144,7 @@ const LOQED_ACTIONS = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DeviceDetailClient({ device, areas, cameras }: Props) {
+export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
@@ -635,6 +642,7 @@ export function DeviceDetailClient({ device, areas, cameras }: Props) {
         device={editing ? device : null}
         areas={areas}
         cameras={cameras}
+        rooms={rooms}
         onClose={() => setEditing(false)}
       />
     </>

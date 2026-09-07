@@ -92,8 +92,22 @@ export async function syncRoomEquipment(
   db: TenantDb,
   accountId: number,
   roomId: number,
-  input: { deviceIds?: number[]; cameraIds?: number[] },
+  input: { deviceIds?: number[]; cameraIds?: number[]; audioZoneIds?: number[] },
 ): Promise<void> {
+  if (input.audioZoneIds) {
+    const next = [...new Set(input.audioZoneIds)];
+    await db.audioZone.updateMany({
+      where: { accountId, keyRoomId: roomId, ...(next.length && { id: { notIn: next } }) },
+      data: { keyRoomId: null },
+    });
+    if (next.length) {
+      await db.audioZone.updateMany({
+        where: { accountId, id: { in: next } },
+        data: { keyRoomId: roomId },
+      });
+    }
+  }
+
   if (input.deviceIds) {
     const next = [...new Set(input.deviceIds)];
     await db.device.updateMany({

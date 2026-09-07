@@ -435,3 +435,26 @@ Snapshot über den neuen Task `HUB_LOG` gelesen (Hub auf `df15676`), nicht vom i
 
 - 13:53 Uhr per `SYSTEM_CHECK` bestätigt: FileVault aus, Auto-Login `aaronarmnborst`, kein Ruhezustand, Neustart nach Stromausfall, Einschalten täglich 06:00, sudo-Regel für pmset, caffeinate an – keine Hinweise mehr. Auto-Login wurde über die Systemeinstellungen gesetzt, nachdem der zweite Lauf des Setup-Skripts bei `sysadminctl` abgebrochen war (Skript-Ausgabe nicht gesehen).
 - Damit überlebt der Hub Herunterfahren und Neustart des iMac ohne Zutun; der Ausfall vom 3./4.9. kann so nicht mehr entstehen.
+
+## 2026-09-07 (Audio und Shelly an Räume und Betriebszeiten gekoppelt)
+
+Schließt zwei offene Punkte vom 1.9.: Audio hielt eigene Uhrzeiten statt auf die Betriebszeit zu verweisen, und `Device.schedule` war ein Wochenplan ohne Ausführung.
+
+### Änderungen
+
+- **Audio-Zone hat einen Raum** (`AudioZone.keyRoomId`). Zuordnung im Zonen-Dialog unter Audio oder im Raum-Dialog unter Räume („Beschallung in diesem Raum“). Die Raumkarte zeigt die Zone mit Start/Stopp; die Zonenkarte unter Audio zeigt den Raum.
+- **Audio-Zeitpläne kennen Betriebsbeginn und Betriebsende** (`AudioSchedule.trigger` = TIME | OPENING | CLOSING, `offsetMinutes`, `operatingScheduleId`, `operating`). Welche Betriebszeit gilt, entscheidet wie bei den Regeln zuerst der Zeitplan, sonst der Raum der jeweiligen Zielzone – Zonen in verschiedenen Räumen sind zu verschiedenen Zeiten dran, der Lauf gruppiert sie. Dazu die Bedingung „nur während / nur außerhalb der Betriebszeit“ je Zone. Die Karte zeigt „Betriebsende −15 Min.“ und den nächsten Termin („heute 19:45“); Warnungen, wenn eine Zielzone keine Betriebszeit hat.
+- **`Device.schedule` entfernt** (Migration `20260907090000_audio_operating_coupling`), samt Karte „Automatische Zeitsteuerung“ und Wochenplan im Anlege-Dialog. An ihrer Stelle auf der Gerätedetailseite die Karte **„Raum und Betriebszeit“**: Raum, Betriebszustand des Raums, alle Regeln, die das Gerät schalten, und „Mit der Betriebszeit koppeln“ – legt „Einschalten bei Betriebsbeginn“ und „Ausschalten bei Betriebsende“ als zwei Raumregeln an (Versatz je Zeitpunkt, wahlweise andere Betriebszeit). Bei Rolltor/Markise heißt „aus“ schließen, beim LOQED abschließen. Gerät anlegen/bearbeiten hat jetzt ein Feld „Raum“.
+- **`operating-hours.ts`**: `dueOperatingOccurrence`/`nextOperatingOccurrence` suchen Vortag, heute und Folgetag ab. Ein Betriebsende um 02:00 gehört zum Vortag und ging in `scheduledTimeFor()` der Regel-Engine bisher verloren – die nutzt jetzt denselben Helfer. Wochentage gelten für den Betriebstag, nicht für den Kalendertag des Endes.
+- `WeekScheduleEditor`/`lib/schedule.ts` bleiben: Mitarbeiter-Zeitfenster und Tickets nutzen sie weiter.
+
+### Geprüft
+
+- 68 Unit-Tests grün (9 neue für Betriebszeit-Auslöser: Fenster, Vortag, Wochentag des Betriebstags, Versatz über Mitternacht, Anzeige). `tsc` sauber, `scripts/audio-schedule-check.ts` weiter grün.
+- Lauf gegen die lokale Dev-DB: Zone im Raum mit Betriebszeit 10–20 Uhr, Zeitplan „Stopp, Betriebsende −15 Min.“ → 19:30 nichts, 19:46 ein STOP-Job (`SCHEDULE:CLOSING`), 19:48 kein zweiter, Uhrzeit-Plan „nur während der Betriebszeit“ um 21:01 bleibt aus. Testdaten wieder entfernt.
+- Seiten Audio, Räume, Geräte, Gerätedetail, Regeln kompilieren im Dev-Server ohne Fehler. Oberfläche nicht eingeloggt geprüft (Browser-Session abgelaufen).
+
+### Offen
+
+- Bewässerung, Überwachung und E-Mail halten weiter eigene Fenster.
+- Bestehende Regeln mit Betriebsende nach Mitternacht feuern ab jetzt; wer so etwas eingerichtet hatte, sieht neue Verlaufseinträge.

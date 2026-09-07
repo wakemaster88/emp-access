@@ -3,10 +3,15 @@ import { test } from "node:test";
 import {
   boundariesForDay,
   describeDay,
+  describeOccurrence,
   describeSeasonRange,
+  dueOperatingOccurrence,
   isOperatingAt,
   isWithinSeasonRange,
+  nextOperatingOccurrence,
   openingForDay,
+  operatingBoundary,
+  operatingOccurrenceForDay,
   seasonForDay,
   type ScheduleSpec,
 } from "./operating-hours";
@@ -279,4 +284,155 @@ test("Umstellungstag auf Sommerzeit bleibt korrekt", () => {
 
 test("Saison-Zeitraum wird lesbar dargestellt", () => {
   assert.equal(describeSeasonRange("05-01", "09-15"), "01.05.–15.09.");
+});
+
+// ─── Betriebszeit-Ausloeser ──────────────────────────────────────────────────
+
+/** Gastronomie: täglich 18:00–02:00, also über Mitternacht. */
+function nachtbetrieb(): ScheduleSpec {
+  return {
+    name: "Gastronomie",
+    seasons: [
+      {
+        name: "Ganzjährig",
+        startMmDd: "01-01",
+        endMmDd: "12-31",
+        sortOrder: 0,
+        periods: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+          weekday,
+          opensAt: "18:00",
+          closesAt: "02:00",
+        })),
+      },
+    ],
+    exceptions: [],
+  };
+}
+
+const MINUTE = 60_000;
+const AUDIO_WINDOW = { beforeMs: 0, afterMs: 5 * MINUTE };
+const RULE_WINDOW = { beforeMs: 3 * MINUTE, afterMs: 3 * MINUTE };
+
+test("Betriebsbeginn und -ende eines Tags als Zeitpunkt", () => {
+  const s = strandbad();
+  // Sommer, Berlin = UTC+2: 10:00 Ortszeit ist 08:00Z.
+  assert.equal(
+    operatingBoundary(s, "2026-07-01", "open", TZ)?.toISOString(),
+    "2026-07-01T08:00:00.000Z",
+  );
+  assert.equal(
+    operatingBoundary(s, "2026-07-01", "close", TZ)?.toISOString(),
+    "2026-07-01T18:00:00.000Z",
+  );
+  assert.equal(operatingBoundary(s, "2026-10-05", "open", TZ), null, "geschlossen");
+});
+
+test("Versatz verschiebt den Zeitpunkt, Wochentage filtern den Betriebstag", () => {
+  const s = strandbad();
+  // 2026-07-01 ist ein Mittwoch (Bit 2).
+  const vorher = operatingOccurrenceForDay(
+    s,
+    { kind: "close", offsetMinutes: -15, daysOfWeek: 127 },
+    "2026-07-01",
+    TZ,
+  );
+  assert.equal(vorher?.at.toISOString(), "2026-07-01T17:45:00.000Z");
+  assert.equal(vorher?.ymd, "2026-07-01");
+
+  const nurMontag = operatingOccurrenceForDay(
+    s,
+    { kind: "close", offsetMinutes: 0, daysOfWeek: 1 },
+    "2026-07-01",
+    TZ,
+  );
+  assert.equal(nurMontag, null);
+});
+
+test("fällig nur im Fenster nach dem Zeitpunkt", () => {
+  const s = strandbad();
+  const trigger = { kind: "open" as const, offsetMinutes: 0, daysOfWeek: 127 };
+  const at = (iso: string) => dueOperatingOccurrence(s, trigger, new Date(iso), TZ, AUDIO_WINDOW);
+  assert.equal(at("2026-07-01T07:59:00Z"), null, "eine Minute zu früh");
+  assert.equal(at("2026-07-01T08:00:00Z")?.at.toISOString(), "2026-07-01T08:00:00.000Z");
+  assert.equal(at("2026-07-01T08:04:30Z")?.at.toISOString(), "2026-07-01T08:00:00.000Z", "Nachholfenster");
+  assert.equal(at("2026-07-01T08:05:00Z"), null, "Fenster zu");
+});
+
+test("Betriebsende nach Mitternacht gehört zum Vortag und wird trotzdem gefunden", () => {
+  const s = nachtbetrieb();
+  // 02:00 Berlin am 2.7. = 00:00Z; der Betriebstag ist der 1.7.
+  const occ = dueOperatingOccurrence(
+    s,
+    { kind: "close", offsetMinutes: 0, daysOfWeek: 127 },
+    new Date("2026-07-02T00:01:00Z"),
+    TZ,
+    AUDIO_WINDOW,
+  );
+  assert.equal(occ?.at.toISOString(), "2026-07-02T00:00:00.000Z");
+  assert.equal(occ?.ymd, "2026-07-01");
+});
+
+test("Wochentag zählt für den Betriebstag, nicht für den Kalendertag des Endes", () => {
+  const s = nachtbetrieb();
+  // 2026-07-03 ist ein Freitag; sein Ende liegt Samstag 02:00. "nur Freitag"
+  // muss dieses Ende treffen, "nur Samstag" nicht.
+  const nurFreitag = dueOperatingOccurrence(
+    s,
+    { kind: "close", offsetMinutes: 0, daysOfWeek: 1 << 4 },
+    new Date("2026-07-04T00:00:30Z"),
+    TZ,
+    AUDIO_WINDOW,
+  );
+  assert.equal(nurFreitag?.ymd, "2026-07-03");
+  const nurSamstag = dueOperatingOccurrence(
+    s,
+    { kind: "close", offsetMinutes: 0, daysOfWeek: 1 << 5 },
+    new Date("2026-07-04T00:00:30Z"),
+    TZ,
+    AUDIO_WINDOW,
+  );
+  assert.equal(nurSamstag, null);
+});
+
+test("Versatz vor Mitternacht zeigt auf den morgigen Betriebsbeginn", () => {
+  // Regel-Fenster (±3 min): Beginn 18:00 minus 19 Stunden = 23:00 am Vortag.
+  const s = nachtbetrieb();
+  const occ = dueOperatingOccurrence(
+    s,
+    { kind: "open", offsetMinutes: -19 * 60, daysOfWeek: 127 },
+    new Date("2026-06-30T21:01:00Z"), // 23:01 Berlin am 30.6.
+    TZ,
+    RULE_WINDOW,
+  );
+  assert.equal(occ?.ymd, "2026-07-01");
+  assert.equal(occ?.at.toISOString(), "2026-06-30T21:00:00.000Z");
+});
+
+test("nächster Termin für die Anzeige: heute, morgen, Wochentag", () => {
+  const s = strandbad();
+  const trigger = { kind: "close" as const, offsetMinutes: -15, daysOfWeek: 127 };
+  const now = new Date("2026-07-01T10:00:00Z"); // Mittwoch 12:00 Berlin
+  const heute = nextOperatingOccurrence(s, trigger, now, TZ);
+  assert.equal(heute && describeOccurrence(heute, now, TZ), "heute 19:45");
+
+  const spaet = new Date("2026-07-01T18:30:00Z"); // 20:30 Berlin, Ende vorbei
+  const morgen = nextOperatingOccurrence(s, trigger, spaet, TZ);
+  assert.equal(morgen && describeOccurrence(morgen, spaet, TZ), "morgen 19:45");
+
+  // Winter: nur Samstag/Sonntag. Am Mittwoch, 14.1., ist der nächste Termin Samstag.
+  const winter = new Date("2026-01-14T10:00:00Z");
+  const samstag = nextOperatingOccurrence(s, trigger, winter, TZ);
+  assert.equal(samstag && describeOccurrence(samstag, winter, TZ), "Sa 15:45");
+});
+
+test("Kulanz hält den laufenden Termin in der Anzeige", () => {
+  const s = strandbad();
+  const trigger = { kind: "open" as const, offsetMinutes: 0, daysOfWeek: 127 };
+  const now = new Date("2026-07-01T08:02:00Z"); // zwei Minuten nach Beginn
+  assert.equal(
+    nextOperatingOccurrence(s, trigger, now, TZ, 5 * MINUTE)?.ymd,
+    "2026-07-01",
+    "im Nachholfenster bleibt heute stehen",
+  );
+  assert.equal(nextOperatingOccurrence(s, trigger, now, TZ)?.ymd, "2026-07-02", "ohne Kulanz morgen");
 });

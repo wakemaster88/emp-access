@@ -20,11 +20,13 @@ import {
 } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils";
 import { DeviceDetailClient } from "@/components/devices/device-detail-client";
-import { ScheduleCard } from "@/components/devices/schedule-card";
+import { OperatingCouplingCard } from "@/components/devices/operating-coupling-card";
 import { SystemInfoCard } from "@/components/devices/system-info-card";
 import { NukiStatusCard } from "@/components/devices/nuki-status-card";
 import { LoqedStatusCard } from "@/components/devices/loqed-status-card";
 import { LATEST_PI_VERSION } from "@/lib/pi-version";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -43,13 +45,20 @@ export default async function DeviceDetailPage({ params }: Props) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [device, scanStats, areas, cameras, account] = await Promise.all([
+  const [device, scanStats, areas, cameras, account, rooms, operatingSchedules, rules] = await Promise.all([
     db.device.findFirst({
       where: { id: deviceId, accountId: session.user.accountId },
       include: {
         _count: { select: { scans: true } },
         camera: { select: { id: true, name: true, snapshotAt: true, lastSeenAt: true } },
         audioZone: { select: { name: true } },
+        keyRoom: {
+          select: {
+            id: true,
+            name: true,
+            operatingSchedule: { include: scheduleSpecInclude },
+          },
+        },
       },
     }),
     db.scan.groupBy({
@@ -69,7 +78,30 @@ export default async function DeviceDetailPage({ params }: Props) {
     }),
     db.account.findUnique({
       where: { id: session.user.accountId },
-      select: { apiToken: true },
+      select: { apiToken: true, timezone: true },
+    }),
+    db.keyRoom.findMany({
+      where: { accountId: session.user.accountId },
+      select: { id: true, name: true },
+      orderBy: [{ building: "asc" }, { name: "asc" }],
+    }),
+    db.operatingSchedule.findMany({
+      where: { accountId: session.user.accountId },
+      select: { id: true, name: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+    // Regeln, die dieses Geraet schalten – fuer die Betriebszeit-Kopplung.
+    db.roomRule.findMany({
+      where: { accountId: session.user.accountId, actions: { some: { deviceId } } },
+      include: {
+        operatingSchedule: { select: { name: true } },
+        actions: {
+          where: { deviceId },
+          select: { deviceAction: true, timerSeconds: true },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
+      orderBy: [{ trigger: "asc" }, { name: "asc" }],
     }),
   ]);
 
@@ -231,6 +263,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                 <DeviceDetailClient
                   areas={areas}
                   cameras={cameras}
+                  rooms={rooms}
                   device={{
                     id: device.id,
                     name: device.name,
@@ -251,7 +284,7 @@ export default async function DeviceDetailPage({ params }: Props) {
                     scanLockSeconds: device.scanLockSeconds,
                     offlineAlertsEnabled: device.offlineAlertsEnabled,
                     firmware: device.firmware,
-                    schedule: device.schedule ?? null,
+                    keyRoomId: device.keyRoomId,
                     task: device.task,
                   }}
                 />
@@ -330,9 +363,43 @@ export default async function DeviceDetailPage({ params }: Props) {
           />
         )}
 
-        {/* Zeitsteuerung – eigene Card für Schalter & Beleuchtung */}
-        {(device.category === "SCHALTER" || device.category === "BELEUCHTUNG") && (
-          <ScheduleCard deviceId={device.id} initialSchedule={device.schedule} />
+        {/* Raum und Betriebszeit: schaltbare Geraete koppeln sich hier an
+            Betriebsbeginn/-ende; die Ausfuehrung uebernimmt die Regel-Engine. */}
+        {device.type !== "RASPBERRY_PI" && device.type !== "AUDIO_PLAYER" && (
+          <OperatingCouplingCard
+            device={{
+              id: device.id,
+              name: device.name,
+              type: device.type,
+              category: device.category ?? null,
+              keyRoomId: device.keyRoomId,
+            }}
+            room={
+              device.keyRoom
+                ? {
+                    id: device.keyRoom.id,
+                    name: device.keyRoom.name,
+                    schedule: device.keyRoom.operatingSchedule
+                      ? toScheduleSpec(device.keyRoom.operatingSchedule)
+                      : null,
+                  }
+                : null
+            }
+            schedules={operatingSchedules}
+            rules={rules.map((rule) => ({
+              id: rule.id,
+              name: rule.name,
+              trigger: rule.trigger,
+              offsetMinutes: rule.offsetMinutes,
+              isActive: rule.isActive,
+              operatingScheduleName: rule.operatingSchedule?.name ?? null,
+              lastRunAt: rule.lastRunAt?.toISOString() ?? null,
+              actions: rule.actions,
+            }))}
+            timezone={account?.timezone || DEFAULT_TIMEZONE}
+            renderedAt={new Date().toISOString()}
+            readonly={session.user.role === "USER"}
+          />
         )}
 
         {/* Raspberry Pi System-Info – Scanner und Abspieler melden dieselben Werte,

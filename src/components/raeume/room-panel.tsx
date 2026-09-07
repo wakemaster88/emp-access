@@ -14,10 +14,15 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeviceRow } from "@/components/raeume/device-row";
+import { ZoneRow, type ZoneAction } from "@/components/raeume/zone-row";
 import { eventTypeLabel, fmtAgo } from "@/components/raeume/shared";
 import { triggerLabel } from "@/components/regeln/shared";
 import type { DeviceStatus } from "@/components/raeume/status";
-import type { RoomDevice, RoomPanel as RoomPanelData } from "@/components/raeume/types";
+import type {
+  RoomDevice,
+  RoomPanel as RoomPanelData,
+  RoomZone,
+} from "@/components/raeume/types";
 import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
 import { tzYmd } from "@/lib/tz-time";
 import { cn } from "@/lib/utils";
@@ -65,8 +70,9 @@ function OperatingLine({
 }
 
 /**
- * Ein Raum als Leitstand-Karte: Geraete zum Schalten, Kameras mit letztem Bild,
- * Schliesspunkte aus der Schliessanlage und die Regeln, die hier greifen.
+ * Ein Raum als Leitstand-Karte: Geraete zum Schalten, Beschallung mit
+ * Start/Stopp, Kameras mit letztem Bild, Schliesspunkte aus der
+ * Schliessanlage und die Regeln, die hier greifen.
  */
 export function RoomPanel({
   room,
@@ -75,6 +81,7 @@ export function RoomPanel({
   timezone,
   readonly,
   onAction,
+  onZoneAction,
   onEdit,
 }: {
   room: RoomPanelData;
@@ -83,6 +90,7 @@ export function RoomPanel({
   timezone: string;
   readonly: boolean;
   onAction: (device: RoomDevice, action: string) => Promise<string | null>;
+  onZoneAction: (zone: RoomZone, action: ZoneAction) => Promise<string | null>;
   onEdit: () => void;
 }) {
   const location = [room.building, room.floor].filter(Boolean).join(" · ");
@@ -125,7 +133,7 @@ export function RoomPanel({
             <button
               type="button"
               onClick={onEdit}
-              title="Geräte und Kameras dieses Raums zuordnen"
+              title="Geräte, Kameras und Beschallung dieses Raums zuordnen"
               className="shrink-0 p-1 text-slate-400 hover:text-indigo-500"
             >
               <Pencil className="h-3.5 w-3.5" />
@@ -147,7 +155,7 @@ export function RoomPanel({
       </CardHeader>
 
       <CardContent className="space-y-3">
-        {room.devices.length === 0 ? (
+        {room.devices.length === 0 && room.zones.length === 0 ? (
           <p className="rounded-md border border-dashed border-slate-200 py-4 text-center text-[11px] text-slate-400 dark:border-slate-700">
             Noch kein Gerät in diesem Raum.
           </p>
@@ -161,6 +169,15 @@ export function RoomPanel({
                 nowMs={nowMs}
                 readonly={readonly}
                 onAction={onAction}
+              />
+            ))}
+            {room.zones.map((zone) => (
+              <ZoneRow
+                key={`zone-${zone.id}`}
+                zone={zone}
+                nowMs={nowMs}
+                readonly={readonly}
+                onAction={onZoneAction}
               />
             ))}
           </div>

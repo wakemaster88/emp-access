@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
-import { clampVolume, parseDaysOfWeek, parseTimeOfDay, parseZoneIds } from "@/lib/audio";
+import { clampVolume, parseDaysOfWeek, parseZoneIds } from "@/lib/audio";
+import { parseScheduleTiming, scheduleResponseInclude } from "@/lib/audio-schedule-input";
 
 export async function PUT(
   request: NextRequest,
@@ -20,6 +21,19 @@ export async function PUT(
   if (!existing) return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
 
   const body = await request.json();
+
+  // Zeitpunkt nur pruefen, wenn er mitgeschickt wird – ein reines
+  // Ein-/Ausschalten aus der Liste soll ohne Zeitangaben auskommen.
+  const timingSent =
+    body.trigger !== undefined ||
+    body.timeOfDay !== undefined ||
+    body.offsetMinutes !== undefined ||
+    body.operatingScheduleId !== undefined ||
+    body.operating !== undefined;
+  const timing = timingSent ? await parseScheduleTiming(db, accountId!, body, existing) : null;
+  if (timing && "error" in timing) {
+    return NextResponse.json({ error: timing.error }, { status: 400 });
+  }
 
   let zoneIds: number[] | undefined = undefined;
   if (body.zoneIds !== undefined) {
@@ -41,17 +55,14 @@ export async function PUT(
       name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined,
       isActive: typeof body.isActive === "boolean" ? body.isActive : undefined,
       daysOfWeek: body.daysOfWeek === undefined ? undefined : parseDaysOfWeek(body.daysOfWeek),
-      timeOfDay: parseTimeOfDay(body.timeOfDay) ?? undefined,
+      ...(timing ?? {}),
       ...(zoneIds !== undefined ? { zoneIds } : {}),
       volume:
         existing.action === "VOLUME" && body.volume !== undefined
           ? clampVolume(body.volume, existing.volume ?? 50)
           : undefined,
     },
-    include: {
-      announcement: { select: { id: true, name: true } },
-      playlist: { select: { id: true, name: true } },
-    },
+    include: scheduleResponseInclude,
   });
 
   return NextResponse.json(schedule);

@@ -19,6 +19,7 @@ export async function GET() {
       device: { select: { id: true, name: true, lastUpdate: true } },
       playlist: { select: { id: true, name: true } },
       stream: { select: { id: true, name: true } },
+      keyRoom: { select: { id: true, name: true } },
     },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
@@ -105,6 +106,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: receiverError }, { status: 400 });
   }
 
+  // Raum, den die Zone beschallt – darueber erbt sie die Betriebszeit.
+  let keyRoomId: number | null = null;
+  if (body.keyRoomId != null && body.keyRoomId !== "") {
+    const candidate = Number(body.keyRoomId);
+    const room = Number.isInteger(candidate)
+      ? await db.keyRoom.findFirst({ where: { id: candidate, accountId: accountId! }, select: { id: true } })
+      : null;
+    if (!room) return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 404 });
+    keyRoomId = candidate;
+  }
+
   const last = await db.audioZone.findFirst({
     where: { accountId: accountId! },
     orderBy: { sortOrder: "desc" },
@@ -116,6 +128,7 @@ export async function POST(request: NextRequest) {
       accountId: accountId!,
       name,
       deviceId,
+      keyRoomId,
       playlistId,
       streamId,
       defaultSource: parseSourceKind(body.defaultSource) ?? "PLAYLIST",
@@ -141,6 +154,7 @@ export async function POST(request: NextRequest) {
       device: { select: { id: true, name: true, lastUpdate: true } },
       playlist: { select: { id: true, name: true } },
       stream: { select: { id: true, name: true } },
+      keyRoom: { select: { id: true, name: true } },
     },
   });
 

@@ -97,6 +97,18 @@ export async function POST(request: NextRequest) {
 
   const { db, accountId } = session;
 
+  // Raum, in dem das Geraet haengt. Ueber ihn bekommt es die Betriebszeit
+  // fuer Regeln mit Betriebsbeginn/-ende.
+  let keyRoomId: number | null = null;
+  if (body.keyRoomId != null && body.keyRoomId !== "") {
+    const candidate = Number(body.keyRoomId);
+    const room = Number.isInteger(candidate)
+      ? await db.keyRoom.findFirst({ where: { id: candidate, accountId: accountId! }, select: { id: true } })
+      : null;
+    if (!room) return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 400 });
+    keyRoomId = candidate;
+  }
+
   const device = await db.device.create({
     data: {
       name: body.name.trim(),
@@ -114,7 +126,7 @@ export async function POST(request: NextRequest) {
       accessOut: body.accessOut ? Number(body.accessOut) : null,
       allowReentry: body.allowReentry ?? false,
       scanLockSeconds: parseScanLockSeconds(body.scanLockSeconds, null),
-      schedule: body.schedule ?? null,
+      keyRoomId,
       accountId: accountId!,
     },
   });

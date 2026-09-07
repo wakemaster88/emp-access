@@ -23,7 +23,14 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasAudioBackend } from "@/lib/audio-constants";
 import { sliderFill } from "./ui";
-import type { AudioDeviceOption, AudioSourceKind, PlaylistRow, StreamRow, ZoneRow } from "./types";
+import type {
+  AudioDeviceOption,
+  AudioSourceKind,
+  PlaylistRow,
+  RoomOption,
+  StreamRow,
+  ZoneRow,
+} from "./types";
 
 const NONE = "__none__";
 
@@ -42,12 +49,23 @@ interface Props {
   devices: AudioDeviceOption[];
   playlists: PlaylistRow[];
   streams: StreamRow[];
+  rooms: RoomOption[];
 }
 
-export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists, streams }: Props) {
+export function ZoneDialog({
+  open,
+  onClose,
+  onSaved,
+  zone,
+  devices,
+  playlists,
+  streams,
+  rooms,
+}: Props) {
   const isEdit = !!zone;
   const [name, setName] = useState(zone?.name ?? "");
   const [deviceId, setDeviceId] = useState<string>(zone?.deviceId ? String(zone.deviceId) : NONE);
+  const [roomId, setRoomId] = useState<string>(zone?.roomId ? String(zone.roomId) : NONE);
   const [playlistId, setPlaylistId] = useState<string>(
     zone?.playlistId ? String(zone.playlistId) : NONE
   );
@@ -122,6 +140,7 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists, s
       const payload = {
         name: name.trim(),
         deviceId: deviceId === NONE ? null : Number(deviceId),
+        keyRoomId: roomId === NONE ? null : Number(roomId),
         playlistId: playlistId === NONE ? null : Number(playlistId),
         streamId: streamId === NONE ? null : Number(streamId),
         defaultSource,
@@ -191,6 +210,27 @@ export function ZoneDialog({ open, onClose, onSaved, zone, devices, playlists, s
                 AUDIO_PLAYER anlegen.
               </p>
             )}
+          </div>
+
+          <div>
+            <Label>Raum</Label>
+            <Select value={roomId} onValueChange={setRoomId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Kein Raum" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Kein Raum</SelectItem>
+                {rooms.map((room) => (
+                  <SelectItem key={room.id} value={String(room.id)}>
+                    {room.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500 mt-1">
+              Über den Raum bekommt die Zone ihre Betriebszeit: Zeitpläne mit „Betriebsbeginn“
+              oder „Betriebsende“ richten sich danach, und die Zone erscheint im Raum-Leitstand.
+            </p>
           </div>
 
           <div>

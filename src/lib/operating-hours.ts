@@ -21,6 +21,7 @@
 import {
   DEFAULT_TIMEZONE,
   addDaysToYmd,
+  formatHhmm,
   parseHhmm,
   tzInstant,
   tzMinutesOfDay,
@@ -222,7 +223,131 @@ export function boundariesForDay(
   return out.sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
+/**
+ * Betriebsbeginn bzw. -ende eines Betriebstags als Zeitpunkt. Bei mehreren
+ * Spannen am Tag zaehlt die erste Oeffnung und das letzte Schliessen –
+ * "Betriebsbeginn" meint nicht das Ende der Mittagspause.
+ */
+export function operatingBoundary(
+  schedule: ScheduleSpec,
+  ymd: string,
+  kind: "open" | "close",
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+): Date | null {
+  const matching = boundariesForDay(schedule, ymd, tz).filter((b) => b.kind === kind);
+  const base = kind === "open" ? matching[0] : matching[matching.length - 1];
+  return base?.at ?? null;
+}
+
+/** Ausloeser, der sich an der Betriebszeit orientiert. */
+export interface OperatingTrigger {
+  kind: "open" | "close";
+  /** Verschiebung in Minuten; negativ = vorher. */
+  offsetMinutes: number;
+  /**
+   * Wochentage als Bitmaske (bit0 = Mo). Gilt fuer den Betriebstag: ein Ende
+   * um 02:00 gehoert zum Vortag, an dem der Betrieb geoeffnet hat.
+   */
+  daysOfWeek: number;
+}
+
+/** Ein konkreter Zeitpunkt, den ein Betriebszeit-Ausloeser hervorbringt. */
+export interface OperatingOccurrence {
+  /** Zeitpunkt einschliesslich Versatz. */
+  at: Date;
+  /** Betriebstag "YYYY-MM-TT", zu dem der Zeitpunkt gehoert. */
+  ymd: string;
+}
+
+/** Zeitpunkt des Ausloesers fuer einen Betriebstag, oder null (geschlossen). */
+export function operatingOccurrenceForDay(
+  schedule: ScheduleSpec,
+  trigger: OperatingTrigger,
+  ymd: string,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+): OperatingOccurrence | null {
+  if (((trigger.daysOfWeek >> weekdayBitOfYmd(ymd)) & 1) !== 1) return null;
+  const base = operatingBoundary(schedule, ymd, trigger.kind, tz);
+  if (!base) return null;
+  return { at: new Date(base.getTime() + trigger.offsetMinutes * 60_000), ymd };
+}
+
+/**
+ * Zeitpunkte des Ausloesers rund um `now`: Vortag, heute und Folgetag, nach
+ * Zeit sortiert. Der Vortag ist noetig, weil ein Betriebsende nach
+ * Mitternacht zum gestrigen Betriebstag gehoert; der Folgetag, weil ein
+ * Versatz vor Mitternacht auf den morgigen Beginn zeigen kann.
+ */
+function occurrencesAround(
+  schedule: ScheduleSpec,
+  trigger: OperatingTrigger,
+  now: Date,
+  tz: string | null | undefined,
+  daysAhead: number,
+): OperatingOccurrence[] {
+  const today = tzYmd(now, tz);
+  const out: OperatingOccurrence[] = [];
+  for (let offset = -1; offset <= daysAhead; offset++) {
+    const occ = operatingOccurrenceForDay(schedule, trigger, addDaysToYmd(today, offset), tz);
+    if (occ) out.push(occ);
+  }
+  return out.sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+/**
+ * Der Zeitpunkt, der jetzt faellig ist: `at - beforeMs <= now < at + afterMs`.
+ * Cron-Laeufe kommen nicht sekundengenau; das Fenster faengt Verspaetung ab.
+ * Gibt es mehrere Treffer, gewinnt der naechstliegende.
+ */
+export function dueOperatingOccurrence(
+  schedule: ScheduleSpec,
+  trigger: OperatingTrigger,
+  now: Date,
+  tz: string | null | undefined,
+  window: { beforeMs: number; afterMs: number },
+): OperatingOccurrence | null {
+  const nowMs = now.getTime();
+  const hits = occurrencesAround(schedule, trigger, now, tz, 1).filter(
+    (occ) => nowMs >= occ.at.getTime() - window.beforeMs && nowMs < occ.at.getTime() + window.afterMs,
+  );
+  if (hits.length === 0) return null;
+  return hits.reduce((best, occ) =>
+    Math.abs(occ.at.getTime() - nowMs) < Math.abs(best.at.getTime() - nowMs) ? occ : best,
+  );
+}
+
+/**
+ * Der naechste anstehende Zeitpunkt – fuer die Anzeige "heute 20:00". Ein
+ * Zeitpunkt gilt noch als anstehend, solange er hoechstens `graceMs`
+ * zurueckliegt; so springt die Anzeige nicht auf morgen, waehrend der Termin
+ * gerade abgearbeitet wird.
+ */
+export function nextOperatingOccurrence(
+  schedule: ScheduleSpec,
+  trigger: OperatingTrigger,
+  now: Date,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+  graceMs = 0,
+): OperatingOccurrence | null {
+  const threshold = now.getTime() - graceMs;
+  return occurrencesAround(schedule, trigger, now, tz, 8).find((occ) => occ.at.getTime() >= threshold) ?? null;
+}
+
 const WEEKDAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+/** "heute 20:00", "morgen 09:30" oder "Sa 10:00" – relativ zum Tag von `now`. */
+export function describeOccurrence(
+  occ: OperatingOccurrence,
+  now: Date,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+): string {
+  const today = tzYmd(now, tz);
+  const day = tzYmd(occ.at, tz);
+  const time = formatHhmm(tzMinutesOfDay(occ.at, tz));
+  if (day === today) return `heute ${time}`;
+  if (day === addDaysToYmd(today, 1)) return `morgen ${time}`;
+  return `${WEEKDAY_NAMES[weekdayBitOfYmd(day)]} ${time}`;
+}
 
 export function weekdayName(weekday: number): string {
   return WEEKDAY_NAMES[weekday] ?? "?";
