@@ -3,11 +3,13 @@
  *
  * Ein Zeitplan kann völlig richtig aussehen und trotzdem stumm bleiben: die
  * Zielzone hat keinen Abspieler, der Pi ist aus, die Playlist wurde gelöscht
- * oder der Termin fällt in die Ruhezeit der Zone. Auffallen würde das erst zur
- * Uhrzeit selbst – und dann merkt es niemand, weil ja nichts passiert. Darum
- * stehen die Gründe an der Karte.
+ * oder der Termin liegt außerhalb der Betriebszeit einer Zone, die Musik nur
+ * dann spielt. Auffallen würde das erst zur Uhrzeit selbst – und dann merkt
+ * es niemand, weil ja nichts passiert. Darum stehen die Gründe an der Karte.
  */
-import { isQuietTime } from "@/lib/audio-constants";
+import { SCHEDULE_WINDOW_MINUTES } from "@/lib/audio-constants";
+import { isWithinOperatingSpan } from "@/lib/operating-hours";
+import { DEFAULT_TIMEZONE, addDaysToYmd, tzInstant, tzYmd, weekdayBitOfYmd } from "@/lib/tz-time";
 import type {
   AnnouncementRow,
   OperatingScheduleOption,
@@ -56,12 +58,70 @@ export function scheduleOperatingSpecs(
   return { specs: [...specs.values()], unresolved };
 }
 
+/**
+ * Betriebstag des nächsten Termins eines Uhrzeit-Zeitplans, oder null ohne
+ * Wochentag. Dieselbe Rechnung wie `nextScheduleRunLabel`, nur als Datum.
+ */
+function nextTimedRunYmd(
+  schedule: ScheduleRow,
+  now: Date,
+  timeZone: string
+): string | null {
+  if (!schedule.timeOfDay) return null;
+  const today = tzYmd(now, timeZone);
+  for (let offset = 0; offset <= 7; offset++) {
+    const ymd = addDaysToYmd(today, offset);
+    if (((schedule.daysOfWeek >> weekdayBitOfYmd(ymd)) & 1) === 0) continue;
+    if (offset === 0) {
+      const at = tzInstant(ymd, schedule.timeOfDay, timeZone);
+      if (at && now.getTime() >= at.getTime() + SCHEDULE_WINDOW_MINUTES * 60_000) continue;
+    }
+    return ymd;
+  }
+  return null;
+}
+
+/**
+ * Zielzonen, die Musik nur zur Betriebszeit spielen und bei denen der Termin
+ * außerhalb liegt. Bei fester Uhrzeit zählt der nächste Termin; bei
+ * Betriebsbeginn/-ende der Vergleich der Versätze – sofern dieselbe
+ * Betriebszeit gilt, sonst lässt sich nichts sagen.
+ */
+export function zonesOutsideMusicWindow(
+  schedule: ScheduleRow,
+  targets: ZoneRow[],
+  options: OperatingScheduleOption[],
+  timeZone: string,
+  now = new Date()
+): ZoneRow[] {
+  return targets.filter((zone) => {
+    // Ohne Betriebszeit läuft die Musik jederzeit – der Schalter wirkt nicht.
+    if (!zone.musicOperating || zone.operatingScheduleId == null) return false;
+    const offsets = { openMinutes: zone.musicOpenOffset, closeMinutes: zone.musicCloseOffset };
+
+    if (schedule.trigger === "TIME") {
+      const spec = options.find((o) => o.id === zone.operatingScheduleId);
+      const ymd = nextTimedRunYmd(schedule, now, timeZone);
+      const at = spec && ymd && schedule.timeOfDay ? tzInstant(ymd, schedule.timeOfDay, timeZone) : null;
+      return !!at && !isWithinOperatingSpan(spec, at, timeZone, offsets);
+    }
+
+    if (schedule.operatingScheduleId != null && schedule.operatingScheduleId !== zone.operatingScheduleId) {
+      return false;
+    }
+    return schedule.trigger === "OPENING"
+      ? schedule.offsetMinutes < zone.musicOpenOffset
+      : schedule.offsetMinutes >= zone.musicCloseOffset;
+  });
+}
+
 export function scheduleWarnings(
   schedule: ScheduleRow,
   zones: ZoneRow[],
   playlists: PlaylistRow[],
   announcements: AnnouncementRow[],
-  operatingSchedules: OperatingScheduleOption[] = []
+  operatingSchedules: OperatingScheduleOption[] = [],
+  timeZone: string = DEFAULT_TIMEZONE
 ): string[] {
   const warnings: string[] = [];
   const targets = scheduleTargetZones(schedule, zones);
@@ -131,14 +191,10 @@ export function scheduleWarnings(
       }
     }
 
-    // Bei Betriebsbeginn/-ende steht die Uhrzeit erst am Tag selbst fest.
-    const timeOfDay = schedule.timeOfDay;
-    const quiet = timeOfDay
-      ? targets.filter((zone) => isQuietTime(zone.quietFrom, zone.quietTo, timeOfDay))
-      : [];
-    if (quiet.length > 0) {
+    const outside = zonesOutsideMusicWindow(schedule, targets, operatingSchedules, timeZone);
+    if (outside.length > 0) {
       warnings.push(
-        `Fällt in die Ruhezeit von ${joinNames(quiet.map((z) => z.name))} – dort bleibt die Musik aus.`
+        `${schedule.trigger === "TIME" ? "Der nächste Termin liegt" : "Liegt"} außerhalb der Betriebszeit von ${joinNames(outside.map((z) => z.name))} (Musik nur zur Betriebszeit) – dort bleibt die Musik aus.`
       );
     }
   }

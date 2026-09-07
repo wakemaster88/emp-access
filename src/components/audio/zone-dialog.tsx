@@ -21,11 +21,14 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { hasAudioBackend } from "@/lib/audio-constants";
+import { MAX_OPERATING_OFFSET_MINUTES, hasAudioBackend } from "@/lib/audio-constants";
+import { operatingSpansForDay } from "@/lib/operating-hours";
+import { formatHhmm, tzMinutesOfDay, tzYmd } from "@/lib/tz-time";
 import { sliderFill } from "./ui";
 import type {
   AudioDeviceOption,
   AudioSourceKind,
+  OperatingScheduleOption,
   PlaylistRow,
   RoomOption,
   StreamRow,
@@ -50,6 +53,29 @@ interface Props {
   playlists: PlaylistRow[];
   streams: StreamRow[];
   rooms: RoomOption[];
+  /** Betriebszeiten samt Wochenplan – für die Vorschau „heute 09:30–20:30“. */
+  operatingSchedules: OperatingScheduleOption[];
+  /** Zeitzone des Accounts. */
+  timeZone: string;
+}
+
+/**
+ * Musikfenster des heutigen Betriebstags als Text, damit man beim Eintippen
+ * des Versatzes sieht, was dabei herauskommt.
+ */
+function describeTodayMusicWindow(
+  spec: OperatingScheduleOption,
+  offsets: { openMinutes: number; closeMinutes: number },
+  timeZone: string
+): string {
+  const spans = operatingSpansForDay(spec, tzYmd(new Date(), timeZone), timeZone, offsets);
+  if (spans.length === 0) return "heute geschlossen – keine Musik";
+  return `heute ${spans
+    .map(
+      (span) =>
+        `${formatHhmm(tzMinutesOfDay(span.from, timeZone))}–${formatHhmm(tzMinutesOfDay(span.to, timeZone))}`
+    )
+    .join(" · ")}`;
 }
 
 export function ZoneDialog({
@@ -61,6 +87,8 @@ export function ZoneDialog({
   playlists,
   streams,
   rooms,
+  operatingSchedules,
+  timeZone,
 }: Props) {
   const isEdit = !!zone;
   const [name, setName] = useState(zone?.name ?? "");
@@ -85,8 +113,9 @@ export function ZoneDialog({
   const [volume, setVolume] = useState(zone?.volume ?? 50);
   const [announcementVolume, setAnnouncementVolume] = useState(zone?.announcementVolume ?? 85);
   const [duckVolume, setDuckVolume] = useState(zone?.duckVolume ?? 15);
-  const [quietFrom, setQuietFrom] = useState(zone?.quietFrom ?? "");
-  const [quietTo, setQuietTo] = useState(zone?.quietTo ?? "");
+  const [musicOperating, setMusicOperating] = useState(zone?.musicOperating ?? false);
+  const [musicOpenOffset, setMusicOpenOffset] = useState(zone?.musicOpenOffset ?? 0);
+  const [musicCloseOffset, setMusicCloseOffset] = useState(zone?.musicCloseOffset ?? 0);
   const [airplayEnabled, setAirplayEnabled] = useState(zone?.airplayEnabled ?? false);
   const [bluetoothEnabled, setBluetoothEnabled] = useState(zone?.bluetoothEnabled ?? false);
   const [externalName, setExternalName] = useState(zone?.externalName ?? "");
@@ -105,6 +134,23 @@ export function ZoneDialog({
   const backends = selected?.backends ?? [];
   const canAirplay = hasAudioBackend(backends, "AIRPLAY");
   const canBluetooth = hasAudioBackend(backends, "BLUETOOTH");
+
+  // Das Musikfenster kommt aus der Betriebszeit des Raums. Fehlt eins von
+  // beiden, bleibt der Schalter wirkungslos – das soll man beim Einstellen
+  // sehen und nicht erst, wenn die Musik abends weiterläuft.
+  const selectedRoom = rooms.find((room) => String(room.id) === roomId);
+  const roomSpec =
+    selectedRoom?.operatingScheduleId != null
+      ? operatingSchedules.find((s) => s.id === selectedRoom.operatingScheduleId)
+      : undefined;
+  const musicHint = !selectedRoom
+    ? "Ohne Raum gibt es keine Betriebszeit – die Musik läuft dann weiter jederzeit. Oben einen Raum wählen."
+    : !selectedRoom.operatingScheduleName
+      ? `Der Raum „${selectedRoom.name}“ hat keine Betriebszeit – die Musik läuft weiter jederzeit. Unter „Räume“ eine zuordnen.`
+      : null;
+  const validOffsets =
+    Math.abs(musicOpenOffset) <= MAX_OPERATING_OFFSET_MINUTES &&
+    Math.abs(musicCloseOffset) <= MAX_OPERATING_OFFSET_MINUTES;
 
   async function save() {
     setError(null);
@@ -135,6 +181,10 @@ export function ZoneDialog({
       setError("Der gewählte Abspieler hat den Bluetooth-Empfang nicht eingerichtet");
       return;
     }
+    if (musicOperating && !validOffsets) {
+      setError(`Der Versatz darf höchstens ${MAX_OPERATING_OFFSET_MINUTES} Minuten betragen`);
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -148,8 +198,9 @@ export function ZoneDialog({
         volume,
         announcementVolume,
         duckVolume,
-        quietFrom: quietFrom || null,
-        quietTo: quietTo || null,
+        musicOperating,
+        musicOpenOffset: musicOperating ? musicOpenOffset : 0,
+        musicCloseOffset: musicOperating ? musicCloseOffset : 0,
         airplayEnabled,
         bluetoothEnabled,
         externalName: externalName.trim() || null,
@@ -321,29 +372,59 @@ export function ZoneDialog({
             <VolumeField label="Ducking" value={duckVolume} onChange={setDuckVolume} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="az-quiet-from">Ruhezeit ab</Label>
-              <Input
-                id="az-quiet-from"
-                type="time"
-                value={quietFrom}
-                onChange={(e) => setQuietFrom(e.target.value)}
+          <div className="space-y-2 rounded-lg border border-border p-3 dark:border-border">
+            <label className="flex min-h-10 items-start gap-2.5 text-sm text-muted-foreground sm:min-h-0">
+              <Switch
+                checked={musicOperating}
+                onCheckedChange={setMusicOperating}
+                className="mt-0.5 shrink-0"
               />
-            </div>
-            <div>
-              <Label htmlFor="az-quiet-to">Ruhezeit bis</Label>
-              <Input
-                id="az-quiet-to"
-                type="time"
-                value={quietTo}
-                onChange={(e) => setQuietTo(e.target.value)}
-              />
-            </div>
+              <span className="min-w-0">
+                Musik nur zur Betriebszeit
+                <span className="block text-xs text-muted-foreground">
+                  Außerhalb stoppt die eigene Musik und startet nicht. Durchsagen laufen
+                  weiterhin, ebenso AirPlay und Bluetooth.
+                </span>
+              </span>
+            </label>
+
+            {musicOperating && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <OffsetField
+                    id="az-open-offset"
+                    label="Betriebsbeginn"
+                    value={musicOpenOffset}
+                    onChange={setMusicOpenOffset}
+                  />
+                  <OffsetField
+                    id="az-close-offset"
+                    label="Betriebsende"
+                    value={musicCloseOffset}
+                    onChange={setMusicCloseOffset}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Verschiebung in Minuten: negativ = vorher, positiv = nachher. „−30“ beim
+                  Beginn heißt: Musik ab einer halben Stunde vor Betriebsbeginn.
+                </p>
+                {musicHint ? (
+                  <p className="text-xs text-warning">{musicHint}</p>
+                ) : (
+                  roomSpec && (
+                    <p className="text-xs text-muted-foreground">
+                      {selectedRoom?.operatingScheduleName}:{" "}
+                      {describeTodayMusicWindow(
+                        roomSpec,
+                        { openMinutes: musicOpenOffset, closeMinutes: musicCloseOffset },
+                        timeZone
+                      )}
+                    </p>
+                  )
+                )}
+              </>
+            )}
           </div>
-          <p className="text-xs text-muted-foreground -mt-1">
-            In der Ruhezeit läuft keine Musik. Durchsagen werden trotzdem abgespielt.
-          </p>
 
           <div className="space-y-2 rounded-lg border border-border p-3 dark:border-border">
             <div>
@@ -457,6 +538,37 @@ function ReceiverSwitch({
         </span>
       </span>
     </label>
+  );
+}
+
+/** Versatz in Minuten gegenüber Betriebsbeginn bzw. -ende. */
+function OffsetField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Input
+          id={id}
+          type="number"
+          min={-MAX_OPERATING_OFFSET_MINUTES}
+          max={MAX_OPERATING_OFFSET_MINUTES}
+          step={5}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value) || 0)}
+        />
+        <span className="shrink-0 text-xs text-muted-foreground">Min.</span>
+      </div>
+    </div>
   );
 }
 

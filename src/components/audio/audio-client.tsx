@@ -45,6 +45,7 @@ import { cn } from "@/lib/utils";
 import {
   AUDIO_OPERATING_LABELS,
   SCHEDULE_WINDOW_MINUTES,
+  describeMusicWindow,
   describeScheduleTiming,
   formatDaysOfWeek,
   nextScheduleRunLabel,
@@ -694,7 +695,8 @@ export function AudioClient({
                           zones,
                           playlists,
                           announcements,
-                          operatingSchedules
+                          operatingSchedules,
+                          timeZone
                         ).map(
                           (warning) => (
                             <p
@@ -767,6 +769,8 @@ export function AudioClient({
           playlists={playlists}
           streams={streams}
           rooms={rooms}
+          operatingSchedules={operatingSchedules}
+          timeZone={timeZone}
           onClose={() => setZoneDialog({ open: false, zone: null })}
           onSaved={() => {
             setZoneDialog({ open: false, zone: null });
@@ -1001,6 +1005,7 @@ function ZoneCard({
   }, [highlight]);
 
   const lastSeen = formatRelativeTime(live?.lastStateAt ?? zone.lastStateAt);
+  const musicWindow = describeMusicWindow(zone);
 
   return (
     <Card
@@ -1079,7 +1084,7 @@ function ZoneCard({
                   : zone.sourceKind === "STREAM"
                     ? (zone.streamName ?? "Webradio")
                     : "Keine Wiedergabe")}
-              {zone.quietFrom && zone.quietTo && ` · Ruhe ${zone.quietFrom}–${zone.quietTo}`}
+              {musicWindow && ` · ${musicWindow}`}
               {lastSeen && ` · gemeldet ${lastSeen}`}
             </p>
           </div>

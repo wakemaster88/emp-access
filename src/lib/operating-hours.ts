@@ -193,6 +193,133 @@ export function isOperatingAt(
   return yesterday.windows.some((w) => coversFromPreviousDay(w, minutes));
 }
 
+/** Versatz an beiden Enden einer Oeffnungsspanne in Minuten; negativ = vorher. */
+export interface SpanOffsets {
+  openMinutes: number;
+  closeMinutes: number;
+}
+
+/** Eine Oeffnungsspanne als echte Zeitpunkte, Versatz bereits eingerechnet. */
+export interface OperatingSpan {
+  from: Date;
+  /** Ausschliesslich: um `to` ist die Spanne schon vorbei. */
+  to: Date;
+  /** Betriebstag "YYYY-MM-TT", zu dem die Spanne gehoert. */
+  ymd: string;
+}
+
+const NO_OFFSETS: SpanOffsets = { openMinutes: 0, closeMinutes: 0 };
+
+/**
+ * Oeffnungsspannen eines Betriebstags als Zeitpunkte, an beiden Enden um
+ * `offsets` verschoben. Gebraucht fuer Fenster, die sich an der Betriebszeit
+ * ausrichten: "Musik von Betriebsbeginn −30 Min. bis Betriebsende +30 Min.".
+ * Eine Spanne ueber Mitternacht endet am Folgetag; gleicher Beginn und
+ * gleiches Ende ("durchgehend") dauern 24 Stunden.
+ */
+export function operatingSpansForDay(
+  schedule: ScheduleSpec,
+  ymd: string,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+  offsets: SpanOffsets = NO_OFFSETS,
+): OperatingSpan[] {
+  const out: OperatingSpan[] = [];
+  for (const window of openingForDay(schedule, ymd).windows) {
+    const from = tzInstant(ymd, window.opensAt, tz);
+    const endsNextDay = window.overnight || window.opensAt === window.closesAt;
+    const to = tzInstant(endsNextDay ? addDaysToYmd(ymd, 1) : ymd, window.closesAt, tz);
+    if (!from || !to) continue;
+    out.push({
+      from: new Date(from.getTime() + offsets.openMinutes * 60_000),
+      to: new Date(to.getTime() + offsets.closeMinutes * 60_000),
+      ymd,
+    });
+  }
+  return out;
+}
+
+/**
+ * Spannen vom Vortag bis `daysAhead` Tage voraus, nach Beginn sortiert und
+ * zusammengelegt, wo sie sich beruehren oder ueberlappen: mit Versatz kann
+ * die Mittagspause zwischen zwei Spannen verschwinden. Der Vortag reicht,
+ * solange der Versatz unter einem Tag bleibt.
+ */
+function mergedSpansAround(
+  schedule: ScheduleSpec,
+  at: Date,
+  tz: string | null | undefined,
+  offsets: SpanOffsets,
+  daysAhead: number,
+): OperatingSpan[] {
+  const today = tzYmd(at, tz);
+  const spans: OperatingSpan[] = [];
+  for (let offset = -1; offset <= daysAhead; offset++) {
+    spans.push(...operatingSpansForDay(schedule, addDaysToYmd(today, offset), tz, offsets));
+  }
+  spans.sort((a, b) => a.from.getTime() - b.from.getTime());
+
+  const merged: OperatingSpan[] = [];
+  for (const span of spans) {
+    // Ein Versatz nach innen kann eine kurze Spanne ganz aufzehren.
+    if (span.to.getTime() <= span.from.getTime()) continue;
+    const last = merged[merged.length - 1];
+    if (last && span.from.getTime() <= last.to.getTime()) {
+      if (span.to.getTime() > last.to.getTime()) last.to = span.to;
+    } else {
+      merged.push({ ...span });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Liegt `at` in einer verschobenen Oeffnungsspanne? Ohne Versatz dasselbe
+ * wie `isOperatingAt`, und wie dort gilt ohne Profil: offen.
+ */
+export function isWithinOperatingSpan(
+  schedule: ScheduleSpec | null | undefined,
+  at: Date,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+  offsets: SpanOffsets = NO_OFFSETS,
+): boolean {
+  if (!schedule) return true;
+  const ms = at.getTime();
+  return mergedSpansAround(schedule, at, tz, offsets, 1).some(
+    (span) => ms >= span.from.getTime() && ms < span.to.getTime(),
+  );
+}
+
+/** Zustand eines Betriebszeit-Fensters samt dem naechsten Wechsel. */
+export interface OperatingSpanState {
+  /** Liegt der Zeitpunkt im Fenster? */
+  inside: boolean;
+  /**
+   * Wann der Zustand kippt: Ende der laufenden bzw. Beginn der naechsten
+   * Spanne. null = kein Wechsel in Sicht (etwa Betriebsferien).
+   */
+  until: Date | null;
+}
+
+/**
+ * Drinnen oder draussen, und bis wann. Der Abspieler einer Audio-Zone haelt
+ * damit das Fenster auch ohne Verbindung zum Server ein: er kennt den
+ * naechsten Wechsel, ohne Saison und Ausnahmetage selbst zu rechnen.
+ */
+export function operatingSpanState(
+  schedule: ScheduleSpec,
+  at: Date,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+  offsets: SpanOffsets = NO_OFFSETS,
+  daysAhead = 8,
+): OperatingSpanState {
+  const ms = at.getTime();
+  const spans = mergedSpansAround(schedule, at, tz, offsets, daysAhead);
+  const current = spans.find((span) => ms >= span.from.getTime() && ms < span.to.getTime());
+  if (current) return { inside: true, until: current.to };
+  const next = spans.find((span) => span.from.getTime() > ms);
+  return { inside: false, until: next?.from ?? null };
+}
+
 export interface OperatingBoundary {
   /** Zeitpunkt des Betriebsbeginns bzw. -endes. */
   at: Date;

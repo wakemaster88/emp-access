@@ -83,14 +83,35 @@ def _sd_notify(state: str):
         pass
 
 
-def _is_quiet_now(quiet_from: Optional[str], quiet_to: Optional[str]) -> bool:
-    """Ruhezeit prüfen; das Fenster darf über Mitternacht laufen."""
-    if not quiet_from or not quiet_to:
+def _parse_iso(value) -> Optional[float]:
+    """ISO-8601-Zeitstempel des Servers als Unix-Zeit; None, wenn unbrauchbar."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        # Python vor 3.11 versteht das "Z" am Ende nicht.
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _music_blocked(zone: dict) -> bool:
+    """
+    Musik nur zur Betriebszeit. Der Server rechnet das Fenster aus der
+    Betriebszeit des Raums (Saison, Ausnahmetage, Versatz) und schickt
+    `music.allowed` samt `music.until`, dem nächsten Wechsel. Nach `until` gilt
+    der umgekehrte Zustand, bis der nächste Abgleich kommt – so hält der
+    Abspieler das Fenster auch ohne Verbindung ein.
+
+    Ohne `music` (ältere Cloud oder Zone ohne Kopplung) ist Musik erlaubt.
+    """
+    music = zone.get("music")
+    if not isinstance(music, dict):
         return False
-    now = datetime.now().strftime("%H:%M")
-    if quiet_from <= quiet_to:
-        return quiet_from <= now < quiet_to
-    return now >= quiet_from or now < quiet_to
+    allowed = music.get("allowed", True) is not False
+    until = _parse_iso(music.get("until"))
+    if until is not None and time.time() >= until:
+        allowed = not allowed
+    return not allowed
 
 
 class EmpAudio:
@@ -112,9 +133,9 @@ class EmpAudio:
         self._zone: dict = {}
         self._zone_lock = threading.Lock()
         self._restored = False
-        # True, solange die Ruhezeit die eigene Musik unterdrückt. Beim Verlassen
-        # des Fensters wird die hinterlegte Quelle wieder gestartet.
-        self._in_quiet = False
+        # True, solange die Betriebszeit die eigene Musik unterdrückt. Sobald
+        # das Fenster wieder aufgeht, wird die hinterlegte Quelle gestartet.
+        self._off_hours = False
 
     # ── Start ────────────────────────────────────────────────────────────────
 
@@ -252,9 +273,9 @@ class EmpAudio:
         if self.external:
             self.external.apply(zone.get("airplay"), zone.get("bluetooth"))
 
-        self._enforce_quiet(zone)
+        self._enforce_music_window(zone)
 
-        if self._in_quiet:
+        if self._off_hours:
             return
 
         if not self._restored:
@@ -263,31 +284,32 @@ class EmpAudio:
         elif previous.get("id") != zone.get("id"):
             self._restore_source(zone)
 
-    def _enforce_quiet(self, zone: dict):
+    def _enforce_music_window(self, zone: dict):
         """
-        Ruhezeit durchsetzen: eigene Musik stoppen, wenn das Fenster beginnt,
-        und die hinterlegte Quelle wieder starten, wenn es endet.
+        Musik nur zur Betriebszeit durchsetzen: eigene Musik stoppen, wenn das
+        Fenster zugeht, und die hinterlegte Quelle wieder starten, wenn es
+        aufgeht.
 
         AirPlay/Bluetooth bleiben bewusst unberührt – wer abends bewusst
         etwas aufspielt, wird nicht ausgebremst.
         """
-        quiet = _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo"))
+        blocked = _music_blocked(zone)
 
-        if quiet:
+        if blocked:
             if self.music and self.music.is_playing:
-                logger.info("Ruhezeit aktiv – Musik wird beendet")
+                logger.info("Außerhalb der Betriebszeit – Musik wird beendet")
                 self.music.stop()
-            if not self._in_quiet:
-                logger.info("Ruhezeit beginnt")
-            self._in_quiet = True
+            if not self._off_hours:
+                logger.info("Betriebszeit vorbei – Musik pausiert bis zum nächsten Beginn")
+            self._off_hours = True
             self._restored = True
             return
 
-        if self._in_quiet:
-            self._in_quiet = False
+        if self._off_hours:
+            self._off_hours = False
             source = zone.get("sourceKind")
             if source in ("STREAM", "PLAYLIST"):
-                logger.info("Ruhezeit beendet – Quelle wird fortgesetzt")
+                logger.info("Betriebszeit beginnt – Quelle wird fortgesetzt")
                 self._restore_source(zone)
 
     def _restore_source(self, zone: dict):
@@ -302,9 +324,9 @@ class EmpAudio:
         threading.Thread(target=self._restore_source_blocking, args=(zone,), daemon=True).start()
 
     def _restore_source_blocking(self, zone: dict):
-        if _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo")):
-            logger.info("Ruhezeit aktiv – Musik startet nicht")
-            self._in_quiet = True
+        if _music_blocked(zone):
+            logger.info("Außerhalb der Betriebszeit – Musik startet nicht")
+            self._off_hours = True
             return
 
         source = zone.get("sourceKind")
@@ -422,9 +444,9 @@ class EmpAudio:
         if isinstance(volume, int):
             self.music.set_volume(volume)
 
-        if _is_quiet_now(zone.get("quietFrom"), zone.get("quietTo")):
-            logger.info("Ruhezeit aktiv – Musik wird nicht gestartet")
-            self._in_quiet = True
+        if _music_blocked(zone):
+            logger.info("Außerhalb der Betriebszeit – Musik wird nicht gestartet")
+            self._off_hours = True
             return
 
         if payload.get("kind") == "STREAM":

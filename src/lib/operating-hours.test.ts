@@ -7,11 +7,14 @@ import {
   describeSeasonRange,
   dueOperatingOccurrence,
   isOperatingAt,
+  isWithinOperatingSpan,
   isWithinSeasonRange,
   nextOperatingOccurrence,
   openingForDay,
   operatingBoundary,
   operatingOccurrenceForDay,
+  operatingSpanState,
+  operatingSpansForDay,
   seasonForDay,
   type ScheduleSpec,
 } from "./operating-hours";
@@ -436,3 +439,115 @@ test("Kulanz hält den laufenden Termin in der Anzeige", () => {
   );
   assert.equal(nextOperatingOccurrence(s, trigger, now, TZ)?.ymd, "2026-07-02", "ohne Kulanz morgen");
 });
+
+// ── Verschobene Oeffnungsspannen (Musik nur zur Betriebszeit) ───────────────
+
+/** Sommerzeit: 10:00 Berlin = 08:00 UTC. */
+function utc(iso: string): Date {
+  return new Date(iso);
+}
+
+test("Öffnungsspanne als Zeitpunkte, an beiden Enden verschoben", () => {
+  const spans = operatingSpansForDay(strandbad(), "2026-07-01", TZ, {
+    openMinutes: -30,
+    closeMinutes: 30,
+  });
+  assert.equal(spans.length, 1);
+  assert.equal(spans[0].from.toISOString(), utc("2026-07-01T07:30:00Z").toISOString());
+  assert.equal(spans[0].to.toISOString(), utc("2026-07-01T18:30:00Z").toISOString());
+  assert.equal(spans[0].ymd, "2026-07-01");
+});
+
+test("ohne Versatz stimmt die Spanne mit isOperatingAt überein", () => {
+  const s = strandbad();
+  for (const iso of ["2026-07-01T07:59:00Z", "2026-07-01T08:00:00Z", "2026-07-01T17:59:00Z", "2026-07-01T18:00:00Z", "2026-07-01T22:00:00Z"]) {
+    assert.equal(isWithinOperatingSpan(s, utc(iso), TZ), isOperatingAt(s, utc(iso), TZ), iso);
+  }
+});
+
+test("Versatz öffnet das Fenster vor Betriebsbeginn und schließt es nach Betriebsende", () => {
+  const s = strandbad();
+  const offsets = { openMinutes: -30, closeMinutes: 30 };
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-01T07:29:00Z"), TZ, offsets), false, "09:29");
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-01T07:30:00Z"), TZ, offsets), true, "09:30");
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-01T18:29:00Z"), TZ, offsets), true, "20:29");
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-01T18:30:00Z"), TZ, offsets), false, "20:30");
+});
+
+test("negativer Versatz am Ende schließt das Fenster vor Betriebsende", () => {
+  const s = strandbad();
+  const offsets = { openMinutes: 0, closeMinutes: -15 };
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-01T17:44:00Z"), TZ, offsets), true, "19:44");
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-01T17:45:00Z"), TZ, offsets), false, "19:45");
+});
+
+test("ohne Profil ist das Fenster immer offen, an geschlossenen Tagen nie", () => {
+  assert.equal(isWithinOperatingSpan(null, utc("2026-07-01T12:00:00Z"), TZ, { openMinutes: -60, closeMinutes: 60 }), true);
+  // 2026-01-14 ist ein Mittwoch – im Winter geschlossen.
+  assert.equal(isWithinOperatingSpan(strandbad(), utc("2026-01-14T12:00:00Z"), TZ), false);
+});
+
+test("Nachtspanne mit Versatz reicht bis in den Folgetag", () => {
+  const s: ScheduleSpec = {
+    name: "Bar",
+    seasons: [
+      {
+        name: "Ganzjährig",
+        startMmDd: "01-01",
+        endMmDd: "12-31",
+        sortOrder: 0,
+        periods: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opensAt: "18:00", closesAt: "02:00" })),
+      },
+    ],
+    exceptions: [],
+  };
+  const offsets = { openMinutes: 0, closeMinutes: 60 };
+  // 02:30 Berlin am 2.7. = 00:30 UTC – Betriebsende 02:00 plus eine Stunde.
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-02T00:30:00Z"), TZ, offsets), true);
+  assert.equal(isWithinOperatingSpan(s, utc("2026-07-02T01:00:00Z"), TZ, offsets), false, "03:00");
+});
+
+test("Versatz legt Spannen zusammen, die sich berühren", () => {
+  const s: ScheduleSpec = {
+    name: "Mit Mittagspause",
+    seasons: [
+      {
+        name: "Ganzjährig",
+        startMmDd: "01-01",
+        endMmDd: "12-31",
+        sortOrder: 0,
+        periods: [0, 1, 2, 3, 4, 5, 6].flatMap((weekday) => [
+          { weekday, opensAt: "10:00", closesAt: "14:00" },
+          { weekday, opensAt: "15:00", closesAt: "20:00" },
+        ]),
+      },
+    ],
+    exceptions: [],
+  };
+  // Ohne Versatz: in der Pause keine Musik, der Zustand kippt um 15:00.
+  const pause = operatingSpanState(s, utc("2026-07-01T12:30:00Z"), TZ);
+  assert.equal(pause.inside, false);
+  assert.equal(pause.until?.toISOString(), utc("2026-07-01T13:00:00Z").toISOString());
+  // Mit einer halben Stunde an beiden Enden verschwindet die Pause.
+  const merged = operatingSpanState(s, utc("2026-07-01T12:30:00Z"), TZ, { openMinutes: -30, closeMinutes: 30 });
+  assert.equal(merged.inside, true);
+  assert.equal(merged.until?.toISOString(), utc("2026-07-01T18:30:00Z").toISOString(), "bis 20:30 Berlin");
+});
+
+test("Zustand nennt den nächsten Wechsel: Ende der laufenden, Beginn der nächsten Spanne", () => {
+  const s = strandbad();
+  const offsets = { openMinutes: -30, closeMinutes: 30 };
+  const inside = operatingSpanState(s, utc("2026-07-01T12:00:00Z"), TZ, offsets);
+  assert.equal(inside.inside, true);
+  assert.equal(inside.until?.toISOString(), utc("2026-07-01T18:30:00Z").toISOString());
+
+  const evening = operatingSpanState(s, utc("2026-07-01T20:00:00Z"), TZ, offsets);
+  assert.equal(evening.inside, false);
+  assert.equal(evening.until?.toISOString(), utc("2026-07-02T07:30:00Z").toISOString(), "morgen 09:30");
+
+  // Zwischen den Saisons: kein Wechsel in Sicht.
+  const gap = operatingSpanState(s, utc("2026-10-05T12:00:00Z"), TZ, offsets);
+  assert.equal(gap.inside, false);
+  assert.equal(gap.until, null);
+});
+

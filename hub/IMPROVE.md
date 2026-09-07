@@ -458,3 +458,19 @@ Schließt zwei offene Punkte vom 1.9.: Audio hielt eigene Uhrzeiten statt auf di
 
 - Bewässerung, Überwachung und E-Mail halten weiter eigene Fenster.
 - Bestehende Regeln mit Betriebsende nach Mitternacht feuern ab jetzt; wer so etwas eingerichtet hatte, sieht neue Verlaufseinträge.
+
+## 2026-09-07 (Ruhezeit der Audio-Zonen durch die Betriebszeit abgelöst)
+
+Die Zone hielt neben der Betriebszeit noch ein eigenes festes Fenster „keine Musik von 22:00 bis 08:00“ – zweite Uhrzeitquelle ohne Saison und Ausnahmetage. Jetzt heißt es „Musik nur zur Betriebszeit“, je Ende mit Versatz.
+
+### Änderungen
+
+- **`AudioZone`**: `quietFrom`/`quietTo` weg, dafür `musicOperating`, `musicOpenOffset`, `musicCloseOffset` (Migration `20260907150000_audio_music_operating`; Zonen mit Ruhezeit bekommen die Kopplung eingeschaltet, Versatz 0). Zonen-Dialog: Schalter, zwei Versatzfelder, Vorschau „heute 09:30–20:30“ aus der Betriebszeit des Raums, Hinweis, wenn Raum oder Betriebszeit fehlen.
+- **`operating-hours.ts`**: `operatingSpansForDay`, `isWithinOperatingSpan`, `operatingSpanState` – Öffnungsspannen als Zeitpunkte mit Versatz an beiden Enden, zusammengelegt, wo sich Spannen berühren; dazu der nächste Wechsel. `audio-constants.ts`: `musicWindowState` (Zone + Betriebszeit → erlaubt/bis wann), `describeMusicWindow`, `parseOffsetMinutes`, `MAX_OPERATING_OFFSET_MINUTES` (gilt jetzt auch für Zeitpläne).
+- **Pi-Abspieler 1.2.0**: bekommt im Zonenabgleich `music: { allowed, until }` statt Uhrzeiten und rechnet nichts selbst. Nach `until` gilt der umgekehrte Zustand, bis der nächste Abgleich kommt – die Musik geht abends auch ohne Verbindung aus. Ohne `music` (Zone ohne Kopplung) wie bisher: Musik jederzeit.
+- Regel-Engine, Dashboard-Ops-Karte („Betriebsruhe“) und Zeitplan-Warnungen fragen dasselbe Fenster. Die Warnung an der Zeitplan-Karte prüft bei fester Uhrzeit den nächsten Termin, bei Betriebsbeginn/-ende den Versatz gegen den der Zone.
+
+### Offen
+
+- Pi zieht das Update per git beim nächsten Lauf; bis dahin gilt auf ihm keine Begrenzung mehr (die Cloud schickt keine Uhrzeiten mehr).
+

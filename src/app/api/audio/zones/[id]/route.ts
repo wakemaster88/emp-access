@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import {
+  MAX_OPERATING_OFFSET_MINUTES,
   checkExternalReceivers,
   clampVolume,
+  parseOffsetMinutes,
   parseSourceKind,
-  parseTimeOfDay,
   resolveOwnedStream,
 } from "@/lib/audio";
 
@@ -102,6 +103,18 @@ export async function PUT(
   const sourceKind = parseSourceKind(body.sourceKind);
   const defaultSource = parseSourceKind(body.defaultSource);
 
+  // Musikfenster: undefined = unverändert, sonst geprüfter Versatz.
+  const musicOpenOffset =
+    body.musicOpenOffset === undefined ? undefined : parseOffsetMinutes(body.musicOpenOffset);
+  const musicCloseOffset =
+    body.musicCloseOffset === undefined ? undefined : parseOffsetMinutes(body.musicCloseOffset);
+  if (musicOpenOffset === null || musicCloseOffset === null) {
+    return NextResponse.json(
+      { error: `Verschiebung muss zwischen −${MAX_OPERATING_OFFSET_MINUTES} und ${MAX_OPERATING_OFFSET_MINUTES} Minuten liegen` },
+      { status: 400 }
+    );
+  }
+
   const airplayEnabled =
     body.airplayEnabled === undefined ? undefined : body.airplayEnabled === true;
   const bluetoothEnabled =
@@ -149,8 +162,9 @@ export async function PUT(
         body.duckVolume === undefined
           ? undefined
           : clampVolume(body.duckVolume, existing.duckVolume),
-      quietFrom: body.quietFrom === undefined ? undefined : parseTimeOfDay(body.quietFrom),
-      quietTo: body.quietTo === undefined ? undefined : parseTimeOfDay(body.quietTo),
+      musicOperating: body.musicOperating === undefined ? undefined : body.musicOperating === true,
+      musicOpenOffset,
+      musicCloseOffset,
       airplayEnabled,
       bluetoothEnabled,
       externalName:

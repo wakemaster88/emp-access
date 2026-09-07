@@ -101,7 +101,7 @@ export default async function AudioPage() {
       listTtsVoices(),
       db.keyRoom.findMany({
         where: { accountId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, operatingSchedule: { select: { id: true, name: true } } },
         orderBy: [{ building: "asc" }, { name: "asc" }],
       }),
       db.operatingSchedule.findMany({
@@ -137,8 +137,9 @@ export default async function AudioPage() {
             streamId: z.streamId,
             streamName: z.stream?.name ?? null,
             streamUrl: z.stream?.url ?? z.streamUrl,
-            quietFrom: z.quietFrom,
-            quietTo: z.quietTo,
+            musicOperating: z.musicOperating,
+            musicOpenOffset: z.musicOpenOffset,
+            musicCloseOffset: z.musicCloseOffset,
             airplayEnabled: z.airplayEnabled,
             bluetoothEnabled: z.bluetoothEnabled,
             externalName: z.externalName,
@@ -224,7 +225,12 @@ export default async function AudioPage() {
             backends: audioBackends(d.systemInfo),
           }))}
           ttsVoices={ttsVoices}
-          rooms={rooms}
+          rooms={rooms.map((room) => ({
+            id: room.id,
+            name: room.name,
+            operatingScheduleId: room.operatingSchedule?.id ?? null,
+            operatingScheduleName: room.operatingSchedule?.name ?? null,
+          }))}
           operatingSchedules={operatingSchedules.map((schedule) => {
             const spec = toScheduleSpec(schedule);
             return {

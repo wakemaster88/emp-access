@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import {
+  MAX_OPERATING_OFFSET_MINUTES,
   checkExternalReceivers,
   clampVolume,
+  parseOffsetMinutes,
   parseSourceKind,
-  parseTimeOfDay,
   resolveOwnedStream,
 } from "@/lib/audio";
 
@@ -117,6 +118,17 @@ export async function POST(request: NextRequest) {
     keyRoomId = candidate;
   }
 
+  // Musik nur zur Betriebszeit des Raums, je Ende mit Versatz in Minuten.
+  const musicOperating = body.musicOperating === true;
+  const musicOpenOffset = body.musicOpenOffset === undefined ? 0 : parseOffsetMinutes(body.musicOpenOffset);
+  const musicCloseOffset = body.musicCloseOffset === undefined ? 0 : parseOffsetMinutes(body.musicCloseOffset);
+  if (musicOpenOffset === null || musicCloseOffset === null) {
+    return NextResponse.json(
+      { error: `Verschiebung muss zwischen −${MAX_OPERATING_OFFSET_MINUTES} und ${MAX_OPERATING_OFFSET_MINUTES} Minuten liegen` },
+      { status: 400 }
+    );
+  }
+
   const last = await db.audioZone.findFirst({
     where: { accountId: accountId! },
     orderBy: { sortOrder: "desc" },
@@ -141,8 +153,9 @@ export async function POST(request: NextRequest) {
       volume: clampVolume(body.volume, 50),
       announcementVolume: clampVolume(body.announcementVolume, 85),
       duckVolume: clampVolume(body.duckVolume, 15),
-      quietFrom: parseTimeOfDay(body.quietFrom),
-      quietTo: parseTimeOfDay(body.quietTo),
+      musicOperating,
+      musicOpenOffset,
+      musicCloseOffset,
       airplayEnabled,
       bluetoothEnabled,
       externalName:
