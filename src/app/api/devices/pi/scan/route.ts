@@ -10,6 +10,7 @@ import { evaluateAreaScanLock, evaluateScanLock } from "@/lib/scan-lock";
 import { DEBOUNCE_WINDOW_MS, resolveDebounce } from "@/lib/scan-debounce";
 import { isDurationPastBerlinDay, isDurationStillRunning, isDurationTicket } from "@/lib/duration-ticket";
 import { runScanRules } from "@/lib/room-rules";
+import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 
 /** Code vom Raspberry Pi, wenn Relais per Dashboard-Button geöffnet wurde → GRANTED-Scan ohne Ticket */
 const DASHBOARD_OPEN_CODE = "__DASHBOARD_OPEN__";
@@ -283,6 +284,9 @@ export async function POST(request: NextRequest) {
         },
         ticketAreas: { select: { accessAreaId: true } },
         ticketDevices: { select: { deviceId: true } },
+        verein: {
+          select: { accessTickets: { select: { ticket: { select: vereinAccessTicketSelect } } } },
+        },
       },
     });
     if (candidates.length > 0) {
@@ -616,13 +620,22 @@ export async function POST(request: NextRequest) {
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
     const subscriptionAreaIds = ticket.subscription?.areas?.map((a) => a.id) ?? [];
     const serviceAreaIds = ticket.service?.serviceAreas?.map((sa) => sa.accessAreaId) ?? [];
+    // Vereinsmitglieder erben die Bereiche der gerade gueltigen Zutrittstickets
+    // ihres Vereins. Fuer sie heisst "keine Bereiche" nirgends, nicht ueberall -
+    // sonst kaeme jedes Mitglied jederzeit durch jedes Drehkreuz.
+    const isVereinMember = ticket.vereinId != null;
+    const vereinAreas = isVereinMember
+      ? vereinAreaIds((ticket.verein?.accessTickets ?? []).map((at) => at.ticket), now, { isExit: isExitScan })
+      : [];
     const allTicketAreas = [
       ...(ticket.accessAreaId ? [ticket.accessAreaId] : []),
       ...ticketAreaIds,
       ...subscriptionAreaIds,
       ...serviceAreaIds,
+      ...vereinAreas,
     ];
-    const hasAccess = allTicketAreas.length === 0 || allTicketAreas.some((a) => deviceAreas.includes(a));
+    const hitsDevice = allTicketAreas.some((a) => deviceAreas.includes(a));
+    const hasAccess = isVereinMember ? hitsDevice : allTicketAreas.length === 0 || hitsDevice;
     if (!hasAccess) {
       await db.scan.create({
         data: { code, deviceId, result: "DENIED", note: "wrong_resource", ticketId: ticket.id, accountId },
