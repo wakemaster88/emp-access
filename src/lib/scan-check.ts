@@ -6,6 +6,7 @@ import { pickBestScanCandidate } from "@/lib/scan-candidate";
 import { isMainResourceScan, resolveMainAreaId } from "@/lib/main-resource";
 import { evaluateScanLock } from "@/lib/scan-lock";
 import { isDurationPastBerlinDay, isDurationTicket } from "@/lib/duration-ticket";
+import { vereinAccessTicketSelect, vereinAreaIds } from "@/lib/verein-access";
 
 /**
  * Geteilte Scan-Check-Kernlogik fuer den authentifizierten Endpoint
@@ -44,55 +45,6 @@ export interface PerformScanCheckArgs {
   accessAreaId?: number;
   /** Optional: deviceId fuer den geschriebenen Scan */
   deviceId?: number | null;
-}
-
-/**
- * Prueft, ob ein Verein-Zutritts-Ticket aktuell gueltig ist (Status + Zeitraum
- * des Tickets selbst). Nur dann duerfen seine Areas an Vereinsmitglieder
- * vererbt werden. Restriktionen kommen direkt vom Ticket (DATE_RANGE,
- * TIME_SLOT, DURATION).
- */
-function isAccessTicketCurrentlyValid(
-  t: {
-    status: string;
-    startDate: Date | null;
-    endDate: Date | null;
-    validityType: string | null;
-    slotStart: string | null;
-    slotEnd: string | null;
-    validityDurationMinutes: number | null;
-    firstScanAt: Date | null;
-  },
-  now: Date,
-): boolean {
-  if (t.status !== "VALID" && t.status !== "REDEEMED") return false;
-
-  if (t.startDate) {
-    const start = new Date(t.startDate);
-    start.setUTCHours(0, 0, 0, 0);
-    if (now < start) return false;
-  }
-  if (t.endDate) {
-    const end = new Date(t.endDate);
-    end.setUTCHours(23, 59, 59, 999);
-    if (now > end) return false;
-  }
-
-  const vType = t.validityType ?? "DATE_RANGE";
-  if (vType === "TIME_SLOT" && t.slotStart && t.slotEnd) {
-    const berlinNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
-    const minutes = berlinNow.getHours() * 60 + berlinNow.getMinutes();
-    const [sh, sm] = t.slotStart.split(":").map(Number);
-    const [eh, em] = t.slotEnd.split(":").map(Number);
-    if (minutes < sh * 60 + sm || minutes > eh * 60 + em) return false;
-  }
-  if (isDurationTicket(t) && t.validityDurationMinutes && t.firstScanAt) {
-    const expiresAt = new Date(t.firstScanAt.getTime() + t.validityDurationMinutes * 60_000);
-    if (now > expiresAt) return false;
-  }
-  if (isDurationPastBerlinDay(t, now)) return false;
-
-  return true;
 }
 
 export async function performScanCheck({
@@ -190,25 +142,7 @@ export async function performScanCheck({
         verein: {
           select: {
             name: true,
-            accessTickets: {
-              select: {
-                ticket: {
-                  select: {
-                    id: true,
-                    status: true,
-                    startDate: true,
-                    endDate: true,
-                    validityType: true,
-                    slotStart: true,
-                    slotEnd: true,
-                    validityDurationMinutes: true,
-                    firstScanAt: true,
-                    accessAreaId: true,
-                    ticketAreas: { select: { accessAreaId: true } },
-                  },
-                },
-              },
-            },
+            accessTickets: { select: { ticket: { select: vereinAccessTicketSelect } } },
           },
         },
       },
@@ -485,12 +419,11 @@ export async function performScanCheck({
 
   if (accessAreaId && !hasDirectDeviceMatch) {
     const ticketAreaIds = ticket.ticketAreas?.map((ta) => ta.accessAreaId) ?? [];
-    const vereinAreaIds: number[] = [];
-    for (const at of ticket.verein?.accessTickets ?? []) {
-      if (!isAccessTicketCurrentlyValid(at.ticket, now)) continue;
-      if (at.ticket.accessAreaId) vereinAreaIds.push(at.ticket.accessAreaId);
-      for (const ta of at.ticket.ticketAreas) vereinAreaIds.push(ta.accessAreaId);
-    }
+    const vereinAreas = vereinAreaIds(
+      (ticket.verein?.accessTickets ?? []).map((at) => at.ticket),
+      now,
+      { isExit: isExitDevice },
+    );
     const subscriptionAreaIds = ticket.subscription?.areas?.map((a) => a.id) ?? [];
     const serviceAreaIds = ticket.service?.serviceAreas?.map((sa) => sa.accessAreaId) ?? [];
     const allTicketAreas = [
@@ -498,7 +431,7 @@ export async function performScanCheck({
       ...ticketAreaIds,
       ...subscriptionAreaIds,
       ...serviceAreaIds,
-      ...vereinAreaIds,
+      ...vereinAreas,
     ];
     const isVereinMember = !!ticket.vereinId;
     const hasAccess = isVereinMember
