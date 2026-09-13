@@ -474,3 +474,60 @@ Die Zone hielt neben der Betriebszeit noch ein eigenes festes Fenster „keine M
 
 - Pi zieht das Update per git beim nächsten Lauf; bis dahin gilt auf ihm keine Begrenzung mehr (die Cloud schickt keine Uhrzeiten mehr).
 
+
+## 2026-09-12 (Falschparker Kamera Eingang: Machbarkeit geprüft)
+
+Anlass: Rechts neben der Zufahrt stehen regelmäßig Autos im absoluten Halteverbot. Gefragt war Erkennung, Push und eine Ansage über den Kamera-Lautsprecher. Diese Sitzung war reine Analyse plus zwei Live-Proben an der Kamera; noch kein Produktionscode.
+
+### Befunde
+
+- „Kamera Eingang" in der Cloud ist physisch `cam-eingang-oben`, RLC-811A auf 192.168.40.11 (Gerätename „Eingang Oben", Firmware v3.1.0.4695). Die Kamera auf 192.168.1.86 heißt intern ebenfalls „Eingang", zeigt aber Drehkreuz und Shop – nicht die Zufahrt. Wer nur nach dem Namen greift, landet auf der falschen Kamera.
+- Der Lautsprecher taugt für Sprache, aber nicht über die CGI-API: `GetAudioFileList`, `GetAudioAlarm`, `GetAutoReply` antworten alle `not support` (rspCode -9). Eigene Audiodateien lassen sich also nicht hochladen, `AudioAlarmPlay` bleibt auf den fest eingebauten Alarmton beschränkt. `GetAudioAlarmV20` und `GetAudioCfg` (Lautstärke 92) gehen.
+- Der Weg für freie Ansagen ist der ONVIF-Backchannel über RTSP. DESCRIBE mit `Require: www.onvif.org/ver20/backchannel` liefert einen dritten Track: `m=audio RTP/AVP 0`, `PCMU/8000`, `a=sendonly`. Ohne den Header fehlt er.
+- Live erprobt und funktionsfähig: `say -v Anna --data-format=LEI16@8000` → `afconvert -d ulaw@8000` → RTSP DESCRIBE/SETUP/PLAY → RTP-Pakete à 160 Byte alle 20 ms, interleaved über TCP. 4,69 s Ansage gingen in 4,70 s durch, ohne Abbruch. Beide Werkzeuge liegen in macOS, ffmpeg ist auf dem Hub nicht installiert.
+- Zwei Fallen dabei: `RECORD` beantwortet die Kamera mit `405 Method Not Allowed`, es muss `PLAY` sein (`Public:` listet OPTIONS, DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE, GET_PARAMETER, SET_PARAMETER). Und der `Require`-Header muss auch an SETUP und PLAY, nicht nur an DESCRIBE.
+- Erkennungsseitig fehlt eine Standzeit. `vision.ts` prüft Einzelbilder ohne Gedächtnis, der Zone-Worker im Tracker zählt über `ZoneOccupancy` nur, wie viele Tracks gerade in der Fläche sind. Für „steht seit 10 Minuten" gibt es nichts.
+- Der Tracker läuft mit drei Workern (`cam-drehkreuze`, `cam-aquapark`, `cam-halle-2`, yolov8n); `cam-eingang-oben` ist nicht dabei. go2rtc 1.9.14 hat die Kamera als `cam-eingang-oben_main`/`_sub`.
+- `parkingLot` mit `spots` steht in `webcams/config.json` und hat einen Editor (`parking-spots-editor.tsx`), bei `cam-halle-2` sogar vier fertige Plätze – der Tracker liest das Feld aber nirgends aus, `parking_history.py` wird von `main.py` nicht importiert. Toter Strang, kein Fundament.
+
+### Änderungen
+
+- Keine am Code. An der Kamera wurde für die Hörprobe die Lautstärke auf 3 gesetzt und danach wieder auf 92 gestellt (`SetAudioCfg`, geprüft).
+
+### Offen
+
+- Die Zone rechts an der Hecke ist noch nicht abgestimmt; der Zuschnitt liegt nur als Vorschlag vor. Radaufstandspunkte der drei Autos liegen bei etwa (0.55, 0.09), (0.61, 0.13), (0.70, 0.20).
+- Ob am Lautsprecher wirklich Ton herauskommt, ist ungeprüft: Der Sendeweg ist bestätigt, gehört hat es bei Lautstärke 3 niemand.
+- Dauerparker am Rand (eigene Fahrzeuge?) würden ohne Sperrzeit zum Daueralarm führen.
+
+## 2026-09-13 (Halteverbot am Eingang: Erkennung mit Standzeit, Ansage über den Kamera-Lautsprecher)
+
+Aus der Machbarkeitsprüfung vom Vortag ist Code geworden. Neu ist ein eigener Takt, der die Standzeit misst – das fehlte bisher überall: `vision.ts` bewertet Einzelbilder ohne Gedächtnis, und `ZoneOccupancy` im Tracker zählt nur, wie viele Fahrzeuge gerade in einer Fläche sind.
+
+### Befunde
+
+- Die Fläche ließ sich erst zuschneiden, als sie leer war. Am Vorabend mit parkenden Autos lag der erste Entwurf zu hoch und deckte überwiegend Hecke und Grünstreifen ab; am Sonntagmorgen war die Grenze zwischen Asphalt und Schotter klar zu sehen.
+- Belastbarer als jedes Augenmaß waren die echten Radaufstandspunkte: Über vier Aufnahmen (18:46, 20:14, 22:08, 09:40) liegen alle acht geparkten Fahrzeuge bei x 0,546–0,797 und y 0,178–0,319. Der Lieferwagen auf dem Pflaster im Vordergrund liegt bei (0,668, 0,920) mit 35,7 % Bildfläche und bleibt außen – genau deshalb zählt der Radaufstandspunkt und nicht der Box-Mittelpunkt.
+- Der Bildausschnitt war über alle vier Zeitpunkte identisch, es hat also niemand gezoomt oder geschwenkt. Eine feste Fläche in normierten Koordinaten ist damit tragfähig; nach einem PTZ-Eingriff wäre sie es nicht.
+- Die Mindestgröße musste deutlich unter `HUB_VEHICLE_MIN_AREA` (2 %) liegen: Ein Pkw auf dem Schotter belegt 0,7–1,8 % der Bildfläche, die Autos auf dem Parkplatz im Hintergrund nur 0,10–0,29 %. 0,5 % trennt beides sauber.
+- Das Wiedererkennen über die Zeit ist unkritisch, weil stehende Autos stillstehen: Im Trockenlauf über drei Minuten lag die Boxenüberdeckung bei 0,96–0,99. Ein einzelner Aussetzer bei einem schwach erkannten Fahrzeug (conf 0,38–0,50 bei 0,71 % Fläche) wurde durch die Aussetzer-Toleranz überbrückt, die Standzeit lief korrekt weiter.
+- YOLO meldet denselben Transporter gern doppelt, als Auto (conf 0,49) und als Lastwagen (conf 0,58) auf derselben Box. Ohne Zusammenführung ab 0,6 Überdeckung zählte ein Fahrzeug zweimal.
+- Hörprobe bei Lautstärke 92 über den fertigen Code: 4,7 s Ansage, sauber durchgelaufen.
+
+### Änderungen
+
+- **`hub/src/camera-talk.ts`** (neu): Ansage über den ONVIF-Audio-Backchannel. `say` erzeugt 8-kHz-Sprache, `afconvert` wandelt in µ-law, dann RTP-Pakete à 160 Byte im 20-ms-Takt, interleaved über TCP. Erzeugte Sprache liegt in `hub/.cache/talk` (`say` braucht rund eine Sekunde), pro Kamera spricht immer nur eine Ansage. Kein ffmpeg nötig, kein Cloud-Dienst – die Ansage läuft auch bei Internet-Ausfall.
+- **`hub/src/noparking.ts`** (neu): Schnappschuss alle 20 s, Fahrzeug-Boxen über `detectVehicles`, Filter nach Klasse, Vertrauen, Mindestgröße und Radaufstandspunkt in der Fläche, danach Zuordnung zu den bekannten Fahrzeugen über die Boxenüberdeckung. Ab 2 Minuten Standzeit Meldung, Wiederholung nach 10 Minuten. Ansage und Cloud-Meldung laufen unabhängig voneinander, damit ein Ausfall die andere Seite nicht mitnimmt.
+- **`hub/src/vision.ts`**: `detectVehicles` liefert die rohen Boxen (die bestehende `checkVehicle`-Logik mit Box-Mittelpunkt und 2-%-Schwelle passt für die Einfahrt, nicht für Standzeiten), `inside` ist jetzt exportiert.
+- **`hub/src/cameras.ts`**: `announceOnCamera` (nicht mit `setSiren` verwechseln – die Sirene kann nur den eingebauten Alarmton) und `findCameraByRef`, damit Kameras in Einstellungen auch über den Namen benannt werden können.
+- **Cloud**: `POST /api/hub/parking-violations` und `src/lib/parking-violations.ts` – Eintrag in der Fahrzeug-Historie mit Bild (`VehicleSighting.source = "NO_PARKING"`), Push, Telegram mit Schnappschuss. Die Historie entsteht immer, benachrichtigt wird höchstens alle 10 Minuten: Ein Fahrzeug, das eine Stunde steht, soll nicht stündlich klingeln.
+- **`hub/scripts/talk-test.ts`** (neu): Ansage von Hand auslösen, für den Hörtest.
+- Diagnose-Hinweise für fehlgeschlagene Prüfungen, Dauerbelegung ohne Meldung und scheiternde Ansagen; neue Improve-Art `noparking`.
+- Aktiv auf Kamera 9: Schwelle 2 Minuten, Takt 20 s, Ansage vorerst aus (`HUB_NOPARK_SPEAK=0`).
+
+### Offen
+
+- Der Cloud-Endpunkt ist noch nicht ausgeliefert: `POST /api/hub/parking-violations` antwortet auf Vercel mit 404, die bestehende Sichtungs-Route mit 401. Bis zum Deploy landet jede Meldung im Log statt im Push. Die Erkennung selbst läuft davon unberührt.
+- Die Ansage ist scharf geschaltet, aber ausgeschaltet. Vor dem Einschalten sollte der Text im Alltag passen – 4,7 s sind lang, wenn jemand nur kurz aussteigt.
+- Dauerparker auf dem Schotter sind ungeklärt. Stehen dort regelmäßig eigene Fahrzeuge, braucht es eine Ausnahme (Kennzeichen-Whitelist oder Ruhezeiten), sonst meldet der Hub alle 10 Minuten dasselbe Auto.
+- Die Fläche steht in `hub/.env` und ist nur dort änderbar. Ein Editor im Dashboard wäre der nächste Schritt; der Zonen-Editor für die Einfahrt (`zone-editor.tsx`) ließe sich dafür wiederverwenden.

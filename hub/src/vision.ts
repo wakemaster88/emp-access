@@ -85,7 +85,7 @@ export function vehicleZoneFor(cameraId: number | undefined): Point[] | null {
 }
 
 /** Punkt-in-Polygon (Ray-Casting). */
-function inside(p: Point, poly: Point[]): boolean {
+export function inside(p: Point, poly: Point[]): boolean {
   let hit = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i];
@@ -208,6 +208,43 @@ export async function checkVehicle(
     log(`Vision-Check${tag} Fehler: ${e instanceof Error ? e.message : e}`);
     improve("vision", "fail", { error: e instanceof Error ? e.message : String(e) });
     return { vehicle: null, conf: 0, area: 0 };
+  }
+}
+
+/**
+ * Alle Fahrzeug-Boxen im Bild, ungefiltert und ohne Zonenregel.
+ * Für Auswertungen, die selbst entscheiden (z. B. Standzeit im Halteverbot:
+ * dort zählt der Radaufstandspunkt, nicht der Box-Mittelpunkt, und die
+ * Mindestgröße ist eine andere als an der Einfahrt).
+ * `null` = Tracker nicht erreichbar.
+ */
+export async function detectVehicles(
+  jpeg: Buffer,
+  opts: { label?: string } = {},
+): Promise<VehicleBox[] | null> {
+  const tag = opts.label ? ` ${opts.label}` : "";
+  try {
+    const { url, pin } = await trackerTarget();
+    const res = await fetch(`${url}/classify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "image/jpeg",
+        ...(pin ? { "x-admin-token": pin } : {}),
+      },
+      body: new Uint8Array(jpeg),
+      signal: AbortSignal.timeout(CLASSIFY_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      log(`Fahrzeug-Erkennung${tag} fehlgeschlagen: HTTP ${res.status}`);
+      improve("vision", "fail", { http: res.status });
+      return null;
+    }
+    const json = (await res.json()) as ClassifyResponse;
+    return Array.isArray(json.vehicles) ? json.vehicles : [];
+  } catch (e) {
+    log(`Fahrzeug-Erkennung${tag} Fehler: ${e instanceof Error ? e.message : e}`);
+    improve("vision", "fail", { error: e instanceof Error ? e.message : String(e) });
+    return null;
   }
 }
 

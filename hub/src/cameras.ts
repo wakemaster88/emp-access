@@ -11,6 +11,7 @@ import { STATE, recordHubEvent } from "./state.js";
 import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
 import { findAllowedVehicle, scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
+import { speakOnCamera } from "./camera-talk.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
 import { readArp } from "./scanner.js";
@@ -913,6 +914,46 @@ export async function setSiren(
     channel: cam.config.channel,
   });
   return { on };
+}
+
+/**
+ * Ansage über den Kamera-Lautsprecher (ONVIF-Backchannel, siehe camera-talk.ts).
+ * Nicht mit `setSiren` zu verwechseln: Die Sirene kann nur den eingebauten
+ * Alarmton, hier kommt gesprochener Text heraus.
+ */
+export async function announceOnCamera(
+  cameraId: number,
+  text: string,
+): Promise<{ seconds: number }> {
+  const cam = await getControlCam(cameraId);
+  return speakOnCamera(
+    {
+      host: cam.config.host,
+      username: cam.config.username,
+      password: cam.config.password,
+      label: cam.config.name,
+    },
+    text,
+  );
+}
+
+/**
+ * Kamera per Cloud-ID oder Name finden – für Einstellungen, in denen eine
+ * Kamera von Hand benannt wird und die ID nicht bekannt ist.
+ */
+export function findCameraByRef(ref: string): CameraConfig | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  const asId = Number(trimmed);
+  if (Number.isInteger(asId)) {
+    const byId = cameras.get(asId);
+    if (byId) return byId.config;
+  }
+  const wanted = trimmed.toLowerCase();
+  for (const cam of cameras.values()) {
+    if (cam.config.name.trim().toLowerCase() === wanted) return cam.config;
+  }
+  return null;
 }
 
 /** Gespeicherte PTZ-Presets der Kamera auslesen. */

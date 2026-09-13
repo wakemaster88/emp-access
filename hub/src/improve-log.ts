@@ -14,6 +14,7 @@ export type ImproveKind =
   | "alpr"
   | "task"
   | "parking"
+  | "noparking"
   | "doorbird"
   | "camera"
   | "heartbeat"
@@ -96,6 +97,17 @@ function hints(): string[] {
     out.push(
       "Fahrzeug-Alarme ohne Auto an der Einfahrt – Kamera-KI reagiert auf Hintergrundverkehr (Erkennungszone in der Kamera enger ziehen)"
     );
+  }
+  if (n("noparking.fail") >= 3) {
+    out.push("Halteverbot-Prüfung schlägt fehl – Kamera erreichbar? (HUB_NOPARK_CAMERAS)");
+  }
+  if (n("noparking.waiting") >= 20 && n("noparking.alert") === 0) {
+    out.push(
+      "Dauerbelegung im Halteverbot ohne Meldung – stehen dort eigene Fahrzeuge? (HUB_NOPARK_ZONE enger ziehen)"
+    );
+  }
+  if (n("camera.talk_fail") >= 2) {
+    out.push("Ansage über den Kamera-Lautsprecher scheitert – LAN oder RTSP-Backchannel der Kamera");
   }
   if (n("alpr.repeat") >= 5) {
     out.push("Kennzeichen mehrfach kurz hintereinander – Alarm flackert, HUB_VEHICLE_GRACE_FRAMES prüfen");

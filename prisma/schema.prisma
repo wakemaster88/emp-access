@@ -1685,7 +1685,7 @@ model VehicleSighting {
   plateNormalized  String?
   allowedVehicleId Int?
   allowedVehicle   AllowedVehicle? @relation(fields: [allowedVehicleId], references: [id], onDelete: SetNull)
-  /// CAMERA_VEHICLE | CAMERA_PLATE | MANUAL
+  /// CAMERA_VEHICLE | CAMERA_PLATE | MANUAL | NO_PARKING (steht im Halteverbot)
   source           String          @default("CAMERA_VEHICLE")
   matched          Boolean         @default(false)
   shellyTriggered  Boolean         @default(false)

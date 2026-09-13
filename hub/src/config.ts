@@ -93,6 +93,7 @@ export const CONFIG = {
     "face",
     "alpr",
     "parking",
+    "noparking",
     "vision",
     "snmp",
   ],
