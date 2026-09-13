@@ -532,3 +532,30 @@ Aus der Machbarkeitsprüfung vom Vortag ist Code geworden. Neu ist ein eigener T
 - 4,7 s Ansage sind lang, wenn jemand nur kurz aussteigt. Nach den ersten Erfahrungen lohnt ein kürzerer Text über `HUB_NOPARK_TEXT`.
 - Die Fläche steht in `hub/.env` und ist nur dort änderbar. Ein Editor im Dashboard wäre der nächste Schritt; der Zonen-Editor für die Einfahrt (`zone-editor.tsx`) ließe sich dafür wiederverwenden.
 - Nach einem PTZ-Eingriff an der Kamera stimmt die Fläche nicht mehr. Fällt die Erkennung dauerhaft auf `clear`, ist das der erste Verdacht.
+
+## 2026-09-13 (Halteverbot-Fläche im Dashboard statt in hub/.env)
+
+Der Zuschnitt vom Morgen war zu grob – und er ließ sich nur an der Maschine im Technikraum ändern. Beides ist behoben: Die Fläche liegt jetzt an der Kamera in der Cloud und wird im Dashboard mit der Maus gezogen.
+
+### Befunde
+
+- Der erste Zuschnitt entstand vor parkenden Autos und deckte überwiegend Hecke und Grünstreifen ab. Am leeren, hellen Sonntagmorgen war die Grenze zwischen Asphalt und Schotter eindeutig zu sehen – die Fläche gehörte deutlich weiter nach unten und rechts.
+- Der Bereich um den Anhänger rechts unten (etwa x 0,85–0,94, y 0,45–0,63) lag außerhalb. Wer dort parkt, wäre unentdeckt geblieben.
+- Beim Nachziehen der linken Kante nach rechts fiel eine echte Parkposition (0,546/0,183) aus der Fläche. Im Detailausschnitt zeigte sich, dass sie im Übergang zwischen Asphalt und Schotter liegt: Die Kante bei x 0,535 nimmt sie mit und bleibt trotzdem rechts der Durchfahrt. Die neue Fläche enthält alle acht beobachteten Parkpositionen, der Lieferwagen auf dem Pflaster davor (35,7 % Bildfläche) bleibt außen.
+- Der bestehende `ZoneEditor` der Einfahrtszone war wiederverwendbar – gleiches Koordinatensystem, gleicher Schnappschuss-Endpunkt. Nur die Hinweistexte waren fest verdrahtet und sprachen vom Box-Mittelpunkt; beim Halteverbot zählt der Radaufstandspunkt, und wer das nicht weiß, rahmt die falsche Fläche ein.
+- Nach dem Herausnehmen aller `HUB_NOPARK_*`-Werte aus `hub/.env` prüft der Hub weiter („Halteverbot prüft: Kamera Eingang"). Damit ist belegt, dass Auswahl und Fläche wirklich aus der Cloud kommen und nicht mehr aus der Umgebung.
+
+### Änderungen
+
+- **`Camera.noParkDetection`, `noParkZone`, `noParkMinutes`** (Migration `20260913080000_camera_no_park_zone`), Standard aus. Der eingeschaltete Schalter ohne Fläche wird von der API abgelehnt, sonst liefe die Erkennung ins Leere.
+- **`ZoneEditor`**: Beschriftung über `texts` austauschbar, Vorgabe bleibt die Einfahrt. Die Validierung in `PUT /api/cameras/[id]` liegt jetzt in `parseZoneInput` und gilt für beide Flächen.
+- **Kamera-Formular**: Abschnitt „Halteverbot" mit Schalter, Standzeit und Fläche, samt Hinweis, die Durchfahrt nicht mit einzurahmen.
+- **Hub**: `zoneFor`/`minutesFor` nehmen die Cloud-Einstellung vor der Umgebung, `camerasToCheck` liest die Auswahl in jedem Durchlauf neu – beim Start ist der Cloud-Abgleich noch nicht gelaufen. Der Takt läuft deshalb immer und ist ohne ausgewählte Kamera ein Leerlauf. Wird das Halteverbot abgeschaltet, verfällt die gemessene Standzeit. Kameras ohne Fläche werden einmal gemeldet, nicht alle 20 Sekunden.
+- Fläche der Kamera Eingang auf 13 Ecken erweitert (ganzer Schotter), Standzeit 2 Minuten – in der Datenbank hinterlegt, damit sie im Dashboard sichtbar ist und dort nur noch nachgezogen werden muss.
+- `hub/.env` enthält vom Halteverbot nur noch die Ansage; Kamera und Fläche stehen auskommentiert als Notausgang darin.
+
+### Offen
+
+- Der erste echte Falschparker steht weiter aus – die Fläche war den ganzen Sonntagmorgen leer. Bis dahin ist die Kette bis zum Push nur in Einzelteilen belegt.
+- Die Ansage (Text, Zeitfenster, ein/aus) hängt noch an der Umgebung und gilt für alle Kameras gleich. Sobald eine zweite Kamera eine gesperrte Fläche bekommt, gehört das an die Kamera.
+- `HUB_NOPARK_MIN_AREA` und `HUB_NOPARK_MIN_CONF` gelten weiter global. Bei einer Fläche weiter weg von der Kamera wäre 0,5 % zu grob.
