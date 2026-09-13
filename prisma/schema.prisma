@@ -1557,6 +1557,15 @@ model Camera {
   /// Einfahrtszone als Polygon [[x,y],...] normiert 0..1; nur Boxen mit
   /// Mittelpunkt in der Zone zaehlen. null = keine Zone.
   vehicleZone         Json?
+  /// Halteverbot: Fahrzeuge melden, die zu lange in einer gesperrten Flaeche
+  /// stehen. Braucht `noParkZone`, sonst prueft der Hub nichts.
+  noParkDetection     Boolean              @default(false)
+  /// Gesperrte Flaeche als Polygon [[x,y],...] normiert 0..1. Anders als bei
+  /// `vehicleZone` zaehlt der Radaufstandspunkt (Unterkante Mitte) der Box,
+  /// damit Fahrzeuge davor nicht mitgezaehlt werden.
+  noParkZone          Json?
+  /// Standzeit in Minuten, ab der gemeldet wird. null = Hub-Standard (2 min).
+  noParkMinutes       Float?
   notes               String?
   /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
   snapshot            Bytes?

@@ -38,6 +38,12 @@ export interface CameraConfig {
   vehicleMinArea?: number | null;
   /** Einfahrtszone [[x,y],…] normiert (Cloud-Einstellung, null = HUB_VEHICLE_ZONE_<id>). */
   vehicleZone?: [number, number][] | null;
+  /** Halteverbot auf dieser Kamera prüfen (Cloud-Einstellung, noparking.ts). */
+  noParkDetection?: boolean;
+  /** Gesperrte Fläche [[x,y],…] normiert (Cloud-Einstellung, null = HUB_NOPARK_ZONE_<id>). */
+  noParkZone?: [number, number][] | null;
+  /** Standzeit in Minuten bis zur Meldung (Cloud-Einstellung, null = HUB_NOPARK_MINUTES). */
+  noParkMinutes?: number | null;
   /** DoorBird: Tor offen halten bis (ISO), null = aus – Wiederaufnahme nach Neustart. */
   doorHoldUntil?: string | null;
 }
@@ -954,6 +960,11 @@ export function findCameraByRef(ref: string): CameraConfig | null {
     if (cam.config.name.trim().toLowerCase() === wanted) return cam.config;
   }
   return null;
+}
+
+/** Alle bekannten Kamera-Konfigurationen (Stand des letzten Cloud-Abgleichs). */
+export function listCameraConfigs(): CameraConfig[] {
+  return [...cameras.values()].map((cam) => cam.config);
 }
 
 /** Gespeicherte PTZ-Presets der Kamera auslesen. */

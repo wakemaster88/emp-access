@@ -19,7 +19,13 @@
  * Mittelpunkt hineinragen, steht aber mit den Rädern daneben.
  */
 import { api, log } from "./config.js";
-import { announceOnCamera, captureSnapshot, findCameraByRef } from "./cameras.js";
+import {
+  announceOnCamera,
+  captureSnapshot,
+  findCameraByRef,
+  listCameraConfigs,
+  type CameraConfig,
+} from "./cameras.js";
 import { improve } from "./improve-log.js";
 import { recordHubEvent } from "./state.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
@@ -53,7 +59,10 @@ function numEnv(key: string, fallback: number, min = 0): number {
 }
 
 const CONF = {
-  /** Kameras als Cloud-ID oder Name, mehrere per Komma. Leer = Modul aus. */
+  /**
+   * Kameras als Cloud-ID oder Name, mehrere per Komma. Nur noch Notausgang:
+   * Normalerweise kommt die Auswahl über `noParkDetection` aus der Cloud.
+   */
   cameras: (process.env.HUB_NOPARK_CAMERAS || "")
     .split(",")
     .map((s) => s.trim())
@@ -78,10 +87,6 @@ const CONF = {
 
 export const NOPARK_INTERVAL_MS = CONF.intervalSec * 1000;
 
-export function noParkingEnabled(): boolean {
-  return CONF.cameras.length > 0;
-}
-
 /* ---------------------------------------------------------------------------
  * Zone
  * ------------------------------------------------------------------------- */
@@ -102,12 +107,43 @@ function parseZone(raw: string | undefined): Point[] | null {
   return pts.length >= 3 ? pts : null;
 }
 
-/** Fläche der Kamera: HUB_NOPARK_ZONE_<id>, sonst HUB_NOPARK_ZONE. */
-function zoneFor(cameraId: number): Point[] | null {
+/**
+ * Fläche der Kamera. Die Cloud-Einstellung gewinnt, damit sie im Dashboard
+ * gezogen werden kann; die Umgebung bleibt als Notausgang.
+ */
+function zoneFor(cam: CameraConfig): Point[] | null {
+  const fromCloud = cam.noParkZone;
+  if (Array.isArray(fromCloud) && fromCloud.length >= 3) {
+    return fromCloud.map(([x, y]) => ({ x, y }));
+  }
   return (
-    parseZone(process.env[`HUB_NOPARK_ZONE_${cameraId}`]) ??
+    parseZone(process.env[`HUB_NOPARK_ZONE_${cam.id}`]) ??
     parseZone(process.env.HUB_NOPARK_ZONE)
   );
+}
+
+/** Standzeit bis zur Meldung: Cloud-Einstellung, sonst HUB_NOPARK_MINUTES. */
+function minutesFor(cam: CameraConfig): number {
+  const fromCloud = cam.noParkMinutes;
+  return typeof fromCloud === "number" && fromCloud >= 0.25 ? fromCloud : CONF.minutes;
+}
+
+/**
+ * Kameras für diesen Durchlauf: alle mit „Halteverbot“ aus der Cloud, dazu die
+ * per Umgebung benannten. Die Cloud-Liste ist erst nach dem ersten Abgleich
+ * gefüllt – deshalb wird sie in jedem Durchlauf neu gelesen.
+ */
+function camerasToCheck(): CameraConfig[] {
+  const out = new Map<number, CameraConfig>();
+  for (const cam of listCameraConfigs()) {
+    if (cam.noParkDetection) out.set(cam.id, cam);
+  }
+  for (const ref of CONF.cameras) {
+    const cam = findCameraByRef(ref);
+    if (cam) out.set(cam.id, cam);
+    else log(`Halteverbot: Kamera "${ref}" nicht gefunden (HUB_NOPARK_CAMERAS prüfen)`);
+  }
+  return [...out.values()];
 }
 
 /* ---------------------------------------------------------------------------
@@ -207,7 +243,12 @@ export function listNoParkingStatus(): NoParkingStatus[] {
  * Aktuelle Boxen den bekannten Fahrzeugen zuordnen.
  * Rückgabe: die Fahrzeuge, deren Standzeit gerade die Schwelle reißt.
  */
-function track(state: CameraState, boxes: VehicleBox[], now: number): Standing[] {
+function track(
+  state: CameraState,
+  boxes: VehicleBox[],
+  now: number,
+  minutes: number,
+): Standing[] {
   const unmatched = [...boxes];
   for (const known of state.standing) {
     let bestIdx = -1;
@@ -237,7 +278,7 @@ function track(state: CameraState, boxes: VehicleBox[], now: number): Standing[]
     state.standing.push({ box, firstSeenAt: now, lastSeenAt: now, misses: 0, reportedAt: 0 });
   }
 
-  const thresholdMs = CONF.minutes * 60_000;
+  const thresholdMs = minutes * 60_000;
   const repeatMs = CONF.repeatMinutes * 60_000;
   return state.standing.filter((s) => {
     if (s.misses > 0) return false;
@@ -325,17 +366,18 @@ async function report(
  * Takt
  * ------------------------------------------------------------------------- */
 
-async function checkCamera(ref: string): Promise<void> {
-  const cam = findCameraByRef(ref);
-  if (!cam) {
-    log(`Halteverbot: Kamera "${ref}" nicht gefunden (HUB_NOPARK_CAMERAS prüfen)`);
-    return;
-  }
-  const zone = zoneFor(cam.id);
+async function checkCamera(cam: CameraConfig): Promise<void> {
+  const zone = zoneFor(cam);
   if (!zone) {
-    log(`Halteverbot ${cam.name}: keine Fläche gesetzt (HUB_NOPARK_ZONE_${cam.id})`);
+    // Ohne Fläche gibt es nichts zu prüfen. Nur einmal melden, sonst füllt das
+    // im 20-Sekunden-Takt das Protokoll.
+    if (!missingZoneWarned.has(cam.id)) {
+      missingZoneWarned.add(cam.id);
+      log(`Halteverbot ${cam.name}: keine Fläche gesetzt – im Dashboard einzeichnen`);
+    }
     return;
   }
+  missingZoneWarned.delete(cam.id);
 
   let state = states.get(cam.id);
   if (!state) {
@@ -357,7 +399,7 @@ async function checkCamera(ref: string): Promise<void> {
 
     const relevant = relevantBoxes(boxes, zone);
     const now = state.lastRunAt;
-    const hits = track(state, relevant, now);
+    const hits = track(state, relevant, now, minutesFor(cam));
     if (hits.length > 0) {
       await report(cam.id, cam.name, jpeg, hits, now);
     } else {
@@ -375,14 +417,29 @@ async function checkCamera(ref: string): Promise<void> {
 }
 
 let running = false;
+/** Kameras ohne Fläche: einmal warnen, nicht in jedem Durchlauf. */
+const missingZoneWarned = new Set<number>();
+/** Zuletzt geprüfte Kameras – für die Meldung, wenn sich die Auswahl ändert. */
+let lastActive = "";
 
-/** Ein Durchlauf über alle konfigurierten Kameras. */
+/** Ein Durchlauf über alle Kameras mit Halteverbot. */
 export async function checkNoParking(): Promise<void> {
-  if (!noParkingEnabled() || running) return;
+  if (running) return;
   running = true;
   try {
-    for (const ref of CONF.cameras) {
-      await checkCamera(ref);
+    const cams = camerasToCheck();
+    const active = cams.map((c) => c.name).join(", ");
+    if (active !== lastActive) {
+      lastActive = active;
+      log(active ? `Halteverbot prüft: ${active}` : "Halteverbot: keine Kamera ausgewählt");
+    }
+    for (const cam of cams) {
+      await checkCamera(cam);
+    }
+    // Zustände von Kameras aufräumen, für die das Halteverbot abgeschaltet wurde.
+    const ids = new Set(cams.map((c) => c.id));
+    for (const id of states.keys()) {
+      if (!ids.has(id)) states.delete(id);
     }
   } finally {
     running = false;
@@ -392,7 +449,7 @@ export async function checkNoParking(): Promise<void> {
 /** Einstellungen in einer Zeile – fürs Startprotokoll. */
 export function noParkingConfigSummary(): string {
   return (
-    `Kameras=${CONF.cameras.join(",") || "-"} Schwelle=${CONF.minutes} min ` +
-    `Takt=${CONF.intervalSec} s Ansage=${CONF.speak ? `${CONF.speakFrom}–${CONF.speakTo} Uhr` : "aus"}`
+    `Takt=${CONF.intervalSec} s Schwelle=${CONF.minutes} min (sofern nicht je Kamera gesetzt) ` +
+    `Ansage=${CONF.speak ? `${CONF.speakFrom}–${CONF.speakTo} Uhr` : "aus"}`
   );
 }

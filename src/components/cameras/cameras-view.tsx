@@ -40,6 +40,12 @@ export interface CameraRow {
   vehicleMinArea: number | null;
   /** Einfahrtszone, normierte Punkte; null = keine Zone. */
   vehicleZone: ZonePoint[] | null;
+  /** Halteverbot: Fahrzeuge mit zu langer Standzeit melden. */
+  noParkDetection: boolean;
+  /** Gesperrte Fläche, normierte Punkte; null = keine Fläche. */
+  noParkZone: ZonePoint[] | null;
+  /** Standzeit in Minuten bis zur Meldung; null = Hub-Standard (2 min). */
+  noParkMinutes: number | null;
   notes: string | null;
   snapshotAt: string | null;
   lastSeenAt: string | null;
@@ -80,6 +86,10 @@ const EMPTY = {
   /** Prozent der Bildfläche als Text; leer = Hub-Standard. */
   vehicleMinAreaPct: "",
   vehicleZone: [] as ZonePoint[],
+  noParkDetection: false,
+  noParkZone: [] as ZonePoint[],
+  /** Standzeit in Minuten als Text; leer = Hub-Standard. */
+  noParkMinutes: "",
   notes: "",
 };
 
@@ -160,6 +170,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       vehicleDetection: c.vehicleDetection,
       vehicleMinAreaPct: c.vehicleMinArea != null ? String(Math.round(c.vehicleMinArea * 1000) / 10) : "",
       vehicleZone: c.vehicleZone ?? [],
+      noParkDetection: c.noParkDetection,
+      noParkZone: c.noParkZone ?? [],
+      noParkMinutes: c.noParkMinutes != null ? String(c.noParkMinutes) : "",
       notes: c.notes ?? "",
     });
     setError("");
@@ -189,6 +202,10 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           vehicleMinArea:
             form.vehicleMinAreaPct.trim() === "" ? null : Number(form.vehicleMinAreaPct) / 100,
           vehicleZone: form.vehicleZone.length >= 3 ? form.vehicleZone : null,
+          // Ohne Fläche bleibt das Halteverbot aus – sonst lehnt die API ab.
+          noParkZone: form.noParkZone.length >= 3 ? form.noParkZone : null,
+          noParkDetection: form.noParkDetection && form.noParkZone.length >= 3,
+          noParkMinutes: form.noParkMinutes.trim() === "" ? null : Number(form.noParkMinutes),
           notes: form.notes,
         }),
       });
@@ -650,6 +667,62 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     points={form.vehicleZone}
                     onChange={(pts) => set("vehicleZone", pts)}
                   />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+              <div className="pr-3">
+                <p className="text-sm font-medium">Halteverbot</p>
+                <p className="text-xs text-muted-foreground">
+                  Fahrzeuge melden, die zu lange in einer gesperrten Fläche stehen – mit Push und
+                  Ansage über den Kamera-Lautsprecher
+                </p>
+              </div>
+              <Switch
+                checked={form.noParkDetection}
+                onCheckedChange={(v) => set("noParkDetection", v)}
+              />
+            </div>
+
+            {form.noParkDetection && (
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <div className="space-y-1.5">
+                  <Label>Standzeit bis zur Meldung (Minuten)</Label>
+                  <Input
+                    type="number"
+                    min={0.25}
+                    max={240}
+                    step={0.5}
+                    value={form.noParkMinutes}
+                    onChange={(e) => set("noParkMinutes", e.target.value)}
+                    placeholder="2 (Hub-Standard)"
+                  />
+                  <p className="text-xs text-muted-foreground/70">
+                    Der Hub schaut alle 20 Sekunden nach. Kurz zum Ausladen halten soll noch nicht
+                    zählen, dauerhaftes Abstellen schon.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Gesperrte Fläche</Label>
+                  <ZoneEditor
+                    imageUrl={
+                      editing?.snapshotAt
+                        ? `/api/cameras/${editing.id}/snapshot?t=${encodeURIComponent(editing.snapshotAt)}`
+                        : null
+                    }
+                    points={form.noParkZone}
+                    onChange={(pts) => set("noParkZone", pts)}
+                    texts={{
+                      purpose: "gesperrten Fläche",
+                      empty: "Klicken, um die gesperrte Fläche einzurahmen. Ohne Fläche prüft der Hub nichts.",
+                      ready: "ein Fahrzeug zählt, wenn seine Räder in der Fläche stehen.",
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground/70">
+                    Nur die Fläche selbst einrahmen, keine Durchfahrt: Wer dort wartet, würde sonst
+                    nach Ablauf der Standzeit gemeldet.
+                  </p>
                 </div>
               </div>
             )}

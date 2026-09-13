@@ -6,19 +6,37 @@ import { Undo2, X } from "lucide-react";
 
 export type ZonePoint = [number, number];
 
+/** Beschriftung – die Einfahrt ist der Standard, das Halteverbot weicht ab. */
+export interface ZoneEditorTexts {
+  /** Für Screenreader: was auf dem Bild markiert wird. */
+  purpose: string;
+  /** Hinweis, solange kein Punkt gesetzt ist. */
+  empty: string;
+  /** Hinweis bei geschlossener Fläche, hinter der Punktzahl. */
+  ready: string;
+}
+
+const ENTRY_TEXTS: ZoneEditorTexts = {
+  purpose: "Einfahrtszone",
+  empty: "Klicken, um die Einfahrt einzurahmen. Ohne Zone zählt nur die Mindestgröße.",
+  ready: "nur Fahrzeuge mit Mittelpunkt in der Fläche zählen.",
+};
+
 /**
- * Einfahrtszone auf dem Kamerabild anklicken. Punkte sind normiert (0..1),
- * damit sie unabhängig von der Auflösung des Hubs gelten. Weniger als drei
- * Punkte bedeuten „keine Zone“ – dann zählt nur die Mindestgröße.
+ * Fläche auf dem Kamerabild anklicken. Punkte sind normiert (0..1), damit sie
+ * unabhängig von der Auflösung des Hubs gelten. Weniger als drei Punkte
+ * bedeuten „keine Zone“.
  */
 export function ZoneEditor({
   imageUrl,
   points,
   onChange,
+  texts = ENTRY_TEXTS,
 }: {
   imageUrl: string | null;
   points: ZonePoint[];
   onChange: (points: ZonePoint[]) => void;
+  texts?: ZoneEditorTexts;
 }) {
   const [broken, setBroken] = useState(false);
 
@@ -39,7 +57,7 @@ export function ZoneEditor({
         className="relative w-full overflow-hidden rounded-lg border border-border bg-muted aspect-video cursor-crosshair select-none"
         onClick={addPoint}
         role="img"
-        aria-label="Kamerabild zum Markieren der Einfahrtszone"
+        aria-label={`Kamerabild zum Markieren der ${texts.purpose}`}
       >
         {imageUrl && !broken ? (
           // Schnappschuss der Kamera; ohne Bild bleibt die Fläche leer, Punkte
@@ -83,10 +101,10 @@ export function ZoneEditor({
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs text-muted-foreground flex-1">
           {points.length === 0
-            ? "Klicken, um die Einfahrt einzurahmen. Ohne Zone zählt nur die Mindestgröße."
+            ? texts.empty
             : points.length < 3
               ? `${points.length} von mindestens 3 Punkten`
-              : `${points.length} Punkte – nur Fahrzeuge mit Mittelpunkt in der Fläche zählen.`}
+              : `${points.length} Punkte – ${texts.ready}`}
         </p>
         <Button
           type="button"

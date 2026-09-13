@@ -28,6 +28,9 @@ export default async function CamerasPage() {
         vehicleDetection: true,
         vehicleMinArea: true,
         vehicleZone: true,
+        noParkDetection: true,
+        noParkZone: true,
+        noParkMinutes: true,
         notes: true,
         snapshotAt: true,
         lastSeenAt: true,
@@ -69,6 +72,7 @@ export default async function CamerasPage() {
             ...c,
             // JSON-Spalte → Punktliste; alles andere (null, kaputt) heisst „keine Zone“.
             vehicleZone: Array.isArray(c.vehicleZone) ? (c.vehicleZone as [number, number][]) : null,
+            noParkZone: Array.isArray(c.noParkZone) ? (c.noParkZone as [number, number][]) : null,
             snapshotAt: c.snapshotAt?.toISOString() ?? null,
             lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
             doorHoldUntil: c.doorHoldUntil?.toISOString() ?? null,

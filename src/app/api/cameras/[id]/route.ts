@@ -2,6 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { getSessionWithDb } from "@/lib/api-auth";
 
+/**
+ * Polygon aus dem Formular prüfen: 3 bis 32 Punkte, normiert 0..1. Ein leeres
+ * Array bedeutet „keine Zone“ und wird zu null.
+ */
+function parseZoneInput(value: unknown): [number, number][] | null | "invalid" {
+  if (value === null || (Array.isArray(value) && value.length === 0)) return null;
+  const pts = Array.isArray(value) ? value : null;
+  const ok =
+    pts &&
+    pts.length >= 3 &&
+    pts.length <= 32 &&
+    pts.every(
+      (p: unknown) =>
+        Array.isArray(p) &&
+        p.length === 2 &&
+        p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1)
+    );
+  if (!ok) return "invalid";
+  return pts.map((p: number[]) => [
+    Math.round(p[0] * 10000) / 10000,
+    Math.round(p[1] * 10000) / 10000,
+  ]);
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -31,6 +55,9 @@ export async function PUT(
       vehicleDetection: true,
       vehicleMinArea: true,
       vehicleZone: true,
+      noParkDetection: true,
+      noParkZone: true,
+      noParkMinutes: true,
       notes: true,
     },
   });
@@ -53,25 +80,39 @@ export async function PUT(
   }
   let vehicleZone = existing.vehicleZone;
   if (body.vehicleZone !== undefined) {
-    if (body.vehicleZone === null || (Array.isArray(body.vehicleZone) && body.vehicleZone.length === 0)) {
-      vehicleZone = null as typeof existing.vehicleZone;
-    } else {
-      const pts = Array.isArray(body.vehicleZone) ? body.vehicleZone : null;
-      const ok =
-        pts &&
-        pts.length >= 3 &&
-        pts.length <= 32 &&
-        pts.every(
-          (p: unknown) =>
-            Array.isArray(p) &&
-            p.length === 2 &&
-            p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1)
-        );
-      if (!ok) {
-        return NextResponse.json({ error: "Zone braucht 3 bis 32 Punkte mit Werten zwischen 0 und 1" }, { status: 400 });
-      }
-      vehicleZone = pts.map((p: number[]) => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000]);
+    const parsed = parseZoneInput(body.vehicleZone);
+    if (parsed === "invalid") {
+      return NextResponse.json({ error: "Einfahrtszone braucht 3 bis 32 Punkte mit Werten zwischen 0 und 1" }, { status: 400 });
     }
+    vehicleZone = parsed as typeof existing.vehicleZone;
+  }
+
+  // Halteverbot: Ohne Fläche gibt es nichts zu prüfen – dann bleibt die
+  // Erkennung aus, auch wenn der Schalter an ist.
+  let noParkZone = existing.noParkZone;
+  if (body.noParkZone !== undefined) {
+    const parsed = parseZoneInput(body.noParkZone);
+    if (parsed === "invalid") {
+      return NextResponse.json({ error: "Halteverbot-Fläche braucht 3 bis 32 Punkte mit Werten zwischen 0 und 1" }, { status: 400 });
+    }
+    noParkZone = parsed as typeof existing.noParkZone;
+  }
+  let noParkMinutes = existing.noParkMinutes;
+  if (body.noParkMinutes !== undefined) {
+    if (body.noParkMinutes === null || body.noParkMinutes === "") noParkMinutes = null;
+    else {
+      const n = Number(body.noParkMinutes);
+      // Unter einer Viertelminute liegt die Standzeit im Takt der Prüfung.
+      if (!Number.isFinite(n) || n < 0.25 || n > 240) {
+        return NextResponse.json({ error: "Standzeit muss zwischen 0,25 und 240 Minuten liegen" }, { status: 400 });
+      }
+      noParkMinutes = n;
+    }
+  }
+  const noParkDetection =
+    typeof body.noParkDetection === "boolean" ? body.noParkDetection : existing.noParkDetection;
+  if (noParkDetection && !noParkZone) {
+    return NextResponse.json({ error: "Halteverbot braucht eine Fläche auf dem Kamerabild" }, { status: 400 });
   }
   const name = body.name !== undefined ? String(body.name).trim() : existing.name;
   if (!name) return NextResponse.json({ error: "Name darf nicht leer sein" }, { status: 400 });
@@ -104,6 +145,9 @@ export async function PUT(
       vehicleMinArea,
       // Prisma: JSON-Spalte auf NULL setzen geht nur ueber DbNull.
       vehicleZone: vehicleZone === null ? Prisma.DbNull : vehicleZone ?? undefined,
+      noParkDetection,
+      noParkZone: noParkZone === null ? Prisma.DbNull : noParkZone ?? undefined,
+      noParkMinutes,
       notes: body.notes !== undefined ? (body.notes?.trim() || null) : existing.notes,
     },
     select: { id: true, name: true, host: true, enabled: true },
