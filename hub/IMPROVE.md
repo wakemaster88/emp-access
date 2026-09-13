@@ -523,11 +523,12 @@ Aus der Machbarkeitsprüfung vom Vortag ist Code geworden. Neu ist ein eigener T
 - **Cloud**: `POST /api/hub/parking-violations` und `src/lib/parking-violations.ts` – Eintrag in der Fahrzeug-Historie mit Bild (`VehicleSighting.source = "NO_PARKING"`), Push, Telegram mit Schnappschuss. Die Historie entsteht immer, benachrichtigt wird höchstens alle 10 Minuten: Ein Fahrzeug, das eine Stunde steht, soll nicht stündlich klingeln.
 - **`hub/scripts/talk-test.ts`** (neu): Ansage von Hand auslösen, für den Hörtest.
 - Diagnose-Hinweise für fehlgeschlagene Prüfungen, Dauerbelegung ohne Meldung und scheiternde Ansagen; neue Improve-Art `noparking`.
-- Aktiv auf Kamera 9: Schwelle 2 Minuten, Takt 20 s, Ansage vorerst aus (`HUB_NOPARK_SPEAK=0`).
+- Aktiv auf Kamera 9: Schwelle 2 Minuten, Takt 20 s, Ansage von 8 bis 22 Uhr. Die Fahrzeuge dort sind fremd, es gibt also keine Ausnahmen.
+- Cloud-Teil ausgeliefert (`7b1c3e72`): Der Endpunkt antwortete rund sieben Minuten nach dem Push statt mit 404 mit 401, war also erreichbar und prüfte den Token.
 
 ### Offen
 
-- Der Cloud-Endpunkt ist noch nicht ausgeliefert: `POST /api/hub/parking-violations` antwortet auf Vercel mit 404, die bestehende Sichtungs-Route mit 401. Bis zum Deploy landet jede Meldung im Log statt im Push. Die Erkennung selbst läuft davon unberührt.
-- Die Ansage ist scharf geschaltet, aber ausgeschaltet. Vor dem Einschalten sollte der Text im Alltag passen – 4,7 s sind lang, wenn jemand nur kurz aussteigt.
-- Dauerparker auf dem Schotter sind ungeklärt. Stehen dort regelmäßig eigene Fahrzeuge, braucht es eine Ausnahme (Kennzeichen-Whitelist oder Ruhezeiten), sonst meldet der Hub alle 10 Minuten dasselbe Auto.
+- Der erste echte Durchlauf steht noch aus: Zum Zeitpunkt der Aktivierung war die Fläche leer (Sonntagmorgen, Regen). Bis dahin ist nur belegt, dass Erkennung, Endpunkt und Lautsprecher je einzeln funktionieren – nicht, dass die Kette bis zum Push auf dem Handy durchläuft. Bei der nächsten Meldung lohnt der Blick in den Log: `Halteverbot-Meldung fehlgeschlagen: HTTP …` wäre das Zeichen für einen Fehler zwischen Hub und Cloud.
+- 4,7 s Ansage sind lang, wenn jemand nur kurz aussteigt. Nach den ersten Erfahrungen lohnt ein kürzerer Text über `HUB_NOPARK_TEXT`.
 - Die Fläche steht in `hub/.env` und ist nur dort änderbar. Ein Editor im Dashboard wäre der nächste Schritt; der Zonen-Editor für die Einfahrt (`zone-editor.tsx`) ließe sich dafür wiederverwenden.
+- Nach einem PTZ-Eingriff an der Kamera stimmt die Fläche nicht mehr. Fällt die Erkennung dauerhaft auf `clear`, ist das der erste Verdacht.
