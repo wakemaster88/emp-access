@@ -18,6 +18,7 @@ export const JOB_KIND_LABELS: Record<AudioJobKind, string> = {
   STOP: "Wiedergabe gestoppt",
   VOLUME: "Lautstärke geändert",
   SYNC_LIBRARY: "Dateien abgeglichen",
+  LIVE: "Live-Durchsage",
 };
 
 export const JOB_STATUS_LABELS: Record<AudioJobStatus, string> = {

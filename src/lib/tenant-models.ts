@@ -9,6 +9,7 @@ export const TENANT_MODELS = new Set<string>([
   "ApiConfig",
   "AudioAnnouncement",
   "AudioJob",
+  "AudioLiveSession",
   "AudioPlaylist",
   "AudioSchedule",
   "AudioStream",

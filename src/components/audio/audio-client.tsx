@@ -54,6 +54,8 @@ import {
 import { describeOccurrence, nextOperatingOccurrence } from "@/lib/operating-hours";
 import { scheduleOperatingSpecs, scheduleWarnings } from "./schedule-warnings";
 import { AnnouncePanel } from "./announce-panel";
+import { LiveBroadcastBanner } from "./live-broadcast";
+import { useLiveBroadcast } from "./use-live-broadcast";
 import { Chip, sliderFill } from "./ui";
 import { AnnouncementDialog } from "./announcement-dialog";
 import { LibraryPanel } from "./library-panel";
@@ -159,6 +161,17 @@ export function AudioClient({
 
   const { zones: liveZones, jobs: liveJobs, refresh: refreshStatus } = useAudioStatus(true);
   const monitor = useZoneMonitor({ tracks, playlists });
+  const live = useLiveBroadcast();
+
+  // Zonenstatus und Verlauf nachziehen, sobald eine Live-Durchsage beginnt oder
+  // endet – sonst stünde dort bis zur nächsten Abfrage noch der alte Stand.
+  const livePhase = live.phase;
+  const previousLivePhase = useRef(livePhase);
+  useEffect(() => {
+    if (previousLivePhase.current === livePhase) return;
+    previousLivePhase.current = livePhase;
+    if (livePhase === "live" || livePhase === "idle") void refreshStatus();
+  }, [livePhase, refreshStatus]);
 
   const [zoneDialog, setZoneDialog] = useState<{ open: boolean; zone: ZoneRow | null }>({
     open: false,
@@ -306,6 +319,9 @@ export function AudioClient({
 
   return (
     <div className="max-w-6xl">
+      {live.phase !== "idle" && tab !== "announce" && (
+        <LiveBroadcastBanner live={live} onShow={() => setTab("announce")} />
+      )}
       <ZoneStatusBar zones={zones} status={liveZones} onSelect={showZone} />
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -361,6 +377,7 @@ export function AudioClient({
             templates={templates}
             onDone={refresh}
             voices={ttsVoices}
+            live={live}
           />
         </TabsContent>
 
@@ -1344,7 +1361,9 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
   );
 
   const visible = useMemo(() => {
-    if (filter === "announcements") return jobs.filter((job) => job.kind === "ANNOUNCE");
+    if (filter === "announcements") {
+      return jobs.filter((job) => job.kind === "ANNOUNCE" || job.kind === "LIVE");
+    }
     if (filter === "problems") return problems;
     return jobs;
   }, [jobs, filter, problems]);

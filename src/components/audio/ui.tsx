@@ -16,19 +16,22 @@ export function Chip({
   onClick,
   children,
   className,
+  disabled,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={active}
       className={cn(
-        "inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors sm:min-h-8 sm:px-3 sm:text-xs",
+        "inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-8 sm:px-3 sm:text-xs",
         active
           ? "border-primary bg-primary text-white"
           : "border-input text-muted-foreground hover:bg-muted dark:border-border dark:text-foreground/80 dark:hover:bg-muted",

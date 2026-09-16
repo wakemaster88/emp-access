@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Megaphone, Mic, Square, TriangleAlert, Volume2 } from "lucide-react";
+import { Loader2, Megaphone, Mic, TriangleAlert, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_TTS_VOICE,
@@ -22,7 +22,9 @@ import {
   type TtsVoice,
 } from "@/lib/audio-constants";
 import { Chip, TEXTAREA_CLASS } from "./ui";
+import { LiveBroadcastCard } from "./live-broadcast";
 import type { AnnouncementRow, ZoneRow } from "./types";
+import type { LiveBroadcast } from "./use-live-broadcast";
 
 interface Props {
   zones: ZoneRow[];
@@ -30,6 +32,8 @@ interface Props {
   onDone: () => void;
   /** Von der API gemeldete Stimmen; leer nur, wenn die Abfrage nicht durchkam. */
   voices?: TtsVoice[];
+  /** Live-Durchsage – lebt auf Seitenebene, damit ein Tabwechsel sie nicht beendet. */
+  live: LiveBroadcast;
 }
 
 export function AnnouncePanel({
@@ -37,6 +41,7 @@ export function AnnouncePanel({
   templates,
   onDone,
   voices = TTS_FALLBACK_VOICES,
+  live,
 }: Props) {
   const activeZones = zones.filter((z) => z.isActive);
   const [selectedZones, setSelectedZones] = useState<number[]>([]);
@@ -47,19 +52,7 @@ export function AnnouncePanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const [recording, setRecording] = useState(false);
-  const [recordSeconds, setRecordSeconds] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      recorderRef.current?.stream.getTracks().forEach((track) => track.stop());
-    };
-  }, []);
+  const liveActive = live.phase !== "idle";
 
   function toggleZone(id: number) {
     setSelectedZones((prev) =>
@@ -75,6 +68,7 @@ export function AnnouncePanel({
   async function sendText() {
     setError(null);
     setNotice(null);
+    live.dismiss();
     if (!text.trim()) {
       setError("Bitte einen Ansagetext eingeben");
       return;
@@ -108,6 +102,7 @@ export function AnnouncePanel({
   async function playTemplate(template: AnnouncementRow) {
     setError(null);
     setNotice(null);
+    live.dismiss();
     setSending(true);
     try {
       const res = await fetch(`/api/audio/announcements/${template.id}/play`, {
@@ -127,73 +122,10 @@ export function AnnouncePanel({
     }
   }
 
-  async function startRecording() {
+  function startLive() {
     setError(null);
     setNotice(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        void uploadRecording(new Blob(chunksRef.current, { type: recorder.mimeType }));
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      setRecording(true);
-      setRecordSeconds(0);
-      timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
-    } catch {
-      setError("Kein Zugriff auf das Mikrofon – bitte im Browser erlauben");
-    }
-  }
-
-  function stopRecording() {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
-    recorderRef.current?.stop();
-    recorderRef.current = null;
-    setRecording(false);
-  }
-
-  async function uploadRecording(blob: Blob) {
-    setSending(true);
-    try {
-      const { upload } = await import("@vercel/blob/client");
-      const extension = blob.type.includes("ogg") ? "ogg" : "webm";
-      const uploaded = await upload(`durchsage-${Date.now()}.${extension}`, blob, {
-        access: "public",
-        handleUploadUrl: "/api/audio/upload",
-        contentType: blob.type,
-      });
-
-      const res = await fetch("/api/audio/announce", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: uploaded.url,
-          blobPathname: uploaded.pathname,
-          contentType: blob.type,
-          chime,
-          emergency,
-          zoneIds: selectedZones,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(typeof data.error === "string" ? data.error : "Durchsage fehlgeschlagen");
-        return;
-      }
-      setNotice(`Aufnahme an ${data.queued} Zone${data.queued === 1 ? "" : "n"} geschickt`);
-      onDone();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload fehlgeschlagen");
-    } finally {
-      setSending(false);
-    }
+    void live.start({ zoneIds: selectedZones, chime, emergency });
   }
 
   if (activeZones.length === 0) {
@@ -212,12 +144,18 @@ export function AnnouncePanel({
 
   return (
     <div className="space-y-3">
+      {liveActive && <LiveBroadcastCard live={live} />}
+
       <Card>
         <CardContent className="p-4 space-y-4">
           <div>
             <Label className="mb-2 block">Zielzonen · {targetLabel}</Label>
             <div className="flex flex-wrap gap-1.5">
-              <Chip active={selectedZones.length === 0} onClick={() => setSelectedZones([])}>
+              <Chip
+                active={selectedZones.length === 0}
+                onClick={() => setSelectedZones([])}
+                disabled={liveActive}
+              >
                 Alle Zonen
               </Chip>
               {activeZones.map((zone) => (
@@ -225,6 +163,7 @@ export function AnnouncePanel({
                   key={zone.id}
                   active={selectedZones.includes(zone.id)}
                   onClick={() => toggleZone(zone.id)}
+                  disabled={liveActive}
                 >
                   {zone.name}
                 </Chip>
@@ -271,12 +210,12 @@ export function AnnouncePanel({
                 daraus am Telefon eine greifbare Fläche. */}
             <div className="flex flex-col justify-end gap-1">
               <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
-                <Switch checked={chime} onCheckedChange={setChime} />
+                <Switch checked={chime} onCheckedChange={setChime} disabled={liveActive} />
                 Gong voranstellen
               </label>
 
               <label className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground sm:min-h-0 dark:text-foreground/80">
-                <Switch checked={emergency} onCheckedChange={setEmergency} />
+                <Switch checked={emergency} onCheckedChange={setEmergency} disabled={liveActive} />
                 <span className="flex items-center gap-1">
                   <TriangleAlert
                     className={cn("h-3.5 w-3.5", emergency ? "text-destructive" : "text-muted-foreground/70")}
@@ -292,7 +231,7 @@ export function AnnouncePanel({
           <div className="grid gap-2 pt-1 sm:flex sm:flex-wrap">
             <Button
               onClick={sendText}
-              disabled={sending || recording}
+              disabled={sending || liveActive}
               className="h-11 gap-1.5 sm:h-9"
             >
               {sending ? (
@@ -303,36 +242,25 @@ export function AnnouncePanel({
               Durchsage abspielen
             </Button>
 
-            {recording ? (
-              <Button
-                onClick={stopRecording}
-                variant="outline"
-                className="h-11 gap-1.5 border-destructive text-destructive sm:h-9"
-              >
-                <Square className="h-4 w-4 fill-current" />
-                Aufnahme beenden ({recordSeconds}s)
-              </Button>
-            ) : (
-              <Button
-                onClick={startRecording}
-                variant="outline"
-                disabled={sending}
-                className="h-11 gap-1.5 sm:h-9"
-              >
-                <Mic className="h-4 w-4" />
-                Live sprechen
-              </Button>
-            )}
+            <Button
+              onClick={startLive}
+              variant="outline"
+              disabled={sending || liveActive}
+              className="h-11 gap-1.5 sm:h-9"
+            >
+              <Mic className="h-4 w-4" />
+              Live-Durchsage starten
+            </Button>
           </div>
 
-          {notice && (
+          {(notice ?? live.notice) && (
             <p className="text-xs text-success bg-success/10 p-2.5 rounded-lg border border-success/30/40">
-              {notice}
+              {notice ?? live.notice}
             </p>
           )}
-          {error && (
+          {(error ?? live.error) && (
             <p className="text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/30">
-              {error}
+              {error ?? live.error}
             </p>
           )}
         </CardContent>
@@ -347,7 +275,7 @@ export function AnnouncePanel({
                 <Button
                   key={template.id}
                   variant="outline"
-                  disabled={sending}
+                  disabled={sending || liveActive}
                   onClick={() => playTemplate(template)}
                   className="h-10 gap-1.5 sm:h-8"
                 >

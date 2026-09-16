@@ -29,6 +29,7 @@ from emp_audio.cache import FileCache
 from emp_audio.chime import ensure_chime
 from emp_audio.config import Config
 from emp_audio.external import ExternalSource, available_backends
+from emp_audio.live import LiveFeed
 from emp_audio.player import MusicPlayer, SpeechPlayer
 from emp_audio.snapcast import SnapcastMusic
 from emp_audio.updater import check_and_update, restart_service
@@ -350,7 +351,7 @@ class EmpAudio:
             priority = priority if isinstance(priority, int) else 0
 
             # Notfalldurchsagen dürfen nicht hinter einer laufenden Ansage warten.
-            if job.get("kind") == "ANNOUNCE" and priority >= EMERGENCY_PRIORITY and self.speech:
+            if job.get("kind") in ("ANNOUNCE", "LIVE") and priority >= EMERGENCY_PRIORITY and self.speech:
                 self.speech.interrupt()
 
             self._jobs.put((-priority, next(self._job_sequence), job))
@@ -372,7 +373,10 @@ class EmpAudio:
                 continue
 
             job_id = job.get("id")
-            self._report(job_id, "PLAYING")
+            # Eine Live-Durchsage meldet sich erst nach dem Gong als laufend – im
+            # Dashboard heißt das: jetzt sprechen.
+            if job.get("kind") != "LIVE":
+                self._report(job_id, "PLAYING")
             try:
                 self._handle_job(job)
                 self._report(job_id, "DONE")
@@ -400,6 +404,8 @@ class EmpAudio:
 
         if kind == "ANNOUNCE":
             self._do_announce(payload, zone)
+        elif kind == "LIVE":
+            self._do_live(job.get("id"), payload, zone)
         elif kind == "PLAY":
             self._do_play(payload, zone)
         elif kind == "STOP":
@@ -436,6 +442,33 @@ class EmpAudio:
             chime_path=self.chime_path if payload.get("chime") else None,
             repeat=payload.get("repeat") if isinstance(payload.get("repeat"), int) else 1,
         )
+        if not completed:
+            raise RuntimeError("Durch höher priorisierte Durchsage unterbrochen")
+
+    def _do_live(self, job_id, payload: dict, zone: dict):
+        session_id = payload.get("sessionId")
+        if not isinstance(session_id, int):
+            raise ValueError("Live-Durchsage ohne Sitzung")
+
+        feed = LiveFeed(self.api, session_id)
+        if not feed.is_open():
+            logger.info("Live-Durchsage #%d ist schon vorbei", session_id)
+            return
+
+        volume = zone.get("announcementVolume")
+        duck = zone.get("duckVolume")
+        logger.info("Live-Durchsage #%d beginnt", session_id)
+        completed = self.speech.play_live(
+            feed,
+            volume=volume if isinstance(volume, int) else 80,
+            duck_volume=duck if isinstance(duck, int) else 20,
+            chime_path=self.chime_path if payload.get("chime") else None,
+            # Eigener Thread: die Meldung darf den Tonfluss nicht aufhalten.
+            on_start=lambda: threading.Thread(
+                target=self._report, args=(job_id, "PLAYING"), daemon=True
+            ).start(),
+        )
+        logger.info("Live-Durchsage #%d beendet", session_id)
         if not completed:
             raise RuntimeError("Durch höher priorisierte Durchsage unterbrochen")
 
