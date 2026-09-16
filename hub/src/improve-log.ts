@@ -18,7 +18,8 @@ export type ImproveKind =
   | "doorbird"
   | "camera"
   | "heartbeat"
-  | "snmp";
+  | "snmp"
+  | "soundweb";
 
 const SECRET_KEYS = /password|token|embedding|authorization|apikey|secret|pin|bot/i;
 const MAX_JSONL_BYTES = 8 * 1024 * 1024;

@@ -15,6 +15,7 @@ import {
 import { enrollFromSighting } from "./face.js";
 import { readHubLog } from "./hublog.js";
 import { restartService } from "./services.js";
+import { runSoundwebTask } from "./soundweb.js";
 import { checkSystem } from "./system-setup.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 import {
@@ -230,6 +231,10 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const result = await readHubLog(task.payload);
       return { success: true, result };
     }
+    case "SOUNDWEB_SET":
+    case "SOUNDWEB_SYNC":
+      // Soundweb London: Regler setzen bzw. Konfiguration neu laden (soundweb.ts).
+      return runSoundwebTask(task.type, task.payload);
     case "SERVICE_RESTART":
       // Tracker per launchctl, Hub per Exit (launchd startet neu) – feste Liste, kein freier Befehl.
       return restartService(task.payload);

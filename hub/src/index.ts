@@ -14,6 +14,7 @@ import { runSwitchSync, snmpConfigured } from "./snmp.js";
 import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
 import { startSystemMetrics } from "./system-metrics.js";
 import { startSystemSetup } from "./system-setup.js";
+import { startSoundweb } from "./soundweb.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -35,6 +36,9 @@ const HIGH_PRIORITY = new Set([
   "HUB_LOG",
   "SERVICE_RESTART",
   "SYSTEM_CHECK",
+  // Ein Fader, der hinter einem Netzwerk-Scan wartet, fühlt sich kaputt an.
+  "SOUNDWEB_SET",
+  "SOUNDWEB_SYNC",
 ]);
 
 const BACKGROUND_TYPES = new Set(["NETWORK_SCAN", "SWITCH_SYNC"]);
@@ -223,6 +227,9 @@ if (snmpConfigured()) {
   }, snmpMs);
 }
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
+// Soundweb London: Konfiguration aus der Cloud, dann je Prozessor eine
+// DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.
+startSoundweb();
 // Welche Kameras geprüft werden, steht in der Cloud ("Halteverbot" an der
 // Kamera) und ist beim Start noch nicht bekannt – der Takt läuft deshalb
 // immer und ist ohne ausgewählte Kamera ein Leerlauf.

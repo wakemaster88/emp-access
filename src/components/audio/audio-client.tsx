@@ -35,6 +35,7 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  SlidersHorizontal,
   Speaker,
   Square,
   Trash2,
@@ -70,6 +71,7 @@ import {
   triggerLabel,
 } from "./labels";
 import { PlaylistDialog } from "./playlist-dialog";
+import { SoundwebPanel } from "./soundweb-panel";
 import { StreamDialog } from "./stream-dialog";
 import { ScheduleDialog, ACTION_LABELS } from "./schedule-dialog";
 import { useAudioStatus } from "./use-audio-status";
@@ -84,6 +86,7 @@ import type {
   PlaylistRow,
   RoomOption,
   ScheduleRow,
+  SoundwebDeviceRow,
   StreamRow,
   TrackRow,
   ZoneRow,
@@ -106,6 +109,10 @@ interface Props {
   operatingSchedules: OperatingScheduleOption[];
   /** Zeitzone des Accounts – Zeitpläne gelten in ihr, nicht in der des Browsers. */
   timeZone: string;
+  /** BSS-Soundweb-Prozessoren mit ihren Reglern (Tab „Soundweb“). */
+  soundwebDevices: SoundwebDeviceRow[];
+  /** Meldet sich der lokale Hub? Er hält die Soundweb-Verbindungen. */
+  hubOnline: boolean;
 }
 
 /**
@@ -153,6 +160,8 @@ export function AudioClient({
   rooms,
   operatingSchedules,
   timeZone,
+  soundwebDevices,
+  hubOnline,
 }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -339,6 +348,11 @@ export function AudioClient({
             Zonen
             <TabCount value={zones.length} />
           </TabsTrigger>
+          <TabsTrigger value="soundweb" className="flex-none gap-1.5">
+            <SlidersHorizontal className="h-4 w-4" />
+            Soundweb
+            <TabCount value={soundwebDevices.length} />
+          </TabsTrigger>
           <TabsTrigger value="library" className="flex-none gap-1.5">
             <Music className="h-4 w-4" />
             Mediathek
@@ -437,6 +451,16 @@ export function AudioClient({
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* ── SOUNDWEB ─────────────────────────────────────────────────────── */}
+        <TabsContent value="soundweb">
+          <SoundwebPanel
+            devices={soundwebDevices}
+            hubOnline={hubOnline}
+            active={tab === "soundweb"}
+            onChanged={refresh}
+          />
         </TabsContent>
 
         {/* ── MEDIATHEK ────────────────────────────────────────────────────── */}

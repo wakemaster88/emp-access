@@ -559,3 +559,32 @@ Der Zuschnitt vom Morgen war zu grob – und er ließ sich nur an der Maschine i
 - Der erste echte Falschparker steht weiter aus – die Fläche war den ganzen Sonntagmorgen leer. Bis dahin ist die Kette bis zum Push nur in Einzelteilen belegt.
 - Die Ansage (Text, Zeitfenster, ein/aus) hängt noch an der Umgebung und gilt für alle Kameras gleich. Sobald eine zweite Kamera eine gesperrte Fläche bekommt, gehört das an die Kamera.
 - `HUB_NOPARK_MIN_AREA` und `HUB_NOPARK_MIN_CONF` gelten weiter global. Bei einer Fläche weiter weg von der Kamera wäre 0,5 % zu grob.
+
+## 2026-09-16 (Soundweb London aus dem Dashboard statt vom Windows-Rechner)
+
+Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient werden, nicht mehr über einen Windows-Rechner mit Audio Architect. Der Hub bekommt dafür ein Modul für das London-DI-Protokoll; die Cloud die Verwaltung der Regler und einen Tab unter Audio.
+
+### Befunde
+
+- Das Protokoll ist schmal und gut dokumentiert (Soundweb London Interface Kit Rev. 2.7): `STX <Body> <XOR-Prüfsumme> ETX`, Body `<Typ> <Node 2> <VD 1> <Objekt 3> <SV 2> <Daten 4>`, danach Ersetzung von 0x02/0x03/0x06/0x15/0x1B durch `0x1B, Byte+0x80`. Beide Byte-Beispiele aus dem Dokument (Prüfsummen 0x84 und 0x3F) werden vom neuen Encoder exakt getroffen.
+- Über Ethernet gibt es kein ACK/NAK („TCP provides it“), Port 1023, mehrere Verbindungen gleichzeitig erlaubt. Ein Abonnement (`0x89` bzw. `0x8E` für Prozent) antwortet sofort mit dem aktuellen Wert und danach bei jeder Änderung; die Rate im Datenfeld zählt nur für Meter, 0 ist für Regler richtig. Preset-Abrufe (`0x8C`) sind Broadcast ohne Adresse.
+- Gain-Fader haben ein eigenes Law: dB × 10000 zwischen −10 und +10 dB, darunter `−log10(|dB/10|) × 200000 − 100000` (−20 dB = −160206, −80 dB = −280618). Prozent ist Wert × 65536. Beides liegt jetzt in `src/lib/soundweb.ts` mit Tests, weil die Karte dB anzeigen soll und nicht Rohwerte.
+- Ein Soundweb sendet von sich aus nichts, solange sich kein Wert ändert. Eine gestorbene Verbindung fiele damit erst beim nächsten Befehl auf. Darum abonniert der Hub alle zwei Minuten eine SV erneut und wertet die Antwort als Lebenszeichen.
+- Durchgängiger Test ohne Hardware: simuliertes Soundweb (TCP-Server mit dem echten Protokollmodul), der echte `hub/src/soundweb.ts` als Runner gegen den Dev-Server, Cloud-Routen per Session-Cookie. Gerät anlegen → `SOUNDWEB_SYNC` → verbunden und vier SVs abonniert in unter einer Sekunde; Werte aller fünf Arten gesetzt und mit Echo bestätigt (Fader-Rundreise 0,8–1,6 s, davon 1 s Task-Poll); Fremdänderung am Gerät nach 2 s im Status; Gerät weg → „getrennt“ im Status, Befehl sofort mit 503 abgelehnt; Gerät wieder da → Wiederverbinden und Neu-Abonnieren nach 9 s.
+- Ein sauber geschlossener Socket (FIN vom Gerät) hatte zunächst keinen Fehlertext, die Karte zeigte dann „noch keine Meldung“ statt „getrennt“. Behoben: ohne Grund heißt es „Verbindung vom Gerät geschlossen“, und die Karte nennt alles „getrennt“, was der Hub schon einmal gemeldet hat.
+
+### Änderungen
+
+- **`hub/src/soundweb-protocol.ts`** (neu): Rahmen bauen und zerlegen, ohne Netz und ohne Hub-Importe – prüfbar gegen aufgezeichnete Bytes. Der Parser verkraftet zerstückelte und zusammengeklebte Rahmen, ignoriert ACK/NAK und meldet falsche Prüfsummen als Fehler statt sie zu verwerfen.
+- **`hub/src/soundweb.ts`** (neu): je Gerät eine Verbindung mit Backoff 3–60 s, Abonnements beim Verbinden (je SV einmal, getrennt nach Roh und Prozent), Zuordnung der Antworten auch ohne Node-Treffer (Antworten tragen den Node der Quelle), gebündelte Meldung an `POST /api/hub/soundweb/state` (400 ms) plus voller Stand jede Minute, Konfiguration aus `GET /api/hub/soundweb` alle fünf Minuten und per Task. Eine Verbindung wird nur neu aufgebaut, wenn sich an ihrem Gerät etwas geändert hat. Tasks `SOUNDWEB_SET` (wartet 1,5 s auf das Echo, ohne Echo gilt der gesendete Wert) und `SOUNDWEB_SYNC`; beide hoch priorisiert, Modul `soundweb`, Health-Karte im lokalen Dashboard, Improve-Art `soundweb`.
+- **Cloud**: Modelle `SoundwebDevice` und `SoundwebControl` (Migration `20260916150000_soundweb_london`), Arten GAIN/MUTE/PERCENT/SELECT/PRESET. Routen unter `/api/audio/soundweb` (Geräte, Regler, `set`, `status`) und `/api/hub/soundweb` (Konfiguration, Zustand). `set` lehnt ohne Hub oder ohne stehende Verbindung sofort mit Grund ab, statt zehn Sekunden zu warten, und schreibt den bestätigten Wert zurück. Jede Änderung an Geräten oder Reglern legt einen `SOUNDWEB_SYNC` an (nur einen, solange einer offen ist).
+- **Dashboard**: Tab „Soundweb“ unter Audio mit Gerätekarten, Reglern nach Abschnitt, dB-Fadern (Anzeige −∞ am Anschlag), Stummschaltern, Auswahl-Chips und Preset-Knöpfen. Bestätigte Werte überstimmen den Serverstand, bis die Statusabfrage (alle 5 s, nur bei sichtbarem Tab) sie eingeholt hat; Fremdänderungen kommen darüber an. Dialoge nehmen die Adresse so, wie Audio Architect sie zeigt (`0x000103000100`), auch nur das Objekt oder `Node, VD, Objekt, SV`.
+- **Doku**: README-Abschnitt „Soundweb London (BSS) steuern“, Hub-README, `hub/.env.example` (`HUB_SOUNDWEB_CONFIG_INTERVAL`, `HUB_SOUNDWEB_PROBE_INTERVAL`, `HUB_SOUNDWEB_SUBSCRIBE_RATE`).
+
+### Offen
+
+- Noch gegen kein echtes Gerät gelaufen. Erster Schritt vor Ort: beide Prozessoren mit IP und Node anlegen und mit einem einzelnen Mute beginnen – so empfiehlt es auch das DI Kit. Bleibt die Karte auf „getrennt: Verbindung abgelehnt“, ist Port 1023 am Gerät oder ein Firewall-Regel zwischen Hub-VLAN und Audio-VLAN der erste Verdacht.
+- Ob der Node in der DI-Nachricht über TCP der HiQnet-Node des Geräts sein muss oder auch 0 („direkt verbunden“) genügt, sagt das Dokument nur für die serielle Verbindung. Der Hub schickt den konfigurierten Node und ordnet Antworten zur Not ohne Node zu; bleibt ein Wert dauerhaft leer, im Log nach `unknown_sv` in der Diagnose schauen.
+- Ob das Gerät eigene SETs an denselben Abonnenten zurückechot, ist im Simulator so angenommen. Tut es das nicht, gilt nach 1,5 s der gesendete Wert (`echoed: false` im Task-Ergebnis) – funktional gleich, nur 1,5 s langsamer.
+- Meter (Pegelanzeigen) sind bewusst nicht dabei; dafür müsste die Abonnement-Rate gesetzt und die Meldung an die Cloud gedrosselt werden.
+- Regeln und Zeitpläne kennen Soundweb-Regler noch nicht (z. B. Preset zum Betriebsbeginn). Die Task-Schnittstelle ist dafür bereits da.

@@ -101,6 +101,13 @@ export const STATE = {
   },
   pendingTasks: 0,
   system: null as SystemState | null,
+  /** Soundweb-London-Verbindungen (soundweb.ts). */
+  soundweb: null as null | {
+    devices: number;
+    connected: number;
+    lastError: string | null;
+    lastConfigAt: string | null;
+  },
   improve: {
     since: new Date().toISOString(),
     counts: {} as Record<string, number>,

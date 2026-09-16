@@ -45,6 +45,13 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
   (`launchctl kickstart -k`, Label `HUB_TRACKER_LAUNCHD_LABEL`) oder den Hub
   selbst neu – nur diese beiden, kein freier Befehl.
 - **Parken**: YOLO-Tracker-Zonen (`vehicleGate`) → Cloud.
+- **Soundweb London (BSS)**: je Prozessor eine DI-Verbindung (TCP 1023,
+  `src/soundweb.ts`, Byte-Protokoll in `src/soundweb-protocol.ts`). Geräte
+  und Regler kommen aus der Cloud (Audio → Soundweb, `GET /api/hub/soundweb`),
+  der Hub abonniert die State Variables, meldet Werte und Verbindungszustand
+  (`POST /api/hub/soundweb/state`) und setzt Werte per Task `SOUNDWEB_SET`;
+  `SOUNDWEB_SYNC` lädt die Konfiguration sofort neu. Lebenszeichen alle zwei
+  Minuten per erneutem Abonnement, Wiederverbinden mit Backoff 3–60 s.
 - **Streams**: Cloud-Camera ist führend; der Hub schreibt IPs in
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).
 - **Selbst-Update**: alle 5 min `git fetch` (async). Bei neuen Commits:
