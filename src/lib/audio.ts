@@ -417,3 +417,31 @@ export async function pruneFinishedJobs(zoneId: number, keep = 200): Promise<voi
     },
   });
 }
+
+/**
+ * Live-Durchsage beenden. Zonen, die ihren Job noch gar nicht abgeholt haben,
+ * sollen nicht Minuten später mit Gong in eine längst beendete Durchsage
+ * starten – ihr Job wird deshalb gleich mit abgeschlossen.
+ */
+export async function endLiveSession(db: Db, sessionId: number, now = new Date()): Promise<void> {
+  await db.audioLiveSession.updateMany({
+    where: { id: sessionId, status: "LIVE" },
+    data: { status: "ENDED", endedAt: now },
+  });
+  await db.audioJob.updateMany({
+    where: { liveSessionId: sessionId, status: "PENDING" },
+    data: {
+      status: "FAILED",
+      finishedAt: now,
+      errorMessage: "Abspieler hat die Live-Durchsage nicht rechtzeitig abgeholt",
+    },
+  });
+}
+
+/** Zustand der Zielzonen einer Live-Durchsage, für die Anzeige beim Sprechen. */
+export async function liveZoneStates(db: Db, sessionId: number) {
+  return db.audioJob.findMany({
+    where: { liveSessionId: sessionId },
+    select: { zoneId: true, status: true, errorMessage: true },
+  });
+}

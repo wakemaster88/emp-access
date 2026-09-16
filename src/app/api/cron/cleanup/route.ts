@@ -17,6 +17,9 @@ export const maxDuration = 300;
  *    der zugehoerigen Bilder im Blob-Speicher.
  * 3. Verwaiste Blobs einsammeln (Bilder, deren Datensatz per Cascade
  *    verschwunden ist).
+ * 4. Live-Durchsagen vom Vortag samt Ton loeschen. Der Verlauf steht an den
+ *    Jobs; der Ton wird nur fuer die Sekunden gebraucht, in denen die Pis ihn
+ *    abholen.
  */
 export async function GET(request: NextRequest) {
   const authResult = verifyCronAuth(request);
@@ -53,9 +56,15 @@ export async function GET(request: NextRequest) {
     blobGc = { error: msg };
   }
 
+  const liveSessions = await prisma.audioLiveSession.deleteMany({
+    where: { startedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+  });
+  console.log(`[cron cleanup] audio-live: ${liveSessions.count} Live-Durchsagen geloescht`);
+
   return NextResponse.json({
     tickets: { markedInvalid: stale.count, cutoff: berlinTodayStart.toISOString() },
     retention: { accounts: retention.accounts, purgedAccounts: retention.results.length, totalDeleted, results: retention.results },
     blobGc,
+    liveSessions: liveSessions.count,
   });
 }

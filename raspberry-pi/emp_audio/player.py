@@ -23,7 +23,9 @@ import socket
 import subprocess
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
+
+from emp_audio.live import LiveFeed, is_quiet
 
 logger = logging.getLogger("emp.audio.player")
 
@@ -74,8 +76,26 @@ SPEECH_FILTERS = (
 FILTER_PROBLEM_WORDS = ("no such filter", "lavfi", "--af", "filter graph")
 
 
+# Live-Durchsage: so weit darf mpv dem Gesprochenen voraus gefüttert sein. Mehr
+# wäre nur Verzögerung, weniger ließe es bei jedem Ruckler im Takt knacken.
+LIVE_LEAD_SECONDS = 0.25
+# Portionen, in denen der Ton an mpv geht – zugleich die Auflösung, mit der
+# Sprechpausen erkannt werden.
+LIVE_BLOCK_SECONDS = 0.02
+# Ab so viel Rückstand fallen Sprechpausen weg, bis er aufgeholt ist.
+LIVE_CATCH_UP_SECONDS = 0.8
+# Darüber (langer Netzaussetzer) wird hart gekürzt: lieber ein Satzende
+# verpassen als eine Durchsage, die Sekunden hinterherläuft.
+LIVE_MAX_BEHIND_SECONDS = 3.0
+LIVE_KEEP_SECONDS = 0.5
+
+
 class PlaybackError(Exception):
     """Wiedergabe fehlgeschlagen – wird im Dashboard am Job sichtbar."""
+
+
+class _FilterRejected(Exception):
+    """mpv kennt den Filter der Sprachanhebung nicht."""
 
 
 def _log_mpv(text: str) -> None:
@@ -491,6 +511,183 @@ class SpeechPlayer:
         finally:
             for target in self.targets:
                 target.unduck()
+
+    def play_live(
+        self,
+        feed: LiveFeed,
+        volume: int,
+        duck_volume: int,
+        chime_path: Optional[str] = None,
+        on_start: Optional[Callable[[], None]] = None,
+    ) -> bool:
+        """
+        Live-Durchsage abspielen, bis sie im Dashboard beendet wird. Senkt wie
+        play() vorher alles ab und fährt es danach zuverlässig wieder hoch.
+
+        False bedeutet: durch eine höher priorisierte Durchsage abgebrochen.
+        """
+        self._interrupted = False
+        was_playing = any(target.is_playing for target in self.targets)
+        try:
+            for target in self.targets:
+                target.duck(duck_volume)
+            if was_playing:
+                time.sleep(0.3)
+
+            if chime_path and os.path.exists(chime_path) and not self._interrupted:
+                self._play_file(chime_path, volume)
+            if self._interrupted:
+                return False
+
+            # Erst nach dem Gong einsteigen: was währenddessen gesagt wurde, käme
+            # sonst verspätet hinterher. `on_start` meldet die Zone im Dashboard
+            # als live – ab da soll gesprochen werden.
+            feed.start()
+            if on_start:
+                on_start()
+            self._stream_live(feed, volume)
+            return not self._interrupted
+        finally:
+            feed.close()
+            for target in self.targets:
+                target.unduck()
+
+    def _stream_live(self, feed: LiveFeed, volume: int) -> None:
+        # Nur speechnorm: dynaudnorm schaut Sekunden voraus und machte die
+        # Durchsage entsprechend träge.
+        with_filter = self._filter_index == 0
+        while True:
+            try:
+                self._pump_live(feed, volume, with_filter)
+                return
+            except _FilterRejected:
+                self._filter_index = max(self._filter_index, 1)
+                with_filter = False
+                logger.warning("mpv nimmt die Sprachanhebung nicht an – Live-Durchsage läuft unverändert")
+
+    def _live_command(self, rate: int, volume: int, with_filter: bool) -> list[str]:
+        cmd = [
+            "mpv",
+            "--no-video",
+            "--no-input-terminal",
+            f"--msg-level={MSG_LEVEL}",
+            # Rohes PCM von stdin, ohne Zwischenpuffer: jede Zehntelsekunde darin
+            # wäre Verzögerung.
+            "--cache=no",
+            "--demuxer=rawaudio",
+            "--demuxer-rawaudio-format=s16le",
+            f"--demuxer-rawaudio-rate={rate}",
+            "--demuxer-rawaudio-channels=mono",
+        ]
+        if with_filter:
+            cmd.append(f"--af={SPEECH_FILTERS[0]}")
+        cmd += [f"--volume={volume}", f"--audio-device={self.audio_device}", "-"]
+        return cmd
+
+    def _pump_live(self, feed: LiveFeed, volume: int, with_filter: bool) -> None:
+        """
+        Gibt den Ton im Takt der Wiedergabe an mpv weiter.
+
+        Alles auf einmal in die Pipe zu schreiben, wäre einfacher – aber was
+        nach einem Netzaussetzer angestaut ankommt, liefe dann für den Rest der
+        Durchsage mit Verspätung. Im Takt geschrieben bleibt der Rückstand hier
+        sichtbar und lässt sich in Sprechpausen wieder abbauen.
+        """
+        if not feed.wait_for_audio(timeout=15):
+            return
+        rate = feed.sample_rate
+        bytes_per_second = rate * 2
+        block = int(rate * LIVE_BLOCK_SECONDS) * 2
+
+        try:
+            with self._lock:
+                process = subprocess.Popen(
+                    self._live_command(rate, volume, with_filter),
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                self._process = process
+        except FileNotFoundError:
+            raise PlaybackError("mpv ist nicht installiert")
+
+        output: list[bytes] = []
+        reader = threading.Thread(target=lambda: output.extend(process.stdout), daemon=True)
+        reader.start()
+
+        died = False
+        clock = time.monotonic()
+        played = 0.0
+        skipped = 0
+        try:
+            while not self._interrupted:
+                if process.poll() is not None:
+                    died = True
+                    break
+
+                now = time.monotonic()
+                if clock + played < now:
+                    # Leergelaufen: Uhr neu stellen, sonst würde der Rückstand
+                    # danach am Stück nachgeschoben.
+                    clock, played = now, 0.0
+                ahead = clock + played - now
+                if ahead > LIVE_LEAD_SECONDS:
+                    time.sleep(min(ahead - LIVE_LEAD_SECONDS, 0.05))
+                    continue
+
+                behind = feed.backlog_bytes / bytes_per_second
+                if behind > LIVE_MAX_BEHIND_SECONDS:
+                    dropped = feed.drop_oldest(int(LIVE_KEEP_SECONDS * bytes_per_second))
+                    logger.info(
+                        "Live-Durchsage lag %.1f s zurück – %.1f s übersprungen",
+                        behind,
+                        dropped / bytes_per_second,
+                    )
+
+                data = feed.read(block, timeout=0.1)
+                if data is None:
+                    break
+                if not data:
+                    continue
+                if feed.backlog_bytes / bytes_per_second > LIVE_CATCH_UP_SECONDS and is_quiet(data):
+                    skipped += len(data)
+                    continue
+
+                process.stdin.write(data)
+                process.stdin.flush()
+                played += len(data) / bytes_per_second
+        except (BrokenPipeError, OSError):
+            died = not self._interrupted
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+            # Am Ende spielt mpv noch aus, was es schon hat, und beendet sich dann.
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                process.wait(timeout=5)
+            reader.join(timeout=1)
+            with self._lock:
+                if self._process is process:
+                    self._process = None
+
+        if skipped:
+            logger.info("Live-Durchsage: %.1f s Sprechpausen übersprungen, um aufzuholen", skipped / bytes_per_second)
+
+        text = b"".join(output).decode(errors="replace")
+        if text:
+            _log_mpv(text)
+        if not died or self._interrupted:
+            return
+        if with_filter and any(word in text.lower() for word in FILTER_PROBLEM_WORDS):
+            raise _FilterRejected()
+        detail = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+        raise PlaybackError(
+            f"mpv beendete sich mit Code {process.returncode}" + (f": {detail[:150]}" if detail else "")
+        )
 
     def interrupt(self) -> None:
         """Bricht eine laufende Durchsage ab (Notfalldurchsage hat Vorrang)."""

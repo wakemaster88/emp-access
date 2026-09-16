@@ -3,19 +3,29 @@ Server communication for the audio player.
 
 GET  /api/devices/audio?id=<deviceId>  – Zonenkonfiguration + offene Jobs
 POST /api/devices/audio                – Heartbeat und Job-Statusmeldungen
+GET  /api/devices/audio/live           – Ton einer Live-Durchsage
 
 Auth läuft wie beim Scanner über das Account-API-Token.
 """
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import requests
 
 logger = logging.getLogger("emp.audio.api")
 
 TIMEOUT = 10
+
+
+class LiveAudio(NamedTuple):
+    """Antwort auf einen Live-Abruf."""
+
+    state: str  # "LIVE" oder "ENDED" – ENDED erst, wenn alles ausgeliefert ist
+    seq: int  # letztes geliefertes Stück, nächster `after`
+    rate: int
+    data: bytes  # rohes PCM, 16 Bit little-endian, mono
 
 
 class ApiClient:
@@ -27,6 +37,10 @@ class ApiClient:
             "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json",
         })
+        # Eigene Verbindung für Live-Ton: der fragt mehrmals pro Sekunde und soll
+        # weder auf den Job-Poll warten noch ihn aufhalten.
+        self._live_session = requests.Session()
+        self._live_session.headers.update({"Authorization": f"Bearer {api_token}"})
 
     def fetch_state(self) -> Optional[dict]:
         """
@@ -52,6 +66,42 @@ class ApiClient:
         except Exception as e:
             logger.warning("Statusabruf: %s", e)
         return None
+
+    def fetch_live(self, session_id: int, after: Optional[int]) -> Optional[LiveAudio]:
+        """
+        Ton einer Live-Durchsage nach Stück `after`. Ohne `after` liefert der
+        Server nur das neueste Stück – so steigt der Pi dort ein, wo gerade
+        gesprochen wird. None bei Netz- oder Serverfehlern.
+        """
+        params = {"id": self.device_id, "session": session_id}
+        if after is not None:
+            params["after"] = after
+        try:
+            resp = self._live_session.get(
+                f"{self.server_url}/api/devices/audio/live",
+                params=params,
+                timeout=TIMEOUT,
+            )
+        except Exception as e:
+            logger.debug("Live-Abruf: %s", e)
+            return None
+
+        if resp.status_code == 404:
+            # Sitzung gelöscht oder nicht für diese Zone – nichts mehr abzuspielen.
+            return LiveAudio("ENDED", after or 0, 16000, b"")
+        if resp.status_code != 200:
+            logger.warning("Live-Abruf fehlgeschlagen: HTTP %d", resp.status_code)
+            return None
+        try:
+            return LiveAudio(
+                state=resp.headers.get("X-Live-State", "LIVE"),
+                seq=int(resp.headers.get("X-Live-Seq", after or 0)),
+                rate=int(resp.headers.get("X-Live-Rate", 16000)),
+                data=resp.content,
+            )
+        except ValueError:
+            logger.warning("Live-Abruf: unlesbare Antwort")
+            return None
 
     def send_heartbeat(
         self,

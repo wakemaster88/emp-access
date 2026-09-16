@@ -169,6 +169,7 @@ model Account {
   audioAnnouncements   AudioAnnouncement[]
   audioSchedules       AudioSchedule[]
   audioJobs            AudioJob[]
+  audioLiveSessions    AudioLiveSession[]
   keyRooms             KeyRoom[]
   operatingSchedules   OperatingSchedule[]
   roomRules            RoomRule[]
@@ -1902,6 +1903,9 @@ enum AudioJobKind {
   VOLUME
   /// Zone soll ihren lokalen Dateicache mit der Bibliothek abgleichen.
   SYNC_LIBRARY
+  /// Live-Durchsage: die Zone spielt den Ton einer AudioLiveSession ab, bis
+  /// sie beendet wird.
+  LIVE
 }
 
 enum AudioJobStatus {
@@ -2180,6 +2184,9 @@ model AudioJob {
   status         AudioJobStatus     @default(PENDING)
   announcementId Int?
   announcement   AudioAnnouncement? @relation(fields: [announcementId], references: [id], onDelete: SetNull)
+  /// Live-Durchsage, deren Ton dieser Job abspielt (nur kind = LIVE).
+  liveSessionId  Int?
+  liveSession    AudioLiveSession?  @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
   /// Kommandoparameter, z. B. { url, volume, playlistId, trackUrls, chime }.
   payload        Json?
   /// Ausloeser: "MANUAL" | "SCHEDULE" | "MONITOR" | "EMERGENCY".
@@ -2193,6 +2200,54 @@ model AudioJob {
   @@index([accountId, createdAt])
   @@index([zoneId, status])
   @@index([announcementId])
+  @@index([liveSessionId])
+}
+
+enum AudioLiveStatus {
+  LIVE
+  ENDED
+}
+
+/// Live-Durchsage aus dem Browser. Der Browser schickt den Mikrofonton in
+/// kurzen Stuecken (AudioLiveChunk), die Zonen-Pis holen sie fortlaufend ab
+/// und spielen sie sofort ab – bis jemand stoppt oder der Browser verstummt.
+model AudioLiveSession {
+  id            Int              @id @default(autoincrement())
+  accountId     Int
+  account       Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  status        AudioLiveStatus  @default(LIVE)
+  /// Wer spricht – fuer den Hinweis, wenn eine zweite Live-Durchsage dieselbe
+  /// Zone will.
+  startedByName String?
+  /// Rohes PCM, 16 Bit little-endian, mono, mit dieser Abtastrate.
+  sampleRate    Int              @default(16000)
+  chime         Boolean          @default(true)
+  /// Hoehere Prioritaet unterbricht eine laufende Durchsage (Notfall = 100).
+  priority      Int              @default(0)
+  /// Hoechste bisher empfangene Stueck-Nummer; 0 = noch kein Ton.
+  lastSeq       Int              @default(0)
+  /// Letztes Lebenszeichen des Browsers. Bleibt es aus, gilt die Sitzung als
+  /// beendet, damit keine Zone an einem geschlossenen Tab haengen bleibt.
+  lastChunkAt   DateTime?
+  startedAt     DateTime         @default(now())
+  endedAt       DateTime?
+  chunks        AudioLiveChunk[]
+  jobs          AudioJob[]
+
+  @@index([accountId, status])
+}
+
+/// Ein Stueck Ton einer Live-Durchsage (einige hundert Millisekunden). Wird
+/// nur kurz vorgehalten: die Pis holen es sofort ab.
+model AudioLiveChunk {
+  id        Int              @id @default(autoincrement())
+  sessionId Int
+  session   AudioLiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  seq       Int
+  data      Bytes
+  createdAt DateTime         @default(now())
+
+  @@unique([sessionId, seq])
 }
 
 // ─── Schließanlage ───────────────────────────────────────────────────────────

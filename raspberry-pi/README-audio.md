@@ -9,6 +9,7 @@ zurück.
 - Hintergrundmusik aus einer Dashboard-Playlist oder einem Webradio-Stream
 - Durchsagen mit Gong, Wiederholung und automatischem Absenken der Musik (Ducking)
 - Notfalldurchsagen (Priorität ≥ 100) unterbrechen eine laufende Ansage
+- Live-Durchsage aus dem Dashboard: Mikrofon im Browser, Ton läuft bis zum Stopp
 - Lokaler Dateicache – einmal geladene Titel laufen auch ohne Internet weiter
 - Musik nur zur Betriebszeit je Zone: außerhalb wird eigene Musik/Stream gestoppt und startet nicht, Durchsagen immer
 - AirPlay- und Bluetooth-Empfang: ein Handy übernimmt die Zone auf Zuruf
@@ -309,6 +310,31 @@ sudo rm -rf /var/lib/emp-audio/cache/*
 Der Gong wird beim ersten Start als `/var/lib/emp-audio/chime.wav` erzeugt.
 Wer einen eigenen möchte, überschreibt einfach diese Datei.
 
+## Live-Durchsage
+
+Unter **Audio → Durchsage → Live-Durchsage starten** spricht man über das
+Mikrofon des Browsers direkt in die gewählten Zonen – so lange, bis man stoppt.
+
+1. Das Dashboard legt eine Live-Sitzung und für jede Zielzone einen Job vom Typ
+   `LIVE` an. Der Browser schickt den Ton ab sofort alle 0,4 s als rohes PCM
+   (16 kHz, mono, 16 Bit) an die Cloud.
+2. Der Pi holt den Job beim nächsten Poll ab (bis zu `job_poll_interval`),
+   senkt die Musik ab und spielt optional den Gong.
+3. Danach steigt er beim neuesten Tonstück ein, meldet `PLAYING` – im Dashboard
+   steht die Zone dann auf „live“ – und holt fortlaufend nach
+   (`GET /api/devices/audio/live`). mpv liest den Ton von stdin.
+4. Nach dem Stopp spielt der Pi aus, was schon unterwegs ist, fährt die Musik
+   wieder hoch und meldet `DONE`.
+
+Die Verzögerung liegt bei etwa 1–2 Sekunden. Hängt die Wiedergabe nach einem
+Netzaussetzer hinterher, überspringt der Pi Sprechpausen, bis er aufgeholt hat;
+bei mehr als 3 Sekunden Rückstand kürzt er hart. Kommt 15 Sekunden lang kein Ton
+mehr an – Tab geschlossen, Handy gesperrt, Netz weg –, endet die Durchsage von
+selbst, damit keine Zone daran hängen bleibt.
+
+Nicht direkt neben einem Lautsprecher der Zielzone sprechen: das Mikrofon nimmt
+die eigene Durchsage mit Verzögerung wieder auf und es hallt.
+
 ## Fehlerbehebung
 
 ### Keine Wiedergabe, Logs zeigen „mpv ist nicht installiert"
@@ -473,6 +499,17 @@ Geräteklasse in `/etc/bluetooth/main.conf`:
 ```bash
 grep -E "Class|DiscoverableTimeout" /etc/bluetooth/main.conf
 # erwartet: Class = 0x200414 und DiscoverableTimeout = 0
+```
+
+### Live-Durchsage bleibt auf „verbindet …“ oder schlägt fehl
+
+Die Zone muss den Job erst abholen – das dauert bis zu `job_poll_interval`
+Sekunden. Steht am Job im Verlauf „Unbekannter Job-Typ: LIVE“, fährt der Pi
+noch eine Version vor 1.3.0 und hat das Update noch nicht gezogen:
+
+```bash
+journalctl -u emp-audio | grep "EMP Access Audio v" | tail -1
+journalctl -u emp-audio | grep -i "live" | tail -20
 ```
 
 ### „Keine Zone für Gerät #x hinterlegt"
