@@ -27,6 +27,7 @@ import { lastScanResult } from "./scanner.js";
 import { listWhitelistPublic } from "./plate.js";
 import { recentImproveEvents } from "./improve-log.js";
 import { snmpConfigured } from "./snmp.js";
+import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 
 let actionCounter = 0;
@@ -212,6 +213,7 @@ function healthItems(
   const cloudOk = heartbeatFresh();
   const camReachable = cameras.filter((c) => c.reachable).length;
   const dbConnected = doorbirds.filter((d) => d.connected).length;
+  const soundweb = soundwebSummary();
 
   return [
     {
@@ -301,6 +303,13 @@ function healthItems(
       state: STATE.pendingTasks > 0 ? "warn" : "ok",
       value: `${STATE.pendingTasks} offen`,
       detail: `${STATE.taskPolls} Abrufe`,
+    },
+    {
+      id: "soundweb",
+      label: "Soundweb",
+      state: soundweb.devices === 0 ? "off" : soundweb.connected === soundweb.devices ? "ok" : "warn",
+      value: soundweb.devices ? `${soundweb.connected}/${soundweb.devices}` : "keine",
+      detail: soundweb.lastError ?? (soundweb.devices ? "DI-Verbindungen" : "nicht eingerichtet"),
     },
     {
       id: "snmp",

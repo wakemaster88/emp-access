@@ -221,6 +221,69 @@ Probleme".
 **Pi-Client:** `raspberry-pi/emp_audio` spricht diese Schnittstelle. Installation
 und Fehlerbehebung stehen in [raspberry-pi/README-audio.md](raspberry-pi/README-audio.md).
 
+## Soundweb London (BSS) steuern
+
+DSP-Prozessoren der BLU-Serie lassen sich im Dashboard unter **Audio →
+Soundweb** bedienen: Pegel, Stummschaltungen, Quellenwahl und Presets aus dem
+Audio-Architect-Design – als Ersatz für den Windows-Rechner mit Custom Panel.
+Das Design selbst entsteht weiter in Audio Architect; im Dashboard stehen nur
+die Regler, die im Alltag gebraucht werden.
+
+**So läuft es:** Die Cloud kennt die Prozessoren und Regler, der lokale Hub
+(`hub/`) hält je Prozessor eine Verbindung über das London-DI-Protokoll
+(TCP 1023), abonniert beim Verbinden alle eingerichteten State Variables und
+meldet Werte und Verbindungszustand zurück. Befehle laufen als Hub-Task
+(`SOUNDWEB_SET`) und kommen bestätigt zurück, sobald der Prozessor den neuen
+Wert echot – meist unter zwei Sekunden. Ändert jemand einen Wert am Wandpanel
+oder in Audio Architect, steht er wenige Sekunden später auch im Dashboard.
+Ohne Hub geht nichts, das sagt die Karte deutlich.
+
+**Einrichten:**
+
+1. **Soundweb hinzufügen:** Name, IP-Adresse (Port 1023) und HiQnet-Node. Der
+   Node steht in Audio Architect im Netzwerkfenster beim Gerät und bildet die
+   ersten vier Hex-Stellen jeder Objektadresse (`0x0001…`). Ein Passwort braucht
+   die DI-Schnittstelle nicht; der Prozessor muss nur aus dem Netz des Hubs
+   erreichbar sein.
+2. **Regler hinzufügen:** Name, optional ein Abschnitt (gruppiert die Karte),
+   die Art und die Adresse.
+   - **HiQnet-Adresse**: In Audio Architect das Objekt anklicken und aus den
+     Eigenschaften die Adresse `0xNNNNvvoooooo` kopieren (Node, Virtual Device
+     03, Objekt). Nur die sechs Objektstellen (`0x000100`) heißen: Node dieses
+     Geräts. Auch `Node, VD, Objekt[, SV]` in Hex oder Dezimal wird verstanden.
+   - **State Variable**: Nummer des Parameters im Objekt. Beim Gain-Objekt
+     0 = Gain, 1 = Mute, 2 = Polarität; mehrkanalige Objekte zählen je Kanal
+     weiter (siehe Objektbeschreibung bzw. Appendix des DI Kit).
+   - **Arten**: *Pegel (dB)* für Gain-Fader mit dem London-Fader-Law
+     (linear zwischen −10 und +10 dB, darunter logarithmisch; der untere
+     Anschlag zeigt −∞), *Stummschaltung*, *Regler (Prozent)* für alles ohne
+     dB-Anzeige (`DI_SETSVPERCENT`), *Auswahl* für ganzzahlige Werte wie den
+     Eingang eines Source Selectors (eine Zeile je Wert: `1=Mikrofon`), und
+     *Preset* für Parameter-Presets (die Zahl in eckigen Klammern im
+     Design-Baum; Preset-Abrufe sind Broadcast, brauchen also keine Adresse).
+   - Der dB-Bereich eines Pegels darf enger sein als der Fader im Design,
+     etwa bis 0 dB, damit niemand versehentlich anhebt.
+3. Nach jeder Änderung holt der Hub die Konfiguration sofort neu
+   (`SOUNDWEB_SYNC`), sonst alle fünf Minuten.
+
+**Zustand und Fehler:** *Verbunden* heißt, der Hub hat in den letzten drei
+Minuten eine stehende DI-Verbindung gemeldet. *Getrennt* nennt den Grund
+(Verbindung abgelehnt, vom Gerät geschlossen, keine Antwort). Weil ein Soundweb
+von sich aus nichts sendet, abonniert der Hub alle zwei Minuten eine State
+Variable erneut und wertet die Antwort als Lebenszeichen; bleibt sie aus, baut
+er die Verbindung neu auf. Ein Befehl an ein getrenntes Gerät wird sofort mit
+Grund abgelehnt, statt zehn Sekunden auf den Hub zu warten.
+
+**Über die API** (Session): `GET/POST /api/audio/soundweb`,
+`PUT/DELETE /api/audio/soundweb/[id]`, `POST /api/audio/soundweb/[id]/controls`,
+`PUT/DELETE /api/audio/soundweb/controls/[id]`,
+`POST /api/audio/soundweb/controls/[id]/set` mit `{ "value": … }` (dB, true/false,
+Prozent oder Auswahlwert; Preset ohne Wert) und `GET /api/audio/soundweb/status`.
+Der Hub nutzt `GET /api/hub/soundweb` (Konfiguration) und
+`POST /api/hub/soundweb/state` (Zustand und Werte), beides mit Account-Token.
+Die Umrechnungen (Gain-Law, Prozent, Adressen) liegen in `src/lib/soundweb.ts`,
+das Byte-Protokoll in `hub/src/soundweb-protocol.ts`.
+
 ## Markisen und Rolltore (Antriebe mit zwei Fahrtrichtungen)
 
 Geräte der Funktion **Markise** oder **Rolltor** werden nicht als Relais

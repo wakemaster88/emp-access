@@ -170,6 +170,8 @@ model Account {
   audioSchedules       AudioSchedule[]
   audioJobs            AudioJob[]
   audioLiveSessions    AudioLiveSession[]
+  soundwebDevices      SoundwebDevice[]
+  soundwebControls     SoundwebControl[]
   keyRooms             KeyRoom[]
   operatingSchedules   OperatingSchedule[]
   roomRules            RoomRule[]
@@ -2248,6 +2250,96 @@ model AudioLiveChunk {
   createdAt DateTime         @default(now())
 
   @@unique([sessionId, seq])
+}
+
+// ─── Soundweb London (BSS) ───────────────────────────────────────────────────
+// DSP-Prozessoren der BLU-Serie, die der Hub ueber das London-DI-Protokoll
+// (TCP 1023) steuert. Das Design selbst entsteht weiter in Audio Architect;
+// hier stehen nur die Regler, die im Alltag bedient werden – als Ersatz fuer
+// den Windows-Rechner mit Custom Panel.
+
+/// Art eines Soundweb-Reglers – bestimmt Bedienelement und Kodierung des
+/// 32-Bit-Werts der State Variable (siehe `src/lib/soundweb.ts`).
+enum SoundwebControlKind {
+  /// Pegel in dB eines Gain-Objekts (Fader-Law: linear zwischen -10 und
+  /// +10 dB, darunter logarithmisch).
+  GAIN
+  /// Stummschaltung: 0 = an, 1 = stumm.
+  MUTE
+  /// Regler ohne dB-Law als Prozent des Reglerwegs (DI_SETSVPERCENT).
+  PERCENT
+  /// Ganzzahlige Auswahl, z. B. Eingang eines Source Selectors.
+  SELECT
+  /// Parameter-Preset abrufen (Broadcast, braucht keine Adresse).
+  PRESET
+}
+
+model SoundwebDevice {
+  id         Int               @id @default(autoincrement())
+  accountId  Int
+  account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name       String
+  /// IP-Adresse oder Hostname im LAN des Hubs.
+  host       String
+  port       Int               @default(1023)
+  /// HiQnet-Node-Adresse (16 Bit), wie Audio Architect sie im Netzwerkfenster
+  /// zeigt (z. B. 0x0001 = 1). Steht auch vorn in der HiQnet-Adresse jedes
+  /// Objekts (0xNNNNvvoooooo).
+  node       Int
+  sortOrder  Int               @default(0)
+  isActive   Boolean           @default(true)
+  /// Ist-Zustand der DI-Verbindung, vom Hub gemeldet (alle 60 s und bei
+  /// jedem Wechsel). Gilt nur zusammen mit einem frischen lastSeenAt.
+  connected  Boolean           @default(false)
+  lastSeenAt DateTime?
+  lastError  String?
+  /// Name des Hubs, der die Verbindung haelt.
+  hubName    String?
+  controls   SoundwebControl[]
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([accountId, sortOrder])
+}
+
+/// Ein Bedienelement auf der Soundweb-Karte: eine State Variable eines
+/// Objekts im Audio-Architect-Design (Gain, Mute, Quellenwahl) oder ein Preset.
+model SoundwebControl {
+  id            Int                 @id @default(autoincrement())
+  accountId     Int
+  account       Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceId      Int
+  device        SoundwebDevice      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  name          String
+  /// Abschnitt auf der Karte (z. B. "Halle", "Gastro"). null = ohne Abschnitt.
+  group         String?
+  kind          SoundwebControlKind
+  /// HiQnet-Node der State Variable; null = Node des Geraets. Ueber das
+  /// HiQnet-Netz lassen sich auch Objekte anderer Einheiten ansprechen.
+  node          Int?
+  /// Virtual Device – fuer alle Audio-Objekte 0x03.
+  virtualDevice Int                 @default(3)
+  /// Objekt-Adresse (24 Bit), z. B. 0x000100 fuer das erste Objekt im Design.
+  objectId      Int                 @default(0)
+  /// State-Variable-ID im Objekt (Gain-Objekt: 0 = Gain, 1 = Mute, 2 = Polaritaet).
+  stateVariable Int                 @default(0)
+  /// GAIN: Reglerbereich in dB. Am unteren Anschlag zeigt die Karte "-inf".
+  minDb         Float               @default(-80)
+  maxDb         Float               @default(10)
+  /// SELECT: Auswahlwerte als [{ "value": 0, "label": "CD" }, ...].
+  options       Json?
+  /// PRESET: Preset-ID aus dem Design-Baum (Zahl in eckigen Klammern).
+  presetId      Int?
+  sortOrder     Int                 @default(0)
+  /// Ist-Wert: Rohwert der State Variable (32 Bit signed) bzw. Prozent*65536
+  /// bei PERCENT, vom Hub aus dem Abonnement gemeldet.
+  value         Int?
+  valueAt       DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([accountId])
+  @@index([deviceId, sortOrder])
 }
 
 // ─── Schließanlage ───────────────────────────────────────────────────────────

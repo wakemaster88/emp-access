@@ -8,8 +8,10 @@ import type {
   AudioSourceKind,
   AudioTrackKind,
   RuleOperatingCondition,
+  SoundwebControlKind,
 } from "@prisma/client";
 import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
+import type { SoundwebDeviceDto } from "@/lib/soundweb-server";
 
 export interface ZoneRow {
   id: number;
@@ -194,3 +196,29 @@ export type {
   AudioExternalKind,
   RuleOperatingCondition,
 };
+
+/* ---------------------------------------------------------------------------
+ * Soundweb London (BSS)
+ * ------------------------------------------------------------------------- */
+
+/** Prozessor samt Reglern, so wie die Seite ihn liefert (Daten als ISO-Text). */
+export type SoundwebDeviceRow = SoundwebDeviceDto;
+export type SoundwebControlRow = SoundwebDeviceDto["controls"][number];
+export type { SoundwebControlKind };
+
+/** Verbindung eines Prozessors aus `/api/audio/soundweb/status`. */
+export interface SoundwebDeviceStatus {
+  id: number;
+  connected: boolean;
+  online: boolean;
+  lastSeenAt: string | null;
+  lastError: string | null;
+  hubName: string | null;
+}
+
+/** Ist-Wert eines Reglers aus der Statusabfrage. */
+export interface SoundwebControlStatus {
+  id: number;
+  value: number | null;
+  valueAt: string | null;
+}

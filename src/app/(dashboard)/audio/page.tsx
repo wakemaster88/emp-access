@@ -11,6 +11,7 @@ import {
   parseZoneIds,
 } from "@/lib/audio";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { hubOnline, serializeSoundwebDevice, soundwebDeviceInclude } from "@/lib/soundweb-server";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,8 @@ export default async function AudioPage() {
     ttsVoices,
     rooms,
     operatingSchedules,
+    soundwebDevices,
+    hubIsOnline,
   ] =
     await Promise.all([
       db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
@@ -109,6 +112,12 @@ export default async function AudioPage() {
         include: scheduleSpecInclude,
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
+      db.soundwebDevice.findMany({
+        where: { accountId },
+        include: soundwebDeviceInclude,
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+      hubOnline(db, accountId),
     ]);
 
   return (
@@ -241,6 +250,8 @@ export default async function AudioPage() {
             };
           })}
           timeZone={account?.timezone || "Europe/Berlin"}
+          soundwebDevices={soundwebDevices.map(serializeSoundwebDevice)}
+          hubOnline={hubIsOnline}
         />
       </div>
     </>

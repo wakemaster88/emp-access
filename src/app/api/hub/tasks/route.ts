@@ -26,6 +26,9 @@ const VALID_TASK_TYPES = [
   "SERVICE_RESTART",
   // Auto-Login/Ruhezustand/Einschaltplan des Hub-Macs sofort neu lesen.
   "SYSTEM_CHECK",
+  // Soundweb London: Regler setzen bzw. Konfiguration neu laden (Audio → Soundweb).
+  "SOUNDWEB_SET",
+  "SOUNDWEB_SYNC",
 ];
 
 /**

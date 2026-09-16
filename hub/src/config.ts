@@ -96,6 +96,7 @@ export const CONFIG = {
     "noparking",
     "vision",
     "snmp",
+    "soundweb",
   ],
 };
 
