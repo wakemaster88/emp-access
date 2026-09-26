@@ -588,3 +588,38 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 - Ob das Gerät eigene SETs an denselben Abonnenten zurückechot, ist im Simulator so angenommen. Tut es das nicht, gilt nach 1,5 s der gesendete Wert (`echoed: false` im Task-Ergebnis) – funktional gleich, nur 1,5 s langsamer.
 - Meter (Pegelanzeigen) sind bewusst nicht dabei; dafür müsste die Abonnement-Rate gesetzt und die Meldung an die Cloud gedrosselt werden.
 - Regeln und Zeitpläne kennen Soundweb-Regler noch nicht (z. B. Preset zum Betriebsbeginn). Die Task-Schnittstelle ist dafür bereits da.
+
+## 2026-09-26 (DO-HM 338E erkannt, DoorBird danach geöffnet)
+
+### Befunde
+
+- Heute 09:51 Uhr (07:51 UTC): Burst Kamera Eingang, 13 Frames, Fahrzeug-Ende 09:50:58. OCR spät→früh. Frames 13–6 ohne Kandidaten (0,00). Frame 5: **DO-HM 338E, conf 0,96, Whitelist**. Dump `hub/.cache/veh-burst/2026-09-26T07-51-16-589Z_Kamera_Eingang`, chosen=4. Auf dem Trefferbild steht der weiße Wagen an der Einfahrt, die späteren Frames sind leer.
+- Tür 26 ms später: `Tür geöffnet (Relais 1)` um 09:51:16.623, aus der lokalen Whitelist-Schaltung, nicht aus dem Telegram-Knopf.
+- 0,9 s davor, 09:51:15.700: eigener Pfad. DoorBird MOTION ab 09:51:04, kein Gesicht (4 Versuche), YOLO am DoorBird YES conf=0,84 Fläche=14,8 % → `Öffnungswunsch (MOTION) → Telegram`. Das ist die Besuchermeldung, unabhängig vom Kennzeichen.
+- Snapshot-Hinweise (Gallery-Schwelle, Halteverbot, DoorBird-Monitor) erklären diesen Vorgang nicht. Monitor-Drop 10:01 Uhr lag danach.
+
+### Änderung
+
+- Keine.
+
+### Nächster Schritt
+
+- OCR der leeren späten Frames kostet hier ~16 s, bis der frühe lesbare Frame drankommt. Frühstopp gilt erst nach dem ersten Whitelist-Treffer. Ob die Reihenfolge bei schon durchgefahrenem Auto umgedreht oder abgebrochen werden soll, ist offen. Umgesetzt am selben Tag, siehe unten.
+
+## 2026-09-26 (Kennzeichen: Tür nicht mehr 16 s hinter den leeren Frames)
+
+### Befunde
+
+- Nachgerechnet am Dump von 09:51: fast-alpr Vollbild findet das Schild in 4K nicht (0,05 s, null Treffer). Die sechs Kacheln brauchen auf einem leeren Frame 0,26–0,31 s und finden nichts. macOS Vision auf demselben leeren Frame braucht **1,5–1,9 s** und liest nur die Kamerauhr. Acht leere Frames × (0,3 + 1,6) s = die 16 s. Der Trefferframe selbst ist in 0,10 s fertig (Kachel links, `DOHM338E`), Vision lief dort gar nicht.
+- Im Dump: Frame 02 liest falsch `DOH1336E` (keine Whitelist, andere Ziffern). Frame 03 und der gewählte Frame lesen `DOHM338E`. Die späteren Frames sind leer.
+
+### Änderung
+
+- Burst startet fast-alpr mit jedem Schnappschuss, nicht erst danach von hinten. Whitelist öffnet das DoorBird, sobald dieser Frame fertig ist. Die Aufnahme läuft weiter.
+- Vision nur noch einmal, und nur wenn fast-alpr kein sicheres Whitelist-Kennzeichen hat (unter `HUB_PLATE_EARLY_STOP_CONF` 0,85 oder gar keins).
+- Kachel-Schleife bricht nach einem klaren Treffer ab (Detektion ≥ 0,5 und OCR ≥ 0,7), statt die restlichen Kacheln zu Ende zu suchen.
+- Gleichzeitige ALPR-Aufrufe gehen nacheinander an den Daemon.
+
+### Nächster Schritt
+
+- Hub um 10:16 Uhr neu gestartet, ALPR-Daemon bereit. Beim nächsten eigenen Wagen im Log: `DoorBird sofort` noch während des Bursts, nicht ~16 s nach `VEHICLE ende`.

@@ -192,11 +192,24 @@ export function alprWarmup(): void {
   if (alprAvailable()) void startDaemon();
 }
 
+/** Eine Anfrage nach der anderen: der Daemon liest stdin zeilenweise. */
+let detectChain: Promise<void> = Promise.resolve();
+
 /**
  * Kennzeichen-Kandidaten für ein JPEG (Dateipfad) via fast-alpr.
  * Leeres Array = nichts gefunden oder ALPR nicht verfügbar.
+ * Gleichzeitige Aufrufe (Burst) werden nacheinander an den Daemon gegeben.
  */
-export async function alprDetect(imagePath: string): Promise<AlprCandidate[]> {
+export function alprDetect(imagePath: string): Promise<AlprCandidate[]> {
+  const run = detectChain.then(() => alprDetectOne(imagePath));
+  detectChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function alprDetectOne(imagePath: string): Promise<AlprCandidate[]> {
   if (!alprAvailable()) return [];
   const ok = await startDaemon();
   if (!ok || !child) return [];

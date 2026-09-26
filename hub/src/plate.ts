@@ -416,8 +416,14 @@ export interface PlateScore {
 
 /**
  * Plate-OCR mit Score – für Burst-Frame-Auswahl.
+ * `vision: false` überspringt macOS Vision. Das braucht der Burst: Vision auf
+ * einem leeren 4K-Frame dauert ~1,6 s und fand dort kein Kennzeichen.
  */
-export async function scorePlateFromJpeg(jpeg: Buffer): Promise<PlateScore> {
+export async function scorePlateFromJpeg(
+  jpeg: Buffer,
+  opts?: { vision?: boolean }
+): Promise<PlateScore> {
+  const allowVision = opts?.vision !== false;
   const empty: PlateScore = {
     plate: null,
     confidence: 0,
@@ -457,10 +463,23 @@ export async function scorePlateFromJpeg(jpeg: Buffer): Promise<PlateScore> {
           };
         }
         // ALPR fand etwas, aber keine sichere Wahl → Vision darf ergänzen.
+        if (!allowVision) {
+          return {
+            plate: null,
+            confidence: result.candidates[0]?.confidence ?? result.confidence,
+            candidates: result.candidates,
+            raw: result.raw,
+            viaWhitelist: false,
+          };
+        }
+      } else if (!allowVision) {
+        return empty;
       }
+    } else if (!allowVision) {
+      return empty;
     }
 
-    // Stufe 2: macOS Vision (Fallback).
+    // Stufe 2: macOS Vision (Fallback), nur wenn der Aufrufer sie will.
     if (!(await ensureBinary())) return empty;
     const [result, wl] = await Promise.all([runOcr(tmp), wlPromise]);
     const plate = pickPlate(result, wl);

@@ -59,6 +59,11 @@ def tiles(frame):
             yield frame[y0:y1, x0:x1]
 
 
+def strong_hit(c: dict) -> bool:
+    """Klarer Treffer: restliche Kacheln würden die Tür nur aufhalten."""
+    return c.get("detConf", 0) >= 0.5 and c.get("ocrConf", 0) >= 0.7
+
+
 def handle(alpr: ALPR, path: str) -> list[dict]:
     frame = cv2.imread(path)
     if frame is None:
@@ -73,6 +78,8 @@ def handle(alpr: ALPR, path: str) -> list[dict]:
                     seen.add(key)
                     c["tiled"] = True
                     candidates.append(c)
+            if any(strong_hit(c) for c in candidates):
+                break
     candidates.sort(key=lambda c: c["ocrConf"], reverse=True)
     return candidates
 

@@ -123,7 +123,7 @@ const PERSON_SNAP_RETRY_MS = 1_200;
  * Spam-Kameras: kürzer. Env: HUB_VEHICLE_BURST_*, HUB_VEHICLE_DUMP_DIR
  */
 const VEHICLE_SNAP_DELAY_MS = 0;
-/** Ab dieser OCR-Confidence früh abbrechen (späte Frames zuerst). */
+/** Ab dieser OCR-Confidence gilt ein Frame als gut genug fürs Bild. Die Tür wartet darauf nicht. */
 const PLATE_EARLY_STOP_CONF = Number(process.env.HUB_PLATE_EARLY_STOP_CONF || 0.85);
 /** Nach VEHICLE-Ende noch ein paar Frames – Alarm flackert, Auto oft noch näher. */
 const VEHICLE_GRACE_FRAMES = Number(process.env.HUB_VEHICLE_GRACE_FRAMES || 3);
@@ -150,6 +150,11 @@ function vehicleBurstPlan(cam: CameraConfig): { count: number; gapMs: number } {
     count: Number.isFinite(countEnv) && countEnv > 0 ? countEnv : 20,
     gapMs: Number.isFinite(gapEnv) && gapEnv >= 200 ? gapEnv : 400,
   };
+}
+
+function plateRank(score: PlateScore | null | undefined): number {
+  if (!score?.plate) return -1;
+  return score.confidence + (score.viaWhitelist ? 0.25 : 0);
 }
 
 function vehicleVisionMode(): "always" | "never" | "auto" {
@@ -583,9 +588,38 @@ async function uploadVehicleSnapshotBody(
 
   const plan = vehicleBurstPlan(cam.config);
   const snaps: Buffer[] = [];
+  const scoreJobs: Promise<void>[] = [];
+  const scored: Array<{ index: number; score: PlateScore } | undefined> = [];
+  let localPromise: ReturnType<typeof actuateIfAllowed> | null = null;
+  let actedPlate: string | null = null;
   let graceLeft = VEHICLE_GRACE_FRAMES;
+
+  const isRepeatPlate = (plate: string): boolean => {
+    if (cam.lastPlate?.plate !== plate) return false;
+    const ago = Date.now() - Date.parse(cam.lastPlate.at);
+    return ago >= 0 && ago < PLATE_REPEAT_MS;
+  };
+
+  const considerPlate = (index: number, score: PlateScore): void => {
+    scored[index] = { index, score };
+    if (score.plate) {
+      log(
+        `Fahrzeug-Burst ${cam.config.name}: Frame ${index + 1} → ${score.plate} conf=${score.confidence.toFixed(2)}${score.viaWhitelist ? " WL" : ""}`
+      );
+    } else {
+      log(
+        `Fahrzeug-Burst ${cam.config.name}: Frame ${index + 1} → ${score.candidates[0]?.plate ?? "—"} (${score.confidence.toFixed(2)})`
+      );
+    }
+    if (localPromise || !score.plate || !score.viaWhitelist) return;
+    if (isRepeatPlate(score.plate)) return;
+    actedPlate = score.plate;
+    log(`Fahrzeug-Burst ${cam.config.name}: ${score.plate} – DoorBird sofort (Frame ${index + 1})`);
+    localPromise = actuateIfAllowed({ cameraId, plate: score.plate });
+  };
+
   log(
-    `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE (+${VEHICLE_GRACE_FRAMES} Grace) …`
+    `Fahrzeug-Burst ${cam.config.name}: max ${plan.count}×${plan.gapMs}ms solange VEHICLE (+${VEHICLE_GRACE_FRAMES} Grace), OCR parallel ohne Vision …`
   );
   for (let i = 0; i < plan.count; i++) {
     try {
@@ -622,6 +656,13 @@ async function uploadVehicleSnapshotBody(
     }
 
     snaps.push(await captureSnap(cam));
+    const index = snaps.length - 1;
+    const jpeg = snaps[index];
+    scoreJobs.push(
+      scorePlateFromJpeg(jpeg, { vision: false }).then((score) => {
+        considerPlate(index, score);
+      })
+    );
     if (i < plan.count - 1) {
       await new Promise((r) => setTimeout(r, plan.gapMs));
     }
@@ -632,43 +673,27 @@ async function uploadVehicleSnapshotBody(
     return null;
   }
 
-  // Plate-OCR spät→früh: Auto oft näher. Mit Dump alle Frames; sonst Early-Stop.
+  // OCR lief schon während der Aufnahme (nur fast-alpr). Vision nicht pro Frame:
+  // auf leeren Bildern ~1,6 s, und genau die späteren Frames sind oft schon leer.
   const dumpRoot = vehicleDumpDir();
+  await Promise.all(scoreJobs);
+
   const scores: Array<{ index: number; score: PlateScore }> = [];
   let bestIdx: number | null = null;
   let bestScore: PlateScore | null = null;
-
-  log(
-    `Fahrzeug-Burst ${cam.config.name}: Plate-OCR auf ${snaps.length} Frames (spät→früh${dumpRoot ? ", voller Dump" : ""}) …`
-  );
-  for (let i = snaps.length - 1; i >= 0; i--) {
-    const score = await scorePlateFromJpeg(snaps[i]);
-    scores.push({ index: i, score });
-    const rank =
-      (score.plate ? score.confidence : 0) + (score.viaWhitelist ? 0.25 : 0);
-    const bestRank = bestScore
-      ? (bestScore.plate ? bestScore.confidence : 0) + (bestScore.viaWhitelist ? 0.25 : 0)
-      : -1;
-    if (score.plate && rank > bestRank) {
-      bestIdx = i;
-      bestScore = score;
-      log(
-        `Fahrzeug-Burst ${cam.config.name}: Frame ${i + 1}/${snaps.length} → ${score.plate} conf=${score.confidence.toFixed(2)}${score.viaWhitelist ? " WL" : ""}`
-      );
-      if (score.confidence >= PLATE_EARLY_STOP_CONF || score.viaWhitelist) {
-        break;
-      }
-    } else {
-      log(
-        `Fahrzeug-Burst ${cam.config.name}: Frame ${i + 1}/${snaps.length} → ${score.candidates[0]?.plate ?? "—"} (${score.confidence.toFixed(2)})`
-      );
+  for (let i = 0; i < snaps.length; i++) {
+    const row = scored[i];
+    if (!row) continue;
+    scores.push(row);
+    if (actedPlate && row.score.plate !== actedPlate) continue;
+    if (plateRank(row.score) > plateRank(bestScore)) {
+      bestIdx = row.index;
+      bestScore = row.score;
     }
   }
 
-  scores.sort((a, b) => a.index - b.index);
-
-  let buf: Buffer | null = bestIdx != null ? snaps[bestIdx] : null;
-  let plate = bestScore?.plate ?? null;
+  let buf: Buffer | null = bestIdx != null && bestScore?.plate ? snaps[bestIdx] : null;
+  let plate = actedPlate ?? bestScore?.plate ?? null;
 
   // Fallback ohne Plate: Vision „Fahrzeug?“ (spät→früh) oder letzter Frame.
   if (!buf) {
@@ -715,6 +740,26 @@ async function uploadVehicleSnapshotBody(
     }
   }
 
+  // Vision nur einmal, und nur wenn fast-alpr kein brauchbares Kennzeichen hat.
+  // Pro Frame wären das die ~1,6 s, die das DoorBird heute 16 s haben warten lassen.
+  const alprSure =
+    !!plate &&
+    !!bestScore?.viaWhitelist &&
+    bestScore.confidence >= PLATE_EARLY_STOP_CONF;
+  if (buf && !alprSure && !localPromise) {
+    log(
+      `Fahrzeug-Burst ${cam.config.name}: Vision einmal auf Frame ${(bestIdx ?? 0) + 1}/${snaps.length}`
+    );
+    const visionScore = await scorePlateFromJpeg(buf);
+    if (visionScore.plate && plateRank(visionScore) > plateRank(bestScore)) {
+      plate = visionScore.plate;
+      bestScore = visionScore;
+      log(
+        `Fahrzeug-Burst ${cam.config.name}: Vision → ${visionScore.plate} conf=${visionScore.confidence.toFixed(2)}${visionScore.viaWhitelist ? " WL" : ""}`
+      );
+    }
+  }
+
   // Reolink-LPR nur wenn OCR nichts fand.
   if (!plate) {
     plate = await tryReadPlate(cam);
@@ -722,17 +767,15 @@ async function uploadVehicleSnapshotBody(
 
   // Gleiches Kennzeichen kurz hintereinander (Alarm flackert, Nachzieh-Burst):
   // ein Eintrag reicht. Aktoren haben ihren eigenen Cooldown.
-  if (plate && cam.lastPlate?.plate === plate) {
+  if (plate && cam.lastPlate && isRepeatPlate(plate) && !localPromise) {
     const ago = Date.now() - Date.parse(cam.lastPlate.at);
-    if (ago >= 0 && ago < PLATE_REPEAT_MS) {
-      log(
-        `Fahrzeug-Snapshot ${cam.config.name}: ${plate} schon vor ${Math.round(ago / 1000)} s gemeldet – kein zweiter Upload`
-      );
-      improve("alpr", "repeat", { cam: cam.config.name, plate, agoMs: ago });
-      cam.lastPlate = { ...cam.lastPlate, at: new Date().toISOString() };
-      cam.lastSnapshotAt = Date.now();
-      return null;
-    }
+    log(
+      `Fahrzeug-Snapshot ${cam.config.name}: ${plate} schon vor ${Math.round(ago / 1000)} s gemeldet – kein zweiter Upload`
+    );
+    improve("alpr", "repeat", { cam: cam.config.name, plate, agoMs: ago });
+    cam.lastPlate = { ...cam.lastPlate, at: new Date().toISOString() };
+    cam.lastSnapshotAt = Date.now();
+    return null;
   }
 
   if (dumpRoot) {
@@ -772,7 +815,10 @@ async function uploadVehicleSnapshotBody(
     listed: !!listed,
   });
 
-  const local = plate ? await actuateIfAllowed({ cameraId, plate }) : null;
+  if (plate && !localPromise && !isRepeatPlate(plate)) {
+    localPromise = actuateIfAllowed({ cameraId, plate });
+  }
+  const local = localPromise ? await localPromise : null;
   if (local?.skipCloud) {
     qs.set("localActed", "1");
     if (local.doorOpened) qs.set("localDoor", "1");
