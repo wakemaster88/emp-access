@@ -668,6 +668,7 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 
 - Heute 18:00: Musik im Restaurant geht aus; morgen 12:00 wieder an (Pi-Journal „Betriebszeit beginnt – Quelle wird fortgesetzt“).
 - Durchsagen Happy Hour (18:00/18:45) und „Gastro Feierabend“ (19:00 täglich) liegen jetzt nach Betriebsende bzw. an Ruhetagen – mit dem Betrieb abstimmen.
+- Nachtrag gleicher Tag: Restaurant-Durchsagen auf Betriebsende umgestellt (Happy Hour Craft Beer/Kukki/Wein/Aperitif −60, Last Minute −15, Gastro Feierabend −10; Wochentage unverändert). Texte zeitneutral: „bis 20 Uhr“ → „bis zum Feierabend“, „es ist 20 Uhr — … macht jetzt Feierabend“ → „in wenigen Minuten macht … Feierabend“; `trackId` geleert, TTS rendert beim nächsten Abspielen neu. Heute fällig: Wein 17:00, Last Minute 17:45, Feierabend 17:50, Musik aus 18:00 – im Audio-Verlauf prüfen. Craft Beer (nur Mi) läuft bis Saisonende nicht, Mi ist zu.
 
 ## 2026-11-04 (Ereigniserkennung nach dem Kamera-Umzug in VLAN 30)
 
