@@ -651,6 +651,24 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 - Am nächsten Morgen prüfen: Zonenkarte „Musik an bis …“ und im Pi-Journal „Betriebszeit beginnt – Quelle wird fortgesetzt“.
 - Offen: Per Hand außerhalb der Musikzeit starten geht weiterhin nicht (Pi verwirft PLAY still). Falls für Abendveranstaltungen gewünscht: Override „bis Ende heute“.
 
+## 2026-10-10 (Restaurant: Musikzeiten von der Website übernommen)
+
+### Befunde
+
+- Deploy von `850bd84` live: Migration 12:14 UTC; danach Heartbeats von Insel und Restaurant um 12:18/12:19 UTC (alter Code hätte ohne `musicOperating` nicht mehr speichern können).
+- Website-API `tuttenbrocksee.com/api/opening?page_id=7&date=…` (Gastro) für 120 Tage abgefragt: bis 31.10. Do–So 12:00–18:00 (Mo–Mi zu); 01.11. Allerheiligen 12:00–18:00 (Sonntag); 02.11.–06.12. Sa+So 12:00–18:00; ab 07.12. zu (geprüft bis 07.02.2027).
+- „Eigene Zeiten“ hält nur einen Wochenplan und hätte am 02.11. und 07.12. von Hand umgestellt werden müssen. Betriebszeit „Gastronomie“ hängt nur am Raum Gastronomie, keine Regeln, keine Zeitpläne.
+
+### Änderung
+
+- Betriebszeit „Gastronomie“: Saisons „Oktober“ (10-01–10-31, Do–So 12–18) und „November bis Nikolaus“ (11-01–12-06, Sa+So 12–18) ergänzt, September unverändert.
+- Zone Restaurant: `musicMode` = OPERATING, Versatz 0. Stichproben gegen die Website: 10.10./15.10./31.10./01.11./07.11./06.12. offen, 12.10./05.11./12.12. zu.
+
+### Nächster Schritt
+
+- Heute 18:00: Musik im Restaurant geht aus; morgen 12:00 wieder an (Pi-Journal „Betriebszeit beginnt – Quelle wird fortgesetzt“).
+- Durchsagen Happy Hour (18:00/18:45) und „Gastro Feierabend“ (19:00 täglich) liegen jetzt nach Betriebsende bzw. an Ruhetagen – mit dem Betrieb abstimmen.
+
 ## 2026-11-04 (Ereigniserkennung nach dem Kamera-Umzug in VLAN 30)
 
 ### Befunde
