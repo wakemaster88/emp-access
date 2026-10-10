@@ -21,13 +21,26 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MAX_OPERATING_OFFSET_MINUTES, hasAudioBackend } from "@/lib/audio-constants";
-import { operatingSpansForDay } from "@/lib/operating-hours";
+import {
+  MAX_OPERATING_OFFSET_MINUTES,
+  MUSIC_MODE_LABELS,
+  describeMusicState,
+  hasAudioBackend,
+  musicWindowSource,
+} from "@/lib/audio-constants";
+import {
+  operatingSpansForDay,
+  seasonForDay,
+  type ScheduleSpec,
+  type SpanOffsets,
+} from "@/lib/operating-hours";
 import { formatHhmm, tzMinutesOfDay, tzYmd } from "@/lib/tz-time";
-import { sliderFill } from "./ui";
+import { Chip, sliderFill } from "./ui";
 import type {
   AudioDeviceOption,
+  AudioMusicMode,
   AudioSourceKind,
+  MusicTimeSpan,
   OperatingScheduleOption,
   PlaylistRow,
   RoomOption,
@@ -36,6 +49,57 @@ import type {
 } from "./types";
 
 const NONE = "__none__";
+
+const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+const MUSIC_MODE_HINTS: Record<AudioMusicMode, string> = {
+  MANUAL: "Musik läuft, bis jemand sie stoppt.",
+  TIMES: "Je Wochentag Start und Ende: zur Startzeit spielt die Zone ihre Quelle, zur Endzeit stoppt sie.",
+  OPERATING:
+    "Start und Ende kommen aus der Betriebszeit des Raums, samt Saison und Ausnahmetagen.",
+};
+
+/** Ein Wochentag im Editor; ausgeschaltete Tage behalten ihre Zeiten zum Wiedereinschalten. */
+interface DayDraft {
+  enabled: boolean;
+  from: string;
+  to: string;
+}
+
+const DEFAULT_DAY: DayDraft = { enabled: false, from: "10:00", to: "20:00" };
+
+/**
+ * Wochenplan zum Bearbeiten. Ohne gespeicherte Musikzeiten schlägt er die
+ * Betriebszeit des Raums vor – die heute gültige Saison, sonst die erste mit
+ * Zeiten –, und ohne die täglich 10–20 Uhr.
+ */
+function initialDays(
+  times: MusicTimeSpan[],
+  roomSpec: ScheduleSpec | undefined,
+  timeZone: string
+): DayDraft[] {
+  if (times.length > 0) {
+    return WEEKDAYS.map((_, weekday) => {
+      const t = times.find((x) => x.weekday === weekday);
+      return t ? { enabled: true, from: t.from, to: t.to } : DEFAULT_DAY;
+    });
+  }
+  const season = roomSpec
+    ? (seasonForDay(roomSpec, tzYmd(new Date(), timeZone)) ??
+      roomSpec.seasons.find((s) => s.periods.length > 0))
+    : undefined;
+  if (season && season.periods.length > 0) {
+    return WEEKDAYS.map((_, weekday) => {
+      const p = season.periods.find((x) => x.weekday === weekday);
+      return p ? { enabled: true, from: p.opensAt, to: p.closesAt } : DEFAULT_DAY;
+    });
+  }
+  return WEEKDAYS.map(() => ({ ...DEFAULT_DAY, enabled: true }));
+}
+
+function daysToTimes(days: DayDraft[]): MusicTimeSpan[] {
+  return days.flatMap((d, weekday) => (d.enabled ? [{ weekday, from: d.from, to: d.to }] : []));
+}
 
 /** Was „Start“ in dieser Zone abspielt. */
 const SOURCES: { value: AudioSourceKind; label: string; hint: string }[] = [
@@ -60,16 +124,16 @@ interface Props {
 }
 
 /**
- * Musikfenster des heutigen Betriebstags als Text, damit man beim Eintippen
- * des Versatzes sieht, was dabei herauskommt.
+ * Musikfenster des heutigen Tags als Text, damit man beim Einstellen sieht,
+ * was dabei herauskommt.
  */
 function describeTodayMusicWindow(
-  spec: OperatingScheduleOption,
-  offsets: { openMinutes: number; closeMinutes: number },
+  spec: ScheduleSpec,
+  offsets: SpanOffsets,
   timeZone: string
 ): string {
   const spans = operatingSpansForDay(spec, tzYmd(new Date(), timeZone), timeZone, offsets);
-  if (spans.length === 0) return "heute geschlossen – keine Musik";
+  if (spans.length === 0) return "heute keine Musik";
   return `heute ${spans
     .map(
       (span) =>
@@ -113,7 +177,12 @@ export function ZoneDialog({
   const [volume, setVolume] = useState(zone?.volume ?? 50);
   const [announcementVolume, setAnnouncementVolume] = useState(zone?.announcementVolume ?? 85);
   const [duckVolume, setDuckVolume] = useState(zone?.duckVolume ?? 15);
-  const [musicOperating, setMusicOperating] = useState(zone?.musicOperating ?? false);
+  const [musicMode, setMusicMode] = useState<AudioMusicMode>(zone?.musicMode ?? "MANUAL");
+  const [days, setDays] = useState<DayDraft[]>(() => {
+    const room = rooms.find((r) => r.id === zone?.roomId);
+    const spec = operatingSchedules.find((s) => s.id === room?.operatingScheduleId);
+    return initialDays(zone?.musicTimes ?? [], spec, timeZone);
+  });
   const [musicOpenOffset, setMusicOpenOffset] = useState(zone?.musicOpenOffset ?? 0);
   const [musicCloseOffset, setMusicCloseOffset] = useState(zone?.musicCloseOffset ?? 0);
   const [airplayEnabled, setAirplayEnabled] = useState(zone?.airplayEnabled ?? false);
@@ -135,19 +204,44 @@ export function ZoneDialog({
   const canAirplay = hasAudioBackend(backends, "AIRPLAY");
   const canBluetooth = hasAudioBackend(backends, "BLUETOOTH");
 
-  // Das Musikfenster kommt aus der Betriebszeit des Raums. Fehlt eins von
-  // beiden, bleibt der Schalter wirkungslos – das soll man beim Einstellen
-  // sehen und nicht erst, wenn die Musik abends weiterläuft.
+  // Was die Automatik mit diesen Einstellungen tun würde – zu sehen beim
+  // Einstellen und nicht erst, wenn die Musik morgens ausbleibt.
   const selectedRoom = rooms.find((room) => String(room.id) === roomId);
   const roomSpec =
     selectedRoom?.operatingScheduleId != null
       ? operatingSchedules.find((s) => s.id === selectedRoom.operatingScheduleId)
       : undefined;
-  const musicHint = !selectedRoom
-    ? "Ohne Raum gibt es keine Betriebszeit – die Musik läuft dann weiter jederzeit. Oben einen Raum wählen."
-    : !selectedRoom.operatingScheduleName
-      ? `Der Raum „${selectedRoom.name}“ hat keine Betriebszeit – die Musik läuft weiter jederzeit. Unter „Räume“ eine zuordnen.`
-      : null;
+  const draftMusic = {
+    musicMode,
+    musicTimes: daysToTimes(days),
+    musicOpenOffset,
+    musicCloseOffset,
+  };
+  const musicSource = musicWindowSource(draftMusic, roomSpec);
+  const musicState = describeMusicState(draftMusic, roomSpec, new Date(), timeZone);
+  const musicHint =
+    musicMode !== "OPERATING"
+      ? null
+      : !selectedRoom
+        ? "Ohne Raum gibt es keine Betriebszeit – die Musik läuft dann jederzeit. Oben einen Raum wählen oder „Eigene Zeiten“ nehmen."
+        : !selectedRoom.operatingScheduleName
+          ? `Der Raum „${selectedRoom.name}“ hat keine Betriebszeit – die Musik läuft jederzeit. Unter „Räume“ eine zuordnen oder „Eigene Zeiten“ nehmen.`
+          : musicState?.warn
+            ? `Die Betriebszeit „${selectedRoom.operatingScheduleName}“ hat in den nächsten Tagen keine Öffnungszeit, etwa weil die Saison abgelaufen ist – die Musik bleibt aus. Unter „Räume“ ergänzen oder „Eigene Zeiten“ nehmen.`
+            : null;
+
+  function updateDay(weekday: number, patch: Partial<DayDraft>) {
+    setDays((current) => current.map((d, i) => (i === weekday ? { ...d, ...patch } : d)));
+  }
+
+  /** Zeiten des ersten eingeschalteten Tags auf alle eingeschalteten übertragen. */
+  function copyFirstDay() {
+    const first = days.find((d) => d.enabled);
+    if (!first) return;
+    setDays((current) => current.map((d) => (d.enabled ? { ...d, from: first.from, to: first.to } : d)));
+  }
+  const firstEnabled = days.findIndex((d) => d.enabled);
+
   const validOffsets =
     Math.abs(musicOpenOffset) <= MAX_OPERATING_OFFSET_MINUTES &&
     Math.abs(musicCloseOffset) <= MAX_OPERATING_OFFSET_MINUTES;
@@ -181,9 +275,20 @@ export function ZoneDialog({
       setError("Der gewählte Abspieler hat den Bluetooth-Empfang nicht eingerichtet");
       return;
     }
-    if (musicOperating && !validOffsets) {
+    if (musicMode === "OPERATING" && !validOffsets) {
       setError(`Der Versatz darf höchstens ${MAX_OPERATING_OFFSET_MINUTES} Minuten betragen`);
       return;
+    }
+    if (musicMode === "TIMES") {
+      if (firstEnabled < 0) {
+        setError("Für „Eigene Zeiten“ mindestens einen Tag einschalten");
+        return;
+      }
+      const bad = days.findIndex((d) => d.enabled && (!d.from || !d.to || d.from === d.to));
+      if (bad >= 0) {
+        setError(`${WEEKDAYS[bad]}: Start und Ende angeben – beide dürfen nicht gleich sein`);
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -198,9 +303,10 @@ export function ZoneDialog({
         volume,
         announcementVolume,
         duckVolume,
-        musicOperating,
-        musicOpenOffset: musicOperating ? musicOpenOffset : 0,
-        musicCloseOffset: musicOperating ? musicCloseOffset : 0,
+        musicMode,
+        ...(musicMode === "TIMES" ? { musicTimes: daysToTimes(days) } : {}),
+        musicOpenOffset: musicMode === "OPERATING" ? musicOpenOffset : 0,
+        musicCloseOffset: musicMode === "OPERATING" ? musicCloseOffset : 0,
         airplayEnabled,
         bluetoothEnabled,
         externalName: externalName.trim() || null,
@@ -373,22 +479,73 @@ export function ZoneDialog({
           </div>
 
           <div className="space-y-2 rounded-lg border border-border p-3 dark:border-border">
-            <label className="flex min-h-10 items-start gap-2.5 text-sm text-muted-foreground sm:min-h-0">
-              <Switch
-                checked={musicOperating}
-                onCheckedChange={setMusicOperating}
-                className="mt-0.5 shrink-0"
-              />
-              <span className="min-w-0">
-                Musik nur zur Betriebszeit
-                <span className="block text-xs text-muted-foreground">
-                  Außerhalb stoppt die eigene Musik und startet nicht. Durchsagen laufen
-                  weiterhin, ebenso AirPlay und Bluetooth.
-                </span>
-              </span>
-            </label>
+            <div>
+              <Label>Musik automatisch an und aus</Label>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {(Object.keys(MUSIC_MODE_LABELS) as AudioMusicMode[]).map((mode) => (
+                  <Chip key={mode} active={musicMode === mode} onClick={() => setMusicMode(mode)}>
+                    {MUSIC_MODE_LABELS[mode]}
+                  </Chip>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">{MUSIC_MODE_HINTS[musicMode]}</p>
+            </div>
 
-            {musicOperating && (
+            {musicMode === "TIMES" && (
+              <div className="space-y-1.5">
+                {days.map((day, weekday) => (
+                  <div
+                    key={WEEKDAYS[weekday]}
+                    className="grid grid-cols-[auto_1.75rem_1fr_auto_1fr] items-center gap-2"
+                  >
+                    <Switch
+                      checked={day.enabled}
+                      onCheckedChange={(enabled) => updateDay(weekday, { enabled })}
+                      aria-label={`Musik am ${WEEKDAYS[weekday]}`}
+                    />
+                    <span
+                      className={cn(
+                        "text-sm font-medium",
+                        day.enabled ? "text-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      {WEEKDAYS[weekday]}
+                    </span>
+                    <Input
+                      type="time"
+                      value={day.from}
+                      onChange={(e) => updateDay(weekday, { from: e.target.value })}
+                      disabled={!day.enabled}
+                      aria-label={`${WEEKDAYS[weekday]} Start`}
+                      className="h-10 px-2 sm:h-9"
+                    />
+                    <span className="text-xs text-muted-foreground">bis</span>
+                    <Input
+                      type="time"
+                      value={day.to}
+                      onChange={(e) => updateDay(weekday, { to: e.target.value })}
+                      disabled={!day.enabled}
+                      aria-label={`${WEEKDAYS[weekday]} Ende`}
+                      className="h-10 px-2 sm:h-9"
+                    />
+                  </div>
+                ))}
+                {firstEnabled >= 0 && days.filter((d) => d.enabled).length > 1 && (
+                  <button
+                    type="button"
+                    onClick={copyFirstDay}
+                    className="min-h-10 text-xs font-medium text-primary hover:underline sm:min-h-0"
+                  >
+                    Zeiten von {WEEKDAYS[firstEnabled]} für alle eingeschalteten Tage übernehmen
+                  </button>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Ende vor Start läuft über Mitternacht, z. B. 18:00 bis 02:00.
+                </p>
+              </div>
+            )}
+
+            {musicMode === "OPERATING" && (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <OffsetField
@@ -408,20 +565,30 @@ export function ZoneDialog({
                   Verschiebung in Minuten: negativ = vorher, positiv = nachher. „−30“ beim
                   Beginn heißt: Musik ab einer halben Stunde vor Betriebsbeginn.
                 </p>
-                {musicHint ? (
-                  <p className="text-xs text-warning">{musicHint}</p>
-                ) : (
-                  roomSpec && (
-                    <p className="text-xs text-muted-foreground">
-                      {selectedRoom?.operatingScheduleName}:{" "}
-                      {describeTodayMusicWindow(
-                        roomSpec,
-                        { openMinutes: musicOpenOffset, closeMinutes: musicCloseOffset },
-                        timeZone
-                      )}
-                    </p>
-                  )
+                {musicHint && <p className="text-xs text-warning">{musicHint}</p>}
+              </>
+            )}
+
+            {musicSource && musicState && !musicHint && (
+              <p className={cn("text-xs", musicState.warn ? "text-warning" : "text-foreground/80")}>
+                {musicMode === "OPERATING" && `${selectedRoom?.operatingScheduleName}: `}
+                {describeTodayMusicWindow(musicSource.spec, musicSource.offsets, timeZone)} ·{" "}
+                {musicState.text}
+              </p>
+            )}
+
+            {musicMode !== "MANUAL" && (
+              <>
+                {defaultSource === "SILENCE" && (
+                  <p className="text-xs text-warning">
+                    Als Quelle ist „Keine Musik“ eingestellt – zur Startzeit startet nichts.
+                  </p>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  Außerhalb startet keine eigene Musik, auch nicht per Hand. Ein Stopp
+                  zwischendurch gilt bis zur nächsten Startzeit. Durchsagen, AirPlay und
+                  Bluetooth laufen immer.
+                </p>
               </>
             )}
           </div>

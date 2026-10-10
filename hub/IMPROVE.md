@@ -623,3 +623,30 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 ### Nächster Schritt
 
 - Hub um 10:16 Uhr neu gestartet, ALPR-Daemon bereit. Beim nächsten eigenen Wagen im Log: `DoorBird sofort` noch während des Bursts, nicht ~16 s nach `VEHICLE ende`.
+
+## 2026-10-10 (Audio: Musik im Restaurant geht nicht mehr von selbst an und aus)
+
+### Befunde
+
+- Hub lokal nicht erreichbar (kein `/api/improve`, kein `emp-hub.log`); Befund aus der Datenbank, nur lesend.
+- Zone „Restaurant“ (#2, Abspieler „Sound Gastro“, v1.3.0, online): Raum „Gastronomie“ mit Betriebszeit „Gastronomie“. Die hat **nur die Saison „September“ 01.09.–30.09.** (Di–Fr 12–20, Sa+So 10–20). Seit dem 01.10. gilt die Gastronomie damit als ganztägig geschlossen.
+- „Musik nur zur Betriebszeit“ ist an der Zone **aus**. Es gibt keinen PLAY/STOP-Zeitplan. Alle 63 PLAY/STOP-Jobs der Zone seit 10.09. sind `MANUAL` (37 PLAY, 26 STOP), zuletzt PLAY am 09.10. 16:32. Es wird also nur von Hand geschaltet.
+- Zone „Insel“ (#1): Kopplung an, aber kein Raum. Sie wirkt dort also nicht.
+- Zwei Fallen dahinter: (1) Die Kette Zone → Raum → Betriebszeit → Saison → Wochenplan wird stumm, sobald eine Saison endet. (2) Ein abendlicher Stopp setzt `sourceKind` auf SILENCE, und der Pi setzt zum Fensterbeginn nur `sourceKind` fort. Nach einem Stopp bliebe die Musik am nächsten Tag also auch mit Kopplung aus.
+- Nebenbei: Seit `ed3b541` (22.08.) speicherte der Zonen-Dialog „Quelle“, „Sync-Gruppe“ und „Zone aktiv“ nicht mehr. Die Felder sind beim Umbau aus dem PUT gefallen.
+
+### Änderung
+
+- `AudioZone.musicOperating` ersetzt durch `musicMode` (MANUAL / TIMES / OPERATING) plus `musicTimes` (je Wochentag `from`/`to`). Migration `20261010120000_audio_music_mode`: Kopplung an → OPERATING.
+- Zonen-Dialog „Musik automatisch an und aus“ mit den Knöpfen Aus / Eigene Zeiten / Betriebszeit des Raums. Bei „Eigene Zeiten“ sieben Zeilen Schalter + Start + Ende, vorbelegt aus der Betriebszeit des Raums. Darunter eine Vorschau „heute 10:00–20:00 · Musik an bis heute 20:00“. Warnung, wenn die Betriebszeit in den nächsten Tagen keine Öffnung hat oder die Quelle „Keine Musik“ ist.
+- Zonenkarte zeigt den Stand („Musik aus bis morgen 12:00“), in Warnfarbe bei stummer Automatik.
+- `GET /api/devices/audio`: außerhalb des Fensters wird `sourceKind` von SILENCE auf die Quelle der Zone zurückgesetzt. Ein Stopp gilt damit nur bis zum Fensterende. Pi unverändert.
+- Fensterrechnung für eigene Zeiten über dieselbe `operatingSpanState` (ganzjähriges Profil). Regel-Engine, Dashboard-Ops und Zeitplan-Warnungen fragen `musicWindowSource`.
+- Zonen-PUT speichert `defaultSource`, `sourceKind`, `isActive`, `syncGroup` wieder.
+- Tests: 106/106 grün, neu u. a. Restaurant-Wochenplan mit Ruhetag Montag und Warnung bei Betriebszeit ohne Saison.
+
+### Nächster Schritt
+
+- Restaurant im Dashboard auf „Eigene Zeiten“ stellen und die Oktober-Zeiten eintragen. Insel ebenso, oder Raum mit Betriebszeit zuordnen.
+- Am nächsten Morgen prüfen: Zonenkarte „Musik an bis …“ und im Pi-Journal „Betriebszeit beginnt – Quelle wird fortgesetzt“.
+- Offen: Per Hand außerhalb der Musikzeit starten geht weiterhin nicht (Pi verwirft PLAY still). Falls für Abendveranstaltungen gewünscht: Override „bis Ende heute“.

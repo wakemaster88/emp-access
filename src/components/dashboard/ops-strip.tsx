@@ -24,7 +24,7 @@ export interface DashboardOps {
       sourceKind: string;
       streamName: string | null;
       externalSender: string | null;
-      /** Musik nur zur Betriebszeit, und die ist gerade vorbei. */
+      /** Musik-Automatik aktiv, und die Musikzeit ist gerade vorbei. */
       offHours: boolean;
       deviceOnline: boolean;
     }[];

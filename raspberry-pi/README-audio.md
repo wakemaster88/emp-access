@@ -11,7 +11,7 @@ zurück.
 - Notfalldurchsagen (Priorität ≥ 100) unterbrechen eine laufende Ansage
 - Live-Durchsage aus dem Dashboard: Mikrofon im Browser, Ton läuft bis zum Stopp
 - Lokaler Dateicache – einmal geladene Titel laufen auch ohne Internet weiter
-- Musik nur zur Betriebszeit je Zone: außerhalb wird eigene Musik/Stream gestoppt und startet nicht, Durchsagen immer
+- Musik automatisch an und aus je Zone (eigene Zeiten oder Betriebszeit des Raums): außerhalb wird eigene Musik/Stream gestoppt und startet nicht, Durchsagen immer
 - AirPlay- und Bluetooth-Empfang: ein Handy übernimmt die Zone auf Zuruf
 - Synchrone Wiedergabe überlappender Außenbereiche über Snapcast
 - Auto-Update per git und systemd-Watchdog wie beim Scanner
@@ -115,15 +115,17 @@ sudo systemctl restart emp-audio
 Lautstärke, Ansagelautstärke, Ducking-Pegel und das Musikfenster kommen aus der
 Zone im Dashboard und müssen hier nicht gepflegt werden.
 
-### Musik nur zur Betriebszeit
+### Musik automatisch an und aus
 
-Die Zone kann Musik auf die Betriebszeit ihres Raums begrenzen, je Ende mit
-Versatz in Minuten. Der Pi rechnet dabei nichts selbst: Saison, Wochentage und
-Ausnahmetage kennt nur der Server, der schickt im Zonenabgleich `music` mit
-`allowed` (jetzt) und `until` (nächster Wechsel, ISO-Zeitstempel). Nach `until`
-nimmt der Abspieler den umgekehrten Zustand an, bis der nächste Abgleich kommt
-– so geht die Musik abends auch dann aus, wenn die Verbindung gerade fehlt.
-Ohne `music` im Abgleich (Zone ohne Kopplung) läuft die Musik jederzeit.
+Die Zone kann Musik auf eigene Musikzeiten je Wochentag oder auf die
+Betriebszeit ihres Raums (mit Versatz) begrenzen. Der Pi rechnet dabei nichts
+selbst: Zeiten, Saison und Ausnahmetage kennt nur der Server, der schickt im
+Zonenabgleich `music` mit `allowed` (jetzt) und `until` (nächster Wechsel,
+ISO-Zeitstempel). Nach `until` nimmt der Abspieler den umgekehrten Zustand an,
+bis der nächste Abgleich kommt – so geht die Musik abends auch dann aus, wenn
+die Verbindung gerade fehlt. Geht das Fenster auf, setzt der Abspieler
+`sourceKind` fort; nach einem Stopp setzt der Server das außerhalb des Fensters
+wieder auf die Quelle der Zone. Ohne Automatik ist `allowed` immer wahr.
 
 ### Sprachanhebung
 

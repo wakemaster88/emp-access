@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  describeMusicState,
   describeMusicWindow,
+  formatMusicTimes,
   musicWindowState,
+  parseMusicTimes,
   parseOffsetMinutes,
 } from "./audio-constants";
 import type { ScheduleSpec } from "./operating-hours";
@@ -37,20 +40,32 @@ test("Versatz: ganze Minuten bis zwölf Stunden, leer und Unsinn sind ungültig"
   assert.equal(parseOffsetMinutes(undefined), null);
 });
 
-test("ohne Kopplung oder ohne Betriebszeit ist Musik jederzeit erlaubt", () => {
+function operating(open = 0, close = 0) {
+  return { musicMode: "OPERATING" as const, musicTimes: [], musicOpenOffset: open, musicCloseOffset: close };
+}
+
+function times(musicTimes: unknown) {
+  return { musicMode: "TIMES" as const, musicTimes, musicOpenOffset: 0, musicCloseOffset: 0 };
+}
+
+/** Restaurant: Mo zu, Di–Fr 12–20, Sa+So 10–20. */
+const RESTAURANT = [
+  ...[1, 2, 3, 4].map((weekday) => ({ weekday, from: "12:00", to: "20:00" })),
+  ...[5, 6].map((weekday) => ({ weekday, from: "10:00", to: "20:00" })),
+];
+
+test("ohne Automatik oder ohne Betriebszeit ist Musik jederzeit erlaubt", () => {
   const now = new Date("2026-07-01T22:00:00Z");
   assert.deepEqual(
-    musicWindowState({ musicOperating: false, musicOpenOffset: 0, musicCloseOffset: 0 }, daily(), now, TZ),
+    musicWindowState({ ...operating(), musicMode: "MANUAL" }, daily(), now, TZ),
     { allowed: true, until: null },
   );
-  assert.deepEqual(
-    musicWindowState({ musicOperating: true, musicOpenOffset: 0, musicCloseOffset: 0 }, null, now, TZ),
-    { allowed: true, until: null },
-  );
+  assert.deepEqual(musicWindowState(operating(), null, now, TZ), { allowed: true, until: null });
+  assert.deepEqual(musicWindowState(times([]), daily(), now, TZ), { allowed: true, until: null });
 });
 
 test("Musik von Betriebsbeginn −30 bis Betriebsende +30, mit nächstem Wechsel", () => {
-  const zone = { musicOperating: true, musicOpenOffset: -30, musicCloseOffset: 30 };
+  const zone = operating(-30, 30);
   // 15:00 Berlin: erlaubt bis 20:30.
   const day = musicWindowState(zone, daily(), new Date("2026-07-01T13:00:00Z"), TZ);
   assert.equal(day.allowed, true);
@@ -62,17 +77,77 @@ test("Musik von Betriebsbeginn −30 bis Betriebsende +30, mit nächstem Wechsel
 });
 
 test("Beschriftung des Musikfensters", () => {
-  assert.equal(describeMusicWindow({ musicOperating: false, musicOpenOffset: -30, musicCloseOffset: 30 }), null);
+  assert.equal(describeMusicWindow({ ...operating(-30, 30), musicMode: "MANUAL" }), null);
+  assert.equal(describeMusicWindow(operating()), "Musik zur Betriebszeit");
   assert.equal(
-    describeMusicWindow({ musicOperating: true, musicOpenOffset: 0, musicCloseOffset: 0 }),
-    "Musik zur Betriebszeit",
-  );
-  assert.equal(
-    describeMusicWindow({ musicOperating: true, musicOpenOffset: -30, musicCloseOffset: 30 }),
+    describeMusicWindow(operating(-30, 30)),
     "Musik von Betriebsbeginn −30 Min. bis Betriebsende +30 Min.",
   );
   assert.equal(
-    describeMusicWindow({ musicOperating: true, musicOpenOffset: 0, musicCloseOffset: -60 }),
+    describeMusicWindow(operating(0, -60)),
     "Musik von Betriebsbeginn bis Betriebsende −1 Std.",
   );
+  assert.equal(
+    describeMusicWindow(times(RESTAURANT)),
+    "Musik Di–Fr 12:00–20:00 · Sa, So 10:00–20:00",
+  );
+});
+
+test("Musikzeiten: ungültige, doppelte und leere Fenster fallen heraus", () => {
+  assert.deepEqual(
+    parseMusicTimes([
+      { weekday: 2, from: "9:30", to: "18:00" },
+      { weekday: 2, from: "10:00", to: "11:00" },
+      { weekday: 0, from: "12:00", to: "12:00" },
+      { weekday: 7, from: "10:00", to: "20:00" },
+      { weekday: 1, from: "25:00", to: "20:00" },
+      { weekday: 4, from: "18:00", to: "02:00" },
+    ]),
+    [
+      { weekday: 2, from: "09:30", to: "18:00" },
+      { weekday: 4, from: "18:00", to: "02:00" },
+    ],
+  );
+  assert.deepEqual(parseMusicTimes("Unsinn"), []);
+  assert.equal(
+    formatMusicTimes([0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: "10:00", to: "20:00" }))),
+    "täglich 10:00–20:00",
+  );
+});
+
+test("eigene Musikzeiten: an zur Startzeit, aus zur Endzeit, Ruhetag übersprungen", () => {
+  const zone = times(RESTAURANT);
+  // Sa 2026-10-10, 13:00 Berlin: an bis 20:00.
+  const saturday = musicWindowState(zone, null, new Date("2026-10-10T11:00:00Z"), TZ);
+  assert.equal(saturday.allowed, true);
+  assert.equal(saturday.until?.toISOString(), "2026-10-10T18:00:00.000Z");
+  // So 21:00: aus; Montag ist Ruhetag, also erst Di 12:00.
+  const sunday = musicWindowState(zone, null, new Date("2026-10-11T19:00:00Z"), TZ);
+  assert.equal(sunday.allowed, false);
+  assert.equal(sunday.until?.toISOString(), "2026-10-13T10:00:00.000Z");
+  // Eigene Zeiten hängen nicht an der Betriebszeit des Raums.
+  assert.equal(musicWindowState(zone, daily(), new Date("2026-10-12T12:00:00Z"), TZ).allowed, false);
+});
+
+test("Zustand als Text, mit Warnung bei Betriebszeit ohne Saison", () => {
+  const now = new Date("2026-10-10T11:00:00Z");
+  assert.deepEqual(describeMusicState(times(RESTAURANT), null, now, TZ), {
+    text: "Musik an bis heute 20:00",
+    warn: false,
+  });
+  assert.deepEqual(describeMusicState(times(RESTAURANT), null, new Date("2026-10-10T19:00:00Z"), TZ), {
+    text: "Musik aus bis morgen 10:00",
+    warn: false,
+  });
+  const septemberOnly: ScheduleSpec = {
+    name: "Gastronomie",
+    seasons: [{ ...daily().seasons[0], startMmDd: "09-01", endMmDd: "09-30" }],
+    exceptions: [],
+  };
+  assert.deepEqual(describeMusicState(operating(), septemberOnly, now, TZ), {
+    text: "Musik aus – keine Musikzeit in den nächsten Tagen",
+    warn: true,
+  });
+  assert.equal(describeMusicState({ ...operating(), musicMode: "MANUAL" }, daily(), now, TZ), null);
+  assert.equal(describeMusicState(operating(), null, now, TZ)?.warn, true);
 });

@@ -4,6 +4,7 @@ import {
   MAX_OPERATING_OFFSET_MINUTES,
   checkExternalReceivers,
   clampVolume,
+  parseMusicSettings,
   parseOffsetMinutes,
   parseSourceKind,
   resolveOwnedStream,
@@ -118,8 +119,9 @@ export async function POST(request: NextRequest) {
     keyRoomId = candidate;
   }
 
-  // Musik nur zur Betriebszeit des Raums, je Ende mit Versatz in Minuten.
-  const musicOperating = body.musicOperating === true;
+  // Musik-Automatik: eigene Zeiten oder Betriebszeit des Raums mit Versatz.
+  const music = parseMusicSettings(body);
+  if ("error" in music) return NextResponse.json({ error: music.error }, { status: 400 });
   const musicOpenOffset = body.musicOpenOffset === undefined ? 0 : parseOffsetMinutes(body.musicOpenOffset);
   const musicCloseOffset = body.musicCloseOffset === undefined ? 0 : parseOffsetMinutes(body.musicCloseOffset);
   if (musicOpenOffset === null || musicCloseOffset === null) {
@@ -153,7 +155,8 @@ export async function POST(request: NextRequest) {
       volume: clampVolume(body.volume, 50),
       announcementVolume: clampVolume(body.announcementVolume, 85),
       duckVolume: clampVolume(body.duckVolume, 15),
-      musicOperating,
+      musicMode: music.musicMode,
+      musicTimes: music.musicTimes,
       musicOpenOffset,
       musicCloseOffset,
       airplayEnabled,

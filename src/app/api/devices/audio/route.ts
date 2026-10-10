@@ -46,9 +46,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Zone not found" }, { status: 404 });
   }
 
-  // Musikfenster aus der Betriebszeit des Raums – hier gerechnet, weil der
-  // Abspieler weder Saison noch Ausnahmetage kennt. `until` nennt den
-  // nächsten Wechsel, damit der Pi ihn auch ohne Verbindung einhält.
+  // Musikfenster aus den Musikzeiten der Zone bzw. der Betriebszeit des Raums
+  // – hier gerechnet, weil der Abspieler weder Saison noch Ausnahmetage kennt.
+  // `until` nennt den nächsten Wechsel, damit der Pi ihn auch ohne Verbindung
+  // einhält.
   const operating = zone.keyRoom?.operatingSchedule;
   const music = musicWindowState(
     zone,
@@ -56,6 +57,20 @@ export async function GET(request: NextRequest) {
     new Date(),
     zone.account.timezone
   );
+
+  // Der Abspieler setzt zum Fensterbeginn `sourceKind` fort. Nach einem Stopp
+  // steht dort SILENCE, und die Musik bliebe am nächsten Tag aus. Deshalb gilt
+  // ein Stopp nur bis zum Fensterende: danach ist die Quelle der Zone wieder
+  // die Vorgabe.
+  let sourceKind = zone.sourceKind;
+  if (
+    !music.allowed &&
+    sourceKind === "SILENCE" &&
+    zone.defaultSource !== "SILENCE"
+  ) {
+    sourceKind = zone.defaultSource;
+    await db.audioZone.update({ where: { id: zone.id }, data: { sourceKind } });
+  }
 
   const jobs = await db.audioJob.findMany({
     where: { zoneId: zone.id, status: "PENDING" },
@@ -79,7 +94,7 @@ export async function GET(request: NextRequest) {
       volume: zone.volume,
       announcementVolume: zone.announcementVolume,
       duckVolume: zone.duckVolume,
-      sourceKind: zone.sourceKind,
+      sourceKind,
       streamUrl: zone.stream?.url ?? zone.streamUrl,
       music: { allowed: music.allowed, until: music.until?.toISOString() ?? null },
       // Empfänger, die diese Zone übernehmen dürfen. null = abgeschaltet, der

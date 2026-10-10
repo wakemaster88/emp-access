@@ -7,8 +7,8 @@
  * dann spielt. Auffallen würde das erst zur Uhrzeit selbst – und dann merkt
  * es niemand, weil ja nichts passiert. Darum stehen die Gründe an der Karte.
  */
-import { SCHEDULE_WINDOW_MINUTES } from "@/lib/audio-constants";
-import { isWithinOperatingSpan } from "@/lib/operating-hours";
+import { SCHEDULE_WINDOW_MINUTES, musicWindowSource } from "@/lib/audio-constants";
+import { isWithinOperatingSpan, nextOperatingOccurrence } from "@/lib/operating-hours";
 import { DEFAULT_TIMEZONE, addDaysToYmd, tzInstant, tzYmd, weekdayBitOfYmd } from "@/lib/tz-time";
 import type {
   AnnouncementRow,
@@ -82,10 +82,10 @@ function nextTimedRunYmd(
 }
 
 /**
- * Zielzonen, die Musik nur zur Betriebszeit spielen und bei denen der Termin
- * außerhalb liegt. Bei fester Uhrzeit zählt der nächste Termin; bei
- * Betriebsbeginn/-ende der Vergleich der Versätze – sofern dieselbe
- * Betriebszeit gilt, sonst lässt sich nichts sagen.
+ * Zielzonen mit Musik-Automatik, bei denen der Termin außerhalb der
+ * Musikzeit liegt. Bei fester Uhrzeit zählt der nächste Termin; bei
+ * Betriebsbeginn/-ende und Kopplung an dieselbe Betriebszeit der Vergleich der
+ * Versätze, bei eigenen Musikzeiten der nächste Termin.
  */
 export function zonesOutsideMusicWindow(
   schedule: ScheduleRow,
@@ -95,23 +95,41 @@ export function zonesOutsideMusicWindow(
   now = new Date()
 ): ZoneRow[] {
   return targets.filter((zone) => {
-    // Ohne Betriebszeit läuft die Musik jederzeit – der Schalter wirkt nicht.
-    if (!zone.musicOperating || zone.operatingScheduleId == null) return false;
-    const offsets = { openMinutes: zone.musicOpenOffset, closeMinutes: zone.musicCloseOffset };
+    const roomSpec = options.find((o) => o.id === zone.operatingScheduleId);
+    const source = musicWindowSource(zone, roomSpec);
+    // Ohne Automatik läuft die Musik jederzeit.
+    if (!source) return false;
 
     if (schedule.trigger === "TIME") {
-      const spec = options.find((o) => o.id === zone.operatingScheduleId);
       const ymd = nextTimedRunYmd(schedule, now, timeZone);
-      const at = spec && ymd && schedule.timeOfDay ? tzInstant(ymd, schedule.timeOfDay, timeZone) : null;
-      return !!at && !isWithinOperatingSpan(spec, at, timeZone, offsets);
+      const at = ymd && schedule.timeOfDay ? tzInstant(ymd, schedule.timeOfDay, timeZone) : null;
+      return !!at && !isWithinOperatingSpan(source.spec, at, timeZone, source.offsets);
     }
 
-    if (schedule.operatingScheduleId != null && schedule.operatingScheduleId !== zone.operatingScheduleId) {
-      return false;
+    const triggerSpec =
+      schedule.operatingScheduleId != null
+        ? options.find((o) => o.id === schedule.operatingScheduleId)
+        : roomSpec;
+    if (!triggerSpec) return false;
+
+    if (zone.musicMode === "OPERATING") {
+      if (triggerSpec.id !== zone.operatingScheduleId) return false;
+      return schedule.trigger === "OPENING"
+        ? schedule.offsetMinutes < zone.musicOpenOffset
+        : schedule.offsetMinutes >= zone.musicCloseOffset;
     }
-    return schedule.trigger === "OPENING"
-      ? schedule.offsetMinutes < zone.musicOpenOffset
-      : schedule.offsetMinutes >= zone.musicCloseOffset;
+
+    const next = nextOperatingOccurrence(
+      triggerSpec,
+      {
+        kind: schedule.trigger === "OPENING" ? "open" : "close",
+        offsetMinutes: schedule.offsetMinutes,
+        daysOfWeek: schedule.daysOfWeek,
+      },
+      now,
+      timeZone
+    );
+    return !!next && !isWithinOperatingSpan(source.spec, next.at, timeZone, source.offsets);
   });
 }
 
@@ -194,7 +212,7 @@ export function scheduleWarnings(
     const outside = zonesOutsideMusicWindow(schedule, targets, operatingSchedules, timeZone);
     if (outside.length > 0) {
       warnings.push(
-        `${schedule.trigger === "TIME" ? "Der nächste Termin liegt" : "Liegt"} außerhalb der Betriebszeit von ${joinNames(outside.map((z) => z.name))} (Musik nur zur Betriebszeit) – dort bleibt die Musik aus.`
+        `${schedule.trigger === "TIME" ? "Der nächste Termin liegt" : "Liegt"} außerhalb der Musikzeit von ${joinNames(outside.map((z) => z.name))} – dort bleibt die Musik aus.`
       );
     }
   }

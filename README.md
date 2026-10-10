@@ -153,19 +153,28 @@ lokal vor und spielen auch ohne Internetverbindung weiter.
    Ducking-Pegel weiter herunter – nicht die Durchsage weiter hoch.
 5. Überlappen sich Zonen akustisch, bei allen dieselbe **Sync-Gruppe**
    eintragen – die Abspieler laufen dann über Snapcast synchron.
-6. **Musik nur zur Betriebszeit**: Die Zone spielt Musik von Betriebsbeginn
-   bis Betriebsende ihres Raums, je Ende mit Versatz in Minuten („Beginn −30,
-   Ende +30“ heißt: eine halbe Stunde vorher an, eine halbe Stunde später
-   aus). Außerhalb stoppt die eigene Musik und startet nicht – auch nicht per
-   Zeitplan oder Regel –, Durchsagen laufen weiter, und wer per AirPlay oder
-   Bluetooth sendet, wird nicht ausgebremst. Saison, Wochentage und
-   Ausnahmetage kommen aus der Betriebszeit; ohne Raum mit Betriebszeit wirkt
-   der Schalter nicht, der Dialog sagt das. Das hat die frühere feste
-   Ruhezeit („22:00–08:00“) abgelöst.
+6. **Musik automatisch an und aus**: Zur Startzeit spielt die Zone ihre
+   Quelle, zur Endzeit stoppt sie. Drei Möglichkeiten:
+   - *Aus* – keine Automatik, Musik läuft, bis jemand stoppt.
+   - *Eigene Zeiten* – je Wochentag Start und Ende direkt an der Zone, z. B.
+     Di–Fr 12:00–20:00, Sa+So 10:00–20:00, Montag aus. Ende vor Start läuft
+     über Mitternacht. Der einfachste Weg für eine Zone wie das Restaurant.
+   - *Betriebszeit des Raums* – Start und Ende aus der Betriebszeit, je Ende
+     mit Versatz in Minuten („Beginn −30, Ende +30“ heißt: eine halbe Stunde
+     vorher an, eine halbe Stunde später aus), samt Saison und Ausnahmetagen.
+     Endet die letzte Saison, bleibt die Zone stumm – Dialog und Zonenkarte
+     warnen dann.
+
+   Außerhalb startet keine eigene Musik – auch nicht per Hand, Zeitplan oder
+   Regel. Durchsagen laufen immer, und wer per AirPlay oder Bluetooth sendet,
+   wird nicht ausgebremst. Die Zonenkarte zeigt den Stand („Musik aus bis
+   morgen 12:00“).
 
 Die Quelle bleibt beim Stoppen erhalten; `sourceKind` in der Datenbank ist
-dagegen der Ist-Zustand, den der Pi nach Neustart oder Durchsage wieder
-aufnimmt.
+dagegen der Ist-Zustand, den der Pi nach Neustart, Durchsage oder zum Beginn
+der Musikzeit wieder aufnimmt. Ein Stopp gilt nur bis zum Ende der Musikzeit:
+danach setzt der Server `sourceKind` wieder auf die Quelle der Zone, damit die
+Musik am nächsten Tag von selbst startet.
 
 **Mithören:** Der Kopfhörer-Knopf auf einer Zonenkarte spielt deren Quelle auf
 dem eigenen Gerät – bei Webradio denselben Stream, bei einer Playlist deren

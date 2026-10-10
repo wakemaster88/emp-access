@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 import {
   AUDIO_OPERATING_LABELS,
   SCHEDULE_WINDOW_MINUTES,
+  describeMusicState,
   describeMusicWindow,
   describeScheduleTiming,
   formatDaysOfWeek,
@@ -415,6 +416,8 @@ export function AudioClient({
                 <ZoneCard
                   key={zone.id}
                   zone={zone}
+                  roomSchedule={operatingSchedules.find((s) => s.id === zone.operatingScheduleId)}
+                  timeZone={timeZone}
                   live={liveZones.get(zone.id)}
                   highlight={highlightZone === zone.id}
                   busy={busyZone === zone.id}
@@ -985,6 +988,8 @@ function IconAction({
 
 function ZoneCard({
   zone,
+  roomSchedule,
+  timeZone,
   live,
   highlight,
   busy,
@@ -999,6 +1004,9 @@ function ZoneCard({
   onDelete,
 }: {
   zone: ZoneRow;
+  /** Betriebszeit des Raums – für die Musik-Automatik „Betriebszeit des Raums“. */
+  roomSchedule: OperatingScheduleOption | undefined;
+  timeZone: string;
   live: ZoneStatus | undefined;
   highlight: boolean;
   busy: boolean;
@@ -1047,6 +1055,7 @@ function ZoneCard({
 
   const lastSeen = formatRelativeTime(live?.lastStateAt ?? zone.lastStateAt);
   const musicWindow = describeMusicWindow(zone);
+  const musicState = describeMusicState(zone, roomSchedule, new Date(), timeZone);
 
   return (
     <Card
@@ -1125,9 +1134,22 @@ function ZoneCard({
                   : zone.sourceKind === "STREAM"
                     ? (zone.streamName ?? "Webradio")
                     : "Keine Wiedergabe")}
-              {musicWindow && ` · ${musicWindow}`}
               {lastSeen && ` · gemeldet ${lastSeen}`}
             </p>
+            {musicState && (
+              <p
+                className={cn(
+                  "mt-0.5 flex items-start gap-1 text-xs",
+                  musicState.warn ? "text-warning" : "text-muted-foreground"
+                )}
+              >
+                <Clock className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  {musicState.text}
+                  {musicWindow && ` · ${musicWindow}`}
+                </span>
+              </p>
+            )}
           </div>
 
           <div className="-mr-1 flex shrink-0 justify-end gap-1 sm:mr-0">

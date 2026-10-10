@@ -468,9 +468,18 @@ export function describeOccurrence(
   now: Date,
   tz: string | null | undefined = DEFAULT_TIMEZONE,
 ): string {
+  return describeInstant(occ.at, now, tz);
+}
+
+/** Wie `describeOccurrence`, für einen beliebigen Zeitpunkt. */
+export function describeInstant(
+  at: Date,
+  now: Date,
+  tz: string | null | undefined = DEFAULT_TIMEZONE,
+): string {
   const today = tzYmd(now, tz);
-  const day = tzYmd(occ.at, tz);
-  const time = formatHhmm(tzMinutesOfDay(occ.at, tz));
+  const day = tzYmd(at, tz);
+  const time = formatHhmm(tzMinutesOfDay(at, tz));
   if (day === today) return `heute ${time}`;
   if (day === addDaysToYmd(today, 1)) return `morgen ${time}`;
   return `${WEEKDAY_NAMES[weekdayBitOfYmd(day)]} ${time}`;

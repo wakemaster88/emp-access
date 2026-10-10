@@ -1935,6 +1935,16 @@ enum AudioScheduleTrigger {
   CLOSING
 }
 
+/// Wann die Musik einer Zone von selbst an- und ausgeht.
+enum AudioMusicMode {
+  /// Keine Automatik: Musik laeuft, bis jemand stoppt.
+  MANUAL
+  /// Eigene Musikzeiten der Zone (`musicTimes`), ein Fenster je Wochentag.
+  TIMES
+  /// Betriebszeit des Raums, je Ende mit Versatz.
+  OPERATING
+}
+
 /// Eine Beschallungszone = ein Raspberry-Pi-Abspieler mit angeschlossenem
 /// Verstaerker. Haelt Soll-Zustand (Quelle, Lautstaerken) und den vom Pi
 /// gemeldeten Ist-Zustand.
@@ -1974,12 +1984,16 @@ model AudioZone {
   stream             AudioStream?       @relation(fields: [streamId], references: [id], onDelete: SetNull)
   /// Webradio-/Stream-URL fuer sourceKind = STREAM (Kopie des gewaehlten Senders).
   streamUrl          String?
-  /// Musik nur zur Betriebszeit des Raums: von Betriebsbeginn plus
-  /// `musicOpenOffset` bis Betriebsende plus `musicCloseOffset` (Minuten,
-  /// negativ = vorher). Ausserhalb stoppt die eigene Musik und startet nicht,
-  /// Durchsagen laufen weiter. Ohne Raum mit Betriebszeit bleibt der Schalter
-  /// wirkungslos. Loest die fruehere feste Ruhezeit (quietFrom/quietTo) ab.
-  musicOperating     Boolean            @default(false)
+  /// Musik-Automatik: im Fenster startet die Quelle von selbst, an dessen Ende
+  /// stoppt sie, ausserhalb startet keine eigene Musik. Durchsagen laufen
+  /// immer. Ein Stopp im Fenster gilt bis zum naechsten Fensterbeginn.
+  musicMode          AudioMusicMode     @default(MANUAL)
+  /// Fenster je Wochentag fuer musicMode = TIMES:
+  /// `[{ weekday: 0..6 (Mo..So), from: "HH:mm", to: "HH:mm" }]`. `to` vor
+  /// `from` laeuft ueber Mitternacht.
+  musicTimes         Json               @default("[]")
+  /// Versatz in Minuten fuer musicMode = OPERATING (negativ = vorher). Ohne
+  /// Raum mit Betriebszeit wirkt die Kopplung nicht.
   musicOpenOffset    Int                @default(0)
   musicCloseOffset   Int                @default(0)
   /// AirPlay-Empfaenger aktiv: ein Sender im WLAN darf die Zone uebernehmen.

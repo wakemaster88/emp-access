@@ -3,7 +3,12 @@
  * damit sie auch in Client-Komponenten verwendet werden können.
  */
 
-import { operatingSpanState, type ScheduleSpec } from "./operating-hours";
+import {
+  describeInstant,
+  operatingSpanState,
+  type ScheduleSpec,
+  type SpanOffsets,
+} from "./operating-hours";
 
 /** Ansagen, die zu lang sind, blockieren die Zone unnötig lange. */
 export const MAX_ANNOUNCEMENT_CHARS = 600;
@@ -285,7 +290,7 @@ export function formatDaysOfWeek(bitmask: number): string {
   return selected.length === 0 ? "Nie" : selected.join(", ");
 }
 
-// ── Musik nur zur Betriebszeit ───────────────────────────────────────────────
+// ── Musik-Automatik ──────────────────────────────────────────────────────────
 
 /** Größter Versatz gegenüber Betriebsbeginn/-ende: zwölf Stunden. */
 export const MAX_OPERATING_OFFSET_MINUTES = 720;
@@ -298,14 +303,112 @@ export function parseOffsetMinutes(value: unknown): number | null {
   return n;
 }
 
+export type AudioMusicModeKind = "MANUAL" | "TIMES" | "OPERATING";
+
+export const MUSIC_MODE_LABELS: Record<AudioMusicModeKind, string> = {
+  MANUAL: "Aus",
+  TIMES: "Eigene Zeiten",
+  OPERATING: "Betriebszeit des Raums",
+};
+
+export function parseMusicMode(value: unknown): AudioMusicModeKind | undefined {
+  return value === "MANUAL" || value === "TIMES" || value === "OPERATING" ? value : undefined;
+}
+
 /**
- * Musikfenster einer Zone: Musik läuft von Betriebsbeginn plus
- * `musicOpenOffset` bis Betriebsende plus `musicCloseOffset` (Minuten). Hat die
- * frühere feste Ruhezeit abgelöst – die Uhrzeiten stehen in der Betriebszeit
- * des Raums, samt Saison und Ausnahmetagen.
+ * Musikfenster eines Wochentags; `to` vor `from` läuft über Mitternacht. Ein
+ * `type` statt `interface`, damit es ohne Umweg als Json-Wert durchgeht.
+ */
+export type MusicTimeSpan = {
+  /** 0 = Mo … 6 = So. */
+  weekday: number;
+  from: string;
+  to: string;
+};
+
+/** "9:30" → "09:30"; null, wenn keine Uhrzeit. */
+function normalizeHhmm(value: unknown): string | null {
+  const time = parseTimeOfDay(value);
+  return time ? time.padStart(5, "0") : null;
+}
+
+/**
+ * Musikzeiten aus der Datenbank oder einem Request: gültige Fenster, höchstens
+ * eins je Wochentag, nach Tag sortiert. Gleicher Start und gleiches Ende fällt
+ * heraus – als Musikzeit ist das ein Tippfehler, kein „rund um die Uhr“.
+ */
+export function parseMusicTimes(value: unknown): MusicTimeSpan[] {
+  if (!Array.isArray(value)) return [];
+  const byDay = new Map<number, MusicTimeSpan>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const weekday = Number((entry as { weekday?: unknown }).weekday);
+    const from = normalizeHhmm((entry as { from?: unknown }).from);
+    const to = normalizeHhmm((entry as { to?: unknown }).to);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) continue;
+    if (!from || !to || from === to || byDay.has(weekday)) continue;
+    byDay.set(weekday, { weekday, from, to });
+  }
+  return [...byDay.values()].sort((a, b) => a.weekday - b.weekday);
+}
+
+/**
+ * Musik-Automatik aus einem Request. Fehlende Felder bleiben unverändert;
+ * geprüft wird gegen den gespeicherten Stand `current`, damit auch eine
+ * Teiländerung keine Zone mit „Eigene Zeiten“ ohne einen einzigen Tag ergibt.
+ */
+export function parseMusicSettings(
+  body: { musicMode?: unknown; musicTimes?: unknown },
+  current: { musicMode: AudioMusicModeKind; musicTimes: unknown } = { musicMode: "MANUAL", musicTimes: [] }
+): { musicMode?: AudioMusicModeKind; musicTimes?: MusicTimeSpan[] } | { error: string } {
+  const musicMode = body.musicMode === undefined ? undefined : parseMusicMode(body.musicMode);
+  if (body.musicMode !== undefined && !musicMode) return { error: "Unbekannte Musik-Automatik" };
+
+  let musicTimes: MusicTimeSpan[] | undefined;
+  if (body.musicTimes !== undefined) {
+    if (!Array.isArray(body.musicTimes)) return { error: "Musikzeiten müssen eine Liste sein" };
+    musicTimes = parseMusicTimes(body.musicTimes);
+    if (musicTimes.length !== body.musicTimes.length) {
+      return {
+        error: "Musikzeiten: je Tag Start und Ende als Uhrzeit angeben – nicht gleich, jeder Tag nur einmal",
+      };
+    }
+  }
+
+  const mode = musicMode ?? current.musicMode;
+  const times = musicTimes ?? parseMusicTimes(current.musicTimes);
+  if (mode === "TIMES" && times.length === 0) {
+    return { error: "Für „Eigene Zeiten“ mindestens einen Tag mit Start und Ende angeben" };
+  }
+  return { musicMode, musicTimes };
+}
+
+/** Musikzeiten als ganzjähriges Profil – so rechnet dieselbe Fensterlogik wie bei der Betriebszeit. */
+export function musicTimesSpec(times: MusicTimeSpan[]): ScheduleSpec {
+  return {
+    name: "Musikzeiten",
+    seasons: [
+      {
+        name: "Musikzeiten",
+        startMmDd: "01-01",
+        endMmDd: "12-31",
+        sortOrder: 0,
+        periods: times.map((t) => ({ weekday: t.weekday, opensAt: t.from, closesAt: t.to })),
+      },
+    ],
+    exceptions: [],
+  };
+}
+
+/**
+ * Musik-Automatik einer Zone: Im Fenster startet die Quelle von selbst, an
+ * dessen Ende stoppt sie. Das Fenster kommt entweder aus den eigenen
+ * Musikzeiten der Zone oder aus der Betriebszeit ihres Raums samt Versatz.
  */
 export interface MusicWindowSettings {
-  musicOperating: boolean;
+  musicMode: AudioMusicModeKind;
+  /** Rohwert aus der Datenbank, siehe `parseMusicTimes`. */
+  musicTimes: unknown;
   musicOpenOffset: number;
   musicCloseOffset: number;
 }
@@ -318,29 +421,81 @@ export interface MusicWindowState {
 }
 
 /**
- * Darf die Zone Musik spielen? Ohne Kopplung oder ohne Betriebszeit immer –
- * ein Raum ohne Profil soll keine Zone stumm schalten, wie bei den Regeln.
+ * Profil und Versatz, nach denen sich das Musikfenster richtet. null heißt
+ * keine Automatik – auch bei der Kopplung an einen Raum ohne Betriebszeit,
+ * denn ein Raum ohne Profil soll keine Zone stumm schalten, wie bei den Regeln.
  */
+export function musicWindowSource(
+  zone: MusicWindowSettings,
+  roomSchedule: ScheduleSpec | null | undefined
+): { spec: ScheduleSpec; offsets: SpanOffsets } | null {
+  if (zone.musicMode === "TIMES") {
+    const times = parseMusicTimes(zone.musicTimes);
+    if (times.length === 0) return null;
+    return { spec: musicTimesSpec(times), offsets: { openMinutes: 0, closeMinutes: 0 } };
+  }
+  if (zone.musicMode === "OPERATING" && roomSchedule) {
+    return {
+      spec: roomSchedule,
+      offsets: { openMinutes: zone.musicOpenOffset, closeMinutes: zone.musicCloseOffset },
+    };
+  }
+  return null;
+}
+
+/** Darf die Zone jetzt Musik spielen, und bis wann? Ohne Automatik immer. */
 export function musicWindowState(
   zone: MusicWindowSettings,
-  schedule: ScheduleSpec | null | undefined,
+  roomSchedule: ScheduleSpec | null | undefined,
   now: Date,
   timeZone: string | null | undefined
 ): MusicWindowState {
-  if (!zone.musicOperating || !schedule) return { allowed: true, until: null };
-  const state = operatingSpanState(schedule, now, timeZone, {
-    openMinutes: zone.musicOpenOffset,
-    closeMinutes: zone.musicCloseOffset,
-  });
+  const source = musicWindowSource(zone, roomSchedule);
+  if (!source) return { allowed: true, until: null };
+  const state = operatingSpanState(source.spec, now, timeZone, source.offsets);
   return { allowed: state.inside, until: state.until };
 }
 
+/** Wochentage als "Di–Fr", "Sa, So" oder "täglich". */
+function formatWeekdays(weekdays: number[]): string {
+  if (weekdays.length === 7) return "täglich";
+  const runs: number[][] = [];
+  for (const day of weekdays) {
+    const run = runs[runs.length - 1];
+    if (run && day === run[run.length - 1] + 1) run.push(day);
+    else runs.push([day]);
+  }
+  return runs
+    .map((run) =>
+      run.length >= 3
+        ? `${WEEKDAY_NAMES[run[0]]}–${WEEKDAY_NAMES[run[run.length - 1]]}`
+        : run.map((day) => WEEKDAY_NAMES[day]).join(", ")
+    )
+    .join(", ");
+}
+
+/** "Di–Fr 12:00–20:00 · Sa, So 10:00–20:00" – Tage mit gleichen Zeiten zusammengefasst. */
+export function formatMusicTimes(times: MusicTimeSpan[]): string {
+  const groups = new Map<string, number[]>();
+  for (const t of times) {
+    const key = `${t.from}–${t.to}`;
+    groups.set(key, [...(groups.get(key) ?? []), t.weekday]);
+  }
+  return [...groups.entries()]
+    .map(([span, weekdays]) => `${formatWeekdays(weekdays)} ${span}`)
+    .join(" · ");
+}
+
 /**
- * "Musik zur Betriebszeit" bzw. "Musik von Betriebsbeginn −30 Min. bis
- * Betriebsende +30 Min."; null ohne Kopplung.
+ * Einstellung als Klartext: "Musik Di–Fr 12:00–20:00" bzw. "Musik von
+ * Betriebsbeginn −30 Min. bis Betriebsende"; null ohne Automatik.
  */
 export function describeMusicWindow(zone: MusicWindowSettings): string | null {
-  if (!zone.musicOperating) return null;
+  if (zone.musicMode === "TIMES") {
+    const times = parseMusicTimes(zone.musicTimes);
+    return times.length > 0 ? `Musik ${formatMusicTimes(times)}` : null;
+  }
+  if (zone.musicMode !== "OPERATING") return null;
   if (zone.musicOpenOffset === 0 && zone.musicCloseOffset === 0) return "Musik zur Betriebszeit";
   const open =
     zone.musicOpenOffset === 0
@@ -351,4 +506,31 @@ export function describeMusicWindow(zone: MusicWindowSettings): string | null {
       ? "Betriebsende"
       : `Betriebsende ${formatOffsetMinutes(zone.musicCloseOffset)}`;
   return `Musik von ${open} bis ${close}`;
+}
+
+/**
+ * Was die Automatik gerade tut: "Musik an bis 20:00", "Musik aus bis morgen
+ * 12:00" oder – wenn keine Musikzeit kommt – eine Warnung. null ohne
+ * Automatik. `warn` markiert eine Zone, die auf absehbare Zeit stumm bleibt.
+ */
+export function describeMusicState(
+  zone: MusicWindowSettings,
+  roomSchedule: ScheduleSpec | null | undefined,
+  now: Date,
+  timeZone: string | null | undefined
+): { text: string; warn: boolean } | null {
+  if (!musicWindowSource(zone, roomSchedule)) {
+    return zone.musicMode === "OPERATING"
+      ? { text: "Musik-Automatik wirkt nicht – kein Raum mit Betriebszeit", warn: true }
+      : null;
+  }
+  const state = musicWindowState(zone, roomSchedule, now, timeZone);
+  if (state.allowed) {
+    return {
+      text: state.until ? `Musik an bis ${describeInstant(state.until, now, timeZone)}` : "Musik an",
+      warn: false,
+    };
+  }
+  if (!state.until) return { text: "Musik aus – keine Musikzeit in den nächsten Tagen", warn: true };
+  return { text: `Musik aus bis ${describeInstant(state.until, now, timeZone)}`, warn: false };
 }

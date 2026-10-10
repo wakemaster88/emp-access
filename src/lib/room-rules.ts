@@ -288,7 +288,8 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
       id: true,
       name: true,
       isActive: true,
-      musicOperating: true,
+      musicMode: true,
+      musicTimes: true,
       musicOpenOffset: true,
       musicCloseOffset: true,
       keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } },
@@ -297,8 +298,8 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
   if (!zone) return { ...base, target: `#${action.audioZoneId}`, ok: false, error: "Zone nicht gefunden" };
   if (!zone.isActive) return { ...base, target: zone.name, ok: false, error: "Zone ist deaktiviert" };
 
-  // Der Zonen-Pi haelt das Musikfenster (Betriebszeit des Raums samt Versatz)
-  // selbst ein. Eine Playlist ausserhalb einzureihen wuerde also nur einen
+  // Der Zonen-Pi haelt das Musikfenster (eigene Musikzeiten oder Betriebszeit
+  // des Raums samt Versatz) selbst ein. Eine Playlist ausserhalb einzureihen wuerde also nur einen
   // Job erzeugen, der verworfen wird – deshalb hier schon abbrechen.
   // Durchsagen laufen weiterhin.
   const timezone = rule.account.timezone || DEFAULT_TIMEZONE;
@@ -332,7 +333,7 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
 
     if (action.audioPlaylistId) {
       if (!musicAllowed) {
-        return { ...base, target: zone.name, ok: false, error: "Außerhalb der Betriebszeit der Zone" };
+        return { ...base, target: zone.name, ok: false, error: "Außerhalb der Musikzeit der Zone" };
       }
       const payload = await playlistPayload(prisma, action.audioPlaylistId);
       if (!payload) {

@@ -8,6 +8,7 @@ import {
   isPlayerOnline,
   listTtsVoices,
   pairableSeconds,
+  parseMusicTimes,
   parseZoneIds,
 } from "@/lib/audio";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
@@ -146,7 +147,8 @@ export default async function AudioPage() {
             streamId: z.streamId,
             streamName: z.stream?.name ?? null,
             streamUrl: z.stream?.url ?? z.streamUrl,
-            musicOperating: z.musicOperating,
+            musicMode: z.musicMode,
+            musicTimes: parseMusicTimes(z.musicTimes),
             musicOpenOffset: z.musicOpenOffset,
             musicCloseOffset: z.musicCloseOffset,
             airplayEnabled: z.airplayEnabled,

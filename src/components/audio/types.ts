@@ -3,6 +3,7 @@ import type {
   AudioExternalKind,
   AudioJobKind,
   AudioJobStatus,
+  AudioMusicMode,
   AudioScheduleAction,
   AudioScheduleTrigger,
   AudioSourceKind,
@@ -10,6 +11,7 @@ import type {
   RuleOperatingCondition,
   SoundwebControlKind,
 } from "@prisma/client";
+import type { MusicTimeSpan } from "@/lib/audio-constants";
 import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
 import type { SoundwebDeviceDto } from "@/lib/soundweb-server";
 
@@ -39,8 +41,11 @@ export interface ZoneRow {
   streamId: number | null;
   streamName: string | null;
   streamUrl: string | null;
-  /** Musik nur zur Betriebszeit des Raums, je Ende mit Versatz in Minuten. */
-  musicOperating: boolean;
+  /** Musik-Automatik: aus, eigene Zeiten oder Betriebszeit des Raums. */
+  musicMode: AudioMusicMode;
+  /** Eigene Musikzeiten je Wochentag (nur musicMode = TIMES). */
+  musicTimes: MusicTimeSpan[];
+  /** Versatz in Minuten gegenüber Betriebsbeginn/-ende (nur OPERATING). */
   musicOpenOffset: number;
   musicCloseOffset: number;
   /** Empfänger, über die ein Sender die Zone übernehmen darf. */
@@ -187,7 +192,10 @@ export interface OperatingScheduleOption {
   exceptions: ExceptionSpec[];
 }
 
+export type { MusicTimeSpan };
+
 export type {
+  AudioMusicMode,
   AudioSourceKind,
   AudioScheduleAction,
   AudioScheduleTrigger,

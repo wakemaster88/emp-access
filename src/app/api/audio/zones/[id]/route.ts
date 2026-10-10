@@ -4,6 +4,7 @@ import {
   MAX_OPERATING_OFFSET_MINUTES,
   checkExternalReceivers,
   clampVolume,
+  parseMusicSettings,
   parseOffsetMinutes,
   parseSourceKind,
   resolveOwnedStream,
@@ -114,6 +115,8 @@ export async function PUT(
       { status: 400 }
     );
   }
+  const music = parseMusicSettings(body, existing);
+  if ("error" in music) return NextResponse.json({ error: music.error }, { status: 400 });
 
   const airplayEnabled =
     body.airplayEnabled === undefined ? undefined : body.airplayEnabled === true;
@@ -143,6 +146,15 @@ export async function PUT(
       ...(deviceId !== undefined ? { deviceId } : {}),
       ...(keyRoomId !== undefined ? { keyRoomId } : {}),
       ...(playlistId !== undefined ? { playlistId } : {}),
+      ...(sourceKind ? { sourceKind } : {}),
+      ...(defaultSource ? { defaultSource } : {}),
+      isActive: typeof body.isActive === "boolean" ? body.isActive : undefined,
+      syncGroup:
+        body.syncGroup === undefined
+          ? undefined
+          : typeof body.syncGroup === "string" && body.syncGroup.trim()
+            ? body.syncGroup.trim()
+            : null,
       ...(streamId !== undefined
         ? { streamId, streamUrl: streamUrlFromStream }
         : body.streamUrl === undefined
@@ -162,7 +174,8 @@ export async function PUT(
         body.duckVolume === undefined
           ? undefined
           : clampVolume(body.duckVolume, existing.duckVolume),
-      musicOperating: body.musicOperating === undefined ? undefined : body.musicOperating === true,
+      musicMode: music.musicMode,
+      musicTimes: music.musicTimes,
       musicOpenOffset,
       musicCloseOffset,
       airplayEnabled,
