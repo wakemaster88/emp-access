@@ -683,6 +683,7 @@ Snapshot nicht verfügbar: Hub läuft auf dem iMac, diese Sitzung auf dem MacBoo
 ### Änderung
 
 - Keine. Empfehlung: stationär Mac mini M6 mit 32 GB und Ethernet. Als MacBook nur ein MacBook Pro 14" M6 mit 32 GB (Lüfter), Ethernet-Adapter, Deckel offen oder `disablesleep`.
+- Nachtrag (Anforderung: Tag und Nacht, alle Kameras überwachen): Der YOLO-Tracker läuft heute auf 3 von 13 Kameras, jeweils auf dem Substream (`<camId>_sub`, FFmpeg-Dekodierung auf der CPU). Auf allen 13 Kameras wären das grob 2–2,5 Kerne statt ~0,5, zusammen mit Face ~6–7 Kerne. Das ist für den M6 mit 6 Effizienzkernen knapp. Empfehlung deshalb Mac mini M5 Pro (15 Leistungskerne, 48 GB). Mac Studio M5 Max (ab 2.999 €) erst bei lokalem Bildmodell zu jedem Ereignis, YOLO auf den 4K-Hauptstreams oder deutlich mehr Kameras. Videoaufzeichnung gibt es im System nicht; Daueraufzeichnung von 13 Kameras wären grob 0,5–1 TB pro Tag und gehört auf NVR oder NAS.
 
 ### Nächster Schritt
 
