@@ -670,6 +670,25 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 - Durchsagen Happy Hour (18:00/18:45) und „Gastro Feierabend“ (19:00 täglich) liegen jetzt nach Betriebsende bzw. an Ruhetagen – mit dem Betrieb abstimmen.
 - Nachtrag gleicher Tag: Restaurant-Durchsagen auf Betriebsende umgestellt (Happy Hour Craft Beer/Kukki/Wein/Aperitif −60, Last Minute −15, Gastro Feierabend −10; Wochentage unverändert). Texte zeitneutral: „bis 20 Uhr“ → „bis zum Feierabend“, „es ist 20 Uhr — … macht jetzt Feierabend“ → „in wenigen Minuten macht … Feierabend“; `trackId` geleert, TTS rendert beim nächsten Abspielen neu. Heute fällig: Wein 17:00, Last Minute 17:45, Feierabend 17:50, Musik aus 18:00 – im Audio-Verlauf prüfen. Craft Beer (nur Mi) läuft bis Saisonende nicht, Mi ist zu.
 
+## 2026-11-02 (Welcher Rechner für den Hub)
+
+Snapshot nicht verfügbar: Hub läuft auf dem iMac, diese Sitzung auf dem MacBook Pro M5 (10 Kerne, 24 GB) ohne Hub-Prozess.
+
+### Befunde
+
+- `HubAgent.status` enthält nur `system` (Systempflege) und `parking`. CPU, Speicher und Prozesse aus `system-metrics.ts` gehen nicht in den Heartbeat. Ohne Zugriff auf den iMac gibt es deshalb keine aktuellen Leistungszahlen.
+- Bemessung daher aus der Messung vom 31.08.: CPU ~50 % von 10 Kernen, davon Face-Sidecar ~2,8 Kerne (läuft auf CPU, weil CoreML bei `buffalo_l` Shape-Fehler wirft), Tracker ~0,5 Kern plus GPU (MPS), go2rtc und Hub zusammen unter 0,1 Kern. Speicher nach dem Abschalten von Ollama ~16 von 32 GB für die ganze Maschine.
+- Last ist Dauerlast rund um die Uhr. Ein lüfterloses MacBook Air drosselt dabei. Ein MacBook schläft mit geschlossenem Deckel ohne externen Monitor trotz `pmset sleep 0`; das verhindert erst `pmset -a disablesleep 1`, das `system-setup.ts` nicht setzt. MacBooks haben kein Ethernet.
+
+### Änderung
+
+- Keine. Empfehlung: stationär Mac mini M6 mit 32 GB und Ethernet. Als MacBook nur ein MacBook Pro 14" M6 mit 32 GB (Lüfter), Ethernet-Adapter, Deckel offen oder `disablesleep`.
+
+### Nächster Schritt
+
+- CPU, Speicher und die Prozess-Top-Liste in den Heartbeat aufnehmen, damit Hardwarefragen aus der Cloud beantwortbar sind.
+- Face-Sidecar mit `allowed_modules=["detection", "recognition"]` (offen seit 31.08.); spart auf jeder Hardware Rechenzeit.
+
 ## 2026-11-04 (Ereigniserkennung nach dem Kamera-Umzug in VLAN 30)
 
 ### Befunde
