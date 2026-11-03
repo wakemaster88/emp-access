@@ -36,6 +36,7 @@ export const TENANT_MODELS = new Set<string>([
   "KeyPolicyTemplate",
   "KeyRoom",
   "KeySignature",
+  "KnownNetworkDevice",
   "ListedPerson",
   "Locker",
   "LostItem",
