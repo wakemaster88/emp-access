@@ -129,9 +129,11 @@
         </div>
         <div class="head-actions">
           <div class="segment compact" id="liveCols" role="group" aria-label="Spalten">
+            <button type="button" data-cols="auto" aria-pressed="false" title="Alle Kameras passend auf den Bildschirm">Auto</button>
             <button type="button" data-cols="2" aria-pressed="false">2</button>
             <button type="button" data-cols="3" aria-pressed="false">3</button>
             <button type="button" data-cols="4" aria-pressed="false">4</button>
+            <button type="button" data-cols="5" aria-pressed="false">5</button>
           </div>
           <button type="button" class="btn" id="liveFull"><svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg>Vollbild</button>
         </div>
@@ -361,9 +363,13 @@
       <header class="cam-side-head">
         <div style="min-width:0">
           <h2 id="camDlgTitle">Kamera</h2>
-          <div class="mono muted" id="camDlgHost"></div>
+          <div class="muted" id="camDlgHost"></div>
         </div>
-        <button type="button" class="icon-btn" id="camDlgClose" aria-label="Schließen"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+        <div class="cam-nav">
+          <button type="button" class="icon-btn" id="camDlgPrev" aria-label="Vorige Kamera" title="Vorige Kamera (Bild ↑)"><svg class="ico" aria-hidden="true" style="transform:rotate(-90deg)"><use href="#i-chev"/></svg></button>
+          <button type="button" class="icon-btn" id="camDlgNext" aria-label="Nächste Kamera" title="Nächste Kamera (Bild ↓)"><svg class="ico" aria-hidden="true" style="transform:rotate(90deg)"><use href="#i-chev"/></svg></button>
+          <button type="button" class="icon-btn" id="camDlgClose" aria-label="Schließen"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </div>
       </header>
       <div id="camDlgControls"></div>
     </aside>

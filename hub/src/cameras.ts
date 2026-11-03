@@ -105,6 +105,8 @@ export interface CameraStatus {
   lastEventAt: string | null;
   lastPerson: LastPerson | null;
   lastPlate: LastPlate | null;
+  /** Faehigkeiten (null = noch nicht abgefragt). */
+  caps: CameraCaps | null;
 }
 
 const cameras = new Map<number, CameraRuntime>();
@@ -1114,8 +1116,120 @@ export function listCameraStatus(): CameraStatus[] {
       lastEventAt: cam.lastEventAt,
       lastPerson: cam.lastPerson,
       lastPlate: cam.lastPlate,
+      caps: capsCache.get(cam.config.id)?.caps ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+/* ---------------------------------------------------------------------------
+ * Faehigkeiten pro Kamera (Kamera-Zentrale im Dashboard zeigt nur, was geht)
+ *
+ * Quelle: GetAbility (abilityChn[channel]) + GetDevInfo. Interpretation wie
+ * reolink_aio: ptzType 1 = nur Zoom (AF), 2/3/5 = Schwenken/Neigen,
+ * 1/2/5 = Zoom. Modelltabelle aus webcams/lib/types.ts ergaenzt Luecken.
+ * ------------------------------------------------------------------------- */
+
+export interface CameraCaps {
+  model: string | null;
+  firmware: string | null;
+  pan: boolean;
+  zoom: boolean;
+  presets: boolean;
+  spotlight: boolean;
+  ir: boolean;
+  siren: boolean;
+  /** Panorama (z. B. Duo): Bild ist deutlich breiter als 16:9. */
+  wide: boolean;
+  /** Woher: "ability" (von der Kamera) oder "model" (nur Modelltabelle). */
+  source: "ability" | "model";
+  checkedAt: string;
+}
+
+const CAPS_TTL_MS = 6 * 60 * 60 * 1000;
+const capsCache = new Map<number, { caps: CameraCaps; at: number }>();
+
+/** Bekannte Modelle, falls GetAbility fehlt oder unvollstaendig ist. */
+const MODEL_CAPS: Array<{ match: RegExp; pan: boolean; zoom: boolean; spotlight: boolean; siren: boolean; wide?: boolean }> = [
+  { match: /E1 Pro/i, pan: true, zoom: false, spotlight: false, siren: false },
+  { match: /RLC-5\d\dA/i, pan: false, zoom: false, spotlight: false, siren: false },
+  { match: /RLC-810A/i, pan: false, zoom: false, spotlight: false, siren: false },
+  { match: /RLC-811A/i, pan: false, zoom: true, spotlight: true, siren: false },
+  { match: /RLC-823/i, pan: true, zoom: true, spotlight: true, siren: true },
+  { match: /GO PT/i, pan: true, zoom: false, spotlight: true, siren: true },
+  { match: /Duo/i, pan: false, zoom: false, spotlight: true, siren: true, wide: true },
+];
+
+function abilityVer(chn: Record<string, unknown> | undefined, key: string): number {
+  const v = chn?.[key] as { ver?: number; permit?: number } | undefined;
+  return typeof v?.ver === "number" ? v.ver : 0;
+}
+
+export async function getCameraCaps(cameraId: number, force = false): Promise<CameraCaps> {
+  const cached = capsCache.get(cameraId);
+  if (!force && cached && Date.now() - cached.at < CAPS_TTL_MS) return cached.caps;
+  const cam = await getControlCam(cameraId);
+  await ensureLogin(cam);
+
+  let model: string | null = null;
+  let firmware: string | null = null;
+  try {
+    const info = (await cgi(cam, "GetDevInfo", {})).DevInfo as { model?: string; firmVer?: string } | undefined;
+    model = info?.model ?? null;
+    firmware = info?.firmVer ?? null;
+  } catch {
+    // aeltere Firmware: ohne Modell weiter
+  }
+
+  const known = model ? MODEL_CAPS.find((m) => m.match.test(model!)) : undefined;
+  let caps: CameraCaps;
+  try {
+    const ability = (await cgi(cam, "GetAbility", { User: { userName: cam.config.username } })).Ability as
+      | { abilityChn?: Array<Record<string, unknown>> }
+      | undefined;
+    const chn = ability?.abilityChn?.[cam.config.channel] ?? ability?.abilityChn?.[0];
+    if (!chn) throw new Error("abilityChn fehlt");
+    const ptzType = abilityVer(chn, "ptzType");
+    const ptzCtrl = abilityVer(chn, "ptzCtrl");
+    caps = {
+      model,
+      firmware,
+      pan: [2, 3, 5].includes(ptzType) || (ptzType === 0 && ptzCtrl > 0 && !!known?.pan),
+      zoom: [1, 2, 5].includes(ptzType) || abilityVer(chn, "supportPtzZoom") > 0,
+      presets: abilityVer(chn, "ptzPreset") > 0,
+      spotlight:
+        abilityVer(chn, "floodLight") > 0 ||
+        abilityVer(chn, "supportFLswitch") > 0 ||
+        abilityVer(chn, "supportFLBrightness") > 0 ||
+        !!known?.spotlight,
+      ir: abilityVer(chn, "ledControl") > 0,
+      siren: abilityVer(chn, "supportAudioAlarm") > 0 || abilityVer(chn, "supportAudioAlarmEnable") > 0 || !!known?.siren,
+      wide: !!known?.wide,
+      source: "ability",
+      checkedAt: new Date().toISOString(),
+    };
+  } catch (e) {
+    log(`Kamera ${cam.config.name}: GetAbility nicht lesbar (${e instanceof Error ? e.message : e}) – nutze Modelltabelle`);
+    caps = {
+      model,
+      firmware,
+      pan: known?.pan ?? false,
+      zoom: known?.zoom ?? false,
+      presets: known?.pan ?? false,
+      spotlight: known?.spotlight ?? false,
+      ir: true,
+      siren: known?.siren ?? false,
+      wide: known?.wide ?? false,
+      source: "model",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  capsCache.set(cameraId, { caps, at: Date.now() });
+  log(
+    `Kamera ${cam.config.name}: ${model ?? "Modell ?"} – ${["pan", "zoom", "presets", "spotlight", "ir", "siren", "wide"]
+      .filter((k) => caps[k as keyof CameraCaps] === true)
+      .join(", ") || "keine Steuerung"} (${caps.source})`
+  );
+  return caps;
 }
 
 /* ---------------------------------------------------------------------------

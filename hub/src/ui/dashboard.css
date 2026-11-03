@@ -1015,8 +1015,34 @@ table.data td[data-label="IP"] .mono { white-space: nowrap; }
   gap: 0.7rem;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
 }
-@media (max-width: 1100px) { .live-grid { --cols: 2 !important; } #liveCols { display: none; } }
-@media (max-width: 560px) { .live-grid { --cols: 1 !important; } }
+@media (max-width: 560px) { #liveCols { display: none; } }
+.live-tile.is-wide { grid-column: span 2; aspect-ratio: 32 / 9; }
+.live-tile.is-wide video, .live-tile.is-wide img { object-fit: contain; }
+@media (max-width: 560px) { .live-tile.is-wide { grid-column: auto; aspect-ratio: 16 / 9; } }
+
+/* Die Zentrale nutzt die volle Breite. */
+.main:has(#view-zentrale:not([hidden])) { max-width: none; }
+@media (min-width: 1280px) { .main:has(#view-zentrale:not([hidden])) { padding: 1.5rem 1.5rem 2rem; } }
+
+.live-caps { display: inline-flex; gap: 0.25rem; }
+.live-caps .cap {
+  display: grid; place-items: center;
+  width: 1.35rem; height: 1.35rem; border-radius: 0.4rem;
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.live-caps .cap .ico { width: 0.8rem; height: 0.8rem; }
+.cam-nav { margin-left: auto; display: flex; gap: 0.35rem; }
+.cam-side-head .cam-nav .icon-btn { margin-left: 0; }
+.ctl-value { min-width: 2.6rem; display: grid; place-items: center; font-weight: 700; font-size: 0.85rem; }
+.ctl-row .btn.small[data-dzoom] { flex: 0 0 auto; }
+.ctl-loading { display: grid; gap: 0.4rem; }
+.ctl-loading .skeleton { height: 2.4rem; }
+.cam-stage { overflow: hidden; touch-action: none; }
+.cam-stage video, .cam-stage img { transition: transform 0.15s var(--ease); }
+.cam-dlg.is-wide .cam-stage { aspect-ratio: 32 / 9; }
+@media (min-width: 980px) { .cam-dlg.is-wide .cam-dlg-body { grid-template-columns: minmax(0, 1fr); } .cam-dlg.is-wide #camDlgControls { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); align-items: start; } }
 
 .live-tile {
   position: relative;
@@ -1147,3 +1173,5 @@ table.data td[data-label="IP"] .mono { white-space: nowrap; }
 .btn.danger:hover { background: var(--alert-bg); }
 .btn.is-on { background: var(--warn-bg); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
 .ctl-hint { font-size: 0.74rem; color: var(--faint); }
+#camDlgControls { display: grid; gap: 1.15rem; }
+#camDlgHost { font-family: inherit; font-size: 0.8rem; line-height: 1.4; }
