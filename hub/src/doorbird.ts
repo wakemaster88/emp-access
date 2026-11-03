@@ -15,6 +15,7 @@ import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
 import { jpegContainsVehicle } from "./vision.js";
 import type { CameraConfig, LastPerson } from "./cameras.js";
 import { updateLocalStreams } from "./streams.js";
+import { findIpByMac, macForIp } from "./netmap.js";
 import { improve } from "./improve-log.js";
 import { PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
@@ -68,6 +69,9 @@ interface DoorbirdRuntime {
   connected: boolean;
   lastEventAt: string | null;
   lastPerson: LastPerson | null;
+  /** MAC lernen / per MAC wiederfinden (wie bei den Reolink-Kameras). */
+  lastMacLearnAt: number;
+  lastRelocateAt: number;
 }
 
 interface DoorbirdHold {
@@ -606,6 +610,69 @@ function handleMonitorLine(rt: DoorbirdRuntime, line: string): void {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * MAC-basiertes Wiederfinden: Die DoorBird (Tor!) haengt bisher an der festen
+ * IP 192.168.1.191. Der Hub lernt ihre MAC, solange sie erreichbar ist, und
+ * sucht sie bei Verbindungsabbruch per MAC unter neuer IP (lokale ARP-Tabelle,
+ * Router-ARP per SNMP, notfalls Ping-Sweep der direkt angeschlossenen Netze).
+ * ------------------------------------------------------------------------- */
+
+const DOORBIRD_MAC_LEARN_MS = 3_600_000;
+const DOORBIRD_RELOCATE_MS = 60_000;
+
+async function reportDoorbirdNetwork(
+  id: number,
+  data: { macAddress?: string; host?: string }
+): Promise<boolean> {
+  const res = await api(`/api/hub/cameras/${id}/network`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  }).catch(() => null);
+  return !!res?.ok;
+}
+
+async function learnDoorbirdMac(rt: DoorbirdRuntime): Promise<void> {
+  if (Date.now() - rt.lastMacLearnAt < DOORBIRD_MAC_LEARN_MS) return;
+  rt.lastMacLearnAt = Date.now();
+  try {
+    const mac = await macForIp(rt.config.host);
+    if (!mac || mac === rt.config.macAddress) return;
+    if (await reportDoorbirdNetwork(rt.config.id, { macAddress: mac })) {
+      rt.config.macAddress = mac;
+      log(`DoorBird ${rt.config.name}: MAC ${mac} gelernt (${rt.config.host})`);
+    }
+  } catch {
+    // Best-effort
+  }
+}
+
+async function relocateDoorbird(rt: DoorbirdRuntime): Promise<boolean> {
+  if (!rt.config.macAddress || !rt.unreachableLogged) return false;
+  if (Date.now() - rt.lastRelocateAt < DOORBIRD_RELOCATE_MS) return false;
+  rt.lastRelocateAt = Date.now();
+  try {
+    const ip = await findIpByMac(rt.config.macAddress, { sweep: true, exclude: rt.config.host });
+    if (!ip) return false;
+    const oldHost = rt.config.host;
+    // Erst die Cloud umstellen, sonst setzt der naechste Konfig-Abgleich die
+    // alte IP wieder.
+    const ok = await reportDoorbirdNetwork(rt.config.id, { host: ip });
+    rt.config.host = ip;
+    log(`DoorBird ${rt.config.name}: per MAC unter neuer IP gefunden (${oldHost} → ${ip})${ok ? "" : " – Cloud-Update fehlgeschlagen"}`);
+    recordHubEvent({
+      kind: "doorbird",
+      severity: "warn",
+      where: rt.config.name,
+      title: "Neue IP-Adresse",
+      detail: `${oldHost} → ${ip}`,
+    });
+    void updateLocalStreams(oldHost, ip).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** monitor.cgi Dauerverbindung mit Reconnect + Idle-Watchdog. */
 async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
   while (!rt.stopped) {
@@ -637,6 +704,7 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
       }
       rt.connected = true;
       rt.reconnectDelay = RECONNECT_MIN_MS;
+      void learnDoorbirdMac(rt);
       resetIdle();
 
       // Erreichbarkeit melden (UI-Online-Status), solange verbunden.
@@ -691,6 +759,11 @@ async function monitorLoop(rt: DoorbirdRuntime): Promise<void> {
     }
 
     if (rt.stopped) break;
+    // Neue IP nach VLAN-Umzug/DHCP-Wechsel? Dann sofort dort neu verbinden.
+    if (await relocateDoorbird(rt)) {
+      rt.reconnectDelay = RECONNECT_MIN_MS;
+      continue;
+    }
     await new Promise((r) => setTimeout(r, rt.reconnectDelay));
     rt.reconnectDelay = Math.min(rt.reconnectDelay * 2, RECONNECT_MAX_MS);
   }
@@ -743,6 +816,8 @@ export function syncDoorbirds(configs: CameraConfig[]): void {
       connected: false,
       lastEventAt: null,
       lastPerson: null,
+      lastMacLearnAt: 0,
+      lastRelocateAt: 0,
     };
     doorbirds.set(config.id, rt);
     log(`DoorBird ${config.name}: Monitor startet (${config.host})`);

@@ -29,6 +29,9 @@ const VALID_TASK_TYPES = [
   // Soundweb London: Regler setzen bzw. Konfiguration neu laden (Audio → Soundweb).
   "SOUNDWEB_SET",
   "SOUNDWEB_SYNC",
+  // Shelly im LAN: Status lesen bzw. Relais schalten (payload: host, channel, on).
+  "SHELLY_STATUS",
+  "SHELLY_SWITCH",
 ];
 
 /**

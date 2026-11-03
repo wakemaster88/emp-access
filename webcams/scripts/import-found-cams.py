@@ -2,14 +2,19 @@
 """Importiert die im Scan gefundenen Reolink-Cams via API."""
 
 import json
+import os
 import re
 import sys
 import unicodedata
 import urllib.request
 import urllib.error
 
-PASSWORD = "adminBeckum2013!"
-USERNAME = "admin"
+# Zugangsdaten nie im Repo: per Umgebung setzen, z. B.
+#   REOLINK_PASSWORD='…' python3 scripts/import-found-cams.py
+PASSWORD = os.environ.get("REOLINK_PASSWORD", "")
+USERNAME = os.environ.get("REOLINK_USERNAME", "admin")
+if not PASSWORD:
+    sys.exit("REOLINK_PASSWORD fehlt (Kamera-Passwort als Umgebungsvariable setzen).")
 API = "http://localhost:3000"
 
 CAMS = [
