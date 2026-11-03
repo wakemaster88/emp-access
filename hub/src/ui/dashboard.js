@@ -7,6 +7,7 @@
  */
 
 const VIEWS = [
+  "zentrale",
   "lage",
   "systeme",
   "netzwerk",
@@ -18,7 +19,7 @@ const VIEWS = [
 ];
 
 const state = {
-  view: "lage",
+  view: "zentrale",
   overview: null,
   events: [],
   eventSeq: 0,
@@ -227,12 +228,13 @@ function ask(title, text, okLabel = "OK") {
 
 function currentView() {
   const hash = location.hash.replace("#", "");
-  if (hash === "live") return "lage";
-  return VIEWS.includes(hash) ? hash : "lage";
+  if (hash === "live") return "zentrale";
+  return VIEWS.includes(hash) ? hash : "zentrale";
 }
 
 function applyRoute() {
   state.view = currentView();
+  if (state.view !== "zentrale") stopLive();
   for (const view of VIEWS) {
     $(`view-${view}`).hidden = view !== state.view;
   }
@@ -314,7 +316,7 @@ async function refresh() {
 
 function tickInterval() {
   if (state.failures > 0) return Math.min(30000, 2000 * 2 ** state.failures);
-  return state.view === "lage" ? 2000 : 5000;
+  return state.view === "lage" || state.view === "zentrale" ? 2000 : 5000;
 }
 
 let tickTimer = null;
@@ -341,6 +343,7 @@ function render() {
   renderNavCounts(d);
 
   switch (state.view) {
+    case "zentrale": renderZentrale(d); break;
     case "lage": renderLage(d); break;
     case "systeme": renderSysteme(d); break;
     case "netzwerk": renderNetzwerk(); break;
@@ -382,7 +385,7 @@ function renderNavCounts(d) {
     el.className = `nav-count ${tone}`;
   };
   const active = d.cameras.filter((c) => c.activeStates.length).length + d.doorbirds.filter((b) => b.activeStates.length).length;
-  set("lage", active, "alert");
+  set("zentrale", active, "alert");
   set("systeme", d.health.filter((h) => h.state === "warn").length, "warn");
   set("netzwerk", d.autoScan && d.autoScan.devices ? d.autoScan.devices : "");
   const camDown = d.cameras.filter((c) => !c.reachable).length + d.doorbirds.filter((b) => !b.connected).length;
@@ -391,6 +394,488 @@ function renderNavCounts(d) {
   const recentAlerts = state.events.filter((e) => e.severity === "alert" && new Date(e.ts).getTime() > since).length;
   set("ereignisse", recentAlerts, "alert");
 }
+
+/* --------------------------------------------------------------- Zentrale */
+
+/*
+ * Live-Kameras ueber go2rtc auf dem Hub. Signalisierung und Standbilder
+ * laufen durch den Dashboard-Proxy (/api/go2rtc/*), das Video selbst per
+ * WebRTC direkt von go2rtc. Kacheln nutzen den Sub-Stream, die
+ * Grossansicht den Main-Stream. Kacheln werden nur neu gebaut, wenn sich
+ * die Kameraliste aendert – sonst wuerden die Videos bei jedem Poll abreissen.
+ */
+
+function storeGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function storeSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // privater Modus
+  }
+}
+
+const live = {
+  cols: Number(storeGet("hub-live-cols")) || 3,
+  /** null = noch nicht gefragt, sonst ob go2rtc antwortet. */
+  go2rtc: null,
+  streams: [],
+  streamsAt: 0,
+  loading: false,
+  signature: "",
+  /** Kamera-ID -> Stop-Funktion der WebRTC-Verbindung. */
+  peers: new Map(),
+  focusId: null,
+  focusStop: null,
+  presets: {},
+};
+
+async function loadStreams(force = false) {
+  if (live.loading || (!force && Date.now() - live.streamsAt < 30000)) return;
+  live.loading = true;
+  try {
+    const r = await getJson("/api/go2rtc/streams");
+    live.go2rtc = !!r.reachable;
+    live.streams = r.streams || [];
+  } catch {
+    live.go2rtc = false;
+    live.streams = [];
+  } finally {
+    live.streamsAt = Date.now();
+    live.loading = false;
+    if (state.view === "zentrale" && state.overview) renderZentrale(state.overview);
+  }
+}
+
+/** Passenden go2rtc-Stream finden: per Kamera-Host aus der RTSP-URL. */
+function streamFor(cam, quality) {
+  const names = live.streams.filter((s) => s.host === cam.host).map((s) => s.name);
+  if (!names.length && cam.kind === "DOORBIRD" && live.streams.some((s) => s.name === "doorbird")) {
+    return "doorbird";
+  }
+  if (!names.length) return null;
+  return names.find((n) => n.endsWith(`_${quality}`)) || names.find((n) => !/_(main|sub)$/.test(n)) || names[0];
+}
+
+function liveCams(d) {
+  return d.cameras
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      host: c.host,
+      kind: "REOLINK",
+      reachable: c.reachable,
+      states: c.activeStates,
+      lastEventAt: c.lastEventAt,
+    }))
+    .concat(
+      d.doorbirds.map((b) => ({
+        id: b.id,
+        name: b.name,
+        host: b.host,
+        kind: "DOORBIRD",
+        reachable: b.connected,
+        states: b.activeStates,
+        lastEventAt: b.lastEventAt,
+        hold: b.hold,
+      }))
+    );
+}
+
+/** Minimaler WebRTC-Client fuer go2rtc; verbindet bei Abbruch neu. */
+function startRtc(video, src, onState) {
+  if (typeof RTCPeerConnection === "undefined") {
+    onState("error");
+    return () => {};
+  }
+  let pc = null;
+  let stopped = false;
+  let timer = null;
+  let attempts = 0;
+
+  const cleanup = () => {
+    if (!pc) return;
+    pc.ontrack = null;
+    pc.onconnectionstatechange = null;
+    try {
+      pc.close();
+    } catch {
+      // schon zu
+    }
+    pc = null;
+  };
+  const retry = () => {
+    if (stopped) return;
+    attempts++;
+    onState("error");
+    cleanup();
+    clearTimeout(timer);
+    timer = setTimeout(connect, Math.min(15000, 2000 * 2 ** Math.min(3, attempts - 1)));
+  };
+
+  async function connect() {
+    if (stopped) return;
+    try {
+      pc = new RTCPeerConnection({ iceServers: [] });
+      pc.addTransceiver("video", { direction: "recvonly" });
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.ontrack = (ev) => {
+        if (ev.streams[0] && video.srcObject !== ev.streams[0]) {
+          video.srcObject = ev.streams[0];
+          video.play().catch(() => {});
+        }
+      };
+      pc.onconnectionstatechange = () => {
+        if (!pc) return;
+        const st = pc.connectionState;
+        if (st === "connected") {
+          attempts = 0;
+          onState("live");
+        } else if (st === "failed" || st === "disconnected" || st === "closed") {
+          retry();
+        }
+      };
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const res = await fetch(`/api/go2rtc/webrtc?src=${encodeURIComponent(src)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/sdp" },
+        body: offer.sdp || "",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const answer = await res.text();
+      if (stopped || !pc) return;
+      await pc.setRemoteDescription({ type: "answer", sdp: answer });
+    } catch {
+      retry();
+    }
+  }
+
+  onState("connecting");
+  connect();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    cleanup();
+    video.srcObject = null;
+  };
+}
+
+function frameUrl(src) {
+  return `/api/go2rtc/frame.jpeg?src=${encodeURIComponent(src)}&t=${Date.now()}`;
+}
+
+function tileHtml(c) {
+  const src = streamFor(c, "sub");
+  return `<article class="live-tile" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
+    <img alt="">
+    <video autoplay muted playsinline></video>
+    <div class="live-empty">${icon(c.kind === "DOORBIRD" ? "door" : "camera")}<span>${
+      src ? "Verbinde …" : live.go2rtc === false ? "go2rtc nicht erreichbar" : live.go2rtc === null ? "Lade Streams …" : "Kein Stream in go2rtc"
+    }</span></div>
+    <div class="live-top">
+      <span class="live-tag mode" hidden></span>
+      <span class="live-name">${esc(c.name)}</span>
+      <span class="live-states"></span>
+    </div>
+    <div class="live-bottom">
+      <span class="live-tag off" hidden>OFFLINE</span>
+      <span class="mono">${esc(c.host)}</span>
+      <span class="grow live-ago"></span>
+    </div>
+  </article>`;
+}
+
+function setTileMode(tile) {
+  const tag = tile.querySelector(".live-tag.mode");
+  const isLive = tile.classList.contains("is-live");
+  const hasPic = tile.classList.contains("has-picture");
+  tag.hidden = !isLive && !hasPic;
+  tag.className = `live-tag mode ${isLive ? "live" : "snap"}`;
+  tag.textContent = isLive ? "LIVE" : "BILD";
+}
+
+function ensureTileStream(tile, c) {
+  const src = streamFor(c, "sub");
+  if (!src) return;
+  if (!live.peers.has(c.id)) {
+    const video = tile.querySelector("video");
+    const img = tile.querySelector("img");
+    img.onload = () => {
+      tile.classList.add("has-picture");
+      setTileMode(tile);
+    };
+    const stop = startRtc(video, src, (st) => {
+      tile.dataset.rtc = st;
+      tile.classList.toggle("is-live", st === "live");
+      if (st === "live") tile.classList.add("has-picture");
+      setTileMode(tile);
+    });
+    live.peers.set(c.id, stop);
+  }
+  // Standbild als Vorschau und als Ersatz, solange WebRTC nicht steht.
+  const img = tile.querySelector("img");
+  const last = Number(tile.dataset.frameAt || 0);
+  const wait = tile.dataset.rtc === "error" ? 5000 : 20000;
+  if (!tile.classList.contains("is-live") && Date.now() - last > (last ? wait : 0)) {
+    tile.dataset.frameAt = String(Date.now());
+    img.src = frameUrl(src);
+  }
+}
+
+function stopTiles() {
+  for (const stop of live.peers.values()) stop();
+  live.peers.clear();
+}
+
+function stopLive() {
+  stopTiles();
+  live.signature = "";
+  if ($("camDlg") && $("camDlg").open) $("camDlg").close();
+}
+
+function renderZentrale(d) {
+  loadStreams();
+  const cams = liveCams(d);
+  const grid = $("liveGrid");
+  grid.style.setProperty("--cols", String(live.cols));
+  for (const b of document.querySelectorAll("#liveCols button")) {
+    b.setAttribute("aria-pressed", String(Number(b.dataset.cols) === live.cols));
+  }
+
+  const sig = `${live.go2rtc}|${cams.map((c) => `${c.id}:${c.host}:${streamFor(c, "sub")}`).join("|")}`;
+  if (sig !== live.signature) {
+    live.signature = sig;
+    stopTiles();
+    grid.innerHTML = cams.length ? cams.map(tileHtml).join("") : empty("Keine Kameras konfiguriert.");
+  }
+
+  for (const c of cams) {
+    const tile = grid.querySelector(`[data-live="${c.id}"]`);
+    if (!tile) continue;
+    tile.classList.toggle("is-active", c.states.length > 0);
+    tile.classList.toggle("is-offline", !c.reachable);
+    const st = tile.querySelector(".live-states");
+    const html = c.states.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("");
+    if (st.dataset.h !== html) {
+      st.innerHTML = html;
+      st.dataset.h = html;
+    }
+    tile.querySelector(".live-tag.off").hidden = c.reachable;
+    tile.querySelector(".live-ago").textContent = c.lastEventAt ? `Signal ${ago(c.lastEventAt)}` : "";
+    ensureTileStream(tile, c);
+  }
+
+  const liveCount = [...grid.querySelectorAll(".live-tile.is-live")].length;
+  const active = cams.filter((c) => c.states.length);
+  $("liveSub").textContent =
+    live.go2rtc === false
+      ? `go2rtc auf dem Hub antwortet nicht – ${cams.length} Kameras ohne Livebild.`
+      : `${liveCount} von ${cams.length} live${active.length ? ` · ${active.map((c) => `${c.name}: ${c.states.join(", ")}`).join(" · ")}` : ""}`;
+
+  if ($("camDlg").open) renderFocusState(d);
+}
+
+/* Grossansicht */
+
+function focusCam() {
+  return state.overview ? liveCams(state.overview).find((c) => c.id === live.focusId) : null;
+}
+
+function openFocus(id) {
+  live.focusId = id;
+  const c = focusCam();
+  if (!c) return;
+  const dlg = $("camDlg");
+  $("camDlgTitle").textContent = c.name;
+  $("camDlgHost").textContent = `${c.host} · ${c.kind === "DOORBIRD" ? "DoorBird" : "Reolink"}`;
+  $("camDlgControls").innerHTML = controlsHtml(c);
+
+  const video = $("camDlgVideo");
+  const img = $("camDlgImg");
+  img.removeAttribute("src");
+  if (live.focusStop) live.focusStop();
+  live.focusStop = null;
+  const src = streamFor(c, "main");
+  if (src) {
+    img.src = frameUrl(src);
+    live.focusStop = startRtc(video, src, (st) => {
+      video.style.opacity = st === "live" ? "1" : "0";
+      $("camDlg").dataset.rtc = st;
+      renderFocusState(state.overview);
+    });
+  }
+  if (!dlg.open) dlg.showModal();
+  renderFocusState(state.overview);
+}
+
+function renderFocusState(d) {
+  const c = d && focusCam();
+  if (!c) return;
+  const rtc = $("camDlg").dataset.rtc;
+  const html = `${rtc === "live" ? '<span class="live-tag live">LIVE</span>' : !streamFor(c, "main") ? '<span class="live-tag off">KEIN STREAM</span>' : rtc === "error" ? '<span class="live-tag snap">STANDBILD</span>' : '<span class="live-tag snap">VERBINDE …</span>'}${c.states
+    .map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`)
+    .join("")}`;
+  const el = $("camDlgState");
+  if (el.dataset.h !== html) {
+    el.innerHTML = html;
+    el.dataset.h = html;
+  }
+}
+
+function controlsHtml(c) {
+  const snap = `<div class="ctl-group"><span class="ctl-label">Bild</span><div class="ctl-row"><button type="button" class="btn" data-cam="CAMERA_SNAPSHOT">${icon("snap")}Schnappschuss in die Cloud</button></div></div>`;
+  if (c.kind === "DOORBIRD") {
+    return `<div class="ctl-group"><span class="ctl-label">Tür</span><div class="ctl-row"><button type="button" class="btn primary" data-cam="DOORBIRD_OPEN">${icon("unlock")}Tür öffnen</button></div>
+      ${c.hold ? `<span class="ctl-hint">Wird offen gehalten bis ${esc(clock(c.hold.until))}</span>` : ""}</div>${snap}`;
+  }
+  const presets = live.presets[c.id];
+  return `
+    <div class="ctl-group">
+      <span class="ctl-label">Schwenken und Zoom</span>
+      <div class="dpad">
+        <button type="button" class="btn" data-ptz="Up" aria-label="hoch">${icon("chev")}</button>
+        <button type="button" class="btn" data-ptz="Left" aria-label="links">${icon("chev")}</button>
+        <span class="center">${icon("target")}</span>
+        <button type="button" class="btn" data-ptz="Right" aria-label="rechts">${icon("chev")}</button>
+        <button type="button" class="btn" data-ptz="Down" aria-label="runter">${icon("chev")}</button>
+      </div>
+      <div class="ctl-row">
+        <button type="button" class="btn small" data-ptz="ZoomDec">${icon("minus")}Zoom</button>
+        <button type="button" class="btn small" data-ptz="ZoomInc">${icon("plus")}Zoom</button>
+      </div>
+      <span class="ctl-hint">Pfeiltasten und + / − gehen auch. Nur für schwenkbare Kameras.</span>
+    </div>
+    <div class="ctl-group">
+      <span class="ctl-label">Positionen</span>
+      <div class="ctl-row" id="presetRow">${
+        presets
+          ? presets.length
+            ? presets.map((p) => `<button type="button" class="btn small" data-preset="${esc(p.id)}">${esc(p.name)}</button>`).join("")
+            : '<span class="ctl-hint">Keine Positionen gespeichert.</span>'
+          : `<button type="button" class="btn small" data-presets-load>${icon("target")}Positionen laden</button>`
+      }</div>
+    </div>
+    <div class="ctl-group">
+      <span class="ctl-label">Licht</span>
+      <div class="ctl-row">
+        <button type="button" class="btn small" data-cam="CAMERA_SPOTLIGHT" data-on="true">${icon("bulb")}Scheinwerfer an</button>
+        <button type="button" class="btn small" data-cam="CAMERA_SPOTLIGHT" data-on="false">aus</button>
+      </div>
+      <div class="ctl-row">
+        <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Auto">${icon("moon")}IR auto</button>
+        <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="On">an</button>
+        <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Off">aus</button>
+      </div>
+    </div>
+    <div class="ctl-group">
+      <span class="ctl-label">Sirene</span>
+      <div class="ctl-row">
+        <button type="button" class="btn small danger" data-cam="CAMERA_SIREN" data-on="true">${icon("siren")}Sirene auslösen</button>
+        <button type="button" class="btn small" data-cam="CAMERA_SIREN" data-on="false">Stopp</button>
+      </div>
+    </div>
+    ${snap}`;
+}
+
+async function camAction(type, payload, label, button) {
+  if (button) button.disabled = true;
+  try {
+    const r = await shellyAction(type, payload);
+    if (r.success) toast(`${label}: erledigt`, "ok");
+    else toast(`${label}: ${r.error || "fehlgeschlagen"}`, "err");
+    return r;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function ptz(op, button) {
+  const c = focusCam();
+  if (!c || c.kind === "DOORBIRD") return;
+  // Kurzer Fahrimpuls; der Hub stoppt nach durationMs selbst.
+  const zoom = op.startsWith("Zoom");
+  shellyAction("CAMERA_PTZ", { cameraId: c.id, op, speed: zoom ? 16 : 32, durationMs: zoom ? 400 : 700 }).then((r) => {
+    if (!r.success) toast(`${c.name}: ${r.error || "Schwenken fehlgeschlagen"}`, "err");
+  });
+  if (button) {
+    button.classList.add("is-on");
+    setTimeout(() => button.classList.remove("is-on"), 700);
+  }
+}
+
+async function onCamControl(el) {
+  const c = focusCam();
+  if (!c) return;
+  if (el.dataset.ptz) return ptz(el.dataset.ptz, el);
+  if (el.dataset.preset) {
+    return camAction("CAMERA_PTZ", { cameraId: c.id, op: "ToPos", presetId: Number(el.dataset.preset), speed: 32 }, `${c.name}: ${el.textContent.trim()}`, el);
+  }
+  if (el.hasAttribute("data-presets-load")) {
+    el.disabled = true;
+    const r = await shellyAction("CAMERA_PTZ_PRESETS", { cameraId: c.id });
+    live.presets[c.id] = r.success ? r.result.presets || [] : [];
+    if (!r.success) toast(`${c.name}: ${r.error || "Positionen nicht lesbar"}`, "err");
+    $("camDlgControls").innerHTML = controlsHtml(c);
+    return;
+  }
+  const type = el.dataset.cam;
+  if (type === "DOORBIRD_OPEN") {
+    const ok = await ask("Tür öffnen?", `${c.name} löst das Türrelais sofort aus.`, "Öffnen");
+    if (ok) camAction(type, { cameraId: c.id }, c.name, el);
+    return;
+  }
+  if (type === "CAMERA_SIREN" && el.dataset.on === "true") {
+    const ok = await ask("Sirene auslösen?", `Die Sirene von ${c.name} heult sofort laut los.`, "Auslösen");
+    if (!ok) return;
+  }
+  const payload = { cameraId: c.id };
+  if (el.dataset.on) payload.on = el.dataset.on === "true";
+  if (el.dataset.state) payload.state = el.dataset.state;
+  const label = { CAMERA_SPOTLIGHT: "Scheinwerfer", CAMERA_IR: "Infrarot", CAMERA_SIREN: "Sirene", CAMERA_SNAPSHOT: "Schnappschuss" }[type] || type;
+  camAction(type, payload, `${c.name}: ${label}`, el);
+}
+
+$("liveGrid").addEventListener("click", (ev) => {
+  const tile = ev.target.closest("[data-live]");
+  if (tile) openFocus(Number(tile.dataset.live));
+});
+$("liveGrid").addEventListener("keydown", (ev) => {
+  const tile = ev.target.closest("[data-live]");
+  if (tile && (ev.key === "Enter" || ev.key === " ")) {
+    ev.preventDefault();
+    openFocus(Number(tile.dataset.live));
+  }
+});
+$("liveCols").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-cols]");
+  if (!b) return;
+  live.cols = Number(b.dataset.cols);
+  storeSet("hub-live-cols", String(live.cols));
+  if (state.overview) renderZentrale(state.overview);
+});
+$("liveFull").addEventListener("click", () => {
+  const el = $("view-zentrale");
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+});
+$("camDlgControls").addEventListener("click", (ev) => {
+  const el = ev.target.closest("button");
+  if (el) onCamControl(el);
+});
+$("camDlgClose").addEventListener("click", () => $("camDlg").close());
+$("camDlg").addEventListener("close", () => {
+  if (live.focusStop) live.focusStop();
+  live.focusStop = null;
+  live.focusId = null;
+  delete $("camDlg").dataset.rtc;
+  $("camDlgVideo").style.opacity = "0";
+});
 
 /* ------------------------------------------------------------------- Lage */
 
@@ -1168,9 +1653,17 @@ $("themeBtn").addEventListener("click", () => {
   toast(`Design: ${next === "auto" ? "automatisch" : next === "light" ? "hell" : "dunkel"}`);
 });
 
-/* Tastatur: 1–8 wechseln die Ansicht, "/" springt in den Gerätefilter. */
+/* Tastatur: 1–9 wechseln die Ansicht, "/" springt in den Gerätefilter. */
 document.addEventListener("keydown", (ev) => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if ($("camDlg").open) {
+    const dir = { ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right", "+": "ZoomInc", "-": "ZoomDec" }[ev.key];
+    if (dir) {
+      ev.preventDefault();
+      if (!ev.repeat) ptz(dir);
+    }
+    return;
+  }
   const t = ev.target;
   if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
     if (ev.key === "Escape" && t.id === "netFilter") {
@@ -1204,7 +1697,12 @@ tickClock();
 
 window.addEventListener("hashchange", applyRoute);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refresh();
+  if (document.hidden) {
+    // Hintergrund-Tab: keine Videoverbindungen offen halten.
+    stopLive();
+  } else {
+    refresh();
+  }
 });
 
 renderEventFilter();
