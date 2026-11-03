@@ -12,9 +12,11 @@
  * eine neue IP bekommen: gesucht wird per MAC, nicht per fester IP.
  */
 import { execFile } from "node:child_process";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
-import { log } from "./config.js";
+import { CONFIG, log } from "./config.js";
 import { community, oidSuffix, snmpWalk } from "./snmp.js";
 
 const exec = promisify(execFile);
@@ -248,21 +250,90 @@ export async function pingSweep(subnets: Subnet[]): Promise<Map<string, number |
 
 // ── ARP lokal + Router ───────────────────────────────────────────────────────
 
+function parseArp(stdout: string): Map<string, { mac: string; iface: string | null }> {
+  const map = new Map<string, { mac: string; iface: string | null }>();
+  for (const line of stdout.split("\n")) {
+    // macOS: "? (192.168.1.4) at 8c:3b:ad:65:b1:0 on en0 ifscope [ethernet]"
+    const m = line.match(/\(([\d.]+)\) at ([0-9a-fA-F:]+)(?: on (\S+))?/);
+    if (!m || m[2] === "ff:ff:ff:ff:ff:ff" || /incomplete/i.test(line)) continue;
+    const mac = normalizeMac(m[2]);
+    if (mac) map.set(m[1], { mac, iface: m[3] ?? null });
+  }
+  return map;
+}
+
+/**
+ * macOS 27 liefert `arp` eine leere Tabelle, wenn es von node (oder python)
+ * gestartet wird – ohne Fehler. Startet launchd das Programm direkt, ist die
+ * Tabelle vollstaendig. Darum als Umweg: einmaligen launchd-Job anlegen, der
+ * `arp -an` in eine Datei schreibt, und die Datei lesen.
+ */
+async function readArpViaLaunchd(): Promise<string> {
+  const dir = path.join(CONFIG.hubDir, ".cache");
+  await mkdir(dir, { recursive: true });
+  const label = `com.emp-access.arp.${process.pid}`;
+  const out = path.join(dir, "arp.txt");
+  await rm(out, { force: true });
+  await exec("launchctl", ["remove", label]).catch(() => undefined);
+  await exec("launchctl", ["submit", "-l", label, "-o", out, "--", "/usr/sbin/arp", "-an"], { timeout: 5000 });
+  try {
+    // Warten, bis arp fertig ist (Datei waechst nicht mehr).
+    let last = -1;
+    for (let i = 0; i < 25; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      const size = await stat(out).then((s) => s.size).catch(() => -1);
+      if (size > 0 && size === last) break;
+      last = size;
+    }
+    return await readFile(out, "utf8").catch(() => "");
+  } finally {
+    // submit-Jobs laufen sonst nach KeepAlive-Art immer wieder an.
+    await exec("launchctl", ["remove", label]).catch(() => undefined);
+  }
+}
+
+let arpViaLaunchd = false;
+let arpCache: { at: number; map: Map<string, { mac: string; iface: string | null }> } | null = null;
+const ARP_CACHE_MS = 15_000;
+
+export function invalidateArpCache(): void {
+  arpCache = null;
+}
+
+let arpInFlight: Promise<Map<string, { mac: string; iface: string | null }>> | null = null;
+
 /** Lokale ARP-Tabelle lesen -> IP/MAC/Interface. */
 export async function readArp(): Promise<Map<string, { mac: string; iface: string | null }>> {
-  const map = new Map<string, { mac: string; iface: string | null }>();
+  if (arpCache && Date.now() - arpCache.at < ARP_CACHE_MS) return arpCache.map;
+  // Ein launchd-Job zur Zeit (gleiches Label).
+  arpInFlight ??= readArpNow().finally(() => {
+    arpInFlight = null;
+  });
+  return arpInFlight;
+}
+
+async function readArpNow(): Promise<Map<string, { mac: string; iface: string | null }>> {
+  let map = new Map<string, { mac: string; iface: string | null }>();
   try {
-    const { stdout } = await exec("arp", ["-a", "-n"], { timeout: 15000 });
-    for (const line of stdout.split("\n")) {
-      // macOS: "? (192.168.1.4) at 8c:3b:ad:65:b1:0 on en0 ifscope [ethernet]"
-      const m = line.match(/\(([\d.]+)\) at ([0-9a-fA-F:]+)(?: on (\S+))?/);
-      if (!m || m[2] === "ff:ff:ff:ff:ff:ff" || /incomplete/i.test(line)) continue;
-      const mac = normalizeMac(m[2]);
-      if (mac) map.set(m[1], { mac, iface: m[3] ?? null });
+    if (!arpViaLaunchd) {
+      const { stdout } = await exec("arp", ["-a", "-n"], { timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+      map = parseArp(stdout);
+    }
+    // Leer, obwohl der Hub Netz-Interfaces hat? -> macOS-Filter, launchd-Umweg.
+    if (map.size === 0 && process.platform === "darwin") {
+      const viaLaunchd = parseArp(await readArpViaLaunchd());
+      if (viaLaunchd.size > 0) {
+        if (!arpViaLaunchd) log(`ARP-Tabelle leer für den Hub-Prozess (macOS) – lese sie über launchd (${viaLaunchd.size} Einträge).`);
+        arpViaLaunchd = true;
+        map = viaLaunchd;
+      } else {
+        arpViaLaunchd = false;
+      }
     }
   } catch (e) {
     log(`ARP-Lesen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
   }
+  arpCache = { at: Date.now(), map };
   return map;
 }
 
@@ -343,6 +414,7 @@ async function sweepDirectSubnets(): Promise<void> {
     const targets = knownSubnets().filter((s) => s.iface || routerHost());
     if (targets.length === 0) return;
     await pingSweep(targets);
+    arpCache = null;
     await readRouterArp(true);
   })().finally(() => {
     relocateSweep = null;

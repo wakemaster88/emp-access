@@ -25,6 +25,7 @@ import {
   pingSweep,
   readArp,
   readRouterArp,
+  invalidateArpCache,
   subnetForIp,
   type Subnet,
 } from "./netmap.js";
@@ -214,6 +215,7 @@ async function fullScan(): Promise<{ devices: ScannedDevice[]; subnets: SubnetSu
   const pings = await pingSweep(subnets);
   // Nach dem Sweep ist die ARP-Tabelle des Routers frisch -> neu lesen.
   await readRouterArp(true);
+  invalidateArpCache();
   const table = await macTable();
 
   // Kandidaten: alle per Ping erreichbaren IPs, lokale ARP-Eintraege und
