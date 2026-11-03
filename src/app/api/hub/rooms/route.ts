@@ -1,0 +1,88 @@
+import { NextRequest, NextResponse } from "next/server";
+import { validateApiToken } from "@/lib/api-auth";
+import { isOperatingAt } from "@/lib/operating-hours";
+import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
+
+/**
+ * GET (Hub, Token-Auth): Raeume mit Geraeten, Kameras, Audiozonen und Regeln
+ * fuer die Raum-Steuerung im Hub-Dashboard.
+ *
+ * Die Cloud bleibt die einzige Stelle, an der Raeume und Regeln gepflegt
+ * werden; der Hub spiegelt diesen Stand, haelt ihn auf der Platte vor und
+ * schaltet Shellys damit direkt im LAN. Zugangsdaten (Shelly-Cloud-Keys,
+ * Geraete-Token) gehen bewusst nicht mit.
+ */
+export async function GET(request: NextRequest) {
+  const auth = await validateApiToken(request);
+  if ("error" in auth) return auth.error;
+  const { db, account } = auth;
+
+  const deviceSelect = {
+    id: true,
+    name: true,
+    type: true,
+    category: true,
+    ipAddress: true,
+    shellyId: true,
+    coverUpChannel: true,
+    coverDownChannel: true,
+    coverRuntimeSec: true,
+    pulseSeconds: true,
+    isActive: true,
+    task: true,
+    lastUpdate: true,
+    keyRoomId: true,
+  } as const;
+
+  const [rooms, unassigned, acc] = await Promise.all([
+    db.keyRoom.findMany({
+      where: { accountId: account.id },
+      orderBy: [{ building: "asc" }, { floor: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        number: true,
+        building: true,
+        floor: true,
+        devices: { where: { isActive: true }, select: deviceSelect, orderBy: { name: "asc" } },
+        cameras: { select: { id: true, name: true, kind: true }, orderBy: { name: "asc" } },
+        audioZones: {
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { sortOrder: "asc" },
+        },
+        operatingSchedule: { select: { id: true, name: true, ...scheduleSpecInclude } },
+        rules: {
+          select: { id: true, name: true, trigger: true, isActive: true, lastRunAt: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        },
+      },
+    }),
+    db.device.findMany({
+      where: { accountId: account.id, isActive: true, keyRoomId: null },
+      select: deviceSelect,
+      orderBy: { name: "asc" },
+    }),
+    db.account.findUnique({ where: { id: account.id }, select: { timezone: true } }),
+  ]);
+
+  const tz = acc?.timezone || DEFAULT_TIMEZONE;
+  const now = new Date();
+
+  return NextResponse.json({
+    at: now.toISOString(),
+    timezone: tz,
+    rooms: rooms.map(({ operatingSchedule, ...room }) => ({
+      ...room,
+      operating: operatingSchedule
+        ? {
+            id: operatingSchedule.id,
+            name: operatingSchedule.name,
+            open: isOperatingAt(toScheduleSpec(operatingSchedule), now, tz),
+          }
+        : null,
+    })),
+    unassigned,
+  });
+}

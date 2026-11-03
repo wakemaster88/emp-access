@@ -8,13 +8,15 @@
  * Zugriff: ohne HUB_DASHBOARD_TOKEN nur 127.0.0.1. Mit Token bindet der
  * Server ans LAN und verlangt das Token fuer jede Anfrage von aussen.
  */
+import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
+import { controlSmart, listSmartDevices, pairSmart } from "./smart-devices.js";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import path from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { CONFIG, log } from "./config.js";
+import { CONFIG, api, log } from "./config.js";
 import {
   STATE,
   currentEventSeq,
@@ -606,6 +608,69 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         router: routerHost(),
         vlansConfigured: configuredVlans().length > 0,
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/rooms") {
+      const live = url.searchParams.get("live") === "1";
+      return json(res, 200, {
+        ...roomsPayload(),
+        live: live ? await liveStates(url.searchParams.get("fresh") === "1") : null,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/rooms/sync") {
+      const r = await syncRooms();
+      return json(res, r.ok ? 200 : 502, r);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/rooms/device") {
+      const body = await readBody(req);
+      const id = Number(body.id);
+      if (!Number.isInteger(id) || id <= 0) return json(res, 400, { error: "Ungültige Geräte-ID" });
+      const r = await deviceAction(id, String(body.action ?? ""));
+      const local = --actionCounter;
+      recordTask({
+        id: local,
+        type: `GERÄT ${String(body.action ?? "")} (${r.via})`,
+        success: r.ok,
+        error: r.error,
+        result: { deviceId: id, on: r.on ?? null },
+      });
+      return json(res, r.ok ? 200 : 502, r);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/smart") {
+      return json(res, 200, await listSmartDevices(url.searchParams.get("fresh") === "1"));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/smart/control") {
+      const body = await readBody(req);
+      const r = await controlSmart(
+        String(body.key ?? ""),
+        body.on === true,
+        typeof body.brightness === "number" ? body.brightness : undefined
+      );
+      return json(res, r.ok ? 200 : 502, r);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/smart/pair") {
+      const body = await readBody(req);
+      const r = await pairSmart(String(body.id ?? ""));
+      return json(res, r.ok ? 200 : 502, r);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/smart/assign") {
+      // Raum-Zuordnung gehoert der Cloud – der Hub reicht sie nur durch und
+      // laedt danach die Raeume neu.
+      const body = await readBody(req);
+      try {
+        const cloud = await api("/api/hub/devices", { method: "POST", body: JSON.stringify(body) });
+        const data = await cloud.json().catch(() => ({}));
+        if (cloud.ok) await syncRooms();
+        return json(res, cloud.ok ? 200 : cloud.status, data);
+      } catch (e) {
+        return json(res, 502, { error: `Cloud nicht erreichbar (${e instanceof Error ? e.message : e})` });
+      }
     }
 
     if (url.pathname.startsWith("/api/detection")) {

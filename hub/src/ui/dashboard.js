@@ -9,6 +9,8 @@
 const VIEWS = [
   "zentrale",
   "lage",
+  "raeume",
+  "geraete",
   "systeme",
   "netzwerk",
   "kameras",
@@ -30,6 +32,15 @@ const state = {
   eventFilter: "alle",
   netFilter: "",
   netVlan: "alle",
+  /** Raeume aus der Cloud plus Live-Zustand der Shellys (GET /api/rooms). */
+  rooms: null,
+  roomBuilding: "alle",
+  /** Geraete-IDs, deren Schaltbefehl gerade laeuft. */
+  roomBusy: new Set(),
+  /** Automatisch gefundene steuerbare Geraete (GET /api/smart). */
+  smart: null,
+  smartVendor: "alle",
+  smartBusy: new Set(),
   /** Shelly-Status je IP (per SHELLY_STATUS geholt). */
   shelly: {},
   loaded: false,
@@ -288,12 +299,16 @@ async function refresh() {
   try {
     const wantNet = state.view === "netzwerk";
     const wantImprove = state.view === "systeme";
-    const [overview, events, network, improve] = await Promise.all([
+    const wantRooms = state.view === "raeume";
+    const [overview, events, network, improve, rooms] = await Promise.all([
       getJson("/api/overview"),
       getJson(`/api/events?since=${state.eventSeq}`),
       wantNet ? getJson("/api/network") : null,
       wantImprove ? getJson("/api/improve?events=0") : null,
+      wantRooms ? getJson("/api/rooms?live=1") : state.view === "geraete" && !state.rooms ? getJson("/api/rooms") : null,
     ]);
+    if (rooms) state.rooms = rooms;
+    if (state.view === "geraete") state.smart = await getJson("/api/smart");
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
     mergeEvents(events.events ?? []);
@@ -345,6 +360,8 @@ function render() {
   switch (state.view) {
     case "zentrale": renderZentrale(d); break;
     case "lage": renderLage(d); break;
+    case "raeume": renderRaeume(d); break;
+    case "geraete": renderGeraete(); break;
     case "systeme": renderSysteme(d); break;
     case "netzwerk": renderNetzwerk(); break;
     case "kameras": renderKameras(d); break;
@@ -393,6 +410,9 @@ function renderNavCounts(d) {
   const since = Date.now() - 10 * 60 * 1000;
   const recentAlerts = state.events.filter((e) => e.severity === "alert" && new Date(e.ts).getTime() > since).length;
   set("ereignisse", recentAlerts, "alert");
+  const roomsOn = state.rooms && state.rooms.live ? Object.values(state.rooms.live).filter((l) => l.on === true).length : 0;
+  set("raeume", roomsOn, "ok");
+  set("geraete", state.smart ? state.smart.devices.filter((x) => x.needsPairing).length : 0, "warn");
 }
 
 /* --------------------------------------------------------------- Zentrale */
@@ -2422,6 +2442,491 @@ async function runAction(type, payload, button) {
     refresh();
   }
 }
+
+/* ------------------------------------------------------------------ Raeume */
+
+/*
+ * Raum-Steuerung: Stand kommt aus der Cloud (Raeume, Geraete, Regeln), der
+ * Hub schaltet Shellys direkt im LAN und reicht den Rest an die Cloud weiter
+ * (rooms.ts). Jede Kachel zeigt nur die Knoepfe, die das Geraet versteht.
+ */
+
+const TRIGGER_LABELS = {
+  TIME: "Uhrzeit",
+  OPENING: "Betriebsbeginn",
+  CLOSING: "Betriebsende",
+  SUNRISE: "Sonnenaufgang",
+  SUNSET: "Sonnenuntergang",
+  MOTION: "Bewegung",
+  DEVICE_SWITCHED: "Gerät geschaltet",
+  SCAN: "Zutritt",
+  IDLE: "Keine Bewegung",
+};
+
+const CATEGORY_LABELS = {
+  DREHKREUZ: "Drehkreuz",
+  TUER: "Tür",
+  SENSOR: "Sensor",
+  SCHALTER: "Schalter",
+  BELEUCHTUNG: "Licht",
+  AUDIO: "Audio",
+  MARKISE: "Markise",
+  ROLLTOR: "Rolltor",
+  TASTER: "Taster",
+};
+
+const TYPE_LABELS = {
+  SHELLY: "Shelly",
+  NUKI_SMARTLOCK: "Nuki",
+  LOQED_SMARTLOCK: "LOQED",
+  GARDENA_VALVE: "Gardena",
+  AUDIO_PLAYER: "Audio-Player",
+  RASPBERRY_PI: "Scanner-Pi",
+};
+
+/** Bedienart eines Geraets – entscheidet Knoepfe, Icon und Rueckfrage. */
+function devKind(dev) {
+  const cat = dev.category || "";
+  if (dev.type === "NUKI_SMARTLOCK" || dev.type === "LOQED_SMARTLOCK") return "lock";
+  if (dev.type === "GARDENA_VALVE") return "valve";
+  if (dev.type === "AUDIO_PLAYER" || cat === "AUDIO") return "audio";
+  if (cat === "MARKISE" || cat === "ROLLTOR") return "cover";
+  if (cat === "SENSOR") return "sensor";
+  if (dev.type === "SHELLY" && cat === "TASTER") return "pulse";
+  if (dev.type === "SHELLY" && (cat === "SCHALTER" || cat === "BELEUCHTUNG")) return "toggle";
+  return "door";
+}
+
+const KIND_ICON = {
+  lock: "lock",
+  valve: "drop",
+  audio: "speaker",
+  cover: "blinds",
+  sensor: "activity",
+  pulse: "zap",
+  toggle: "bulb",
+  door: "door",
+};
+
+function devButtons(dev, kind, live) {
+  const b = (action, label, cls = "") =>
+    `<button type="button" class="btn small ${cls}" data-dev="${dev.id}" data-dev-action="${action}"${state.roomBusy.has(dev.id) ? " disabled" : ""}>${esc(label)}</button>`;
+  switch (kind) {
+    case "toggle":
+      return live && live.on ? b("deactivate", "Ausschalten", "on") : b("open", "Einschalten", "primary");
+    case "pulse":
+      return b("open", `Auslösen (${dev.pulseSeconds || 30} s)`, "primary");
+    case "cover":
+      return b("open", "Auf") + b("stop", "Stopp") + b("close", "Zu");
+    case "lock":
+      return b("open", "Öffnen", "primary") + b("deactivate", "Abschließen");
+    case "valve":
+      return b("open", "Bewässern", "primary") + b("deactivate", "Stoppen");
+    case "audio":
+      return b("open", "Abspielen", "primary") + b("stop", "Stopp");
+    case "sensor":
+      return "";
+    default:
+      return b("open", "Öffnen", "primary");
+  }
+}
+
+function devTile(dev, liveMap) {
+  const kind = devKind(dev);
+  const live = liveMap ? liveMap[dev.id] : null;
+  const what = [CATEGORY_LABELS[dev.category] || null, TYPE_LABELS[dev.type] || dev.type].filter(Boolean).join(" · ");
+  let status = "";
+  if (dev.local && live) {
+    if (!live.reachable) status = badge("warn", "nicht erreichbar");
+    else if (live.on === true) status = badge("ok", live.powerW != null && live.powerW > 0 ? `an · ${num(live.powerW, 0)} W` : "an");
+    else if (live.on === false) status = badge("idle", "aus");
+  }
+  const via = dev.local ? badge("outline", "LAN") : badge("outline", "Cloud");
+  const on = live && live.on === true;
+  return `<div class="dev ${on ? "is-on" : ""}">
+    <span class="tile-ico ${on ? "ok" : "accent"}">${icon(KIND_ICON[kind] || "dot")}</span>
+    <div class="dev-main">
+      <div class="dev-name">${esc(dev.name)}</div>
+      <div class="dev-meta"><span class="muted">${esc(what)}</span>${status}${via}</div>
+    </div>
+    <div class="dev-actions">${devButtons(dev, kind, live)}</div>
+  </div>`;
+}
+
+function roomCard(room, liveMap, camIds) {
+  const head = [room.number, room.floor ? `Etage ${room.floor}` : null].filter(Boolean).join(" · ");
+  const op = room.operating
+    ? badge(room.operating.open ? "ok" : "idle", room.operating.open ? `geöffnet · ${room.operating.name}` : `geschlossen · ${room.operating.name}`)
+    : "";
+  const devices = room.devices.length
+    ? room.devices.map((dev) => devTile(dev, liveMap)).join("")
+    : '<div class="muted small-note">Keine Geräte zugeordnet.</div>';
+  const cams = room.cameras.length
+    ? `<div class="chips">${room.cameras
+        .map((c) =>
+          camIds.has(c.id)
+            ? `<button type="button" class="btn small" data-room-cam="${c.id}">${icon("camera")}${esc(c.name)}</button>`
+            : `<span class="badge outline">${esc(c.name)}</span>`
+        )
+        .join("")}</div>`
+    : "";
+  const zones = room.audioZones.length
+    ? `<div class="line"><span class="k">Beschallung</span><span class="v">${room.audioZones.map((z) => esc(z.name)).join(", ")}</span></div>`
+    : "";
+  const activeRules = room.rules.filter((r) => r.isActive).length;
+  const rules = room.rules.length
+    ? `<details class="rules"><summary>${icon("zap")}${room.rules.length} Regel${room.rules.length === 1 ? "" : "n"}${
+        activeRules < room.rules.length ? ` <span class="muted">(${activeRules} aktiv)</span>` : ""
+      }</summary><ul>${room.rules
+        .map(
+          (r) =>
+            `<li><span class="${r.isActive ? "" : "muted"}">${esc(r.name)}</span><span class="muted">${esc(TRIGGER_LABELS[r.trigger] || r.trigger)}${
+              r.lastRunAt ? ` · zuletzt ${esc(ago(r.lastRunAt))}` : ""
+            }</span></li>`
+        )
+        .join("")}</ul></details>`
+    : "";
+  return `<article class="card room">
+    <div class="place-head"><span class="tile-ico accent">${icon("home")}</span><h3>${esc(room.name)}</h3>${head ? `<span class="host">${esc(head)}</span>` : ""}</div>
+    ${op ? `<div class="chips">${op}</div>` : ""}
+    <div class="devs">${devices}</div>
+    ${cams}${zones}${rules}
+  </article>`;
+}
+
+function renderRaeume(d) {
+  const r = state.rooms;
+  if (!r) {
+    setHTML("roomGrid", '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>');
+    return;
+  }
+  const sub = !r.syncedAt
+    ? `Noch kein Stand aus der Cloud${r.syncError ? ` (${r.syncError})` : ""}.`
+    : `Stand aus der Cloud ${ago(r.syncedAt)}${r.fromCache ? " (gespeichert, Cloud nicht erreichbar)" : ""}${
+        r.syncError && !r.fromCache ? ` · letzter Abgleich fehlgeschlagen: ${r.syncError}` : ""
+      }. Räume und Regeln pflegst du online.`;
+  if ($("roomSub").textContent !== sub) $("roomSub").textContent = sub;
+
+  const buildings = [...new Set(r.rooms.map((x) => x.building || "Ohne Gebäude"))];
+  if (buildings.length > 1) {
+    if (state.roomBuilding !== "alle" && !buildings.includes(state.roomBuilding)) state.roomBuilding = "alle";
+    setHTML(
+      "roomFilter",
+      ["alle", ...buildings]
+        .map(
+          (bld) =>
+            `<button type="button" data-building="${esc(bld)}" aria-pressed="${state.roomBuilding === bld}">${esc(bld === "alle" ? "Alle" : bld)}</button>`
+        )
+        .join("")
+    );
+  } else {
+    setHTML("roomFilter", "");
+  }
+
+  const camIds = new Set(d ? liveCams(d).map((c) => c.id) : []);
+  const list = r.rooms.filter((x) => state.roomBuilding === "alle" || (x.building || "Ohne Gebäude") === state.roomBuilding);
+  const cards = list.map((room) => roomCard(room, r.live, camIds));
+  if (r.unassigned.length && state.roomBuilding === "alle") {
+    cards.push(
+      roomCard(
+        { id: 0, name: "Ohne Raum", number: null, floor: null, building: null, devices: r.unassigned, cameras: [], audioZones: [], rules: [], operating: null },
+        r.live,
+        camIds
+      )
+    );
+  }
+  setHTML(
+    "roomGrid",
+    cards.length ? cards.join("") : empty("Noch keine Räume. Lege sie online unter Räume an und ordne Geräte, Kameras und Regeln zu.")
+  );
+}
+
+/** Schalten, die eine Rueckfrage brauchen: Antriebe, Schloesser, Tueroeffner. */
+function devConfirm(dev, action) {
+  const kind = devKind(dev);
+  if (kind === "cover" && action !== "stop") {
+    return { title: `${dev.name} ${action === "open" ? "auffahren" : "zufahren"}?`, text: "Der Antrieb fährt sofort los. Achte darauf, dass niemand im Weg steht.", ok: action === "open" ? "Auf" : "Zu" };
+  }
+  if (kind === "lock") {
+    return action === "open"
+      ? { title: `${dev.name} öffnen?`, text: "Das Schloss öffnet sofort.", ok: "Öffnen" }
+      : { title: `${dev.name} abschließen?`, text: "Das Schloss schließt sofort ab.", ok: "Abschließen" };
+  }
+  if (kind === "door") {
+    return { title: `${dev.name} öffnen?`, text: "Der Öffner zieht kurz an.", ok: "Öffnen" };
+  }
+  return null;
+}
+
+function findRoomDevice(id) {
+  const r = state.rooms;
+  if (!r) return null;
+  return r.rooms.flatMap((x) => x.devices).concat(r.unassigned).find((dev) => dev.id === id) || null;
+}
+
+async function roomDeviceAction(button) {
+  const id = Number(button.dataset.dev);
+  const action = button.dataset.devAction;
+  const dev = findRoomDevice(id);
+  if (!dev) return;
+  const c = devConfirm(dev, action);
+  if (c && !(await ask(c.title, c.text, c.ok))) return;
+  state.roomBusy.add(id);
+  renderRaeume(state.overview);
+  try {
+    const res = await fetch("/api/rooms/device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data.ok) toast(`${dev.name}: erledigt (${data.via === "lokal" ? "im LAN" : "über die Cloud"})`, "ok");
+    else toast(`${dev.name}: ${data.error || "fehlgeschlagen"}`, "err");
+  } catch (e) {
+    toast(`${dev.name}: ${e.message}`, "err");
+  } finally {
+    state.roomBusy.delete(id);
+    try {
+      state.rooms = await getJson("/api/rooms?live=1&fresh=1");
+    } catch {
+      /* naechster Poll holt es */
+    }
+    renderRaeume(state.overview);
+  }
+}
+
+$("roomSync").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/rooms/sync", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    toast(data.ok ? "Räume aus der Cloud geladen" : `Abgleich fehlgeschlagen: ${data.error || res.status}`, data.ok ? "ok" : "err");
+    state.rooms = await getJson("/api/rooms?live=1&fresh=1");
+    renderRaeume(state.overview);
+  } catch (e) {
+    toast(`Abgleich fehlgeschlagen: ${e.message}`, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("roomFilter").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-building]");
+  if (!b) return;
+  state.roomBuilding = b.dataset.building;
+  renderRaeume(state.overview);
+});
+
+$("roomGrid").addEventListener("click", (ev) => {
+  const devBtn = ev.target.closest("button[data-dev-action]");
+  if (devBtn) {
+    roomDeviceAction(devBtn);
+    return;
+  }
+  const cam = ev.target.closest("button[data-room-cam]");
+  if (cam) openFocus(Number(cam.dataset.roomCam));
+});
+
+/* ----------------------------------------------------------------- Geraete */
+
+/*
+ * Alles Steuerbare im Netz: Shelly und Tasmota direkt, Hue und Nuki nach
+ * einmaliger Kopplung. Shelly-Kanaele lassen sich einem Raum zuordnen; die
+ * Zuordnung speichert die Cloud, danach erscheinen sie unter "Raeume".
+ */
+
+const VENDOR_ICON = { Shelly: "power", "Philips Hue": "bulb", Nuki: "lock", Tasmota: "power" };
+
+/** Cloud-Geraet zu einem Shelly-Kanal (gleiche IP, gleicher Kanal). */
+function cloudDeviceFor(ip, channel) {
+  const r = state.rooms;
+  if (!r) return null;
+  const all = r.rooms.flatMap((room) => room.devices.map((dev) => ({ dev, room }))).concat(r.unassigned.map((dev) => ({ dev, room: null })));
+  return (
+    all.find(({ dev }) => {
+      if (dev.type !== "SHELLY" || dev.ipAddress !== ip) return false;
+      const suffix = dev.shellyId && dev.shellyId.includes("_") ? Number(dev.shellyId.split("_").pop()) : 0;
+      return (suffix > 0 ? suffix - 1 : 0) === channel;
+    }) || null
+  );
+}
+
+function roomSelect(dev, ctl) {
+  const r = state.rooms;
+  if (!r || dev.vendor !== "Shelly") return "";
+  const hit = cloudDeviceFor(dev.ip, ctl.channel ?? 0);
+  const current = hit && hit.room ? hit.room.id : "";
+  const opts = [`<option value="">${hit ? "Kein Raum" : "Raum zuordnen …"}</option>`]
+    .concat(r.rooms.map((room) => `<option value="${room.id}"${room.id === current ? " selected" : ""}>${esc(room.name)}</option>`))
+    .join("");
+  return `<select class="field small-select" aria-label="Raum für ${esc(ctl.name)}" data-assign="${esc(ctl.key)}" data-ip="${esc(dev.ip)}" data-mac="${esc(dev.mac || "")}" data-channel="${ctl.channel ?? 0}" data-name="${esc(dev.name + (dev.controls.length > 1 ? ` ${ctl.name}` : ""))}"${hit ? ` data-device-id="${hit.dev.id}"` : ""}>${opts}</select>`;
+}
+
+function smartControl(dev, ctl) {
+  const busy = state.smartBusy.has(ctl.key);
+  let status;
+  if (!ctl.reachable) status = badge("warn", "nicht erreichbar");
+  else if (ctl.kind === "lock") status = badge(ctl.on ? "ok" : "idle", ctl.stateText || "?");
+  else if (ctl.on === true)
+    status = badge("ok", ctl.powerW ? `an · ${num(ctl.powerW, 0)} W` : ctl.brightness != null ? `an · ${ctl.brightness} %` : "an");
+  else if (ctl.on === false) status = badge("idle", "aus");
+  else status = "";
+  const btn =
+    ctl.kind === "lock"
+      ? `<button type="button" class="btn small primary" data-smart="${esc(ctl.key)}" data-on="true"${busy ? " disabled" : ""}>Öffnen</button><button type="button" class="btn small" data-smart="${esc(ctl.key)}" data-on="false"${busy ? " disabled" : ""}>Abschließen</button>`
+      : ctl.on
+        ? `<button type="button" class="btn small on" data-smart="${esc(ctl.key)}" data-on="false"${busy ? " disabled" : ""}>Ausschalten</button>`
+        : `<button type="button" class="btn small primary" data-smart="${esc(ctl.key)}" data-on="true"${busy ? " disabled" : ""}>Einschalten</button>`;
+  return `<div class="dev ${ctl.on && ctl.kind !== "lock" ? "is-on" : ""}">
+    <span class="tile-ico ${ctl.on ? "ok" : "accent"}">${icon(ctl.kind === "lock" ? "lock" : ctl.kind === "light" ? "bulb" : "power")}</span>
+    <div class="dev-main"><div class="dev-name">${esc(ctl.name)}</div><div class="dev-meta">${status}${roomSelect(dev, ctl)}</div></div>
+    <div class="dev-actions">${btn}</div>
+  </div>`;
+}
+
+function smartCard(dev) {
+  const meta = [dev.model, dev.ip, dev.vlanName].filter(Boolean).join(" · ");
+  const pairing = dev.needsPairing
+    ? `<div class="pair-hint">${icon("info")}<span>${esc(dev.pairingHint || "Kopplung nötig")}</span></div>
+       <div class="card-foot"><button type="button" class="btn small primary" data-pair="${esc(dev.id)}"${state.smartBusy.has(dev.id) ? " disabled" : ""}>${icon("unlock")}Koppeln</button></div>`
+    : "";
+  const controls = dev.controls.length
+    ? dev.controls.map((ctl) => smartControl(dev, ctl)).join("")
+    : dev.needsPairing
+      ? ""
+      : '<div class="muted small-note">Keine steuerbaren Kanäle gemeldet.</div>';
+  return `<article class="card room">
+    <div class="place-head"><span class="tile-ico accent">${icon(VENDOR_ICON[dev.vendor] || "chip")}</span><h3>${esc(dev.name)}</h3><span class="host">${esc(dev.vendor)}</span></div>
+    <div class="muted small-note mono">${esc(meta)}</div>
+    ${dev.error && !dev.needsPairing ? `<div class="chips">${badge("warn", dev.error)}</div>` : ""}
+    ${pairing}
+    <div class="devs">${controls}</div>
+  </article>`;
+}
+
+function renderGeraete() {
+  const sm = state.smart;
+  if (!sm) {
+    setHTML("smartGrid", '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>');
+    return;
+  }
+  const sub = `${sm.devices.length === 1 ? "1 steuerbares Gerät" : `${sm.devices.length} steuerbare Geräte`} gefunden${sm.scannedAt ? ` · letzter Netz-Scan ${ago(sm.scannedAt)}` : " · noch kein Netz-Scan"}. Shelly-Kanäle kannst du einem Raum zuordnen.`;
+  if ($("smartSub").textContent !== sub) $("smartSub").textContent = sub;
+
+  const vendors = [...new Set(sm.devices.map((dev) => dev.vendor))];
+  if (vendors.length > 1) {
+    if (state.smartVendor !== "alle" && !vendors.includes(state.smartVendor)) state.smartVendor = "alle";
+    setHTML(
+      "smartFilter",
+      ["alle", ...vendors]
+        .map((v) => {
+          const n = v === "alle" ? sm.devices.length : sm.devices.filter((dev) => dev.vendor === v).length;
+          return `<button type="button" data-vendor="${esc(v)}" aria-pressed="${state.smartVendor === v}">${esc(v === "alle" ? "Alle" : v)} <span class="n">${n}</span></button>`;
+        })
+        .join("")
+    );
+  } else {
+    setHTML("smartFilter", "");
+  }
+  const list = sm.devices.filter((dev) => state.smartVendor === "alle" || dev.vendor === state.smartVendor);
+  setHTML(
+    "smartGrid",
+    list.length
+      ? list.map(smartCard).join("")
+      : empty("Noch keine steuerbaren Geräte gefunden. Starte einen Netz-Scan, oder prüfe, ob der Hub das VLAN der Geräte erreicht.")
+  );
+}
+
+async function reloadSmart() {
+  try {
+    state.smart = await getJson("/api/smart?fresh=1");
+  } catch {
+    /* naechster Poll */
+  }
+  renderGeraete();
+}
+
+async function postJson(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok && data.ok !== false, data };
+}
+
+$("smartGrid").addEventListener("click", async (ev) => {
+  const ctlBtn = ev.target.closest("button[data-smart]");
+  if (ctlBtn) {
+    const key = ctlBtn.dataset.smart;
+    const on = ctlBtn.dataset.on === "true";
+    if (key.startsWith("nuki:")) {
+      const ok = await ask(on ? "Tür öffnen?" : "Schloss abschließen?", on ? "Das Schloss zieht sofort die Falle." : "Das Schloss schließt sofort ab.", on ? "Öffnen" : "Abschließen");
+      if (!ok) return;
+    }
+    state.smartBusy.add(key);
+    renderGeraete();
+    const r = await postJson("/api/smart/control", { key, on });
+    state.smartBusy.delete(key);
+    toast(r.ok ? "Erledigt" : `Fehlgeschlagen: ${r.data.error || "?"}`, r.ok ? "ok" : "err");
+    reloadSmart();
+    return;
+  }
+  const pairBtn = ev.target.closest("button[data-pair]");
+  if (pairBtn) {
+    const id = pairBtn.dataset.pair;
+    state.smartBusy.add(id);
+    renderGeraete();
+    toast(id.startsWith("nuki:") ? "Jetzt den Knopf an der Nuki Bridge drücken …" : "Kopple mit der Hue Bridge …");
+    const r = await postJson("/api/smart/pair", { id });
+    state.smartBusy.delete(id);
+    toast(r.ok ? "Gekoppelt" : `Kopplung fehlgeschlagen: ${r.data.error || "?"}`, r.ok ? "ok" : "err");
+    reloadSmart();
+  }
+});
+
+$("smartGrid").addEventListener("change", async (ev) => {
+  const sel = ev.target.closest("select[data-assign]");
+  if (!sel) return;
+  const roomId = sel.value ? Number(sel.value) : null;
+  const body = sel.dataset.deviceId
+    ? { deviceId: Number(sel.dataset.deviceId), roomId }
+    : { ip: sel.dataset.ip, mac: sel.dataset.mac, channel: Number(sel.dataset.channel), name: sel.dataset.name, roomId };
+  if (!body.deviceId && roomId === null) return;
+  sel.disabled = true;
+  const r = await postJson("/api/smart/assign", body);
+  toast(
+    r.ok ? (r.data.created ? `${r.data.device.name} angelegt und zugeordnet` : "Raum gespeichert") : `Zuordnung fehlgeschlagen: ${r.data.error || "?"}`,
+    r.ok ? "ok" : "err"
+  );
+  try {
+    state.rooms = await getJson("/api/rooms");
+  } catch {
+    /* naechster Poll */
+  }
+  sel.disabled = false;
+  renderGeraete();
+});
+
+$("smartFilter").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-vendor]");
+  if (!b) return;
+  state.smartVendor = b.dataset.vendor;
+  renderGeraete();
+});
+
+$("smartScan").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  toast("Netz-Scan läuft, das dauert ein bis zwei Minuten …");
+  try {
+    await fetch("/api/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "NETWORK_SCAN", payload: null }) });
+    toast("Netz-Scan fertig", "ok");
+  } catch (e) {
+    toast(`Netz-Scan fehlgeschlagen: ${e.message}`, "err");
+  } finally {
+    btn.disabled = false;
+    reloadSmart();
+  }
+});
 
 /* ------------------------------------------------------------------ Events */
 
