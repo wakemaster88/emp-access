@@ -1,6 +1,9 @@
 /*
  * Hub-Dashboard: Router, adaptives Polling und Rendering.
  * Kein Framework – die Datenmenge ist klein und bleibt lokal.
+ * DOM wird nur angefasst, wenn sich das HTML wirklich aendert (setHTML):
+ * so flackert nichts, Hover/Fokus bleiben stehen und Shelly-Knoepfe
+ * verschwinden nicht unter dem Finger.
  */
 
 const VIEWS = [
@@ -43,6 +46,18 @@ function esc(value) {
   })[c]);
 }
 
+/** innerHTML nur setzen, wenn sich etwas geaendert hat. */
+const htmlCache = new Map();
+function setHTML(id, html) {
+  if (htmlCache.get(id) === html) return;
+  htmlCache.set(id, html);
+  $(id).innerHTML = html;
+}
+
+function icon(name, cls = "") {
+  return `<svg class="ico ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
 function clock(iso) {
   if (!iso) return "–";
   return new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -51,6 +66,7 @@ function clock(iso) {
 function ago(iso) {
   if (!iso) return "nie";
   const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 10) return "gerade eben";
   if (s < 60) return `vor ${s} s`;
   if (s < 3600) return `vor ${Math.floor(s / 60)} min`;
   if (s < 86400) return `vor ${Math.floor(s / 3600)} h`;
@@ -99,11 +115,25 @@ function rate(n) {
   return `${bytes(n)}/s`;
 }
 
+function loadTone(p) {
+  return p >= 90 ? "alert" : p >= 75 ? "warn" : "ok";
+}
+
 /** Balken fuer Auslastung – Farbe folgt der Schwelle, Zahl steht daneben. */
 function meter(percent) {
   const p = Math.max(0, Math.min(100, percent || 0));
-  const tone = p >= 90 ? "alert" : p >= 75 ? "warn" : "ok";
-  return `<div class="meter ${tone}"><span style="width:${p.toFixed(1)}%"></span></div>`;
+  return `<div class="meter ${loadTone(p)}"><span style="width:${p.toFixed(1)}%"></span></div>`;
+}
+
+/** Ring-Anzeige 0–100 %. tone: ok/warn/alert/grad. */
+function ring(percent, label, small = "", tone = "ok", size = "") {
+  const r = 40;
+  const c = 2 * Math.PI * r;
+  const p = Math.max(0, Math.min(100, percent ?? 0));
+  return `<div class="ring ${tone} ${size}" role="img" aria-label="${esc(`${label} ${small}`)}">
+    <svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="${r}"/><circle class="bar" cx="50" cy="50" r="${r}" stroke-dasharray="${((p / 100) * c).toFixed(1)} ${c.toFixed(1)}"/></svg>
+    <div class="ring-label">${esc(label)}${small ? `<small>${esc(small)}</small>` : ""}</div>
+  </div>`;
 }
 
 /* Alarmzustand → Farbklasse. */
@@ -113,13 +143,84 @@ function stateTone(name) {
   return "idle";
 }
 
+/** Feste Farbtöne fuer die bekannten VLANs, sonst aus der ID abgeleitet. */
+const VLAN_HUES = { 1: 215, 20: 150, 30: 265, 40: 32, 41: 320, 70: 190, 80: 52 };
+function vlanHue(id) {
+  if (id == null || id === "?") return 220;
+  const n = Number(id);
+  return VLAN_HUES[n] ?? (n * 47) % 360;
+}
+
+const HEALTH_ICONS = {
+  hub: "server",
+  cloud: "cloud",
+  cpu: "cpu",
+  memory: "memory",
+  disk: "disk",
+  cameras: "camera",
+  doorbird: "door",
+  face: "face",
+  alpr: "plate",
+  parking: "parking",
+  network: "network",
+  tasks: "tasks",
+  soundweb: "speaker",
+  snmp: "switch",
+};
+
+const KIND_ICONS = {
+  camera: "camera",
+  person: "user",
+  vehicle: "car",
+  doorbird: "door",
+  network: "network",
+  system: "server",
+  task: "tasks",
+};
+
+/** Symbol fuer den erkannten Geraetetyp aus dem Scanner. */
+function deviceIcon(dev) {
+  if (dev.shelly) return "power";
+  const t = String(dev.deviceType || "").toLowerCase();
+  if (t.includes("kamera")) return "camera";
+  if (t.includes("tür")) return "door";
+  if (t.includes("audio")) return "speaker";
+  if (t.includes("drucker")) return "printer";
+  if (t.includes("iphone") || t.includes("ipad")) return "phone";
+  if (t.includes("windows") || t.includes("pc")) return "monitor";
+  if (t.includes("nas") || t.includes("server") || t.includes("medien")) return "server";
+  if (t.includes("switch") || t.includes("router") || t.includes("netzwerk")) return "switch";
+  if (t.includes("iot") || t.includes("raspberry")) return "chip";
+  if (t.includes("web")) return "globe";
+  return "dot";
+}
+
 function toast(message, tone = "") {
   const box = $("toasts");
   const el = document.createElement("div");
   el.className = `toast ${tone}`;
-  el.textContent = message;
+  el.innerHTML = `${icon(tone === "ok" ? "check" : tone === "err" ? "alert" : "info")}<span></span>`;
+  el.lastChild.textContent = message;
   box.appendChild(el);
-  setTimeout(() => el.remove(), 6000);
+  while (box.children.length > 4) box.firstChild.remove();
+  setTimeout(() => {
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 320);
+  }, 5500);
+}
+
+/** Bestaetigung als eigener Dialog; faellt auf confirm() zurueck. */
+function ask(title, text, okLabel = "OK") {
+  const dlg = $("confirmDlg");
+  if (!dlg || typeof dlg.showModal !== "function") return Promise.resolve(confirm(`${title}\n${text}`));
+  $("confirmTitle").textContent = title;
+  $("confirmText").textContent = text;
+  $("confirmOk").textContent = okLabel;
+  dlg.returnValue = "";
+  dlg.showModal();
+  return new Promise((resolve) => {
+    dlg.addEventListener("close", () => resolve(dlg.returnValue === "ok"), { once: true });
+  });
 }
 
 /* ----------------------------------------------------------------- Routing */
@@ -183,16 +284,19 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try {
-    const [overview, events] = await Promise.all([
+    const wantNet = state.view === "netzwerk";
+    const wantImprove = state.view === "systeme";
+    const [overview, events, network, improve] = await Promise.all([
       getJson("/api/overview"),
       getJson(`/api/events?since=${state.eventSeq}`),
+      wantNet ? getJson("/api/network") : null,
+      wantImprove ? getJson("/api/improve?events=0") : null,
     ]);
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
     mergeEvents(events.events ?? []);
-
-    if (state.view === "netzwerk") state.network = await getJson("/api/network");
-    if (state.view === "systeme") state.improve = await getJson("/api/improve");
+    if (network) state.network = network;
+    if (improve) state.improve = improve;
 
     state.online = true;
     state.failures = 0;
@@ -229,11 +333,12 @@ function render() {
   renderTopbar(d);
   if (!d) {
     if (!state.loaded) {
-      $("lagePlaces").innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
-      $("lageHealth").innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+      setHTML("lagePlaces", '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>');
+      setHTML("lageHealth", '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>');
     }
     return;
   }
+  renderNavCounts(d);
 
   switch (state.view) {
     case "lage": renderLage(d); break;
@@ -265,6 +370,26 @@ function renderTopbar(d) {
     $("hubName").textContent = d.hub.name;
     $("hubSub").textContent = `${d.hub.hostname} · ${d.hub.version} · seit ${uptime(d.hub.uptimeSec)}`;
   }
+}
+
+/** Kleine Zaehler in der Navigation: Warnungen sofort sichtbar. */
+function renderNavCounts(d) {
+  const set = (view, value, tone = "") => {
+    const el = document.querySelector(`.nav-count[data-count="${view}"]`);
+    if (!el) return;
+    const text = value ? String(value) : "";
+    if (el.textContent !== text) el.textContent = text;
+    el.className = `nav-count ${tone}`;
+  };
+  const active = d.cameras.filter((c) => c.activeStates.length).length + d.doorbirds.filter((b) => b.activeStates.length).length;
+  set("lage", active, "alert");
+  set("systeme", d.health.filter((h) => h.state === "warn").length, "warn");
+  set("netzwerk", d.autoScan && d.autoScan.devices ? d.autoScan.devices : "");
+  const camDown = d.cameras.filter((c) => !c.reachable).length + d.doorbirds.filter((b) => !b.connected).length;
+  set("kameras", camDown, "warn");
+  const since = Date.now() - 10 * 60 * 1000;
+  const recentAlerts = state.events.filter((e) => e.severity === "alert" && new Date(e.ts).getTime() > since).length;
+  set("ereignisse", recentAlerts, "alert");
 }
 
 /* ------------------------------------------------------------------- Lage */
@@ -311,7 +436,7 @@ function placeCard(p) {
   }
   if (p.plate) {
     rows.push(`<div class="line"><span class="k">Kennzeichen</span><span class="v">${
-      p.plate.plate ? `<strong>${esc(p.plate.plate)}</strong>` : "keines erkannt"
+      p.plate.plate ? `<strong class="mono">${esc(p.plate.plate)}</strong>` : "keines erkannt"
     } ${p.plate.listed ? badge("ok", "freigegeben") : ""} <span class="muted">${esc(ago(p.plate.at))}</span></span></div>`);
   }
   if (!rows.length) {
@@ -324,12 +449,21 @@ function placeCard(p) {
       : p.pendingVehicle
         ? badge("idle", "Fahrzeug wartet")
         : "";
+  const tone = p.active.length ? "alert" : p.reachable ? "accent" : "warn";
 
   return `<article class="card place ${p.active.length ? "is-active" : ""}">
-    <div class="place-head"><h3>${esc(p.name)}</h3><span class="host mono">${esc(p.host)}</span></div>
+    <div class="place-head"><span class="tile-ico ${tone}">${icon(p.kind === "DOORBIRD" ? "door" : "camera")}</span><h3>${esc(p.name)}</h3><span class="host mono">${esc(p.host)}</span></div>
     <div class="chips">${chips || badge("idle", "ruhig")}${warn}</div>
     ${rows.join("")}
     <div class="line"><span class="k">Letztes Signal</span><span class="v muted">${esc(ago(p.lastEventAt))}</span></div>
+  </article>`;
+}
+
+function kpi(iconName, value, label, sub, tone = "accent") {
+  return `<article class="card stat">
+    <div class="head"><span class="tile-ico ${tone}">${icon(iconName)}</span><span class="label top">${esc(label)}</span></div>
+    <div class="value">${esc(value)}</div>
+    <div class="label">${esc(sub)}</div>
   </article>`;
 }
 
@@ -337,44 +471,82 @@ function renderLage(d) {
   const list = places(d);
   const active = list.filter((p) => p.active.length);
 
-  $("activeStrip").innerHTML = active
-    .map((p) => `<span class="pulse"><span class="dot"></span>${esc(p.name)}: ${esc(p.active.join(", "))}</span>`)
-    .join("");
+  setHTML(
+    "activeStrip",
+    active.map((p) => `<span class="pulse"><span class="dot"></span>${esc(p.name)}: ${esc(p.active.join(", "))}</span>`).join("")
+  );
 
   $("lageSub").textContent = active.length
     ? `${active.length} von ${list.length} Orten melden gerade etwas.`
     : `Ruhig – ${list.length} Orte beobachtet.`;
 
+  // Status-Hero: Anteil gesunder Systeme (abgeschaltete zaehlen nicht).
+  const relevant = d.health.filter((h) => h.state !== "off");
+  const ok = relevant.filter((h) => h.state === "ok").length;
+  const warnings = relevant.filter((h) => h.state === "warn");
+  const pct = relevant.length ? (ok / relevant.length) * 100 : 100;
+  const tone = active.length ? "alert" : warnings.length ? "warn" : "ok";
+  const headline = active.length
+    ? `${active.length} ${active.length === 1 ? "Ort meldet" : "Orte melden"} gerade etwas`
+    : warnings.length
+      ? `${warnings.length} ${warnings.length === 1 ? "Hinweis" : "Hinweise"}`
+      : "Alles im grünen Bereich";
+  const detail = warnings.length
+    ? warnings.map((w) => `${w.label}: ${w.value}`).join(" · ")
+    : `${ok} von ${relevant.length} Systemen laufen sauber.`;
+
+  const camOk = d.cameras.filter((c) => c.reachable).length;
+  const scan = d.autoScan || {};
+  const cpu = d.system && d.system.cpu.usage != null ? `${Math.round(d.system.cpu.usage)} %` : "–";
+  const mem = d.system ? `${Math.round(d.system.memory.usage)} %` : "–";
+
+  setHTML(
+    "lageHero",
+    `<article class="card hero-status ${tone}">
+      ${ring(pct, `${ok}/${relevant.length}`, "OK", tone === "ok" ? "grad" : tone)}
+      <div><h2>${esc(headline)}</h2><p>${esc(detail)}</p></div>
+    </article>
+    <div class="hero-kpis">
+      ${kpi("camera", `${camOk}/${d.cameras.length}`, "Kameras", "erreichbar", camOk === d.cameras.length ? "ok" : "warn")}
+      ${kpi("network", scan.lastRunAt ? String(scan.devices) : "–", "Netzwerk", scan.lastRunAt ? `Scan ${ago(scan.lastRunAt)}` : "kein Scan", scan.error ? "warn" : "accent")}
+      ${kpi("cloud", d.heartbeat && d.heartbeat.fresh ? "online" : "getrennt", "Cloud", `${d.heartbeat?.successCount ?? 0} Heartbeats`, d.heartbeat && d.heartbeat.fresh ? "ok" : "warn")}
+      ${kpi("cpu", cpu, "Rechner", `RAM ${mem}`, "accent")}
+    </div>`
+  );
+
   const sorted = list.slice().sort((a, b) => {
     if (!!b.active.length !== !!a.active.length) return b.active.length - a.active.length;
     return (b.lastEventAt || "").localeCompare(a.lastEventAt || "");
   });
-  $("lagePlaces").innerHTML = sorted.length ? sorted.map(placeCard).join("") : empty("Keine Kameras konfiguriert.");
+  setHTML("lagePlaces", sorted.length ? sorted.map(placeCard).join("") : empty("Keine Kameras konfiguriert."));
 
-  $("lageTimeline").innerHTML = timelineHtml(state.events.slice(-14).reverse(), "Noch nichts passiert.");
-  $("lageHealth").innerHTML = d.health.map(healthCard).join("");
+  setHTML("lageTimeline", timelineHtml(state.events.slice(-14).reverse(), "Noch nichts passiert."));
+  setHTML("lageHealth", d.health.map(healthCard).join(""));
 }
 
 function healthCard(h) {
-  return `<article class="card health-card">
-    <div class="row"><span class="dot ${h.state}"></span><span class="label">${esc(h.label)}</span></div>
+  return `<article class="card health-card ${esc(h.state)}">
+    <div class="row"><span class="tile-ico">${icon(HEALTH_ICONS[h.id] || "dot")}</span><span class="label">${esc(h.label)}</span><span class="dot ${esc(h.state)}"></span></div>
     <div class="value">${esc(h.value)}</div>
     <div class="detail">${esc(h.detail)}</div>
   </article>`;
 }
 
-function timelineHtml(events, emptyText, big = false) {
+function timelineHtml(events, emptyText) {
   if (!events.length) return `<li class="empty">${esc(emptyText)}</li>`;
+  const now = Date.now();
   return events
-    .map(
-      (e) => `<li class="${esc(e.severity)}">
+    .map((e) => {
+      const fresh = now - new Date(e.ts).getTime() < 4000 ? " fresh" : "";
+      return `<li class="${esc(e.severity)}${fresh}">
         ${timeTag(e.ts)}
+        <span class="node">${icon(KIND_ICONS[e.kind] || "dot")}</span>
         <div class="body">
           <div class="title">${e.where ? `<span class="where">${esc(e.where)}</span> · ` : ""}${esc(e.title)}</div>
           ${e.detail ? `<div class="detail">${esc(e.detail)}</div>` : ""}
         </div>
-      </li>`
-    )
+      </li>`;
+    })
     .join("");
 }
 
@@ -382,30 +554,43 @@ function timelineHtml(events, emptyText, big = false) {
 
 function renderSysteme(d) {
   $("systemeSub").textContent = `${d.hub.name} · ${d.hub.apiUrl} · Module: ${d.hub.modules.join(", ")}`;
-  $("systemeHealth").innerHTML = d.health.map(healthCard).join("");
+  setHTML("systemeHealth", d.health.map(healthCard).join(""));
   renderLeistung(d.system);
 
   const imp = state.improve || d.improve;
   const hints = imp.hints || [];
-  $("diagBox").innerHTML = `
-    <div class="value" style="font-size:1rem;font-weight:620">${esc(imp.hint || "sammelt …")}</div>
-    <div class="muted" style="font-size:0.8rem;margin-top:0.25rem">seit ${esc(clock(imp.since))} · <a href="/api/improve">Rohdaten</a></div>
-    ${hints.length ? `<ul class="hints">${hints.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}`;
+  setHTML(
+    "diagBox",
+    `<div class="diag">
+      <span class="tile-ico ${hints.length ? "warn" : "ok"}">${icon(hints.length ? "alert" : "check")}</span>
+      <div>
+        <div class="diag-title">${esc(imp.hint || "sammelt …")}</div>
+        <div class="muted" style="font-size:0.8rem;margin-top:0.2rem">seit ${esc(clock(imp.since))} · <a href="/api/improve">Rohdaten</a></div>
+        ${hints.length ? `<ul class="hints">${hints.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}
+      </div>
+    </div>`
+  );
 
-  const counts = Object.entries(imp.counts || {});
-  $("countsBox").innerHTML = counts.length
-    ? `<dl class="kv">${counts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
-    : empty("Noch keine Zähler.");
+  const counts = Object.entries(imp.counts || {}).sort(([a], [b]) => a.localeCompare(b));
+  setHTML(
+    "countsBox",
+    counts.length
+      ? `<dl class="kv">${counts.map(([k, v]) => `<dt class="mono">${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
+      : empty("Noch keine Zähler.")
+  );
 
-  $("logsBox").innerHTML = d.logs.length
-    ? d.logs.map((l) => `<div><span class="ts">${esc(clock(l.ts))}</span><span class="msg">${esc(l.msg)}</span></div>`).join("")
-    : empty("Keine Logs.");
+  setHTML(
+    "logsBox",
+    d.logs.length
+      ? d.logs.map((l) => `<div><span class="ts">${esc(clock(l.ts))}</span><span class="msg">${esc(l.msg)}</span></div>`).join("")
+      : empty("Keine Logs.")
+  );
 }
 
 function renderLeistung(sys) {
   if (!sys) {
-    $("perfStats").innerHTML = empty("Keine Leistungsdaten.");
-    $("perfDetail").innerHTML = "";
+    setHTML("perfStats", empty("Keine Leistungsdaten."));
+    setHTML("perfDetail", "");
     return;
   }
 
@@ -414,43 +599,28 @@ function renderLeistung(sys) {
     { rx: 0, tx: 0 }
   );
 
-  $("perfStats").innerHTML = [
-    {
-      label: "CPU",
-      value: sys.cpu.usage == null ? "–" : `${Math.round(sys.cpu.usage)} %`,
-      sub: `${sys.cpu.cores} Kerne`,
-      percent: sys.cpu.usage,
-    },
-    {
-      label: "Speicher",
-      value: `${Math.round(sys.memory.usage)} %`,
-      sub: `${bytes(sys.memory.usedBytes)} von ${bytes(sys.memory.totalBytes)}`,
-      percent: sys.memory.usage,
-    },
-    sys.disk
-      ? {
-          label: "Platte",
-          value: `${Math.round(sys.disk.usage)} %`,
-          sub: `${bytes(sys.disk.totalBytes - sys.disk.usedBytes)} frei`,
-          percent: sys.disk.usage,
-        }
-      : { label: "Platte", value: "–", sub: "unbekannt", percent: null },
-    {
-      label: "Netz",
-      value: rate(net.rx + net.tx),
-      sub: `↓ ${rate(net.rx)} · ↑ ${rate(net.tx)}`,
-      percent: null,
-    },
-  ]
-    .map(
-      (s) => `<article class="card stat">
-        <div class="value">${esc(s.value)}</div>
-        <div class="label">${esc(s.label)}</div>
-        ${s.percent == null ? "" : meter(s.percent)}
-        <div class="label">${esc(s.sub)}</div>
-      </article>`
-    )
-    .join("");
+  const gauge = (label, percent, sub) => {
+    const p = percent == null ? null : Math.round(percent);
+    return `<article class="card stat gauge">
+      ${ring(p ?? 0, p == null ? "–" : `${p}%`, "", p == null ? "ok" : loadTone(p) === "ok" ? "grad" : loadTone(p), "sm")}
+      <div class="txt"><span class="label top">${esc(label)}</span><span class="value">${esc(sub)}</span></div>
+    </article>`;
+  };
+
+  setHTML(
+    "perfStats",
+    [
+      gauge("CPU", sys.cpu.usage, `${sys.cpu.cores} Kerne · Last ${num(sys.cpu.load1)}`),
+      gauge("Speicher", sys.memory.usage, `${bytes(sys.memory.usedBytes)} / ${bytes(sys.memory.totalBytes)}`),
+      sys.disk
+        ? gauge("Platte", sys.disk.usage, `${bytes(sys.disk.totalBytes - sys.disk.usedBytes)} frei`)
+        : gauge("Platte", null, "unbekannt"),
+      `<article class="card stat gauge">
+        <span class="tile-ico accent" style="width:4.4rem;height:4.4rem;border-radius:50%">${icon("activity")}</span>
+        <div class="txt"><span class="label top">Netz</span><span class="value">${esc(rate(net.rx + net.tx))}</span><span class="label">↓ ${esc(rate(net.rx))} · ↑ ${esc(rate(net.tx))}</span></div>
+      </article>`,
+    ].join("")
+  );
 
   const procRows = [
     {
@@ -461,9 +631,11 @@ function renderLeistung(sys) {
     },
   ].concat(sys.processes);
 
-  $("perfDetail").innerHTML = `
+  setHTML(
+    "perfDetail",
+    `
     <article class="card">
-      <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Rechner</h3>
+      <div class="place-head" style="margin-bottom:0.6rem"><span class="tile-ico accent">${icon("server")}</span><h3>Rechner</h3></div>
       <div class="line"><span class="k">Prozessor</span><span class="v">${esc(sys.cpu.model)}</span></div>
       <div class="line"><span class="k">Last</span><span class="v">${num(sys.cpu.load1)} · ${num(sys.cpu.load5)} · ${num(sys.cpu.load15)} <span class="muted">(${num(sys.cpu.loadPerCore)} pro Kern)</span></span></div>
       <div class="line"><span class="k">Komprimiert</span><span class="v">${esc(sys.memory.compressedBytes == null ? "unbekannt" : bytes(sys.memory.compressedBytes))}</span></div>
@@ -472,7 +644,7 @@ function renderLeistung(sys) {
       <div class="line"><span class="k">Hub läuft</span><span class="v">${esc(uptime(sys.hubProcess.uptimeSec))}</span></div>
     </article>
     <article class="card">
-      <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Prozesse</h3>
+      <div class="place-head" style="margin-bottom:0.6rem"><span class="tile-ico accent">${icon("cpu")}</span><h3>Prozesse</h3></div>
       ${procRows
         .map(
           (p) => `<div class="line"><span class="k">${esc(p.label)}</span><span class="v">${
@@ -482,58 +654,85 @@ function renderLeistung(sys) {
         .join("")}
     </article>
     <article class="card">
-      <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Netzwerkkarten</h3>
+      <div class="place-head" style="margin-bottom:0.6rem"><span class="tile-ico accent">${icon("network")}</span><h3>Netzwerkkarten</h3></div>
       ${
         sys.network.length
           ? sys.network
               .map(
-                (i) => `<div class="line"><span class="k">${esc(i.name)}</span><span class="v">↓ ${esc(rate(i.rxBytesPerSec))} · ↑ ${esc(rate(i.txBytesPerSec))}</span></div>`
+                (i) => `<div class="line"><span class="k mono">${esc(i.name)}</span><span class="v">↓ ${esc(rate(i.rxBytesPerSec))} · ↑ ${esc(rate(i.txBytesPerSec))}</span></div>`
               )
               .join("")
           : '<div class="line"><span class="v muted">Kein Durchsatz gemessen.</span></div>'
       }
-    </article>`;
+    </article>`
+  );
 }
 
 /* --------------------------------------------------------------- Netzwerk */
 
-function vlanLabel(dev) {
-  if (dev.vlanId == null) return dev.subnet || "–";
-  return `${dev.vlanId}${dev.vlanName ? ` · ${dev.vlanName}` : ""}`;
+function vlanPill(dev) {
+  if (dev.vlanId == null) return `<span class="vlan-pill" style="--h:220">${esc(dev.subnet || "–")}</span>`;
+  return `<span class="vlan-pill" style="--h:${vlanHue(dev.vlanId)}">${esc(dev.vlanId)}${dev.vlanName ? ` · ${esc(dev.vlanName)}` : ""}</span>`;
 }
 
 function shellyCell(dev) {
   if (!dev.shelly) return "";
   const st = state.shelly[dev.ip];
   if (!st) {
-    return `<div><button type="button" class="btn small" data-shelly-status="${esc(dev.ip)}">Status</button></div>`;
+    return `<div style="margin-top:0.35rem"><button type="button" class="btn small" data-shelly-status="${esc(dev.ip)}">${icon("power")}Status</button></div>`;
   }
   if (st.error) return `<div class="muted">${esc(st.error)}</div>`;
-  return `<div class="chips">${st.channels
+  return `<div class="chips" style="margin-top:0.35rem">${st.channels
     .filter((c) => c.kind === "switch")
     .map(
-      (c) => `<button type="button" class="btn small ${c.on ? "primary" : ""}" data-shelly-switch="${esc(dev.ip)}" data-channel="${esc(c.id)}" data-on="${c.on ? "false" : "true"}" title="Kanal ${esc(c.id)} ${c.on ? "ausschalten" : "einschalten"}">
-          K${esc(c.id)}: ${c.on ? "an" : "aus"}${c.powerW != null ? ` · ${esc(Math.round(c.powerW))} W` : ""}
+      (c) => `<button type="button" class="btn small ${c.on ? "on" : ""}" data-shelly-switch="${esc(dev.ip)}" data-channel="${esc(c.id)}" data-on="${c.on ? "false" : "true"}" title="Kanal ${esc(c.id)} ${c.on ? "ausschalten" : "einschalten"}">
+          ${icon("power")}K${esc(c.id)}: ${c.on ? "an" : "aus"}${c.powerW != null ? ` · ${esc(Math.round(c.powerW))} W` : ""}
         </button>`
     )
     .join("")}</div>`;
+}
+
+function ipKey(ip) {
+  return String(ip)
+    .split(".")
+    .map((n) => n.padStart(3, "0"))
+    .join(".");
 }
 
 function renderNetzwerk() {
   const n = state.network;
   if (!n) {
     $("netSub").textContent = "Scan-Daten werden geladen …";
+    if (!htmlCache.has("netSubnets")) {
+      setHTML("netKpis", '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>');
+    }
     return;
   }
   const noMac = n.devices.filter((d) => !d.mac).length;
   $("netSub").textContent = n.scanning
     ? "Scan läuft gerade …"
     : n.lastRunAt
-      ? `${n.devices.length} Geräte · ${ago(n.lastRunAt)}${n.uploaded ? " · in die Cloud gemeldet" : ""}${noMac ? ` · ${noMac} ohne MAC (geroutet, Router-SNMP fehlt)` : ""}${n.error ? ` · Fehler: ${n.error}` : ""}`
+      ? `Letzter Scan ${ago(n.lastRunAt)}${n.uploaded ? " · in die Cloud gemeldet" : ""}${noMac ? ` · ${noMac} ohne MAC (geroutet, Router-SNMP fehlt)` : ""}${n.error ? ` · Fehler: ${n.error}` : ""}`
       : "Noch kein Scan gelaufen.";
 
+  const online = n.devices.filter((d) => d.reachable).length;
+  const shellys = n.devices.filter((d) => d.shelly).length;
+  const cams = n.devices.filter((d) => /kamera/i.test(d.deviceType || "")).length;
   const subnets = n.subnets || [];
-  $("netSubnets").innerHTML = subnets.length
+  const reachableNets = subnets.filter((s) => s.found > 0).length;
+  setHTML(
+    "netKpis",
+    [
+      kpi("network", String(n.devices.length), "Geräte", `${online} antworten`, "accent"),
+      kpi("switch", `${reachableNets}/${subnets.length}`, "VLANs", "mit Geräten", reachableNets === subnets.length ? "ok" : "warn"),
+      kpi("camera", String(cams), "Kameras", "im Scan erkannt", "accent"),
+      kpi("power", String(shellys), "Shellys", "schaltbar", "accent"),
+      kpi("info", String(noMac), "ohne MAC", noMac ? "Router-ARP fehlt" : "alle zugeordnet", noMac ? "warn" : "ok"),
+    ].join("")
+  );
+
+  const maxFound = Math.max(1, ...subnets.map((s) => s.found));
+  let subnetHtml = subnets.length
     ? subnets
         .map((s) => {
           const tone = s.mode === "direkt" ? (s.found ? "ok" : "warn") : s.found ? "warn" : "alert";
@@ -541,64 +740,92 @@ function renderNetzwerk() {
             s.mode === "direkt"
               ? `direkt über ${s.iface}${s.hubIp ? ` (${s.hubIp})` : ""}`
               : "nur geroutet";
-          return `<article class="card place">
-        <div class="place-head"><h3>${esc(s.vlanId != null ? `VLAN ${s.vlanId}${s.vlanName ? ` · ${s.vlanName}` : ""}` : s.cidr)}</h3><span class="host mono">${esc(s.cidr)}</span></div>
-        <div class="chips">${badge(tone, `${s.found} Geräte`)}${badge(s.mode === "direkt" ? "ok" : "idle", how)}</div>
-        ${s.found > s.withMac ? `<div class="line"><span class="k">ohne MAC</span><span class="v">${esc(s.found - s.withMac)}</span></div>` : ""}
-        ${s.mode !== "direkt" && !s.found ? `<div class="line"><span class="v muted">Nicht erreichbar: VLAN-Interface am Hub oder Routing fehlt.</span></div>` : ""}
+          const h = vlanHue(s.vlanId);
+          return `<article class="card place vlan-card" style="--h:${h}">
+        <div class="place-head">
+          <span class="vlan-num">${esc(s.vlanId ?? "–")}</span>
+          <div style="min-width:0"><h3>${esc(s.vlanName || (s.vlanId != null ? `VLAN ${s.vlanId}` : s.cidr))}</h3><div class="mono muted">${esc(s.cidr)}</div></div>
+          <div class="vlan-count"><strong>${esc(s.found)}</strong><span>Geräte</span></div>
+        </div>
+        <div class="vlan-bar"><span style="width:${((s.found / maxFound) * 100).toFixed(1)}%"></span></div>
+        <div class="chips">${badge(s.mode === "direkt" ? "ok" : "idle", how)}${s.found > s.withMac ? badge("warn", `${s.found - s.withMac} ohne MAC`) : ""}${tone === "alert" ? badge("alert", "nicht erreichbar") : ""}</div>
+        ${s.mode !== "direkt" && !s.found ? `<div class="line"><span class="v muted">VLAN-Interface am Hub oder Routing fehlt.</span></div>` : ""}
       </article>`;
         })
         .join("")
     : empty("Keine Subnetze bekannt.");
   if (!n.vlansConfigured) {
-    $("netSubnets").innerHTML += `<article class="card"><div class="line"><span class="v muted">HUB_VLANS ist nicht gesetzt – es werden nur die eigenen Interfaces gescannt. Siehe hub/.env.example.</span></div></article>`;
+    subnetHtml += `<article class="card"><div class="line"><span class="v muted">HUB_VLANS ist nicht gesetzt – es werden nur die eigenen Interfaces gescannt. Siehe hub/.env.example.</span></div></article>`;
   }
+  setHTML("netSubnets", subnetHtml);
 
   const sw = n.switches || [];
-  $("netSwitches").innerHTML = sw.length
-    ? sw
-        .map(
-          (s) => `<article class="card place">
-        <div class="place-head"><h3>${esc(s.sysName || s.host)}</h3><span class="host mono">${esc(s.host)}</span></div>
-        <div class="chips">${s.error ? badge("alert", s.error) : badge("ok", `${s.portsUp}/${s.portsTotal} Ports aktiv`)}</div>
+  setHTML(
+    "netSwitches",
+    sw.length
+      ? sw
+          .map((s) => {
+            const p = s.portsTotal ? (s.portsUp / s.portsTotal) * 100 : 0;
+            return `<article class="card place">
+        <div class="place-head"><span class="tile-ico ${s.error ? "alert" : "accent"}">${icon("switch")}</span><h3>${esc(s.sysName || s.host)}</h3><span class="host mono">${esc(s.host)}</span></div>
+        ${s.error ? `<div class="chips">${badge("alert", s.error)}</div>` : `<div class="line"><span class="k">Ports aktiv</span><span class="v"><strong>${esc(s.portsUp)}</strong><span class="muted"> / ${esc(s.portsTotal)}</span></span></div><div class="meter grad"><span style="width:${p.toFixed(1)}%"></span></div>`}
         <div class="line"><span class="k">Laufzeit</span><span class="v">${esc(typeof s.uptimeS === "number" ? uptime(s.uptimeS) : "–")}</span></div>
         <div class="line"><span class="k">MACs</span><span class="v">${esc(s.macs)}</span></div>
         <div class="line"><span class="k">Stand</span><span class="v muted">${esc(ago(s.polledAt))}</span></div>
-      </article>`
-        )
-        .join("")
-    : empty("Keine Switches abgefragt. HUB_SNMP_TARGETS setzen und SNMP in Insight aktivieren.");
-
-  const vlans = [...new Set(n.devices.map((d) => (d.vlanId != null ? String(d.vlanId) : "?")))].sort((a, b) => Number(a) - Number(b));
-  $("netVlanFilter").innerHTML = ["alle", ...vlans]
-    .map((v) => `<button type="button" data-vlan="${esc(v)}" aria-pressed="${state.netVlan === v}">${esc(v === "alle" ? "Alle" : v === "?" ? "ohne VLAN" : `VLAN ${v}`)}</button>`)
-    .join("");
-
-  const q = state.netFilter.trim().toLowerCase();
-  const rows = n.devices.filter(
-    (dev) =>
-      (state.netVlan === "alle" || String(dev.vlanId ?? "?") === state.netVlan) &&
-      (!q ||
-        [dev.ip, dev.hostname, dev.vendor, dev.deviceType, dev.mac, dev.vlanName, dev.vlanId].some((v) =>
-          String(v ?? "").toLowerCase().includes(q)
-        ))
+      </article>`;
+          })
+          .join("")
+      : empty("Keine Switches abgefragt. HUB_SNMP_TARGETS setzen und SNMP in Insight aktivieren.")
   );
 
-  $("netRows").innerHTML = rows.length
-    ? rows
-        .map(
-          (dev) => `<tr>
+  const perVlan = {};
+  for (const d of n.devices) {
+    const k = d.vlanId != null ? String(d.vlanId) : "?";
+    perVlan[k] = (perVlan[k] || 0) + 1;
+  }
+  const vlans = Object.keys(perVlan).sort((a, b) => Number(a) - Number(b));
+  setHTML(
+    "netVlanFilter",
+    ["alle", ...vlans]
+      .map(
+        (v) =>
+          `<button type="button" data-vlan="${esc(v)}" aria-pressed="${state.netVlan === v}" style="--h:${vlanHue(v)}">${
+            v === "alle" ? "" : '<span class="sw"></span>'
+          }${esc(v === "alle" ? "Alle" : v === "?" ? "ohne VLAN" : `VLAN ${v}`)}<span class="n">${v === "alle" ? n.devices.length : perVlan[v]}</span></button>`
+      )
+      .join("")
+  );
+
+  const q = state.netFilter.trim().toLowerCase();
+  const rows = n.devices
+    .filter(
+      (dev) =>
+        (state.netVlan === "alle" || String(dev.vlanId ?? "?") === state.netVlan) &&
+        (!q ||
+          [dev.ip, dev.hostname, dev.vendor, dev.deviceType, dev.mac, dev.vlanName, dev.vlanId].some((v) =>
+            String(v ?? "").toLowerCase().includes(q)
+          ))
+    )
+    .sort((a, b) => ipKey(a.ip).localeCompare(ipKey(b.ip)));
+
+  setHTML(
+    "netRows",
+    rows.length
+      ? rows
+          .map(
+            (dev) => `<tr>
         <td data-label="IP"><span class="mono">${esc(dev.ip)}</span></td>
-        <td data-label="Name"><div>${esc(dev.hostname || "–")}<div class="muted mono">${esc(dev.mac || "MAC unbekannt")}${dev.macSource === "router" ? " · via Router" : ""}</div></div></td>
-        <td data-label="VLAN"><span>${esc(vlanLabel(dev))}</span></td>
+        <td data-label="Name"><div class="dev"><span class="tile-ico ${dev.reachable ? "accent" : ""}">${icon(deviceIcon(dev))}</span><div style="min-width:0"><div class="dev-name">${esc(dev.hostname || (dev.shelly && dev.shelly.name) || "–")}</div><div class="muted mono">${esc(dev.mac || "MAC unbekannt")}${dev.macSource === "router" ? " · via Router" : ""}</div></div></div></td>
+        <td data-label="VLAN">${vlanPill(dev)}</td>
         <td data-label="Hersteller"><span>${esc(dev.vendor || "–")}</span></td>
-        <td data-label="Typ"><div>${esc(dev.deviceType || "–")}${shellyCell(dev)}</div></td>
-        <td data-label="Ports"><span class="mono">${esc(dev.openPorts.join(", ") || "–")}</span></td>
-        <td data-label="Status">${dev.reachable ? badge("ok", `${dev.responseMs ?? "?"} ms`) : badge("idle", "still")}</td>
+        <td data-label="Typ"><div>${esc(dev.deviceType || "–")}${dev.shelly ? ` <span class="badge outline">Shelly ${esc(dev.shelly.app || dev.shelly.model || "")}</span>` : ""}${shellyCell(dev)}</div></td>
+        <td data-label="Ports">${dev.openPorts.length ? `<div class="ports">${dev.openPorts.map((p) => `<span>${esc(p)}</span>`).join("")}</div>` : '<span class="muted">–</span>'}</td>
+        <td data-label="Status">${dev.reachable ? `<span class="status"><span class="dot ok"></span>${esc(dev.responseMs ?? "?")} ms</span>` : '<span class="status muted"><span class="dot idle"></span>still</span>'}</td>
       </tr>`
-        )
-        .join("")
-    : `<tr><td colspan="7">${empty(n.devices.length ? "Kein Gerät passt zum Filter." : "Noch keine Geräte erfasst.")}</td></tr>`;
+          )
+          .join("")
+      : `<tr><td colspan="7">${empty(n.devices.length ? "Kein Gerät passt zum Filter." : "Noch keine Geräte erfasst.")}</td></tr>`
+  );
 }
 
 async function shellyAction(type, payload) {
@@ -630,8 +857,9 @@ function renderKameras(d) {
 
   const camCards = cams.map((c) => {
     const chips = c.activeStates.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("");
+    const tone = c.activeStates.length ? "alert" : c.reachable ? "accent" : "warn";
     return `<article class="card place ${c.activeStates.length ? "is-active" : ""}">
-      <div class="place-head"><h3>${esc(c.name)}</h3><span class="host mono">${esc(c.host)}</span></div>
+      <div class="place-head"><span class="tile-ico ${tone}">${icon("camera")}</span><h3>${esc(c.name)}</h3><span class="host mono">${esc(c.host)}</span></div>
       <div class="chips">
         ${c.reachable ? badge("ok", "erreichbar") : badge("warn", "offline")}
         ${c.vehicleDetection ? badge("idle", "Fahrzeuge an") : badge("off", "Fahrzeuge aus")}
@@ -640,13 +868,13 @@ function renderKameras(d) {
       ${c.lastError ? `<div class="line"><span class="k">Fehler</span><span class="v">${esc(c.lastError)}</span></div>` : ""}
       <div class="line"><span class="k">Letztes Bild</span><span class="v muted">${esc(ago(c.lastSnapshotAt))}</span></div>
       <div class="line"><span class="k">Letztes Signal</span><span class="v muted">${esc(ago(c.lastEventAt))}</span></div>
-      <div><button type="button" class="btn small" data-snapshot="${c.id}">Schnappschuss</button></div>
+      <div class="card-foot"><button type="button" class="btn small" data-snapshot="${c.id}">${icon("snap")}Schnappschuss</button></div>
     </article>`;
   });
 
   const birdCards = birds.map(
     (b) => `<article class="card place ${b.activeStates.length ? "is-active" : ""}">
-      <div class="place-head"><h3>${esc(b.name)}</h3><span class="host mono">${esc(b.host)}</span></div>
+      <div class="place-head"><span class="tile-ico ${b.activeStates.length ? "alert" : b.connected ? "accent" : "warn"}">${icon("door")}</span><h3>${esc(b.name)}</h3><span class="host mono">${esc(b.host)}</span></div>
       <div class="chips">
         ${badge("idle", "DoorBird")}
         ${b.connected ? badge("ok", "Monitor verbunden") : badge("warn", "getrennt")}
@@ -655,11 +883,11 @@ function renderKameras(d) {
       </div>
       ${b.hold ? `<div class="line"><span class="k">Offen halten</span><span class="v${b.hold.lastError ? "" : " muted"}">${b.hold.pulses} Impulse · letzter ${esc(ago(b.hold.lastPulseAt))}${b.hold.lastError ? ` · Fehler: ${esc(b.hold.lastError)}` : ""}</span></div>` : ""}
       <div class="line"><span class="k">Letztes Signal</span><span class="v muted">${esc(ago(b.lastEventAt))}</span></div>
-      <div><button type="button" class="btn small" data-snapshot="${b.id}">Schnappschuss</button></div>
+      <div class="card-foot"><button type="button" class="btn small" data-snapshot="${b.id}">${icon("snap")}Schnappschuss</button></div>
     </article>`
   );
 
-  $("camGrid").innerHTML = camCards.concat(birdCards).join("") || empty("Keine Kameras konfiguriert.");
+  setHTML("camGrid", camCards.concat(birdCards).join("") || empty("Keine Kameras konfiguriert."));
 }
 
 /* ------------------------------------------------------------- Ereignisse */
@@ -676,19 +904,28 @@ const EVENT_KINDS = [
 ];
 
 function renderEventFilter() {
-  $("eventFilter").innerHTML = EVENT_KINDS.map(
-    ([id, label]) =>
-      `<button type="button" data-kind="${id}" aria-pressed="${state.eventFilter === id}">${esc(label)}</button>`
-  ).join("");
+  const counts = {};
+  for (const e of state.events) counts[e.kind] = (counts[e.kind] || 0) + 1;
+  setHTML(
+    "eventFilter",
+    EVENT_KINDS.map(([id, label]) => {
+      const n = id === "alle" ? state.events.length : counts[id] || 0;
+      return `<button type="button" data-kind="${id}" aria-pressed="${state.eventFilter === id}">${id === "alle" ? "" : icon(KIND_ICONS[id])}${esc(label)}${n ? `<span class="n">${n}</span>` : ""}</button>`;
+    }).join("")
+  );
 }
 
 function renderEreignisse() {
   renderEventFilter();
   const list = state.events.filter((e) => state.eventFilter === "alle" || e.kind === state.eventFilter);
-  $("eventTimeline").innerHTML = timelineHtml(list.slice(-120).reverse(), "Noch keine Ereignisse.");
+  setHTML("eventTimeline", timelineHtml(list.slice(-120).reverse(), "Noch keine Ereignisse."));
 }
 
 /* ---------------------------------------------------------------- Personen */
+
+function statCard(iconName, label, value, sub, tone = "accent") {
+  return kpi(iconName, String(value), label, sub, tone);
+}
 
 function renderPersonen(d) {
   const c = d.improve.counts || {};
@@ -701,18 +938,19 @@ function renderPersonen(d) {
     ? `Gesichtserkennung bereit · ${d.face.gallery} Embeddings in der Gallery`
     : "Gesichtserkennung aus – Sidecar nicht bereit";
 
-  $("personStats").innerHTML = [
-    ["Gallery", d.face.gallery, "Embeddings"],
-    ["Erkannt", match, "mit Namen"],
-    ["Unbekannt", nomatch, "ohne Treffer"],
-    ["Knapp", near, "unter Schwelle"],
-    ["Ohne Gesicht", noFace, "abgebrochen"],
-  ]
-    .map(([label, value, sub]) => `<article class="card stat"><div class="value">${esc(value)}</div><div class="label">${esc(label)}</div><div class="label">${esc(sub)}</div></article>`)
-    .join("");
+  setHTML(
+    "personStats",
+    [
+      statCard("face", "Gallery", d.face.gallery, "Embeddings"),
+      statCard("check", "Erkannt", match, "mit Namen", "ok"),
+      statCard("user", "Unbekannt", nomatch, "ohne Treffer"),
+      statCard("alert", "Knapp", near, "unter Schwelle", near ? "warn" : "accent"),
+      statCard("x", "Ohne Gesicht", noFace, "abgebrochen"),
+    ].join("")
+  );
 
   const list = state.events.filter((e) => e.kind === "person");
-  $("personTimeline").innerHTML = timelineHtml(list.slice(-60).reverse(), "Noch keine Personen gesehen.");
+  setHTML("personTimeline", timelineHtml(list.slice(-60).reverse(), "Noch keine Personen gesehen."));
 }
 
 /* --------------------------------------------------------------- Fahrzeuge */
@@ -728,46 +966,53 @@ function renderFahrzeuge(d) {
     ? `Kennzeichen-Erkennung bereit · ${d.whitelist.length} freigegebene Fahrzeuge`
     : "Kennzeichen-Erkennung aus (fast-alpr fehlt)";
 
-  $("vehicleStats").innerHTML = [
-    ["Kennzeichen", plates, "gelesen"],
-    ["Ohne Plate", noPlate, "hochgeladen"],
-    ["Verschoben", deferred, "hinter Person"],
-    ["Übersprungen", skipped, "kein Fahrzeug"],
-  ]
-    .map(([label, value, sub]) => `<article class="card stat"><div class="value">${esc(value)}</div><div class="label">${esc(label)}</div><div class="label">${esc(sub)}</div></article>`)
-    .join("");
+  setHTML(
+    "vehicleStats",
+    [
+      statCard("plate", "Kennzeichen", plates, "gelesen", "ok"),
+      statCard("car", "Ohne Plate", noPlate, "hochgeladen"),
+      statCard("user", "Verschoben", deferred, "hinter Person"),
+      statCard("x", "Übersprungen", skipped, "kein Fahrzeug"),
+    ].join("")
+  );
 
   const list = state.events.filter((e) => e.kind === "vehicle");
-  $("vehicleTimeline").innerHTML = timelineHtml(list.slice(-60).reverse(), "Noch keine Fahrzeuge gesehen.");
+  setHTML("vehicleTimeline", timelineHtml(list.slice(-60).reverse(), "Noch keine Fahrzeuge gesehen."));
 
-  $("lotGrid").innerHTML = d.parking.lots.length
-    ? d.parking.lots
-        .map(
-          (lot) => `<article class="card place">
-        <div class="place-head"><h3>${esc(lot.name)}</h3><span class="host mono">${esc(lot.ip)}</span></div>
-        <div class="value" style="font-size:1.75rem;font-weight:650">${esc(lot.count)}</div>
+  setHTML(
+    "lotGrid",
+    d.parking.lots.length
+      ? d.parking.lots
+          .map(
+            (lot) => `<article class="card place">
+        <div class="place-head"><span class="tile-ico accent">${icon("parking")}</span><h3>${esc(lot.name)}</h3><span class="host mono">${esc(lot.ip)}</span></div>
+        <div class="stat"><div class="value">${esc(lot.count)}</div><div class="label">Fahrzeuge erkannt</div></div>
         <div class="chips">
           ${d.parking.trackerOnline ? badge("ok", `${num(lot.fps, 1)} fps`) : badge("warn", "Tracker offline")}
           ${lot.lastError ? badge("warn", lot.lastError) : ""}
         </div>
         <div class="line"><span class="k">Stand</span><span class="v muted">${esc(lot.lastUpdate ? ago(new Date(lot.lastUpdate).toISOString()) : "unbekannt")}</span></div>
       </article>`
-        )
-        .join("")
-    : empty("Keine Parkflächen konfiguriert (vehicleGate).");
+          )
+          .join("")
+      : empty("Keine Parkflächen konfiguriert (vehicleGate).")
+  );
 
-  $("wlRows").innerHTML = d.whitelist.length
-    ? d.whitelist
-        .map(
-          (v) => `<tr>
-        <td data-label="Kennzeichen"><span class="mono">${esc(v.plate)}</span></td>
+  setHTML(
+    "wlRows",
+    d.whitelist.length
+      ? d.whitelist
+          .map(
+            (v) => `<tr>
+        <td data-label="Kennzeichen"><span class="mono"><strong>${esc(v.plate)}</strong></span></td>
         <td data-label="Name"><span>${esc(v.name)}</span></td>
         <td data-label="Cooldown"><span>${esc(v.cooldownMinutes)} min</span></td>
-        <td data-label="Zuletzt"><span>${esc(v.lastTriggeredAt ? ago(v.lastTriggeredAt) : "nie")}</span></td>
+        <td data-label="Zuletzt"><span class="muted">${esc(v.lastTriggeredAt ? ago(v.lastTriggeredAt) : "nie")}</span></td>
       </tr>`
-        )
-        .join("")
-    : `<tr><td colspan="4">${empty("Keine freigegebenen Fahrzeuge.")}</td></tr>`;
+          )
+          .join("")
+      : `<tr><td colspan="4">${empty("Keine freigegebenen Fahrzeuge.")}</td></tr>`
+  );
 }
 
 /* ---------------------------------------------------------------- Aktionen */
@@ -785,25 +1030,37 @@ function renderAktionen(d) {
     select.dataset.signature = options;
   }
 
-  $("taskRows").innerHTML = d.tasks.length
-    ? d.tasks
-        .map(
-          (t) => `<tr>
+  setHTML(
+    "taskRows",
+    d.tasks.length
+      ? d.tasks
+          .map(
+            (t) => `<tr>
         <td data-label="Zeit"><span>${esc(clock(t.ts))}</span></td>
-        <td data-label="Aufgabe"><div>${esc(t.type)}<div class="muted">#${esc(t.id)}</div></div></td>
+        <td data-label="Aufgabe"><div><strong>${esc(t.type)}</strong><div class="muted mono">#${esc(t.id)}</div></div></td>
         <td data-label="Status">${t.success ? badge("ok", "OK") : badge("alert", "Fehler")}</td>
         <td data-label="Ergebnis">${t.error ? `<span>${esc(t.error)}</span>` : `<span class="muted mono">${esc(JSON.stringify(t.result ?? {}).slice(0, 160))}</span>`}</td>
       </tr>`
-        )
-        .join("")
-    : `<tr><td colspan="4">${empty("Noch keine Aufgaben gelaufen.")}</td></tr>`;
+          )
+          .join("")
+      : `<tr><td colspan="4">${empty("Noch keine Aufgaben gelaufen.")}</td></tr>`
+  );
 }
 
 /* ----------------------------------------------------------------- Aktion */
 
+const ACTION_LABELS = {
+  PING: "Ping",
+  WAKE_ON_LAN: "Wake-on-LAN",
+  NETWORK_SCAN: "Netzwerk-Scan",
+  SWITCH_SYNC: "Switch-Abfrage",
+  CAMERA_SNAPSHOT: "Schnappschuss",
+};
+
 async function runAction(type, payload, button) {
+  const name = ACTION_LABELS[type] || type;
   if (button) button.disabled = true;
-  toast(`${type} läuft …`);
+  toast(`${name} läuft …`);
   try {
     const res = await fetch("/api/action", {
       method: "POST",
@@ -812,12 +1069,12 @@ async function runAction(type, payload, button) {
     });
     const data = await res.json();
     if (data.success) {
-      toast(`${type}: erledigt${data.result ? ` – ${JSON.stringify(data.result).slice(0, 120)}` : ""}`, "ok");
+      toast(`${name}: erledigt${data.result ? ` – ${JSON.stringify(data.result).slice(0, 120)}` : ""}`, "ok");
     } else {
-      toast(`${type}: ${data.error || "fehlgeschlagen"}`, "err");
+      toast(`${name}: ${data.error || "fehlgeschlagen"}`, "err");
     }
   } catch (e) {
-    toast(`${type}: ${e.message}`, "err");
+    toast(`${name}: ${e.message}`, "err");
   } finally {
     if (button) button.disabled = false;
     refresh();
@@ -839,7 +1096,7 @@ document.addEventListener("submit", (ev) => {
   runAction(type, Object.keys(payload).length ? payload : null, form.querySelector("button"));
 });
 
-document.addEventListener("click", (ev) => {
+document.addEventListener("click", async (ev) => {
   const snap = ev.target.closest("[data-snapshot]");
   if (snap) {
     runAction("CAMERA_SNAPSHOT", { cameraId: Number(snap.dataset.snapshot) }, snap);
@@ -860,10 +1117,16 @@ document.addEventListener("click", (ev) => {
   if (shellySwitchBtn) {
     const ip = shellySwitchBtn.dataset.shellySwitch;
     const on = shellySwitchBtn.dataset.on === "true";
+    const channel = shellySwitchBtn.dataset.channel;
     // Shellys schalten auch Anlagen-Stromkreise – nie ohne Rückfrage.
-    if (!confirm(`Shelly ${ip}, Kanal ${shellySwitchBtn.dataset.channel} wirklich ${on ? "EIN" : "AUS"}schalten?`)) return;
+    const ok = await ask(
+      `Shelly ${on ? "einschalten" : "ausschalten"}?`,
+      `${ip}, Kanal ${channel} wird ${on ? "EIN" : "AUS"}geschaltet. Hängt daran ein Anlagen-Stromkreis, wirkt das sofort.`,
+      on ? "Einschalten" : "Ausschalten"
+    );
+    if (!ok) return;
     shellySwitchBtn.disabled = true;
-    shellyAction("SHELLY_SWITCH", { host: ip, channel: Number(shellySwitchBtn.dataset.channel), on }).then((r) => {
+    shellyAction("SHELLY_SWITCH", { host: ip, channel: Number(channel), on }).then((r) => {
       toast(r.success ? `Shelly ${ip}: ${r.result.on ? "an" : "aus"}` : `Shelly ${ip}: ${r.error}`, r.success ? "ok" : "err");
       loadShelly(ip);
     });
@@ -891,15 +1154,53 @@ $("themeBtn").addEventListener("click", () => {
   const order = ["auto", "light", "dark"];
   const current = document.documentElement.dataset.theme || "auto";
   const next = order[(order.indexOf(current) + 1) % order.length];
-  if (next === "auto") {
-    delete document.documentElement.dataset.theme;
-    localStorage.removeItem("hub-theme");
-  } else {
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem("hub-theme", next);
+  try {
+    if (next === "auto") {
+      delete document.documentElement.dataset.theme;
+      localStorage.removeItem("hub-theme");
+    } else {
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("hub-theme", next);
+    }
+  } catch {
+    // Privater Modus: Wahl gilt nur fuer diese Sitzung.
   }
   toast(`Design: ${next === "auto" ? "automatisch" : next === "light" ? "hell" : "dunkel"}`);
 });
+
+/* Tastatur: 1–8 wechseln die Ansicht, "/" springt in den Gerätefilter. */
+document.addEventListener("keydown", (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const t = ev.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+    if (ev.key === "Escape" && t.id === "netFilter") {
+      t.value = "";
+      state.netFilter = "";
+      t.blur();
+      renderNetzwerk();
+    }
+    return;
+  }
+  const idx = Number(ev.key) - 1;
+  if (idx >= 0 && idx < VIEWS.length) {
+    location.hash = VIEWS[idx];
+    return;
+  }
+  if (ev.key === "/") {
+    ev.preventDefault();
+    if (state.view !== "netzwerk") location.hash = "netzwerk";
+    setTimeout(() => $("netFilter").focus(), 0);
+  }
+});
+
+function tickClock() {
+  const el = $("clock");
+  const now = new Date();
+  el.textContent = now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  el.dateTime = now.toISOString();
+}
+setInterval(tickClock, 15000);
+tickClock();
 
 window.addEventListener("hashchange", applyRoute);
 document.addEventListener("visibilitychange", () => {
