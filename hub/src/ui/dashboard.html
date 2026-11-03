@@ -119,6 +119,7 @@
     <a href="#zentrale" data-view="zentrale"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-grid"/></svg><span class="nav-label">Zentrale</span><span class="nav-count" data-count="zentrale"></span></a>
     <a href="#lage" data-view="lage"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="nav-label">Lage</span><span class="nav-count" data-count="lage"></span></a>
     <a href="#raeume" data-view="raeume"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-label">Räume</span><span class="nav-count" data-count="raeume"></span></a>
+    <a href="#geraete" data-view="geraete" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-chip"/></svg><span class="nav-label">Geräte</span><span class="nav-count" data-count="geraete"></span></a>
     <a href="#systeme" data-view="systeme" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-cpu"/></svg><span class="nav-label">Systeme</span><span class="nav-count" data-count="systeme"></span></a>
     <a href="#netzwerk" data-view="netzwerk" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-network"/></svg><span class="nav-label">Netzwerk</span><span class="nav-count" data-count="netzwerk"></span></a>
     <a href="#kameras" data-view="kameras"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-camera"/></svg><span class="nav-label">Kameras</span><span class="nav-count" data-count="kameras"></span></a>
@@ -207,6 +208,21 @@
       </header>
       <div class="segment" id="roomFilter" role="group" aria-label="Gebäude"></div>
       <div class="grid rooms" id="roomGrid"></div>
+    </section>
+
+    <!-- Geraete: alles Steuerbare im Netz, automatisch gefunden (smart-devices.ts) -->
+    <section class="view" id="view-geraete" hidden>
+      <header class="view-head">
+        <div>
+          <h1 class="view-title">Geräte</h1>
+          <p class="view-sub" id="smartSub">Steuerbare Geräte im Netz, automatisch gefunden.</p>
+        </div>
+        <div class="head-actions">
+          <button type="button" class="btn small" id="smartScan"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>Netz neu durchsuchen</button>
+        </div>
+      </header>
+      <div class="segment" id="smartFilter" role="group" aria-label="Hersteller"></div>
+      <div class="grid rooms" id="smartGrid"></div>
     </section>
 
     <section class="view" id="view-systeme" hidden>
