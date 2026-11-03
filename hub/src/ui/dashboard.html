@@ -61,6 +61,16 @@
   <symbol id="i-chip" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></symbol>
   <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></symbol>
   <symbol id="i-snap" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-siren" viewBox="0 0 24 24"><path d="M7 18v-6a5 5 0 0 1 10 0v6"/><path d="M5 21h14v-3H5zM12 2v2M4.2 5.2l1.4 1.4M19.8 5.2l-1.4 1.4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
 </svg>
 
@@ -92,6 +102,7 @@
   </header>
 
   <nav class="nav" id="nav" aria-label="Bereiche">
+    <a href="#zentrale" data-view="zentrale"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-grid"/></svg><span class="nav-label">Zentrale</span><span class="nav-count" data-count="zentrale"></span></a>
     <a href="#lage" data-view="lage"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="nav-label">Lage</span><span class="nav-count" data-count="lage"></span></a>
     <a href="#systeme" data-view="systeme"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-cpu"/></svg><span class="nav-label">Systeme</span><span class="nav-count" data-count="systeme"></span></a>
     <a href="#netzwerk" data-view="netzwerk"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-network"/></svg><span class="nav-label">Netzwerk</span><span class="nav-count" data-count="netzwerk"></span></a>
@@ -100,7 +111,7 @@
     <a href="#personen" data-view="personen"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-user"/></svg><span class="nav-label">Personen</span><span class="nav-count" data-count="personen"></span></a>
     <a href="#fahrzeuge" data-view="fahrzeuge"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-car"/></svg><span class="nav-label">Fahrzeuge</span><span class="nav-count" data-count="fahrzeuge"></span></a>
     <a href="#aktionen" data-view="aktionen"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-zap"/></svg><span class="nav-label">Aktionen</span><span class="nav-count" data-count="aktionen"></span></a>
-    <div class="nav-foot" aria-hidden="true">Tasten <kbd>1</kbd>–<kbd>8</kbd> wechseln den Bereich</div>
+    <div class="nav-foot" aria-hidden="true">Tasten <kbd>1</kbd>–<kbd>9</kbd> wechseln den Bereich</div>
   </nav>
 
   <main class="main" id="main" tabindex="-1">
@@ -108,6 +119,25 @@
       <svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>
       Hub-Prozess nicht erreichbar – letzter Stand wird angezeigt.
     </div>
+
+    <!-- Zentrale: Live-Kameras -->
+    <section class="view" id="view-zentrale" hidden>
+      <header class="view-head">
+        <div>
+          <h1 class="view-title">Zentrale</h1>
+          <p class="view-sub" id="liveSub">Live-Bilder aller Kameras.</p>
+        </div>
+        <div class="head-actions">
+          <div class="segment compact" id="liveCols" role="group" aria-label="Spalten">
+            <button type="button" data-cols="2" aria-pressed="false">2</button>
+            <button type="button" data-cols="3" aria-pressed="false">3</button>
+            <button type="button" data-cols="4" aria-pressed="false">4</button>
+          </div>
+          <button type="button" class="btn" id="liveFull"><svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg>Vollbild</button>
+        </div>
+      </header>
+      <div class="live-grid" id="liveGrid"></div>
+    </section>
 
     <!-- Lage -->
     <section class="view" id="view-lage" hidden>
@@ -319,6 +349,26 @@
     </section>
   </main>
 </div>
+
+<dialog class="cam-dlg" id="camDlg" aria-labelledby="camDlgTitle">
+  <div class="cam-dlg-body">
+    <div class="cam-stage">
+      <video id="camDlgVideo" autoplay muted playsinline></video>
+      <img id="camDlgImg" alt="">
+      <div class="cam-badge" id="camDlgState"></div>
+    </div>
+    <aside class="cam-side">
+      <header class="cam-side-head">
+        <div style="min-width:0">
+          <h2 id="camDlgTitle">Kamera</h2>
+          <div class="mono muted" id="camDlgHost"></div>
+        </div>
+        <button type="button" class="icon-btn" id="camDlgClose" aria-label="Schließen"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div id="camDlgControls"></div>
+    </aside>
+  </div>
+</dialog>
 
 <dialog class="dialog" id="confirmDlg" aria-labelledby="confirmTitle">
   <form method="dialog" class="dialog-body">

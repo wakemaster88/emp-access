@@ -51,6 +51,13 @@ const ALLOWED_ACTIONS = [
   "SHELLY_STATUS",
   "SHELLY_SWITCH",
   "SWITCH_SYNC",
+  // Kamera-Zentrale: dieselben Steuer-Tasks wie aus der Cloud.
+  "CAMERA_PTZ",
+  "CAMERA_PTZ_PRESETS",
+  "CAMERA_SPOTLIGHT",
+  "CAMERA_IR",
+  "CAMERA_SIREN",
+  "DOORBIRD_OPEN",
 ];
 
 function json(res: http.ServerResponse, status: number, body: unknown) {
@@ -68,6 +75,79 @@ async function readBody(req: http.IncomingMessage): Promise<Record<string, unkno
     return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
   } catch {
     return {};
+  }
+}
+
+async function readRaw(req: http.IncomingMessage, limit = 256 * 1024): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > limit) throw new Error("Body zu gross");
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/* ---------------------------------------------------------------------------
+ * go2rtc-Proxy fuer die Kamera-Zentrale
+ *
+ * Der Browser spricht nur mit dem Dashboard (gleicher Origin, gleiche
+ * Anmeldung). Nur Signalisierung und Standbilder laufen hier durch; das
+ * Video selbst kommt per WebRTC direkt von go2rtc.
+ * ------------------------------------------------------------------------- */
+
+const GO2RTC_URL = (process.env.HUB_GO2RTC_URL || "http://127.0.0.1:1984").replace(/\/$/, "");
+
+async function proxyGo2rtc(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL
+): Promise<void> {
+  const sub = url.pathname.slice("/api/go2rtc".length);
+  try {
+    if (req.method === "GET" && sub === "/streams") {
+      // Nur Name + Kamera-Host weitergeben – die RTSP-URLs enthalten Passwoerter.
+      const r = await fetch(`${GO2RTC_URL}/api/streams`, { signal: AbortSignal.timeout(4000) });
+      if (!r.ok) return json(res, 200, { reachable: false, streams: [] });
+      const data = (await r.json()) as Record<string, { producers?: Array<{ url?: string }> } | null>;
+      const streams = Object.entries(data ?? {}).map(([name, info]) => {
+        const producer = info?.producers?.[0]?.url ?? "";
+        const m = producer.match(/@([^:/@]+)[:/]/) ?? producer.match(/^\w+:\/\/([^:/@]+)[:/]/);
+        return { name, host: m ? m[1] : null };
+      });
+      return json(res, 200, { reachable: true, streams });
+    }
+    const src = url.searchParams.get("src") ?? "";
+    if (!/^[\w.-]{1,80}$/.test(src)) return json(res, 400, { error: "src ungueltig" });
+    if (req.method === "POST" && sub === "/webrtc") {
+      const offer = await readRaw(req);
+      const r = await fetch(`${GO2RTC_URL}/api/webrtc?src=${encodeURIComponent(src)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/sdp" },
+        body: offer,
+        signal: AbortSignal.timeout(10_000),
+      });
+      const answer = await r.text();
+      res.writeHead(r.status, { "Content-Type": "application/sdp", "Cache-Control": "no-store" });
+      res.end(answer);
+      return;
+    }
+    if (req.method === "GET" && sub === "/frame.jpeg") {
+      const r = await fetch(`${GO2RTC_URL}/api/frame.jpeg?src=${encodeURIComponent(src)}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      const body = Buffer.from(await r.arrayBuffer());
+      res.writeHead(r.status, {
+        "Content-Type": r.headers.get("content-type") ?? "image/jpeg",
+        "Cache-Control": "no-store",
+      });
+      res.end(body);
+      return;
+    }
+    return json(res, 404, { error: "unbekannt" });
+  } catch (e) {
+    return json(res, 502, { error: `go2rtc nicht erreichbar: ${e instanceof Error ? e.message : e}` });
   }
 }
 
@@ -437,6 +517,10 @@ export function startDashboard(): void {
         router: routerHost(),
         vlansConfigured: configuredVlans().length > 0,
       });
+    }
+
+    if (url.pathname.startsWith("/api/go2rtc/")) {
+      return proxyGo2rtc(req, res, url);
     }
 
     if (req.method === "GET" && url.pathname === "/api/improve") {
