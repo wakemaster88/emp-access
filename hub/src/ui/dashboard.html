@@ -120,6 +120,7 @@
     <a href="#lage" data-view="lage"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="nav-label">Lage</span><span class="nav-count" data-count="lage"></span></a>
     <a href="#raeume" data-view="raeume"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-label">Räume</span><span class="nav-count" data-count="raeume"></span></a>
     <a href="#geraete" data-view="geraete" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-chip"/></svg><span class="nav-label">Geräte</span><span class="nav-count" data-count="geraete"></span></a>
+    <a href="#regeln" data-view="regeln" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-tasks"/></svg><span class="nav-label">Regeln</span><span class="nav-count" data-count="regeln"></span></a>
     <a href="#systeme" data-view="systeme" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-cpu"/></svg><span class="nav-label">Systeme</span><span class="nav-count" data-count="systeme"></span></a>
     <a href="#netzwerk" data-view="netzwerk" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-network"/></svg><span class="nav-label">Netzwerk</span><span class="nav-count" data-count="netzwerk"></span></a>
     <a href="#kameras" data-view="kameras"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-camera"/></svg><span class="nav-label">Kameras</span><span class="nav-count" data-count="kameras"></span></a>
@@ -224,6 +225,20 @@
       </header>
       <div class="segment" id="smartFilter" role="group" aria-label="Hersteller"></div>
       <div class="grid rooms" id="smartGrid"></div>
+    </section>
+
+    <!-- Regeln: Automationen je Raum bearbeiten (gespeichert in der Cloud) -->
+    <section class="view" id="view-regeln" hidden>
+      <header class="view-head">
+        <div>
+          <h1 class="view-title">Regeln</h1>
+          <p class="view-sub" id="ruleSub">Automationen je Raum. Gespeichert wird online, der Hub springt bei Internetausfall ein.</p>
+        </div>
+        <div class="head-actions">
+          <button type="button" class="btn small primary" id="ruleNew"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Neue Regel</button>
+        </div>
+      </header>
+      <div id="ruleGrid"></div>
     </section>
 
     <section class="view" id="view-systeme" hidden>
@@ -482,6 +497,65 @@
       <span class="spacer"></span>
       <button type="button" class="btn" id="vehCancel">Abbrechen</button>
       <button type="submit" class="btn primary" id="vehSave" value="save">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog form-dlg rule-dlg" id="ruleDlg" aria-labelledby="ruleDlgTitle">
+  <form method="dialog" class="form-dlg-body" id="ruleForm">
+    <h2 id="ruleDlgTitle">Regel</h2>
+    <div class="form-grid">
+      <label class="span2">Name<input class="field" name="name" required maxlength="120" autocomplete="off" placeholder="z. B. Licht Technikraum bei Bewegung"></label>
+      <label>Raum<select class="field" name="roomId"></select></label>
+      <label>Auslöser<select class="field" name="trigger">
+        <option value="MOTION">Bewegung / Person / Fahrzeug</option>
+        <option value="TIME">Feste Uhrzeit</option>
+        <option value="OPENING">Betriebsbeginn</option>
+        <option value="CLOSING">Betriebsende</option>
+        <option value="SUNRISE">Sonnenaufgang</option>
+        <option value="SUNSET">Sonnenuntergang</option>
+        <option value="DEVICE_SWITCHED">Gerät geschaltet</option>
+        <option value="IDLE">Keine Bewegung im Raum</option>
+        <option value="SCAN">Zutritt (Scan)</option>
+      </select></label>
+      <label data-for="TIME">Uhrzeit<input class="field" name="timeOfDay" type="time"></label>
+      <label data-for="OPENING CLOSING SUNRISE SUNSET">Versatz (Minuten, ± )<input class="field" name="offsetMinutes" type="number" min="-720" max="720" value="0"></label>
+      <label data-for="MOTION">Kamera<select class="field" name="cameraId"></select></label>
+      <label data-for="MOTION">Ereignis<select class="field" name="eventType"><option value="">Jedes</option><option value="PERSON">Person</option><option value="VEHICLE">Fahrzeug</option><option value="MOTION">Bewegung</option></select></label>
+      <label data-for="DEVICE_SWITCHED">Auslösendes Gerät<select class="field" name="triggerDeviceId"></select></label>
+      <label data-for="DEVICE_SWITCHED">Bei Aktion<select class="field" name="triggerAction"><option value="">Jede</option><option value="open">Ein / Öffnen</option><option value="deactivate">Aus / Abschließen</option><option value="close">Zu</option><option value="stop">Stopp</option></select></label>
+      <label data-for="IDLE">Ruhe seit (Minuten)<input class="field" name="idleMinutes" type="number" min="1" max="1440" value="15"></label>
+      <label data-for="SCAN">Richtung<select class="field" name="scanDirection"><option value="">Beide</option><option value="IN">Eintritt</option><option value="OUT">Austritt</option></select></label>
+    </div>
+
+    <fieldset class="rule-fs">
+      <legend>Bedingungen</legend>
+      <div class="days" id="ruleDays"></div>
+      <div class="form-grid">
+        <label>Betriebszeit<select class="field" name="operating"><option value="ANY">Egal</option><option value="OPEN">Nur wenn geöffnet</option><option value="CLOSED">Nur wenn geschlossen</option></select></label>
+        <label>Sperrzeit nach Auslösen (s)<input class="field" name="cooldownSeconds" type="number" min="0" max="86400" value="60"></label>
+        <label>Zeitfenster von<input class="field" name="windowStart" type="time"></label>
+        <label>Zeitfenster bis<input class="field" name="windowEnd" type="time"></label>
+        <label class="check"><input type="checkbox" name="onlyWhenDark"> Nur bei Dunkelheit</label>
+        <label class="check"><input type="checkbox" name="isActive" checked> Regel aktiv</label>
+      </div>
+    </fieldset>
+
+    <fieldset class="rule-fs">
+      <legend>Aktionen</legend>
+      <div id="ruleActions" class="rule-actions"></div>
+      <div class="chips">
+        <button type="button" class="btn small" data-add-action="DEVICE"><svg class="ico" aria-hidden="true"><use href="#i-power"/></svg>Gerät schalten</button>
+        <button type="button" class="btn small" data-add-action="NOTIFY"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg>Benachrichtigen</button>
+      </div>
+    </fieldset>
+
+    <p class="form-err" id="ruleErr" hidden></p>
+    <div class="form-dlg-actions">
+      <button type="button" class="btn danger" id="ruleDelete" hidden>Löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="ruleCancel">Abbrechen</button>
+      <button type="submit" class="btn primary" id="ruleSave" value="save">Speichern</button>
     </div>
   </form>
 </dialog>
