@@ -17,7 +17,7 @@ import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { CONFIG, log } from "./config.js";
-import { community, oidSuffix, snmpWalk } from "./snmp.js";
+import { community, friendlySnmpError, oidSuffix, snmpWalk } from "./snmp.js";
 
 const exec = promisify(execFile);
 
@@ -368,9 +368,7 @@ export async function readRouterArp(force = false): Promise<Map<string, string>>
   } catch (e) {
     if (!routerArpWarned) {
       log(
-        `Router-ARP per SNMP (${host}, Community ${community() === "public" ? "public" : "gesetzt"}) fehlgeschlagen: ${
-          e instanceof Error ? e.message : e
-        }`
+        `Router-ARP per SNMP (${host}, Community ${community() === "public" ? "public" : "gesetzt"}) fehlgeschlagen: ${friendlySnmpError(e)}`
       );
       routerArpWarned = true;
     }
