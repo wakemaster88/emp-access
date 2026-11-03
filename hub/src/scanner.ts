@@ -3,123 +3,82 @@
  * inklusive Zusatzinformationen und meldet sie an die Cloud (/api/hub/scan).
  *
  * Ablauf pro Lauf:
- *   1. Alle lokalen IPv4-Subnetze bestimmen.
- *   2. Ping-Sweep ueber jedes /24 (fuellt die ARP-Tabelle, misst Antwortzeit).
- *   3. ARP-Tabelle lesen -> IP/MAC/Interface.
+ *   1. Subnetze bestimmen: eigene Interfaces (auch VLAN-Interfaces auf dem
+ *      Trunk-Port), HUB_VLANS und HUB_SCAN_SUBNETS (netmap.ts).
+ *   2. Ping-Sweep ueber jedes Subnetz (fuellt die ARP-Tabelle, misst Antwortzeit).
+ *   3. MAC je IP: lokale ARP-Tabelle, fuer geroutete VLANs die ARP-Tabelle des
+ *      Routers per SNMP (HUB_SNMP_ROUTER).
  *   4. Pro Geraet anreichern: Hostname (Reverse-DNS), Hersteller (MAC-OUI),
- *      offene TCP-Ports, abgeleiteter Geraetetyp.
+ *      offene TCP-Ports, Shelly-Erkennung, abgeleiteter Geraetetyp, VLAN.
  *
  * Alle Anreicherungen sind best-effort und einzeln fehlertolerant.
  */
-import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import net from "node:net";
 import dns from "node:dns/promises";
-import { networkInterfaces } from "node:os";
-import { promisify } from "node:util";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
-
-const exec = promisify(execFile);
+import {
+  ipToInt,
+  knownSubnets,
+  macTable,
+  pingSweep,
+  readArp,
+  readRouterArp,
+  subnetForIp,
+  type Subnet,
+} from "./netmap.js";
+import { probeShelly, type ShellyInfo } from "./shelly.js";
 let busy = false;
 /** Letztes Scan-Ergebnis fuer das lokale Dashboard (nicht nur die Anzahl). */
 let lastDevices: ScannedDevice[] = [];
+let lastSubnets: SubnetSummary[] = [];
 
 export interface ScannedDevice {
   ip: string;
-  mac: string;
+  /** null = geroutetes VLAN ohne Router-ARP (wird nicht in die Cloud gemeldet). */
+  mac: string | null;
+  /** Woher die MAC stammt: lokale ARP-Tabelle oder Router (SNMP). */
+  macSource: "arp" | "router" | null;
   iface: string | null;
+  vlanId: number | null;
+  vlanName: string | null;
+  subnet: string | null;
   hostname: string | null;
   vendor: string | null;
   openPorts: number[];
   deviceType: string | null;
   responseMs: number | null;
   reachable: boolean;
+  /** Gesetzt, wenn das Geraet ein Shelly ist (lokale API, schaltbar). */
+  shelly: ShellyInfo | null;
+}
+
+export interface SubnetSummary {
+  cidr: string;
+  vlanId: number | null;
+  vlanName: string | null;
+  iface: string | null;
+  hubIp: string | null;
+  /** direkt = Hub hat ein Interface im Netz; geroutet = nur ueber den Router. */
+  mode: "direkt" | "geroutet";
+  found: number;
+  withMac: number;
 }
 
 /** Haeufige TCP-Ports zur Geraete-Identifikation. */
 const SCAN_PORTS = [
   21, 22, 23, 53, 80, 111, 135, 139, 143, 443, 445, 515, 548, 554, 631,
-  993, 1883, 3000, 3389, 5000, 5001, 5060, 5900, 6379, 7000, 8000, 8080,
+  993, 1023, 1883, 3000, 3389, 5000, 5001, 5060, 5900, 6379, 7000, 8000, 8080,
   8443, 8883, 9000, 9100, 32400, 62078,
 ];
 
-const PING_CONCURRENCY = 64;
 const PORT_CONCURRENCY = 16;
 const PORT_TIMEOUT_MS = 700;
 const DNS_TIMEOUT_MS = 1500;
 
-/** Lokale IPv4-Interfaces mit /24-Praefix (auf /24 begrenzt fuer sinnvolle Laufzeit). */
-function localSubnets(): { prefix: string; iface: string }[] {
-  const nets: { prefix: string; iface: string }[] = [];
-  const seen = new Set<string>();
-  for (const [iface, addrs] of Object.entries(networkInterfaces())) {
-    for (const a of addrs ?? []) {
-      if (a.family === "IPv4" && !a.internal) {
-        const parts = a.address.split(".");
-        if (parts.length !== 4) continue;
-        const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
-        if (seen.has(prefix)) continue;
-        seen.add(prefix);
-        nets.push({ prefix, iface });
-      }
-    }
-  }
-  return nets;
-}
-
-/** Einzelnen Host pingen; liefert Erreichbarkeit + Antwortzeit. */
-async function pingHost(ip: string): Promise<{ reachable: boolean; ms: number | null }> {
-  const started = Date.now();
-  try {
-    const { stdout } = await exec("ping", ["-c", "1", "-W", "600", "-t", "1", ip], { timeout: 1800 });
-    const m = stdout.match(/time[=<]([\d.]+)\s*ms/i);
-    return { reachable: true, ms: m ? Math.round(parseFloat(m[1])) : Date.now() - started };
-  } catch {
-    return { reachable: false, ms: null };
-  }
-}
-
-/** Ping-Sweep ueber alle Subnetze; liefert Map ip -> Antwortzeit. */
-async function pingSweep(): Promise<Map<string, number | null>> {
-  const subnets = localSubnets();
-  const result = new Map<string, number | null>();
-  if (subnets.length === 0) return result;
-
-  const targets: string[] = [];
-  for (const { prefix } of subnets) {
-    for (let host = 1; host <= 254; host++) targets.push(`${prefix}.${host}`);
-  }
-
-  let index = 0;
-  async function worker() {
-    while (index < targets.length) {
-      const ip = targets[index++];
-      const { reachable, ms } = await pingHost(ip);
-      if (reachable) result.set(ip, ms);
-    }
-  }
-  await Promise.all(Array.from({ length: PING_CONCURRENCY }, worker));
-  return result;
-}
-
-/** ARP-Tabelle lesen -> IP/MAC/Interface. (Auch fuer Kamera-MAC-Re-Mapping genutzt.) */
-export async function readArp(): Promise<Map<string, { mac: string; iface: string | null }>> {
-  const map = new Map<string, { mac: string; iface: string | null }>();
-  try {
-    const { stdout } = await exec("arp", ["-a", "-n"], { timeout: 15000 });
-    for (const line of stdout.split("\n")) {
-      // macOS: "? (192.168.1.4) at 8c:3b:ad:65:b1:0 on en0 ifscope [ethernet]"
-      const m = line.match(/\(([\d.]+)\) at ([0-9a-fA-F:]+)(?: on (\S+))?/);
-      if (!m || m[2] === "ff:ff:ff:ff:ff:ff" || /incomplete/i.test(line)) continue;
-      const mac = m[2].split(":").map((o) => o.padStart(2, "0")).join(":").toUpperCase();
-      map.set(m[1], { mac, iface: m[3] ?? null });
-    }
-  } catch (e) {
-    log(`ARP-Lesen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
-  }
-  return map;
-}
+/** Fuer bestehende Importe (cameras.ts u. a.): ARP lebt jetzt in netmap.ts. */
+export { readArp };
 
 // ── MAC-Hersteller (OUI) ─────────────────────────────────────────────────────
 
@@ -143,6 +102,8 @@ const OUI_FALLBACK: Record<string, string> = {
   "44D9E7": "Ubiquiti", "245A4C": "Ubiquiti", "00A0DE": "Yamaha",
   "001C42": "Parallels", "0050F2": "Microsoft", "0025AE": "Microsoft",
   "D89E3F": "Apple", "AC87A3": "Apple", "F0DBF8": "Apple", "6C4008": "Apple",
+  // Standort Tuttenbrocksee
+  "EC71DB": "Reolink", "1CCAE3": "DoorBird", "B0C554": "D-Link", "000940": "AGFEO",
 };
 
 function loadOui(): Map<string, string> {
@@ -216,12 +177,21 @@ async function scanPorts(ip: string): Promise<number[]> {
   return open.sort((a, b) => a - b);
 }
 
-/** Grobe Geraetetyp-Heuristik aus offenen Ports und Hostname. */
-function guessDeviceType(ports: number[], hostname: string | null, vendor: string | null): string | null {
+/** Grobe Geraetetyp-Heuristik aus offenen Ports, Hostname, Hersteller und Shelly-Probe. */
+function guessDeviceType(
+  ports: number[],
+  hostname: string | null,
+  vendor: string | null,
+  shelly: ShellyInfo | null = null
+): string | null {
   const p = new Set(ports);
   const h = (hostname ?? "").toLowerCase();
   const v = (vendor ?? "").toLowerCase();
 
+  if (shelly) return `Shelly ${shelly.app ?? shelly.model ?? ""}`.trim();
+  if (/doorbird|bird home/.test(v) || /doorbird/.test(h)) return "Türstation";
+  if (/reolink/.test(v)) return "Kamera";
+  if (p.has(1023) && !p.has(22)) return "Audio-DSP (Soundweb)";
   if (p.has(9100) || p.has(515) || p.has(631) || /print|hp|canon|epson|brother|kyocera/.test(h))
     return "Drucker";
   if (p.has(554) || /cam|ipcam|axis|hikvision|dahua|reolink/.test(h)) return "Kamera";
@@ -231,19 +201,27 @@ function guessDeviceType(ports: number[], hostname: string | null, vendor: strin
   if (p.has(548) || p.has(445) || /synology|nas|qnap/.test(h) || /synology|qnap/.test(v)) return "NAS/Server";
   if (p.has(22) && (p.has(80) || p.has(443)) && /raspberry|pi/.test(v)) return "Raspberry Pi";
   if (p.has(1883) || p.has(8883) || /hue|nest|sonos|shelly|tasmota|esp/.test(h)) return "IoT-Gerät";
-  if (/router|gateway|fritz|unifi|ubiquiti|netgear/.test(h) || /ubiquiti|netgear/.test(v)) return "Router/AP";
+  if (/router|gateway|fritz|unifi|ubiquiti|netgear|switch|wac|wax|gc\d/.test(h) || /ubiquiti|netgear/.test(v))
+    return "Netzwerk (Switch/AP/Router)";
   if (p.has(80) || p.has(443) || p.has(8080)) return "Web-Gerät";
   if (p.has(22)) return "Server/PC";
   return null;
 }
 
-/** Kompletter aktiver Scan mit Anreicherung. */
-async function fullScan(): Promise<ScannedDevice[]> {
-  const pings = await pingSweep();
-  const arp = await readArp();
+/** Kompletter aktiver Scan mit Anreicherung (alle bekannten Subnetze/VLANs). */
+async function fullScan(): Promise<{ devices: ScannedDevice[]; subnets: SubnetSummary[] }> {
+  const subnets = knownSubnets();
+  const pings = await pingSweep(subnets);
+  // Nach dem Sweep ist die ARP-Tabelle des Routers frisch -> neu lesen.
+  await readRouterArp(true);
+  const table = await macTable();
 
-  // Kandidaten: alles mit MAC (ARP) plus per Ping erreichbare IPs.
-  const ips = new Set<string>([...arp.keys(), ...pings.keys()]);
+  // Kandidaten: alle per Ping erreichbaren IPs, lokale ARP-Eintraege und
+  // Router-ARP-Eintraege innerhalb der bekannten Subnetze.
+  const ips = new Set<string>(pings.keys());
+  for (const [ip, s] of table) {
+    if (s.source === "arp" || subnetForIp(ip, subnets)) ips.add(ip);
+  }
   const devices: ScannedDevice[] = [];
 
   // Anreicherung parallel, aber begrenzt (Port-Scans sind teuer).
@@ -253,35 +231,53 @@ async function fullScan(): Promise<ScannedDevice[]> {
   async function worker() {
     while (index < list.length) {
       const ip = list[index++];
-      const arpEntry = arp.get(ip);
-      const mac = arpEntry?.mac ?? null;
-      // Ohne MAC koennen wir das Geraet nicht stabil identifizieren -> ueberspringen.
-      if (!mac) continue;
+      const sighting = table.get(ip) ?? null;
+      const mac = sighting?.mac ?? null;
+      const subnet = subnetForIp(ip, subnets);
+      // Ohne MAC und ohne Ping-Antwort gibt es nichts Verlaessliches zu melden.
+      if (!mac && !pings.has(ip)) continue;
 
       const [hostname, openPorts] = await Promise.all([lookupHostname(ip), scanPorts(ip)]);
-      const vendor = lookupVendor(mac);
+      const shelly = openPorts.includes(80) ? await probeShelly(ip) : null;
+      const vendor = mac ? lookupVendor(mac) : null;
       devices.push({
         ip,
         mac,
-        iface: arpEntry?.iface ?? null,
-        hostname,
-        vendor,
+        macSource: sighting?.source ?? null,
+        iface: sighting?.iface ?? subnet?.iface ?? null,
+        vlanId: subnet?.vlanId ?? null,
+        vlanName: subnet?.vlanName ?? null,
+        subnet: subnet?.cidr ?? null,
+        hostname: hostname ?? shelly?.name ?? null,
+        vendor: vendor ?? (shelly ? "Shelly" : null),
         openPorts,
-        deviceType: guessDeviceType(openPorts, hostname, vendor),
+        deviceType: guessDeviceType(openPorts, hostname, vendor, shelly),
         responseMs: pings.get(ip) ?? null,
         reachable: pings.has(ip) || openPorts.length > 0,
+        shelly,
       });
     }
   }
   await Promise.all(Array.from({ length: ENRICH_CONCURRENCY }, worker));
 
-  devices.sort((a, b) => {
-    const pa = a.ip.split(".").map(Number);
-    const pb = b.ip.split(".").map(Number);
-    for (let i = 0; i < 4; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
-    return 0;
+  devices.sort((a, b) => (ipToInt(a.ip) ?? 0) - (ipToInt(b.ip) ?? 0));
+  return { devices, subnets: summarize(subnets, devices) };
+}
+
+function summarize(subnets: Subnet[], devices: ScannedDevice[]): SubnetSummary[] {
+  return subnets.map((s) => {
+    const inNet = devices.filter((d) => d.subnet === s.cidr);
+    return {
+      cidr: s.cidr,
+      vlanId: s.vlanId,
+      vlanName: s.vlanName,
+      iface: s.iface,
+      hubIp: s.hubIp,
+      mode: s.iface ? "direkt" : "geroutet",
+      found: inNet.length,
+      withMac: inNet.filter((d) => d.mac).length,
+    };
   });
-  return devices;
 }
 
 export type CloudScanResult = {
@@ -308,19 +304,24 @@ export async function runCloudScan(label = "Auto-Scan"): Promise<CloudScanResult
   const startedAt = Date.now();
   try {
     log(`${label} gestartet (Ping-Sweep + Portscan) …`);
-    const devices = await fullScan();
+    const { devices, subnets } = await fullScan();
     lastDevices = devices;
+    lastSubnets = subnets;
+    const coverage = subnets
+      .map((n) => `${n.vlanName ?? n.cidr}: ${n.found}${n.mode === "geroutet" ? " (geroutet)" : ""}`)
+      .join(", ");
     recordHubEvent({
       kind: "network",
       severity: "info",
       where: "LAN",
       title: `${label}: ${devices.length} Geräte`,
-      detail: `${Math.round((Date.now() - startedAt) / 1000)} s`,
+      detail: `${Math.round((Date.now() - startedAt) / 1000)} s · ${coverage}`,
     });
 
+    // Die Cloud identifiziert Geraete per MAC – Eintraege ohne MAC bleiben lokal.
     const res = await api("/api/hub/scan", {
       method: "POST",
-      body: JSON.stringify({ hubName: CONFIG.name, devices }),
+      body: JSON.stringify({ hubName: CONFIG.name, devices: devices.filter((d) => d.mac) }),
     });
     if (!res.ok) {
       const error = `HTTP ${res.status}`;
@@ -361,6 +362,7 @@ export function lastScanResult(): {
   uploaded: boolean;
   error: string | null;
   devices: ScannedDevice[];
+  subnets: SubnetSummary[];
 } {
   return {
     scanning: busy,
@@ -368,6 +370,7 @@ export function lastScanResult(): {
     uploaded: STATE.autoScan.uploaded,
     error: STATE.autoScan.error,
     devices: lastDevices,
+    subnets: lastSubnets.length ? lastSubnets : summarize(knownSubnets(), []),
   };
 }
 

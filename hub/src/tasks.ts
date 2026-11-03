@@ -96,6 +96,35 @@ async function runWakeOnLan(payload: Record<string, unknown> | null): Promise<Ta
   });
 }
 
+const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+
+async function runShellyTask(type: string, payload: Record<string, unknown> | null): Promise<TaskResult> {
+  const host = String(payload?.host ?? "").trim();
+  if (!IPV4_RE.test(host)) return { success: false, error: "Ungültige Shelly-IP" };
+  const { shellyStatus, shellySwitch } = await import("./shelly.js");
+  try {
+    if (type === "SHELLY_STATUS") {
+      return { success: true, result: await shellyStatus(host) };
+    }
+    const channel = Number(payload?.channel ?? 0);
+    if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+      return { success: false, error: "Ungültiger Kanal" };
+    }
+    const raw = payload?.on;
+    const on: boolean | "toggle" =
+      raw === true || raw === "true" || raw === "on"
+        ? true
+        : raw === false || raw === "false" || raw === "off"
+          ? false
+          : "toggle";
+    const r = await shellySwitch(host, channel, on);
+    log(`Shelly ${host} Kanal ${channel}: ${on === "toggle" ? "umgeschaltet" : on ? "an" : "aus"} → ${r.on === null ? "?" : r.on ? "an" : "aus"}`);
+    return { success: true, result: { host, channel, ...r } };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function executeTask(task: HubTask): Promise<TaskResult> {
   log(`Task #${task.id} (${task.type}) wird ausgeführt …`);
   switch (task.type) {
@@ -238,6 +267,10 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
     case "SERVICE_RESTART":
       // Tracker per launchctl, Hub per Exit (launchd startet neu) – feste Liste, kein freier Befehl.
       return restartService(task.payload);
+    case "SHELLY_STATUS":
+    case "SHELLY_SWITCH":
+      // Shelly (Gen1/Gen2+) direkt im LAN: Status lesen bzw. Relais schalten.
+      return runShellyTask(task.type, task.payload);
     case "SYSTEM_CHECK": {
       // Auto-Login/Ruhezustand/Einschaltplan sofort neu lesen (z. B. nach setup-system.sh),
       // pmset dabei nachziehen, falls die sudoers-Regel inzwischen da ist.

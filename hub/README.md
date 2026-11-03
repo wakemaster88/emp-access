@@ -16,11 +16,18 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 - **Task-Queue**: pollt offene Tasks, arbeitet zeitkritische parallel
   (`SCAN_SNAPSHOT`, Türöffner, PTZ, Snapshots). `NETWORK_SCAN` läuft im
   Hintergrund und blockiert die Queue nicht.
-- **Netzwerk**: Ping-Sweep + Portscan (alle 30 min), Wake-on-LAN, optional
-  SNMP der NETGEAR-Switches (Ports/VLANs/MAC-Tabelle).
+- **Netzwerk**: Ping-Sweep + Portscan (alle 30 min) über alle VLANs
+  (`src/netmap.ts`, siehe „Mehrere VLANs“ unten), Wake-on-LAN, optional
+  SNMP der NETGEAR-Switches (Ports/VLANs/MAC-Tabelle, Laufzeit) und die
+  ARP-Tabelle des Routers für MACs in gerouteten VLANs.
+- **Shelly**: Scan erkennt Shellys (Gen1 und Gen2+/Pro) an `/shelly`;
+  Status und Relais schalten im lokalen Dashboard (mit Rückfrage) und per
+  Task `SHELLY_STATUS` / `SHELLY_SWITCH` (`{ host, channel, on }`).
 - **Kameras (Reolink)**: CGI-Polling (parallel), Events, Personen- und
-  Fahrzeug-Pipelines, PTZ/Scheinwerfer/IR/Sirene, MAC-Re-Mapping bei DHCP.
-- **DoorBird**: `monitor.cgi` (Push), Klingel, Türöffner, Telegram-Torwunsch.
+  Fahrzeug-Pipelines, PTZ/Scheinwerfer/IR/Sirene, MAC-Re-Mapping bei DHCP
+  und VLAN-Umzug (lokale ARP, Router-ARP, notfalls Ping-Sweep).
+- **DoorBird**: `monitor.cgi` (Push), Klingel, Türöffner, Telegram-Torwunsch,
+  MAC-Re-Mapping wie bei den Kameras (neue IP → Cloud + Streams).
   **Tor offen halten** (Task `DOORBIRD_HOLD`, Webcams/Kameras → Uhr-Symbol):
   Das Tor schließt ~1 min nach jedem Impuls von selbst, darum löst der Hub
   das Relais bis zum gewählten Endzeitpunkt alle 50 s erneut aus
@@ -56,6 +63,33 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).
 - **Selbst-Update**: alle 5 min `git fetch` (async). Bei neuen Commits:
   `reset --hard origin/main` + `npm install` + Neustart durch launchd.
+
+## Mehrere VLANs
+
+Nach der VLAN-Aufteilung (Kameras 30, Betrieb/IoT 40, Anlage/Audio 41 …) ist
+Inter-VLAN-Routing am Router für diese Netze aus. Damit der Hub trotzdem
+alles sieht und steuert, hängt er mit einem **Trunk-Port** am Core-Switch
+(untagged 1, tagged 30/40/41) und bekommt je VLAN ein macOS-VLAN-Interface:
+
+```bash
+./install/setup-vlans.sh              # Trockenlauf: zeigt, was passiert
+sudo ./install/setup-vlans.sh --apply # VLAN 30/40/41 mit .5, ohne Router
+```
+
+Dann in `hub/.env`:
+
+- `HUB_VLANS` – Soll-VLANs mit Namen und Subnetz; alle werden gescannt, das
+  Dashboard zeigt je VLAN „direkt über vlanX“ oder „nur geroutet“.
+- `HUB_SNMP_ROUTER` – Router-IP; liefert per SNMP die MACs aus VLANs, in
+  denen der Hub kein eigenes Interface hat.
+- `HUB_SCAN_EXCLUDE` – VLANs, die nicht gescannt werden sollen.
+
+Kameras und DoorBird werden über ihre **MAC** wiedergefunden: Der Hub lernt
+die MAC, solange ein Gerät erreichbar ist. Antwortet es nicht mehr, sucht er
+die MAC in der ARP-Tabelle (lokal + Router) und pingt notfalls einmal alle
+direkt angeschlossenen Netze an. Taucht sie unter neuer IP auf, stellt er
+sofort um, meldet die IP an die Cloud und zieht go2rtc/Kiosk nach. Dauerhaft
+sauber wird es mit DHCP-Reservierungen am Router.
 
 ## Betrieb rund um die Uhr
 

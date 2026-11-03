@@ -110,12 +110,21 @@
 
       <div class="toolbar">
         <button type="button" class="btn primary" data-action="NETWORK_SCAN">Netzwerk-Scan starten</button>
-        <input type="search" id="netFilter" class="field" placeholder="Filtern: IP, Name, Typ" inputmode="search" aria-label="Geräte filtern">
+        <button type="button" class="btn" data-action="SWITCH_SYNC">Switches abfragen</button>
+        <input type="search" id="netFilter" class="field" placeholder="Filtern: IP, Name, Typ, VLAN" inputmode="search" aria-label="Geräte filtern">
       </div>
 
+      <h2 class="sec">VLANs und Subnetze</h2>
+      <div class="grid cards" id="netSubnets"></div>
+
+      <h2 class="sec">Switches (SNMP)</h2>
+      <div class="grid cards" id="netSwitches"></div>
+
+      <h2 class="sec">Geräte</h2>
+      <div class="segment" id="netVlanFilter" role="group" aria-label="Nach VLAN filtern"></div>
       <div class="card table-card">
         <table class="data" id="netTable">
-          <thead><tr><th>IP</th><th>Name</th><th>Hersteller</th><th>Typ</th><th>Ports</th><th>Status</th></tr></thead>
+          <thead><tr><th>IP</th><th>Name</th><th>VLAN</th><th>Hersteller</th><th>Typ</th><th>Ports</th><th>Status</th></tr></thead>
           <tbody id="netRows"></tbody>
         </table>
       </div>

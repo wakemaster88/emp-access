@@ -14,7 +14,7 @@ import { jpegContainsVehicle } from "./vision.js";
 import { speakOnCamera } from "./camera-talk.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
-import { readArp } from "./scanner.js";
+import { findIpByMac, macForIp } from "./netmap.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve } from "./improve-log.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
@@ -1130,7 +1130,7 @@ const MAC_LEARN_INTERVAL_MS = 3_600_000;
 /** Re-Mapping-Versuch hoechstens einmal pro Minute pro Kamera. */
 const RELOCATE_THROTTLE_MS = 60_000;
 
-async function reportNetworkUpdate(
+export async function reportNetworkUpdate(
   cameraId: number,
   data: { macAddress?: string; host?: string }
 ): Promise<boolean> {
@@ -1146,8 +1146,8 @@ async function learnCameraMac(cam: CameraRuntime): Promise<void> {
   if (Date.now() - cam.lastMacLearnAt < MAC_LEARN_INTERVAL_MS) return;
   cam.lastMacLearnAt = Date.now();
   try {
-    const arp = await readArp();
-    const mac = arp.get(cam.config.host)?.mac ?? null;
+    // Lokale ARP-Tabelle oder (geroutetes VLAN) ARP-Tabelle des Routers.
+    const mac = await macForIp(cam.config.host);
     if (!mac || mac === cam.config.macAddress) return;
     const ok = await reportNetworkUpdate(cam.config.id, { macAddress: mac });
     if (ok) {
@@ -1160,17 +1160,19 @@ async function learnCameraMac(cam: CameraRuntime): Promise<void> {
 }
 
 /**
- * Kamera unerreichbar: MAC in der ARP-Tabelle suchen. Taucht sie unter einer
- * anderen IP auf, sofort umstellen und die Cloud aktualisieren.
+ * Kamera unerreichbar: MAC in der ARP-Tabelle (lokal + Router) suchen. Taucht
+ * sie unter einer anderen IP auf (z. B. VLAN-Umzug 192.168.1.x -> 192.168.30.x),
+ * sofort umstellen und die Cloud aktualisieren.
  */
 async function tryRelocateCamera(cam: CameraRuntime): Promise<boolean> {
   if (!cam.config.macAddress) return false;
   if (Date.now() - cam.lastRelocateAt < RELOCATE_THROTTLE_MS) return false;
   cam.lastRelocateAt = Date.now();
   try {
-    const arp = await readArp();
-    for (const [ip, entry] of arp) {
-      if (entry.mac !== cam.config.macAddress || ip === cam.config.host) continue;
+    // Sucht in lokaler + Router-ARP-Tabelle; ohne Treffer werden die direkt
+    // angeschlossenen Subnetze (auch VLAN-Interfaces) einmal angepingt.
+    const ip = await findIpByMac(cam.config.macAddress, { sweep: true, exclude: cam.config.host });
+    if (ip) {
       const oldHost = cam.config.host;
       cam.config.host = ip;
       cam.token = null;

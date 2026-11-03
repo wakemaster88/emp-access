@@ -25,6 +25,9 @@ const state = {
   failures: 0,
   eventFilter: "alle",
   netFilter: "",
+  netVlan: "alle",
+  /** Shelly-Status je IP (per SHELLY_STATUS geholt). */
+  shelly: {},
   loaded: false,
 };
 
@@ -494,22 +497,91 @@ function renderLeistung(sys) {
 
 /* --------------------------------------------------------------- Netzwerk */
 
+function vlanLabel(dev) {
+  if (dev.vlanId == null) return dev.subnet || "–";
+  return `${dev.vlanId}${dev.vlanName ? ` · ${dev.vlanName}` : ""}`;
+}
+
+function shellyCell(dev) {
+  if (!dev.shelly) return "";
+  const st = state.shelly[dev.ip];
+  if (!st) {
+    return `<div><button type="button" class="btn small" data-shelly-status="${esc(dev.ip)}">Status</button></div>`;
+  }
+  if (st.error) return `<div class="muted">${esc(st.error)}</div>`;
+  return `<div class="chips">${st.channels
+    .filter((c) => c.kind === "switch")
+    .map(
+      (c) => `<button type="button" class="btn small ${c.on ? "primary" : ""}" data-shelly-switch="${esc(dev.ip)}" data-channel="${esc(c.id)}" data-on="${c.on ? "false" : "true"}" title="Kanal ${esc(c.id)} ${c.on ? "ausschalten" : "einschalten"}">
+          K${esc(c.id)}: ${c.on ? "an" : "aus"}${c.powerW != null ? ` · ${esc(Math.round(c.powerW))} W` : ""}
+        </button>`
+    )
+    .join("")}</div>`;
+}
+
 function renderNetzwerk() {
   const n = state.network;
   if (!n) {
     $("netSub").textContent = "Scan-Daten werden geladen …";
     return;
   }
+  const noMac = n.devices.filter((d) => !d.mac).length;
   $("netSub").textContent = n.scanning
     ? "Scan läuft gerade …"
     : n.lastRunAt
-      ? `${n.devices.length} Geräte · ${ago(n.lastRunAt)}${n.uploaded ? " · in die Cloud gemeldet" : ""}${n.error ? ` · Fehler: ${n.error}` : ""}`
+      ? `${n.devices.length} Geräte · ${ago(n.lastRunAt)}${n.uploaded ? " · in die Cloud gemeldet" : ""}${noMac ? ` · ${noMac} ohne MAC (geroutet, Router-SNMP fehlt)` : ""}${n.error ? ` · Fehler: ${n.error}` : ""}`
       : "Noch kein Scan gelaufen.";
 
+  const subnets = n.subnets || [];
+  $("netSubnets").innerHTML = subnets.length
+    ? subnets
+        .map((s) => {
+          const tone = s.mode === "direkt" ? (s.found ? "ok" : "warn") : s.found ? "warn" : "alert";
+          const how =
+            s.mode === "direkt"
+              ? `direkt über ${s.iface}${s.hubIp ? ` (${s.hubIp})` : ""}`
+              : "nur geroutet";
+          return `<article class="card place">
+        <div class="place-head"><h3>${esc(s.vlanId != null ? `VLAN ${s.vlanId}${s.vlanName ? ` · ${s.vlanName}` : ""}` : s.cidr)}</h3><span class="host mono">${esc(s.cidr)}</span></div>
+        <div class="chips">${badge(tone, `${s.found} Geräte`)}${badge(s.mode === "direkt" ? "ok" : "idle", how)}</div>
+        ${s.found > s.withMac ? `<div class="line"><span class="k">ohne MAC</span><span class="v">${esc(s.found - s.withMac)}</span></div>` : ""}
+        ${s.mode !== "direkt" && !s.found ? `<div class="line"><span class="v muted">Nicht erreichbar: VLAN-Interface am Hub oder Routing fehlt.</span></div>` : ""}
+      </article>`;
+        })
+        .join("")
+    : empty("Keine Subnetze bekannt.");
+  if (!n.vlansConfigured) {
+    $("netSubnets").innerHTML += `<article class="card"><div class="line"><span class="v muted">HUB_VLANS ist nicht gesetzt – es werden nur die eigenen Interfaces gescannt. Siehe hub/.env.example.</span></div></article>`;
+  }
+
+  const sw = n.switches || [];
+  $("netSwitches").innerHTML = sw.length
+    ? sw
+        .map(
+          (s) => `<article class="card place">
+        <div class="place-head"><h3>${esc(s.sysName || s.host)}</h3><span class="host mono">${esc(s.host)}</span></div>
+        <div class="chips">${s.error ? badge("alert", s.error) : badge("ok", `${s.portsUp}/${s.portsTotal} Ports aktiv`)}</div>
+        <div class="line"><span class="k">Laufzeit</span><span class="v">${esc(typeof s.uptimeS === "number" ? uptime(s.uptimeS) : "–")}</span></div>
+        <div class="line"><span class="k">MACs</span><span class="v">${esc(s.macs)}</span></div>
+        <div class="line"><span class="k">Stand</span><span class="v muted">${esc(ago(s.polledAt))}</span></div>
+      </article>`
+        )
+        .join("")
+    : empty("Keine Switches abgefragt. HUB_SNMP_TARGETS setzen und SNMP in Insight aktivieren.");
+
+  const vlans = [...new Set(n.devices.map((d) => (d.vlanId != null ? String(d.vlanId) : "?")))].sort((a, b) => Number(a) - Number(b));
+  $("netVlanFilter").innerHTML = ["alle", ...vlans]
+    .map((v) => `<button type="button" data-vlan="${esc(v)}" aria-pressed="${state.netVlan === v}">${esc(v === "alle" ? "Alle" : v === "?" ? "ohne VLAN" : `VLAN ${v}`)}</button>`)
+    .join("");
+
   const q = state.netFilter.trim().toLowerCase();
-  const rows = n.devices.filter((dev) =>
-    !q ||
-    [dev.ip, dev.hostname, dev.vendor, dev.deviceType, dev.mac].some((v) => String(v ?? "").toLowerCase().includes(q))
+  const rows = n.devices.filter(
+    (dev) =>
+      (state.netVlan === "alle" || String(dev.vlanId ?? "?") === state.netVlan) &&
+      (!q ||
+        [dev.ip, dev.hostname, dev.vendor, dev.deviceType, dev.mac, dev.vlanName, dev.vlanId].some((v) =>
+          String(v ?? "").toLowerCase().includes(q)
+        ))
   );
 
   $("netRows").innerHTML = rows.length
@@ -517,15 +589,35 @@ function renderNetzwerk() {
         .map(
           (dev) => `<tr>
         <td data-label="IP"><span class="mono">${esc(dev.ip)}</span></td>
-        <td data-label="Name"><div>${esc(dev.hostname || "–")}<div class="muted mono">${esc(dev.mac)}</div></div></td>
+        <td data-label="Name"><div>${esc(dev.hostname || "–")}<div class="muted mono">${esc(dev.mac || "MAC unbekannt")}${dev.macSource === "router" ? " · via Router" : ""}</div></div></td>
+        <td data-label="VLAN"><span>${esc(vlanLabel(dev))}</span></td>
         <td data-label="Hersteller"><span>${esc(dev.vendor || "–")}</span></td>
-        <td data-label="Typ"><span>${esc(dev.deviceType || "–")}</span></td>
+        <td data-label="Typ"><div>${esc(dev.deviceType || "–")}${shellyCell(dev)}</div></td>
         <td data-label="Ports"><span class="mono">${esc(dev.openPorts.join(", ") || "–")}</span></td>
         <td data-label="Status">${dev.reachable ? badge("ok", `${dev.responseMs ?? "?"} ms`) : badge("idle", "still")}</td>
       </tr>`
         )
         .join("")
-    : `<tr><td colspan="6">${empty(n.devices.length ? "Kein Gerät passt zum Filter." : "Noch keine Geräte erfasst.")}</td></tr>`;
+    : `<tr><td colspan="7">${empty(n.devices.length ? "Kein Gerät passt zum Filter." : "Noch keine Geräte erfasst.")}</td></tr>`;
+}
+
+async function shellyAction(type, payload) {
+  try {
+    const res = await fetch("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, payload }),
+    });
+    return await res.json();
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+async function loadShelly(ip) {
+  const r = await shellyAction("SHELLY_STATUS", { host: ip });
+  state.shelly[ip] = r.success ? r.result : { error: r.error || "Status nicht lesbar" };
+  renderNetzwerk();
 }
 
 /* ---------------------------------------------------------------- Kameras */
@@ -756,6 +848,31 @@ document.addEventListener("click", (ev) => {
   const action = ev.target.closest("button[data-action]");
   if (action) {
     runAction(action.dataset.action, null, action);
+    return;
+  }
+  const shellyStatusBtn = ev.target.closest("[data-shelly-status]");
+  if (shellyStatusBtn) {
+    shellyStatusBtn.disabled = true;
+    loadShelly(shellyStatusBtn.dataset.shellyStatus);
+    return;
+  }
+  const shellySwitchBtn = ev.target.closest("[data-shelly-switch]");
+  if (shellySwitchBtn) {
+    const ip = shellySwitchBtn.dataset.shellySwitch;
+    const on = shellySwitchBtn.dataset.on === "true";
+    // Shellys schalten auch Anlagen-Stromkreise – nie ohne Rückfrage.
+    if (!confirm(`Shelly ${ip}, Kanal ${shellySwitchBtn.dataset.channel} wirklich ${on ? "EIN" : "AUS"}schalten?`)) return;
+    shellySwitchBtn.disabled = true;
+    shellyAction("SHELLY_SWITCH", { host: ip, channel: Number(shellySwitchBtn.dataset.channel), on }).then((r) => {
+      toast(r.success ? `Shelly ${ip}: ${r.result.on ? "an" : "aus"}` : `Shelly ${ip}: ${r.error}`, r.success ? "ok" : "err");
+      loadShelly(ip);
+    });
+    return;
+  }
+  const vlanBtn = ev.target.closest("#netVlanFilter button");
+  if (vlanBtn) {
+    state.netVlan = vlanBtn.dataset.vlan;
+    renderNetzwerk();
     return;
   }
   const kind = ev.target.closest("#eventFilter button");

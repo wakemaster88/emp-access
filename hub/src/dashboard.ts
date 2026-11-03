@@ -26,7 +26,8 @@ import { lastParkingSnapshot } from "./parking.js";
 import { lastScanResult } from "./scanner.js";
 import { listWhitelistPublic } from "./plate.js";
 import { recentImproveEvents } from "./improve-log.js";
-import { snmpConfigured } from "./snmp.js";
+import { lastSwitchSnapshots, snmpConfigured } from "./snmp.js";
+import { configuredVlans, routerHost } from "./netmap.js";
 import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 
@@ -47,6 +48,9 @@ const ALLOWED_ACTIONS = [
   "WAKE_ON_LAN",
   "CAMERA_SNAPSHOT",
   "FACE_ENROLL",
+  "SHELLY_STATUS",
+  "SHELLY_SWITCH",
+  "SWITCH_SYNC",
 ];
 
 function json(res: http.ServerResponse, status: number, body: unknown) {
@@ -427,7 +431,12 @@ export function startDashboard(): void {
     }
 
     if (req.method === "GET" && url.pathname === "/api/network") {
-      return json(res, 200, lastScanResult());
+      return json(res, 200, {
+        ...lastScanResult(),
+        switches: lastSwitchSnapshots(),
+        router: routerHost(),
+        vlansConfigured: configuredVlans().length > 0,
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/improve") {

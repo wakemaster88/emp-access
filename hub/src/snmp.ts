@@ -10,6 +10,8 @@ import { improve } from "./improve-log.js";
 const execFileAsync = promisify(execFile);
 
 const OID_SYS_NAME = "1.3.6.1.2.1.1.5.0";
+const OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0";
+const OID_SYS_UPTIME = "1.3.6.1.2.1.1.3.0";
 const OID_IF_DESCR = "1.3.6.1.2.1.2.2.1.2";
 const OID_IF_OPER = "1.3.6.1.2.1.2.2.1.8";
 const OID_PVID = "1.3.6.1.2.1.17.7.1.4.5.1.1";
@@ -32,6 +34,10 @@ export interface MacEntry {
 export interface SwitchSnapshot {
   host: string;
   sysName: string | null;
+  sysDescr?: string | null;
+  /** Laufzeit seit dem letzten Neustart in Sekunden. */
+  uptimeS?: number | null;
+  polledAt?: string;
   ports: SwitchPort[];
   macTable: MacEntry[];
 }
@@ -43,8 +49,35 @@ function snmpTargets(): string[] {
     .filter(Boolean);
 }
 
-function community(): string {
+export function community(): string {
   return process.env.HUB_SNMP_COMMUNITY || "public";
+}
+
+/** Letzter Stand je Switch fuer das lokale Dashboard (ohne MAC-Tabellen). */
+const lastSnapshots = new Map<string, SwitchSnapshot & { error?: string | null }>();
+
+export function lastSwitchSnapshots(): Array<{
+  host: string;
+  sysName: string | null;
+  sysDescr: string | null;
+  uptimeS: number | null;
+  polledAt: string | null;
+  portsUp: number;
+  portsTotal: number;
+  macs: number;
+  error: string | null;
+}> {
+  return [...lastSnapshots.values()].map((s) => ({
+    host: s.host,
+    sysName: s.sysName,
+    sysDescr: s.sysDescr ?? null,
+    uptimeS: s.uptimeS ?? null,
+    polledAt: s.polledAt ?? null,
+    portsUp: s.ports.filter((p) => p.up).length,
+    portsTotal: s.ports.length,
+    macs: s.macTable.length,
+    error: s.error ?? null,
+  }));
 }
 
 export function snmpConfigured(): boolean {
@@ -61,7 +94,7 @@ function parseWalk(stdout: string): Array<{ oid: string; value: string }> {
   return rows;
 }
 
-async function snmpGet(host: string, oid: string): Promise<string | null> {
+export async function snmpGet(host: string, oid: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync(
       "snmpget",
@@ -74,7 +107,7 @@ async function snmpGet(host: string, oid: string): Promise<string | null> {
   }
 }
 
-async function snmpWalk(host: string, oid: string): Promise<Array<{ oid: string; value: string }>> {
+export async function snmpWalk(host: string, oid: string): Promise<Array<{ oid: string; value: string }>> {
   const { stdout } = await execFileAsync(
     "snmpwalk",
     ["-v2c", "-c", community(), "-On", "-Oe", host, oid],
@@ -83,7 +116,7 @@ async function snmpWalk(host: string, oid: string): Promise<Array<{ oid: string;
   return parseWalk(stdout);
 }
 
-function oidSuffix(oid: string, prefix: string): string {
+export function oidSuffix(oid: string, prefix: string): string {
   const p = prefix.replace(/^\./, "");
   return oid.startsWith(p + ".") ? oid.slice(p.length + 1) : "";
 }
@@ -106,6 +139,11 @@ function vlanAndMacFromOid(suffix: string): { vlan: number | null; mac: string |
 
 export async function pollSwitch(host: string): Promise<SwitchSnapshot> {
   const sysName = await snmpGet(host, OID_SYS_NAME);
+  const sysDescr = await snmpGet(host, OID_SYS_DESCR);
+  // sysUpTime in Hundertstelsekunden, z. B. "Timeticks: (12345) 0:02:03.45" oder "12345".
+  const uptimeRaw = await snmpGet(host, OID_SYS_UPTIME);
+  const ticks = uptimeRaw ? Number(uptimeRaw.match(/\((\d+)\)/)?.[1] ?? uptimeRaw.match(/^\d+/)?.[0]) : NaN;
+  const uptimeS = Number.isFinite(ticks) ? Math.round(ticks / 100) : null;
   const descrs = await snmpWalk(host, OID_IF_DESCR);
   const opers = await snmpWalk(host, OID_IF_OPER).catch(() => []);
   const pvids = await snmpWalk(host, OID_PVID).catch(() => []);
@@ -153,7 +191,7 @@ export async function pollSwitch(host: string): Promise<SwitchSnapshot> {
     macTable.push({ mac, port, vlan });
   }
 
-  return { host, sysName, ports, macTable };
+  return { host, sysName, sysDescr, uptimeS, polledAt: new Date().toISOString(), ports, macTable };
 }
 
 export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
@@ -172,9 +210,16 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
       try {
         const snap = await pollSwitch(host);
         switches.push(snap);
+        lastSnapshots.set(host, { ...snap, error: null });
         log(`${label}: ${host} ${snap.sysName ?? ""} – ${snap.ports.length} Ports, ${snap.macTable.length} MACs`);
       } catch (e) {
-        log(`${label} ${host}: ${e instanceof Error ? e.message : e}`);
+        const error = e instanceof Error ? e.message : String(e);
+        log(`${label} ${host}: ${error}`);
+        const prev = lastSnapshots.get(host);
+        lastSnapshots.set(host, {
+          ...(prev ?? { host, sysName: null, ports: [], macTable: [] }),
+          error,
+        });
       }
     }
     if (switches.length === 0) {
