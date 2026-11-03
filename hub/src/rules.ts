@@ -115,7 +115,7 @@ async function readJson<T>(file: string): Promise<T | null> {
   }
 }
 
-async function refreshPlan(): Promise<void> {
+export async function refreshPlan(): Promise<void> {
   try {
     const res = await api("/api/hub/rules");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

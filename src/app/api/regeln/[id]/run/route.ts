@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionOrApiToken } from "@/lib/api-auth";
 import { executeRule } from "@/lib/room-rules";
 
 export const maxDuration = 30;
@@ -9,10 +9,10 @@ export const maxDuration = 30;
  * wer hier drueckt, will genau jetzt sehen, ob die Aktionen greifen.
  */
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionWithDb();
+  const session = await getSessionOrApiToken(request);
   if ("error" in session) return session.error;
   const { db, accountId } = session;
 

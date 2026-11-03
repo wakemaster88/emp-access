@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionOrApiToken } from "@/lib/api-auth";
 import {
   replaceRuleActions,
   ruleInclude,
@@ -11,7 +11,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionWithDb();
+  const session = await getSessionOrApiToken(request);
   if ("error" in session) return session.error;
   if (session.accountId == null) {
     return NextResponse.json({ error: "Kein Mandant zugeordnet" }, { status: 403 });
@@ -74,10 +74,10 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSessionWithDb();
+  const session = await getSessionOrApiToken(request);
   if ("error" in session) return session.error;
   if (session.accountId == null) {
     return NextResponse.json({ error: "Kein Mandant zugeordnet" }, { status: 403 });

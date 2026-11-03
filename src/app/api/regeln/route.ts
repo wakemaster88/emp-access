@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithDb } from "@/lib/api-auth";
+import { getSessionOrApiToken } from "@/lib/api-auth";
 import {
   replaceRuleActions,
   ruleInclude,
@@ -8,7 +8,7 @@ import {
 import { roomRuleCreateSchema } from "@/lib/validators";
 
 export async function GET(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionOrApiToken(request);
   if ("error" in session) return session.error;
   if (session.accountId == null) {
     return NextResponse.json({ error: "Kein Mandant zugeordnet" }, { status: 403 });
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSessionWithDb();
+  const session = await getSessionOrApiToken(request);
   if ("error" in session) return session.error;
   if (session.accountId == null) {
     return NextResponse.json({ error: "Kein Mandant zugeordnet" }, { status: 403 });

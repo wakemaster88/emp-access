@@ -173,3 +173,21 @@ export async function getAccountFromRequest(request: NextRequest): Promise<
   }
   return { db: session.db, accountId: session.accountId };
 }
+
+/**
+ * Sitzung (Web-App) oder Account-Token (Hub). Fuer Verwaltungs-Endpunkte, die
+ * auch der Hub bedienen darf – etwa die Regeln, die das Hub-Dashboard
+ * bearbeitet. Mit `Authorization`-Header zaehlt nur das Token.
+ */
+export async function getSessionOrApiToken(
+  request: NextRequest,
+): Promise<{ error: NextResponse } | { db: TenantDb; accountId: number | null | undefined }> {
+  if (request.headers.has("authorization")) {
+    const auth = await validateApiToken(request);
+    if ("error" in auth) return { error: auth.error as NextResponse };
+    return { db: auth.db, accountId: auth.account.id };
+  }
+  const session = await getSessionWithDb();
+  if ("error" in session) return { error: session.error as NextResponse };
+  return { db: session.db, accountId: session.accountId };
+}

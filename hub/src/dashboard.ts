@@ -10,7 +10,7 @@
  */
 import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
 import { controlSmart, listSmartDevices, pairSmart } from "./smart-devices.js";
-import { onDeviceSwitched, rulesStatus } from "./rules.js";
+import { onDeviceSwitched, refreshPlan, rulesStatus } from "./rules.js";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -642,6 +642,27 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         result: { deviceId: id, on: r.on ?? null },
       });
       return json(res, r.ok ? 200 : 502, r);
+    }
+
+    // Regeln bearbeiten: reine Durchreiche an die Cloud (/api/regeln), die
+    // Cloud prueft und speichert. Danach Raeume und Notbetrieb-Plan neu laden.
+    if (url.pathname === "/api/rules" || url.pathname.startsWith("/api/rules/")) {
+      const sub = url.pathname.slice("/api/rules".length);
+      if (!/^(\/\d+(\/run)?)?$/.test(sub)) return json(res, 404, { error: "Nicht gefunden" });
+      const method = req.method ?? "GET";
+      if (!["GET", "POST", "PUT", "DELETE"].includes(method)) return json(res, 405, { error: "Methode nicht erlaubt" });
+      try {
+        const body = method === "POST" || method === "PUT" ? JSON.stringify(await readBody(req)) : undefined;
+        const cloud = await api(`/api/regeln${sub}`, { method, body });
+        const data = await cloud.json().catch(() => ({}));
+        if (method !== "GET" && cloud.ok) {
+          void syncRooms();
+          void refreshPlan();
+        }
+        return json(res, cloud.status, data);
+      } catch (e) {
+        return json(res, 502, { error: `Cloud nicht erreichbar (${e instanceof Error ? e.message : e}) – Regeln lassen sich nur online ändern.` });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/smart") {

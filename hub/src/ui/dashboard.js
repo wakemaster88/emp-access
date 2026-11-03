@@ -11,6 +11,7 @@ const VIEWS = [
   "lage",
   "raeume",
   "geraete",
+  "regeln",
   "systeme",
   "netzwerk",
   "kameras",
@@ -41,6 +42,9 @@ const state = {
   smart: null,
   smartVendor: "alle",
   smartBusy: new Set(),
+  /** Regeln aus der Cloud (GET /api/rules -> /api/regeln). */
+  rules: null,
+  rulesError: null,
   /** Shelly-Status je IP (per SHELLY_STATUS geholt). */
   shelly: {},
   loaded: false,
@@ -305,10 +309,11 @@ async function refresh() {
       getJson(`/api/events?since=${state.eventSeq}`),
       wantNet ? getJson("/api/network") : null,
       wantImprove ? getJson("/api/improve?events=0") : null,
-      wantRooms ? getJson("/api/rooms?live=1") : state.view === "geraete" && !state.rooms ? getJson("/api/rooms") : null,
+      wantRooms ? getJson("/api/rooms?live=1") : (state.view === "geraete" || state.view === "regeln") && !state.rooms ? getJson("/api/rooms") : null,
     ]);
     if (rooms) state.rooms = rooms;
     if (state.view === "geraete") state.smart = await getJson("/api/smart");
+    if (state.view === "regeln" && (!state.rules || Date.now() - (state.rulesAt || 0) > 30000)) await loadRules();
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
     mergeEvents(events.events ?? []);
@@ -362,6 +367,7 @@ function render() {
     case "lage": renderLage(d); break;
     case "raeume": renderRaeume(d); break;
     case "geraete": renderGeraete(); break;
+    case "regeln": renderRegeln(d); break;
     case "systeme": renderSysteme(d); break;
     case "netzwerk": renderNetzwerk(); break;
     case "kameras": renderKameras(d); break;
@@ -2949,6 +2955,355 @@ $("smartScan").addEventListener("click", async (ev) => {
     btn.disabled = false;
     reloadSmart();
   }
+});
+
+/* ------------------------------------------------------------------ Regeln */
+
+/*
+ * Regeln bearbeiten wie online: Der Hub reicht alles an /api/regeln der Cloud
+ * durch (dashboard.ts). Audio-Aktionen lassen sich hier nicht anlegen, bleiben
+ * beim Speichern aber unveraendert erhalten.
+ */
+
+const DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+let ruleDraft = { id: null, actions: [] };
+
+async function loadRules() {
+  try {
+    const res = await fetch("/api/rules", { headers: { Accept: "application/json" } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `HTTP ${res.status}`);
+    state.rules = Array.isArray(data) ? data : [];
+    state.rulesError = null;
+  } catch (e) {
+    state.rulesError = e.message;
+  }
+  state.rulesAt = Date.now();
+}
+
+function allRoomDevices() {
+  const r = state.rooms;
+  if (!r) return [];
+  return r.rooms.flatMap((room) => room.devices.map((dev) => ({ ...dev, roomName: room.name }))).concat(r.unassigned.map((dev) => ({ ...dev, roomName: null })));
+}
+
+function allCameras(d) {
+  const map = new Map();
+  if (state.rooms) for (const room of state.rooms.rooms) for (const c of room.cameras) map.set(c.id, { id: c.id, name: c.name, roomId: room.id });
+  if (d) for (const c of liveCams(d)) if (!map.has(c.id)) map.set(c.id, { id: c.id, name: c.name, roomId: null });
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+function ruleSummary(rule) {
+  const t = TRIGGER_LABELS[rule.trigger] || rule.trigger;
+  const off = rule.offsetMinutes ? ` ${rule.offsetMinutes > 0 ? "+" : "−"}${Math.abs(rule.offsetMinutes)} min` : "";
+  let what = t;
+  if (rule.trigger === "TIME") what = `um ${rule.timeOfDay || "?"}`;
+  else if (["OPENING", "CLOSING", "SUNRISE", "SUNSET"].includes(rule.trigger)) what = `${t}${off}`;
+  else if (rule.trigger === "MOTION") what = `${rule.eventType ? { PERSON: "Person", VEHICLE: "Fahrzeug", MOTION: "Bewegung" }[rule.eventType] : "Bewegung"}${rule.camera ? ` an ${rule.camera.name}` : " im Raum"}`;
+  else if (rule.trigger === "DEVICE_SWITCHED") what = `${rule.triggerDevice ? rule.triggerDevice.name : "Gerät"} geschaltet`;
+  else if (rule.trigger === "IDLE") what = `${rule.idleMinutes} min ohne Bewegung`;
+  const days = rule.daysOfWeek === 127 ? "" : ` · ${DAY_NAMES.filter((_, i) => (rule.daysOfWeek >> i) & 1).join(", ")}`;
+  const cond = [
+    rule.operating === "OPEN" ? "nur geöffnet" : rule.operating === "CLOSED" ? "nur geschlossen" : null,
+    rule.windowStart && rule.windowEnd ? `${rule.windowStart}–${rule.windowEnd}` : null,
+    rule.onlyWhenDark ? "nur dunkel" : null,
+  ].filter(Boolean);
+  const acts = (rule.actions || []).map((a) => {
+    if (a.kind === "DEVICE") return `${a.device ? a.device.name : "Gerät"}: ${ACTION_LABEL[a.deviceAction] || a.deviceAction}`;
+    if (a.kind === "NOTIFY") return `${a.channel === "TELEGRAM" ? "Telegram" : a.channel === "BOTH" ? "Push + Telegram" : "Push"}`;
+    return `Audio${a.audioZone ? ` ${a.audioZone.name}` : ""}`;
+  });
+  return { what: `${what}${days}${cond.length ? ` · ${cond.join(", ")}` : ""}`, acts: acts.join(" → ") || "keine Aktion" };
+}
+
+const ACTION_LABEL = { open: "ein / öffnen", deactivate: "aus / abschließen", close: "zu", stop: "stopp", reset: "Ruhe", emergency: "Not-Auf" };
+
+function renderRegeln(d) {
+  if (state.rulesError && !state.rules) {
+    setHTML("ruleGrid", empty(`Regeln konnten nicht geladen werden: ${state.rulesError}`));
+    return;
+  }
+  if (!state.rules) {
+    setHTML("ruleGrid", '<div class="skeleton"></div><div class="skeleton"></div>');
+    return;
+  }
+  const groups = new Map();
+  for (const rule of state.rules) {
+    const key = rule.room ? rule.room.name : "Betriebsweit";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(rule);
+  }
+  const html = [...groups.entries()]
+    .sort((a, b) => (a[0] === "Betriebsweit" ? 1 : b[0] === "Betriebsweit" ? -1 : a[0].localeCompare(b[0], "de")))
+    .map(([room, list]) => `<h2 class="sec">${esc(room)}</h2><div class="grid rooms">${list
+      .map((rule) => {
+        const sum = ruleSummary(rule);
+        return `<article class="card room rule-card ${rule.isActive ? "" : "is-off"}">
+          <div class="place-head"><span class="tile-ico ${rule.isActive ? "accent" : ""}">${icon("zap")}</span><h3>${esc(rule.name)}</h3>
+            <label class="switch" title="${rule.isActive ? "Aktiv" : "Inaktiv"}"><input type="checkbox" data-rule-toggle="${rule.id}"${rule.isActive ? " checked" : ""} aria-label="Regel ${esc(rule.name)} aktiv"><span></span></label></div>
+          <div class="line"><span class="k">Wenn</span><span class="v">${esc(sum.what)}</span></div>
+          <div class="line"><span class="k">Dann</span><span class="v">${esc(sum.acts)}</span></div>
+          <div class="line"><span class="k">Zuletzt</span><span class="v muted">${rule.lastRunAt ? esc(ago(rule.lastRunAt)) : "noch nie"}</span></div>
+          <div class="card-foot"><button type="button" class="btn small" data-rule-edit="${rule.id}">Bearbeiten</button><button type="button" class="btn small" data-rule-run="${rule.id}">Jetzt ausführen</button></div>
+        </article>`;
+      })
+      .join("")}</div>`)
+    .join("");
+  setHTML("ruleGrid", html || empty("Noch keine Regeln. Lege mit „Neue Regel“ die erste an."));
+  const sub = `${state.rules.length} Regeln, ${state.rules.filter((r) => r.isActive).length} aktiv. Gespeichert wird online, der Hub springt bei Internetausfall ein.`;
+  if ($("ruleSub").textContent !== sub) $("ruleSub").textContent = sub;
+}
+
+function deviceActionOptions(dev) {
+  const kind = dev ? devKind(dev) : "door";
+  const opts = {
+    toggle: [["open", "Einschalten"], ["deactivate", "Ausschalten"]],
+    pulse: [["open", "Auslösen"], ["deactivate", "Ausschalten"]],
+    cover: [["open", "Auf"], ["close", "Zu"], ["stop", "Stopp"]],
+    lock: [["open", "Öffnen"], ["deactivate", "Abschließen"], ["reset", "Tagverriegelung"]],
+    valve: [["open", "Bewässern"], ["deactivate", "Stoppen"]],
+    audio: [["open", "Abspielen"], ["stop", "Stopp"]],
+    sensor: [["open", "Ein"], ["deactivate", "Aus"]],
+    door: [["open", "Öffnen"], ["deactivate", "Sperren"]],
+  };
+  return opts[kind] || opts.door;
+}
+
+function renderRuleActions() {
+  const devices = allRoomDevices();
+  const rows = ruleDraft.actions.map((a, i) => {
+    let body;
+    if (a.kind === "DEVICE") {
+      const dev = devices.find((x) => x.id === a.deviceId);
+      body = `<select class="field" data-act="${i}" data-field="deviceId" aria-label="Gerät"><option value="">Gerät wählen …</option>${devices
+        .map((x) => `<option value="${x.id}"${x.id === a.deviceId ? " selected" : ""}>${esc(x.name)}${x.roomName ? ` (${esc(x.roomName)})` : ""}</option>`)
+        .join("")}</select><select class="field" data-act="${i}" data-field="deviceAction" aria-label="Aktion">${deviceActionOptions(dev)
+        .map(([v, l]) => `<option value="${v}"${v === a.deviceAction ? " selected" : ""}>${l}</option>`)
+        .join("")}</select>`;
+    } else if (a.kind === "NOTIFY") {
+      body = `<select class="field" data-act="${i}" data-field="channel" aria-label="Kanal">${[["PUSH", "Push"], ["TELEGRAM", "Telegram"], ["BOTH", "Push + Telegram"]]
+        .map(([v, l]) => `<option value="${v}"${v === (a.channel || "PUSH") ? " selected" : ""}>${l}</option>`)
+        .join("")}</select><input class="field" data-act="${i}" data-field="message" maxlength="500" placeholder="Text (leer = Regelname)" value="${esc(a.message || "")}">`;
+    } else {
+      body = `<span class="muted">Audio${a.audioZone ? ` · ${esc(a.audioZone.name)}` : ""}${a.audioAnnouncement ? ` · ${esc(a.audioAnnouncement.name)}` : a.audioPlaylist ? ` · ${esc(a.audioPlaylist.name)}` : ""} (online bearbeiten)</span>`;
+    }
+    return `<div class="rule-act"><span class="rule-act-n">${i + 1}</span><div class="rule-act-body">${body}</div><button type="button" class="icon-btn small" data-act-del="${i}" aria-label="Aktion entfernen">${icon("x")}</button></div>`;
+  });
+  $("ruleActions").innerHTML = rows.join("") || '<p class="muted small-note">Noch keine Aktion.</p>';
+}
+
+function syncTriggerFields() {
+  const f = $("ruleForm");
+  const t = f.trigger.value;
+  for (const el of f.querySelectorAll("[data-for]")) el.hidden = !el.dataset.for.split(" ").includes(t);
+}
+
+function openRuleEditor(rule) {
+  const f = $("ruleForm");
+  const d = state.overview;
+  f.reset();
+  $("ruleErr").hidden = true;
+  $("ruleDlgTitle").textContent = rule ? `${rule.name} bearbeiten` : "Neue Regel";
+  $("ruleDelete").hidden = !rule;
+  const rooms = state.rooms ? state.rooms.rooms : [];
+  f.roomId.innerHTML = `<option value="">Betriebsweit (kein Raum)</option>${rooms.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("")}`;
+  f.cameraId.innerHTML = `<option value="">Jede Kamera im Raum</option>${allCameras(d).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}`;
+  f.triggerDeviceId.innerHTML = `<option value="">Gerät wählen …</option>${allRoomDevices().map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}`;
+  const days = rule ? rule.daysOfWeek : 127;
+  $("ruleDays").innerHTML = DAY_NAMES.map((n, i) => `<label class="day"><input type="checkbox" value="${i}"${(days >> i) & 1 ? " checked" : ""}><span>${n}</span></label>`).join("");
+
+  const v = (x) => (x == null ? "" : String(x));
+  f.name.value = rule ? rule.name : "";
+  f.roomId.value = v(rule ? rule.roomId : rooms[0] ? rooms[0].id : "");
+  f.trigger.value = rule ? rule.trigger : "MOTION";
+  f.timeOfDay.value = rule ? v(rule.timeOfDay) : "";
+  f.offsetMinutes.value = rule ? rule.offsetMinutes : 0;
+  f.cameraId.value = rule ? v(rule.cameraId) : "";
+  f.eventType.value = rule ? v(rule.eventType) : "";
+  f.triggerDeviceId.value = rule ? v(rule.triggerDeviceId) : "";
+  f.triggerAction.value = rule ? v(rule.triggerAction) : "";
+  f.idleMinutes.value = rule && rule.idleMinutes ? rule.idleMinutes : 15;
+  f.scanDirection.value = rule ? v(rule.scanDirection) : "";
+  f.operating.value = rule ? rule.operating : "ANY";
+  f.cooldownSeconds.value = rule ? rule.cooldownSeconds : 60;
+  f.windowStart.value = rule ? v(rule.windowStart) : "";
+  f.windowEnd.value = rule ? v(rule.windowEnd) : "";
+  f.onlyWhenDark.checked = rule ? rule.onlyWhenDark : false;
+  f.isActive.checked = rule ? rule.isActive : true;
+  ruleDraft = {
+    id: rule ? rule.id : null,
+    actions: rule ? rule.actions.map((a) => ({ ...a })) : [{ kind: "DEVICE", deviceId: null, deviceAction: "open" }],
+  };
+  syncTriggerFields();
+  renderRuleActions();
+  $("ruleDlg").showModal();
+}
+
+function ruleFormPayload() {
+  const f = $("ruleForm");
+  const t = f.trigger.value;
+  const num = (x) => (x === "" || x == null ? null : Number(x));
+  let days = 0;
+  for (const c of $("ruleDays").querySelectorAll("input:checked")) days |= 1 << Number(c.value);
+  return {
+    name: f.name.value.trim(),
+    roomId: num(f.roomId.value),
+    isActive: f.isActive.checked,
+    trigger: t,
+    daysOfWeek: days,
+    ...(t === "TIME" ? { timeOfDay: f.timeOfDay.value } : {}),
+    offsetMinutes: ["OPENING", "CLOSING", "SUNRISE", "SUNSET"].includes(t) ? Number(f.offsetMinutes.value) || 0 : 0,
+    cameraId: t === "MOTION" ? num(f.cameraId.value) : null,
+    eventType: t === "MOTION" ? f.eventType.value || null : null,
+    triggerDeviceId: t === "DEVICE_SWITCHED" ? num(f.triggerDeviceId.value) : null,
+    triggerAction: t === "DEVICE_SWITCHED" ? f.triggerAction.value || null : null,
+    idleMinutes: t === "IDLE" ? num(f.idleMinutes.value) : null,
+    scanDirection: t === "SCAN" ? f.scanDirection.value || null : null,
+    operating: f.operating.value,
+    cooldownSeconds: Number(f.cooldownSeconds.value) || 0,
+    windowStart: f.windowStart.value || null,
+    windowEnd: f.windowEnd.value || null,
+    onlyWhenDark: f.onlyWhenDark.checked,
+    actions: ruleDraft.actions.map((a, i) => ({
+      kind: a.kind,
+      sortOrder: i,
+      deviceId: a.kind === "DEVICE" ? a.deviceId : null,
+      deviceAction: a.kind === "DEVICE" ? a.deviceAction : null,
+      timerSeconds: a.kind === "DEVICE" ? a.timerSeconds ?? null : null,
+      channel: a.kind === "NOTIFY" ? a.channel || "PUSH" : null,
+      message: a.kind === "NOTIFY" ? a.message || null : null,
+      audioZoneId: a.kind === "AUDIO" ? a.audioZoneId : null,
+      audioAnnouncementId: a.kind === "AUDIO" ? a.audioAnnouncementId ?? null : null,
+      audioPlaylistId: a.kind === "AUDIO" ? a.audioPlaylistId ?? null : null,
+    })),
+  };
+}
+
+function ruleError(data, status) {
+  if (typeof data.error === "string") return data.error;
+  if (data.error && data.error.fieldErrors) {
+    const first = Object.entries(data.error.fieldErrors)[0];
+    if (first) return `${first[0]}: ${first[1][0]}`;
+  }
+  if (data.error && data.error.formErrors && data.error.formErrors.length) return data.error.formErrors[0];
+  return `Speichern fehlgeschlagen (HTTP ${status})`;
+}
+
+async function ruleRequest(method, path, body) {
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+$("ruleNew").addEventListener("click", () => openRuleEditor(null));
+$("ruleCancel").addEventListener("click", () => $("ruleDlg").close());
+$("ruleForm").trigger.addEventListener("change", syncTriggerFields);
+
+$("ruleActions").addEventListener("change", (ev) => {
+  const el = ev.target.closest("[data-act]");
+  if (!el) return;
+  const a = ruleDraft.actions[Number(el.dataset.act)];
+  const field = el.dataset.field;
+  a[field] = field === "deviceId" ? (el.value ? Number(el.value) : null) : el.value;
+  if (field === "deviceId") {
+    const dev = allRoomDevices().find((x) => x.id === a.deviceId);
+    const opts = deviceActionOptions(dev).map(([v]) => v);
+    if (!opts.includes(a.deviceAction)) a.deviceAction = opts[0];
+    renderRuleActions();
+  }
+});
+$("ruleActions").addEventListener("input", (ev) => {
+  const el = ev.target.closest("input[data-act]");
+  if (el) ruleDraft.actions[Number(el.dataset.act)][el.dataset.field] = el.value;
+});
+$("ruleActions").addEventListener("click", (ev) => {
+  const del = ev.target.closest("[data-act-del]");
+  if (!del) return;
+  ruleDraft.actions.splice(Number(del.dataset.actDel), 1);
+  renderRuleActions();
+});
+document.querySelector("#ruleDlg").addEventListener("click", (ev) => {
+  const add = ev.target.closest("[data-add-action]");
+  if (!add) return;
+  ruleDraft.actions.push(add.dataset.addAction === "DEVICE" ? { kind: "DEVICE", deviceId: null, deviceAction: "open" } : { kind: "NOTIFY", channel: "PUSH", message: "" });
+  renderRuleActions();
+});
+
+$("ruleForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const body = ruleFormPayload();
+  const err = $("ruleErr");
+  if (!body.actions.length) {
+    err.textContent = "Mindestens eine Aktion anlegen.";
+    err.hidden = false;
+    return;
+  }
+  if (body.actions.some((a) => a.kind === "DEVICE" && !a.deviceId)) {
+    err.textContent = "Bei jeder Geräte-Aktion ein Gerät wählen.";
+    err.hidden = false;
+    return;
+  }
+  if (!body.daysOfWeek) {
+    err.textContent = "Mindestens einen Wochentag wählen.";
+    err.hidden = false;
+    return;
+  }
+  $("ruleSave").disabled = true;
+  const r = ruleDraft.id ? await ruleRequest("PUT", `/api/rules/${ruleDraft.id}`, body) : await ruleRequest("POST", "/api/rules", body);
+  $("ruleSave").disabled = false;
+  if (!r.ok) {
+    err.textContent = ruleError(r.data, r.status);
+    err.hidden = false;
+    return;
+  }
+  $("ruleDlg").close();
+  toast(ruleDraft.id ? "Regel gespeichert" : "Regel angelegt", "ok");
+  await loadRules();
+  renderRegeln(state.overview);
+});
+
+$("ruleDelete").addEventListener("click", async () => {
+  if (!ruleDraft.id) return;
+  $("ruleDlg").close();
+  const ok = await ask("Regel löschen?", "Die Regel wird online gelöscht. Der Verlauf bleibt erhalten.", "Löschen");
+  if (!ok) return;
+  const r = await ruleRequest("DELETE", `/api/rules/${ruleDraft.id}`);
+  toast(r.ok ? "Regel gelöscht" : ruleError(r.data, r.status), r.ok ? "ok" : "err");
+  await loadRules();
+  renderRegeln(state.overview);
+});
+
+$("ruleGrid").addEventListener("click", async (ev) => {
+  const edit = ev.target.closest("[data-rule-edit]");
+  if (edit) {
+    const rule = (state.rules || []).find((x) => x.id === Number(edit.dataset.ruleEdit));
+    if (rule) openRuleEditor(rule);
+    return;
+  }
+  const run = ev.target.closest("[data-rule-run]");
+  if (run) {
+    const rule = (state.rules || []).find((x) => x.id === Number(run.dataset.ruleRun));
+    if (!rule || !(await ask(`„${rule.name}“ jetzt ausführen?`, "Die Aktionen laufen sofort, ohne Bedingungen und Sperrzeit.", "Ausführen"))) return;
+    run.disabled = true;
+    const r = await ruleRequest("POST", `/api/rules/${rule.id}/run`);
+    run.disabled = false;
+    const failed = r.data && Array.isArray(r.data.actions) ? r.data.actions.filter((a) => !a.ok) : [];
+    toast(r.ok ? "Regel ausgeführt" : failed.length ? `Teilweise fehlgeschlagen: ${failed.map((a) => `${a.target}: ${a.error}`).join("; ")}` : ruleError(r.data, r.status), r.ok ? "ok" : "err");
+    await loadRules();
+    renderRegeln(state.overview);
+  }
+});
+
+$("ruleGrid").addEventListener("change", async (ev) => {
+  const t = ev.target.closest("[data-rule-toggle]");
+  if (!t) return;
+  t.disabled = true;
+  const r = await ruleRequest("PUT", `/api/rules/${t.dataset.ruleToggle}`, { isActive: t.checked });
+  t.disabled = false;
+  toast(r.ok ? (t.checked ? "Regel aktiviert" : "Regel pausiert") : ruleError(r.data, r.status), r.ok ? "ok" : "err");
+  await loadRules();
+  renderRegeln(state.overview);
 });
 
 /* ------------------------------------------------------------------ Events */
