@@ -9,6 +9,8 @@
  * Server ans LAN und verlangt das Token fuer jede Anfrage von aussen.
  */
 import http from "node:http";
+import https from "node:https";
+import net from "node:net";
 import path from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -31,6 +33,8 @@ import { lastSwitchSnapshots, snmpConfigured } from "./snmp.js";
 import { configuredVlans, routerHost } from "./netmap.js";
 import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
+import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
+import { getFrame, startFrameWarmer } from "./frame-cache.js";
 
 let actionCounter = 0;
 
@@ -41,7 +45,39 @@ const ASSETS: Record<string, { file: string; type: string }> = {
   "/index.html": { file: "dashboard.html", type: "text/html; charset=utf-8" },
   "/dashboard.css": { file: "dashboard.css", type: "text/css; charset=utf-8" },
   "/dashboard.js": { file: "dashboard.js", type: "text/javascript; charset=utf-8" },
+  "/pwa.js": { file: "pwa.js", type: "text/javascript; charset=utf-8" },
+  // Home-Bildschirm-App (PWA): Manifest, Service Worker, Icons.
+  "/manifest.webmanifest": { file: "manifest.webmanifest", type: "application/manifest+json; charset=utf-8" },
+  "/sw.js": { file: "sw.js", type: "text/javascript; charset=utf-8" },
+  "/icons/icon.svg": { file: "icons/icon.svg", type: "image/svg+xml" },
+  "/icons/icon-192.png": { file: "icons/icon-192.png", type: "image/png" },
+  "/icons/icon-512.png": { file: "icons/icon-512.png", type: "image/png" },
+  "/icons/icon-maskable-512.png": { file: "icons/icon-maskable-512.png", type: "image/png" },
+  "/icons/apple-touch-icon.png": { file: "icons/apple-touch-icon.png", type: "image/png" },
+  "/apple-touch-icon.png": { file: "icons/apple-touch-icon.png", type: "image/png" },
+  "/apple-touch-icon-precomposed.png": { file: "icons/apple-touch-icon.png", type: "image/png" },
+  "/favicon.ico": { file: "icons/icon-192.png", type: "image/png" },
 };
+
+/**
+ * Ohne Token erreichbar: enthaelt nichts Geheimes, wird aber vom System
+ * geholt, bevor ein Cookie da ist (Icon beim "Zum Home-Bildschirm",
+ * Manifest auf der Login-Seite, CA-Zertifikat zum Installieren).
+ */
+const PUBLIC_PATHS = new Set([
+  "/manifest.webmanifest",
+  "/sw.js",
+  "/ca.crt",
+  "/apple-touch-icon.png",
+  "/apple-touch-icon-precomposed.png",
+  "/favicon.ico",
+]);
+function isPublic(pathname: string): boolean {
+  return PUBLIC_PATHS.has(pathname) || pathname.startsWith("/icons/");
+}
+
+/** Gesetzt, sobald das lokale Zertifikat geladen ist (siehe dashboard-tls.ts). */
+let tls: TlsMaterial | null = null;
 
 const ALLOWED_ACTIONS = [
   "PING",
@@ -136,15 +172,16 @@ async function proxyGo2rtc(
       return;
     }
     if (req.method === "GET" && sub === "/frame.jpeg") {
-      const r = await fetch(`${GO2RTC_URL}/api/frame.jpeg?src=${encodeURIComponent(src)}`, {
-        signal: AbortSignal.timeout(8000),
-      });
-      const body = Buffer.from(await r.arrayBuffer());
-      res.writeHead(r.status, {
-        "Content-Type": r.headers.get("content-type") ?? "image/jpeg",
+      const got = await getFrame(GO2RTC_URL, src, url.searchParams.get("cached") === "1");
+      if (!got) return json(res, 502, { error: "kein Bild" });
+      res.writeHead(200, {
+        "Content-Type": got.frame.type,
         "Cache-Control": "no-store",
+        // Alter in Sekunden; -1 = unbekannt (vom Datentraeger nach Neustart).
+        "X-Frame-Age": String(got.frame.at ? Math.round((Date.now() - got.frame.at) / 1000) : -1),
+        "X-Frame-Cached": got.cached ? "1" : "0",
       });
-      res.end(body);
+      res.end(got.frame.buf);
       return;
     }
     return json(res, 404, { error: "unbekannt" });
@@ -197,37 +234,53 @@ function authorized(
     cookieToken(req);
   if (!given || !sameToken(given, expected)) return false;
 
-  if (url.searchParams.has("token")) {
+  // Bei jedem Seitenaufruf erneuern (gleitend ein Jahr), damit die
+  // Home-Bildschirm-App nicht nach einem Monat wieder nach dem Token fragt.
+  // Lax statt Strict: Der Start vom Home-Bildschirm soll das Cookie sicher
+  // mitschicken. Kein Secure – das Cookie gilt fuer HTTP und HTTPS.
+  if (url.searchParams.has("token") || !url.pathname.startsWith("/api/")) {
     res.setHeader(
       "Set-Cookie",
-      `${COOKIE_NAME}=${encodeURIComponent(expected)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`
+      `${COOKIE_NAME}=${encodeURIComponent(expected)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`
     );
   }
   return true;
 }
 
-const LOGIN_PAGE = /* html */ `<!doctype html>
+function loginPage(failed: boolean): string {
+  return /* html */ `<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hub">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <title>EMP-Access Hub</title>
 <style>
   :root { color-scheme: light dark; }
   body { margin:0; min-height:100dvh; display:grid; place-items:center;
+    padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom); box-sizing:border-box;
     font:15px/1.5 -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     background:#0b1020; color:#e6e9f5; }
   form { display:grid; gap:12px; width:min(320px, 88vw); }
   h1 { font-size:17px; margin:0 0 4px; }
   p { margin:0; color:#8b93b5; font-size:13px; }
   input, button { font:inherit; border-radius:10px; padding:12px 14px; min-height:44px; }
-  input { background:#141a30; border:1px solid #232b4a; color:inherit; }
+  input { background:#141a30; border:1px solid #232b4a; color:inherit; font-size:16px; }
   button { border:0; background:#6d5cf7; color:#fff; font-weight:600; }
+  .err { color:#fb7185; }
 </style></head>
 <body><form method="GET" action="/">
   <h1>EMP-Access Hub</h1>
-  <p>Zugang nur mit Token.</p>
+  <p${failed ? ' class="err"' : ""}>${failed ? "Token falsch – bitte erneut eingeben." : "Zugang nur mit Token. Danach bleibt dieses Gerät ein Jahr angemeldet."}</p>
   <input type="password" name="token" placeholder="Token" autocomplete="current-password" required autofocus>
   <button>Anmelden</button>
 </form></body></html>`;
+}
 
 /* ---------------------------------------------------------------------------
  * Nutzdaten
@@ -469,6 +522,7 @@ async function serveAsset(
       "Content-Type": asset.type,
       "Cache-Control": "no-cache",
       ETag: etag,
+      ...(asset.file === "sw.js" ? { "Service-Worker-Allowed": "/" } : {}),
     });
     res.end(body);
   } catch (e) {
@@ -482,14 +536,47 @@ async function serveAsset(
  * Server
  * ------------------------------------------------------------------------- */
 
-export function startDashboard(): void {
-  const server = http.createServer(async (req, res) => {
+async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
+
+    if (req.method === "GET" && isPublic(url.pathname)) {
+      if (url.pathname === "/ca.crt") {
+        if (!tls) return json(res, 404, { error: "HTTPS ist auf diesem Hub nicht eingerichtet" });
+        const der = caDer(tls.ca);
+        res.writeHead(200, {
+          // So bietet Safari auf iPhone/iPad direkt "Profil laden" an.
+          "Content-Type": "application/x-x509-ca-cert",
+          "Content-Disposition": 'attachment; filename="EMP-Access-Hub-CA.crt"',
+          "Cache-Control": "no-store",
+        });
+        res.end(der);
+        return;
+      }
+      const pub = ASSETS[url.pathname];
+      if (pub) return serveAsset(res, req, pub);
+    }
 
     if (!authorized(req, url, res)) {
       if (url.pathname.startsWith("/api/")) return json(res, 401, { error: "Token fehlt" });
-      res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
-      return res.end(LOGIN_PAGE);
+      res.writeHead(401, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      return void res.end(loginPage(url.searchParams.has("token")));
+    }
+
+    // Token aus der Adresse entfernen, sobald das Cookie gesetzt ist: So landet
+    // es weder im Verlauf noch als Start-Adresse der Home-Bildschirm-App.
+    if (req.method === "GET" && url.searchParams.has("token") && !url.pathname.startsWith("/api/")) {
+      url.searchParams.delete("token");
+      res.writeHead(303, { Location: `${url.pathname}${url.search}`, "Cache-Control": "no-store" });
+      return void res.end();
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/pwa") {
+      return json(res, 200, {
+        https: !!tls,
+        secure: !!(req.socket as { encrypted?: boolean }).encrypted,
+        port: CONFIG.dashboardPort,
+        names: tls?.names ?? [],
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/status") {
@@ -560,6 +647,41 @@ export function startDashboard(): void {
     }
 
     json(res, 404, { error: "Nicht gefunden" });
+}
+
+/**
+ * HTTP und HTTPS auf demselben Port: Das erste Byte einer TLS-Verbindung ist
+ * 0x16 (Handshake). So bleibt http://…:8787 wie gewohnt erreichbar, und
+ * https://…:8787 kommt ohne neue Firewall-Regel zwischen den VLANs dazu.
+ */
+export async function startDashboard(): Promise<void> {
+  const onRequest = (req: http.IncomingMessage, res: http.ServerResponse) => {
+    handle(req, res).catch((e) => {
+      log(`Dashboard-Anfrage fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      if (!res.headersSent) json(res, 500, { error: "Interner Fehler" });
+      else res.end();
+    });
+  };
+  startFrameWarmer(GO2RTC_URL);
+  const httpServer = http.createServer(onRequest);
+  httpServer.on("error", (e) => log(`Dashboard-Server-Fehler: ${e.message}`));
+
+  // HTTPS nur, wenn das Dashboard ins LAN darf – lokal braucht es keins.
+  tls = CONFIG.dashboardHost === "127.0.0.1" ? null : await loadDashboardTls();
+  const httpsServer = tls ? https.createServer({ key: tls.key, cert: tls.cert }, onRequest) : null;
+  httpsServer?.on("tlsClientError", () => {
+    // Geraete ohne installierte CA brechen den Handshake ab – kein Log-Spam.
+  });
+
+  const server = net.createServer((socket) => {
+    socket.once("error", () => socket.destroy());
+    socket.once("data", (head: Buffer) => {
+      socket.pause();
+      socket.unshift(head);
+      if (head[0] === 0x16 && httpsServer) httpsServer.emit("connection", socket);
+      else httpServer.emit("connection", socket);
+      process.nextTick(() => socket.resume());
+    });
   });
 
   server.on("error", (e) => log(`Dashboard-Server-Fehler: ${e.message}`));
@@ -570,6 +692,9 @@ export function startDashboard(): void {
         : CONFIG.dashboardToken
           ? "im LAN, Token nötig"
           : "im LAN OHNE Token";
-    log(`Lokales Dashboard: http://localhost:${CONFIG.dashboardPort} (${scope})`);
+    log(
+      `Lokales Dashboard: http://localhost:${CONFIG.dashboardPort} (${scope})` +
+        (tls ? ` · HTTPS auf demselben Port, CA unter /ca.crt` : "")
+    );
   });
 }

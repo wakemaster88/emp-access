@@ -441,7 +441,47 @@ const live = {
   /** Kamera-IDs mit Panorama-Bild (aus caps.wide oder Videoformat). */
   wide: new Set(),
   zoom: { scale: 1, x: 50, y: 50 },
+  /** Ersatz-Vollbild fuers iPhone (kein Element-Fullscreen in Safari). */
+  kiosk: false,
 };
+
+/** Finger statt Maus: andere Hinweise, Gesten in der Grossansicht. */
+const TOUCH = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+const PHONE_MAX = 560;
+
+/*
+ * Nur sichtbare Kacheln halten eine WebRTC-Verbindung. Auf dem Telefon
+ * passen zwei, drei Reihen auf den Schirm – alle 13 Kameras gleichzeitig zu
+ * dekodieren kostet Akku, Daten und bringt iOS ins Stocken. Unsichtbare
+ * Kacheln zeigen weiter ihr (seltener aufgefrischtes) Standbild.
+ */
+const tileObserver =
+  typeof IntersectionObserver === "function"
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            const tile = e.target;
+            tile.dataset.vis = e.isIntersecting ? "1" : "0";
+            const id = Number(tile.dataset.live);
+            const c = state.overview ? liveCams(state.overview).find((x) => x.id === id) : null;
+            if (c) ensureTileStream(tile, c);
+          }
+        },
+        { rootMargin: "120px 0px" }
+      )
+    : null;
+
+function stopTile(tile, id) {
+  const stop = live.peers.get(id);
+  if (!stop) return;
+  stop();
+  live.peers.delete(id);
+  tile.classList.remove("is-live");
+  tile.dataset.rtc = "";
+  // Bisheriges Livebild ist weg; sofort ein frisches Standbild holen.
+  tile.dataset.frameAt = "0";
+  setTileMode(tile);
+}
 
 async function loadStreams(force = false) {
   if (live.loading || (!force && Date.now() - live.streamsAt < 30000)) return;
@@ -592,8 +632,58 @@ function startRtc(video, src, onState) {
   };
 }
 
-function frameUrl(src) {
-  return `/api/go2rtc/frame.jpeg?src=${encodeURIComponent(src)}&t=${Date.now()}`;
+function frameUrl(src, cached = false) {
+  return `/api/go2rtc/frame.jpeg?src=${encodeURIComponent(src)}${cached ? "&cached=1" : ""}&t=${Date.now()}`;
+}
+
+/*
+ * Vorschaubilder. Der Hub haelt pro Stream das letzte gute Bild bereit
+ * (cached=1 kommt sofort, auch wenn go2rtc gerade haengt). Hier im
+ * Browser bleibt das letzte Bild pro Kamera als Blob-URL, damit neu
+ * gebaute Kacheln (Rueckkehr in die App, Tab-Wechsel) sofort ein Bild
+ * zeigen statt "Verbinde …". Ein fehlgeschlagener Abruf aendert nichts
+ * am angezeigten Bild – kein kaputtes Bild-Symbol mehr.
+ */
+const frameCache = new Map();
+
+async function loadFrame(img, src, cacheKey, cached) {
+  if (img.dataset.loading === "1") return false;
+  img.dataset.loading = "1";
+  try {
+    const res = await fetch(frameUrl(src, cached), { cache: "no-store" });
+    if (!res.ok || !(res.headers.get("content-type") || "").startsWith("image/")) return false;
+    const age = Number(res.headers.get("x-frame-age"));
+    const blob = await res.blob();
+    if (!blob.size) return false;
+    const url = URL.createObjectURL(blob);
+    const at = Number.isFinite(age) && age >= 0 ? Date.now() - age * 1000 : 0;
+    const prev = img.dataset.blob;
+    img.src = url;
+    img.dataset.blob = url;
+    img.dataset.at = String(at);
+    if (cacheKey != null) {
+      const old = frameCache.get(cacheKey);
+      frameCache.set(cacheKey, { url, at });
+      if (old && old.url !== url && old.url !== prev) setTimeout(() => URL.revokeObjectURL(old.url), 5000);
+    }
+    if (prev && prev !== url && (cacheKey == null || prev !== frameCache.get(cacheKey)?.url)) {
+      setTimeout(() => URL.revokeObjectURL(prev), 5000);
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    delete img.dataset.loading;
+  }
+}
+
+/** "2 min" fuer das Alter eines Standbilds, leer wenn frisch. */
+function frameAge(at) {
+  if (!at) return "";
+  const s = (Date.now() - at) / 1000;
+  if (s < 45) return "";
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${Math.round(s / 3600)} h`;
 }
 
 /** Kleine Symbole fuer das, was die Kamera kann. */
@@ -611,8 +701,9 @@ function capIcons(c) {
 
 function tileHtml(c) {
   const src = streamFor(c, "sub");
-  return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
-    <img alt="">
+  const pic = frameCache.get(c.id);
+  return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}${pic ? " has-picture" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
+    <img alt=""${pic ? ` src="${pic.url}" data-blob="${pic.url}" data-at="${pic.at}"` : ""}>
     <video autoplay muted playsinline></video>
     <div class="live-empty">${icon(c.kind === "DOORBIRD" ? "door" : "camera")}<span>${
       src ? "Verbinde …" : live.go2rtc === false ? "go2rtc nicht erreichbar" : live.go2rtc === null ? "Lade Streams …" : "Kein Stream in go2rtc"
@@ -636,7 +727,9 @@ function setTileMode(tile) {
   const hasPic = tile.classList.contains("has-picture");
   tag.hidden = !isLive && !hasPic;
   tag.className = `live-tag mode ${isLive ? "live" : "snap"}`;
-  tag.textContent = isLive ? "LIVE" : "BILD";
+  const age = isLive ? "" : frameAge(Number(tile.querySelector("img").dataset.at || 0));
+  tag.textContent = isLive ? "LIVE" : age ? `BILD · ${age}` : "BILD";
+  tag.title = isLive ? "Livebild" : tile.dataset.rtc === "connecting" ? "Letztes Bild, Livebild verbindet …" : "Standbild";
 }
 
 /** Panorama-Kameras (Duo) bekommen eine doppelt breite Kachel. */
@@ -651,14 +744,16 @@ function markWide(id, w, h) {
 function ensureTileStream(tile, c) {
   const src = streamFor(c, "sub");
   if (!src) return;
-  if (!live.peers.has(c.id)) {
+  const visible = tile.dataset.vis !== "0";
+  if (!visible) stopTile(tile, c.id);
+  const img = tile.querySelector("img");
+  img.onload = () => {
+    tile.classList.add("has-picture");
+    setTileMode(tile);
+    markWide(c.id, img.naturalWidth, img.naturalHeight);
+  };
+  if (visible && !live.peers.has(c.id)) {
     const video = tile.querySelector("video");
-    const img = tile.querySelector("img");
-    img.onload = () => {
-      tile.classList.add("has-picture");
-      setTileMode(tile);
-      markWide(c.id, img.naturalWidth, img.naturalHeight);
-    };
     video.onloadedmetadata = () => markWide(c.id, video.videoWidth, video.videoHeight);
     const stop = startRtc(video, src, (st) => {
       tile.dataset.rtc = st;
@@ -669,12 +764,14 @@ function ensureTileStream(tile, c) {
     live.peers.set(c.id, stop);
   }
   // Standbild als Vorschau und als Ersatz, solange WebRTC nicht steht.
-  const img = tile.querySelector("img");
+  // Erst das gemerkte Bild vom Hub (sofort), danach frische.
   const last = Number(tile.dataset.frameAt || 0);
-  const wait = tile.dataset.rtc === "error" ? 5000 : 20000;
+  const wait = !visible ? 60000 : tile.dataset.rtc === "error" ? 5000 : 20000;
   if (!tile.classList.contains("is-live") && Date.now() - last > (last ? wait : 0)) {
     tile.dataset.frameAt = String(Date.now());
-    img.src = frameUrl(src);
+    loadFrame(img, src, c.id, !last).then((ok) => {
+      if (ok) setTileMode(tile);
+    });
   }
 }
 
@@ -700,11 +797,13 @@ function layoutGrid() {
   const width = grid.clientWidth;
   const units = [...grid.querySelectorAll(".live-tile")].reduce((n, t) => n + (t.classList.contains("is-wide") ? 2 : 1), 0) || 1;
   let cols;
-  if (window.innerWidth < 560) cols = 1;
-  else if (live.cols !== "auto") cols = Number(live.cols);
+  if (window.innerWidth < PHONE_MAX) {
+    // Telefon hochkant: Auto = zwei Spalten ab drei Kameras, wahlweise 1 oder 2.
+    cols = live.cols === "1" ? 1 : live.cols === "auto" && units <= 2 ? 1 : 2;
+  } else if (live.cols !== "auto") cols = Number(live.cols);
   else {
     const top = grid.getBoundingClientRect().top + window.scrollY;
-    const fullscreen = !!document.fullscreenElement;
+    const fullscreen = isFullscreen();
     const avail = window.innerHeight - (fullscreen ? 12 : Math.min(top, 220)) - 16;
     const gap = 10;
     const maxCols = Math.max(1, Math.floor((width + gap) / (300 + gap)));
@@ -719,6 +818,34 @@ function layoutGrid() {
     }
   }
   grid.style.setProperty("--cols", String(Math.max(1, cols)));
+  grid.dataset.cols = String(Math.max(1, cols));
+}
+
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement || live.kiosk);
+}
+
+/**
+ * Vollbild der Zentrale. iPad/Mac koennen echtes Element-Vollbild, das
+ * iPhone nicht – dort blendet der Kiosk-Modus Kopf- und Tab-Leiste aus
+ * (als Home-Bildschirm-App ist das praktisch Vollbild).
+ */
+function toggleLiveFullscreen() {
+  const el = $("view-zentrale");
+  if (live.kiosk) return setKiosk(false);
+  if (document.fullscreenElement) return void document.exitFullscreen().catch(() => {});
+  if (document.webkitFullscreenElement) return void document.webkitExitFullscreen?.();
+  if (el.requestFullscreen) return void el.requestFullscreen().catch(() => setKiosk(true));
+  if (el.webkitRequestFullscreen) return void el.webkitRequestFullscreen();
+  setKiosk(true);
+}
+
+function setKiosk(on) {
+  live.kiosk = on;
+  document.body.classList.toggle("is-kiosk", on);
+  $("kioskExit").hidden = !on;
+  window.scrollTo(0, 0);
+  setTimeout(layoutGrid, 50);
 }
 
 function renderZentrale(d) {
@@ -735,7 +862,9 @@ function renderZentrale(d) {
   if (sig !== live.signature) {
     live.signature = sig;
     stopTiles();
+    tileObserver?.disconnect();
     grid.innerHTML = cams.length ? cams.map(tileHtml).join("") : empty("Keine Kameras konfiguriert.");
+    if (tileObserver) for (const t of grid.querySelectorAll(".live-tile")) tileObserver.observe(t);
   }
   layoutGrid();
 
@@ -823,21 +952,35 @@ function openFocus(id) {
 
   const video = $("camDlgVideo");
   const img = $("camDlgImg");
-  img.removeAttribute("src");
+  // Sofort das Kachelbild zeigen, das grosse Bild laedt dahinter nach.
+  const pic = frameCache.get(c.id);
+  if (img.dataset.blob && img.dataset.blob !== pic?.url) URL.revokeObjectURL(img.dataset.blob);
+  delete img.dataset.blob;
+  if (pic) img.src = pic.url;
+  else img.removeAttribute("src");
   video.style.opacity = "0";
   if (live.focusStop) live.focusStop();
   live.focusStop = null;
   delete dlg.dataset.rtc;
   const src = streamFor(c, "main");
   if (src) {
-    img.src = frameUrl(src);
+    const want = c.id;
+    // Erst das gemerkte Hauptbild (sofort), dann ein frisches.
+    loadFrame(img, src, null, true).then(() => {
+      if (live.focusId === want && $("camDlg").dataset.rtc !== "live") loadFrame(img, src, null, false);
+    });
     live.focusStop = startRtc(video, src, (st) => {
       video.style.opacity = st === "live" ? "1" : "0";
       $("camDlg").dataset.rtc = st;
       renderFocusState(state.overview);
     });
   }
-  if (!dlg.open) dlg.showModal();
+  if (!dlg.open) {
+    dlg.showModal();
+    // showModal fokussiert den ersten Knopf und scrollt dorthin – auf dem
+    // Telefon soll die Ansicht oben mit Name und Schliessen beginnen.
+    dlg.querySelector(".cam-dlg-body").scrollTop = 0;
+  }
   renderFocusState(state.overview);
   if (c.kind === "REOLINK" && !c.caps && c.reachable) {
     shellyAction("CAMERA_CAPS", { cameraId: c.id }).then(() => refresh());
@@ -876,7 +1019,11 @@ function controlsHtml(c) {
         <button type="button" class="btn small" data-dzoom="1" aria-label="Bild vergrößern">${icon("plus")}</button>
         <button type="button" class="btn small" data-dzoom="0">Zurück</button>
       </div>
-      <span class="ctl-hint">Digital im Browser, auch mit dem Mausrad an der Stelle, auf die du zeigst.</span>
+      <span class="ctl-hint">${
+        TOUCH
+          ? "Mit zwei Fingern aufziehen, Doppeltipp vergrößert. Vergrößert mit einem Finger verschieben, sonst wischen für die nächste Kamera."
+          : "Digital im Browser, auch mit dem Mausrad an der Stelle, auf die du zeigst. Vergrößert per Ziehen verschieben."
+      }</span>
     </div>`;
   const snap = `<div class="ctl-group"><span class="ctl-label">Bild</span><div class="ctl-row"><button type="button" class="btn small" data-cam="CAMERA_SNAPSHOT">${icon("snap")}Schnappschuss in die Cloud</button></div></div>`;
 
@@ -1053,13 +1200,15 @@ $("liveCols").addEventListener("click", (ev) => {
   storeSet("hub-live-cols2", live.cols);
   if (state.overview) renderZentrale(state.overview);
 });
-$("liveFull").addEventListener("click", () => {
-  const el = $("view-zentrale");
-  if (document.fullscreenElement) document.exitFullscreen();
-  else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+$("liveFull").addEventListener("click", toggleLiveFullscreen);
+$("kioskExit").addEventListener("click", () => setKiosk(false));
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && live.kiosk && !$("camDlg").open) setKiosk(false);
 });
 window.addEventListener("resize", layoutGrid);
+window.addEventListener("orientationchange", () => setTimeout(layoutGrid, 250));
 document.addEventListener("fullscreenchange", () => setTimeout(layoutGrid, 50));
+document.addEventListener("webkitfullscreenchange", () => setTimeout(layoutGrid, 50));
 
 /* PTZ: gedrueckt halten faehrt, loslassen stoppt. */
 let ptzHeld = null;
@@ -1082,6 +1231,10 @@ function endPtzHold() {
 }
 $("camDlgControls").addEventListener("pointerup", endPtzHold);
 $("camDlgControls").addEventListener("pointercancel", endPtzHold);
+// Langes Druecken auf dem Telefon: kein Kontextmenue, keine Textauswahl.
+$("camDlgControls").addEventListener("contextmenu", (ev) => {
+  if (ev.target.closest("[data-ptz]")) ev.preventDefault();
+});
 $("camDlgControls").addEventListener("click", (ev) => {
   const el = ev.target.closest("button");
   if (el && !el.dataset.ptz) onCamControl(el);
@@ -1099,6 +1252,97 @@ document.querySelector(".cam-stage").addEventListener(
   },
   { passive: false }
 );
+
+/*
+ * Gesten auf dem Bild: zwei Finger zoomen, ein Finger verschiebt das
+ * vergroesserte Bild (Maus: ziehen), Doppeltipp schaltet 1× ↔ 2,5×,
+ * Wischen nach links/rechts wechselt die Kamera, solange nicht gezoomt ist.
+ */
+const gesture = { pts: new Map(), start: null, lastTap: 0, type: "mouse" };
+
+function stagePoint(stage, ev) {
+  const r = stage.getBoundingClientRect();
+  return { x: ((ev.clientX - r.left) / r.width) * 100, y: ((ev.clientY - r.top) / r.height) * 100, w: r.width, h: r.height };
+}
+
+function gestureSnapshot() {
+  const p = [...gesture.pts.values()];
+  const mid = p.length > 1 ? { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 } : { x: p[0].x, y: p[0].y };
+  const dist = p.length > 1 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0;
+  return { n: p.length, mid, dist, scale: live.zoom.scale, ox: live.zoom.x, oy: live.zoom.y, at: Date.now() };
+}
+
+const stageEl = document.querySelector(".cam-stage");
+stageEl.addEventListener("pointerdown", (ev) => {
+  if (ev.pointerType === "mouse" && ev.button > 0) return;
+  gesture.type = ev.pointerType;
+  stageEl.setPointerCapture?.(ev.pointerId);
+  stageEl.classList.add("is-gesture");
+  gesture.pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  gesture.start = gestureSnapshot();
+  gesture.start.first = { x: ev.clientX, y: ev.clientY };
+  if (gesture.pts.size === 2 && live.zoom.scale === 1) {
+    // Erstes Aufziehen: dort hineinzoomen, wo die Finger sind.
+    const p = stagePoint(stageEl, { clientX: gesture.start.mid.x, clientY: gesture.start.mid.y });
+    gesture.start.ox = Math.max(0, Math.min(100, p.x));
+    gesture.start.oy = Math.max(0, Math.min(100, p.y));
+  }
+});
+stageEl.addEventListener("pointermove", (ev) => {
+  if (!gesture.pts.has(ev.pointerId) || !gesture.start) return;
+  gesture.pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  const now = gestureSnapshot();
+  const s = gesture.start;
+  if (now.n >= 2 && s.n >= 2 && s.dist > 0) {
+    setZoom(s.scale * (now.dist / s.dist), s.ox, s.oy);
+    return;
+  }
+  if (now.n === 1 && s.n === 1 && live.zoom.scale > 1) {
+    const r = stageEl.getBoundingClientRect();
+    const k = live.zoom.scale - 1;
+    const x = s.ox - ((now.mid.x - s.mid.x) / (r.width * k)) * 100;
+    const y = s.oy - ((now.mid.y - s.mid.y) / (r.height * k)) * 100;
+    setZoom(live.zoom.scale, Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y)));
+  }
+});
+function endGesture(ev) {
+  if (!gesture.pts.has(ev.pointerId)) return;
+  const s = gesture.start;
+  gesture.pts.delete(ev.pointerId);
+  if (gesture.pts.size) {
+    // Ein Finger bleibt liegen: von hier aus weiter verschieben.
+    gesture.start = gestureSnapshot();
+    return;
+  }
+  gesture.start = null;
+  stageEl.classList.remove("is-gesture");
+  if (!s || s.n !== 1 || ev.type === "pointercancel") return;
+  const dx = ev.clientX - s.first.x;
+  const dy = ev.clientY - s.first.y;
+  const quick = Date.now() - s.at < 600;
+  if (live.zoom.scale === 1 && ev.pointerType !== "mouse" && quick && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+    stepFocus(dx < 0 ? 1 : -1);
+    return;
+  }
+  if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && ev.pointerType !== "mouse") {
+    const now = Date.now();
+    if (now - gesture.lastTap < 300) {
+      gesture.lastTap = 0;
+      const p = stagePoint(stageEl, ev);
+      if (live.zoom.scale > 1) setZoom(1, 50, 50);
+      else setZoom(2.5, Math.max(0, Math.min(100, p.x)), Math.max(0, Math.min(100, p.y)));
+    } else gesture.lastTap = now;
+  }
+}
+stageEl.addEventListener("pointerup", endGesture);
+stageEl.addEventListener("pointercancel", endGesture);
+stageEl.addEventListener("dblclick", (ev) => {
+  if (gesture.type !== "mouse") return; // Finger: Doppeltipp oben erledigt
+  const p = stagePoint(stageEl, ev);
+  if (live.zoom.scale > 1) setZoom(1, 50, 50);
+  else setZoom(2.5, p.x, p.y);
+});
+stageEl.addEventListener("contextmenu", (ev) => ev.preventDefault());
 
 $("camDlgPrev").addEventListener("click", () => stepFocus(-1));
 $("camDlgNext").addEventListener("click", () => stepFocus(1));

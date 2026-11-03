@@ -68,3 +68,6 @@ next-env.d.ts
 
 /src/generated/prisma
 webcams-history.bundle
+
+# lokale Dashboard-CA und Zertifikate (dashboard-tls.ts)
+/hub/.tls/
