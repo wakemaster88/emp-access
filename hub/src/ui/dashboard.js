@@ -1718,22 +1718,400 @@ function renderFahrzeuge(d) {
       : empty("Keine Parkflächen konfiguriert (vehicleGate).")
   );
 
-  setHTML(
-    "wlRows",
-    d.whitelist.length
-      ? d.whitelist
-          .map(
-            (v) => `<tr>
-        <td data-label="Kennzeichen"><span class="mono"><strong>${esc(v.plate)}</strong></span></td>
-        <td data-label="Name"><span>${esc(v.name)}</span></td>
+  renderVehicleSettings();
+}
+
+/* -------------------------------------------------- Fahrzeug-Einstellungen */
+
+const veh = {
+  loadedAt: 0,
+  loading: false,
+  det: null,
+  detError: null,
+  vehicles: null,
+  cameras: [],
+  shellys: [],
+  error: null,
+  editing: null,
+  zone: null,
+};
+
+/** Fehlertext aus Hub/Cloud-Antwort (String oder zod-Fehlerobjekt). */
+function errText(body, status) {
+  const e = body && body.error;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object") {
+    const parts = [...(e.formErrors || [])];
+    for (const [k, v] of Object.entries(e.fieldErrors || {})) parts.push(`${k}: ${[].concat(v).join(", ")}`);
+    if (parts.length) return parts.join(" · ");
+  }
+  return `HTTP ${status}`;
+}
+
+async function sendJson(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(errText(data, res.status));
+  return data;
+}
+
+async function loadVehicleSettings(force = false) {
+  if (veh.loading || (!force && Date.now() - veh.loadedAt < 60_000)) return;
+  veh.loading = true;
+  const [det, list] = await Promise.allSettled([
+    getJson("/api/detection"),
+    sendJson("GET", "/api/detection/vehicles"),
+  ]);
+  if (det.status === "fulfilled") {
+    veh.det = det.value;
+    veh.detError = null;
+  } else veh.detError = det.reason.message;
+  if (list.status === "fulfilled") {
+    veh.vehicles = list.value.vehicles || [];
+    veh.cameras = list.value.cameras || [];
+    veh.shellys = list.value.shellys || [];
+    veh.error = null;
+  } else veh.error = list.reason.message;
+  veh.loadedAt = Date.now();
+  veh.loading = false;
+  if (state.view === "fahrzeuge") renderVehicleSettings();
+}
+
+function vehicleActionText(v) {
+  const parts = [];
+  if (v.doorbird) parts.push(`Tor ${v.doorbird.name}`);
+  if (v.shellyDevice) {
+    const verb = { ON: "an", OFF: "aus", TOGGLE: "umschalten" }[v.shellyAction] || v.shellyAction;
+    parts.push(`${v.shellyDevice.name} ${verb}${v.timerSeconds ? ` (${v.timerSeconds} s)` : ""}`);
+  }
+  return parts.length ? parts.join(" + ") : "nur melden";
+}
+
+function envValue(key) {
+  const row = veh.det?.env?.find((e) => e.key === key);
+  return row ? row.value : null;
+}
+
+function zoneButton(field, zone) {
+  const n = Array.isArray(zone) ? zone.length : 0;
+  return `<button type="button" class="btn small" data-det-zone="${field}">${icon("target")}${n ? `${n} Punkte` : "keine"}</button>`;
+}
+
+function detCardHtml(c) {
+  const envArea = Number(envValue("HUB_VEHICLE_MIN_AREA"));
+  const defArea = Number.isFinite(envArea) && envValue("HUB_VEHICLE_MIN_AREA") !== null ? envArea : 0.02;
+  const area = c.vehicleMinArea == null ? "" : String(Math.round(c.vehicleMinArea * 1000) / 10);
+  const defMin = envValue("HUB_NOPARK_MINUTES") || "2";
+  return `<article class="card det-card" data-det="${c.id}">
+    <div class="det-head"><span class="tile-ico accent">${icon("camera")}</span><h3 title="${esc(c.name)}">${esc(c.name)}</h3></div>
+    <div class="det-block ${c.vehicleDetection ? "" : "is-off"}">
+      <div class="det-row"><label class="tgl"><input type="checkbox" data-det-field="vehicleDetection" ${c.vehicleDetection ? "checked" : ""}><span class="knob"></span>Fahrzeugerkennung</label></div>
+      <div class="det-row"><span class="k">Mindestgröße</span><span class="unit"><input class="field" type="number" inputmode="decimal" min="0" max="50" step="0.5" data-det-field="vehicleMinArea" value="${esc(area)}" placeholder="${esc(Math.round(defArea * 1000) / 10)}" aria-label="Mindestgröße in Prozent">%</span></div>
+      <div class="det-row"><span class="k">Einfahrtszone</span>${zoneButton("vehicleZone", c.vehicleZone)}</div>
+    </div>
+    <div class="det-block ${c.noParkDetection ? "" : "is-off"}">
+      <div class="det-row"><label class="tgl"><input type="checkbox" data-det-field="noParkDetection" ${c.noParkDetection ? "checked" : ""}><span class="knob"></span>Halteverbot</label></div>
+      <div class="det-row"><span class="k">Standzeit</span><span class="unit"><input class="field" type="number" inputmode="decimal" min="0.25" max="240" step="0.25" data-det-field="noParkMinutes" value="${esc(c.noParkMinutes ?? "")}" placeholder="${esc(defMin)}" aria-label="Standzeit in Minuten">min</span></div>
+      <div class="det-row"><span class="k">Gesperrte Fläche</span>${zoneButton("noParkZone", c.noParkZone)}</div>
+    </div>
+  </article>`;
+}
+
+function renderVehicleSettings() {
+  loadVehicleSettings();
+
+  $("vehAdd").disabled = !veh.vehicles;
+  $("vehHint").textContent = veh.error
+    ? `Cloud nicht erreichbar (${veh.error}). Die Liste zeigt den zuletzt geladenen Stand.`
+    : "Erkannte Kennzeichen öffnen das Tor oder schalten einen Shelly.";
+
+  if (veh.vehicles) {
+    setHTML(
+      "wlRows",
+      veh.vehicles.length
+        ? veh.vehicles
+            .map(
+              (v) => `<tr class="${v.isActive ? "" : "is-off"}">
+        <td data-label="Kennzeichen"><span class="mono"><strong>${esc(v.plate)}</strong></span>${v.isActive ? "" : ` ${badge("off", "inaktiv")}`}</td>
+        <td data-label="Name"><div>${esc(v.name)}${v.notes ? `<div class="muted">${esc(v.notes)}</div>` : ""}</div></td>
+        <td data-label="Aktion"><span>${esc(vehicleActionText(v))}</span></td>
+        <td data-label="Kamera"><span class="muted">${esc(v.camera ? v.camera.name : "alle")}</span></td>
         <td data-label="Cooldown"><span>${esc(v.cooldownMinutes)} min</span></td>
         <td data-label="Zuletzt"><span class="muted">${esc(v.lastTriggeredAt ? ago(v.lastTriggeredAt) : "nie")}</span></td>
+        <td data-label=""><div class="row-btns"><button type="button" class="btn small" data-veh-edit="${v.id}">Bearbeiten</button></div></td>
       </tr>`
-          )
-          .join("")
-      : `<tr><td colspan="4">${empty("Keine freigegebenen Fahrzeuge.")}</td></tr>`
+            )
+            .join("")
+        : `<tr><td colspan="7">${empty("Noch keine freigegebenen Fahrzeuge.")}</td></tr>`
+    );
+  } else {
+    setHTML(
+      "wlRows",
+      `<tr><td colspan="7">${empty(veh.error ? `Cloud nicht erreichbar: ${veh.error}` : "Lade Fahrzeuge …")}</td></tr>`
+    );
+  }
+
+  const cams = veh.det?.cameras || [];
+  setHTML(
+    "detGrid",
+    cams.length
+      ? cams.map(detCardHtml).join("")
+      : empty(veh.detError ? `Einstellungen nicht lesbar: ${veh.detError}` : "Keine Kameras konfiguriert.")
+  );
+
+  setHTML(
+    "envRows",
+    (veh.det?.env || [])
+      .map(
+        (e) => `<div class="env-row"><span class="k">${esc(e.label)}<small>${esc(e.key)}</small></span>${
+          e.value === null
+            ? `<span class="v default">${esc(e.fallback)}</span>`
+            : `<span class="v mono">${esc(e.value)}</span>`
+        }</div>`
+      )
+      .join("")
   );
 }
+
+async function saveDetection(camId, patch, input) {
+  const cam = veh.det?.cameras.find((c) => c.id === camId);
+  if (!cam) return;
+  try {
+    const saved = await sendJson("PATCH", `/api/detection/cameras/${camId}`, patch);
+    for (const k of Object.keys(saved)) if (k in cam) cam[k] = saved[k];
+    toast(`${cam.name}: gespeichert`, "ok");
+  } catch (e) {
+    toast(`${cam.name}: ${e.message}`, "err");
+    if (input && input.type === "checkbox") input.checked = !input.checked;
+  }
+  htmlCache.delete("detGrid");
+  renderVehicleSettings();
+}
+
+$("detGrid").addEventListener("change", (ev) => {
+  const input = ev.target.closest("[data-det-field]");
+  const card = ev.target.closest("[data-det]");
+  if (!input || !card) return;
+  const field = input.dataset.detField;
+  let value;
+  if (input.type === "checkbox") value = input.checked;
+  else if (input.value.trim() === "") value = null;
+  else {
+    value = Number(input.value.replace(",", "."));
+    if (!Number.isFinite(value)) return toast("Bitte eine Zahl eingeben", "err");
+    if (field === "vehicleMinArea") value = Math.round(value * 10) / 1000;
+  }
+  saveDetection(Number(card.dataset.det), { [field]: value }, input);
+});
+
+$("detGrid").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-det-zone]");
+  const card = ev.target.closest("[data-det]");
+  if (btn && card) openZone(Number(card.dataset.det), btn.dataset.detZone);
+});
+
+/* Zonen-Editor: Punkte aufs Kamerabild klicken, normiert 0..1. */
+
+function drawZone() {
+  const z = veh.zone;
+  if (!z) return;
+  const pts = z.points;
+  $("zoneSvg").innerHTML = pts.length >= 2 ? `<polygon points="${pts.map((p) => p.join(",")).join(" ")}"/>` : "";
+  const stage = $("zoneStage");
+  stage.querySelectorAll(".zone-pt").forEach((el) => el.remove());
+  for (const [x, y] of pts) {
+    const dot = document.createElement("span");
+    dot.className = "zone-pt";
+    dot.style.left = `${x * 100}%`;
+    dot.style.top = `${y * 100}%`;
+    stage.appendChild(dot);
+  }
+  $("zoneUndo").disabled = !z.history.length;
+  $("zoneMsg").textContent = z.imgError
+    ? `Kein Kamerabild (${z.imgError}). Punkte lassen sich trotzdem setzen.`
+    : pts.length < 3
+      ? `${pts.length} von mindestens 3 Punkten gesetzt`
+      : `${pts.length} Punkte`;
+}
+
+function openZone(camId, field) {
+  const cam = veh.det?.cameras.find((c) => c.id === camId);
+  if (!cam) return;
+  const nopark = field === "noParkZone";
+  veh.zone = { camId, field, points: (cam[field] || []).map((p) => [p[0], p[1]]), history: [], imgError: null };
+  $("zoneDlgTitle").textContent = `${cam.name}: ${nopark ? "Gesperrte Fläche" : "Einfahrtszone"}`;
+  $("zoneDlgHint").textContent = nopark
+    ? "Klicke die Ecken der Halteverbot-Fläche ins Bild. Gezählt wird, wo das Fahrzeug auf dem Boden steht."
+    : "Klicke die Ecken der Einfahrt ins Bild. Es zählen nur Fahrzeuge, deren Mitte in der Zone liegt. Ohne Zone zählt das ganze Bild.";
+  const stage = $("zoneStage");
+  stage.classList.toggle("nopark", nopark);
+  stage.style.aspectRatio = "16 / 9";
+  const img = $("zoneImg");
+  img.onload = () => {
+    if (img.naturalWidth && img.naturalHeight) stage.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+    veh.zone && (veh.zone.imgError = null);
+    drawZone();
+  };
+  img.onerror = () => {
+    if (veh.zone) veh.zone.imgError = "Kamera antwortet nicht";
+    drawZone();
+  };
+  img.src = `/api/detection/cameras/${camId}/snapshot.jpg?t=${Date.now()}`;
+  drawZone();
+  $("zoneDlg").showModal();
+}
+
+$("zoneStage").addEventListener("click", (ev) => {
+  const z = veh.zone;
+  if (!z) return;
+  if (z.points.length >= 32) return toast("Höchstens 32 Punkte", "err");
+  const r = $("zoneStage").getBoundingClientRect();
+  const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+  const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+  const pt = [Math.round(x * 10000) / 10000, Math.round(y * 10000) / 10000];
+  // Ab drei Punkten an der Kante einfügen, die den Umfang am wenigsten
+  // verlängert – so entsteht beim Nachbessern kein verdrehtes Polygon.
+  const pts = z.points;
+  z.history.push(pts.map((p) => [...p]));
+  if (pts.length >= 3) {
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    let best = pts.length;
+    let cost = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      const c = dist(a, pt) + dist(pt, b) - dist(a, b);
+      if (c < cost) {
+        cost = c;
+        best = i + 1;
+      }
+    }
+    pts.splice(best, 0, pt);
+  } else pts.push(pt);
+  drawZone();
+});
+$("zoneUndo").addEventListener("click", () => {
+  if (veh.zone?.history.length) veh.zone.points = veh.zone.history.pop();
+  drawZone();
+});
+$("zoneClear").addEventListener("click", () => {
+  if (!veh.zone || !veh.zone.points.length) return;
+  veh.zone.history.push(veh.zone.points);
+  veh.zone.points = [];
+  drawZone();
+});
+$("zoneCancel").addEventListener("click", () => $("zoneDlg").close());
+$("zoneDlg").addEventListener("close", () => {
+  veh.zone = null;
+  $("zoneImg").removeAttribute("src");
+});
+$("zoneSave").addEventListener("click", async () => {
+  const z = veh.zone;
+  if (!z) return;
+  if (z.points.length > 0 && z.points.length < 3) return toast("Eine Zone braucht mindestens 3 Punkte", "err");
+  const patch = { [z.field]: z.points.length ? z.points : null };
+  // Ohne Fläche kann das Halteverbot nicht prüfen – dann mit ausschalten.
+  if (z.field === "noParkZone" && !z.points.length) patch.noParkDetection = false;
+  const btn = $("zoneSave");
+  btn.disabled = true;
+  await saveDetection(z.camId, patch);
+  btn.disabled = false;
+  $("zoneDlg").close();
+});
+
+/* Fahrzeug anlegen / bearbeiten */
+
+function fillSelect(sel, items, emptyLabel, value) {
+  sel.innerHTML =
+    `<option value="">${esc(emptyLabel)}</option>` +
+    items.map((i) => `<option value="${i.id}">${esc(i.name)}</option>`).join("");
+  sel.value = value == null ? "" : String(value);
+}
+
+function openVehicle(v) {
+  veh.editing = v ? v.id : null;
+  const f = $("vehForm");
+  f.reset();
+  $("vehDlgTitle").textContent = v ? `${v.plate} bearbeiten` : "Fahrzeug hinzufügen";
+  $("vehErr").hidden = true;
+  $("vehDelete").hidden = !v;
+  const cams = veh.cameras.filter((c) => c.kind !== "DOORBIRD");
+  const birds = veh.cameras.filter((c) => c.kind === "DOORBIRD");
+  fillSelect(f.elements.cameraId, cams, "Alle Kameras", v?.cameraId);
+  fillSelect(f.elements.doorbirdCameraId, birds, "Kein Tor", v?.doorbirdCameraId);
+  fillSelect(f.elements.shellyDeviceId, veh.shellys, "Kein Shelly", v?.shellyDeviceId);
+  f.elements.plate.value = v?.plate || "";
+  f.elements.name.value = v?.name || "";
+  f.elements.shellyAction.value = v?.shellyAction || "ON";
+  f.elements.timerSeconds.value = v?.timerSeconds ?? "";
+  f.elements.cooldownMinutes.value = v?.cooldownMinutes ?? 2;
+  f.elements.notes.value = v?.notes || "";
+  f.elements.isActive.checked = v ? v.isActive : true;
+  f.elements.notifyOnDetection.checked = v ? v.notifyOnDetection : false;
+  $("vehDlg").showModal();
+  f.elements.plate.focus();
+}
+
+$("vehAdd").addEventListener("click", () => openVehicle(null));
+$("wlRows").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-veh-edit]");
+  if (!btn) return;
+  const v = veh.vehicles?.find((x) => x.id === Number(btn.dataset.vehEdit));
+  if (v) openVehicle(v);
+});
+
+$("vehCancel").addEventListener("click", () => $("vehDlg").close());
+$("vehForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const idOrNull = (el) => (el.value ? Number(el.value) : null);
+  const payload = {
+    plate: f.elements.plate.value.trim(),
+    name: f.elements.name.value.trim(),
+    cameraId: idOrNull(f.elements.cameraId),
+    doorbirdCameraId: idOrNull(f.elements.doorbirdCameraId),
+    shellyDeviceId: idOrNull(f.elements.shellyDeviceId),
+    shellyAction: f.elements.shellyAction.value,
+    timerSeconds: f.elements.timerSeconds.value ? Number(f.elements.timerSeconds.value) : null,
+    cooldownMinutes: Number(f.elements.cooldownMinutes.value) || 2,
+    notes: f.elements.notes.value.trim() || null,
+    isActive: f.elements.isActive.checked,
+    notifyOnDetection: f.elements.notifyOnDetection.checked,
+  };
+  const btn = $("vehSave");
+  btn.disabled = true;
+  try {
+    if (veh.editing) await sendJson("PUT", `/api/detection/vehicles/${veh.editing}`, payload);
+    else await sendJson("POST", "/api/detection/vehicles", payload);
+    $("vehDlg").close();
+    toast(`${payload.plate} gespeichert`, "ok");
+    await loadVehicleSettings(true);
+  } catch (e) {
+    $("vehErr").textContent = e.message;
+    $("vehErr").hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("vehDelete").addEventListener("click", async () => {
+  const v = veh.vehicles?.find((x) => x.id === veh.editing);
+  if (!v) return;
+  if (!(await ask(`${v.plate} löschen?`, `${v.name} wird nicht mehr erkannt und öffnet nichts mehr.`, "Löschen"))) return;
+  try {
+    await sendJson("DELETE", `/api/detection/vehicles/${v.id}`);
+    $("vehDlg").close();
+    toast(`${v.plate} gelöscht`, "ok");
+    await loadVehicleSettings(true);
+  } catch (e) {
+    $("vehErr").textContent = e.message;
+    $("vehErr").hidden = false;
+  }
+});
 
 /* ---------------------------------------------------------------- Aktionen */
 
