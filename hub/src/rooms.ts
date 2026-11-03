@@ -212,6 +212,13 @@ export interface ActionOutcome {
   via: "lokal" | "cloud";
   on?: boolean | null;
   error?: string;
+  /** Geraetename (fuer Protokoll und Regel-Verlauf). */
+  name?: string;
+}
+
+/** Kameras eines Raums (Cloud-IDs), fuer Bewegungs- und Ruhe-Regeln. */
+export function roomCameraIds(roomId: number): number[] {
+  return snapshot?.rooms.find((r) => r.id === roomId)?.cameras.map((c) => c.id) ?? [];
 }
 
 async function viaCloud(id: number, action: DeviceAction): Promise<ActionOutcome> {
@@ -229,11 +236,24 @@ async function viaCloud(id: number, action: DeviceAction): Promise<ActionOutcome
   }
 }
 
-export async function deviceAction(id: number, action: string): Promise<ActionOutcome> {
+/**
+ * `localOnly` (Regel-Notbetrieb): nur im LAN schalten, nie die Cloud fragen –
+ * die ist in dem Moment ohnehin nicht erreichbar.
+ */
+export async function deviceAction(
+  id: number,
+  action: string,
+  opts: { localOnly?: boolean } = {}
+): Promise<ActionOutcome> {
   if (!ACTIONS.has(action as DeviceAction)) return { ok: false, via: "lokal", error: "Ungültige Aktion" };
   const act = action as DeviceAction;
   const dev = allDevices().find((d) => d.id === id);
   if (!dev) return { ok: false, via: "lokal", error: "Gerät unbekannt – Räume neu laden" };
+  const name = dev.name;
+  const withName = (r: ActionOutcome): ActionOutcome => ({ ...r, name });
+  if (opts.localOnly && !(isLocalDevice(dev) && act !== "close" && act !== "stop")) {
+    return withName({ ok: false, via: "lokal", error: "Nur über die Cloud schaltbar" });
+  }
 
   if (isLocalDevice(dev) && act !== "close" && act !== "stop") {
     const on = act === "open" || act === "emergency";
@@ -241,18 +261,19 @@ export async function deviceAction(id: number, action: string): Promise<ActionOu
       const r = await shellySwitch(dev.ipAddress as string, channelOf(dev), on, autoOffSec(dev, act));
       statusCache.delete(dev.ipAddress as string);
       log(`Raum-Steuerung: ${dev.name} ${on ? "ein" : "aus"} (lokal)`);
-      return { ok: true, via: "lokal", on: r.on };
+      return withName({ ok: true, via: "lokal", on: r.on });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (opts.localOnly) return withName({ ok: false, via: "lokal", error: msg });
       log(`Raum-Steuerung: ${dev.name} lokal fehlgeschlagen (${msg}), versuche Cloud`);
       const cloud = await viaCloud(id, act);
-      return cloud.ok ? cloud : { ...cloud, error: `Lokal: ${msg}. Cloud: ${cloud.error}` };
+      return withName(cloud.ok ? cloud : { ...cloud, error: `Lokal: ${msg}. Cloud: ${cloud.error}` });
     }
   }
 
   const r = await viaCloud(id, act);
   log(`Raum-Steuerung: ${dev.name} ${act} über Cloud → ${r.ok ? "ok" : r.error}`);
-  return r;
+  return withName(r);
 }
 
 /* -------------------------------------------------------------- Dashboard */

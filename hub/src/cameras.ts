@@ -4,6 +4,7 @@
  * GetAiState), meldet Start/Ende der Ereignisse an die Cloud und laedt
  * Schnappschuesse hoch (bei Ereignis-Beginn und auf Task-Anforderung).
  */
+import { onCameraEvent } from "./rules.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
@@ -1480,6 +1481,9 @@ export async function pollCameras(): Promise<void> {
     await Promise.all(
       Array.from({ length: Math.min(POLL_CONCURRENCY, list.length) }, () => pollWorker())
     );
+
+    // Regeln auf dem Hub (Ruhe-Erkennung, Notbetrieb ohne Cloud).
+    for (const e of events) if (e.phase === "start") onCameraEvent(e.cameraId, e.type);
 
     const seenDue = Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
     if (events.length > 0 || (seen.length > 0 && seenDue)) {

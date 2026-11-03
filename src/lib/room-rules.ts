@@ -631,3 +631,162 @@ export async function runScanRules(
   }
   return { triggered };
 }
+
+// ─── Notbetrieb-Plan fuer den Hub ─────────────────────────────────────────────
+
+/** Zeitraum [from, to] in ISO-Strings. */
+export interface PlanInterval {
+  from: string;
+  to: string;
+}
+
+export interface HubRulePlanRule {
+  id: number;
+  name: string;
+  roomId: number | null;
+  trigger: RuleTrigger;
+  cooldownSeconds: number;
+  /** MOTION */
+  cameraId: number | null;
+  eventType: string | null;
+  /** DEVICE_SWITCHED */
+  triggerDeviceId: number | null;
+  triggerAction: string | null;
+  /** IDLE */
+  idleMinutes: number | null;
+  /** Ereignis-Ausloeser: Zeitraeume, in denen die Bedingungen erfuellt sind. */
+  allowed: PlanInterval[];
+  /** Zeit-Ausloeser: konkrete Zeitpunkte, an denen die Regel feuert. */
+  fireAt: string[];
+  actions: Array<{
+    id: number;
+    kind: string;
+    deviceId: number | null;
+    deviceAction: string | null;
+    timerSeconds: number | null;
+  }>;
+}
+
+const PLAN_STEP_MS = 2 * 60_000;
+const TIMED_TRIGGERS = new Set<RuleTrigger>(["TIME", "OPENING", "CLOSING", "SUNRISE", "SUNSET"]);
+
+/**
+ * Plan fuer den Notbetrieb des Hubs: alle aktiven Regeln mit vorab
+ * ausgewerteten Bedingungen fuer die naechsten Stunden.
+ *
+ * Der Hub soll Regeln nur weiterfuehren, wenn er die Cloud nicht erreicht.
+ * Damit er dafuer keine zweite Kopie der Betriebszeit-, Sonnen- und
+ * Zeitfenster-Logik braucht, rechnet die Cloud hier vor:
+ *  - Zeit-Ausloeser: die konkreten Zeitpunkte, an denen die Regel feuern wuerde.
+ *  - Ereignis-Ausloeser (Bewegung, Schaltvorgang, Ruhe): die Zeitraeume, in
+ *    denen ihre Bedingungen erfuellt sind (Raster 2 Minuten).
+ * SCAN-Regeln fehlen bewusst: Zutritte laufen ohnehin ueber die Cloud.
+ */
+export async function buildHubRulePlan(
+  accountId: number,
+  from = new Date(),
+  hours = 48,
+): Promise<HubRulePlanRule[]> {
+  const rules = (await prisma.roomRule.findMany({
+    where: { accountId, isActive: true, trigger: { not: "SCAN" } },
+    include: ruleInclude,
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+  })) as LoadedRule[];
+
+  const end = from.getTime() + hours * 3_600_000;
+  const out: HubRulePlanRule[] = [];
+
+  for (const rule of rules) {
+    const allowed: PlanInterval[] = [];
+    const fireAt = new Set<string>();
+
+    if (TIMED_TRIGGERS.has(rule.trigger)) {
+      for (let t = from.getTime(); t <= end; t += PLAN_STEP_MS) {
+        const ctx = contextFor(rule, new Date(t));
+        const at = scheduledTimeFor(rule, ctx);
+        if (!at || at.getTime() < from.getTime() || at.getTime() > end) continue;
+        if (Math.abs(at.getTime() - t) > FIRE_WINDOW_MS) continue;
+        if (!ruleAllows(rule, contextFor(rule, at))) continue;
+        // Auf die Minute runden, damit Nachbarschritte denselben Termin liefern.
+        fireAt.add(new Date(Math.round(at.getTime() / 60_000) * 60_000).toISOString());
+      }
+    } else {
+      let open: number | null = null;
+      for (let t = from.getTime(); t <= end; t += PLAN_STEP_MS) {
+        const ok = ruleAllows(rule, contextFor(rule, new Date(t)));
+        if (ok && open === null) open = t;
+        if (!ok && open !== null) {
+          allowed.push({ from: new Date(open).toISOString(), to: new Date(t).toISOString() });
+          open = null;
+        }
+      }
+      if (open !== null) allowed.push({ from: new Date(open).toISOString(), to: new Date(end).toISOString() });
+    }
+
+    out.push({
+      id: rule.id,
+      name: rule.name,
+      roomId: rule.roomId,
+      trigger: rule.trigger,
+      cooldownSeconds: rule.cooldownSeconds,
+      cameraId: rule.cameraId,
+      eventType: rule.eventType,
+      triggerDeviceId: rule.triggerDeviceId,
+      triggerAction: rule.triggerAction,
+      idleMinutes: rule.idleMinutes,
+      allowed,
+      fireAt: [...fireAt].sort(),
+      actions: rule.actions.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        deviceId: a.deviceId,
+        deviceAction: a.deviceAction,
+        timerSeconds: a.timerSeconds,
+      })),
+    });
+  }
+  return out;
+}
+
+/**
+ * Laeufe, die der Hub im Notbetrieb ausgefuehrt hat, nachtragen. Setzt auch
+ * `lastRunAt`, damit die Cloud dieselbe Regel nicht gleich noch einmal feuert.
+ */
+export async function recordHubRuleRuns(
+  accountId: number,
+  runs: Array<{
+    ruleId: number;
+    at: Date;
+    triggerKind: string;
+    success: boolean;
+    details: unknown;
+    errorMessage: string | null;
+  }>,
+): Promise<number> {
+  let saved = 0;
+  for (const run of runs) {
+    const rule = await prisma.roomRule.findFirst({
+      where: { id: run.ruleId, accountId },
+      select: { id: true, name: true, roomId: true, lastRunAt: true },
+    });
+    if (!rule) continue;
+    await prisma.roomRuleRun.create({
+      data: {
+        accountId,
+        ruleId: rule.id,
+        ruleName: rule.name,
+        roomId: rule.roomId,
+        triggeredAt: run.at,
+        triggerKind: `hub:${run.triggerKind}`,
+        success: run.success,
+        details: (run.details ?? []) as Prisma.InputJsonValue,
+        errorMessage: run.errorMessage,
+      },
+    });
+    if (!rule.lastRunAt || rule.lastRunAt < run.at) {
+      await prisma.roomRule.update({ where: { id: rule.id }, data: { lastRunAt: run.at } });
+    }
+    saved++;
+  }
+  return saved;
+}

@@ -10,6 +10,7 @@
  */
 import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
 import { controlSmart, listSmartDevices, pairSmart } from "./smart-devices.js";
+import { onDeviceSwitched, rulesStatus } from "./rules.js";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -614,6 +615,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       const live = url.searchParams.get("live") === "1";
       return json(res, 200, {
         ...roomsPayload(),
+        rulesStatus: rulesStatus(),
         live: live ? await liveStates(url.searchParams.get("fresh") === "1") : null,
       });
     }
@@ -628,6 +630,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       const id = Number(body.id);
       if (!Number.isInteger(id) || id <= 0) return json(res, 400, { error: "Ungültige Geräte-ID" });
       const r = await deviceAction(id, String(body.action ?? ""));
+      // Lokal geschaltet: Die Cloud bekommt es sonst nicht mit ("Gerät
+      // geschaltet"-Regeln). Ueber die Cloud geschaltet startet sie sie selbst.
+      if (r.ok && r.via === "lokal") void onDeviceSwitched(id, String(body.action));
       const local = --actionCounter;
       recordTask({
         id: local,

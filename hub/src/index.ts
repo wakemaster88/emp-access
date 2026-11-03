@@ -16,6 +16,7 @@ import { startSystemMetrics } from "./system-metrics.js";
 import { startSystemSetup } from "./system-setup.js";
 import { startSoundweb } from "./soundweb.js";
 import { startRooms } from "./rooms.js";
+import { startRules } from "./rules.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -231,7 +232,7 @@ setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 // Soundweb London: Konfiguration aus der Cloud, dann je Prozessor eine
 // DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.
 startSoundweb();
-void startRooms();
+void startRooms().then(() => startRules());
 // Welche Kameras geprüft werden, steht in der Cloud ("Halteverbot" an der
 // Kamera) und ist beim Start noch nicht bekannt – der Takt läuft deshalb
 // immer und ist ohne ausgewählte Kamera ein Leerlauf.
