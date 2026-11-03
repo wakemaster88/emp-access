@@ -128,8 +128,11 @@
 
 html, body { min-height: 100%; }
 
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 body {
   margin: 0;
+  -webkit-tap-highlight-color: transparent;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
@@ -210,6 +213,8 @@ kbd {
   gap: 0.75rem;
   padding: 0.65rem 1rem;
   padding-top: max(0.65rem, env(safe-area-inset-top));
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
   background: color-mix(in srgb, var(--bg) 72%, transparent);
   backdrop-filter: saturate(160%) blur(16px);
   -webkit-backdrop-filter: saturate(160%) blur(16px);
@@ -300,6 +305,8 @@ kbd {
   gap: 0.15rem;
   padding: 0.4rem 0.5rem;
   padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+  padding-right: max(0.5rem, env(safe-area-inset-right));
   background: color-mix(in srgb, var(--bg) 80%, transparent);
   backdrop-filter: saturate(160%) blur(16px);
   -webkit-backdrop-filter: saturate(160%) blur(16px);
@@ -352,7 +359,9 @@ kbd {
 .nav-foot { display: none; }
 
 .main {
-  padding: 1.1rem 1rem calc(var(--nav-h) + 1.75rem);
+  padding: 1.1rem 1rem calc(var(--nav-h) + 1.75rem + env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
   outline: none;
   max-width: 100%;
   min-width: 0;
@@ -413,7 +422,9 @@ kbd {
     font-size: 0.72rem;
     color: var(--faint);
   }
-  .main { grid-area: main; padding: 1.6rem 1.9rem 3rem; }
+  .main { grid-area: main; padding: 1.6rem max(1.9rem, env(safe-area-inset-right)) 3rem 1.9rem; }
+  .topbar { padding-left: max(1.25rem, env(safe-area-inset-left)); }
+  .nav { padding-left: max(0.8rem, env(safe-area-inset-left)); }
 }
 
 @media (min-width: 1280px) {
@@ -1015,10 +1026,17 @@ table.data td[data-label="IP"] .mono { white-space: nowrap; }
   gap: 0.7rem;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
 }
-@media (max-width: 560px) { #liveCols { display: none; } }
+/* Telefon: nur Auto/1/2 – mehr Spalten werden zu klein. */
+#liveCols .phone-only { display: none; }
+@media (max-width: 559px) {
+  #liveCols .phone-only { display: inline-flex; }
+  #liveCols [data-cols="3"], #liveCols [data-cols="4"], #liveCols [data-cols="5"] { display: none; }
+  .live-grid { gap: 0.45rem; }
+  .live-tile { border-radius: var(--radius); }
+}
 .live-tile.is-wide { grid-column: span 2; aspect-ratio: 32 / 9; }
 .live-tile.is-wide video, .live-tile.is-wide img { object-fit: contain; }
-@media (max-width: 560px) { .live-tile.is-wide { grid-column: auto; aspect-ratio: 16 / 9; } }
+.live-grid[data-cols="1"] .live-tile.is-wide { grid-column: auto; aspect-ratio: 16 / 9; }
 
 /* Die Zentrale nutzt die volle Breite. */
 .main:has(#view-zentrale:not([hidden])) { max-width: none; }
@@ -1039,8 +1057,9 @@ table.data td[data-label="IP"] .mono { white-space: nowrap; }
 .ctl-row .btn.small[data-dzoom] { flex: 0 0 auto; }
 .ctl-loading { display: grid; gap: 0.4rem; }
 .ctl-loading .skeleton { height: 2.4rem; }
-.cam-stage { overflow: hidden; touch-action: none; }
+.cam-stage { overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .cam-stage video, .cam-stage img { transition: transform 0.15s var(--ease); }
+.cam-stage.is-gesture video, .cam-stage.is-gesture img { transition: none; }
 .cam-dlg.is-wide .cam-stage { aspect-ratio: 32 / 9; }
 @media (min-width: 980px) { .cam-dlg.is-wide .cam-dlg-body { grid-template-columns: minmax(0, 1fr); } .cam-dlg.is-wide #camDlgControls { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); align-items: start; } }
 
@@ -1175,3 +1194,135 @@ table.data td[data-label="IP"] .mono { white-space: nowrap; }
 .ctl-hint { font-size: 0.74rem; color: var(--faint); }
 #camDlgControls { display: grid; gap: 1.15rem; }
 #camDlgHost { font-family: inherit; font-size: 0.8rem; line-height: 1.4; }
+
+/* --------------------------------------------- iPhone/iPad, Home-Bildschirm-App */
+
+/* Hinweis "Als App installieren" (pwa.js) */
+.banner.info {
+  background: var(--grad-soft);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  font-weight: 500;
+  align-items: flex-start;
+}
+.banner.info > .ico { color: var(--accent); margin-top: 0.15rem; }
+.pwa-hint-text { flex: 1; min-width: 0; line-height: 1.45; }
+.pwa-hint-text a { color: var(--accent); font-weight: 650; }
+.icon-btn.small { width: 2rem; height: 2rem; flex: none; margin: -0.25rem -0.4rem -0.25rem 0; }
+
+/* Touch: kein Hover-Huepfen (bleibt sonst nach dem Tippen haengen). */
+@media (hover: none) {
+  .live-tile:hover, .health-card:hover { transform: none; }
+  .live-tile:active { transform: scale(0.985); }
+}
+
+/* iOS zoomt in Felder unter 16px hinein – auf Touch-Geraeten verhindern. */
+@media (pointer: coarse) {
+  .field, input, select, textarea { font-size: 16px; }
+  .segment button { min-height: 2.5rem; }
+}
+
+/* Live-Kacheln: kein Sichern-/Teilen-Menue bei langem Druck. */
+.live-tile { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* Kleine Kacheln (zwei Spalten auf dem Telefon): nur das Wichtigste. */
+.live-tile { container-type: inline-size; }
+@container (max-width: 260px) {
+  .live-top, .live-bottom { padding: 0.35rem 0.45rem; gap: 0.3rem; }
+  .live-name { font-size: 0.74rem; }
+  .live-tag { font-size: 0.56rem; padding: 0.04rem 0.35rem; }
+  .live-states .badge { font-size: 0.6rem; padding: 0.05rem 0.35rem; }
+  .live-caps, .live-ago { display: none; }
+}
+
+/* PTZ: gedrueckt halten ohne Lupe, Textauswahl oder Kontextmenue; groesser fuer Daumen. */
+[data-ptz] { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+@media (pointer: coarse) {
+  .dpad { grid-template-columns: repeat(3, 3.75rem); grid-template-rows: repeat(3, 3.75rem); gap: 0.4rem; }
+  .dpad .btn .ico { width: 1.5rem; height: 1.5rem; }
+  .ctl-row .btn.small { min-height: 2.75rem; }
+}
+
+/* Grossansicht auf Telefon und Tablet hochkant: ganzer Bildschirm, Bild bleibt oben stehen. */
+@media (max-width: 979px) {
+  .cam-dlg {
+    width: 100vw; max-width: 100vw;
+    height: 100dvh; max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: #000;
+    padding-top: env(safe-area-inset-top);
+  }
+  .cam-dlg[open] { animation: sheet 0.25s var(--ease); }
+  .cam-dlg-body {
+    height: calc(100dvh - env(safe-area-inset-top));
+    max-height: calc(100dvh - env(safe-area-inset-top));
+    overscroll-behavior: contain;
+    background: var(--surface-solid);
+    -webkit-overflow-scrolling: touch;
+    /* Block statt Grid: sonst quetscht die feste Hoehe die Bildzeile. */
+    display: block;
+  }
+  .cam-stage { position: sticky; top: 0; z-index: 2; }
+  .cam-side {
+    background: var(--surface-solid);
+    padding-left: max(1.1rem, env(safe-area-inset-left));
+    padding-right: max(1.1rem, env(safe-area-inset-right));
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  }
+}
+@keyframes sheet { from { opacity: 0; transform: translateY(24px); } }
+
+/* Telefon quer: Bild links in voller Hoehe, Steuerung rechts daneben. */
+@media (max-width: 979px) and (orientation: landscape) and (max-height: 560px) {
+  .cam-dlg { padding-top: 0; }
+  .cam-dlg-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) min(18rem, 40vw);
+    height: 100dvh; max-height: 100dvh;
+    overflow: hidden;
+  }
+  .cam-stage, .cam-dlg.is-wide .cam-stage {
+    position: relative;
+    aspect-ratio: auto;
+    height: 100dvh;
+    margin-left: env(safe-area-inset-left);
+  }
+  .cam-side {
+    min-height: 0;
+    max-height: 100dvh;
+    overflow: auto;
+    padding-top: max(0.8rem, env(safe-area-inset-top));
+  }
+}
+
+/* Kiosk = Vollbild-Ersatz fuers iPhone: nur noch das Kamera-Raster. */
+.kiosk-exit {
+  position: fixed;
+  z-index: 30;
+  top: max(0.6rem, env(safe-area-inset-top));
+  right: max(0.6rem, env(safe-area-inset-right));
+  display: grid; place-items: center;
+  width: 2.6rem; height: 2.6rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+body.is-kiosk { background: #000; }
+body.is-kiosk .aurora,
+body.is-kiosk .topbar,
+body.is-kiosk .nav,
+body.is-kiosk .banner,
+body.is-kiosk #view-zentrale .view-head { display: none !important; }
+body.is-kiosk .shell { display: block; }
+body.is-kiosk .main {
+  max-width: none;
+  padding: max(0.4rem, env(safe-area-inset-top)) max(0.4rem, env(safe-area-inset-right)) max(0.4rem, env(safe-area-inset-bottom)) max(0.4rem, env(safe-area-inset-left));
+}
+body.is-kiosk .live-grid { gap: 0.4rem; }
+#view-zentrale:-webkit-full-screen { background: #000; padding: 0.6rem; overflow: auto; }
+#view-zentrale:-webkit-full-screen .view-head { display: none; }

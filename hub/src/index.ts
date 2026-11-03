@@ -189,7 +189,7 @@ recordHubEvent({
   title: "Hub gestartet",
   detail: `${CONFIG.name} · Version ${CONFIG.version}`,
 });
-startDashboard();
+void startDashboard();
 heartbeat();
 pollTasks();
 autoScan();

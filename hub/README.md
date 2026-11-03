@@ -195,8 +195,32 @@ HUB_DASHBOARD_TOKEN=langes-zufaelliges-geheimnis
 Dann bindet der Server ans LAN (`0.0.0.0`, per `HUB_DASHBOARD_HOST`
 uebersteuerbar) und verlangt das Token bei jedem Zugriff von aussen: einmal
 `http://<iMac-IP>:8787/?token=…` aufrufen, danach merkt es ein Cookie.
-Ohne Token bleibt das Dashboard strikt auf `127.0.0.1`. Es gibt kein HTTPS und
-keine Benutzerverwaltung – nur im vertrauenswuerdigen Heimnetz nutzen.
+Ohne Token bleibt das Dashboard strikt auf `127.0.0.1`. Es gibt keine
+Benutzerverwaltung – nur im vertrauenswuerdigen Netz (LAN/VPN) nutzen.
+Das Cookie gilt ein Jahr und verlaengert sich bei jedem Aufruf; das Token
+wird nach der Anmeldung aus der Adresse entfernt.
+
+### Als App auf iPhone/iPad (PWA)
+
+Das Dashboard ist eine Home-Bildschirm-App (Manifest, Icons, Service Worker,
+Safe-Area, Touch-Gesten). Service Worker gibt es auf iOS nur per HTTPS,
+deshalb spricht der Port **8787 HTTP und HTTPS gleichzeitig**. Beim ersten
+Start legt der Hub dafuer eine eigene CA an (`hub/.tls/`, nicht im Git) und
+stellt ein Zertifikat fuer seine LAN-IPs und `<hostname>.local` aus
+(zusaetzliche Namen: `HUB_DASHBOARD_TLS_NAMES`, abschalten:
+`HUB_DASHBOARD_TLS=0`). Einmal pro Geraet:
+
+1. In Safari `http://<Hub-IP>:8787/ca.crt` laden („Profil geladen“).
+2. Einstellungen → Allgemein → VPN & Geräteverwaltung → Profil installieren.
+3. Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen →
+   „EMP-Access Hub CA“ einschalten.
+4. `https://<Hub-IP>:8787/` oeffnen, Token eingeben, Teilen → „Zum
+   Home-Bildschirm“.
+
+Das Dashboard zeigt auf dem Telefon selbst einen Hinweis, welcher Schritt
+fehlt. Der Service Worker cached nur die App-Huelle (Netz zuerst, Cache nur
+wenn der Hub nicht antwortet); `/api/*`, Livebilder und Standbilder gehen
+immer direkt ans Netz.
 Den Tueroeffner der DoorBird gibt es im Dashboard bewusst nicht.
 
 Deinstallieren:
