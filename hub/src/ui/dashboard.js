@@ -2594,6 +2594,27 @@ function roomCard(room, liveMap, camIds) {
   </article>`;
 }
 
+/** Wer fuehrt die Regeln gerade aus: Cloud (normal) oder Hub (Notbetrieb). */
+function ruleStatusHtml(st) {
+  if (!st) return "";
+  const recent = (st.recent || [])
+    .slice(0, 5)
+    .map((x) => `<li><span>${esc(x.rule)}</span><span class="muted">${esc(clock(x.at))} · ${x.success ? "ok" : esc(x.error || "Fehler")}</span></li>`)
+    .join("");
+  if (st.mode === "hub") {
+    return `<div class="banner" role="status">${icon("alert")}<div><strong>Notbetrieb:</strong> Die Cloud ist nicht erreichbar${
+      st.offlineSince ? ` (seit ${esc(clock(st.offlineSince))})` : ""
+    }, der Hub führt ${st.rules} Regeln selbst aus. Er schaltet nur Geräte im LAN; Benachrichtigungen und Audio holt er nicht nach.${
+      st.planExpired ? " Achtung: Der Regel-Plan ist abgelaufen, Zeitregeln greifen nicht mehr." : ""
+    }${recent ? `<ul class="rule-log">${recent}</ul>` : ""}</div></div>`;
+  }
+  const plan = st.planAt
+    ? `Regeln laufen online. Fällt das Internet aus, übernimmt der Hub ${st.rules} Regeln (Plan bis ${esc(new Date(st.planValidUntil).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }))}).`
+    : `Regeln laufen online. Noch kein Regel-Plan für den Notbetrieb${st.planError ? ` (${esc(st.planError)})` : ""}.`;
+  const pend = st.pending ? ` ${st.pending} Läufe aus dem Notbetrieb warten auf Übertragung.` : "";
+  return `<p class="muted small-note rule-note">${icon("zap")}${plan}${pend}</p>`;
+}
+
 function renderRaeume(d) {
   const r = state.rooms;
   if (!r) {
@@ -2606,6 +2627,8 @@ function renderRaeume(d) {
         r.syncError && !r.fromCache ? ` · letzter Abgleich fehlgeschlagen: ${r.syncError}` : ""
       }. Räume und Regeln pflegst du online.`;
   if ($("roomSub").textContent !== sub) $("roomSub").textContent = sub;
+
+  setHTML("ruleStatus", ruleStatusHtml(r.rulesStatus));
 
   const buildings = [...new Set(r.rooms.map((x) => x.building || "Ohne Gebäude"))];
   if (buildings.length > 1) {

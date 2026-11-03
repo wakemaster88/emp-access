@@ -9,6 +9,7 @@
  *
  * Klingel/Bewegung → Snapshot → Gesichts-Pipeline (wie Reolink-PERSON).
  */
+import { onCameraEvent } from "./rules.js";
 import { api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
 import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
@@ -413,6 +414,7 @@ async function reportEvent(
   type: string,
   phase: "start" | "end"
 ): Promise<void> {
+  if (phase === "start") onCameraEvent(cameraId, type);
   try {
     await api("/api/hub/camera-events", {
       method: "POST",

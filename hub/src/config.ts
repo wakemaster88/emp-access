@@ -98,6 +98,7 @@ export const CONFIG = {
     "snmp",
     "soundweb",
     "rooms",
+    "rules",
   ],
 };
 
