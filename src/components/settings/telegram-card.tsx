@@ -14,6 +14,7 @@ interface TelegramCardProps {
     isActive: boolean;
     dailyReport: boolean;
     dailyReportTime: string;
+    notifyNewDevices?: boolean;
   } | null;
 }
 
@@ -33,6 +34,22 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
   const [error, setError] = useState("");
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
   const [config, setConfig] = useState(initialConfig);
+  const [notifyNewDevices, setNotifyNewDevices] = useState(initialConfig?.notifyNewDevices ?? true);
+
+  const toggleNotifyNewDevices = async () => {
+    const next = !notifyNewDevices;
+    setNotifyNewDevices(next);
+    try {
+      const res = await fetch("/api/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "settings", notifyNewDevices: next }),
+      });
+      if (!res.ok) setNotifyNewDevices(!next);
+    } catch {
+      setNotifyNewDevices(!next);
+    }
+  };
 
   const handleValidate = async () => {
     setLoading(true);
@@ -120,6 +137,25 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
             <span className="text-sm font-medium text-foreground">
               {config.dailyReport ? `Täglich um ${config.dailyReportTime}` : "Deaktiviert"}
             </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Neue Geräte im Netz melden</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notifyNewDevices}
+              aria-label="Neue Geräte im Netz melden"
+              onClick={toggleNotifyNewDevices}
+              className={cn(
+                "relative h-6 w-11 rounded-full transition-colors",
+                notifyNewDevices ? "bg-primary" : "bg-slate-300 dark:bg-accent",
+              )}
+            >
+              <span className={cn(
+                "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform",
+                notifyNewDevices && "translate-x-5",
+              )} />
+            </button>
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={handleTest} disabled={loading} className="flex-1">

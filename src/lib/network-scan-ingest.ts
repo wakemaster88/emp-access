@@ -1,6 +1,7 @@
 import { isVirtualMac } from "@/lib/oui";
 import { findVlanForIp } from "@/lib/ip";
 import type { tenantClient } from "@/lib/prisma";
+import { alertNewDevices } from "@/lib/new-device-alert";
 
 type Db = ReturnType<typeof tenantClient>;
 
@@ -130,6 +131,13 @@ export async function ingestHubScanDevices(
       update: common,
     });
     processed++;
+  }
+
+  // Neue, bisher nie gesehene MACs per Telegram melden (nur melden, nie sperren).
+  try {
+    await alertNewDevices(db, accountId, byMac);
+  } catch (err) {
+    console.error("[scan-ingest] Neu-Geraete-Meldung fehlgeschlagen:", err);
   }
 
   const claimedIps = [...byMac.values()].map((i) => i.ip).filter((ip): ip is string => !!ip);

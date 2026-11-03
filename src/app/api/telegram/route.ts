@@ -15,6 +15,7 @@ export async function GET() {
       isActive: true,
       dailyReport: true,
       dailyReportTime: true,
+      notifyNewDevices: true,
       createdAt: true,
     },
   });
@@ -83,6 +84,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "settings") {
+    if (typeof body.notifyNewDevices !== "boolean") {
+      return NextResponse.json({ error: "notifyNewDevices fehlt" }, { status: 400 });
+    }
+    await session.db.telegramConfig.updateMany({
+      where: { accountId: session.accountId! },
+      data: { notifyNewDevices: body.notifyNewDevices },
+    });
     return NextResponse.json({ ok: true });
   }
 

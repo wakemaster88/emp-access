@@ -154,6 +154,7 @@ model Account {
   hubAgents            HubAgent[]
   hubTasks             HubTask[]
   discoveredDevices    DiscoveredDevice[]
+  knownNetworkDevices  KnownNetworkDevice[]
   cameras              Camera[]
   cameraEvents         CameraEvent[]
   allowedVehicles      AllowedVehicle[]
@@ -1074,6 +1075,8 @@ model TelegramConfig {
   /// Wann der letzte Tagesbericht rausging – verhindert Doppelversand und
   /// erlaubt das Nachholen bei verspaetetem Cron-Tick.
   dailyReportLastSentAt DateTime?
+  /// Hinweis, sobald der Hub ein bisher unbekanntes Geraet im Netz sieht.
+  notifyNewDevices      Boolean   @default(true)
   accountId             Int
   account               Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt             DateTime  @default(now())
@@ -1825,6 +1828,23 @@ model CameraEvent {
 /// Vom Hub automatisch entdecktes Geraet im lokalen Netz (ARP-Scan).
 /// Wird per (accountId, macAddress) upserted; `lastSeenAt` zeigt, wann das
 /// Geraet zuletzt in einem Scan auftauchte.
+/// Jede MAC, die der Hub je im Netz gesehen hat. Anders als DiscoveredDevice
+/// (unzugeordnete Eintraege verschwinden nach zwei Scans ohne Treffer) bleibt
+/// dieser Eintrag bestehen. Er entscheidet, ob ein Geraet "neu" ist und eine
+/// Telegram-Meldung ausloest. Beim allerersten Scan wird der Bestand ohne
+/// Meldung angelegt.
+model KnownNetworkDevice {
+  id          Int       @id @default(autoincrement())
+  macAddress  String
+  /// Zeitpunkt der Telegram-Meldung; null = still uebernommen (Bestand).
+  notifiedAt  DateTime?
+  firstSeenAt DateTime  @default(now())
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, macAddress])
+}
+
 model DiscoveredDevice {
   id          Int      @id @default(autoincrement())
   macAddress  String
