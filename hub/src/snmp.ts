@@ -127,7 +127,7 @@ export function friendlySnmpError(e: unknown): string {
     return "snmpwalk fehlt auf dem Hub – brew install net-snmp";
   }
   if (/Timeout|No Response|ETIMEDOUT|killed|SIGTERM/i.test(msg)) {
-    return "keine SNMP-Antwort – SNMP am Switch noch nicht aktiviert oder Community (HUB_SNMP_COMMUNITY) falsch";
+    return "keine SNMP-Antwort – SNMP am Gerät noch nicht aktiviert, Zugriff auf andere IP beschränkt oder Community (HUB_SNMP_COMMUNITY) falsch";
   }
   if (/Unknown host|getaddrinfo/i.test(msg)) return "Switch-Adresse unbekannt";
   if (/authorizationError|noAccess|Unknown user/i.test(msg)) {
