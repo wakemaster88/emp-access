@@ -97,6 +97,7 @@ export const CONFIG = {
     "vision",
     "snmp",
     "soundweb",
+    "rooms",
   ],
 };
 

@@ -174,24 +174,32 @@ export async function shellyStatus(host: string): Promise<ShellyStatus> {
   return { host, info, channels, temperatureC, uptimeS };
 }
 
-/** Relais schalten: on = true/false, oder "toggle". Liefert den neuen Zustand. */
+/**
+ * Relais schalten: on = true/false, oder "toggle". Liefert den neuen Zustand.
+ *
+ * `autoOffSec` (nur beim Einschalten): Der Shelly faellt nach so vielen
+ * Sekunden von selbst wieder ab – der Timer laeuft im Geraet, nicht im Hub.
+ * Gleiche Logik wie `shellyAutoOffSec` in der Cloud (Taster, Tueroeffner).
+ */
 export async function shellySwitch(
   host: string,
   channel: number,
-  on: boolean | "toggle"
+  on: boolean | "toggle",
+  autoOffSec?: number
 ): Promise<{ on: boolean | null }> {
   const info = await probeShelly(host, TIMEOUT_MS);
   if (!info) throw new Error(`${host} ist kein erreichbarer Shelly`);
+  const timer = on === true && autoOffSec && autoOffSec > 0 ? Math.round(autoOffSec) : 0;
   if (info.gen >= 2) {
     const path =
       on === "toggle"
         ? `/rpc/Switch.Toggle?id=${channel}`
-        : `/rpc/Switch.Set?id=${channel}&on=${on ? "true" : "false"}`;
+        : `/rpc/Switch.Set?id=${channel}&on=${on ? "true" : "false"}${timer ? `&toggle_after=${timer}` : ""}`;
     await shellyGet(host, path);
     const st = (await shellyGet(host, `/rpc/Switch.GetStatus?id=${channel}`)) as Record<string, unknown>;
     return { on: typeof st.output === "boolean" ? st.output : null };
   }
   const turn = on === "toggle" ? "toggle" : on ? "on" : "off";
-  const r = (await shellyGet(host, `/relay/${channel}?turn=${turn}`)) as Record<string, unknown>;
+  const r = (await shellyGet(host, `/relay/${channel}?turn=${turn}${timer ? `&timer=${timer}` : ""}`)) as Record<string, unknown>;
   return { on: typeof r.ison === "boolean" ? r.ison : null };
 }

@@ -8,6 +8,7 @@
  * Zugriff: ohne HUB_DASHBOARD_TOKEN nur 127.0.0.1. Mit Token bindet der
  * Server ans LAN und verlangt das Token fuer jede Anfrage von aussen.
  */
+import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -606,6 +607,35 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         router: routerHost(),
         vlansConfigured: configuredVlans().length > 0,
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/rooms") {
+      const live = url.searchParams.get("live") === "1";
+      return json(res, 200, {
+        ...roomsPayload(),
+        live: live ? await liveStates(url.searchParams.get("fresh") === "1") : null,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/rooms/sync") {
+      const r = await syncRooms();
+      return json(res, r.ok ? 200 : 502, r);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/rooms/device") {
+      const body = await readBody(req);
+      const id = Number(body.id);
+      if (!Number.isInteger(id) || id <= 0) return json(res, 400, { error: "Ungültige Geräte-ID" });
+      const r = await deviceAction(id, String(body.action ?? ""));
+      const local = --actionCounter;
+      recordTask({
+        id: local,
+        type: `GERÄT ${String(body.action ?? "")} (${r.via})`,
+        success: r.ok,
+        error: r.error,
+        result: { deviceId: id, on: r.on ?? null },
+      });
+      return json(res, r.ok ? 200 : 502, r);
     }
 
     if (url.pathname.startsWith("/api/detection")) {

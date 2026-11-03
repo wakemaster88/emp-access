@@ -355,6 +355,7 @@ kbd {
 .nav-count:empty { display: none; }
 .nav-count.alert { background: var(--alert); color: #fff; }
 .nav-count.warn { background: var(--warn); color: #1b1300; }
+.nav-count.ok { background: var(--ok); color: #fff; }
 
 .nav-foot { display: none; }
 
@@ -1451,3 +1452,42 @@ tr.is-off td:not(:last-child) { opacity: 0.55; }
 .more-sheet .nav-ico { width: 1.4rem; height: 1.4rem; }
 .more-sheet .nav-count { position: absolute; top: 0.35rem; right: calc(50% - 1.6rem); }
 @media (min-width: 900px) { .more-sheet { display: none !important; } }
+
+/* Raeume: Geraete je Raum schalten */
+.grid.rooms { grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); align-items: start; }
+.room { display: grid; gap: 0.7rem; align-content: start; }
+.devs { display: grid; gap: 0.45rem; }
+.dev {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "ico main" "act act";
+  gap: 0.45rem 0.65rem;
+  align-items: center;
+  padding: 0.6rem 0.65rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: border-color 0.2s;
+}
+.dev.is-on { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.dev > .tile-ico { grid-area: ico; }
+.dev-main { grid-area: main; min-width: 0; }
+.dev-name { font-weight: 620; font-size: 0.9rem; overflow-wrap: anywhere; }
+.dev-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: 0.75rem; margin-top: 0.15rem; }
+.dev-actions { grid-area: act; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.dev-actions:empty { display: none; }
+.dev-actions .btn { flex: 1 1 auto; min-height: 2.5rem; }
+@media (min-width: 900px) {
+  .dev { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "ico main act"; }
+  .dev-actions { justify-content: flex-end; }
+  .dev-actions .btn { flex: none; }
+}
+.small-note { font-size: 0.82rem; }
+.rules summary {
+  display: flex; align-items: center; gap: 0.4rem;
+  cursor: pointer; font-size: 0.82rem; color: var(--muted); list-style: none;
+}
+.rules summary::-webkit-details-marker { display: none; }
+.rules summary .ico { width: 0.95rem; height: 0.95rem; }
+.rules ul { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
+.rules li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.2rem 0.6rem; font-size: 0.82rem; }
