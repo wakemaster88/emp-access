@@ -27,6 +27,7 @@ import { listDoorbirdStatus } from "./doorbird.js";
 import { lastParkingSnapshot } from "./parking.js";
 import { lastScanResult } from "./scanner.js";
 import { listWhitelistPublic } from "./plate.js";
+import { handleDetectionApi } from "./detection-settings.js";
 import { recentImproveEvents } from "./improve-log.js";
 import { lastSwitchSnapshots, snmpConfigured } from "./snmp.js";
 import { configuredVlans, routerHost } from "./netmap.js";
@@ -603,6 +604,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         router: routerHost(),
         vlansConfigured: configuredVlans().length > 0,
       });
+    }
+
+    if (url.pathname.startsWith("/api/detection")) {
+      await handleDetectionApi(req, res, url, json, readBody);
+      return;
     }
 
     if (url.pathname.startsWith("/api/go2rtc/")) {

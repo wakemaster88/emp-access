@@ -312,12 +312,24 @@
       </div>
 
       <h2 class="sec">Freigegebene Fahrzeuge</h2>
+      <div class="toolbar sec-tools">
+        <p class="muted" id="vehHint">Erkannte Kennzeichen öffnen das Tor oder schalten einen Shelly.</p>
+        <button type="button" class="btn primary small" id="vehAdd"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Fahrzeug hinzufügen</button>
+      </div>
       <div class="card table-card">
         <table class="data">
-          <thead><tr><th>Kennzeichen</th><th>Name</th><th>Cooldown</th><th>Zuletzt</th></tr></thead>
+          <thead><tr><th>Kennzeichen</th><th>Name</th><th>Aktion</th><th>Kamera</th><th>Cooldown</th><th>Zuletzt</th><th><span class="sr-only">Bearbeiten</span></th></tr></thead>
           <tbody id="wlRows"></tbody>
         </table>
       </div>
+
+      <h2 class="sec">Erkennung pro Kamera</h2>
+      <div class="grid cards" id="detGrid"></div>
+
+      <details class="card env-card">
+        <summary><strong>Feineinstellungen</strong> <span class="muted">aus der .env des Hubs, nur Anzeige</span></summary>
+        <div id="envRows" class="env-rows"></div>
+      </details>
     </section>
 
     <!-- Aktionen -->
@@ -406,6 +418,52 @@
 </dialog>
 
 <button type="button" class="kiosk-exit" id="kioskExit" hidden aria-label="Vollbild beenden"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+<dialog class="dialog form-dlg" id="vehDlg" aria-labelledby="vehDlgTitle">
+  <form method="dialog" class="form-dlg-body" id="vehForm">
+    <h2 id="vehDlgTitle">Fahrzeug</h2>
+    <div class="form-grid">
+      <label>Kennzeichen<input class="field mono" name="plate" required maxlength="20" placeholder="BOR-AB 123" autocomplete="off"></label>
+      <label>Name<input class="field" name="name" required maxlength="80" placeholder="z. B. Lieferant Müller" autocomplete="off"></label>
+      <label>Nur an Kamera<select class="field" name="cameraId"></select></label>
+      <label>Tor öffnen (DoorBird)<select class="field" name="doorbirdCameraId"></select></label>
+      <label>Shelly schalten<select class="field" name="shellyDeviceId"></select></label>
+      <label>Shelly-Aktion<select class="field" name="shellyAction"><option value="ON">Einschalten</option><option value="OFF">Ausschalten</option><option value="TOGGLE">Umschalten</option></select></label>
+      <label>Auto-Aus nach (s)<input class="field" name="timerSeconds" type="number" min="1" max="3600" placeholder="aus"></label>
+      <label>Cooldown (min)<input class="field" name="cooldownMinutes" type="number" min="1" max="1440" value="2" required></label>
+      <label class="span2">Notiz<input class="field" name="notes" maxlength="500" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" name="isActive" checked> Aktiv</label>
+      <label class="check"><input type="checkbox" name="notifyOnDetection"> Push bei Erkennung</label>
+    </div>
+    <p class="form-err" id="vehErr" hidden></p>
+    <div class="form-dlg-actions">
+      <button type="button" class="btn danger" id="vehDelete" hidden>Löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="vehCancel">Abbrechen</button>
+      <button type="submit" class="btn primary" id="vehSave" value="save">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog zone-dlg" id="zoneDlg" aria-labelledby="zoneDlgTitle">
+  <div class="form-dlg-body">
+    <div>
+      <h2 id="zoneDlgTitle">Zone</h2>
+      <p class="muted" id="zoneDlgHint"></p>
+    </div>
+    <div class="zone-stage" id="zoneStage">
+      <img id="zoneImg" alt="">
+      <svg id="zoneSvg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="zone-msg" id="zoneMsg"></div>
+    </div>
+    <div class="form-dlg-actions">
+      <button type="button" class="btn small" id="zoneUndo">Rückgängig</button>
+      <button type="button" class="btn small danger" id="zoneClear">Zone löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="zoneCancel">Abbrechen</button>
+      <button type="button" class="btn primary" id="zoneSave">Speichern</button>
+    </div>
+  </div>
+</dialog>
 
 <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 <script src="/dashboard.js"></script>
