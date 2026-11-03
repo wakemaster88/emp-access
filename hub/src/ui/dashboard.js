@@ -403,6 +403,7 @@ function renderNavCounts(d) {
  * WebRTC direkt von go2rtc. Kacheln nutzen den Sub-Stream, die
  * Grossansicht den Main-Stream. Kacheln werden nur neu gebaut, wenn sich
  * die Kameraliste aendert – sonst wuerden die Videos bei jedem Poll abreissen.
+ * Die Steuerung zeigt nur, was die Kamera laut CAMERA_CAPS kann.
  */
 
 function storeGet(key) {
@@ -421,7 +422,8 @@ function storeSet(key, value) {
 }
 
 const live = {
-  cols: Number(storeGet("hub-live-cols")) || 3,
+  /** "auto" oder feste Spaltenzahl. */
+  cols: storeGet("hub-live-cols2") || "auto",
   /** null = noch nicht gefragt, sonst ob go2rtc antwortet. */
   go2rtc: null,
   streams: [],
@@ -433,6 +435,12 @@ const live = {
   focusId: null,
   focusStop: null,
   presets: {},
+  /** Kamera-IDs, deren Faehigkeiten schon angefragt wurden. */
+  capsAsked: new Set(),
+  capsBusy: false,
+  /** Kamera-IDs mit Panorama-Bild (aus caps.wide oder Videoformat). */
+  wide: new Set(),
+  zoom: { scale: 1, x: 50, y: 50 },
 };
 
 async function loadStreams(force = false) {
@@ -450,6 +458,22 @@ async function loadStreams(force = false) {
     live.loading = false;
     if (state.view === "zentrale" && state.overview) renderZentrale(state.overview);
   }
+}
+
+/** Faehigkeiten nacheinander abfragen (Hub cached sie 6 h). */
+async function loadCaps(cams) {
+  if (live.capsBusy) return;
+  const next = cams.find((c) => c.kind === "REOLINK" && c.reachable && !c.caps && !live.capsAsked.has(c.id));
+  if (!next) return;
+  live.capsBusy = true;
+  live.capsAsked.add(next.id);
+  try {
+    await shellyAction("CAMERA_CAPS", { cameraId: next.id });
+  } finally {
+    live.capsBusy = false;
+  }
+  // Ergebnis kommt mit dem naechsten /api/overview; gleich weitermachen.
+  setTimeout(() => state.overview && loadCaps(liveCams(state.overview)), 300);
 }
 
 /** Passenden go2rtc-Stream finden: per Kamera-Host aus der RTSP-URL. */
@@ -472,6 +496,7 @@ function liveCams(d) {
       reachable: c.reachable,
       states: c.activeStates,
       lastEventAt: c.lastEventAt,
+      caps: c.caps || null,
     }))
     .concat(
       d.doorbirds.map((b) => ({
@@ -483,6 +508,7 @@ function liveCams(d) {
         states: b.activeStates,
         lastEventAt: b.lastEventAt,
         hold: b.hold,
+        caps: null,
       }))
     );
 }
@@ -570,9 +596,22 @@ function frameUrl(src) {
   return `/api/go2rtc/frame.jpeg?src=${encodeURIComponent(src)}&t=${Date.now()}`;
 }
 
+/** Kleine Symbole fuer das, was die Kamera kann. */
+function capIcons(c) {
+  const k = c.caps;
+  if (!k) return "";
+  const list = [
+    [k.pan, "target", "Schwenkbar"],
+    [k.zoom, "plus", "Optischer Zoom"],
+    [k.spotlight, "bulb", "Scheinwerfer"],
+    [k.siren, "siren", "Sirene"],
+  ].filter(([on]) => on);
+  return list.map(([, ic, title]) => `<span class="cap" title="${esc(title)}">${icon(ic)}</span>`).join("");
+}
+
 function tileHtml(c) {
   const src = streamFor(c, "sub");
-  return `<article class="live-tile" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
+  return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
     <img alt="">
     <video autoplay muted playsinline></video>
     <div class="live-empty">${icon(c.kind === "DOORBIRD" ? "door" : "camera")}<span>${
@@ -585,7 +624,7 @@ function tileHtml(c) {
     </div>
     <div class="live-bottom">
       <span class="live-tag off" hidden>OFFLINE</span>
-      <span class="mono">${esc(c.host)}</span>
+      <span class="live-caps"></span>
       <span class="grow live-ago"></span>
     </div>
   </article>`;
@@ -600,6 +639,15 @@ function setTileMode(tile) {
   tag.textContent = isLive ? "LIVE" : "BILD";
 }
 
+/** Panorama-Kameras (Duo) bekommen eine doppelt breite Kachel. */
+function markWide(id, w, h) {
+  if (!w || !h || w / h < 2.4 || live.wide.has(id)) return;
+  live.wide.add(id);
+  const tile = document.querySelector(`[data-live="${id}"]`);
+  if (tile) tile.classList.add("is-wide");
+  layoutGrid();
+}
+
 function ensureTileStream(tile, c) {
   const src = streamFor(c, "sub");
   if (!src) return;
@@ -609,7 +657,9 @@ function ensureTileStream(tile, c) {
     img.onload = () => {
       tile.classList.add("has-picture");
       setTileMode(tile);
+      markWide(c.id, img.naturalWidth, img.naturalHeight);
     };
+    video.onloadedmetadata = () => markWide(c.id, video.videoWidth, video.videoHeight);
     const stop = startRtc(video, src, (st) => {
       tile.dataset.rtc = st;
       tile.classList.toggle("is-live", st === "live");
@@ -639,13 +689,46 @@ function stopLive() {
   if ($("camDlg") && $("camDlg").open) $("camDlg").close();
 }
 
+/**
+ * Spalten: fest gewaehlt oder "Auto". Auto sucht die Spaltenzahl, bei der
+ * alle Kacheln ohne Scrollen auf den Bildschirm passen und dabei moeglichst
+ * gross sind; bei sehr vielen Kameras mindestens ~300 px breit.
+ */
+function layoutGrid() {
+  const grid = $("liveGrid");
+  if (!grid || !grid.offsetParent) return;
+  const width = grid.clientWidth;
+  const units = [...grid.querySelectorAll(".live-tile")].reduce((n, t) => n + (t.classList.contains("is-wide") ? 2 : 1), 0) || 1;
+  let cols;
+  if (window.innerWidth < 560) cols = 1;
+  else if (live.cols !== "auto") cols = Number(live.cols);
+  else {
+    const top = grid.getBoundingClientRect().top + window.scrollY;
+    const fullscreen = !!document.fullscreenElement;
+    const avail = window.innerHeight - (fullscreen ? 12 : Math.min(top, 220)) - 16;
+    const gap = 10;
+    const maxCols = Math.max(1, Math.floor((width + gap) / (300 + gap)));
+    cols = maxCols;
+    for (let c = 1; c <= Math.max(1, maxCols); c++) {
+      const tileW = (width - gap * (c - 1)) / c;
+      const rows = Math.ceil(units / c);
+      if (rows * (tileW * 9) / 16 + gap * (rows - 1) <= avail) {
+        cols = c;
+        break;
+      }
+    }
+  }
+  grid.style.setProperty("--cols", String(Math.max(1, cols)));
+}
+
 function renderZentrale(d) {
   loadStreams();
   const cams = liveCams(d);
+  loadCaps(cams);
+  for (const c of cams) if (c.caps && c.caps.wide) live.wide.add(c.id);
   const grid = $("liveGrid");
-  grid.style.setProperty("--cols", String(live.cols));
   for (const b of document.querySelectorAll("#liveCols button")) {
-    b.setAttribute("aria-pressed", String(Number(b.dataset.cols) === live.cols));
+    b.setAttribute("aria-pressed", String(b.dataset.cols === String(live.cols)));
   }
 
   const sig = `${live.go2rtc}|${cams.map((c) => `${c.id}:${c.host}:${streamFor(c, "sub")}`).join("|")}`;
@@ -654,6 +737,7 @@ function renderZentrale(d) {
     stopTiles();
     grid.innerHTML = cams.length ? cams.map(tileHtml).join("") : empty("Keine Kameras konfiguriert.");
   }
+  layoutGrid();
 
   for (const c of cams) {
     const tile = grid.querySelector(`[data-live="${c.id}"]`);
@@ -666,19 +750,35 @@ function renderZentrale(d) {
       st.innerHTML = html;
       st.dataset.h = html;
     }
+    const capsEl = tile.querySelector(".live-caps");
+    const capsHtml = capIcons(c);
+    if (capsEl.dataset.h !== capsHtml) {
+      capsEl.innerHTML = capsHtml;
+      capsEl.dataset.h = capsHtml;
+    }
     tile.querySelector(".live-tag.off").hidden = c.reachable;
     tile.querySelector(".live-ago").textContent = c.lastEventAt ? `Signal ${ago(c.lastEventAt)}` : "";
     ensureTileStream(tile, c);
   }
 
-  const liveCount = [...grid.querySelectorAll(".live-tile.is-live")].length;
+  const liveCount = grid.querySelectorAll(".live-tile.is-live").length;
   const active = cams.filter((c) => c.states.length);
   $("liveSub").textContent =
     live.go2rtc === false
       ? `go2rtc auf dem Hub antwortet nicht – ${cams.length} Kameras ohne Livebild.`
       : `${liveCount} von ${cams.length} live${active.length ? ` · ${active.map((c) => `${c.name}: ${c.states.join(", ")}`).join(" · ")}` : ""}`;
 
-  if ($("camDlg").open) renderFocusState(d);
+  if ($("camDlg").open) {
+    renderFocusState(d);
+    // Faehigkeiten kamen nach dem Oeffnen an: Steuerung nachziehen.
+    const c = focusCam();
+    const box = $("camDlgControls");
+    if (c && box.dataset.caps !== capsKey(c)) {
+      box.innerHTML = controlsHtml(c);
+      box.dataset.caps = capsKey(c);
+      $("camDlgHost").textContent = focusSubtitle(c);
+    }
+  }
 }
 
 /* Grossansicht */
@@ -687,20 +787,47 @@ function focusCam() {
   return state.overview ? liveCams(state.overview).find((c) => c.id === live.focusId) : null;
 }
 
+function capsKey(c) {
+  return c.caps ? JSON.stringify(c.caps) : "none";
+}
+
+function focusSubtitle(c) {
+  if (c.kind === "DOORBIRD") return `${c.host} · DoorBird`;
+  const k = c.caps;
+  return `${c.host} · ${k && k.model ? `Reolink ${k.model}` : "Reolink"}${k && k.firmware ? ` · FW ${k.firmware}` : ""}`;
+}
+
+function setZoom(scale, x = live.zoom.x, y = live.zoom.y) {
+  live.zoom = { scale: Math.max(1, Math.min(4, scale)), x, y };
+  const t = live.zoom.scale === 1 ? "" : `scale(${live.zoom.scale})`;
+  for (const el of [$("camDlgVideo"), $("camDlgImg")]) {
+    el.style.transformOrigin = `${live.zoom.x}% ${live.zoom.y}%`;
+    el.style.transform = t;
+  }
+  const lbl = $("camZoomLabel");
+  if (lbl) lbl.textContent = `${live.zoom.scale.toFixed(1)}×`;
+}
+
 function openFocus(id) {
   live.focusId = id;
   const c = focusCam();
   if (!c) return;
   const dlg = $("camDlg");
   $("camDlgTitle").textContent = c.name;
-  $("camDlgHost").textContent = `${c.host} · ${c.kind === "DOORBIRD" ? "DoorBird" : "Reolink"}`;
-  $("camDlgControls").innerHTML = controlsHtml(c);
+  $("camDlgHost").textContent = focusSubtitle(c);
+  const box = $("camDlgControls");
+  box.innerHTML = controlsHtml(c);
+  box.dataset.caps = capsKey(c);
+  setZoom(1, 50, 50);
+  dlg.classList.toggle("is-wide", live.wide.has(c.id));
 
   const video = $("camDlgVideo");
   const img = $("camDlgImg");
   img.removeAttribute("src");
+  video.style.opacity = "0";
   if (live.focusStop) live.focusStop();
   live.focusStop = null;
+  delete dlg.dataset.rtc;
   const src = streamFor(c, "main");
   if (src) {
     img.src = frameUrl(src);
@@ -712,6 +839,18 @@ function openFocus(id) {
   }
   if (!dlg.open) dlg.showModal();
   renderFocusState(state.overview);
+  if (c.kind === "REOLINK" && !c.caps && c.reachable) {
+    shellyAction("CAMERA_CAPS", { cameraId: c.id }).then(() => refresh());
+  }
+}
+
+/** Naechste/vorige Kamera in der Grossansicht. */
+function stepFocus(dir) {
+  if (!state.overview) return;
+  const cams = liveCams(state.overview);
+  const i = cams.findIndex((c) => c.id === live.focusId);
+  if (i < 0) return;
+  openFocus(cams[(i + dir + cams.length) % cams.length].id);
 }
 
 function renderFocusState(d) {
@@ -729,29 +868,59 @@ function renderFocusState(d) {
 }
 
 function controlsHtml(c) {
-  const snap = `<div class="ctl-group"><span class="ctl-label">Bild</span><div class="ctl-row"><button type="button" class="btn" data-cam="CAMERA_SNAPSHOT">${icon("snap")}Schnappschuss in die Cloud</button></div></div>`;
+  const digital = `<div class="ctl-group">
+      <span class="ctl-label">Bild vergrößern</span>
+      <div class="ctl-row">
+        <button type="button" class="btn small" data-dzoom="-1" aria-label="Bild verkleinern">${icon("minus")}</button>
+        <span class="ctl-value" id="camZoomLabel">${live.zoom.scale.toFixed(1)}×</span>
+        <button type="button" class="btn small" data-dzoom="1" aria-label="Bild vergrößern">${icon("plus")}</button>
+        <button type="button" class="btn small" data-dzoom="0">Zurück</button>
+      </div>
+      <span class="ctl-hint">Digital im Browser, auch mit dem Mausrad an der Stelle, auf die du zeigst.</span>
+    </div>`;
+  const snap = `<div class="ctl-group"><span class="ctl-label">Bild</span><div class="ctl-row"><button type="button" class="btn small" data-cam="CAMERA_SNAPSHOT">${icon("snap")}Schnappschuss in die Cloud</button></div></div>`;
+
   if (c.kind === "DOORBIRD") {
     return `<div class="ctl-group"><span class="ctl-label">Tür</span><div class="ctl-row"><button type="button" class="btn primary" data-cam="DOORBIRD_OPEN">${icon("unlock")}Tür öffnen</button></div>
-      ${c.hold ? `<span class="ctl-hint">Wird offen gehalten bis ${esc(clock(c.hold.until))}</span>` : ""}</div>${snap}`;
+      ${c.hold ? `<span class="ctl-hint">Wird offen gehalten bis ${esc(clock(c.hold.until))}</span>` : ""}</div>${digital}${snap}`;
   }
-  const presets = live.presets[c.id];
-  return `
-    <div class="ctl-group">
-      <span class="ctl-label">Schwenken und Zoom</span>
-      <div class="dpad">
+
+  const k = c.caps;
+  if (!k) {
+    return `<div class="ctl-group"><span class="ctl-label">Steuerung</span><div class="ctl-loading"><div class="skeleton"></div><span class="ctl-hint">${
+      c.reachable ? "Frage ab, was diese Kamera kann …" : "Kamera ist offline – Funktionen unbekannt."
+    }</span></div></div>${digital}${snap}`;
+  }
+
+  const groups = [];
+  if (k.pan || k.zoom) {
+    groups.push(`<div class="ctl-group">
+      <span class="ctl-label">${k.pan ? "Schwenken" : "Optischer Zoom"}</span>
+      ${
+        k.pan
+          ? `<div class="dpad">
         <button type="button" class="btn" data-ptz="Up" aria-label="hoch">${icon("chev")}</button>
         <button type="button" class="btn" data-ptz="Left" aria-label="links">${icon("chev")}</button>
         <span class="center">${icon("target")}</span>
         <button type="button" class="btn" data-ptz="Right" aria-label="rechts">${icon("chev")}</button>
         <button type="button" class="btn" data-ptz="Down" aria-label="runter">${icon("chev")}</button>
-      </div>
-      <div class="ctl-row">
-        <button type="button" class="btn small" data-ptz="ZoomDec">${icon("minus")}Zoom</button>
-        <button type="button" class="btn small" data-ptz="ZoomInc">${icon("plus")}Zoom</button>
-      </div>
-      <span class="ctl-hint">Pfeiltasten und + / − gehen auch. Nur für schwenkbare Kameras.</span>
-    </div>
-    <div class="ctl-group">
+      </div>`
+          : ""
+      }
+      ${
+        k.zoom
+          ? `<div class="ctl-row">
+        <button type="button" class="btn small" data-ptz="ZoomDec">${icon("minus")}Weit</button>
+        <button type="button" class="btn small" data-ptz="ZoomInc">${icon("plus")}Nah</button>
+      </div>`
+          : ""
+      }
+      <span class="ctl-hint">Gedrückt halten fährt, loslassen stoppt.${k.pan ? " Pfeiltasten gehen auch." : ""}</span>
+    </div>`);
+  }
+  if (k.presets || k.pan) {
+    const presets = live.presets[c.id];
+    groups.push(`<div class="ctl-group">
       <span class="ctl-label">Positionen</span>
       <div class="ctl-row" id="presetRow">${
         presets
@@ -760,27 +929,39 @@ function controlsHtml(c) {
             : '<span class="ctl-hint">Keine Positionen gespeichert.</span>'
           : `<button type="button" class="btn small" data-presets-load>${icon("target")}Positionen laden</button>`
       }</div>
-    </div>
-    <div class="ctl-group">
-      <span class="ctl-label">Licht</span>
-      <div class="ctl-row">
+    </div>`);
+  }
+  const light = [];
+  if (k.spotlight) {
+    light.push(`<div class="ctl-row">
         <button type="button" class="btn small" data-cam="CAMERA_SPOTLIGHT" data-on="true">${icon("bulb")}Scheinwerfer an</button>
         <button type="button" class="btn small" data-cam="CAMERA_SPOTLIGHT" data-on="false">aus</button>
-      </div>
-      <div class="ctl-row">
-        <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Auto">${icon("moon")}IR auto</button>
+      </div>`);
+  }
+  if (k.ir) {
+    light.push(`<div class="ctl-row">
+        <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Auto">${icon("moon")}Infrarot auto</button>
         <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="On">an</button>
         <button type="button" class="btn small" data-cam="CAMERA_IR" data-state="Off">aus</button>
-      </div>
-    </div>
-    <div class="ctl-group">
+      </div>`);
+  }
+  if (light.length) groups.push(`<div class="ctl-group"><span class="ctl-label">Licht</span>${light.join("")}</div>`);
+  if (k.siren) {
+    groups.push(`<div class="ctl-group">
       <span class="ctl-label">Sirene</span>
       <div class="ctl-row">
         <button type="button" class="btn small danger" data-cam="CAMERA_SIREN" data-on="true">${icon("siren")}Sirene auslösen</button>
         <button type="button" class="btn small" data-cam="CAMERA_SIREN" data-on="false">Stopp</button>
       </div>
-    </div>
-    ${snap}`;
+    </div>`);
+  }
+  if (!groups.length) {
+    groups.push(`<div class="ctl-group"><span class="ctl-label">Steuerung</span><span class="ctl-hint">Feste Kamera ohne Schwenken, Zoom, Scheinwerfer oder Sirene.</span></div>`);
+  }
+  if (k.source === "model") {
+    groups.push(`<span class="ctl-hint">Funktionen aus der Modellliste geschätzt – die Kamera hat ihre Fähigkeiten nicht gemeldet.</span>`);
+  }
+  return groups.join("") + digital + snap;
 }
 
 async function camAction(type, payload, label, button) {
@@ -795,24 +976,36 @@ async function camAction(type, payload, label, button) {
   }
 }
 
-function ptz(op, button) {
+/** Fahrimpuls; mit hold=true faehrt die Kamera bis ptzStop() (max. 5 s). */
+function ptz(op, hold = false) {
   const c = focusCam();
   if (!c || c.kind === "DOORBIRD") return;
-  // Kurzer Fahrimpuls; der Hub stoppt nach durationMs selbst.
-  const zoom = op.startsWith("Zoom");
-  shellyAction("CAMERA_PTZ", { cameraId: c.id, op, speed: zoom ? 16 : 32, durationMs: zoom ? 400 : 700 }).then((r) => {
-    if (!r.success) toast(`${c.name}: ${r.error || "Schwenken fehlgeschlagen"}`, "err");
+  const k = c.caps;
+  const isZoom = op.startsWith("Zoom");
+  if (k && ((isZoom && !k.zoom) || (!isZoom && !k.pan))) return;
+  shellyAction("CAMERA_PTZ", {
+    cameraId: c.id,
+    op,
+    speed: isZoom ? 16 : 32,
+    durationMs: hold ? 5000 : isZoom ? 400 : 700,
+  }).then((r) => {
+    if (!r.success && !/Stop/.test(r.error || "")) toast(`${c.name}: ${r.error || "Schwenken fehlgeschlagen"}`, "err");
   });
-  if (button) {
-    button.classList.add("is-on");
-    setTimeout(() => button.classList.remove("is-on"), 700);
-  }
+}
+
+function ptzStop() {
+  const c = focusCam();
+  if (!c || c.kind === "DOORBIRD") return;
+  shellyAction("CAMERA_PTZ", { cameraId: c.id, op: "Stop" });
 }
 
 async function onCamControl(el) {
   const c = focusCam();
   if (!c) return;
-  if (el.dataset.ptz) return ptz(el.dataset.ptz, el);
+  if (el.dataset.dzoom != null) {
+    const step = Number(el.dataset.dzoom);
+    return setZoom(step === 0 ? 1 : live.zoom.scale + step * 0.5);
+  }
   if (el.dataset.preset) {
     return camAction("CAMERA_PTZ", { cameraId: c.id, op: "ToPos", presetId: Number(el.dataset.preset), speed: 32 }, `${c.name}: ${el.textContent.trim()}`, el);
   }
@@ -825,6 +1018,7 @@ async function onCamControl(el) {
     return;
   }
   const type = el.dataset.cam;
+  if (!type) return;
   if (type === "DOORBIRD_OPEN") {
     const ok = await ask("Tür öffnen?", `${c.name} löst das Türrelais sofort aus.`, "Öffnen");
     if (ok) camAction(type, { cameraId: c.id }, c.name, el);
@@ -855,8 +1049,8 @@ $("liveGrid").addEventListener("keydown", (ev) => {
 $("liveCols").addEventListener("click", (ev) => {
   const b = ev.target.closest("button[data-cols]");
   if (!b) return;
-  live.cols = Number(b.dataset.cols);
-  storeSet("hub-live-cols", String(live.cols));
+  live.cols = b.dataset.cols;
+  storeSet("hub-live-cols2", live.cols);
   if (state.overview) renderZentrale(state.overview);
 });
 $("liveFull").addEventListener("click", () => {
@@ -864,10 +1058,50 @@ $("liveFull").addEventListener("click", () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
 });
+window.addEventListener("resize", layoutGrid);
+document.addEventListener("fullscreenchange", () => setTimeout(layoutGrid, 50));
+
+/* PTZ: gedrueckt halten faehrt, loslassen stoppt. */
+let ptzHeld = null;
+$("camDlgControls").addEventListener("pointerdown", (ev) => {
+  const el = ev.target.closest("[data-ptz]");
+  if (!el || ev.button > 0) return;
+  ev.preventDefault();
+  el.setPointerCapture?.(ev.pointerId);
+  ptzHeld = { el, at: Date.now() };
+  el.classList.add("is-on");
+  ptz(el.dataset.ptz, true);
+});
+function endPtzHold() {
+  if (!ptzHeld) return;
+  const { el, at } = ptzHeld;
+  ptzHeld = null;
+  el.classList.remove("is-on");
+  // Kurzer Tipp: ein Stueck fahren lassen, sonst sofort anhalten.
+  setTimeout(ptzStop, Math.max(0, 450 - (Date.now() - at)));
+}
+$("camDlgControls").addEventListener("pointerup", endPtzHold);
+$("camDlgControls").addEventListener("pointercancel", endPtzHold);
 $("camDlgControls").addEventListener("click", (ev) => {
   const el = ev.target.closest("button");
-  if (el) onCamControl(el);
+  if (el && !el.dataset.ptz) onCamControl(el);
 });
+
+/* Digitaler Zoom per Mausrad auf dem Bild. */
+document.querySelector(".cam-stage").addEventListener(
+  "wheel",
+  (ev) => {
+    ev.preventDefault();
+    const r = ev.currentTarget.getBoundingClientRect();
+    const x = ((ev.clientX - r.left) / r.width) * 100;
+    const y = ((ev.clientY - r.top) / r.height) * 100;
+    setZoom(live.zoom.scale * (ev.deltaY < 0 ? 1.15 : 1 / 1.15), x, y);
+  },
+  { passive: false }
+);
+
+$("camDlgPrev").addEventListener("click", () => stepFocus(-1));
+$("camDlgNext").addEventListener("click", () => stepFocus(1));
 $("camDlgClose").addEventListener("click", () => $("camDlg").close());
 $("camDlg").addEventListener("close", () => {
   if (live.focusStop) live.focusStop();
@@ -875,6 +1109,7 @@ $("camDlg").addEventListener("close", () => {
   live.focusId = null;
   delete $("camDlg").dataset.rtc;
   $("camDlgVideo").style.opacity = "0";
+  setZoom(1, 50, 50);
 });
 
 /* ------------------------------------------------------------------- Lage */
@@ -1657,10 +1892,26 @@ $("themeBtn").addEventListener("click", () => {
 document.addEventListener("keydown", (ev) => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
   if ($("camDlg").open) {
+    if (ev.target && ev.target.closest && ev.target.closest("#confirmDlg")) return;
+    const c = focusCam();
+    const k = c && c.caps;
+    if (ev.key === "PageDown" || ((ev.key === "ArrowRight" || ev.key === "ArrowLeft") && !(k && k.pan))) {
+      ev.preventDefault();
+      if (!ev.repeat) stepFocus(ev.key === "ArrowLeft" ? -1 : 1);
+      return;
+    }
+    if (ev.key === "PageUp") {
+      ev.preventDefault();
+      if (!ev.repeat) stepFocus(-1);
+      return;
+    }
     const dir = { ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right", "+": "ZoomInc", "-": "ZoomDec" }[ev.key];
     if (dir) {
       ev.preventDefault();
-      if (!ev.repeat) ptz(dir);
+      if (!ev.repeat) {
+        ptzKey = ev.key;
+        ptz(dir, true);
+      }
     }
     return;
   }
@@ -1683,6 +1934,14 @@ document.addEventListener("keydown", (ev) => {
     ev.preventDefault();
     if (state.view !== "netzwerk") location.hash = "netzwerk";
     setTimeout(() => $("netFilter").focus(), 0);
+  }
+});
+
+let ptzKey = null;
+document.addEventListener("keyup", (ev) => {
+  if (ptzKey && ev.key === ptzKey) {
+    ptzKey = null;
+    ptzStop();
   }
 });
 

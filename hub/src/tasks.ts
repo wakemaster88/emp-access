@@ -10,6 +10,7 @@ import {
   setIrLights,
   setSiren,
   getPtzPresets,
+  getCameraCaps,
   ensureCameraConfigs,
 } from "./cameras.js";
 import { enrollFromSighting } from "./face.js";
@@ -227,6 +228,16 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
             result = await getPtzPresets(cameraId);
         }
         return { success: true, result: { cameraId, ...(result as object) } };
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    case "CAMERA_CAPS": {
+      const cameraId = Number(task.payload?.cameraId);
+      if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
+      try {
+        const caps = await getCameraCaps(cameraId, task.payload?.force === true);
+        return { success: true, result: { cameraId, caps } };
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
       }
