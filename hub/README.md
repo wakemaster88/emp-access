@@ -66,30 +66,33 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
 
 ## Mehrere VLANs
 
-Nach der VLAN-Aufteilung (Kameras 30, Betrieb/IoT 40, Anlage/Audio 41 …) ist
-Inter-VLAN-Routing am Router für diese Netze aus. Damit der Hub trotzdem
-alles sieht und steuert, hängt er mit einem **Trunk-Port** am Core-Switch
-(untagged 1, tagged 30/40/41) und bekommt je VLAN ein macOS-VLAN-Interface:
+Nach der VLAN-Aufteilung (Kameras 30, Betrieb/IoT 40, Anlage/Audio 41 …)
+bleibt der Hub **standardmäßig in VLAN 1** und erreicht die anderen Netze
+über das Inter-VLAN-Routing des Routers (PR60X: an für 1, 30, 70). So bleibt
+das Kamera-VLAN isoliert; der Hub braucht dafür kein eigenes Bein darin.
 
-```bash
-./install/setup-vlans.sh              # Trockenlauf: zeigt, was passiert
-sudo ./install/setup-vlans.sh --apply # VLAN 30/40/41 mit .5, ohne Router
-```
-
-Dann in `hub/.env`:
+In `hub/.env`:
 
 - `HUB_VLANS` – Soll-VLANs mit Namen und Subnetz; alle werden gescannt, das
-  Dashboard zeigt je VLAN „direkt über vlanX“ oder „nur geroutet“.
-- `HUB_SNMP_ROUTER` – Router-IP; liefert per SNMP die MACs aus VLANs, in
-  denen der Hub kein eigenes Interface hat.
+  Dashboard zeigt je VLAN „direkt über …“, „nur geroutet“ oder „nicht
+  erreichbar“ (Routing aus).
+- `HUB_SNMP_ROUTER` – Router-IP; liefert per SNMP die MACs aus gerouteten
+  VLANs (dort sieht der Hub keine ARP-Einträge). Ohne SNMP fehlen dort die
+  MACs, und diese Geräte gehen nicht in die Cloud-Geräteliste.
 - `HUB_SCAN_EXCLUDE` – VLANs, die nicht gescannt werden sollen.
 
 Kameras und DoorBird werden über ihre **MAC** wiedergefunden: Der Hub lernt
-die MAC, solange ein Gerät erreichbar ist. Antwortet es nicht mehr, sucht er
-die MAC in der ARP-Tabelle (lokal + Router) und pingt notfalls einmal alle
-direkt angeschlossenen Netze an. Taucht sie unter neuer IP auf, stellt er
-sofort um, meldet die IP an die Cloud und zieht go2rtc/Kiosk nach. Dauerhaft
-sauber wird es mit DHCP-Reservierungen am Router.
+die MAC, solange ein Gerät erreichbar ist (ARP, Router-SNMP oder bei Reolink
+direkt per `GetLocalLink`). Antwortet es nicht mehr, sucht er die MAC in der
+ARP-Tabelle (lokal + Router), pingt notfalls die Netze an und fragt bei
+Reolink die Kandidaten aus dem letzten Scan per API nach ihrer MAC. Taucht
+sie unter neuer IP auf, stellt er sofort um, meldet die IP an die Cloud und
+zieht go2rtc/Kiosk nach.
+
+**Optional** (nur wenn ein VLAN ohne Routing direkt erreichbar sein soll und
+der Hub per Kabel an einem Trunk-Port hängt): `install/setup-vlans.sh` legt
+macOS-VLAN-Interfaces an (Trockenlauf ohne `--apply`). Das umgeht die
+Isolation des VLANs – bewusst entscheiden.
 
 ## Betrieb rund um die Uhr
 

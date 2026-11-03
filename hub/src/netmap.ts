@@ -338,9 +338,11 @@ async function sweepDirectSubnets(): Promise<void> {
   if (Date.now() - lastRelocateSweepAt < RELOCATE_SWEEP_MS) return;
   lastRelocateSweepAt = Date.now();
   relocateSweep = (async () => {
-    const direct = knownSubnets().filter((s) => s.iface);
-    if (direct.length === 0) return;
-    await pingSweep(direct);
+    // Direkte Netze fuellen die lokale ARP-Tabelle. Geroutete Netze lohnen nur,
+    // wenn der Router per SNMP seine ARP-Tabelle verraet.
+    const targets = knownSubnets().filter((s) => s.iface || routerHost());
+    if (targets.length === 0) return;
+    await pingSweep(targets);
     await readRouterArp(true);
   })().finally(() => {
     relocateSweep = null;
@@ -350,7 +352,7 @@ async function sweepDirectSubnets(): Promise<void> {
 
 /**
  * Aktuelle IP zu einer MAC finden. Ohne Treffer (optional) einmal alle direkt
- * angeschlossenen Subnetze anpingen, damit die ARP-Tabelle gefuellt ist, und
+ * angeschlossenen Subnetze (mit HUB_SNMP_ROUTER auch die gerouteten) anpingen, damit die ARP-Tabelle gefuellt ist, und
  * erneut suchen. `exclude` = bisherige IP (die gerade nicht antwortet).
  */
 export async function findIpByMac(

@@ -14,7 +14,8 @@ import { jpegContainsVehicle } from "./vision.js";
 import { speakOnCamera } from "./camera-talk.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
-import { findIpByMac, macForIp } from "./netmap.js";
+import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
+import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve } from "./improve-log.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
@@ -1141,13 +1142,67 @@ export async function reportNetworkUpdate(
   return res.ok;
 }
 
+/** MAC direkt von der Kamera (Reolink GetLocalLink) – funktioniert auch geroutet. */
+async function readMacFromCamera(cam: CameraRuntime): Promise<string | null> {
+  try {
+    await ensureLogin(cam);
+    const value = await cgi(cam, "GetLocalLink", {});
+    const mac = (value.LocalLink as { mac?: string } | undefined)?.mac;
+    return mac ? normalizeMac(mac) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Per Kamera-API gelesene MACs fremder IPs (geroutete VLANs), 10 min gueltig. */
+const probedMacs = new Map<string, { mac: string | null; at: number }>();
+const PROBE_TTL_MS = 600_000;
+const MAX_PROBES = 40;
+
+/**
+ * Fallback ohne ARP-Treffer (geroutetes VLAN, kein Router-SNMP): Kandidaten
+ * aus dem letzten Netzwerk-Scan (Reolink/RTSP, keiner anderen Kamera
+ * zugeordnet) mit den Zugangsdaten dieser Kamera nach ihrer MAC fragen.
+ */
+async function findCameraByApi(cam: CameraRuntime): Promise<string | null> {
+  const wanted = cam.config.macAddress;
+  if (!wanted) return null;
+  const taken = new Set([...cameras.values()].map((c) => c.config.host));
+  const candidates = lastScanResult()
+    .devices.filter(
+      (d) =>
+        !taken.has(d.ip) &&
+        (d.mac === null || d.mac === wanted) &&
+        (/reolink/i.test(d.vendor ?? "") || d.openPorts.includes(554))
+    )
+    .map((d) => d.ip)
+    .slice(0, MAX_PROBES);
+  for (const ip of candidates) {
+    const cached = probedMacs.get(ip);
+    let mac = cached && Date.now() - cached.at < PROBE_TTL_MS ? cached.mac : undefined;
+    if (mac === undefined) {
+      const probe: CameraRuntime = {
+        ...cam,
+        config: { ...cam.config, host: ip },
+        token: null,
+        tokenExpiresAt: 0,
+      };
+      mac = await readMacFromCamera(probe);
+      probedMacs.set(ip, { mac, at: Date.now() });
+    }
+    if (mac === wanted) return ip;
+  }
+  return null;
+}
+
 /** MAC der (gerade erfolgreich erreichten) Kamera aus der ARP-Tabelle lernen. */
 async function learnCameraMac(cam: CameraRuntime): Promise<void> {
   if (Date.now() - cam.lastMacLearnAt < MAC_LEARN_INTERVAL_MS) return;
   cam.lastMacLearnAt = Date.now();
   try {
-    // Lokale ARP-Tabelle oder (geroutetes VLAN) ARP-Tabelle des Routers.
-    const mac = await macForIp(cam.config.host);
+    // Lokale ARP-Tabelle, ARP-Tabelle des Routers (SNMP) oder – im gerouteten
+    // VLAN ohne SNMP – die Kamera selbst (GetLocalLink).
+    const mac = (await macForIp(cam.config.host)) ?? (await readMacFromCamera(cam));
     if (!mac || mac === cam.config.macAddress) return;
     const ok = await reportNetworkUpdate(cam.config.id, { macAddress: mac });
     if (ok) {
@@ -1171,7 +1226,9 @@ async function tryRelocateCamera(cam: CameraRuntime): Promise<boolean> {
   try {
     // Sucht in lokaler + Router-ARP-Tabelle; ohne Treffer werden die direkt
     // angeschlossenen Subnetze (auch VLAN-Interfaces) einmal angepingt.
-    const ip = await findIpByMac(cam.config.macAddress, { sweep: true, exclude: cam.config.host });
+    const ip =
+      (await findIpByMac(cam.config.macAddress, { sweep: true, exclude: cam.config.host })) ??
+      (await findCameraByApi(cam));
     if (ip) {
       const oldHost = cam.config.host;
       cam.config.host = ip;

@@ -1,7 +1,9 @@
 #!/bin/zsh
-# VLAN-Interfaces fuer den Hub-Mac anlegen (macOS), damit der Hub Geraete in
-# isolierten VLANs (Kameras, Betrieb/IoT, Anlage/Audio) direkt erreicht – ohne
-# Inter-VLAN-Routing am Router.
+# OPTIONAL. Standard ist: Hub bleibt in VLAN 1 und erreicht die anderen VLANs
+# ueber das Inter-VLAN-Routing des Routers – dann wird dieses Skript nicht
+# gebraucht. Es legt VLAN-Interfaces am Hub-Mac an (macOS), damit er Geraete
+# in VLANs OHNE Routing direkt erreicht. Achtung: Das umgeht die Isolation
+# dieser VLANs (der Hub sitzt dann mit in jedem Netz).
 #
 # Voraussetzung: Der Switch-Port des Hubs ist ein Trunk
 #   (untagged VLAN 1, tagged 30/40/41) – in NETGEAR Insight am Core-Switch.
