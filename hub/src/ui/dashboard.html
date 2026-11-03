@@ -80,6 +80,7 @@
   <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></symbol>
   <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
 </svg>
 
@@ -113,13 +114,14 @@
   <nav class="nav" id="nav" aria-label="Bereiche">
     <a href="#zentrale" data-view="zentrale"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-grid"/></svg><span class="nav-label">Zentrale</span><span class="nav-count" data-count="zentrale"></span></a>
     <a href="#lage" data-view="lage"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="nav-label">Lage</span><span class="nav-count" data-count="lage"></span></a>
-    <a href="#systeme" data-view="systeme"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-cpu"/></svg><span class="nav-label">Systeme</span><span class="nav-count" data-count="systeme"></span></a>
-    <a href="#netzwerk" data-view="netzwerk"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-network"/></svg><span class="nav-label">Netzwerk</span><span class="nav-count" data-count="netzwerk"></span></a>
+    <a href="#systeme" data-view="systeme" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-cpu"/></svg><span class="nav-label">Systeme</span><span class="nav-count" data-count="systeme"></span></a>
+    <a href="#netzwerk" data-view="netzwerk" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-network"/></svg><span class="nav-label">Netzwerk</span><span class="nav-count" data-count="netzwerk"></span></a>
     <a href="#kameras" data-view="kameras"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-camera"/></svg><span class="nav-label">Kameras</span><span class="nav-count" data-count="kameras"></span></a>
     <a href="#ereignisse" data-view="ereignisse"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-bell"/></svg><span class="nav-label">Ereignisse</span><span class="nav-count" data-count="ereignisse"></span></a>
-    <a href="#personen" data-view="personen"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-user"/></svg><span class="nav-label">Personen</span><span class="nav-count" data-count="personen"></span></a>
-    <a href="#fahrzeuge" data-view="fahrzeuge"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-car"/></svg><span class="nav-label">Fahrzeuge</span><span class="nav-count" data-count="fahrzeuge"></span></a>
-    <a href="#aktionen" data-view="aktionen"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-zap"/></svg><span class="nav-label">Aktionen</span><span class="nav-count" data-count="aktionen"></span></a>
+    <a href="#personen" data-view="personen" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-user"/></svg><span class="nav-label">Personen</span><span class="nav-count" data-count="personen"></span></a>
+    <a href="#fahrzeuge" data-view="fahrzeuge" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-car"/></svg><span class="nav-label">Fahrzeuge</span><span class="nav-count" data-count="fahrzeuge"></span></a>
+    <a href="#aktionen" data-view="aktionen" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-zap"/></svg><span class="nav-label">Aktionen</span><span class="nav-count" data-count="aktionen"></span></a>
+    <button type="button" class="nav-more" id="navMore" aria-haspopup="true" aria-expanded="false" aria-controls="moreSheet"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-more"/></svg><span class="nav-label">Mehr</span><span class="nav-count" id="navMoreCount"></span></button>
     <div class="nav-foot" aria-hidden="true">Tasten <kbd>1</kbd>–<kbd>9</kbd> wechseln den Bereich</div>
   </nav>
 
@@ -416,6 +418,9 @@
     </div>
   </form>
 </dialog>
+
+<!-- Telefon: weitere Bereiche hinter "Mehr" (pwa.js) -->
+<div class="more-sheet" id="moreSheet" hidden></div>
 
 <button type="button" class="kiosk-exit" id="kioskExit" hidden aria-label="Vollbild beenden"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
 <dialog class="dialog form-dlg" id="vehDlg" aria-labelledby="vehDlgTitle">

@@ -34,6 +34,7 @@ import { configuredVlans, routerHost } from "./netmap.js";
 import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
+import { getFrame, startFrameWarmer } from "./frame-cache.js";
 
 let actionCounter = 0;
 
@@ -171,15 +172,16 @@ async function proxyGo2rtc(
       return;
     }
     if (req.method === "GET" && sub === "/frame.jpeg") {
-      const r = await fetch(`${GO2RTC_URL}/api/frame.jpeg?src=${encodeURIComponent(src)}`, {
-        signal: AbortSignal.timeout(8000),
-      });
-      const body = Buffer.from(await r.arrayBuffer());
-      res.writeHead(r.status, {
-        "Content-Type": r.headers.get("content-type") ?? "image/jpeg",
+      const got = await getFrame(GO2RTC_URL, src, url.searchParams.get("cached") === "1");
+      if (!got) return json(res, 502, { error: "kein Bild" });
+      res.writeHead(200, {
+        "Content-Type": got.frame.type,
         "Cache-Control": "no-store",
+        // Alter in Sekunden; -1 = unbekannt (vom Datentraeger nach Neustart).
+        "X-Frame-Age": String(got.frame.at ? Math.round((Date.now() - got.frame.at) / 1000) : -1),
+        "X-Frame-Cached": got.cached ? "1" : "0",
       });
-      res.end(body);
+      res.end(got.frame.buf);
       return;
     }
     return json(res, 404, { error: "unbekannt" });
@@ -660,6 +662,7 @@ export async function startDashboard(): Promise<void> {
       else res.end();
     });
   };
+  startFrameWarmer(GO2RTC_URL);
   const httpServer = http.createServer(onRequest);
   httpServer.on("error", (e) => log(`Dashboard-Server-Fehler: ${e.message}`));
 

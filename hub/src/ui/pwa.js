@@ -25,6 +25,70 @@
     });
   }
 
+  /*
+   * Telefon: Die Tab-Leiste zeigt Zentrale, Lage, Kameras, Ereignisse und
+   * "Mehr"; der Rest kommt in ein kleines Blatt darueber. Die Zaehler der
+   * versteckten Bereiche erscheinen gesammelt am "Mehr"-Knopf.
+   */
+  const nav = document.getElementById("nav");
+  const moreBtn = document.getElementById("navMore");
+  const sheet = document.getElementById("moreSheet");
+  const moreCount = document.getElementById("navMoreCount");
+  if (nav && moreBtn && sheet && moreCount) {
+    const extras = () => [...nav.querySelectorAll("a.nav-extra")];
+    const closeSheet = () => {
+      sheet.hidden = true;
+      moreBtn.setAttribute("aria-expanded", "false");
+    };
+    const openSheet = () => {
+      sheet.innerHTML = "";
+      for (const a of extras()) {
+        const c = a.cloneNode(true);
+        c.classList.remove("nav-extra");
+        c.querySelector(".nav-count")?.removeAttribute("data-count");
+        sheet.appendChild(c);
+      }
+      sheet.hidden = false;
+      moreBtn.setAttribute("aria-expanded", "true");
+    };
+    moreBtn.addEventListener("click", () => (sheet.hidden ? openSheet() : closeSheet()));
+    sheet.addEventListener("click", (ev) => {
+      if (ev.target.closest("a")) closeSheet();
+    });
+    document.addEventListener("click", (ev) => {
+      if (!sheet.hidden && !sheet.contains(ev.target) && !moreBtn.contains(ev.target)) closeSheet();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && !sheet.hidden) closeSheet();
+    });
+    window.addEventListener("hashchange", closeSheet);
+
+    const syncMore = () => {
+      let n = 0;
+      let tone = "";
+      for (const a of extras()) {
+        const el = a.querySelector(".nav-count");
+        // Nur Hinweise (Warnung/Alarm) zaehlen, keine reinen Mengen wie "77 Geraete".
+        const isAlert = el && el.classList.contains("alert");
+        const isWarn = el && el.classList.contains("warn");
+        if (!isAlert && !isWarn) continue;
+        const v = Number(el.textContent || 0);
+        n += v > 0 ? v : 1;
+        if (isAlert) tone = "alert";
+        else if (!tone) tone = "warn";
+      }
+      const text = n > 0 ? String(n > 99 ? "99+" : n) : "";
+      // Nur bei Aenderung schreiben – der Beobachter sieht auch diese Knoten.
+      if (moreCount.textContent !== text) moreCount.textContent = text;
+      const cls = `nav-count ${tone}`.trim();
+      if (moreCount.className !== cls) moreCount.className = cls;
+      const active = extras().some((a) => a.hasAttribute("aria-current"));
+      if (moreBtn.classList.contains("is-current") !== active) moreBtn.classList.toggle("is-current", active);
+    };
+    new MutationObserver(syncMore).observe(nav, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["aria-current", "class"] });
+    syncMore();
+  }
+
   const box = document.getElementById("pwaHint");
   const text = document.getElementById("pwaHintText");
   const closeBtn = document.getElementById("pwaHintClose");

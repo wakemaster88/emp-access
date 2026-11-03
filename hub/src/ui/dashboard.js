@@ -632,8 +632,58 @@ function startRtc(video, src, onState) {
   };
 }
 
-function frameUrl(src) {
-  return `/api/go2rtc/frame.jpeg?src=${encodeURIComponent(src)}&t=${Date.now()}`;
+function frameUrl(src, cached = false) {
+  return `/api/go2rtc/frame.jpeg?src=${encodeURIComponent(src)}${cached ? "&cached=1" : ""}&t=${Date.now()}`;
+}
+
+/*
+ * Vorschaubilder. Der Hub haelt pro Stream das letzte gute Bild bereit
+ * (cached=1 kommt sofort, auch wenn go2rtc gerade haengt). Hier im
+ * Browser bleibt das letzte Bild pro Kamera als Blob-URL, damit neu
+ * gebaute Kacheln (Rueckkehr in die App, Tab-Wechsel) sofort ein Bild
+ * zeigen statt "Verbinde …". Ein fehlgeschlagener Abruf aendert nichts
+ * am angezeigten Bild – kein kaputtes Bild-Symbol mehr.
+ */
+const frameCache = new Map();
+
+async function loadFrame(img, src, cacheKey, cached) {
+  if (img.dataset.loading === "1") return false;
+  img.dataset.loading = "1";
+  try {
+    const res = await fetch(frameUrl(src, cached), { cache: "no-store" });
+    if (!res.ok || !(res.headers.get("content-type") || "").startsWith("image/")) return false;
+    const age = Number(res.headers.get("x-frame-age"));
+    const blob = await res.blob();
+    if (!blob.size) return false;
+    const url = URL.createObjectURL(blob);
+    const at = Number.isFinite(age) && age >= 0 ? Date.now() - age * 1000 : 0;
+    const prev = img.dataset.blob;
+    img.src = url;
+    img.dataset.blob = url;
+    img.dataset.at = String(at);
+    if (cacheKey != null) {
+      const old = frameCache.get(cacheKey);
+      frameCache.set(cacheKey, { url, at });
+      if (old && old.url !== url && old.url !== prev) setTimeout(() => URL.revokeObjectURL(old.url), 5000);
+    }
+    if (prev && prev !== url && (cacheKey == null || prev !== frameCache.get(cacheKey)?.url)) {
+      setTimeout(() => URL.revokeObjectURL(prev), 5000);
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    delete img.dataset.loading;
+  }
+}
+
+/** "2 min" fuer das Alter eines Standbilds, leer wenn frisch. */
+function frameAge(at) {
+  if (!at) return "";
+  const s = (Date.now() - at) / 1000;
+  if (s < 45) return "";
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${Math.round(s / 3600)} h`;
 }
 
 /** Kleine Symbole fuer das, was die Kamera kann. */
@@ -651,8 +701,9 @@ function capIcons(c) {
 
 function tileHtml(c) {
   const src = streamFor(c, "sub");
-  return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
-    <img alt="">
+  const pic = frameCache.get(c.id);
+  return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}${pic ? " has-picture" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
+    <img alt=""${pic ? ` src="${pic.url}" data-blob="${pic.url}" data-at="${pic.at}"` : ""}>
     <video autoplay muted playsinline></video>
     <div class="live-empty">${icon(c.kind === "DOORBIRD" ? "door" : "camera")}<span>${
       src ? "Verbinde …" : live.go2rtc === false ? "go2rtc nicht erreichbar" : live.go2rtc === null ? "Lade Streams …" : "Kein Stream in go2rtc"
@@ -676,7 +727,9 @@ function setTileMode(tile) {
   const hasPic = tile.classList.contains("has-picture");
   tag.hidden = !isLive && !hasPic;
   tag.className = `live-tag mode ${isLive ? "live" : "snap"}`;
-  tag.textContent = isLive ? "LIVE" : "BILD";
+  const age = isLive ? "" : frameAge(Number(tile.querySelector("img").dataset.at || 0));
+  tag.textContent = isLive ? "LIVE" : age ? `BILD · ${age}` : "BILD";
+  tag.title = isLive ? "Livebild" : tile.dataset.rtc === "connecting" ? "Letztes Bild, Livebild verbindet …" : "Standbild";
 }
 
 /** Panorama-Kameras (Duo) bekommen eine doppelt breite Kachel. */
@@ -693,14 +746,14 @@ function ensureTileStream(tile, c) {
   if (!src) return;
   const visible = tile.dataset.vis !== "0";
   if (!visible) stopTile(tile, c.id);
+  const img = tile.querySelector("img");
+  img.onload = () => {
+    tile.classList.add("has-picture");
+    setTileMode(tile);
+    markWide(c.id, img.naturalWidth, img.naturalHeight);
+  };
   if (visible && !live.peers.has(c.id)) {
     const video = tile.querySelector("video");
-    const img = tile.querySelector("img");
-    img.onload = () => {
-      tile.classList.add("has-picture");
-      setTileMode(tile);
-      markWide(c.id, img.naturalWidth, img.naturalHeight);
-    };
     video.onloadedmetadata = () => markWide(c.id, video.videoWidth, video.videoHeight);
     const stop = startRtc(video, src, (st) => {
       tile.dataset.rtc = st;
@@ -711,12 +764,14 @@ function ensureTileStream(tile, c) {
     live.peers.set(c.id, stop);
   }
   // Standbild als Vorschau und als Ersatz, solange WebRTC nicht steht.
-  const img = tile.querySelector("img");
+  // Erst das gemerkte Bild vom Hub (sofort), danach frische.
   const last = Number(tile.dataset.frameAt || 0);
   const wait = !visible ? 60000 : tile.dataset.rtc === "error" ? 5000 : 20000;
   if (!tile.classList.contains("is-live") && Date.now() - last > (last ? wait : 0)) {
     tile.dataset.frameAt = String(Date.now());
-    img.src = frameUrl(src);
+    loadFrame(img, src, c.id, !last).then((ok) => {
+      if (ok) setTileMode(tile);
+    });
   }
 }
 
@@ -897,14 +952,23 @@ function openFocus(id) {
 
   const video = $("camDlgVideo");
   const img = $("camDlgImg");
-  img.removeAttribute("src");
+  // Sofort das Kachelbild zeigen, das grosse Bild laedt dahinter nach.
+  const pic = frameCache.get(c.id);
+  if (img.dataset.blob && img.dataset.blob !== pic?.url) URL.revokeObjectURL(img.dataset.blob);
+  delete img.dataset.blob;
+  if (pic) img.src = pic.url;
+  else img.removeAttribute("src");
   video.style.opacity = "0";
   if (live.focusStop) live.focusStop();
   live.focusStop = null;
   delete dlg.dataset.rtc;
   const src = streamFor(c, "main");
   if (src) {
-    img.src = frameUrl(src);
+    const want = c.id;
+    // Erst das gemerkte Hauptbild (sofort), dann ein frisches.
+    loadFrame(img, src, null, true).then(() => {
+      if (live.focusId === want && $("camDlg").dataset.rtc !== "live") loadFrame(img, src, null, false);
+    });
     live.focusStop = startRtc(video, src, (st) => {
       video.style.opacity = st === "live" ? "1" : "0";
       $("camDlg").dataset.rtc = st;
