@@ -116,6 +116,26 @@ export async function snmpWalk(host: string, oid: string): Promise<Array<{ oid: 
   return parseWalk(stdout);
 }
 
+/**
+ * Rohe snmpwalk-Fehler ("Command failed: snmpwalk -v2c -c <community> ...")
+ * in eine verstaendliche Meldung uebersetzen. Nebenbei landet so die
+ * Community nicht im Dashboard oder Log.
+ */
+export function friendlySnmpError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/ENOENT|command not found|spawn snmp/i.test(msg)) {
+    return "snmpwalk fehlt auf dem Hub – brew install net-snmp";
+  }
+  if (/Timeout|No Response|ETIMEDOUT|killed|SIGTERM/i.test(msg)) {
+    return "keine SNMP-Antwort – SNMP am Switch noch nicht aktiviert oder Community (HUB_SNMP_COMMUNITY) falsch";
+  }
+  if (/Unknown host|getaddrinfo/i.test(msg)) return "Switch-Adresse unbekannt";
+  if (/authorizationError|noAccess|Unknown user/i.test(msg)) {
+    return "SNMP-Zugriff verweigert – Community (HUB_SNMP_COMMUNITY) prüfen";
+  }
+  return msg.replace(/-c\s+\S+/g, "-c ***").split("\n")[0].slice(0, 200);
+}
+
 export function oidSuffix(oid: string, prefix: string): string {
   const p = prefix.replace(/^\./, "");
   return oid.startsWith(p + ".") ? oid.slice(p.length + 1) : "";
@@ -206,6 +226,7 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
   }
   try {
     const switches: SwitchSnapshot[] = [];
+    let firstError: string | null = null;
     for (const host of hosts) {
       try {
         const snap = await pollSwitch(host);
@@ -213,18 +234,19 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
         lastSnapshots.set(host, { ...snap, error: null });
         log(`${label}: ${host} ${snap.sysName ?? ""} – ${snap.ports.length} Ports, ${snap.macTable.length} MACs`);
       } catch (e) {
-        const error = e instanceof Error ? e.message : String(e);
+        const error = friendlySnmpError(e);
         log(`${label} ${host}: ${error}`);
         const prev = lastSnapshots.get(host);
         lastSnapshots.set(host, {
           ...(prev ?? { host, sysName: null, ports: [], macTable: [] }),
           error,
         });
+        firstError ??= error;
       }
     }
     if (switches.length === 0) {
       improve("snmp", "fail", { error: "unreachable" });
-      return { ok: false, switches: 0, error: "kein Switch erreichbar (snmpwalk/net-snmp?)" };
+      return { ok: false, switches: 0, error: firstError ?? "kein Switch erreichbar" };
     }
     const res = await api("/api/hub/switch", {
       method: "POST",
@@ -237,10 +259,6 @@ export async function runSwitchSync(label = "SNMP-Sync"): Promise<{
     improve("snmp", "ok", { switches: switches.length });
     return { ok: true, switches: switches.length };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/ENOENT|not found/i.test(msg)) {
-      return { ok: false, switches: 0, error: "snmpwalk fehlt – brew install net-snmp" };
-    }
-    return { ok: false, switches: 0, error: msg };
+    return { ok: false, switches: 0, error: friendlySnmpError(e) };
   }
 }
