@@ -6,7 +6,7 @@ const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 
 /**
  * POST (Hub): Fahrzeug-Schnappschuss + optionales Kennzeichen.
- * Query: cameraId, optional plate
+ * Query: cameraId, optional plate, delivery (Marke), deliveryOpened=1
  * Body: raw JPEG
  */
 export async function POST(request: NextRequest) {
@@ -23,6 +23,10 @@ export async function POST(request: NextRequest) {
   const skipActuators = q.get("localActed") === "1";
   const localDoorOpened = q.get("localDoor") === "1";
   const localShelly = q.get("localShelly");
+  // Lieferdienst an der Aufschrift erkannt (delivery.ts am Hub).
+  const deliveryRaw = q.get("delivery")?.trim().toUpperCase() ?? "";
+  const deliveryBrand = /^[A-Z]{2,12}$/.test(deliveryRaw) ? deliveryRaw : null;
+  const deliveryOpened = !!deliveryBrand && q.get("deliveryOpened") === "1";
 
   const camera = await db.camera.findFirst({
     where: { id: cameraId, accountId: account.id },
@@ -57,6 +61,8 @@ export async function POST(request: NextRequest) {
     localDoorOpened,
     localShellyTriggered: localShelly === "1" || localShelly === "0",
     localShellyOk: localShelly === "1" ? true : localShelly === "0" ? false : null,
+    deliveryBrand,
+    deliveryOpened,
   });
 
   return NextResponse.json({

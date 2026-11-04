@@ -22,6 +22,9 @@ const DETECTION_KEYS = [
   "noParkDetection",
   "noParkZone",
   "noParkMinutes",
+  "deliveryMode",
+  "deliveryFrom",
+  "deliveryTo",
 ] as const;
 
 /** .env-Feineinstellungen mit Standardwert (nur Anzeige). */
@@ -34,6 +37,10 @@ const ENV_SETTINGS: Array<{ key: string; label: string; fallback: string }> = [
   { key: "HUB_VEHICLE_BURST_COUNT", label: "Burst: Bilder je Ereignis", fallback: "20 (Weitwinkel 3)" },
   { key: "HUB_VEHICLE_BURST_GAP_MS", label: "Burst: Abstand (ms)", fallback: "400" },
   { key: "HUB_VEHICLE_GRACE_FRAMES", label: "Burst: Nachlauf-Bilder", fallback: "3" },
+  { key: "HUB_DELIVERY_MIN_FRAMES", label: "Lieferdienst: Bilder mit Aufschrift", fallback: "2" },
+  { key: "HUB_DELIVERY_COOLDOWN_MIN", label: "Lieferdienst: Sperrzeit nach Öffnung (min)", fallback: "5" },
+  { key: "HUB_DELIVERY_DAYS", label: "Lieferdienst: Öffnungstage (1=Mo … 7=So)", fallback: "1,2,3,4,5,6" },
+  { key: "HUB_DELIVERY_DOORBIRD_ID", label: "Lieferdienst: DoorBird-Kamera-ID", fallback: "einziger DoorBird" },
   { key: "HUB_NOPARK_MINUTES", label: "Halteverbot: Standzeit (min)", fallback: "2" },
   { key: "HUB_NOPARK_INTERVAL", label: "Halteverbot: Prüftakt (s)", fallback: "20" },
   { key: "HUB_NOPARK_REPEAT_MINUTES", label: "Halteverbot: erneut melden nach (min)", fallback: "10" },
@@ -54,6 +61,9 @@ function cameraSettings(c: CameraConfig) {
     noParkDetection: c.noParkDetection === true,
     noParkZone: c.noParkZone ?? null,
     noParkMinutes: c.noParkMinutes ?? null,
+    deliveryMode: c.deliveryMode ?? null,
+    deliveryFrom: c.deliveryFrom ?? null,
+    deliveryTo: c.deliveryTo ?? null,
   };
 }
 

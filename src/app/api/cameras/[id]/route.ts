@@ -34,6 +34,9 @@ export async function PUT(
       noParkDetection: true,
       noParkZone: true,
       noParkMinutes: true,
+      deliveryMode: true,
+      deliveryFrom: true,
+      deliveryTo: true,
       notes: true,
     },
   });

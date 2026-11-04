@@ -39,7 +39,13 @@ export interface DetectionSettings {
   noParkDetection: boolean;
   noParkZone: Prisma.JsonValue | null;
   noParkMinutes: number | null;
+  deliveryMode: string | null;
+  deliveryFrom: string | null;
+  deliveryTo: string | null;
 }
+
+const DELIVERY_MODES = ["NOTIFY", "OPEN"];
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** Bestehende Werte mit den Feldern aus `body` zusammenfuehren und pruefen. */
 export function mergeDetectionSettings(
@@ -96,8 +102,41 @@ export function mergeDetectionSettings(
   const vehicleDetection =
     typeof body.vehicleDetection === "boolean" ? body.vehicleDetection : existing.vehicleDetection;
 
+  // Lieferdienste: Aus / nur melden / Tor oeffnen, Zeitfenster HH:mm.
+  let deliveryMode = existing.deliveryMode;
+  if (body.deliveryMode !== undefined) {
+    if (body.deliveryMode === null || body.deliveryMode === "") deliveryMode = null;
+    else if (typeof body.deliveryMode === "string" && DELIVERY_MODES.includes(body.deliveryMode)) {
+      deliveryMode = body.deliveryMode;
+    } else return { error: "Lieferdienste: Modus muss Aus, Melden oder Öffnen sein" };
+  }
+  const time = (key: "deliveryFrom" | "deliveryTo"): string | null | { error: string } => {
+    const v = body[key];
+    if (v === undefined) return existing[key];
+    if (v === null || v === "") return null;
+    if (typeof v === "string" && HHMM.test(v)) return v;
+    return { error: "Lieferdienste: Uhrzeit als HH:MM angeben" };
+  };
+  const deliveryFrom = time("deliveryFrom");
+  if (deliveryFrom && typeof deliveryFrom === "object") return deliveryFrom;
+  const deliveryTo = time("deliveryTo");
+  if (deliveryTo && typeof deliveryTo === "object") return deliveryTo;
+  if (deliveryMode && !vehicleDetection) {
+    return { error: "Lieferdienste brauchen die Fahrzeugerkennung" };
+  }
+
   return {
-    settings: { vehicleDetection, vehicleMinArea, vehicleZone, noParkDetection, noParkZone, noParkMinutes },
+    settings: {
+      vehicleDetection,
+      vehicleMinArea,
+      vehicleZone,
+      noParkDetection,
+      noParkZone,
+      noParkMinutes,
+      deliveryMode,
+      deliveryFrom,
+      deliveryTo,
+    },
   };
 }
 
@@ -110,6 +149,9 @@ export function detectionUpdateData(s: DetectionSettings) {
     noParkDetection: s.noParkDetection,
     noParkZone: s.noParkZone === null ? Prisma.DbNull : (s.noParkZone as Prisma.InputJsonValue),
     noParkMinutes: s.noParkMinutes,
+    deliveryMode: s.deliveryMode,
+    deliveryFrom: s.deliveryFrom,
+    deliveryTo: s.deliveryTo,
   };
 }
 
@@ -120,4 +162,7 @@ export const DETECTION_SELECT = {
   noParkDetection: true,
   noParkZone: true,
   noParkMinutes: true,
+  deliveryMode: true,
+  deliveryFrom: true,
+  deliveryTo: true,
 } as const;

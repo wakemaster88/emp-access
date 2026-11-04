@@ -536,3 +536,22 @@ export async function readPlateFromJpeg(jpeg: Buffer): Promise<string | null> {
   }
   return score.plate;
 }
+
+/**
+ * Alle Texte im Bild (macOS Vision, ganzes Bild + Kacheln), z. B. für die
+ * Aufschrift von Lieferwagen. Leer, wenn OCR aus ist oder das Binary fehlt.
+ */
+export async function readTextFromJpeg(jpeg: Buffer): Promise<string[]> {
+  if (process.env.HUB_PLATE_OCR === "0" || process.env.HUB_PLATE_OCR === "never") return [];
+  if (!(await ensureBinary())) return [];
+  const tmp = path.join(tmpdir(), `emp-text-${randomUUID()}.jpg`);
+  try {
+    await fs.writeFile(tmp, jpeg);
+    return (await runOcr(tmp)).raw;
+  } catch (e) {
+    log(`Text-OCR Fehler: ${e instanceof Error ? e.message : e}`);
+    return [];
+  } finally {
+    await fs.unlink(tmp).catch(() => undefined);
+  }
+}

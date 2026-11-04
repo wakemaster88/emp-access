@@ -1620,6 +1620,12 @@ model Camera {
   noParkZone          Json?
   /// Standzeit in Minuten, ab der gemeldet wird. null = Hub-Standard (2 min).
   noParkMinutes       Float?
+  /// Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes) an der Aufschrift
+  /// erkennen: null = aus, "NOTIFY" = nur melden, "OPEN" = Tor oeffnen.
+  deliveryMode        String?
+  /// Zeitfenster "HH:mm" fuer das Oeffnen; null = Hub-Standard 07:00–20:00.
+  deliveryFrom        String?
+  deliveryTo          String?
   notes               String?
   /// Letzter Schnappschuss (JPEG) + Zeitpunkt.
   snapshot            Bytes?
@@ -1757,6 +1763,10 @@ model VehicleSighting {
   matched          Boolean         @default(false)
   shellyTriggered  Boolean         @default(false)
   shellyOk         Boolean?
+  /// Lieferdienst an der Aufschrift erkannt (z. B. "DHL"), sonst null.
+  deliveryBrand    String?
+  /// Hub hat fuer den Lieferdienst das Tor geoeffnet.
+  deliveryOpened   Boolean         @default(false)
   /// Schnappschuss bei Fahrzeugerkennung (JPEG).
   snapshot         Bytes?
   /// Pfad im Blob-Speicher; gesetzt statt `snapshot` bei neuen Sichtungen.
@@ -3027,17 +3037,17 @@ model RoomClimate {
   operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
 
   /// Laufzustand, vom Takt geschrieben.
-  lastTempC           Float?
-  lastReadAt          DateTime?
+  lastTempC      Float?
+  lastReadAt     DateTime?
   /// Zuletzt gesendeter Zustand der Heizung; null = noch nie geschaltet.
-  heating             Boolean?
-  lastSwitchAt        DateTime?
+  heating        Boolean?
+  lastSwitchAt   DateTime?
   /// Aktuelles Soll (targetC, setbackC oder null = aus), zur Anzeige.
-  currentTargetC      Float?
-  lastError           String?
+  currentTargetC Float?
+  lastError      String?
 
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([accountId])
   @@index([sensorDeviceId])

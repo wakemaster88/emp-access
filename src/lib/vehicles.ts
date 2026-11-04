@@ -42,6 +42,10 @@ export async function processVehicleSighting(opts: {
   localDoorOpened?: boolean;
   localShellyTriggered?: boolean;
   localShellyOk?: boolean | null;
+  /** Lieferdienst an der Aufschrift erkannt (Hub), z. B. "DHL". */
+  deliveryBrand?: string | null;
+  /** Hub hat fuer den Lieferdienst das Tor geoeffnet. */
+  deliveryOpened?: boolean;
 }): Promise<{
   sightingId: number;
   matched: boolean;
@@ -177,12 +181,32 @@ export async function processVehicleSighting(opts: {
       matched: !!vehicle,
       shellyTriggered,
       shellyOk,
+      deliveryBrand: opts.deliveryBrand ?? null,
+      deliveryOpened: !!opts.deliveryOpened,
       seenAt,
       ...storedSnapshot,
     },
     // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
     select: { id: true },
   });
+
+  // Lieferdienst: immer melden, mit Hinweis ob das Tor offen ist.
+  if (opts.deliveryBrand && opts.cameraId) {
+    const cam = await prisma.camera.findFirst({
+      where: { id: opts.cameraId, accountId: opts.accountId },
+      select: { name: true },
+    });
+    sendPushToAccount(opts.accountId, {
+      title: opts.deliveryOpened
+        ? `${opts.deliveryBrand} am ${cam?.name ?? "Tor"}: Tor geöffnet`
+        : `${opts.deliveryBrand} am ${cam?.name ?? "Tor"}`,
+      body: opts.deliveryOpened
+        ? `Lieferdienst erkannt${plateRaw ? ` · ${plateRaw}` : ""}`
+        : `Lieferdienst erkannt${plateRaw ? ` · ${plateRaw}` : ""} – Tor öffnen in der Kamera-Zentrale`,
+      url: "/cameras",
+      tag: `delivery-${opts.cameraId}`,
+    }).catch((err) => console.error("[vehicles] delivery push failed:", err));
+  }
 
   // Ueberwachungs-Push erst hier, nach der Pruefung auf dem Hub (frueher
   // schon beim rohen VEHICLE-Alarm). Freigegebene Fahrzeuge bleiben still,
