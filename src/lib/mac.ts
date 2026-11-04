@@ -32,3 +32,15 @@ export function macSpellings(macs: Iterable<string>): string[] {
   }
   return [...out];
 }
+
+/**
+ * Gleiches Geraet, andere Schnittstelle: NETGEAR-Switches antworten im
+ * Management-VLAN mit Basis-MAC + 3 (Insight zeigt die Basis-MAC). Gleiche
+ * erste fuenf Oktette reichen dafuer als Hinweis.
+ */
+export function sameDeviceMac(a: string | null, b: string | null): boolean {
+  const x = normalizeMac(a);
+  const y = normalizeMac(b);
+  if (!x || !y) return false;
+  return x.slice(0, 14) === y.slice(0, 14);
+}

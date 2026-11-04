@@ -1,5 +1,5 @@
 import { isVirtualMac } from "@/lib/oui";
-import { macSpellings, normalizeMac } from "@/lib/mac";
+import { macSpellings, normalizeMac, sameDeviceMac } from "@/lib/mac";
 import { findVlanForIp } from "@/lib/ip";
 import type { tenantClient } from "@/lib/prisma";
 import { alertNewDevices } from "@/lib/new-device-alert";
@@ -215,7 +215,8 @@ export async function ingestHubScanDevices(
     /**
      * Scan-Treffer fuer einen bekannten Eintrag: zuerst per MAC (dann darf
      * die IP nachgezogen werden), sonst per IP. Ein IP-Treffer zaehlt nicht,
-     * wenn dort laut Scan ein Geraet mit anderer MAC antwortet.
+     * wenn dort laut Scan ein anderes Geraet antwortet (fremde MAC; eine
+     * Schnittstellen-MAC desselben Switches gilt nicht als fremd).
      */
     const match = (macRaw: string | null, ip: string | null) => {
       const mac = normalizeMac(macRaw);
@@ -223,7 +224,9 @@ export async function ingestHubScanDevices(
       if (viaMac) return { info: viaMac, viaMac: true };
       if (!ip) return null;
       const macAtIp = macByIp.get(ip);
-      if (macAtIp && (!mac || macAtIp === mac)) return { info: byMac.get(macAtIp)!, viaMac: false };
+      if (macAtIp && (!mac || sameDeviceMac(macAtIp, mac))) {
+        return { info: byMac.get(macAtIp)!, viaMac: false };
+      }
       const routed = ipOnly.get(ip);
       return routed ? { info: routed, viaMac: false } : null;
     };
