@@ -10,6 +10,9 @@
  * Zustand und Karte gehen an die Cloud (POST /api/hub/mower-sync), dort
  * erscheinen die Maeher als Geraet im Raum. Befehle aus der Cloud kommen als
  * Hub-Task MOWER_ACTION zurueck (tasks.ts → mowerAction).
+ *
+ * Die Maeher-Kameras traegt der Hub als Streams in go2rtc ein (mower-streams.ts).
+ * go2rtc holt das Bild per WHEP beim Dienst ab, sobald jemand zuschaut.
  */
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -18,9 +21,11 @@ import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
 import { buildCloudMap, type CloudMowerMap, type MowerGeo } from "./mower-map.js";
+import { mowerStreamName, mowerStreamSources, needsStreamUpdate } from "./mower-streams.js";
 
 const MOWER_PORT = Number(process.env.MOWER_PORT || 8791);
 const MOWER_URL = `http://127.0.0.1:${MOWER_PORT}`;
+const GO2RTC_URL = (process.env.HUB_GO2RTC_URL || "http://127.0.0.1:1984").replace(/\/$/, "");
 const MOWER_DIR = path.join(CONFIG.hubDir, "mower");
 const VENV_PY = path.join(MOWER_DIR, ".venv", "bin", "python");
 const REQ_FILE = path.join(MOWER_DIR, "requirements.txt");
@@ -153,8 +158,22 @@ export interface MowerTask {
   zones: string[];
 }
 
+export interface MowerCamera {
+  uid: number;
+  label: string;
+  /** Laeuft gerade eine Agora-Sitzung (jemand schaut zu)? */
+  live: boolean;
+  since: number | null;
+  /** Letzter Grund, warum das Bild nicht kam oder endete. */
+  error: string | null;
+  /** go2rtc-Streams: roh (H265) und fuer Browser (H264). */
+  stream?: string;
+  streamH264?: string;
+}
+
 export interface MowerInfo {
   name: string;
+  cameras?: MowerCamera[];
   firmware?: string | null;
   position?: { lat: number; lon: number } | null;
   currentZone: string | null;
@@ -179,6 +198,7 @@ export interface MowerStatus {
   error: string | null;
   account?: string | null;
   lastPollAt?: number | null;
+  camera?: { available: boolean; error: string | null; maxS?: number };
   mowers: MowerInfo[];
 }
 
@@ -203,7 +223,14 @@ export async function mowerStatus(): Promise<MowerStatus> {
   try {
     const res = await fetch(`${MOWER_URL}/status`, { signal: AbortSignal.timeout(5000) });
     const data = (await res.json()) as Omit<MowerStatus, "configured">;
-    return { configured: true, ...data, mowers: Array.isArray(data.mowers) ? data.mowers : [] };
+    const mowers = (Array.isArray(data.mowers) ? data.mowers : []).map((m) => ({
+      ...m,
+      cameras: (Array.isArray(m.cameras) ? m.cameras : []).map((c) => {
+        const stream = mowerStreamName(m.name, c.uid);
+        return { ...c, stream, streamH264: `${stream}_h264` };
+      }),
+    }));
+    return { configured: true, ...data, mowers };
   } catch (e) {
     return { configured: true, state: "error", error: e instanceof Error ? e.message : String(e), mowers: [] };
   }
@@ -321,6 +348,47 @@ async function syncMowersToCloud(st: MowerStatus): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------- Kamera-Streams */
+
+const announcedStreams = new Set<string>();
+
+/**
+ * Maeher-Kameras als Streams in go2rtc eintragen (PUT /api/streams, go2rtc
+ * schreibt sie selbst in seine yaml). Fehlt ein Stream, weil die
+ * Kamera-Verwaltung die yaml neu geschrieben hat, kommt er beim naechsten
+ * Durchlauf wieder dazu. Laufende Streams bleiben unangetastet.
+ */
+async function syncMowerStreams(st: MowerStatus): Promise<void> {
+  if (st.state !== "ready" || !st.camera?.available) return;
+  const want: Record<string, string> = {};
+  for (const m of st.mowers) {
+    for (const c of m.cameras ?? []) Object.assign(want, mowerStreamSources(m.name, c.uid, MOWER_PORT));
+  }
+  if (Object.keys(want).length === 0) return;
+  let have: Record<string, { producers?: { url?: string }[]; consumers?: unknown[] } | null>;
+  try {
+    const res = await fetch(`${GO2RTC_URL}/api/streams`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return;
+    have = ((await res.json()) ?? {}) as typeof have;
+  } catch {
+    return; // go2rtc laeuft nicht; naechster Durchlauf
+  }
+  for (const [name, src] of Object.entries(want)) {
+    if (!needsStreamUpdate(have[name], src)) continue;
+    try {
+      const res = await fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(name)}&src=${encodeURIComponent(src)}`, {
+        method: "PUT",
+        signal: AbortSignal.timeout(4000),
+      });
+      // 400 kann auch "yaml nicht schreibbar" heissen, der Stream laeuft dann trotzdem bis zum Neustart.
+      if (!announcedStreams.has(name)) log(`go2rtc: Mäher-Kamera ${name} eingetragen${res.ok ? "" : ` (HTTP ${res.status})`}`);
+      announcedStreams.add(name);
+    } catch (e) {
+      log(`go2rtc: Mäher-Kamera ${name} nicht eintragbar: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+}
+
 /* ------------------------------------------------------- Ereignis-Chronik */
 
 const lastSeen = new Map<string, { status: string; errors: string }>();
@@ -328,6 +396,7 @@ const lastSeen = new Map<string, { status: string; errors: string }>();
 async function watchOnce(): Promise<void> {
   const st = await mowerStatus();
   await syncMowersToCloud(st);
+  await syncMowerStreams(st);
   for (const m of st.mowers) {
     const errors = m.errors.map((e) => e.code).join(",");
     const prev = lastSeen.get(m.name);

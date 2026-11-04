@@ -40,6 +40,7 @@ import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
+import { isMowerStream } from "./mower-streams.js";
 
 let actionCounter = 0;
 
@@ -169,7 +170,8 @@ async function proxyGo2rtc(
         method: "POST",
         headers: { "Content-Type": "application/sdp" },
         body: offer,
-        signal: AbortSignal.timeout(10_000),
+        // Maeher-Kameras brauchen laenger: Token bei Mammotion, Agora-Beitritt, ffmpeg.
+        signal: AbortSignal.timeout(isMowerStream(src) ? 40_000 : 10_000),
       });
       const answer = await r.text();
       res.writeHead(r.status, { "Content-Type": "application/sdp", "Cache-Control": "no-store" });
@@ -177,6 +179,8 @@ async function proxyGo2rtc(
       return;
     }
     if (req.method === "GET" && sub === "/frame.jpeg") {
+      // Ein Standbild wuerde die Kamera am Maeher einschalten; das Bild kommt nur live.
+      if (isMowerStream(src)) return json(res, 404, { error: "Mäher-Kameras nur live" });
       const got = await getFrame(GO2RTC_URL, src, url.searchParams.get("cached") === "1");
       if (!got) return json(res, 502, { error: "kein Bild" });
       res.writeHead(200, {
