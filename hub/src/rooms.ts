@@ -39,6 +39,8 @@ export interface RoomDevice {
   /** HUE_LIGHT: Bridge und Lampe. */
   hueBridgeId?: string | null;
   hueLightId?: string | null;
+  /** MAMMOTION_MOWER: Geraetename bei Mammotion. */
+  mowerName?: string | null;
 }
 
 export interface Room {

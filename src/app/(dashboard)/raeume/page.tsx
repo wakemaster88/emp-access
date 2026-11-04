@@ -18,6 +18,7 @@ import { deviceControls } from "@/lib/device-controls";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 import { climateView } from "@/lib/room-climate";
 import { buildRoomActivity, dayStart } from "@/lib/room-activity";
+import { readMowerMap, readMowerState } from "@/lib/mower";
 
 /** Fenster, in dem eine Bewegung im Raum noch als "zuletzt" gezeigt wird. */
 const EVENT_LOOKBACK_HOURS = 24;
@@ -261,6 +262,19 @@ export default async function RaeumePage() {
     }),
   ]);
 
+  // Maeher: Zustand und Karte nur fuer diese Geraete laden (Karte ist gross).
+  const mowerRows = await db.device.findMany({
+    where: { ...accountFilter, type: "MAMMOTION_MOWER" },
+    select: { id: true, systemInfo: true, mowerMap: true },
+  });
+  const mowerById = new Map(
+    mowerRows.map((m) => [m.id, { state: readMowerState(m.systemInfo), map: readMowerMap(m.mowerMap) }]),
+  );
+  const toRoomDevice = (d: DeviceRecord): RoomDevice => {
+    const mower = mowerById.get(d.id);
+    return mower ? { ...toDevice(d), mower } : toDevice(d);
+  };
+
   // Netzwerk je Raum: ausdruecklich zugeordnet, sonst erraten ueber den
   // Standort/Bereich (heisst wie der Raum) oder das verknuepfte IoT-Geraet.
   const roomByName = new Map(rooms.map((r) => [r.name.trim().toLowerCase(), r.id]));
@@ -413,7 +427,7 @@ export default async function RaeumePage() {
     building: room.building,
     floor: room.floor,
     notes: room.notes,
-    devices: room.devices.map(toDevice),
+    devices: room.devices.map(toRoomDevice),
     cameras: room.cameras.map(toCamera),
     zones: room.audioZones.map(toZone),
     locks: room.doors.flatMap((door) =>
@@ -474,7 +488,7 @@ export default async function RaeumePage() {
         <RaeumeClient
           data={{
             rooms: roomPanels,
-            looseDevices: looseDevices.map(toDevice),
+            looseDevices: looseDevices.map(toRoomDevice),
             looseCameras: looseCameras.map(toCamera),
             looseZones: looseZones.map(toZone),
             network,

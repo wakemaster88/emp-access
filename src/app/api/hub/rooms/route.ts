@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
     keyRoomId: true,
     hueBridgeId: true,
     hueLightId: true,
+    mowerName: true,
   } as const;
 
   const [rooms, unassigned, acc, schedules] = await Promise.all([

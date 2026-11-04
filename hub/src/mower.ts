@@ -6,13 +6,18 @@
  * (ein eigener Zweit-Account, mit dem die Maeher in der App geteilt sind).
  * Fehlt das venv oder haben sich die Requirements geaendert, richtet der Hub
  * es selbst ein (hub/mower/install.sh) – so reicht ein normales Hub-Update.
+ *
+ * Zustand und Karte gehen an die Cloud (POST /api/hub/mower-sync), dort
+ * erscheinen die Maeher als Geraet im Raum. Befehle aus der Cloud kommen als
+ * Hub-Task MOWER_ACTION zurueck (tasks.ts → mowerAction).
  */
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { CONFIG, log } from "./config.js";
+import { CONFIG, api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
+import { buildCloudMap, type CloudMowerMap, type MowerGeo } from "./mower-map.js";
 
 const MOWER_PORT = Number(process.env.MOWER_PORT || 8791);
 const MOWER_URL = `http://127.0.0.1:${MOWER_PORT}`;
@@ -150,6 +155,10 @@ export interface MowerTask {
 
 export interface MowerInfo {
   name: string;
+  firmware?: string | null;
+  position?: { lat: number; lon: number } | null;
+  currentZone: string | null;
+  zones?: { hash: string | number; name: string }[];
   label: string;
   model: string;
   online: boolean;
@@ -159,7 +168,6 @@ export interface MowerInfo {
   charging: boolean;
   battery: number;
   progress: number | null;
-  currentZone: string | null;
   runningTaskId: string | null;
   tasks: MowerTask[];
   errors: { code: number; text: string }[];
@@ -236,12 +244,90 @@ export async function mowerAction(body: Record<string, unknown>): Promise<{ ok: 
   }
 }
 
+/* -------------------------------------------------------------- Cloud-Sync */
+
+/** Was die Cloud vom Maeher bekommt (ohne schnell wechselndes Datenalter). */
+function cloudState(m: MowerInfo) {
+  return {
+    model: m.model,
+    label: m.label,
+    online: m.online,
+    status: m.status,
+    statusLabel: m.statusLabel,
+    active: m.active,
+    charging: m.charging,
+    battery: m.battery,
+    progress: m.progress,
+    currentZone: m.currentZone,
+    runningTaskId: m.runningTaskId,
+    firmware: m.firmware ?? null,
+    position: m.position ?? null,
+    zones: (m.zones ?? []).map((z) => z.name),
+    tasks: m.tasks,
+    errors: m.errors,
+  };
+}
+
+const CLOUD_HEARTBEAT_MS = 5 * 60_000;
+const CLOUD_MAP_EVERY_MS = 30 * 60_000;
+const lastCloud = new Map<string, { json: string; at: number }>();
+const lastCloudMap = new Map<string, { json: string; fetchedAt: number }>();
+
+/**
+ * Maeher an die Cloud melden: bei jeder Aenderung, sonst alle 5 Minuten.
+ * Die Karte wird alle 30 Minuten neu gebaut und nur mitgeschickt, wenn sie
+ * sich geaendert hat.
+ */
+async function syncMowersToCloud(st: MowerStatus): Promise<void> {
+  if (st.state !== "ready" || st.mowers.length === 0) return;
+  const now = Date.now();
+  const payload: { name: string; state: ReturnType<typeof cloudState>; map?: CloudMowerMap | null }[] = [];
+  for (const m of st.mowers) {
+    const state = cloudState(m);
+    const json = JSON.stringify(state);
+    const prev = lastCloud.get(m.name);
+    const item: (typeof payload)[number] = { name: m.name, state };
+    const mapPrev = lastCloudMap.get(m.name);
+    if (!mapPrev || now - mapPrev.fetchedAt > CLOUD_MAP_EVERY_MS) {
+      try {
+        const r = await mowerMap(m.name);
+        if (r.status === 200) {
+          const map = buildCloudMap(r.body as MowerGeo);
+          const mapJson = JSON.stringify(map);
+          if (map && mapJson !== mapPrev?.json) item.map = map;
+          lastCloudMap.set(m.name, { json: map ? mapJson : mapPrev?.json ?? "", fetchedAt: now });
+        }
+      } catch {
+        /* naechster Versuch in 30 min */
+      }
+    }
+    if (item.map || !prev || prev.json !== json || now - prev.at > CLOUD_HEARTBEAT_MS) payload.push(item);
+  }
+  if (payload.length === 0) return;
+  try {
+    const res = await api("/api/hub/mower-sync", { method: "POST", body: JSON.stringify({ mowers: payload }) });
+    if (!res.ok) {
+      log(`Mäher-Sync: HTTP ${res.status}`);
+      // Karte beim naechsten Mal erneut schicken.
+      for (const p of payload) if (p.map) lastCloudMap.delete(p.name);
+      return;
+    }
+    for (const p of payload) lastCloud.set(p.name, { json: JSON.stringify(p.state), at: now });
+    const r = (await res.json().catch(() => ({}))) as { created?: number };
+    if (r.created) log(`Mäher-Sync: ${r.created} Mäher in der Cloud angelegt (im Raum zuordnen)`);
+  } catch (e) {
+    for (const p of payload) if (p.map) lastCloudMap.delete(p.name);
+    log(`Mäher-Sync: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 /* ------------------------------------------------------- Ereignis-Chronik */
 
 const lastSeen = new Map<string, { status: string; errors: string }>();
 
 async function watchOnce(): Promise<void> {
   const st = await mowerStatus();
+  await syncMowersToCloud(st);
   for (const m of st.mowers) {
     const errors = m.errors.map((e) => e.code).join(",");
     const prev = lastSeen.get(m.name);
@@ -260,6 +346,11 @@ async function watchOnce(): Promise<void> {
       });
     }
   }
+}
+
+/** Nach einem Befehl den neuen Zustand bald an die Cloud melden. */
+export function syncMowersSoon(): void {
+  setTimeout(() => void watchOnce().catch(() => {}), 12_000);
 }
 
 export function startMower(): void {

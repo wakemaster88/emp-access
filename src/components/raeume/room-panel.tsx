@@ -10,6 +10,7 @@ import {
   ListTree,
   Lock,
   Pencil,
+  Sprout,
   Thermometer,
   TriangleAlert,
   Users,
@@ -36,6 +37,8 @@ import { NetworkWidget } from "@/components/raeume/network-widget";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
 import { ActivityChart, CameraTile, ClimateHero, DeviceTile, GroupTile, ZoneCard } from "@/components/raeume/room-widgets";
+import { MowerCard, type MowerLive } from "@/components/raeume/mower-card";
+import type { MowerAction } from "@/lib/mower";
 import { cn } from "@/lib/utils";
 
 const FAN_RE = /l(ü|ue)ft|ventil/i;
@@ -46,15 +49,18 @@ const CLIMATE_NAME_RE = /heiz|l(ü|ue)ft|klima|thermo|temperatur|ventil/i;
 export interface RoomGroups {
   climate: RoomDevice[];
   light: RoomDevice[];
+  mower: RoomDevice[];
   other: RoomDevice[];
 }
 
 /** Geraete eines Raums auf die Widgets verteilen. */
 export function groupRoomDevices(room: RoomPanelData): RoomGroups {
   const heaterIds = new Set([...(room.climate?.heaterDeviceIds ?? []), ...(room.climate?.fanDeviceIds ?? [])]);
-  const groups: RoomGroups = { climate: [], light: [], other: [] };
+  const groups: RoomGroups = { climate: [], light: [], mower: [], other: [] };
   for (const d of room.devices) {
-    if (
+    if (d.type === "MAMMOTION_MOWER") {
+      groups.mower.push(d);
+    } else if (
       heaterIds.has(d.id) ||
       d.id === room.climate?.sensorDeviceId ||
       (d.category !== "BELEUCHTUNG" && CLIMATE_NAME_RE.test(d.name))
@@ -146,6 +152,8 @@ export function RoomPanel({
   onEdit,
   onClimate,
   network = [],
+  mowers,
+  onMowerAction,
 }: {
   room: RoomPanelData;
   /** Netzwerkgeraete in diesem Raum. */
@@ -158,6 +166,9 @@ export function RoomPanel({
   onZoneAction: (zone: RoomZone, action: ZoneAction) => Promise<string | null>;
   onEdit: () => void;
   onClimate: () => void;
+  /** Live-Zustand der Maeher (alle 30 s neu gelesen). */
+  mowers?: Map<number, MowerLive>;
+  onMowerAction?: (device: RoomDevice, action: MowerAction, planId?: string) => Promise<string | null>;
 }) {
   const location = [room.building, room.floor].filter(Boolean).join(" · ");
   const groups = groupRoomDevices(room);
@@ -192,6 +203,10 @@ export function RoomPanel({
   const heatTiles = climateDevices.filter((d) => tileable(d) && !isFan(d));
   const climateRows = climateDevices.filter((d) => !tileable(d));
   const [showAll, setShowAll] = useState(false);
+  const mowersMowing = groups.mower.filter((d) => {
+    const s = mowers?.get(d.id)?.state ?? d.mower?.state;
+    return s?.online && s.status === "MODE_WORKING";
+  }).length;
   const group = (title: string, list: RoomDevice[], wide = false) =>
     list.length > 0 && (
       <GroupTile
@@ -277,6 +292,12 @@ export function RoomPanel({
               Musik
             </Pill>
           )}
+          {mowersMowing > 0 && (
+            <Pill tone="live">
+              <Sprout className="h-3 w-3" />
+              {mowersMowing === 1 ? "Mäher mäht" : `${mowersMowing} Mäher mähen`}
+            </Pill>
+          )}
           {present && (
             <Pill tone="live">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
@@ -360,6 +381,26 @@ export function RoomPanel({
           >
             {lightTiles.length > 0 && <div className="grid grid-cols-2 gap-2">{group("Alle Lichter", lightTiles, true)}</div>}
             {rows(lightRows)}
+          </Section>
+        )}
+
+        {groups.mower.length > 0 && (
+          <Section icon={<Sprout className="h-3.5 w-3.5" />} title="Mähroboter">
+            <div className="space-y-2">
+              {groups.mower.map((d) => (
+                <MowerCard
+                  key={d.id}
+                  device={d}
+                  map={d.mower?.map ?? null}
+                  initial={d.mower?.state ?? null}
+                  live={mowers?.get(d.id)}
+                  nowMs={nowMs}
+                  timezone={timezone}
+                  readonly={readonly || !onMowerAction}
+                  onAction={onMowerAction ?? (async () => "Nicht verfügbar")}
+                />
+              ))}
+            </div>
           </Section>
         )}
 

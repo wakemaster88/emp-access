@@ -38,6 +38,7 @@ const DEVICE_TYPE_LABELS: Record<string, string> = {
   HUE_LIGHT: "Philips Hue",
   GARDENA_VALVE: "GARDENA",
   AUDIO_PLAYER: "Audio",
+  MAMMOTION_MOWER: "Mammotion",
 };
 
 const DEVICE_CATEGORY_LABELS: Record<string, string> = {

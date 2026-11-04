@@ -84,6 +84,8 @@ export function isActionAllowedForDevice(
   action: DeviceAction,
   device: { type: string; category: string | null },
 ): boolean {
+  // Maeher haben eigene Befehle (POST /api/devices/[id]/mower).
+  if (device.type === "MAMMOTION_MOWER") return false;
   if (isAudioDevice(device)) return action === "open" || action === "stop";
   if (isCoverDevice(device)) return action in COVER_ALLOWED;
   return action in TASK_MAP;

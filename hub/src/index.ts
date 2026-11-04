@@ -34,6 +34,8 @@ const HIGH_PRIORITY = new Set([
   "SCAN_SNAPSHOT",
   // Licht aus der Cloud oder einer Regel: sofort schalten.
   "HUE_SET",
+  // Maeher-Befehl aus dem Raum-Widget: sofort weitergeben.
+  "MOWER_ACTION",
   // Regel „Kamera steuern“ (z. B. Klingel → Halle auf Preset): sofort.
   "CAMERA_SCENE",
   "DOORBIRD_OPEN",
