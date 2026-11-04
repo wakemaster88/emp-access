@@ -28,6 +28,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { recordCloudSample } from "@/lib/climate-history";
 import { isOperatingAt, isWithinOperatingSpan, type ScheduleSpec, type SpanOffsets } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import {
@@ -246,6 +247,12 @@ export async function runClimateTick(now = new Date()): Promise<ClimateTickResul
         readAt = statusUpdatedAt(entry.status) ?? (entry.online ? now : null);
       }
       const fresh = !!readAt && now.getTime() - readAt.getTime() <= STALE_READING_MIN * 60_000;
+      // Verlauf: Notnagel, falls der Hub fuer dieses Fenster nichts gemeldet hat.
+      if (entry && readAt) {
+        await recordCloudSample({ accountId, deviceId: c.sensorDevice.id, roomId: c.room.id, at: readAt, tempC, humidity }).catch(
+          () => undefined,
+        );
+      }
 
       // Heizung: bei Wechsel, und solange geheizt wird in jedem Takt (Watchdog).
       const hasHeater = c.heaterDeviceIds.length > 0;

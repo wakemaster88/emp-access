@@ -282,7 +282,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
         </div>
         {effectiveView.kind === "overview" && (
           <div className="relative lg:w-60">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
             <input
               type="search"
               value={query}

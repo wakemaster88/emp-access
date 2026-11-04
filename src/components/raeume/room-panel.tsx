@@ -35,6 +35,7 @@ import type {
 import { deviceControlModel, isLatchingSwitchDevice } from "@/lib/device-controls";
 import { RoomIcon } from "@/components/raeume/room-icons";
 import { TechTable } from "@/components/raeume/tech-table";
+import { ClimateHistory, type HistoryRange } from "@/components/raeume/climate-history";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { fmtWhen, ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
 import { operatingSpanState } from "@/lib/operating-hours";
@@ -288,6 +289,7 @@ export function RoomPanel({
     },
   ].filter(Boolean) as TabSpec[];
   const [tabChoice, setTab] = useState<TabKey | null>(initialTab ?? null);
+  const [historyRange, setHistoryRange] = useState<HistoryRange>("day");
   const tab: TabKey = tabChoice && tabs.some((t) => t.key === tabChoice) ? tabChoice : tabs[0].key;
 
   // Schnellsteuerung: ein Antippen schaltet den ganzen Raum.
@@ -604,6 +606,19 @@ export function RoomPanel({
                 </p>
               )}
             </Section>
+            {showClimate && (
+              <Section
+                icon={<Thermometer className="h-3.5 w-3.5" />}
+                title="Klimaverlauf"
+                action={
+                  <Link href="/raeume/klima" className="text-[11px] font-medium text-primary hover:underline">
+                    Alle Räume
+                  </Link>
+                }
+              >
+                <ClimateHistory roomId={room.id} range={historyRange} onRange={setHistoryRange} timezone={timezone} nowMs={nowMs} />
+              </Section>
+            )}
           </>
         )}
 

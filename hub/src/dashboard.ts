@@ -9,6 +9,7 @@
  * Server ans LAN und verlangt das Token fuer jede Anfrage von aussen.
  */
 import { deviceAction, liveStates, roomsPayload, syncRooms } from "./rooms.js";
+import { climatePayload, recordClimatePush } from "./climate.js";
 import { controlSmart, listSmartDevices, pairSmart } from "./smart-devices.js";
 import { onDeviceSwitched, refreshPlan, rulesStatus } from "./rules.js";
 import http from "node:http";
@@ -672,6 +673,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       }
     }
 
+    // Klimafuehler: Shelly H&T kann per Webhook (Aktion "Temperature change" →
+    // http://<hub>:8787/api/climate/report?token=…&device=<id>&tC=${ev.tC}&rh=${ev.rh})
+    // melden, dann braucht der Hub den schlafenden Fuehler nicht zu wecken.
+    if (url.pathname === "/api/climate/report") {
+      const q = url.searchParams;
+      const num = (v: string | null) => (v == null || v === "" ? null : Number(v));
+      const out = recordClimatePush(Number(q.get("device")), num(q.get("tC")), num(q.get("rh")));
+      return json(res, out.ok ? 200 : 400, out);
+    }
+    if (req.method === "GET" && url.pathname === "/api/climate") {
+      return json(res, 200, climatePayload());
+    }
     if (req.method === "GET" && url.pathname === "/api/smart") {
       return json(res, 200, await listSmartDevices(url.searchParams.get("fresh") === "1"));
     }

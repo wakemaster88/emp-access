@@ -186,6 +186,7 @@ model Account {
   roomRules            RoomRule[]
   roomRuleRuns         RoomRuleRun[]
   roomClimates         RoomClimate[]
+  climateSamples       ClimateSample[]
   roomMotionEvents     RoomMotionEvent[]
   keyDoors             KeyDoor[]
   keyLocks             KeyLock[]
@@ -355,6 +356,7 @@ model Device {
   ruleTriggers         RoomRule[]           @relation("RoomRuleTriggerDevice")
   ruleActions          RoomRuleAction[]     @relation("RoomRuleActionDevice")
   climateSensors       RoomClimate[]        @relation("RoomClimateSensor")
+  climateSamples       ClimateSample[]
   motionEvents         RoomMotionEvent[]
 
   @@index([accountId])
@@ -2386,34 +2388,34 @@ enum SoundwebControlKind {
 }
 
 model SoundwebDevice {
-  id         Int               @id @default(autoincrement())
-  accountId  Int
-  account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name       String
+  id                Int               @id @default(autoincrement())
+  accountId         Int
+  account           Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name              String
   /// IP-Adresse oder Hostname im LAN des Hubs.
-  host       String
-  port       Int               @default(1023)
+  host              String
+  port              Int               @default(1023)
   /// HiQnet-Node-Adresse (16 Bit), wie Audio Architect sie im Netzwerkfenster
   /// zeigt (z. B. 0x0001 = 1). Steht auch vorn in der HiQnet-Adresse jedes
   /// Objekts (0xNNNNvvoooooo).
-  node       Int
-  sortOrder  Int               @default(0)
-  isActive   Boolean           @default(true)
+  node              Int
+  sortOrder         Int               @default(0)
+  isActive          Boolean           @default(true)
   /// Ist-Zustand der DI-Verbindung, vom Hub gemeldet (alle 60 s und bei
   /// jedem Wechsel). Gilt nur zusammen mit einem frischen lastSeenAt.
-  connected  Boolean           @default(false)
-  lastSeenAt DateTime?
-  lastError  String?
+  connected         Boolean           @default(false)
+  lastSeenAt        DateTime?
+  lastError         String?
   /// Seit wann die Verbindung getrennt ist (NULL = verbunden). Erst nach
   /// einer Karenzzeit gibt es eine Ausfall-Meldung.
   disconnectedAt    DateTime?
   /// Gesetzt, sobald die Ausfall-Meldung raus ist; geleert bei „wieder da“.
   offlineNotifiedAt DateTime?
   /// Name des Hubs, der die Verbindung haelt.
-  hubName    String?
-  controls   SoundwebControl[]
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
+  hubName           String?
+  controls          SoundwebControl[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   @@index([accountId, sortOrder])
 }
@@ -2493,6 +2495,7 @@ model KeyRoom {
   rules               RoomRule[]
   /// Solltemperatur halten (Fuehler + Heizung), hoechstens eine je Raum.
   climate             RoomClimate?
+  climateSamples      ClimateSample[]
   networkDevices      NetworkDevice[]
   networkClients      NetworkClient[]
   motionEvents        RoomMotionEvent[]
@@ -3063,6 +3066,47 @@ model RoomClimate {
   @@index([accountId])
   @@index([sensorDeviceId])
   @@index([operatingScheduleId])
+}
+
+/// Aufloesung eines Klima-Messpunkts: 5 Minuten (90 Tage), Stunde (2 Jahre), Tag (unbegrenzt).
+enum ClimateResolution {
+  MIN5
+  HOUR
+  DAY
+}
+
+/// Verlauf von Temperatur und Luftfeuchte je Fuehler (src/lib/climate-history.ts).
+///
+/// Der Hub liest die Fuehler im LAN jede Minute und meldet 5-Minuten-Mittel
+/// (POST /api/hub/climate-samples); ohne Hub-Meldung schreibt der Klima-Takt
+/// der Cloud einen Punkt aus dem Shelly-Cloud-Status. Aeltere Punkte werden im
+/// Cron zu Stunden und Tagen verdichtet (Mittel gewichtet nach `count`).
+model ClimateSample {
+  id          Int               @id @default(autoincrement())
+  accountId   Int
+  account     Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceId    Int
+  device      Device            @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// Raum des Fuehlers zum Zeitpunkt der Messung; null = ohne Raum.
+  roomId      Int?
+  room        KeyRoom?          @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  resolution  ClimateResolution
+  /// Beginn des Zeitfensters (UTC, auf die Aufloesung gerundet).
+  bucketStart DateTime
+  tempMin     Float?
+  tempAvg     Float?
+  tempMax     Float?
+  humMin      Float?
+  humAvg      Float?
+  humMax      Float?
+  /// Zahl der Einzelmessungen im Fenster (Gewicht beim Verdichten).
+  count       Int               @default(1)
+  /// "hub" = im LAN gelesen, "cloud" = aus dem Shelly-Cloud-Status.
+  source      String            @default("hub")
+
+  @@unique([deviceId, resolution, bucketStart])
+  @@index([accountId, roomId, resolution, bucketStart])
+  @@index([accountId, resolution, bucketStart])
 }
 
 /// Bewegung, gemeldet von einem Bewegungsmelder (Shelly) in einem Raum. Wird

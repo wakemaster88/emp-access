@@ -185,6 +185,37 @@ export async function shellyStatus(host: string): Promise<ShellyStatus> {
   return { host, info, channels, temperatureC, uptimeS };
 }
 
+export interface ShellyEnvironment {
+  tC: number | null;
+  rh: number | null;
+}
+
+/**
+ * Temperatur und Luftfeuchte eines Shelly-Fuehlers (H&T, Plus Add-on, BLU
+ * ueber Gateway): Gen2+ aus den Komponenten `temperature:N` / `humidity:N`
+ * (kleinste Nummer), Gen1 aus `tmp` / `hum`. Wirft, wenn das Geraet nicht
+ * antwortet – Batterie-Fuehler schlafen zwischen zwei Meldungen.
+ */
+export async function shellyEnvironment(host: string): Promise<ShellyEnvironment> {
+  const info = await probeShelly(host, TIMEOUT_MS);
+  if (!info) throw new Error(`${host} ist kein erreichbarer Shelly`);
+  if (info.gen >= 2) {
+    const s = (await shellyGet(host, "/rpc/Shelly.GetStatus")) as Record<string, Record<string, unknown>>;
+    const lowest = (prefix: string): Record<string, unknown> | null => {
+      let best: number | null = null;
+      for (const key of Object.keys(s)) {
+        if (!key.startsWith(`${prefix}:`)) continue;
+        const id = Number(key.slice(prefix.length + 1));
+        if (Number.isInteger(id) && (best === null || id < best)) best = id;
+      }
+      return best === null ? null : s[`${prefix}:${best}`] ?? null;
+    };
+    return { tC: num(lowest("temperature")?.tC), rh: num(lowest("humidity")?.rh) };
+  }
+  const s = (await shellyGet(host, "/status")) as Record<string, Record<string, unknown>>;
+  return { tC: num(s.tmp?.tC), rh: num(s.hum?.value) };
+}
+
 /**
  * Relais schalten: on = true/false, oder "toggle". Liefert den neuen Zustand.
  *

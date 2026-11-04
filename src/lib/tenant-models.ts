@@ -17,6 +17,7 @@ export const TENANT_MODELS = new Set<string>([
   "AudioZone",
   "Camera",
   "CameraEvent",
+  "ClimateSample",
   "Device",
   "DiscoveredDevice",
   "EmailConfig",
