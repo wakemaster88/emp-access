@@ -1,22 +1,34 @@
 "use client";
 
-import { useMemo, useState } from "react";
+/**
+ * Räume-Seite: eine Tab-Leiste im Kopf (Übersicht, ein Tab je Raum, Ohne Raum)
+ * und darunter genau eine Ansicht. Die Übersicht ist das Lagebild aller
+ * Räume, ein Raum-Tab zeigt die Raumkarte in voller Breite, "Ohne Raum"
+ * ordnet lose Geräte zu. Die gewählte Ansicht steht in der URL (?raum=…),
+ * damit ein Link direkt in einen Raum führt.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Building2, Cctv, Cpu, Plus, Search, TriangleAlert, Volume2 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Building2, Plus, Search } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { RoomPanel, roomHasEquipment } from "@/components/raeume/room-panel";
-import { RoomIcon } from "@/components/raeume/room-icons";
+import { RoomPanel, roomHasEquipment, type RoomPanelTab } from "@/components/raeume/room-panel";
 import { ClimateDialog } from "@/components/raeume/climate-dialog";
 import { RoomEquipmentDialog, type Placed } from "@/components/raeume/room-equipment-dialog";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
 import { useDeviceStatuses, useNow } from "@/components/raeume/status";
 import { useMowerStates } from "@/components/raeume/mower-card";
+import { RoomTabs, type RoomTabItem, type RoomView } from "@/components/raeume/room-tabs";
+import { Overview, type OverviewFilter } from "@/components/raeume/overview";
+import { AssignView } from "@/components/raeume/assign-view";
+import { summarizeRoom, upcomingAcrossRooms } from "@/components/raeume/room-summary";
+import { groupLooseItems, splitByKind, type LooseItem } from "@/lib/room-overview";
 import type { MowerAction } from "@/lib/mower";
 import type { ZoneAction } from "@/components/raeume/zone-row";
 import type { NetworkItem, RaeumeData, RoomCamera, RoomDevice, RoomZone } from "@/components/raeume/types";
+import { cn } from "@/lib/utils";
 
 /** Wartezeit, bevor nach einer Schaltaktion neu abgefragt wird. */
 const STATUS_SETTLE_MS = 1200;
@@ -27,8 +39,28 @@ const STATUS_SETTLE_MS = 1200;
  */
 const ZONE_SETTLE_MS = 2500;
 
+const ASSIGN_PARAM = "ohne-raum";
+const UPCOMING_LIMIT = 8;
+
+function viewFromParam(raw: string | null): RoomView {
+  if (!raw) return { kind: "overview" };
+  if (raw === ASSIGN_PARAM) return { kind: "assign" };
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? { kind: "room", id } : { kind: "overview" };
+}
+
+function paramFromView(view: RoomView): string | null {
+  if (view.kind === "overview") return null;
+  return view.kind === "assign" ? ASSIGN_PARAM : String(view.id);
+}
+
 export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: boolean }) {
   const router = useRouter();
+  const params = useSearchParams();
+  const [view, setViewState] = useState<RoomView>(() => viewFromParam(params.get("raum")));
+  const [tabHint, setTabHint] = useState<RoomPanelTab | undefined>(undefined);
+  const [showEmpty, setShowEmpty] = useState(false);
+  const [filter, setFilter] = useState<OverviewFilter>("all");
   const [query, setQuery] = useState("");
   const [equipmentRoom, setEquipmentRoom] = useState<{
     id: number;
@@ -38,6 +70,23 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
   } | null>(null);
   const [climateRoomId, setClimateRoomId] = useState<number | null>(null);
   const [error, setError] = useState("");
+
+  // Zurück/Vor im Browser folgt der URL.
+  useEffect(() => {
+    const onPop = () => setViewState(viewFromParam(new URLSearchParams(window.location.search).get("raum")));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const setView = useCallback((next: RoomView, tab?: RoomPanelTab) => {
+    setViewState(next);
+    setTabHint(tab);
+    const url = new URL(window.location.href);
+    const param = paramFromView(next);
+    if (param) url.searchParams.set("raum", param);
+    else url.searchParams.delete("raum");
+    window.history.pushState(null, "", url);
+  }, []);
 
   // Nur Shelly-Geraete haben eine Statusabfrage. Geraete ohne Raum bleiben
   // aussen vor: dort geht es ums Zuordnen, nicht ums Schalten.
@@ -87,22 +136,50 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     [data.rooms],
   );
 
-  const visibleRooms = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return data.rooms;
-    return data.rooms.filter((room) => {
-      const haystack = [
-        room.name,
-        room.number,
-        room.building,
-        room.floor,
-        ...room.devices.map((d) => d.name),
-        ...room.cameras.map((c) => c.name),
-        ...room.zones.map((z) => z.name),
-      ];
-      return haystack.some((v) => v?.toLowerCase().includes(q));
-    });
-  }, [data.rooms, query]);
+  const networkByRoom = useMemo(() => {
+    const map = new Map<number, NetworkItem[]>();
+    for (const item of data.network) {
+      if (item.roomId != null) map.set(item.roomId, [...(map.get(item.roomId) ?? []), item]);
+    }
+    return map;
+  }, [data.network]);
+
+  // Jeder Raum wird genau einmal verdichtet; Tabs, Kacheln und Spuren lesen daraus.
+  const summaries = useMemo(
+    () => data.rooms.map((room) => summarizeRoom(room, statuses, mowers, nowMs, data.timezone)),
+    [data.rooms, statuses, mowers, nowMs, data.timezone],
+  );
+  const upcoming = useMemo(() => upcomingAcrossRooms(data.rooms, nowMs, UPCOMING_LIMIT), [data.rooms, nowMs]);
+
+  const tabItems: RoomTabItem[] = summaries.map((s) => ({
+    id: s.room.id,
+    name: s.room.name,
+    dot: s.alerts.length > 0 ? "alert" : s.present ? "present" : s.open === true ? "open" : s.open === false ? "closed" : "none",
+    badge: s.alerts.length > 0 ? s.alerts.length : null,
+    empty: !roomHasEquipment(s.room) && !networkByRoom.has(s.room.id),
+  }));
+
+  const q = query.trim().toLowerCase();
+  const visibleSummaries = q ? summaries.filter((s) => s.haystack.includes(q)) : summaries;
+
+  // Lose Elemente, nach Ort im Namen gruppiert.
+  const looseItems: LooseItem[] = useMemo(
+    () => [
+      ...data.looseDevices.map((d) => ({
+        key: `d${d.id}`,
+        kind: "device" as const,
+        id: d.id,
+        name: d.name,
+        meta: deviceMetaLabel(d.type, d.category),
+      })),
+      ...data.looseCameras.map((c) => ({ key: `c${c.id}`, kind: "camera" as const, id: c.id, name: c.name, meta: "Kamera" })),
+      ...data.looseZones.map((z) => ({ key: `z${z.id}`, kind: "zone" as const, id: z.id, name: z.name, meta: "Beschallung" })),
+    ],
+    [data.looseDevices, data.looseCameras, data.looseZones],
+  );
+  const namedRooms = useMemo(() => data.rooms.map((r) => ({ id: r.id, name: r.name })), [data.rooms]);
+  const looseGroups = useMemo(() => groupLooseItems(looseItems, namedRooms), [looseItems, namedRooms]);
+  const looseCount = looseItems.length;
 
   async function handleAction(device: RoomDevice, action: string): Promise<string | null> {
     setError("");
@@ -141,174 +218,143 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     return null;
   }
 
-  const networkByRoom = new Map<number, NetworkItem[]>();
-  for (const item of data.network) {
-    if (item.roomId != null) networkByRoom.set(item.roomId, [...(networkByRoom.get(item.roomId) ?? []), item]);
+  /**
+   * Lose Elemente einem Raum zuordnen. Die Raum-API ersetzt je Art die ganze
+   * Liste, darum werden die vorhandenen IDs des Raums mitgeschickt; Arten
+   * ohne neue Elemente bleiben unberührt.
+   */
+  async function assignLoose(items: LooseItem[], roomId: number): Promise<string | null> {
+    const split = splitByKind(items);
+    const room = data.rooms.find((r) => r.id === roomId);
+    const body: { deviceIds?: number[]; cameraIds?: number[]; audioZoneIds?: number[] } = {};
+    if (split.deviceIds.length) body.deviceIds = [...(room?.devices.map((d) => d.id) ?? []), ...split.deviceIds];
+    if (split.cameraIds.length) body.cameraIds = [...(room?.cameras.map((c) => c.id) ?? []), ...split.cameraIds];
+    if (split.zoneIds.length) body.audioZoneIds = [...(room?.zones.map((z) => z.id) ?? []), ...split.zoneIds];
+    const res = await apiRequest(`/api/schliessanlage/rooms/${roomId}`, "PUT", body);
+    if (!res.ok) return res.message;
+    router.refresh();
+    return null;
   }
-  const equipped = (room: (typeof data.rooms)[number]) => roomHasEquipment(room) || networkByRoom.has(room.id);
-  const equippedRooms = visibleRooms.filter(equipped);
-  const emptyRooms = visibleRooms.filter((room) => !equipped(room));
+
+  async function createRoom(name: string): Promise<{ id: number } | { error: string }> {
+    const res = await apiRequest<{ id?: number }>("/api/schliessanlage/rooms", "POST", { name });
+    if (!res.ok) return { error: res.message };
+    if (typeof res.data?.id !== "number") return { error: "Raum wurde angelegt, aber ohne Kennung zurückgemeldet." };
+    return { id: res.data.id };
+  }
+
   const climateRoom = climateRoomId != null ? data.rooms.find((r) => r.id === climateRoomId) ?? null : null;
   const openEquipment = (room: (typeof data.rooms)[number]) =>
     setEquipmentRoom({ id: room.id, name: room.name, icon: room.icon, scheduleId: room.schedule?.id ?? null });
 
-  const deviceCount = data.rooms.reduce((sum, r) => sum + r.devices.length, 0);
-  const cameraCount = data.rooms.reduce((sum, r) => sum + r.cameras.length, 0);
-  const zoneCount = data.rooms.reduce((sum, r) => sum + r.zones.length, 0);
-  const looseCount = data.looseDevices.length + data.looseCameras.length + data.looseZones.length;
+  const activeRoom = view.kind === "room" ? data.rooms.find((r) => r.id === view.id) ?? null : null;
+  const effectiveView: RoomView = view.kind === "room" && !activeRoom ? { kind: "overview" } : view;
+
+  if (data.rooms.length === 0 && looseCount === 0) {
+    return (
+      <section className="glass-card">
+        <EmptyState
+          icon={Building2}
+          title="Noch keine Räume angelegt"
+          description="Räume, Türen und Schlösser werden in der Schließanlage gepflegt und erscheinen dann hier als Leitstand."
+          action={
+            <Button asChild variant="outline" size="sm">
+              <Link href="/schliessanlage">In der Schließanlage anlegen</Link>
+            </Button>
+          }
+        />
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle className="text-base sm:text-xl">
-                {data.rooms.length} Räume · {deviceCount} Geräte · {cameraCount} Kameras
-                {zoneCount > 0 && ` · ${zoneCount} Beschallungszonen`}
-              </CardTitle>
-              <CardDescription>
-                Steuerung je Raum. Räume, Türen und Schlösser werden in der{" "}
-                <Link href="/schliessanlage" className="underline hover:text-primary">
-                  Schließanlage
-                </Link>{" "}
-                gepflegt.
-              </CardDescription>
-            </div>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Raum oder Gerät suchen…"
-                className="h-9 w-full rounded-md border border-border bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-card"
-              />
-            </div>
-          </div>
-          <ErrorLine message={error} />
-        </CardHeader>
-
-        {looseCount > 0 && (
-          <CardContent className="pt-0">
-            <div className="rounded-md border border-dashed border-warning/30 bg-warning/10 p-3">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-warning">
-                <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-                Noch keinem Raum zugeordnet
-              </p>
-              <p className="mt-1 text-[11px] text-warning/80">
-                {data.looseDevices.length} Geräte, {data.looseCameras.length} Kameras und{" "}
-                {data.looseZones.length} Beschallungszonen erscheinen erst in einem Raum, wenn du
-                sie dort zuordnest. Das geht über den Stift an einer Raumkarte. Erst mit Raum
-                bekommen sie eine Betriebszeit.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {data.looseDevices.slice(0, 12).map((device) => (
-                  <span
-                    key={`d${device.id}`}
-                    title={deviceMetaLabel(device.type, device.category)}
-                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
-                  >
-                    <Cpu className="h-2.5 w-2.5 text-muted-foreground/70" />
-                    {device.name}
-                  </span>
-                ))}
-                {data.looseCameras.slice(0, 6).map((camera) => (
-                  <span
-                    key={`c${camera.id}`}
-                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
-                  >
-                    <Cctv className="h-2.5 w-2.5 text-muted-foreground/70" />
-                    {camera.name}
-                  </span>
-                ))}
-                {data.looseZones.slice(0, 6).map((zone) => (
-                  <span
-                    key={`z${zone.id}`}
-                    className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
-                  >
-                    <Volume2 className="h-2.5 w-2.5 text-muted-foreground/70" />
-                    {zone.name}
-                  </span>
-                ))}
-                {data.looseDevices.length > 12 && (
-                  <span className="text-[10px] text-muted-foreground/70">
-                    und {data.looseDevices.length - 12} weitere
-                  </span>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        )}
-      </Card>
-
-      {data.rooms.length === 0 ? (
-        <Card className="py-0">
-          <EmptyState
-            icon={Building2}
-            title="Noch keine Räume angelegt"
-            description="Räume, Türen und Schlösser werden in der Schließanlage gepflegt und erscheinen dann hier als Leitstand."
-            action={
-              <Button asChild variant="outline" size="sm">
-                <Link href="/schliessanlage">In der Schließanlage anlegen</Link>
-              </Button>
-            }
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">
+          <RoomTabs
+            items={tabItems}
+            view={effectiveView}
+            looseCount={looseCount}
+            showEmpty={showEmpty}
+            onToggleEmpty={() => setShowEmpty((v) => !v)}
+            onSelect={(next) => setView(next)}
           />
-        </Card>
-      ) : visibleRooms.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground/70">Keine Treffer.</p>
-      ) : (
+        </div>
+        {effectiveView.kind === "overview" && (
+          <div className="relative lg:w-60">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Raum oder Gerät suchen …"
+              aria-label="Raum oder Gerät suchen"
+              className={cn(
+                "h-9 w-full rounded-full border border-(--glass-border) bg-(--glass-bg) pl-9 pr-3 text-[13px] shadow-[inset_0_1px_0_var(--glass-highlight)] backdrop-blur-xl",
+                "placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring",
+              )}
+            />
+          </div>
+        )}
+      </div>
+      <ErrorLine message={error} />
+
+      {effectiveView.kind === "overview" && (
         <>
-          {equippedRooms.length > 0 && (
-            <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {equippedRooms.map((room) => (
-                <RoomPanel
-                  key={room.id}
-                  room={room}
-                  statuses={statuses}
-                  nowMs={nowMs}
-                  timezone={data.timezone}
-                  readonly={readonly}
-                  onAction={handleAction}
-                  onZoneAction={handleZoneAction}
-                  onEdit={() => openEquipment(room)}
-                  onClimate={() => setClimateRoomId(room.id)}
-                  network={networkByRoom.get(room.id) ?? []}
-                  mowers={mowers}
-                  onMowerAction={handleMowerAction}
-                />
-              ))}
-            </div>
+          {data.rooms.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Noch keine Räume. Lege unter „Ohne Raum“ einen Raum an oder pflege Räume in der{" "}
+              <Link href="/schliessanlage" className="underline hover:text-primary">
+                Schließanlage
+              </Link>
+              .
+            </p>
+          ) : visibleSummaries.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">Keine Treffer.</p>
+          ) : (
+            <Overview
+              summaries={visibleSummaries}
+              upcoming={upcoming}
+              filter={filter}
+              onFilter={setFilter}
+              nowMs={nowMs}
+              timezone={data.timezone}
+              readonly={readonly}
+              onOpenRoom={(roomId, tab) => setView({ kind: "room", id: roomId }, tab)}
+              onAction={handleAction}
+              onZoneAction={handleZoneAction}
+            />
           )}
-          {(emptyRooms.length > 0 || !readonly) && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Räume ohne Ausstattung</CardTitle>
-                <CardDescription className="text-xs">
-                  Noch keine Geräte, Kameras oder Beschallung zugeordnet. Antippen zum Ausstatten.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-1.5">
-                {emptyRooms.map((room) => (
-                  <button
-                    key={room.id}
-                    type="button"
-                    disabled={readonly}
-                    onClick={() => openEquipment(room)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary disabled:pointer-events-none"
-                  >
-                    <RoomIcon room={room} className="h-3 w-3" />
-                    {room.name}
-                    {(room.building || room.floor) && (
-                      <span className="text-muted-foreground/60">{[room.building, room.floor].filter(Boolean).join(" · ")}</span>
-                    )}
-                  </button>
-                ))}
-                {!readonly && <NewRoomButton />}
-              </CardContent>
-            </Card>
+          {!readonly && (
+            <div className="flex justify-end">
+              <NewRoomButton />
+            </div>
           )}
         </>
+      )}
+
+      {effectiveView.kind === "room" && activeRoom && (
+        <RoomPanel
+          key={`${activeRoom.id}:${tabHint ?? ""}`}
+          room={activeRoom}
+          statuses={statuses}
+          nowMs={nowMs}
+          timezone={data.timezone}
+          readonly={readonly}
+          onAction={handleAction}
+          onZoneAction={handleZoneAction}
+          onEdit={() => openEquipment(activeRoom)}
+          onClimate={() => setClimateRoomId(activeRoom.id)}
+          network={networkByRoom.get(activeRoom.id) ?? []}
+          mowers={mowers}
+          onMowerAction={handleMowerAction}
+          wide
+          initialTab={tabHint}
+        />
+      )}
+
+      {effectiveView.kind === "assign" && (
+        <AssignView groups={looseGroups} rooms={namedRooms} readonly={readonly} onAssign={assignLoose} onCreateRoom={createRoom} />
       )}
 
       {climateRoom && (
@@ -369,9 +415,9 @@ function NewRoomButton() {
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/15"
+        className="inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
-        <Plus className="h-3 w-3" />
+        <Plus className="h-3.5 w-3.5" />
         Neuer Raum
       </button>
     );
@@ -388,13 +434,13 @@ function NewRoomButton() {
         }}
         placeholder="Name, z. B. Büro"
         maxLength={120}
-        className="h-7 w-40 rounded-md border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        className="h-9 w-44 rounded-control border border-border/70 bg-background/70 px-3 text-[13px] focus:outline-none focus:ring-1 focus:ring-ring"
       />
       <button
         type="button"
         onClick={() => void create()}
         disabled={busy || !name.trim()}
-        className="h-7 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+        className="h-9 rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground disabled:opacity-50"
       >
         {busy ? "…" : "Anlegen"}
       </button>

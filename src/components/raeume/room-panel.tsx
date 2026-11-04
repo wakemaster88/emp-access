@@ -23,7 +23,6 @@ import {
   Zap,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeviceRow } from "@/components/raeume/device-row";
 import type { ZoneAction } from "@/components/raeume/zone-row";
 import { eventTypeLabel, fmtAgo } from "@/components/raeume/shared";
@@ -144,8 +143,14 @@ export function RoomPanel({
   network = [],
   mowers,
   onMowerAction,
+  wide = false,
+  initialTab,
 }: {
   room: RoomPanelData;
+  /** Volle Seitenbreite: Abschnitte laufen ab lg in zwei Spalten. */
+  wide?: boolean;
+  /** Reiter, der beim Öffnen gezeigt wird (z. B. aus einer Störung heraus). */
+  initialTab?: RoomPanelTab;
   /** Netzwerkgeraete in diesem Raum. */
   network?: NetworkItem[];
   statuses: Map<number, DeviceStatus>;
@@ -272,7 +277,7 @@ export function RoomPanel({
       badge: network.length + sensorsOnly.length > 0 ? String(network.length + sensorsOnly.length) : null,
     },
   ].filter(Boolean) as { key: TabKey; label: string; icon: ReactNode; badge?: string | null; live?: boolean }[];
-  const [tabChoice, setTab] = useState<TabKey | null>(null);
+  const [tabChoice, setTab] = useState<TabKey | null>(initialTab ?? null);
   const tab: TabKey = tabChoice && tabs.some((t) => t.key === tabChoice) ? tabChoice : tabs[0].key;
 
   // Schnellsteuerung: ein Antippen schaltet den ganzen Raum.
@@ -280,8 +285,8 @@ export function RoomPanel({
   const playableZones = room.zones.filter((z) => z.isActive && z.hasPlayer);
 
   return (
-    <Card className="overflow-hidden rounded-3xl border-border/70 shadow-sm">
-      <CardHeader className="relative space-y-3 bg-gradient-to-br from-primary/[0.07] via-transparent to-transparent pb-3">
+    <section className="glass-card overflow-hidden">
+      <div className={cn("relative space-y-3 p-4 pb-3", wide && "sm:p-5 sm:pb-3")}>
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 text-white shadow-[0_6px_16px_-6px_var(--primary)]">
             <RoomIcon room={room} className="h-5 w-5" />
@@ -395,7 +400,7 @@ export function RoomPanel({
         )}
 
         {tabs.length > 1 && (
-          <div role="tablist" className="flex gap-1 rounded-full bg-muted/70 p-1">
+          <div role="tablist" className={cn("glass-strip flex gap-0.5", wide && "sm:max-w-xl")}>
             {tabs.map((t) => (
               <button
                 key={t.key}
@@ -404,10 +409,8 @@ export function RoomPanel({
                 aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  "flex min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11px] font-medium transition-all",
-                  tab === t.key
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
+                  "flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-2 text-[11px] transition-all duration-200",
+                  tab === t.key ? "glass-pill-active font-semibold text-foreground" : "font-medium text-muted-foreground hover:text-foreground",
                 )}
               >
                 {t.icon}
@@ -426,9 +429,15 @@ export function RoomPanel({
             ))}
           </div>
         )}
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-5 pt-1" role="tabpanel">
+      <div
+        className={cn(
+          "space-y-5 px-4 pb-4 pt-1",
+          wide && "sm:px-5 sm:pb-5 lg:columns-2 lg:gap-6 lg:space-y-0 lg:[&>*]:mb-5 lg:[&>*]:break-inside-avoid",
+        )}
+        role="tabpanel"
+      >
         {tab === "control" && (
           <>
             {showClimate && (
@@ -604,12 +613,13 @@ export function RoomPanel({
             )}
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
 type TabKey = "control" | "time" | "security" | "tech";
+export type RoomPanelTab = TabKey;
 
 type QuickTone = "light" | "music" | "heat" | "air" | "live" | "danger";
 
@@ -660,8 +670,8 @@ function QuickTile({
       aria-pressed={active}
       title={title}
       className={cn(
-        "flex min-w-0 items-center gap-2 rounded-2xl border p-2 text-left transition-all duration-300 enabled:active:scale-[0.97]",
-        active || tone === "danger" ? QUICK_ON[tone] : "border-border bg-card enabled:hover:bg-muted/40 dark:bg-muted/30",
+        "flex min-w-0 items-center gap-2 rounded-tile border p-2 text-left transition-all duration-300 enabled:active:scale-[0.97]",
+        active || tone === "danger" ? QUICK_ON[tone] : "glass-tile enabled:hover:bg-foreground/5",
         disabled && "cursor-default",
       )}
     >
