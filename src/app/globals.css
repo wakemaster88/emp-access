@@ -67,8 +67,12 @@
 }
 
 /* Zusätzlicher Breakpoint unterhalb von `sm` (480px): Handys quer, große Handys. */
+/* Radien der Glas-Flächen (siehe docs/design-regeln.md): Karte, Kachel, Bedienelement. */
 @theme {
   --breakpoint-xs: 30rem;
+  --radius-card: 1.5rem;
+  --radius-tile: 1.125rem;
+  --radius-control: 0.875rem;
 }
 
 :root {
@@ -121,6 +125,20 @@
   --sidebar-accent-foreground: oklch(0.97 0 0);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.585 0.233 277);
+
+  /* Liquid Glass (hell): weiße, durchscheinende Flächen auf farbigem Grund. */
+  --glass-bg: oklch(1 0 0 / 58%);
+  --glass-bg-strong: oklch(1 0 0 / 78%);
+  --glass-tile: oklch(1 0 0 / 55%);
+  --glass-border: oklch(1 0 0 / 85%);
+  --glass-highlight: oklch(1 0 0 / 95%);
+  --glass-shadow: 0 20px 50px -28px oklch(0.25 0.04 262 / 45%);
+  --glass-blur: 28px;
+  --glass-pill: oklch(1 0 0 / 92%);
+  --ambient-1: oklch(0.6 0.2 276 / 22%);
+  --ambient-2: oklch(0.72 0.14 232 / 18%);
+  --ambient-3: oklch(0.75 0.14 300 / 16%);
+  --ambient-4: oklch(0.78 0.15 163 / 14%);
 }
 
 .dark {
@@ -169,6 +187,20 @@
   --sidebar-accent-foreground: oklch(0.97 0 0);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.68 0.17 276);
+
+  /* Liquid Glass (dunkel): Flächen aus Weiß mit wenig Deckung, Lichtkante oben. */
+  --glass-bg: oklch(1 0 0 / 5.5%);
+  --glass-bg-strong: oklch(1 0 0 / 9%);
+  --glass-tile: oklch(1 0 0 / 8%);
+  --glass-border: oklch(1 0 0 / 16%);
+  --glass-highlight: oklch(1 0 0 / 22%);
+  --glass-shadow: 0 24px 60px -30px oklch(0 0 0 / 75%);
+  --glass-blur: 28px;
+  --glass-pill: oklch(1 0 0 / 16%);
+  --ambient-1: oklch(0.55 0.22 276 / 42%);
+  --ambient-2: oklch(0.7 0.15 232 / 26%);
+  --ambient-3: oklch(0.8 0.12 300 / 22%);
+  --ambient-4: oklch(0.75 0.16 163 / 16%);
 }
 
 /* PWA & iOS: safe area, touch, prevent zoom on inputs */
@@ -285,6 +317,69 @@
 /* Halbtransparente Fläche mit Weichzeichner (Kopfbalken, Tab-Leiste). */
 @utility glass {
   @apply border-border/70 bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/65;
+}
+
+/*
+ * Liquid Glass (docs/design-regeln.md, Abschnitt 2)
+ * -------------------------------------------------
+ * Karte, Kachel, Leiste und aktive Pille als wiederverwendbare Flächen. Die
+ * Werte stehen in den Tokens oben, je einmal für Hell und Dunkel.
+ */
+@utility glass-card {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 oklch(1 0 0 / 4%),
+    var(--glass-shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+}
+
+@utility glass-tile {
+  border-radius: var(--radius-tile);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-tile);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+/* Schwebende Kapsel für Tab-Leisten und Segmentwahlen. */
+@utility glass-strip {
+  border-radius: 9999px;
+  padding: 4px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+/* Aktiver Eintrag in einer Kapsel: helle Glas-Pille statt Unterstreichung. */
+@utility glass-pill-active {
+  border-radius: 9999px;
+  background: var(--glass-pill);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 6px 16px -6px oklch(0 0 0 / 45%);
+}
+
+/* Weicher Farbgrund hinter dem Glas: vier Flecken, fest zum Fenster. */
+@utility page-ambient {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(55% 45% at 12% 8%, var(--ambient-1), transparent 65%),
+    radial-gradient(45% 40% at 88% 18%, var(--ambient-2), transparent 65%),
+    radial-gradient(50% 45% at 72% 92%, var(--ambient-3), transparent 65%),
+    radial-gradient(45% 40% at 18% 85%, var(--ambient-4), transparent 65%);
+  background-attachment: fixed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-card,
+  .glass-tile {
+    transition: none;
+  }
 }
 
 /* Feines Punktraster als Hintergrund (Login, leere Zustände). */
