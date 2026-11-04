@@ -9,8 +9,9 @@
  *   dazwischen              → Zustand bleibt
  *
  * Das Soll richtet sich nach der Betriebszeit (die des Klimas, sonst die des
- * Raums): waehrend der Betriebszeit `targetC`, `preheatMinutes` vorher schon
- * ebenfalls, ausserhalb `setbackC` oder Heizung aus.
+ * Raums): waehrend der Betriebszeit `targetC`, `preheatMinutes` vorher und
+ * `afterrunMinutes` nachher ebenfalls, sonst `setbackC` oder Heizung aus.
+ * Beispiel Wasserski 12–16 Uhr, 30 Min. vor, 30 Min. nach → Heizen 11:30–16:30.
  *
  * Sicherheit:
  *  - Jedes "an" geht mit dem geraeteeigenen Auto-Off-Timer (WATCHDOG_SEC) raus
@@ -22,7 +23,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { isOperatingAt, type ScheduleSpec } from "@/lib/operating-hours";
+import { isWithinOperatingSpan, type ScheduleSpec, type SpanOffsets } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import {
   shellyBaseId,
@@ -45,6 +46,7 @@ export const CLIMATE_LIMITS = {
   maxC: 30,
   maxHysteresisC: 3,
   maxPreheatMinutes: 240,
+  maxAfterrunMinutes: 240,
 } as const;
 
 // ─── Reine Entscheidung (ohne I/O, testbar) ──────────────────────────────────
@@ -81,17 +83,20 @@ export function climateDecision(input: ClimateDecisionInput): ClimateDecision {
   return { heat: input.heating ?? input.tempC < input.targetC, reason: "im Sollbereich" };
 }
 
-/** Soll fuer diesen Moment: Betriebszeit (mit Vorheizen) → targetC, sonst setbackC. */
+/** Heizfenster relativ zur Betriebszeit: Vorheizen vorher, Nachlauf nachher. */
+export function climateOffsets(climate: { preheatMinutes: number; afterrunMinutes?: number | null }): SpanOffsets {
+  return { openMinutes: -Math.max(0, climate.preheatMinutes), closeMinutes: Math.max(0, climate.afterrunMinutes ?? 0) };
+}
+
+/** Soll fuer diesen Moment: Heizfenster (Betriebszeit ± Vor-/Nachlauf) → targetC, sonst setbackC. */
 export function climateTarget(
-  climate: { targetC: number; setbackC: number | null; preheatMinutes: number },
+  climate: { targetC: number; setbackC: number | null; preheatMinutes: number; afterrunMinutes?: number | null },
   schedule: ScheduleSpec | null,
   now: Date,
   tz: string,
 ): { targetC: number | null; open: boolean } {
   if (!schedule) return { targetC: climate.targetC, open: true };
-  const open =
-    isOperatingAt(schedule, now, tz) ||
-    (climate.preheatMinutes > 0 && isOperatingAt(schedule, new Date(now.getTime() + climate.preheatMinutes * 60_000), tz));
+  const open = isWithinOperatingSpan(schedule, now, tz, climateOffsets(climate));
   return { targetC: open ? climate.targetC : climate.setbackC, open };
 }
 
@@ -240,6 +245,7 @@ export function climateView(c: {
   hysteresisC: number;
   setbackC: number | null;
   preheatMinutes: number;
+  afterrunMinutes: number;
   operatingScheduleId: number | null;
   lastTempC: number | null;
   lastReadAt: Date | null;
@@ -258,6 +264,7 @@ export function climateView(c: {
     hysteresisC: c.hysteresisC,
     setbackC: c.setbackC,
     preheatMinutes: c.preheatMinutes,
+    afterrunMinutes: c.afterrunMinutes,
     operatingScheduleId: c.operatingScheduleId,
     lastTempC: c.lastTempC,
     lastReadAt: c.lastReadAt?.toISOString() ?? null,

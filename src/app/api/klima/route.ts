@@ -41,7 +41,7 @@ export async function PUT(request: NextRequest) {
   const room = await db.keyRoom.findFirst({ where: { id: roomId, accountId }, select: { id: true } });
   if (!room) return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 404 });
 
-  const { minC, maxC, maxHysteresisC, maxPreheatMinutes } = CLIMATE_LIMITS;
+  const { minC, maxC, maxHysteresisC, maxPreheatMinutes, maxAfterrunMinutes } = CLIMATE_LIMITS;
   const targetC = num(body.targetC);
   if (targetC === null || targetC < minC || targetC > maxC) return bad(`Solltemperatur zwischen ${minC} und ${maxC} °C`);
   const setbackC = body.setbackC == null || body.setbackC === "" ? null : num(body.setbackC);
@@ -51,6 +51,8 @@ export async function PUT(request: NextRequest) {
   if (hysteresisC === null || hysteresisC < 0.1 || hysteresisC > maxHysteresisC) return bad(`Spielraum zwischen 0,1 und ${maxHysteresisC} °C`);
   const preheatMinutes = body.preheatMinutes == null ? 30 : Math.round(num(body.preheatMinutes) ?? -1);
   if (preheatMinutes < 0 || preheatMinutes > maxPreheatMinutes) return bad(`Vorheizen zwischen 0 und ${maxPreheatMinutes} Minuten`);
+  const afterrunMinutes = body.afterrunMinutes == null || body.afterrunMinutes === "" ? 0 : Math.round(num(body.afterrunMinutes) ?? -1);
+  if (afterrunMinutes < 0 || afterrunMinutes > maxAfterrunMinutes) return bad(`Nachlauf zwischen 0 und ${maxAfterrunMinutes} Minuten`);
 
   const sensorDeviceId = Number(body.sensorDeviceId);
   const sensor = Number.isInteger(sensorDeviceId)
@@ -87,6 +89,7 @@ export async function PUT(request: NextRequest) {
     hysteresisC,
     setbackC,
     preheatMinutes,
+    afterrunMinutes,
     operatingScheduleId,
   };
   const climate = await db.roomClimate.upsert({

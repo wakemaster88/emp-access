@@ -225,7 +225,7 @@ export default async function RaeumePage() {
   // weil die Zeitzone des Mandanten gebraucht wird.
   const tz = account?.timezone || DEFAULT_TIMEZONE;
   const todayStart = dayStart(now, tz);
-  const [personEvents, sightings] = await Promise.all([
+  const [personEvents, sightings, motions] = await Promise.all([
     db.cameraEvent.findMany({
       where: { ...accountFilter, type: "PERSON", startedAt: { gte: todayStart }, camera: { keyRoomId: { not: null } } },
       select: { startedAt: true, endedAt: true, camera: { select: { keyRoomId: true } } },
@@ -238,6 +238,10 @@ export default async function RaeumePage() {
         listedPerson: { select: { name: true, listType: true } },
       },
     }),
+    db.roomMotionEvent.findMany({
+      where: { ...accountFilter, at: { gte: todayStart } },
+      select: { roomId: true, at: true },
+    }),
   ]);
   const activity = buildRoomActivity(
     personEvents.map((e) => ({ roomId: e.camera.keyRoomId!, startedAt: e.startedAt, endedAt: e.endedAt })),
@@ -246,6 +250,7 @@ export default async function RaeumePage() {
       .map((s) => ({ roomId: s.camera!.keyRoomId!, seenAt: s.seenAt, person: s.listedPerson })),
     now,
     tz,
+    motions,
   );
 
   const lastEventByRoom = new Map<number, RoomEvent>();

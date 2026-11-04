@@ -489,7 +489,13 @@ export function ActivityChart({
       <div className="flex items-end justify-between gap-2">
         <div>
           <p className="text-2xl font-semibold leading-none tabular-nums tracking-tight">{a?.total ?? 0}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">Personen-Ereignisse heute</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {!a || a.motion === 0
+              ? "Personen-Ereignisse heute"
+              : a.motion === a.total
+                ? "Bewegungen heute (Bewegungsmelder)"
+                : `Ereignisse heute · ${a.motion} vom Bewegungsmelder`}
+          </p>
         </div>
         {a && a.total > 0 && peak >= 0 && (
           <p className="text-right text-[11px] text-muted-foreground">

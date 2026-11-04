@@ -31,7 +31,17 @@ export interface RoomActivity {
   people: RoomActivityPerson[];
   /** Sichtungen ohne Zuordnung zu einer hinterlegten Person. */
   unknown: number;
+  /** Davon Ereignisse von Bewegungsmeldern (statt Kamera). */
+  motion: number;
 }
+
+export interface ActivityMotion {
+  roomId: number;
+  at: Date;
+}
+
+/** So lange nach einer Bewegung gilt der Raum als besetzt (Takt 5 Min.). */
+export const MOTION_PRESENCE_MS = 6 * 60_000;
 
 export interface ActivityEvent {
   roomId: number;
@@ -55,12 +65,13 @@ export function buildRoomActivity(
   sightings: ActivitySighting[],
   now: Date,
   tz: string,
+  motions: ActivityMotion[] = [],
 ): Map<number, RoomActivity> {
   const out = new Map<number, RoomActivity>();
   const get = (roomId: number) => {
     let a = out.get(roomId);
     if (!a) {
-      a = { hours: Array(24).fill(0), total: 0, present: false, lastAt: null, people: [], unknown: 0 };
+      a = { hours: Array(24).fill(0), total: 0, present: false, lastAt: null, people: [], unknown: 0, motion: 0 };
       out.set(roomId, a);
     }
     return a;
@@ -76,6 +87,15 @@ export function buildRoomActivity(
     const open = e.endedAt === null && t - e.startedAt.getTime() < OPEN_EVENT_MAX_MS;
     const recent = e.endedAt !== null && t - e.endedAt.getTime() < PRESENCE_GRACE_MS;
     if (open || recent) a.present = true;
+  }
+  for (const m of motions) {
+    const a = get(m.roomId);
+    a.hours[Math.min(23, Math.floor(tzMinutesOfDay(m.at, tz) / 60))]++;
+    a.total++;
+    a.motion++;
+    const iso = m.at.toISOString();
+    if (!a.lastAt || iso > a.lastAt) a.lastAt = iso;
+    if (t - m.at.getTime() < MOTION_PRESENCE_MS) a.present = true;
   }
   for (const s of sightings) {
     const a = get(s.roomId);

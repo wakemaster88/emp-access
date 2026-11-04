@@ -104,6 +104,7 @@ export interface RoomClimateView {
   hysteresisC: number;
   setbackC: number | null;
   preheatMinutes: number;
+  afterrunMinutes: number;
   operatingScheduleId: number | null;
   lastTempC: number | null;
   lastReadAt: string | null;

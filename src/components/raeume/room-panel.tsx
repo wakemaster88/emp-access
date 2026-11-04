@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   Building2,
+  CalendarClock,
   Cctv,
   Cpu,
-  DoorClosed,
-  DoorOpen,
   Lightbulb,
   Loader2,
   Lock,
@@ -32,52 +31,9 @@ import type {
   RoomZone,
 } from "@/components/raeume/types";
 import { isLatchingSwitchDevice } from "@/lib/device-controls";
+import { ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
 import { ActivityChart, CameraTile, ClimateHero, DeviceTile, ZoneCard } from "@/components/raeume/room-widgets";
-import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
-import { tzYmd } from "@/lib/tz-time";
 import { cn } from "@/lib/utils";
-
-/**
- * Betriebszustand des Raums als Zeile: geoeffnet oder geschlossen, dazu die
- * Zeiten von heute. Ohne Profil bleibt die Zeile weg – dann steuert nichts
- * anderes als die Regeln selbst.
- */
-function OperatingLine({
-  schedule,
-  timezone,
-  nowMs,
-}: {
-  schedule: NonNullable<RoomPanelData["schedule"]>;
-  timezone: string;
-  nowMs: number;
-}) {
-  const now = new Date(nowMs);
-  const spec = { name: schedule.name, seasons: schedule.seasons, exceptions: schedule.exceptions };
-  const open = isOperatingAt(spec, now, timezone);
-  const today = openingForDay(spec, tzYmd(now, timezone));
-
-  return (
-    <p
-      className={cn(
-        "mt-2 flex items-center gap-1.5 rounded px-2 py-1 text-[11px]",
-        open
-          ? "bg-success/10 text-success "
-          : "bg-muted/50 text-muted-foreground dark:bg-muted/50 dark:text-muted-foreground",
-      )}
-      title={`Betriebszeit: ${schedule.name}`}
-    >
-      {open ? (
-        <DoorOpen className="h-3 w-3 shrink-0" />
-      ) : (
-        <DoorClosed className="h-3 w-3 shrink-0" />
-      )}
-      {open ? "geöffnet" : "geschlossen"}
-      <span className="truncate opacity-70">
-        · {schedule.name} · heute {describeDay(today)}
-      </span>
-    </p>
-  );
-}
 
 /** Geraete, die zum Klima gehoeren: Heizung, Lueftung, Klima, Fuehler. */
 const CLIMATE_NAME_RE = /heiz|l(ü|ue)ft|klima|thermo|temperatur|ventil/i;
@@ -241,6 +197,12 @@ export function RoomPanel({
     statuses.has(d.id) ? statuses.get(d.id)?.output === true : d.type === "HUE_LIGHT" && d.task === 1;
   const lightsOn = groups.light.filter(isOn).length;
   const playing = room.zones.filter((z) => z.isPlaying).length;
+  // Bewegungsmelder im Raum: live "erkannt" zaehlt sofort als Anwesenheit.
+  const motionReadings = room.devices
+    .map((d) => statuses.get(d.id)?.readings?.find((r) => r.kind === "motion"))
+    .filter(Boolean);
+  const hasMotionSensor = motionReadings.length > 0;
+  const present = !!room.activity?.present || motionReadings.some((r) => r!.value === "erkannt");
   const tileable = (d: RoomDevice) => isLatchingSwitchDevice(d);
   const otherTiles = groups.other.filter(tileable);
   const otherRows = groups.other.filter((d) => !tileable(d));
@@ -321,17 +283,23 @@ export function RoomPanel({
               Musik
             </Pill>
           )}
-          {room.activity?.present && (
+          {present && (
             <Pill tone="live">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
               jemand da
             </Pill>
           )}
         </div>
-        {room.schedule && <OperatingLine schedule={room.schedule} timezone={timezone} nowMs={nowMs} />}
       </CardHeader>
 
       <CardContent className="space-y-5 pt-1">
+        <Section icon={<CalendarClock className="h-3.5 w-3.5" />} title="Betriebszeit">
+          {room.schedule ? (
+            <ScheduleWidget schedule={room.schedule} climate={room.climate} timezone={timezone} nowMs={nowMs} />
+          ) : (
+            <ScheduleEmpty onEdit={readonly ? undefined : onEdit} />
+          )}
+        </Section>
         {showClimate && (
           <Section
             icon={<Thermometer className="h-3.5 w-3.5" />}
@@ -408,12 +376,12 @@ export function RoomPanel({
           </Section>
         )}
 
-        {(room.activity || room.cameras.length > 0) && (
+        {(room.activity || room.cameras.length > 0 || hasMotionSensor) && (
           <Section
             icon={<Users className="h-3.5 w-3.5" />}
             title="Ereignisse"
             action={
-              room.activity?.present ? (
+              present ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                   gerade jemand da

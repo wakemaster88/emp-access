@@ -167,6 +167,30 @@ function readBattery(status: ShellyDeviceStatusMap): SensorReading | null {
   };
 }
 
+/** Bewegungsmelder: Gen2/BLU `motion:N`, Gen1 Shelly Motion `sensor`. */
+export interface MotionReading {
+  motion: boolean;
+  /** Letzte Bewegung laut Melder; null = nicht gemeldet. */
+  lastMotionAt: Date | null;
+}
+
+const toDate = (v: unknown): Date | null =>
+  typeof v === "number" && Number.isFinite(v) && v > 1_000_000_000 ? new Date(v * 1000) : null;
+
+/** Bewegungszustand aus einem Shelly-Status, null = kein Bewegungsmelder. */
+export function readMotion(status: ShellyDeviceStatusMap): MotionReading | null {
+  const keys = Object.keys(status)
+    .filter((k) => k === "motion" || k.startsWith("motion:"))
+    .sort();
+  for (const key of keys) {
+    const c = status[key] as { motion?: unknown; ts?: unknown } | null;
+    if (typeof c?.motion === "boolean") return { motion: c.motion, lastMotionAt: toDate(c.ts) };
+  }
+  const sensor = status.sensor as { motion?: unknown; timestamp?: unknown } | undefined;
+  if (typeof sensor?.motion === "boolean") return { motion: sensor.motion, lastMotionAt: toDate(sensor.timestamp) };
+  return null;
+}
+
 /**
  * Alle Messwerte eines Geraetestatus in Anzeigereihenfolge: erst die Aussage
  * ueber den Zustand (Tür, Riegel, Bewegung), dann Umgebungswerte, zuletzt die
@@ -181,8 +205,8 @@ export function readSensorReadings(status: ShellyDeviceStatusMap): SensorReading
   const lock = readLock(status);
   if (lock) readings.push(lock);
 
-  const motion = component<{ motion?: unknown }>(status, "motion");
-  if (typeof motion?.motion === "boolean") {
+  const motion = readMotion(status);
+  if (motion) {
     readings.push({
       kind: "motion",
       label: "Bewegung",
