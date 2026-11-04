@@ -8,6 +8,7 @@
 
 import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
 import type { RoomActivity } from "@/lib/room-activity";
+import type { RoomAutomation } from "@/lib/room-automations";
 
 export interface RoomDevice {
   id: number;
@@ -139,6 +140,8 @@ export interface RoomPanel {
   /** `null` = keine Betriebszeit, der Raum gilt dann als dauerhaft verfügbar. */
   schedule: RoomSchedule | null;
   rules: RoomRuleSummary[];
+  /** Regeln und Audio-Zeitpläne des Raums, lesbar und mit nächstem Lauf. */
+  automations: RoomAutomation[];
   climate: RoomClimateView | null;
   /** Personen heute laut Kameras des Raums; null = keine Kamera mit Daten. */
   activity: RoomActivity | null;
