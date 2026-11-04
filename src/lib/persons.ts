@@ -187,7 +187,7 @@ export async function processCameraPersonEvent(opts: {
         }).catch((err) => console.error("[persons] push failed:", err));
       }
 
-      await prisma.personSighting.create({
+      const created = await prisma.personSighting.create({
         data: {
           accountId: opts.accountId,
           cameraId: opts.cameraId,
@@ -207,6 +207,23 @@ export async function processCameraPersonEvent(opts: {
         select: { id: true },
       });
       sightings++;
+
+      // Sicherer Treffer aus neuem Blickwinkel: Profil lernt mit (best effort).
+      // Abgewartet statt im Hintergrund: serverlos endet die Funktion mit der Antwort.
+      if (opts.matchMethod !== "MANUAL" && opts.faceEmbedding?.length) {
+        try {
+          const { maybeAutoLearn } = await import("@/lib/person-profile");
+          await maybeAutoLearn({
+            accountId: opts.accountId,
+            listedPersonId: person.id,
+            sightingId: created.id,
+            embedding: opts.faceEmbedding,
+            matchScore: opts.matchScore,
+          });
+        } catch (err) {
+          console.error("[persons] auto-learn failed:", err);
+        }
+      }
 
       // Überwachung: Whitelist-Personen weder Push noch Telegram.
       if (person.listType !== "WHITELIST") {

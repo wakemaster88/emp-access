@@ -54,7 +54,8 @@ const HIGH_PRIORITY = new Set([
   "SOUNDWEB_SYNC",
 ]);
 
-const BACKGROUND_TYPES = new Set(["NETWORK_SCAN", "SWITCH_SYNC"]);
+// FACE_ANALYZE: Stapel alter Sichtungen, darf keinen Slot fuer eilige Tasks blockieren.
+const BACKGROUND_TYPES = new Set(["NETWORK_SCAN", "SWITCH_SYNC", "FACE_ANALYZE"]);
 
 let taskPollTimer: ReturnType<typeof setInterval> | null = null;
 let taskPollEveryMs = CONFIG.taskIntervalMs;

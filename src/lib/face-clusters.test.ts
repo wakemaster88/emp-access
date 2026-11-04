@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  chooseProfile,
   clusterFaces,
+  shouldAutoLearn,
   cosine,
   pickDiverseSamples,
   rankKnownPersons,
@@ -96,4 +98,31 @@ test("600 Gesichter in vertretbarer Zeit", () => {
   const clusters = clusterFaces(items);
   assert.ok(Date.now() - t < 3000);
   assert.equal(clusters.length, 30);
+});
+
+test("Profil: Fehlgriff fliegt raus, Rest bleibt", () => {
+  const r = rng(6);
+  const anna = randomVec(r);
+  const items = [
+    ...Array.from({ length: 6 }, (_, i) => ({ id: i + 1, embedding: around(anna, r) })),
+    { id: 99, embedding: randomVec(r) },
+  ];
+  const { keep, outliers } = chooseProfile(items, 4);
+  assert.deepEqual(outliers, [99]);
+  assert.equal(keep.length, 4);
+  assert.ok(!keep.includes(99));
+});
+
+test("Auto-Lernen nur bei sicherem Match und neuem Blickwinkel", () => {
+  const r = rng(7);
+  const anna = randomVec(r);
+  const s1 = around(anna, r);
+  const e = around(anna, r);
+  assert.equal(shouldAutoLearn({ embedding: e, samples: [s1], matchScore: 0.6 }), true);
+  assert.equal(shouldAutoLearn({ embedding: e, samples: [s1], matchScore: 0.46 }), false);
+  assert.equal(shouldAutoLearn({ embedding: s1, samples: [s1], matchScore: 0.9 }), false);
+  assert.equal(
+    shouldAutoLearn({ embedding: e, samples: Array(20).fill(s1), matchScore: 0.6, maxSimilarity: 1.1 }),
+    false
+  );
 });
