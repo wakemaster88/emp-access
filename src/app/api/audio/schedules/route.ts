@@ -52,7 +52,8 @@ export async function POST(request: NextRequest) {
   }
 
   let playlistId: number | null = null;
-  if (action === "PLAY") {
+  // PLAY ohne Playlist spielt die Vorgabe der Zone (Webradio oder Playlist).
+  if (action === "PLAY" && body.playlistId != null && body.playlistId !== "") {
     const candidate = Number(body.playlistId);
     const playlist = await db.audioPlaylist.findFirst({
       where: { id: candidate, accountId: accountId! },
