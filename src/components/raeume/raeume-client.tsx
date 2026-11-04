@@ -107,6 +107,8 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     // erreicht hat – die Ursache steht dann in `error`.
     const remoteError = res.data?.error;
     setTimeout(refresh, STATUS_SETTLE_MS);
+    // Hue: Zustand ist der letzte Befehl; die Seite neu laden, sobald der Hub geschaltet hat.
+    if (device.type === "HUE_LIGHT") setTimeout(() => router.refresh(), 6_000);
     return remoteError ?? null;
   }
 

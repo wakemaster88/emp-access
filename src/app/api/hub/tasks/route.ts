@@ -33,6 +33,8 @@ const VALID_TASK_TYPES = [
   "SOUNDWEB_SYNC",
   // Shelly im LAN: Status lesen bzw. Relais schalten (payload: host, channel, on).
   "SHELLY_STATUS",
+  // Philips Hue im LAN schalten (payload: bridgeId, lightId, on, deviceId).
+  "HUE_SET",
   "SHELLY_SWITCH",
 ];
 

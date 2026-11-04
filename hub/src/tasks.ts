@@ -233,6 +233,14 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
       }
     }
+    case "HUE_SET": {
+      const bridgeId = String(task.payload?.bridgeId ?? "");
+      const lightId = String(task.payload?.lightId ?? "");
+      if (!bridgeId || !/^\d+$/.test(lightId)) return { success: false, error: "bridgeId/lightId fehlt" };
+      const { controlSmart } = await import("./smart-devices.js");
+      const r = await controlSmart(`hue:${bridgeId}:${lightId}`, task.payload?.on === true);
+      return r.ok ? { success: true, result: { bridgeId, lightId, on: task.payload?.on === true } } : { success: false, error: r.error };
+    }
     case "CAMERA_SCENE": {
       const cameraId = Number(task.payload?.cameraId);
       if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };

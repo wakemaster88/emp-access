@@ -2485,6 +2485,7 @@ const TYPE_LABELS = {
   SHELLY: "Shelly",
   NUKI_SMARTLOCK: "Nuki",
   LOQED_SMARTLOCK: "LOQED",
+  HUE_LIGHT: "Philips Hue",
   GARDENA_VALVE: "Gardena",
   AUDIO_PLAYER: "Audio-Player",
   RASPBERRY_PI: "Scanner-Pi",
@@ -2495,6 +2496,7 @@ function devKind(dev) {
   const cat = dev.category || "";
   if (dev.type === "NUKI_SMARTLOCK" || dev.type === "LOQED_SMARTLOCK") return "lock";
   if (dev.type === "GARDENA_VALVE") return "valve";
+  if (dev.type === "HUE_LIGHT") return "toggle";
   if (dev.type === "AUDIO_PLAYER" || cat === "AUDIO") return "audio";
   if (cat === "MARKISE" || cat === "ROLLTOR") return "cover";
   if (cat === "SENSOR") return "sensor";
@@ -2795,15 +2797,24 @@ function cloudDeviceFor(ip, channel) {
   );
 }
 
+/** Cloud-Geraet zu einer Hue-Lampe (Schluessel hue:<bridge>:<lampe>). */
+function cloudHueFor(key) {
+  const r = state.rooms;
+  if (!r) return null;
+  const [, bridgeId, lightId] = key.split(":");
+  const all = r.rooms.flatMap((room) => room.devices.map((dev) => ({ dev, room }))).concat(r.unassigned.map((dev) => ({ dev, room: null })));
+  return all.find(({ dev }) => dev.type === "HUE_LIGHT" && dev.hueBridgeId === bridgeId && dev.hueLightId === lightId) || null;
+}
+
 function roomSelect(dev, ctl) {
   const r = state.rooms;
-  if (!r || dev.vendor !== "Shelly") return "";
-  const hit = cloudDeviceFor(dev.ip, ctl.channel ?? 0);
+  if (!r || (dev.vendor !== "Shelly" && dev.vendor !== "Philips Hue")) return "";
+  const hit = dev.vendor === "Philips Hue" ? cloudHueFor(ctl.key) : cloudDeviceFor(dev.ip, ctl.channel ?? 0);
   const current = hit && hit.room ? hit.room.id : "";
   const opts = [`<option value="">${hit ? "Kein Raum" : "Raum zuordnen …"}</option>`]
     .concat(r.rooms.map((room) => `<option value="${room.id}"${room.id === current ? " selected" : ""}>${esc(room.name)}</option>`))
     .join("");
-  return `<select class="field small-select" aria-label="Raum für ${esc(ctl.name)}" data-assign="${esc(ctl.key)}" data-ip="${esc(dev.ip)}" data-mac="${esc(dev.mac || "")}" data-channel="${ctl.channel ?? 0}" data-name="${esc(dev.name + (dev.controls.length > 1 ? ` ${ctl.name}` : ""))}"${hit ? ` data-device-id="${hit.dev.id}"` : ""}>${opts}</select>`;
+  return `<select class="field small-select" aria-label="Raum für ${esc(ctl.name)}" data-assign="${esc(ctl.key)}" data-ip="${esc(dev.ip)}" data-mac="${esc(dev.mac || "")}" data-channel="${ctl.channel ?? 0}" data-name="${esc(dev.vendor === "Philips Hue" ? ctl.name : dev.name + (dev.controls.length > 1 ? ` ${ctl.name}` : ""))}"${hit ? ` data-device-id="${hit.dev.id}"` : ""}>${opts}</select>`;
 }
 
 function smartControl(dev, ctl) {
@@ -2930,9 +2941,12 @@ $("smartGrid").addEventListener("change", async (ev) => {
   const sel = ev.target.closest("select[data-assign]");
   if (!sel) return;
   const roomId = sel.value ? Number(sel.value) : null;
+  const key = sel.dataset.assign || "";
   const body = sel.dataset.deviceId
     ? { deviceId: Number(sel.dataset.deviceId), roomId }
-    : { ip: sel.dataset.ip, mac: sel.dataset.mac, channel: Number(sel.dataset.channel), name: sel.dataset.name, roomId };
+    : key.startsWith("hue:")
+      ? { hue: { bridgeId: key.split(":")[1], lightId: key.split(":")[2] }, name: sel.dataset.name, roomId }
+      : { ip: sel.dataset.ip, mac: sel.dataset.mac, channel: Number(sel.dataset.channel), name: sel.dataset.name, roomId };
   if (!body.deviceId && roomId === null) return;
   sel.disabled = true;
   const r = await postJson("/api/smart/assign", body);

@@ -19,6 +19,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { shellyStatus, shellySwitch } from "./shelly.js";
+import { controlSmart, hueLightStates } from "./smart-devices.js";
 
 export interface RoomDevice {
   id: number;
@@ -35,6 +36,9 @@ export interface RoomDevice {
   task: number;
   lastUpdate: string | null;
   keyRoomId: number | null;
+  /** HUE_LIGHT: Bridge und Lampe. */
+  hueBridgeId?: string | null;
+  hueLightId?: string | null;
 }
 
 export interface Room {
@@ -111,7 +115,13 @@ function autoOffSec(d: RoomDevice, action: DeviceAction): number | undefined {
 
 /** Kann der Hub dieses Geraet selbst im LAN schalten? */
 export function isLocalDevice(d: RoomDevice): boolean {
+  if (isHue(d)) return true;
   return d.type === "SHELLY" && !!d.ipAddress && IPV4_RE.test(d.ipAddress) && !isCover(d);
+}
+
+/** Philips Hue: immer lokal ueber die gekoppelte Bridge. */
+function isHue(d: RoomDevice): boolean {
+  return d.type === "HUE_LIGHT" && !!d.hueBridgeId && !!d.hueLightId;
 }
 
 function allDevices(): RoomDevice[] {
@@ -198,7 +208,15 @@ function cachedStatus(host: string, fresh = false) {
  */
 export async function liveStates(fresh = false): Promise<Record<number, LiveState>> {
   const out: Record<number, LiveState> = {};
-  const local = allDevices().filter(isLocalDevice);
+  const all = allDevices();
+  const hue = all.filter(isHue);
+  const bridges = [...new Set(hue.map((d) => d.hueBridgeId as string))];
+  const hueStates = new Map(await Promise.all(bridges.map(async (b) => [b, await hueLightStates(b)] as const)));
+  for (const d of hue) {
+    const st = hueStates.get(d.hueBridgeId as string)?.[d.hueLightId as string];
+    out[d.id] = st ? { reachable: st.reachable, on: st.on, powerW: null } : { reachable: false, on: null, powerW: null };
+  }
+  const local = all.filter((d) => isLocalDevice(d) && !isHue(d));
   const hosts = [...new Set(local.map((d) => d.ipAddress as string))];
   const results = new Map(
     await Promise.all(hosts.map(async (h) => [h, await cachedStatus(h, fresh)] as const))
@@ -263,6 +281,13 @@ export async function deviceAction(
   const withName = (r: ActionOutcome): ActionOutcome => ({ ...r, name });
   if (opts.localOnly && !(isLocalDevice(dev) && act !== "close" && act !== "stop")) {
     return withName({ ok: false, via: "lokal", error: "Nur über die Cloud schaltbar" });
+  }
+
+  if (isHue(dev)) {
+    const on = act === "open" || act === "emergency";
+    const r = await controlSmart(`hue:${dev.hueBridgeId}:${dev.hueLightId}`, on);
+    log(`Raum-Steuerung: ${dev.name} ${on ? "ein" : "aus"} (Hue) → ${r.ok ? "ok" : r.error}`);
+    return withName({ ok: r.ok, via: "lokal", on: r.ok ? on : null, ...(r.error ? { error: r.error } : {}) });
   }
 
   if (isLocalDevice(dev) && act !== "close" && act !== "stop") {

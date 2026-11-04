@@ -28,6 +28,7 @@ const deviceSelect = {
   ipAddress: true,
   lastUpdate: true,
   pulseSeconds: true,
+  task: true,
 } as const;
 
 const cameraSelect = {
@@ -59,6 +60,7 @@ type DeviceRecord = {
   ipAddress: string | null;
   lastUpdate: Date | null;
   pulseSeconds: number | null;
+  task: number;
 };
 
 type CameraRecord = {
@@ -80,6 +82,7 @@ function toDevice(d: DeviceRecord): RoomDevice {
     hasLocalAddress: !!d.ipAddress,
     lastUpdate: d.lastUpdate ? d.lastUpdate.toISOString() : null,
     pulseSeconds: d.pulseSeconds,
+    task: d.task,
   };
 }
 

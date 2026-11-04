@@ -21,7 +21,10 @@ const CATEGORIES = new Set([
  *  - sonst Shelly per IP + Kanal: gibt es das Geraet schon (gleiche IP und
  *    Kanal-Suffix), wird nur der Raum gesetzt, sonst wird es angelegt.
  *
- * Body: { deviceId?, ip?, mac?, channel?, name?, category?, roomId: number|null }
+ *  - `hue` gesetzt: Philips-Hue-Lampe (Bridge-ID + Lampen-ID) anlegen oder
+ *    zuordnen. Geschaltet wird sie vom Hub.
+ *
+ * Body: { deviceId?, ip?, mac?, channel?, hue?: { bridgeId, lightId }, name?, category?, roomId: number|null }
  */
 export async function POST(request: NextRequest) {
   const auth = await validateApiToken(request);
@@ -48,6 +51,41 @@ export async function POST(request: NextRequest) {
       select: { id: true, name: true, keyRoomId: true },
     });
     return NextResponse.json({ ok: true, created: false, device });
+  }
+
+  if (body.hue && typeof body.hue === "object") {
+    const bridgeId = String(body.hue.bridgeId ?? "").trim().toLowerCase();
+    const lightId = String(body.hue.lightId ?? "").trim();
+    if (!/^[0-9a-f]{6,32}$/.test(bridgeId) || !/^\d{1,4}$/.test(lightId)) {
+      return NextResponse.json({ error: "Ungültige Hue-Lampe" }, { status: 400 });
+    }
+    const existing = await db.device.findFirst({
+      where: { accountId: account.id, type: "HUE_LIGHT", hueBridgeId: bridgeId, hueLightId: lightId },
+      select: { id: true },
+    });
+    if (existing) {
+      const device = await db.device.update({
+        where: { id: existing.id },
+        data: { keyRoomId: roomId, ...(category ? { category } : {}) },
+        select: { id: true, name: true, keyRoomId: true },
+      });
+      return NextResponse.json({ ok: true, created: false, device });
+    }
+    const hueName =
+      typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 120) : `Hue Lampe ${lightId}`;
+    const device = await db.device.create({
+      data: {
+        accountId: account.id,
+        name: hueName,
+        type: "HUE_LIGHT",
+        category: category ?? "BELEUCHTUNG",
+        hueBridgeId: bridgeId,
+        hueLightId: lightId,
+        keyRoomId: roomId,
+      },
+      select: { id: true, name: true, keyRoomId: true },
+    });
+    return NextResponse.json({ ok: true, created: true, device });
   }
 
   const ip = String(body.ip ?? "").trim();

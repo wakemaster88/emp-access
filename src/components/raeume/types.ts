@@ -21,6 +21,8 @@ export interface RoomDevice {
   lastUpdate: string | null;
   /** Sekunden, die ein Taster nach dem Druck eingeschaltet bleibt. */
   pulseSeconds: number | null;
+  /** Letzter Befehl (1 = an, 3 = aus) – Zustand fuer Geraete ohne Statusabfrage (Hue). */
+  task: number;
 }
 
 /** Beschallungszone im Raum – Zustand aus dem letzten Heartbeat des Abspielers. */
