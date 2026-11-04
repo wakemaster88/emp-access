@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { isUniqueConstraintError, withDbRetry } from "@/lib/db-errors";
 import { controlShelly } from "@/lib/shelly";
-import { maybeSurveillanceTelegramAlert } from "@/lib/surveillance";
+import { maybeSurveillanceAlert, maybeSurveillanceTelegramAlert } from "@/lib/surveillance";
 import { sendPushToAccount } from "@/lib/web-push";
 import { storeSightingSnapshot } from "@/lib/blob-store";
 
@@ -183,6 +183,18 @@ export async function processVehicleSighting(opts: {
     // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
     select: { id: true },
   });
+
+  // Ueberwachungs-Push erst hier, nach der Pruefung auf dem Hub (frueher
+  // schon beim rohen VEHICLE-Alarm). Freigegebene Fahrzeuge bleiben still,
+  // wie Whitelist-Personen; sie haben ihren eigenen Push (notifyOnDetection).
+  if (opts.cameraId && source !== "MANUAL" && !vehicle) {
+    maybeSurveillanceAlert({
+      accountId: opts.accountId,
+      cameraId: opts.cameraId,
+      type: "VEHICLE",
+      at: seenAt,
+    }).catch((err) => console.error("[vehicles] surveillance push failed:", err));
+  }
 
   if (snapshot && opts.cameraId) {
     const detail = [

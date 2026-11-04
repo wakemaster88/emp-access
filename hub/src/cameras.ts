@@ -19,6 +19,7 @@ import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
 import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
 import { improve } from "./improve-log.js";
+import { debounceEvents, newDebounceState, type DebounceState } from "./event-debounce.js";
 import { DISPLAY_SNAPSHOT_MAX_PX, PERSON_SNAPSHOT_MAX_PX, shrinkJpeg } from "./image.js";
 
 export interface CameraConfig {
@@ -79,6 +80,10 @@ interface CameraRuntime {
   /** VEHICLE kam während einer Pipeline – Burst danach nachholen. */
   pendingVehicle: boolean;
   unreachableLogged: boolean;
+  /** Kamera beantwortet keine Batch-Requests – Einzelabfragen. */
+  noBatch?: boolean;
+  /** Entprellte Ereignisse (Cloud/Regeln/Lagebild), siehe event-debounce.ts. */
+  debounce: DebounceState;
   /** Letzter MAC-Lernversuch (Throttle, erfolgreich erreichte Kamera). */
   lastMacLearnAt: number;
   /** Letzter IP-Re-Mapping-Versuch per MAC (Throttle bei Unerreichbarkeit). */
@@ -117,6 +122,8 @@ const CONFIG_REFRESH_MS = 60_000;
 const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
+/** Ereignis endet erst nach so langer Ruhe (KI flackert), siehe event-debounce.ts. */
+const EVENT_END_HOLD_MS = Number(process.env.HUB_EVENT_END_HOLD_MS || 6_000);
 /** Personen: kurz warten, dann mehrere Versuche solange PERSON aktiv (Gesicht oft erst frontal). */
 const PERSON_SNAP_DELAY_MS = 1_000;
 const PERSON_SNAP_ATTEMPTS = 4;
@@ -331,32 +338,100 @@ async function tryReadPlate(cam: CameraRuntime): Promise<string | null> {
   return null;
 }
 
+type CgiResult = {
+  code: number;
+  value?: Record<string, unknown>;
+  error?: { rspCode?: number; detail?: string };
+};
+
+/**
+ * Mehrere CGI-Kommandos in einem HTTP-Request (Reolink nimmt ein Array).
+ * Liefert die Einzelergebnisse in derselben Reihenfolge; Token-Fehler
+ * loesen wie bei cgi() genau einen Re-Login aus.
+ */
+async function cgiBatch(
+  cam: CameraRuntime,
+  cmds: Array<{ cmd: string; param: Record<string, unknown> }>,
+  retried = false
+): Promise<CgiResult[] | null> {
+  const qs = cam.token ? `&token=${encodeURIComponent(cam.token)}` : "";
+  const res = await fetch(`${baseUrl(cam.config)}/cgi-bin/api.cgi?cmd=${cmds[0].cmd}${qs}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cmds.map(({ cmd, param }) => ({ cmd, action: 0, param }))),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json().catch(() => null)) as CgiResult[] | null;
+  if (!Array.isArray(json)) return null;
+  const tokenErr = json.some((r) => r?.code !== 0 && (r?.error?.rspCode === -6 || r?.error?.rspCode === -1));
+  if (tokenErr) {
+    cam.token = null;
+    cam.tokenExpiresAt = 0;
+    if (!retried) {
+      await ensureLogin(cam);
+      return cgiBatch(cam, cmds, true);
+    }
+  }
+  return json;
+}
+
+function readStates(
+  cam: CameraRuntime,
+  md: Record<string, unknown>,
+  ai: Record<string, unknown> | null
+): Record<string, boolean> {
+  const states: Record<string, boolean> = { MOTION: Number(md.state) === 1 };
+  if (!ai) return states;
+  const map: Record<string, string> = { people: "PERSON", vehicle: "VEHICLE", dog_cat: "ANIMAL" };
+  for (const [key, type] of Object.entries(map)) {
+    // Fahrzeug-Erkennung pro Kamera abschaltbar (Spam-Weitwinkel).
+    if (type === "VEHICLE" && cam.config.vehicleDetection === false) continue;
+    const entry = ai[key] as { alarm_state?: number; support?: number } | undefined;
+    if (entry?.support === 1) states[type] = entry.alarm_state === 1;
+  }
+  // Klare Gesichtserkennung (falls Modell face liefert) ueberschreibt PERSON.
+  const face = ai.face as { alarm_state?: number; support?: number } | undefined;
+  if (face?.support === 1) {
+    states.PERSON = face.alarm_state === 1;
+  }
+  return states;
+}
+
+/**
+ * Bewegung und KI-Zustand in einem Request (vorher zwei pro Kamera und Poll).
+ * Kameras, die kein Batch koennen, fallen dauerhaft auf Einzelabfragen zurueck.
+ */
 async function pollStates(cam: CameraRuntime): Promise<Record<string, boolean>> {
   await ensureLogin(cam);
   const channel = cam.config.channel;
-  const states: Record<string, boolean> = {};
-
-  const md = await cgi(cam, "GetMdState", { channel });
-  states.MOTION = Number(md.state) === 1;
-
-  try {
-    const ai = await cgi(cam, "GetAiState", { channel });
-    const map: Record<string, string> = { people: "PERSON", vehicle: "VEHICLE", dog_cat: "ANIMAL" };
-    for (const [key, type] of Object.entries(map)) {
-      // Fahrzeug-Erkennung pro Kamera abschaltbar (Spam-Weitwinkel).
-      if (type === "VEHICLE" && cam.config.vehicleDetection === false) continue;
-      const entry = ai[key] as { alarm_state?: number; support?: number } | undefined;
-      if (entry?.support === 1) states[type] = entry.alarm_state === 1;
+  if (!cam.noBatch) {
+    // Netzwerk-/Login-Fehler gehen normal nach oben (Kamera unerreichbar).
+    const results = await cgiBatch(cam, [
+      { cmd: "GetMdState", param: { channel } },
+      { cmd: "GetAiState", param: { channel } },
+    ]);
+    const [md, ai] = results ?? [];
+    if (md?.code === 0) {
+      return readStates(cam, md.value ?? {}, ai?.code === 0 ? ai.value ?? {} : null);
     }
-    // Klare Gesichtserkennung (falls Modell face liefert) ueberschreibt PERSON.
-    const face = ai.face as { alarm_state?: number; support?: number } | undefined;
-    if (face?.support === 1) {
-      states.PERSON = face.alarm_state === 1;
+    const rsp = md?.error?.rspCode;
+    if (rsp === -6 || rsp === -1) {
+      throw new Error(`GetMdState fehlgeschlagen: ${md?.error?.detail ?? "Login"} (rspCode ${rsp})`);
     }
-  } catch {
-    // Aeltere Modelle ohne KI-Erkennung - nur Bewegung melden.
+    // Unpassende Antwort: diese Kamera kann kein Batch.
+    cam.noBatch = true;
+    log(`Kamera ${cam.config.name}: Batch-Abfrage nicht unterstuetzt – Einzelabfragen`);
   }
-  return states;
+  return pollStatesSingle(cam);
+}
+
+async function pollStatesSingle(cam: CameraRuntime): Promise<Record<string, boolean>> {
+  const channel = cam.config.channel;
+  const md = await cgi(cam, "GetMdState", { channel });
+  // Aeltere Modelle ohne KI-Erkennung - nur Bewegung melden.
+  const ai = await cgi(cam, "GetAiState", { channel }).catch(() => null);
+  return readStates(cam, md, ai);
 }
 
 /** JPEG von der Kamera holen (ohne Upload). */
@@ -383,11 +458,16 @@ export async function captureSnapshot(cameraId: number): Promise<Buffer> {
 }
 
 /** Schnappschuss von der Kamera holen und in die Cloud laden. */
-export async function uploadSnapshot(cameraId: number): Promise<{ bytes: number }> {
+export async function uploadSnapshot(
+  cameraId: number,
+  opts: { maxPx?: number } = {}
+): Promise<{ bytes: number }> {
   const cam = cameras.get(cameraId);
   if (!cam) throw new Error(`Kamera ${cameraId} nicht konfiguriert (oder deaktiviert)`);
 
-  const buf = await captureSnap(cam);
+  const raw = await captureSnap(cam);
+  // Auto-Snapshots bei Bewegung nur fuer die Anzeige: verkleinert hochladen.
+  const buf = opts.maxPx ? await shrinkJpeg(raw, opts.maxPx) : raw;
   const upload = await api(`/api/hub/cameras/${cameraId}/snapshot`, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
@@ -1067,6 +1147,7 @@ async function refreshConfigs(): Promise<void> {
         token: null,
         tokenExpiresAt: 0,
         states: {},
+        debounce: newDebounceState(),
         lastSnapshotAt: 0,
         snapshotInFlight: false,
         pendingVehicle: false,
@@ -1394,7 +1475,6 @@ export async function pollCameras(): Promise<void> {
       plate?: string;
     }[] = [];
     const seen: number[] = [];
-    const now = new Date().toISOString();
     const snapshotJobs: number[] = [];
     const personSnapshotJobs: number[] = [];
     const vehicleSnapshotJobs: number[] = [];
@@ -1419,15 +1499,10 @@ export async function pollCameras(): Promise<void> {
         cam.unreachableLogged = false;
         void learnCameraMac(cam);
 
+        // Rohe Flanken starten die Bild-Pipelines (schnell, zweiter Wagen).
         for (const [type, active] of Object.entries(states)) {
           const was = cam.states[type] ?? false;
           if (active && !was) {
-            events.push({
-              cameraId: cam.config.id,
-              type,
-              phase: "start",
-              at: now,
-            });
             const idle =
               !cam.snapshotInFlight &&
               Date.now() - cam.lastSnapshotAt > EVENT_SNAPSHOT_THROTTLE_MS;
@@ -1438,19 +1513,21 @@ export async function pollCameras(): Promise<void> {
               if (type === "PERSON") personSnapshotJobs.push(cam.config.id);
               else snapshotJobs.push(cam.config.id);
             }
-          } else if (!active && was) {
-            events.push({ cameraId: cam.config.id, type, phase: "end", at: now });
-          }
-          if (active !== was) {
-            cam.lastEventAt = now;
-            recordHubEvent({
-              kind: "camera",
-              severity: "info",
-              where: cam.config.name,
-              title: `${type} ${active ? "erkannt" : "beendet"}`,
-            });
           }
           cam.states[type] = active;
+        }
+
+        // Entprellte Ereignisse gehen an Cloud, Regeln und Lagebild.
+        for (const ev of debounceEvents(cam.debounce, states, Date.now(), EVENT_END_HOLD_MS)) {
+          const at = new Date(ev.at).toISOString();
+          events.push({ cameraId: cam.config.id, type: ev.type, phase: ev.phase, at });
+          cam.lastEventAt = at;
+          recordHubEvent({
+            kind: "camera",
+            severity: "info",
+            where: cam.config.name,
+            title: `${ev.type} ${ev.phase === "start" ? "erkannt" : "beendet"}`,
+          });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1485,20 +1562,6 @@ export async function pollCameras(): Promise<void> {
     // Regeln auf dem Hub (Ruhe-Erkennung, Notbetrieb ohne Cloud).
     for (const e of events) if (e.phase === "start") onCameraEvent(e.cameraId, e.type);
 
-    const seenDue = Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
-    if (events.length > 0 || (seen.length > 0 && seenDue)) {
-      const res = await api("/api/hub/camera-events", {
-        method: "POST",
-        body: JSON.stringify({ events, seen }),
-      });
-      if (!res.ok) log(`Kamera-Event-Upload fehlgeschlagen: HTTP ${res.status}`);
-      else if (seen.length > 0) lastSeenReportAt = Date.now();
-      for (const e of events) {
-        const cam = cameras.get(e.cameraId);
-        log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
-      }
-    }
-
     const vehicleIds = [...new Set(vehicleSnapshotJobs)];
     const personIds = [...new Set(personSnapshotJobs)];
     const both = new Set(personIds.filter((id) => vehicleIds.includes(id)));
@@ -1532,13 +1595,29 @@ export async function pollCameras(): Promise<void> {
 
     for (const cameraId of [...new Set(snapshotJobs)]) {
       if (personSnapshotJobs.includes(cameraId) || vehicleSnapshotJobs.includes(cameraId)) continue;
-      uploadSnapshot(cameraId).catch((e) =>
+      uploadSnapshot(cameraId, { maxPx: DISPLAY_SNAPSHOT_MAX_PX }).catch((e) =>
         log(`Auto-Snapshot Kamera ${cameraId} fehlgeschlagen: ${e instanceof Error ? e.message : e}`)
       );
     }
 
+    // Erst die Pipelines (laufen ohne await), dann die Cloud: die Tuer soll
+    // nicht auf den Upload der Ereignisliste warten.
+    const seenDue = Date.now() - lastSeenReportAt >= SEEN_REPORT_MS;
+    if (events.length > 0 || (seen.length > 0 && seenDue)) {
+      const res = await api("/api/hub/camera-events", {
+        method: "POST",
+        body: JSON.stringify({ events, seen }),
+      });
+      if (!res.ok) log(`Kamera-Event-Upload fehlgeschlagen: HTTP ${res.status}`);
+      else if (seen.length > 0) lastSeenReportAt = Date.now();
+      for (const e of events) {
+        const cam = cameras.get(e.cameraId);
+        log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);
+      }
+    }
+
     const openEvents = [...cameras.values()].reduce(
-      (sum, c) => sum + Object.values(c.states).filter(Boolean).length,
+      (sum, c) => sum + Object.values(c.debounce.reported).filter(Boolean).length,
       0
     );
     STATE.cameras = {
@@ -1563,7 +1642,13 @@ export async function pollCameras(): Promise<void> {
   }
 }
 
+/**
+ * Poll-Takt. Seit die Kameras im eigenen VLAN direkt erreichbar sind und
+ * Bewegung + KI in einem Request kommen, reichen 2 s statt 5 s (im Mittel
+ * ~1,5 s schneller bis zum Burst). Env HUB_CAMERA_POLL_INTERVAL in Sekunden,
+ * ab 1.
+ */
 export const CAMERA_POLL_INTERVAL_MS = (() => {
   const n = Number(process.env.HUB_CAMERA_POLL_INTERVAL);
-  return (Number.isFinite(n) && n >= 2 ? n : 5) * 1000;
+  return (Number.isFinite(n) && n >= 1 ? n : 2) * 1000;
 })();
