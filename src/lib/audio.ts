@@ -19,6 +19,8 @@ import {
   normalizeTtsVoice,
   type TtsVoice,
 } from "@/lib/audio-constants";
+import { hasPlaceholders, resolveAnnouncementText, type AnnouncementContext } from "./announcement-text";
+import { scheduleSpecInclude, toScheduleSpec } from "./operating-queries";
 
 type Db = TenantDb;
 
@@ -376,8 +378,18 @@ export async function ensureAnnouncementTrack(
     voice: string | null;
     trackId: number | null;
     track: { id: number; url: string; durationSec: number | null } | null;
-  }
+  },
+  context?: AnnouncementContext,
 ): Promise<{ id: number; url: string; durationSec: number | null }> {
+  // Texte mit Platzhaltern ({uhrzeit}, {schluss} …) werden je Abspielen mit
+  // den echten Zeiten gerendert. Gleicher Text trifft den TTS-Cache, deshalb
+  // kostet das nur beim ersten Mal je Uhrzeit.
+  if (announcement.source === "TTS" && hasPlaceholders(announcement.text)) {
+    const text = resolveAnnouncementText(announcement.text!, context ?? { now: new Date(), schedule: null });
+    if (!text) throw new Error("Ansagetext ist leer");
+    return renderTtsTrack(db, accountId, text, announcement.voice);
+  }
+
   if (announcement.track) return announcement.track;
 
   if (announcement.source !== "TTS" || !announcement.text?.trim()) {
@@ -444,4 +456,29 @@ export async function liveZoneStates(db: Db, sessionId: number) {
     where: { liveSessionId: sessionId },
     select: { zoneId: true, status: true, errorMessage: true },
   });
+}
+
+/**
+ * Zeitbezug fuer Platzhalter in Durchsagen beim Abspielen von Hand: Zeitzone
+ * des Betriebs und die Betriebszeit des Raums der ersten Zielzone, sonst das
+ * Standardprofil.
+ */
+export async function announcementContextForZones(
+  db: Db,
+  accountId: number,
+  zoneIds: number[],
+  now = new Date(),
+): Promise<AnnouncementContext> {
+  const [account, zone, fallback] = await Promise.all([
+    db.account.findUnique({ where: { id: accountId }, select: { timezone: true } }),
+    zoneIds.length
+      ? db.audioZone.findFirst({
+          where: { accountId, id: { in: zoneIds }, keyRoom: { operatingScheduleId: { not: null } } },
+          select: { keyRoom: { select: { operatingSchedule: { include: scheduleSpecInclude } } } },
+        })
+      : Promise.resolve(null),
+    db.operatingSchedule.findFirst({ where: { accountId, isDefault: true }, include: scheduleSpecInclude }),
+  ]);
+  const record = zone?.keyRoom?.operatingSchedule ?? fallback;
+  return { now, timezone: account?.timezone, schedule: record ? toScheduleSpec(record) : null };
 }

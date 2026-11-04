@@ -195,7 +195,14 @@ export async function runAudioScheduleTick(now = new Date()): Promise<AudioTickR
         const triggerKind = schedule.trigger === "TIME" ? "SCHEDULE" : `SCHEDULE:${schedule.trigger}`;
 
         if (schedule.action === "ANNOUNCE" && schedule.announcement) {
-          const track = await ensureAnnouncementTrack(db, account.id, schedule.announcement);
+          const spec = schedule.operatingSchedule
+            ? toScheduleSpec(schedule.operatingSchedule)
+            : due.find((z) => z.spec)?.spec ?? null;
+          const track = await ensureAnnouncementTrack(db, account.id, schedule.announcement, {
+            now,
+            timezone: timeZone,
+            schedule: spec,
+          });
           await queueAnnouncement(
             db,
             account.id,

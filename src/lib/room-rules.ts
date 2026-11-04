@@ -359,7 +359,11 @@ async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise
       if (!announcement) {
         return { ...base, target: zone.name, ok: false, error: "Durchsage nicht gefunden" };
       }
-      const track = await ensureAnnouncementTrack(prisma, rule.accountId, announcement);
+      const track = await ensureAnnouncementTrack(prisma, rule.accountId, announcement, {
+        now: new Date(),
+        timezone,
+        schedule: operating ? toScheduleSpec(operating) : scheduleFor(rule),
+      });
       const queued = await queueAnnouncement(
         prisma,
         rule.accountId,
