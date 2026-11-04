@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
   if (body.hue && typeof body.hue === "object") {
     const bridgeId = String(body.hue.bridgeId ?? "").trim().toLowerCase();
     const lightId = String(body.hue.lightId ?? "").trim();
-    if (!/^[0-9a-f]{6,32}$/.test(bridgeId) || !/^\d{1,4}$/.test(lightId)) {
+    if (!/^[0-9a-f]{6,32}$/.test(bridgeId) || !/^g?\d{1,4}$/.test(lightId)) {
       return NextResponse.json({ error: "Ungültige Hue-Lampe" }, { status: 400 });
     }
     const existing = await db.device.findFirst({
@@ -72,7 +72,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, created: false, device });
     }
     const hueName =
-      typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 120) : `Hue Lampe ${lightId}`;
+      typeof body.name === "string" && body.name.trim()
+        ? body.name.trim().replace(/\s*\(Gruppe, \d+ Lampen\)$/, "").slice(0, 120)
+        : lightId.startsWith("g")
+          ? `Hue Gruppe ${lightId.slice(1)}`
+          : `Hue Lampe ${lightId}`;
     const device = await db.device.create({
       data: {
         accountId: account.id,

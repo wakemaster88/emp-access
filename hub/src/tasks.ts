@@ -244,7 +244,7 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
     case "HUE_SET": {
       const bridgeId = String(task.payload?.bridgeId ?? "");
       const lightId = String(task.payload?.lightId ?? "");
-      if (!bridgeId || !/^\d+$/.test(lightId)) return { success: false, error: "bridgeId/lightId fehlt" };
+      if (!bridgeId || !/^g?\d+$/.test(lightId)) return { success: false, error: "bridgeId/lightId fehlt" };
       const { controlSmart } = await import("./smart-devices.js");
       const r = await controlSmart(`hue:${bridgeId}:${lightId}`, task.payload?.on === true);
       return r.ok ? { success: true, result: { bridgeId, lightId, on: task.payload?.on === true } } : { success: false, error: r.error };
