@@ -259,7 +259,7 @@ export function DeviceTile({
   }
 
   const sub = offline
-    ? "nicht erreichbar"
+    ? "offline"
     : on
       ? status?.power != null && status.power > 0
         ? `an · ${Math.round(status.power)} W`
@@ -274,9 +274,9 @@ export function DeviceTile({
       title={error || (label !== device.name ? device.name : undefined)}
       aria-pressed={on}
       className={cn(
-        "group relative flex min-h-[92px] flex-col justify-between rounded-2xl border p-3 text-left transition-all duration-300",
+        "group relative flex min-h-[92px] flex-col justify-between rounded-tile border p-3 text-left transition-all duration-300",
         "disabled:cursor-default enabled:hover:-translate-y-0.5 enabled:active:scale-[0.97]",
-        on ? TONE_ON[tone] : "border-border bg-card hover:border-foreground/15 dark:bg-muted/30",
+        on ? TONE_ON[tone] : "glass-tile enabled:hover:bg-foreground/5",
         offline && "opacity-60",
       )}
     >
@@ -291,7 +291,104 @@ export function DeviceTile({
       <span className="mt-2 block">
         <span className="block break-words text-[13px] font-semibold leading-tight text-foreground">{label}</span>
         <span className={cn("block text-[11px]", error ? "text-destructive" : on ? "text-foreground/70" : "text-muted-foreground")}>
-          {error ? "Fehler" : sub}
+          {error ? "Fehler" : busy ? "schaltet …" : sub}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Taster: ein Antippen löst einen Impuls aus, der im Gerät abläuft. Der Ring
+ * zeigt die Restzeit, danach steht die Kachel wieder bereit.
+ */
+export function PulseTile({
+  device,
+  roomName,
+  status,
+  readonly,
+  onAction,
+}: {
+  device: RoomDevice;
+  roomName: string;
+  status: DeviceStatus | undefined;
+  readonly: boolean;
+  onAction: (device: RoomDevice, action: string) => Promise<string | null>;
+}) {
+  const seconds = Math.max(1, device.pulseSeconds ?? 3);
+  const [busy, setBusy] = useState(false);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const running = remaining != null;
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setRemaining((r) => (r == null || r - 0.25 <= 0 ? null : r - 0.25)), 250);
+    return () => clearInterval(t);
+  }, [running]);
+
+  const offline = !!status && !status.online;
+  const label = shortDeviceName(device.name, roomName);
+  const canPress = !readonly && device.isActive && !offline && !busy && !running;
+  const frac = remaining == null ? 0 : 1 - remaining / seconds;
+  const R = 13;
+  const C = 2 * Math.PI * R;
+
+  async function press() {
+    if (!canPress) return;
+    setBusy(true);
+    setError("");
+    const message = await onAction(device, "open");
+    setBusy(false);
+    if (message) setError(message);
+    else setRemaining(seconds);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void press()}
+      disabled={!canPress}
+      title={error || (label !== device.name ? device.name : undefined)}
+      className={cn(
+        "group relative flex min-h-[92px] flex-col justify-between rounded-tile border p-3 text-left transition-all duration-300",
+        "disabled:cursor-default enabled:hover:-translate-y-0.5 enabled:active:scale-[0.97]",
+        running ? TONE_ON.default : "glass-tile enabled:hover:bg-foreground/5",
+        offline && "opacity-60",
+      )}
+    >
+      <span className="relative flex h-8 w-8 items-center justify-center">
+        <svg viewBox="0 0 32 32" className="absolute inset-0 h-8 w-8 -rotate-90" aria-hidden>
+          <circle cx="16" cy="16" r={R} fill="none" strokeWidth="2.5" className={running ? "stroke-primary/25" : "stroke-foreground/10"} />
+          {running && (
+            <circle
+              cx="16"
+              cy="16"
+              r={R}
+              fill="none"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              className="stroke-primary transition-[stroke-dashoffset] duration-300 ease-linear"
+              strokeDasharray={C}
+              strokeDashoffset={C * (1 - frac)}
+            />
+          )}
+        </svg>
+        <span className={cn("flex h-6 w-6 items-center justify-center rounded-full", running ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CircleDot className="h-3.5 w-3.5" />}
+        </span>
+      </span>
+      <span className="mt-2 block">
+        <span className="block break-words text-[13px] font-semibold leading-tight text-foreground">{label}</span>
+        <span className={cn("block text-[11px] tabular-nums", error ? "text-destructive" : running ? "text-foreground/70" : "text-muted-foreground")}>
+          {error
+            ? "Fehler"
+            : offline
+              ? "offline"
+              : running
+                ? `Impuls läuft … ${Math.ceil(remaining)} s`
+                : busy
+                  ? "schaltet …"
+                  : `Impuls ${seconds} s · antippen`}
         </span>
       </span>
     </button>
@@ -327,10 +424,10 @@ export function ZoneCard({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl border p-3 transition-colors",
+        "relative overflow-hidden rounded-tile border p-3 transition-colors",
         playing
           ? "border-violet-400/40 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-600 text-white shadow-[0_10px_30px_-10px_rgba(139,92,246,0.7)]"
-          : "border-border bg-card dark:bg-muted/30",
+          : "glass-tile",
       )}
     >
       {playing && <div className="pointer-events-none absolute -right-6 -top-10 h-28 w-28 rounded-full bg-white/15 blur-2xl" />}
@@ -402,7 +499,7 @@ export function CameraTile({
     <a
       href="/kameras"
       className={cn(
-        "group relative block overflow-hidden rounded-2xl border border-border bg-slate-900",
+        "group relative block overflow-hidden rounded-tile border border-(--glass-border) bg-slate-900",
         wide ? "col-span-2 aspect-[16/8]" : "aspect-video",
       )}
     >
@@ -549,7 +646,7 @@ export function ActivityChart({
               title={`${p.name}: ${p.count}× gesehen, zuletzt ${new Date(p.lastAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: timezone })}`}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2 text-[11px]",
-                p.listType === "BLACKLIST" ? "border-destructive/40 bg-destructive/10 text-destructive" : "border-border bg-card",
+                p.listType === "BLACKLIST" ? "border-destructive/40 bg-destructive/10 text-destructive" : "border-(--glass-border) bg-(--glass-tile)",
               )}
             >
               <span
@@ -654,8 +751,8 @@ export function GroupTile({
     <div className={cn("space-y-2", (wide || open) && "col-span-2")}>
       <div
         className={cn(
-          "relative flex min-h-[92px] flex-col justify-between rounded-2xl border p-3 transition-all duration-300",
-          anyOn ? TONE_ON[tone] : "border-border bg-card dark:bg-muted/30",
+          "relative flex min-h-[92px] flex-col justify-between rounded-tile border p-3 transition-all duration-300",
+          anyOn ? TONE_ON[tone] : "glass-tile",
         )}
       >
         <div className="flex items-start justify-between gap-2">
@@ -687,7 +784,9 @@ export function GroupTile({
           <span className={cn("block text-[11px]", error ? "text-destructive" : anyOn ? "text-foreground/70" : "text-muted-foreground")}>
             {error
               ? "Fehler"
-              : anyOn
+              : busy
+                ? "schaltet …"
+                : anyOn
                 ? `${onCount} von ${devices.length} an${power > 0 ? ` · ${Math.round(power)} W` : ""}`
                 : `alle ${devices.length} aus`}
           </span>
@@ -706,7 +805,7 @@ export function GroupTile({
         </div>
       </div>
       {open && (
-        <div className="grid grid-cols-2 gap-2 rounded-2xl bg-muted/30 p-1.5">
+        <div className="glass-tile grid grid-cols-2 gap-2 p-1.5">
           {devices.map((d) => (
             <DeviceTile key={d.id} device={d} roomName={roomName} status={statuses.get(d.id)} readonly={readonly} onAction={onAction} />
           ))}

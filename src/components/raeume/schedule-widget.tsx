@@ -32,6 +32,17 @@ export function fmtWhen(d: Date, now: Date, tz: string): string {
   return `${DAY_SHORT[weekdayBitOfYmd(ymd)]} ${fmtTime(d, tz)}`;
 }
 
+/** "noch 5 Std 28 Min", "noch 12 Min", "noch 2 Tage 3 Std". */
+export function fmtRemaining(ms: number): string {
+  const min = Math.max(0, Math.round(ms / 60_000));
+  if (min < 60) return `noch ${min} Min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h < 24) return `noch ${h} Std${m ? ` ${m} Min` : ""}`;
+  const d = Math.floor(h / 24);
+  return `noch ${d} ${d === 1 ? "Tag" : "Tage"}${h % 24 ? ` ${h % 24} Std` : ""}`;
+}
+
 const fmtMin = (m: number) => {
   const t = ((Math.round(m) % 1440) + 1440) % 1440;
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
@@ -55,6 +66,7 @@ export function ScheduleWidget({
   timezone,
   nowMs,
   hideStatus = false,
+  onEdit,
 }: {
   schedule: RoomSchedule;
   climate: RoomClimateView | null;
@@ -62,6 +74,8 @@ export function ScheduleWidget({
   nowMs: number;
   /** Zustand (geoeffnet/geschlossen) steht schon im Kopf der Raumkarte. */
   hideStatus?: boolean;
+  /** Öffnet den Dialog, in dem die Betriebszeit des Raums gewählt wird. */
+  onEdit?: () => void;
 }) {
   const now = new Date(nowMs);
   const spec: ScheduleSpec = { name: schedule.name, seasons: schedule.seasons, exceptions: schedule.exceptions };
@@ -100,17 +114,22 @@ export function ScheduleWidget({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-2xl border p-3.5",
-        state.inside
-          ? "border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-teal-50/60 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:via-card dark:to-card"
-          : "border-border bg-gradient-to-br from-slate-50 to-white dark:from-muted/30 dark:to-card",
+        "overflow-hidden rounded-tile border p-3.5",
+        state.inside ? "border-emerald-400/35 bg-gradient-to-b from-emerald-500/10 to-transparent" : "glass-tile",
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
         {hideStatus ? (
-          <p className="min-w-0 truncate pt-1 text-xs font-medium text-muted-foreground">{schedule.name}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-muted-foreground">{schedule.name}</p>
+            {state.until && (
+              <p className="text-[11px] tabular-nums text-muted-foreground">
+                {fmtRemaining(state.until.getTime() - nowMs)} · {state.inside ? "schließt" : "öffnet"} {fmtWhen(state.until, now, timezone)}
+              </p>
+            )}
+          </div>
         ) : (
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
               className={cn(
@@ -151,11 +170,20 @@ export function ScheduleWidget({
                 : "Heizen aus"}
           </div>
         )}
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10"
+          >
+            Bearbeiten
+          </button>
+        )}
       </div>
 
       {/* Tagesleiste */}
       <div className="relative mt-4 h-9">
-        <div className="absolute inset-x-0 top-3 h-3 rounded-full bg-slate-200/70 dark:bg-muted" />
+        <div className="absolute inset-x-0 top-3 h-3 rounded-full bg-foreground/10" />
         {heat.map((b, i) => (
           <div
             key={`h${i}`}
@@ -217,7 +245,7 @@ export function ScheduleWidget({
                   ? "bg-foreground text-background shadow-sm"
                   : closed
                     ? "text-muted-foreground/60"
-                    : "bg-white/70 text-foreground dark:bg-muted/40",
+                    : "bg-foreground/5 text-foreground",
               )}
             >
               <span className="text-[10px] font-semibold">{d.label}</span>
@@ -243,9 +271,9 @@ export function ScheduleEmpty({ onEdit }: { onEdit?: () => void }) {
       type="button"
       onClick={onEdit}
       disabled={!onEdit}
-      className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-border p-3 text-left text-xs text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 disabled:pointer-events-none"
+      className="flex w-full items-center gap-3 rounded-tile border border-dashed border-(--glass-border) p-3 text-left text-xs text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 disabled:pointer-events-none"
     >
-      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-muted">
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground/8">
         <CalendarClock className="h-4 w-4" />
       </span>
       <span>

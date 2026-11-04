@@ -116,11 +116,11 @@ export function DeviceRow({
   }
 
   return (
-    <div className="rounded-md border border-border bg-white p-2 dark:border-border dark:bg-card/40">
+    <div className="glass-tile p-2.5">
       <div className="flex items-center gap-2">
         <span
           className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
             on
               ? "bg-warning/10 text-warning "
               : "bg-muted text-muted-foreground/70 dark:bg-muted",
@@ -179,12 +179,12 @@ export function DeviceRow({
                   onClick={() => run(control.action)}
                   title={control.label}
                   className={cn(
-                    "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
+                    "inline-flex h-8 items-center gap-1 rounded-control px-2.5 text-[11px] font-medium transition-colors disabled:opacity-50",
                     control.role === "danger"
                       ? "bg-destructive/10 text-destructive hover:bg-destructive/10 "
                       : control.role === "primary"
-                        ? "bg-primary text-white hover:bg-primary/90"
-                        : "bg-muted text-muted-foreground hover:bg-accent dark:bg-muted dark:text-foreground/80",
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                        : "bg-foreground/8 text-foreground/80 hover:bg-foreground/12",
                   )}
                 >
                   {active ? (
@@ -206,7 +206,7 @@ export function DeviceRow({
             <span
               key={reading.kind + reading.label}
               className={cn(
-                "rounded px-1.5 py-0.5 text-[10px]",
+                "rounded-full px-2 py-0.5 text-[10px]",
                 reading.emphasis === "alert"
                   ? "bg-destructive/12 text-destructive"
                   : reading.emphasis === "warn"

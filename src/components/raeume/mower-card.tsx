@@ -100,32 +100,32 @@ const TONE: Record<MowerTone, { text: string; dot: string; ping?: boolean; card:
     text: "text-emerald-700 dark:text-emerald-400",
     dot: "bg-emerald-500",
     ping: true,
-    card: "border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-teal-50/60 dark:border-emerald-500/25 dark:from-emerald-500/10 dark:via-card dark:to-card",
+    card: "border-emerald-400/35 bg-gradient-to-b from-emerald-500/10 to-transparent",
     marker: "#10b981",
   },
   paused: {
     text: "text-amber-700 dark:text-amber-400",
     dot: "bg-amber-500",
-    card: "border-amber-200/70 bg-gradient-to-br from-amber-50/80 to-white dark:border-amber-500/20 dark:from-amber-500/[0.07] dark:to-card",
+    card: "border-amber-400/35 bg-gradient-to-b from-amber-500/10 to-transparent",
     marker: "#f59e0b",
   },
   returning: {
     text: "text-sky-700 dark:text-sky-400",
     dot: "bg-sky-500",
     ping: true,
-    card: "border-sky-200/70 bg-gradient-to-br from-sky-50/80 to-white dark:border-sky-500/20 dark:from-sky-500/[0.07] dark:to-card",
+    card: "border-sky-400/35 bg-gradient-to-b from-sky-500/10 to-transparent",
     marker: "#0ea5e9",
   },
   charging: {
     text: "text-foreground",
     dot: "bg-emerald-500",
-    card: "border-border bg-gradient-to-br from-slate-50 to-white dark:from-muted/30 dark:to-card",
+    card: "glass-tile",
     marker: "#64748b",
   },
   idle: {
     text: "text-foreground",
     dot: "bg-slate-400",
-    card: "border-border bg-gradient-to-br from-slate-50 to-white dark:from-muted/30 dark:to-card",
+    card: "glass-tile",
     marker: "#64748b",
   },
   error: {
@@ -138,7 +138,7 @@ const TONE: Record<MowerTone, { text: string; dot: string; ping?: boolean; card:
   offline: {
     text: "text-muted-foreground",
     dot: "bg-slate-300 dark:bg-slate-600",
-    card: "border-dashed border-border bg-transparent",
+    card: "border-dashed border-(--glass-border) bg-transparent",
     marker: "#94a3b8",
   },
 };
@@ -422,7 +422,7 @@ export function MowerCard({
 
   if (!state) {
     return (
-      <div className="rounded-2xl border border-dashed border-border p-3 text-xs text-muted-foreground">
+      <div className="rounded-tile border border-dashed border-(--glass-border) p-3 text-xs text-muted-foreground">
         {device.name}: noch keine Meldung vom Hub.
       </div>
     );
@@ -494,7 +494,7 @@ export function MowerCard({
   );
 
   return (
-    <div className={cn("overflow-hidden rounded-2xl border p-3.5 transition-colors", TONE[tone].card)}>
+    <div className={cn("overflow-hidden rounded-tile border p-3.5 transition-colors", TONE[tone].card)}>
       <div className={cn("flex gap-3", !tall && "flex-col")}>
         {tall && mapTile}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -614,7 +614,7 @@ export function MowerCard({
       )}
 
       {planOpen && state.tasks.length > 0 && (
-        <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-background/50">
+        <div className="glass-tile mt-3 divide-y divide-border/50 overflow-hidden">
           {state.tasks.map((t) => (
             <div key={t.id} className={cn("flex items-center gap-2 px-2.5 py-2 text-xs", !t.enabled && "opacity-60")}>
               <div className="min-w-0 flex-1">
