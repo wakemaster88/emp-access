@@ -9,7 +9,9 @@ export type RuleTrigger =
   | "MOTION"
   | "DEVICE_SWITCHED"
   | "SCAN"
-  | "IDLE";
+  | "IDLE"
+  /** Szene: kein Auslöser, läuft nur von Hand. */
+  | "MANUAL";
 
 export type RuleActionKind = "DEVICE" | "NOTIFY" | "AUDIO" | "CAMERA";
 export type RuleOperating = "ANY" | "OPEN" | "CLOSED";

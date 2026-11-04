@@ -363,7 +363,8 @@ export default async function RaeumePage() {
   for (const room of rooms) {
     const roomSchedule = room.operatingSchedule ? toScheduleSpec(room.operatingSchedule) : null;
     const zoneNames = new Map(room.audioZones.map((z) => [z.id, z.name]));
-    const inputs: AutomationInput[] = room.rules.map((rule) => ({
+    // Szenen (MANUAL) haben keinen Zeitpunkt; sie stehen als Kacheln im Reiter Steuern.
+    const inputs: AutomationInput[] = room.rules.filter((rule) => rule.trigger !== "MANUAL").map((rule) => ({
       key: `r${rule.id}`,
       kind: "rule",
       name: rule.name,
@@ -456,6 +457,7 @@ export default async function RaeumePage() {
       isActive: rule.isActive,
       lastRunAt: rule.lastRunAt ? rule.lastRunAt.toISOString() : null,
       actionCount: rule._count.actions,
+      actions: rule.actions.map(ruleActionLabel),
     })),
     automations: automationsByRoom.get(room.id) ?? [],
     climate: room.climate ? climateView(room.climate) : null,

@@ -89,6 +89,8 @@ export interface RoomRuleSummary {
   isActive: boolean;
   lastRunAt: string | null;
   actionCount: number;
+  /** Lesbare Aktionen ("Deckenlicht: Anschalten"), fuer Szenen-Kacheln. */
+  actions: string[];
 }
 
 /** Auswahleintrag für die Zuordnung im Raum-Dialog. */
@@ -124,6 +126,9 @@ export interface RoomClimateView {
   lastSwitchAt: string | null;
   currentTargetC: number | null;
   lastError: string | null;
+  /** Übersteuern mit Ablauf: Soll bis `overrideUntil` (ISO), danach wieder der Plan. */
+  overrideC: number | null;
+  overrideUntil: string | null;
 }
 
 export interface RoomPanel {

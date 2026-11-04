@@ -29,6 +29,7 @@ const TRIGGER_ORDER: RuleTrigger[] = [
   "DEVICE_SWITCHED",
   "SCAN",
   "IDLE",
+  "MANUAL",
 ];
 
 function toDrafts(rule: Rule | null): ActionDraft[] {

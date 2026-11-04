@@ -16,6 +16,7 @@ export const TRIGGER_LABELS: Record<RuleTrigger, string> = {
   DEVICE_SWITCHED: "Gerät geschaltet",
   SCAN: "Zutritt am Leser",
   IDLE: "Ruhe im Raum",
+  MANUAL: "Szene (von Hand)",
 };
 
 /** Wie `TRIGGER_LABELS`, aber für Werte, die erst zur Laufzeit feststehen. */
@@ -34,6 +35,7 @@ export const TRIGGER_HINTS: Record<RuleTrigger, string> = {
   DEVICE_SWITCHED: "Ein Gerät wird über EMP geschaltet. Handschaltungen am Gerät zählen nicht.",
   SCAN: "Ein gewährter Zutritt an einem Leser.",
   IDLE: "Seit der eingestellten Dauer meldet keine Kamera des Raums Bewegung.",
+  MANUAL: "Kein Auslöser: läuft nur, wenn jemand die Szene antippt (Raumkarte oder „Ausführen“).",
 };
 
 export const OPERATING_LABELS: Record<string, string> = {
@@ -128,6 +130,8 @@ export function describeTrigger(rule: Rule): string {
     }
     case "IDLE":
       return `${rule.idleMinutes ?? "–"} Min. ohne Bewegung`;
+    case "MANUAL":
+      return "Von Hand, als Szene in der Raumkarte";
     default:
       return TRIGGER_LABELS[rule.trigger] ?? rule.trigger;
   }

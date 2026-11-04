@@ -87,6 +87,8 @@ export function whenLabel(trigger: string, offsetMinutes: number, timeOfDay: str
       return "wenn ein Gerät schaltet";
     case "SCAN":
       return "bei Zutritt";
+    case "MANUAL":
+      return "von Hand (Szene)";
     default:
       return trigger;
   }

@@ -115,3 +115,16 @@ test("Nachlauf-Fenster: 16:00 Schluss, 45 Min. → bis 16:45, nicht während des
   assert.equal(inAfterrun(ski, at("11:50"), tz, 45), false);
   assert.equal(inAfterrun(null, at("16:10"), tz, 45), false);
 });
+
+test("Uebersteuern mit Ablauf geht vor dem Plan und laeuft ab", () => {
+  const tz = "Europe/Berlin";
+  const climate = { targetC: 21, setbackC: 16, preheatMinutes: 30, overrideC: 23, overrideUntil: new Date("2026-11-04T08:10:00Z") };
+  // 09:00 Berlin (08:00 UTC): eigentlich Absenkung, aber uebersteuert.
+  const before = climateTarget(climate, schedule, new Date("2026-11-04T08:00:00Z"), tz);
+  assert.equal(before.targetC, 23);
+  assert.equal(before.override, true);
+  // Nach dem Ablauf (09:20 Berlin, noch vor dem Vorheizen) gilt wieder der Plan.
+  const after = climateTarget(climate, schedule, new Date("2026-11-04T08:20:00Z"), tz);
+  assert.equal(after.targetC, 16);
+  assert.equal(after.override, false);
+});

@@ -2847,6 +2847,8 @@ enum RuleTrigger {
   SCAN
   /// Seit `idleMinutes` keine Bewegung im Raum gemeldet.
   IDLE
+  /// Szene: kein Ausloeser, laeuft nur von Hand (Kachel in der Raumkarte).
+  MANUAL
 }
 
 /// Bedingung an die Betriebszeit.
@@ -3058,6 +3060,10 @@ model RoomClimate {
   lastSwitchAt   DateTime?
   /// Aktuelles Soll (targetC, setbackC oder null = aus), zur Anzeige.
   currentTargetC Float?
+  /// Uebersteuern mit Ablauf: dieses Soll gilt bis `overrideUntil`, danach
+  /// wieder der Plan. Der Takt raeumt abgelaufene Werte weg.
+  overrideC      Float?
+  overrideUntil  DateTime?
   lastError      String?
 
   createdAt DateTime @default(now())

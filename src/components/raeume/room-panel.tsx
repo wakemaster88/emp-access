@@ -12,6 +12,7 @@ import {
   Pencil,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Sprout,
   Thermometer,
   TriangleAlert,
@@ -37,6 +38,8 @@ import { deviceControlModel, isLatchingSwitchDevice } from "@/lib/device-control
 import { RoomIcon } from "@/components/raeume/room-icons";
 import { TechTable } from "@/components/raeume/tech-table";
 import { IrrigationWidget } from "@/components/raeume/irrigation-widget";
+import { ClimateOverride } from "@/components/raeume/climate-override";
+import { SceneTiles } from "@/components/raeume/scene-tiles";
 import { ClimateHistory, type HistoryRange } from "@/components/raeume/climate-history";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { fmtWhen, ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
@@ -261,7 +264,11 @@ export function RoomPanel({
   const openState = spec ? operatingSpanState(spec, now, timezone) : null;
   const offline = room.devices.filter((d) => statuses.get(d.id)?.online === false).length;
   const activeAutomations = room.automations.filter((a) => a.isActive).length;
+  const scenes = room.rules.filter((r) => r.trigger === "MANUAL");
+  const canScene = !readonly && (room.devices.some((d) => d.isActive && d.category !== "SENSOR") || room.zones.some((z) => z.hasPlayer));
+  const showScenes = scenes.length > 0 || canScene;
   const hasControl =
+    showScenes ||
     showClimate ||
     groups.light.length > 0 ||
     groups.mower.length > 0 ||
@@ -464,6 +471,23 @@ export function RoomPanel({
       >
         {tab === "control" && (
           <>
+            {showScenes && (
+              <Section
+                icon={<Sparkles className="h-3.5 w-3.5" />}
+                title={scenes.length > 0 ? `Szenen · ${scenes.length}` : "Szenen"}
+                action={
+                  scenes.length > 0 &&
+                  !readonly && (
+                    <Link href="/regeln" className="text-[11px] font-medium text-primary hover:underline">
+                      Bearbeiten
+                    </Link>
+                  )
+                }
+              >
+                <SceneTiles room={room} scenes={scenes} readonly={readonly} />
+              </Section>
+            )}
+
             {showClimate && (
               <Section
                 icon={<Thermometer className="h-3.5 w-3.5" />}
@@ -494,6 +518,15 @@ export function RoomPanel({
                   )}
                 >
                   <ClimateHero tempC={tempC} humidity={humidity} climate={room.climate} nowMs={nowMs} />
+                  {room.climate?.isActive && room.climate.heaterDeviceIds.length > 0 && !room.climate.lastError && (
+                    <ClimateOverride
+                      climate={room.climate}
+                      openUntil={openState?.until ?? null}
+                      nowMs={nowMs}
+                      timezone={timezone}
+                      readonly={readonly}
+                    />
+                  )}
                   {!room.climate && (
                     <div className="mt-1 flex items-center gap-3 rounded-control bg-foreground/5 px-3 py-2 text-[11px] text-muted-foreground">
                       <span className="min-w-0 flex-1">
