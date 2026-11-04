@@ -10,6 +10,7 @@ import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
 import type { RoomActivity } from "@/lib/room-activity";
 import type { RoomAutomation } from "@/lib/room-automations";
 import type { MowerMap, MowerState } from "@/lib/mower";
+import type { RoomIrrigation } from "@/lib/room-irrigation";
 
 export interface RoomDevice {
   id: number;
@@ -148,6 +149,8 @@ export interface RoomPanel {
   climate: RoomClimateView | null;
   /** Personen heute laut Kameras des Raums; null = keine Kamera mit Daten. */
   activity: RoomActivity | null;
+  /** GARDENA-Ventile im Raum mit Zeitplänen, Lauf und Verbrauch; null = keine Ventile. */
+  irrigation: RoomIrrigation | null;
 }
 
 /** Netzwerkgeraet: Infrastruktur (Switch, AP, Router) oder Endgeraet. */
