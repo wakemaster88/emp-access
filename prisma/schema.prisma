@@ -3058,6 +3058,10 @@ model RoomClimate {
   lastSwitchAt   DateTime?
   /// Aktuelles Soll (targetC, setbackC oder null = aus), zur Anzeige.
   currentTargetC Float?
+  /// Uebersteuern mit Ablauf: dieses Soll gilt bis `overrideUntil`, danach
+  /// wieder der Plan. Der Takt raeumt abgelaufene Werte weg.
+  overrideC      Float?
+  overrideUntil  DateTime?
   lastError      String?
 
   createdAt DateTime @default(now())

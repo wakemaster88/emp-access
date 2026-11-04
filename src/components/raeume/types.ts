@@ -124,6 +124,9 @@ export interface RoomClimateView {
   lastSwitchAt: string | null;
   currentTargetC: number | null;
   lastError: string | null;
+  /** Übersteuern mit Ablauf: Soll bis `overrideUntil` (ISO), danach wieder der Plan. */
+  overrideC: number | null;
+  overrideUntil: string | null;
 }
 
 export interface RoomPanel {

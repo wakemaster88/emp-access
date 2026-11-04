@@ -37,6 +37,7 @@ import { deviceControlModel, isLatchingSwitchDevice } from "@/lib/device-control
 import { RoomIcon } from "@/components/raeume/room-icons";
 import { TechTable } from "@/components/raeume/tech-table";
 import { IrrigationWidget } from "@/components/raeume/irrigation-widget";
+import { ClimateOverride } from "@/components/raeume/climate-override";
 import { ClimateHistory, type HistoryRange } from "@/components/raeume/climate-history";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { fmtWhen, ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
@@ -494,6 +495,15 @@ export function RoomPanel({
                   )}
                 >
                   <ClimateHero tempC={tempC} humidity={humidity} climate={room.climate} nowMs={nowMs} />
+                  {room.climate?.isActive && room.climate.heaterDeviceIds.length > 0 && !room.climate.lastError && (
+                    <ClimateOverride
+                      climate={room.climate}
+                      openUntil={openState?.until ?? null}
+                      nowMs={nowMs}
+                      timezone={timezone}
+                      readonly={readonly}
+                    />
+                  )}
                   {!room.climate && (
                     <div className="mt-1 flex items-center gap-3 rounded-control bg-foreground/5 px-3 py-2 text-[11px] text-muted-foreground">
                       <span className="min-w-0 flex-1">

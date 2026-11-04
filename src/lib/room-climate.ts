@@ -95,16 +95,37 @@ export function climateOffsets(climate: { preheatMinutes: number; afterrunMinute
   return { openMinutes: -Math.max(0, climate.preheatMinutes), closeMinutes: Math.max(0, climate.afterrunMinutes ?? 0) };
 }
 
-/** Soll fuer diesen Moment: Heizfenster (Betriebszeit ± Vor-/Nachlauf) → targetC, sonst setbackC. */
+/** Gilt gerade ein Uebersteuern (Soll mit Ablauf)? */
+export function overrideActive(
+  climate: { overrideC?: number | null; overrideUntil?: Date | string | null },
+  now: Date,
+): boolean {
+  if (climate.overrideC == null || !climate.overrideUntil) return false;
+  const until = typeof climate.overrideUntil === "string" ? Date.parse(climate.overrideUntil) : climate.overrideUntil.getTime();
+  return until > now.getTime();
+}
+
+/**
+ * Soll fuer diesen Moment: ein laufendes Uebersteuern geht vor, sonst
+ * Heizfenster (Betriebszeit ± Vor-/Nachlauf) → targetC, sonst setbackC.
+ */
 export function climateTarget(
-  climate: { targetC: number; setbackC: number | null; preheatMinutes: number; afterrunMinutes?: number | null },
+  climate: {
+    targetC: number;
+    setbackC: number | null;
+    preheatMinutes: number;
+    afterrunMinutes?: number | null;
+    overrideC?: number | null;
+    overrideUntil?: Date | null;
+  },
   schedule: ScheduleSpec | null,
   now: Date,
   tz: string,
-): { targetC: number | null; open: boolean } {
-  if (!schedule) return { targetC: climate.targetC, open: true };
+): { targetC: number | null; open: boolean; override: boolean } {
+  if (overrideActive(climate, now)) return { targetC: climate.overrideC!, open: true, override: true };
+  if (!schedule) return { targetC: climate.targetC, open: true, override: false };
   const open = isWithinOperatingSpan(schedule, now, tz, climateOffsets(climate));
-  return { targetC: open ? climate.targetC : climate.setbackC, open };
+  return { targetC: open ? climate.targetC : climate.setbackC, open, override: false };
 }
 
 export interface VentDecisionInput {
@@ -233,7 +254,9 @@ export async function runClimateTick(now = new Date()): Promise<ClimateTickResul
       const tz = c.account.timezone || DEFAULT_TIMEZONE;
       const record = c.operatingSchedule ?? c.room.operatingSchedule ?? null;
       const spec = record ? toScheduleSpec(record) : null;
-      const { targetC } = climateTarget(c, spec, now, tz);
+      const { targetC, override } = climateTarget(c, spec, now, tz);
+      // Abgelaufenes Uebersteuern wegraeumen, damit die Anzeige nicht haengt.
+      const clearOverride = !override && (c.overrideC != null || c.overrideUntil != null);
 
       // Messwert
       let tempC: number | null = null;
@@ -289,6 +312,7 @@ export async function runClimateTick(now = new Date()): Promise<ClimateTickResul
           lastReadAt: readAt ?? c.lastReadAt,
           currentTargetC: hasHeater ? targetC : null,
           lastError: error,
+          ...(clearOverride ? { overrideC: null, overrideUntil: null } : {}),
           ...(mustSend && !sendError ? { heating: decision.heat } : {}),
           ...(changed ? { lastSwitchAt: now } : {}),
           ...(fanSend && !fanError ? { fanOn: vent.on } : {}),
@@ -337,6 +361,8 @@ export function climateView(c: {
   lastSwitchAt: Date | null;
   currentTargetC: number | null;
   lastError: string | null;
+  overrideC?: number | null;
+  overrideUntil?: Date | null;
 }) {
   return {
     id: c.id,
@@ -363,6 +389,8 @@ export function climateView(c: {
     lastSwitchAt: c.lastSwitchAt?.toISOString() ?? null,
     currentTargetC: c.currentTargetC,
     lastError: c.lastError,
+    overrideC: c.overrideC ?? null,
+    overrideUntil: c.overrideUntil?.toISOString() ?? null,
   };
 }
 
