@@ -90,10 +90,8 @@ export function NetworkWidget({ items, nowMs }: { items: NetworkItem[]; nowMs: n
               <div
                 key={item.key}
                 className={cn(
-                  "relative overflow-hidden rounded-2xl border p-3",
-                  s === "online"
-                    ? "border-emerald-200/70 bg-gradient-to-br from-emerald-50 to-white dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-card"
-                    : "border-border bg-card dark:bg-muted/30",
+                  "relative overflow-hidden rounded-tile border p-3",
+                  s === "online" ? "border-emerald-400/35 bg-gradient-to-b from-emerald-500/10 to-transparent" : "glass-tile",
                 )}
                 title={item.inferred ? "Über Standort zugeordnet" : undefined}
               >
@@ -127,7 +125,7 @@ export function NetworkWidget({ items, nowMs }: { items: NetworkItem[]; nowMs: n
       )}
 
       {clients.length > 0 && (
-        <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border">
+        <div className="glass-tile divide-y divide-border/50 overflow-hidden">
           {clients.map((item) => {
             const s = state(item, nowMs);
             const Icon = ICONS[item.type] ?? Cpu;

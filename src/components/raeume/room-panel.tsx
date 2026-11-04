@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import {
   CalendarClock,
   Cpu,
-  Gauge,
   Lightbulb,
   Loader2,
   Lock,
@@ -33,13 +32,13 @@ import type {
   RoomPanel as RoomPanelData,
   RoomZone,
 } from "@/components/raeume/types";
-import { isLatchingSwitchDevice } from "@/lib/device-controls";
+import { deviceControlModel, isLatchingSwitchDevice } from "@/lib/device-controls";
 import { RoomIcon } from "@/components/raeume/room-icons";
-import { NetworkWidget } from "@/components/raeume/network-widget";
+import { TechTable } from "@/components/raeume/tech-table";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { fmtWhen, ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
 import { operatingSpanState } from "@/lib/operating-hours";
-import { ActivityChart, CameraTile, ClimateHero, DeviceTile, GroupTile, ZoneCard } from "@/components/raeume/room-widgets";
+import { ActivityChart, CameraTile, ClimateHero, DeviceTile, GroupTile, PulseTile, ZoneCard } from "@/components/raeume/room-widgets";
 import { MowerCard, type MowerLive } from "@/components/raeume/mower-card";
 import type { MowerAction } from "@/lib/mower";
 import { cn } from "@/lib/utils";
@@ -124,11 +123,11 @@ function parseC(v: string | null): number | null {
 }
 
 /**
- * Ein Raum als Karte im Stil einer Smart-Home-App. Oben steht der Zustand
+ * Ein Raum als Glas-Karte (docs/design-regeln.md). Oben steht der Zustand
  * (geoeffnet, Anwesenheit, Stoerungen) und eine Schnellsteuerung (Licht,
  * Musik, Klima, Maeher). Darunter Reiter, in denen jede Info genau einmal
- * vorkommt: Steuerung, Zeitplan (Betriebszeit + Regeln), Sicherheit
- * (Kameras, Personen, Schliessung) und Technik (Fuehler, Netzwerk).
+ * vorkommt: Steuern, Zeit (Betriebszeit + Ablaeufe), Ueberwachung
+ * (Kameras, Personen, Tueren) und Technik (Anbindung aller Geraete).
  */
 export function RoomPanel({
   room,
@@ -187,8 +186,11 @@ export function RoomPanel({
   const hasMotionSensor = motionReadings.length > 0;
   const present = !!room.activity?.present || motionReadings.some((r) => r!.value === "erkannt");
   const tileable = (d: RoomDevice) => isLatchingSwitchDevice(d);
-  const otherTiles = groups.other.filter(tileable);
-  const otherRows = groups.other.filter((d) => !tileable(d));
+  const isPulse = (d: RoomDevice) => deviceControlModel(d) === "PULSE";
+  const otherTiles = groups.other.filter((d) => tileable(d) || isPulse(d));
+  const otherRows = groups.other.filter((d) => !tileable(d) && !isPulse(d));
+  const otherOn = groups.other.filter(isOn).length;
+  const otherPower = groups.other.reduce((sum, d) => sum + (isOn(d) ? (statuses.get(d.id)?.power ?? 0) : 0), 0);
   const lightTiles = groups.light.filter(tileable);
   const lightRows = groups.light.filter((d) => !tileable(d));
   const fanIds = new Set(room.climate?.fanDeviceIds ?? []);
@@ -214,13 +216,20 @@ export function RoomPanel({
       />
     );
   const eventLabel = room.lastEvent ? `${eventTypeLabel(room.lastEvent.type)} ${fmtAgo(room.lastEvent.startedAt, nowMs)}` : null;
+  // Die Kamera mit dem juengsten Ereignis steht vorn und wird gross.
+  const eventCamera = room.cameras.find((c) => c.id === room.lastEvent?.cameraId) ?? null;
+  const cameras = eventCamera ? [eventCamera, ...room.cameras.filter((c) => c.id !== eventCamera.id)] : room.cameras;
 
   const tiles = (list: RoomDevice[]) =>
     list.length > 0 && (
       <div className="grid grid-cols-2 gap-2">
-        {list.map((d) => (
-          <DeviceTile key={d.id} device={d} roomName={room.name} status={statuses.get(d.id)} readonly={readonly} onAction={onAction} />
-        ))}
+        {list.map((d) =>
+          isPulse(d) ? (
+            <PulseTile key={d.id} device={d} roomName={room.name} status={statuses.get(d.id)} readonly={readonly} onAction={onAction} />
+          ) : (
+            <DeviceTile key={d.id} device={d} roomName={room.name} status={statuses.get(d.id)} readonly={readonly} onAction={onAction} />
+          ),
+        )}
       </div>
     );
   const rows = (list: RoomDevice[]) =>
@@ -242,30 +251,30 @@ export function RoomPanel({
     : null;
   const now = new Date(nowMs);
   const openState = spec ? operatingSpanState(spec, now, timezone) : null;
-  const sensorsOnly = sensors;
   const offline = room.devices.filter((d) => statuses.get(d.id)?.online === false).length;
   const activeAutomations = room.automations.filter((a) => a.isActive).length;
   const hasControl =
     showClimate || groups.light.length > 0 || groups.mower.length > 0 || room.zones.length > 0 || groups.other.length > 0;
   const hasSecurity = room.cameras.length > 0 || !!room.activity || hasMotionSensor || room.locks.length > 0;
-  const hasTech = network.length > 0 || sensorsOnly.length > 0;
-  const tabs: { key: TabKey; label: string; icon: ReactNode; badge?: string | null; live?: boolean }[] = [
+  const hasTech = network.length > 0 || room.devices.length > 0;
+  type TabSpec = { key: TabKey; label: string; icon: ReactNode; badge?: string | null; live?: boolean; alert?: boolean };
+  const tabs: TabSpec[] = [
     hasControl && {
       key: "control" as const,
-      label: "Steuerung",
+      label: "Steuern",
       icon: <SlidersHorizontal className="h-3.5 w-3.5" />,
       badge: lightsOn + playing + mowersMowing > 0 ? String(lightsOn + playing + mowersMowing) : null,
       live: lightsOn + playing + mowersMowing > 0,
     },
     {
       key: "time" as const,
-      label: "Zeitplan",
+      label: "Zeit",
       icon: <CalendarClock className="h-3.5 w-3.5" />,
       badge: activeAutomations > 0 ? String(activeAutomations) : null,
     },
     hasSecurity && {
       key: "security" as const,
-      label: "Sicherheit",
+      label: "Überwachung",
       icon: <ShieldCheck className="h-3.5 w-3.5" />,
       badge: room.cameras.length > 0 ? String(room.cameras.length) : null,
       live: present,
@@ -274,9 +283,10 @@ export function RoomPanel({
       key: "tech" as const,
       label: "Technik",
       icon: <Wifi className="h-3.5 w-3.5" />,
-      badge: network.length + sensorsOnly.length > 0 ? String(network.length + sensorsOnly.length) : null,
+      badge: offline > 0 ? String(offline) : null,
+      alert: offline > 0,
     },
-  ].filter(Boolean) as { key: TabKey; label: string; icon: ReactNode; badge?: string | null; live?: boolean }[];
+  ].filter(Boolean) as TabSpec[];
   const [tabChoice, setTab] = useState<TabKey | null>(initialTab ?? null);
   const tab: TabKey = tabChoice && tabs.some((t) => t.key === tabChoice) ? tabChoice : tabs[0].key;
 
@@ -419,7 +429,7 @@ export function RoomPanel({
                   <span
                     className={cn(
                       "rounded-full px-1.5 text-[9px] font-semibold tabular-nums",
-                      t.live ? "bg-emerald-500 text-white" : "bg-foreground/10 text-foreground/70",
+                      t.alert ? "bg-destructive text-white" : t.live ? "bg-emerald-500 text-white" : "bg-foreground/10 text-foreground/70",
                     )}
                   >
                     {t.badge}
@@ -445,28 +455,48 @@ export function RoomPanel({
                 icon={<Thermometer className="h-3.5 w-3.5" />}
                 title="Klima"
                 action={
-                  !readonly && (
+                  !readonly &&
+                  room.climate && (
                     <button
                       type="button"
                       onClick={onClimate}
                       className="rounded-full px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
                     >
-                      {room.climate ? "Einstellen" : "Temperatur halten …"}
+                      Einstellen
                     </button>
                   )
                 }
               >
                 <div
                   className={cn(
-                    "rounded-2xl border p-2 pr-3",
+                    "rounded-tile border p-2 pr-3",
                     room.climate?.lastError
                       ? "border-destructive/40 bg-destructive/5"
                       : room.climate?.heating
-                        ? "border-orange-300/50 bg-gradient-to-br from-orange-50 to-transparent dark:border-orange-400/20 dark:from-orange-500/10"
-                        : "border-border bg-gradient-to-br from-sky-50/70 to-transparent dark:from-sky-500/5",
+                        ? "border-orange-400/35 bg-gradient-to-b from-orange-500/12 to-transparent"
+                        : room.climate?.fanOn
+                          ? "border-sky-400/35 bg-gradient-to-b from-sky-500/12 to-transparent"
+                          : "glass-tile",
                   )}
                 >
                   <ClimateHero tempC={tempC} humidity={humidity} climate={room.climate} nowMs={nowMs} />
+                  {!room.climate && (
+                    <div className="mt-1 flex items-center gap-3 rounded-control bg-foreground/5 px-3 py-2 text-[11px] text-muted-foreground">
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-semibold text-foreground">Temperatur halten?</span>
+                        Fühler vorhanden, Heizung nicht zugeordnet. Soll, Vorlauf und Absenkung in einem Schritt einrichten.
+                      </span>
+                      {!readonly && (
+                        <button
+                          type="button"
+                          onClick={onClimate}
+                          className="h-8 shrink-0 rounded-full bg-primary px-3 text-[11px] font-semibold text-primary-foreground"
+                        >
+                          Einrichten
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {room.climate?.lastError && (
                     <p className="flex items-center gap-1 px-1 pb-1 text-[11px] text-destructive">
                       <TriangleAlert className="h-3 w-3 shrink-0" />
@@ -485,7 +515,14 @@ export function RoomPanel({
             )}
 
             {groups.light.length > 0 && (
-              <Section icon={<Lightbulb className="h-3.5 w-3.5" />} title="Beleuchtung">
+              <Section
+                icon={<Lightbulb className="h-3.5 w-3.5" />}
+                title={`Beleuchtung · ${lightsOn > 0 ? `${lightsOn} von ${groups.light.length} an` : "alle aus"}`}
+                action={
+                  !readonly &&
+                  switchableLights.length > 1 && <AllToggle devices={switchableLights} anyOn={lightsOn > 0} onAction={onAction} />
+                }
+              >
                 {tiles(lightTiles)}
                 {rows(lightRows)}
               </Section>
@@ -522,7 +559,11 @@ export function RoomPanel({
             )}
 
             {groups.other.length > 0 && (
-              <Section icon={<Cpu className="h-3.5 w-3.5" />} title="Geräte">
+              <Section
+                icon={<Cpu className="h-3.5 w-3.5" />}
+                title={`Geräte · ${otherOn > 0 ? `${otherOn} von ${groups.other.length} an` : "alle aus"}`}
+                action={otherPower > 0 && <span className="text-[11px] tabular-nums text-muted-foreground">zusammen {fmtPower(otherPower)}</span>}
+              >
                 {tiles(otherTiles)}
                 {rows(otherRows)}
               </Section>
@@ -533,13 +574,20 @@ export function RoomPanel({
         {tab === "time" && (
           <>
             {room.schedule ? (
-              <ScheduleWidget schedule={room.schedule} climate={room.climate} timezone={timezone} nowMs={nowMs} hideStatus />
+              <ScheduleWidget
+                schedule={room.schedule}
+                climate={room.climate}
+                timezone={timezone}
+                nowMs={nowMs}
+                hideStatus
+                onEdit={readonly ? undefined : onEdit}
+              />
             ) : (
               <ScheduleEmpty onEdit={readonly ? undefined : onEdit} />
             )}
             <Section
               icon={<Workflow className="h-3.5 w-3.5" />}
-              title="Regeln & Abläufe"
+              title="Abläufe"
               action={
                 !readonly && (
                   <Link href="/regeln" className="text-[11px] font-medium text-primary hover:underline">
@@ -551,8 +599,8 @@ export function RoomPanel({
               {room.automations.length > 0 ? (
                 <AutomationWidget items={room.automations} nowMs={nowMs} timezone={timezone} />
               ) : (
-                <p className="rounded-2xl border border-dashed border-border p-3 text-xs text-muted-foreground">
-                  Noch keine Regeln. Zum Beispiel „30 Min. vor Öffnung Licht an“.
+                <p className="rounded-tile border border-dashed border-(--glass-border) p-3 text-xs text-muted-foreground">
+                  Noch keine Abläufe. Zum Beispiel „30 Min. vor Öffnung Licht an“.
                 </p>
               )}
             </Section>
@@ -561,14 +609,14 @@ export function RoomPanel({
 
         {tab === "security" && (
           <>
-            {room.cameras.length > 0 && (
+            {cameras.length > 0 && (
               <div className="grid grid-cols-2 gap-2">
-                {room.cameras.map((camera, i) => (
+                {cameras.map((camera, i) => (
                   <CameraTile
                     key={camera.id}
                     camera={camera}
                     nowMs={nowMs}
-                    wide={room.cameras.length === 1 || (room.cameras.length % 2 === 1 && i === 0)}
+                    wide={cameras.length === 1 || (i === 0 && (eventCamera != null || cameras.length % 2 === 1))}
                     eventLabel={room.lastEvent?.cameraId === camera.id ? eventLabel : null}
                   />
                 ))}
@@ -576,15 +624,15 @@ export function RoomPanel({
             )}
             {(room.activity || room.cameras.length > 0 || hasMotionSensor) && (
               <Section icon={<Users className="h-3.5 w-3.5" />} title="Personen heute">
-                <div className="rounded-2xl border border-border bg-gradient-to-b from-primary/[0.04] to-transparent p-3">
+                <div className="glass-tile p-3">
                   <ActivityChart activity={room.activity} nowMs={nowMs} timezone={timezone} />
                 </div>
               </Section>
             )}
             {room.locks.length > 0 && (
-              <Section icon={<Lock className="h-3.5 w-3.5" />} title="Schließung">
+              <Section icon={<Lock className="h-3.5 w-3.5" />} title="Türen & Schließung">
                 {room.locks.map((lock) => (
-                  <div key={lock.id} className="flex items-center gap-1.5 rounded-xl bg-muted/50 px-2.5 py-1.5 text-[11px]">
+                  <div key={lock.id} className="glass-tile flex items-center gap-1.5 px-3 py-2 text-[11px]">
                     <span className="min-w-0 break-words text-muted-foreground">{lock.label}</span>
                     {lock.deviceName && (
                       <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-primary" title="Wird elektronisch geöffnet">
@@ -600,18 +648,9 @@ export function RoomPanel({
         )}
 
         {tab === "tech" && (
-          <>
-            {sensorsOnly.length > 0 && (
-              <Section icon={<Gauge className="h-3.5 w-3.5" />} title="Fühler">
-                <div className="space-y-1.5">{rows(sensorsOnly)}</div>
-              </Section>
-            )}
-            {network.length > 0 && (
-              <Section icon={<Wifi className="h-3.5 w-3.5" />} title="Netzwerk">
-                <NetworkWidget items={network} nowMs={nowMs} />
-              </Section>
-            )}
-          </>
+          <Section icon={<Wifi className="h-3.5 w-3.5" />} title="Anbindung">
+            <TechTable devices={room.devices} statuses={statuses} network={network} nowMs={nowMs} />
+          </Section>
         )}
       </div>
     </section>
@@ -807,6 +846,51 @@ function StatusPill({
     >
       {dot && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
       {children}
+    </button>
+  );
+}
+
+/** "180 W" oder "1,4 kW". */
+function fmtPower(watts: number): string {
+  if (watts >= 1000) return `${(watts / 1000).toLocaleString("de-DE", { maximumFractionDigits: 1 })} kW`;
+  return `${Math.round(watts)} W`;
+}
+
+/** "Alle aus" / "Alle an" im Kopf eines Abschnitts. */
+function AllToggle({
+  devices,
+  anyOn,
+  onAction,
+}: {
+  devices: RoomDevice[];
+  anyOn: boolean;
+  onAction: (device: RoomDevice, action: string) => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function toggle() {
+    setBusy(true);
+    setError("");
+    const next = !anyOn;
+    for (const d of devices) {
+      const msg = await onAction(d, next ? "open" : "reset");
+      if (msg) setError(msg);
+    }
+    setBusy(false);
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => void toggle()}
+      disabled={busy}
+      title={error || undefined}
+      className={cn(
+        "flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors disabled:opacity-60",
+        error ? "text-destructive" : "bg-foreground/8 text-foreground/80 hover:bg-foreground/12",
+      )}
+    >
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+      {error ? "Fehler" : anyOn ? "Alle aus" : "Alle an"}
     </button>
   );
 }
