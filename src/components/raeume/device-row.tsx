@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -24,7 +24,8 @@ import type { DeviceControl } from "@/lib/device-controls";
 import { cn } from "@/lib/utils";
 import type { RoomDevice } from "@/components/raeume/types";
 import type { DeviceStatus } from "@/components/raeume/status";
-import { deviceMetaLabel, fmtAgo } from "@/components/raeume/shared";
+import { deviceMetaLabel, fmtAgo, shortDeviceName } from "@/components/raeume/shared";
+import { Switch } from "@/components/ui/switch";
 
 /** Symbol nach Geraeteart. Gibt das Element direkt zurueck, damit waehrend des
  *  Renderns keine Komponente in einer Variablen landet. */
@@ -63,12 +64,15 @@ function ControlIcon({ control, className }: { control: DeviceControl; className
  */
 export function DeviceRow({
   device,
+  roomName,
   status,
   nowMs,
   readonly,
   onAction,
 }: {
   device: RoomDevice;
+  /** Raum der Karte; wird im angezeigten Namen weggelassen. */
+  roomName?: string;
   status: DeviceStatus | undefined;
   nowMs: number;
   readonly: boolean;
@@ -78,7 +82,29 @@ export function DeviceRow({
   const [error, setError] = useState("");
   const controls = visibleDeviceControls(device, status?.output);
   const isLatching = isLatchingSwitchDevice(device);
-  const on = status?.output === true;
+  const reported = status?.output === true;
+  // Schalter springen sofort um und warten nicht auf die naechste Abfrage.
+  const [pending, setPending] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (pending === null) return;
+    const t = setTimeout(() => setPending(null), 10_000);
+    return () => clearTimeout(t);
+  }, [pending]);
+  const on = pending ?? reported;
+  const label = roomName ? shortDeviceName(device.name, roomName) : device.name;
+  const reachable = !status || status.online;
+
+  async function toggle(next: boolean) {
+    setPending(next);
+    setBusy(next ? "open" : "reset");
+    setError("");
+    const message = await onAction(device, next ? "open" : "reset");
+    setBusy(null);
+    if (message) {
+      setPending(null);
+      setError(message);
+    }
+  }
 
   async function run(action: string) {
     setBusy(action);
@@ -98,24 +124,24 @@ export function DeviceRow({
               ? "bg-warning/10 text-warning "
               : "bg-muted text-muted-foreground/70 dark:bg-muted",
           )}
+          title={status ? (status.online ? `erreichbar (${status.source})` : "nicht erreichbar") : undefined}
         >
           <DeviceIcon device={device} className="h-4 w-4" />
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground/90">
-            {device.name}
+          <p
+            className="flex flex-wrap items-center gap-x-1.5 break-words text-sm font-medium leading-snug text-foreground/90"
+            title={label !== device.name ? device.name : undefined}
+          >
+            {label}
             {!device.isActive && (
               <span className="shrink-0 text-[10px] font-normal text-muted-foreground/70">außer Betrieb</span>
             )}
           </p>
           <p className="truncate text-[11px] text-muted-foreground/70">
             {deviceMetaLabel(device.type, device.category)}
-            {status && status.source !== "unavailable" && isLatching && (
-              <span className={cn("ml-1.5", on ? "text-warning" : "")}>
-                · {on ? "an" : "aus"}
-              </span>
-            )}
+            {status && !status.online && <span className="ml-1.5 text-warning">· nicht erreichbar</span>}
             {status?.power != null && status.power > 0 && (
               <span className="ml-1.5">· {Math.round(status.power)} W</span>
             )}
@@ -125,17 +151,22 @@ export function DeviceRow({
           </p>
         </div>
 
-        {status && (
-          <span
-            className={cn(
-              "h-1.5 w-1.5 shrink-0 rounded-full",
-              status.online ? "bg-success" : "bg-slate-300 dark:bg-slate-600",
-            )}
-            title={status.online ? `erreichbar (${status.source})` : "nicht erreichbar"}
-          />
+        {isLatching && !readonly && (
+          <span className="flex shrink-0 items-center gap-2">
+            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/70" />}
+            <span className={cn("text-[11px] tabular-nums", on ? "text-warning" : "text-muted-foreground/70")}>
+              {status || pending !== null ? (on ? "an" : "aus") : ""}
+            </span>
+            <Switch
+              checked={on}
+              disabled={busy !== null || !reachable}
+              onCheckedChange={(next) => void toggle(next)}
+              aria-label={`${device.name} ${on ? "ausschalten" : "einschalten"}`}
+            />
+          </span>
         )}
 
-        {!readonly && controls.length > 0 && (
+        {!isLatching && !readonly && controls.length > 0 && (
           <div className="flex shrink-0 items-center gap-1">
             {controls.map((control) => {
               const active = busy === control.action;

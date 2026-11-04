@@ -219,3 +219,19 @@ export function readSensorReadings(status: ShellyDeviceStatusMap): SensorReading
 
   return readings;
 }
+
+/** Temperatur in °C als Zahl (Gen2/BLE-Komponente oder Gen1 `tmp`), sonst null. */
+export function readTemperatureC(status: ShellyDeviceStatusMap): number | null {
+  return (
+    num(component<{ tC?: unknown }>(status, "temperature")?.tC) ??
+    num((status.tmp as { value?: unknown } | undefined)?.value)
+  );
+}
+
+/** Luftfeuchte in Prozent als Zahl, sonst null. */
+export function readHumidityPercent(status: ShellyDeviceStatusMap): number | null {
+  return (
+    num(component<{ rh?: unknown }>(status, "humidity")?.rh) ??
+    num((status.hum as { value?: unknown } | undefined)?.value)
+  );
+}

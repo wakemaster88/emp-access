@@ -2592,9 +2592,23 @@ function roomCard(room, liveMap, camIds) {
         )
         .join("")}</ul></details>`
     : "";
+  const cl = room.climate;
+  const fmtC = (v) => (v == null ? "–" : `${num(v, 1)} °C`);
+  const climate = cl
+    ? `<div class="climate${cl.lastError ? " err" : cl.heating ? " on" : ""}">
+        <span class="climate-temp">${fmtC(cl.lastTempC)}</span>
+        <span class="muted">${
+          !cl.isActive
+            ? "Regelung pausiert"
+            : `Soll ${cl.currentTargetC == null ? "aus" : fmtC(cl.currentTargetC)} · ${cl.heating ? "heizt" : "Heizung aus"}`
+        }${cl.lastReadAt ? ` · gemessen ${esc(ago(cl.lastReadAt))}` : ""}</span>
+        ${cl.lastError ? `<span class="climate-err">${esc(cl.lastError)}</span>` : ""}
+      </div>`
+    : "";
   return `<article class="card room">
     <div class="place-head"><span class="tile-ico accent">${icon("home")}</span><h3>${esc(room.name)}</h3>${head ? `<span class="host">${esc(head)}</span>` : ""}</div>
     ${op ? `<div class="chips">${op}</div>` : ""}
+    ${climate}
     <div class="devs">${devices}</div>
     ${cams}${zones}${rules}
   </article>`;

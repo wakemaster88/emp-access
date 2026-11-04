@@ -1530,3 +1530,10 @@ tr.is-off td:not(:last-child) { opacity: 0.55; }
 .rule-act .icon-btn.small { margin: 0; }
 [data-for][hidden] { display: none !important; }
 .switch span, .day span { pointer-events: none; }
+
+/* Raumklima in der Raumkarte */
+.climate { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; margin: 6px 0; }
+.climate.on { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-bg); }
+.climate.err { border-color: color-mix(in srgb, var(--alert) 45%, transparent); }
+.climate-temp { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.climate-err { flex-basis: 100%; color: var(--alert); font-size: .8rem; }

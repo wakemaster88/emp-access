@@ -42,6 +42,23 @@ export function deviceMetaLabel(type: string, category: string | null): string {
   return [deviceTypeLabel(type), cat].filter(Boolean).join(" · ");
 }
 
+/**
+ * Geraetename ohne den Raumnamen: In der Karte "Umkleide Damen" reicht
+ * "Belüftung 1" statt "Belüftung Umkleide Damen 1". Bleibt nichts uebrig,
+ * gilt der volle Name.
+ */
+export function shortDeviceName(name: string, roomName: string): string {
+  const room = roomName.trim();
+  if (!room) return name;
+  const escaped = room.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const short = name
+    .replace(new RegExp(`\\s*${escaped}\\s*`, "i"), " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s\-–·:/]+|[\s\-–·:/]+$/g, "")
+    .trim();
+  return short.length >= 2 ? short : name;
+}
+
 export function eventTypeLabel(type: string): string {
   return EVENT_TYPE_LABELS[type] ?? type;
 }

@@ -13,6 +13,8 @@ import { superAdminClient, tenantClient, type TenantDb } from "@/lib/prisma";
 import { isPlayerOnline } from "@/lib/audio-constants";
 import { scheduleInclude } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
+import { climateView } from "@/lib/room-climate";
+import { buildRoomActivity, dayStart } from "@/lib/room-activity";
 
 /** Fenster, in dem eine Bewegung im Raum noch als "zuletzt" gezeigt wird. */
 const EVENT_LOOKBACK_HOURS = 24;
@@ -137,6 +139,7 @@ export default async function RaeumePage() {
         cameras: { select: cameraSelect, orderBy: { name: "asc" } },
         audioZones: { select: zoneSelect, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] },
         operatingSchedule: { include: scheduleInclude },
+        climate: true,
         rules: {
           select: {
             id: true,
@@ -215,6 +218,33 @@ export default async function RaeumePage() {
         }),
   ]);
 
+  // Personen heute je Raum (Kameras mit Raum). Laeuft nach dem ersten Block,
+  // weil die Zeitzone des Mandanten gebraucht wird.
+  const tz = account?.timezone || DEFAULT_TIMEZONE;
+  const todayStart = dayStart(now, tz);
+  const [personEvents, sightings] = await Promise.all([
+    db.cameraEvent.findMany({
+      where: { ...accountFilter, type: "PERSON", startedAt: { gte: todayStart }, camera: { keyRoomId: { not: null } } },
+      select: { startedAt: true, endedAt: true, camera: { select: { keyRoomId: true } } },
+    }),
+    db.personSighting.findMany({
+      where: { ...accountFilter, seenAt: { gte: todayStart }, camera: { keyRoomId: { not: null } } },
+      select: {
+        seenAt: true,
+        camera: { select: { keyRoomId: true } },
+        listedPerson: { select: { name: true, listType: true } },
+      },
+    }),
+  ]);
+  const activity = buildRoomActivity(
+    personEvents.map((e) => ({ roomId: e.camera.keyRoomId!, startedAt: e.startedAt, endedAt: e.endedAt })),
+    sightings
+      .filter((s) => s.camera?.keyRoomId != null)
+      .map((s) => ({ roomId: s.camera!.keyRoomId!, seenAt: s.seenAt, person: s.listedPerson })),
+    now,
+    tz,
+  );
+
   const lastEventByRoom = new Map<number, RoomEvent>();
   for (const e of events) {
     const roomId = e.camera.keyRoomId;
@@ -259,6 +289,8 @@ export default async function RaeumePage() {
       lastRunAt: rule.lastRunAt ? rule.lastRunAt.toISOString() : null,
       actionCount: rule._count.actions,
     })),
+    climate: room.climate ? climateView(room.climate) : null,
+    activity: activity.get(room.id) ?? null,
     schedule: room.operatingSchedule
       ? {
           id: room.operatingSchedule.id,
@@ -296,7 +328,7 @@ export default async function RaeumePage() {
             looseCameras: looseCameras.map(toCamera),
             looseZones: looseZones.map(toZone),
             scheduleOptions: schedules,
-            timezone: account?.timezone || DEFAULT_TIMEZONE,
+            timezone: tz,
             renderedAt: now.toISOString(),
           }}
           readonly={isSuperAdmin}

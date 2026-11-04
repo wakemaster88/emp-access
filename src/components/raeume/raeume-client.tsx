@@ -3,11 +3,12 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Building2, Cctv, Cpu, Search, TriangleAlert, Volume2 } from "lucide-react";
+import { Building2, Cctv, Cpu, Plus, Search, TriangleAlert, Volume2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { RoomPanel } from "@/components/raeume/room-panel";
+import { RoomPanel, roomHasEquipment } from "@/components/raeume/room-panel";
+import { ClimateDialog } from "@/components/raeume/climate-dialog";
 import { RoomEquipmentDialog, type Placed } from "@/components/raeume/room-equipment-dialog";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
 import { useDeviceStatuses, useNow } from "@/components/raeume/status";
@@ -31,6 +32,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     name: string;
     scheduleId: number | null;
   } | null>(null);
+  const [climateRoomId, setClimateRoomId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   // Nur Shelly-Geraete haben eine Statusabfrage. Geraete ohne Raum bleiben
@@ -66,6 +68,10 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
       ...data.looseZones.map((item) => ({ item, roomId: null })),
     ],
     [data.rooms, data.looseZones],
+  );
+  const allShellys = useMemo(
+    () => placedDevices.map((p) => p.item).filter((d) => d.type === "SHELLY"),
+    [placedDevices],
   );
   const roomNames = useMemo(
     () => new Map(data.rooms.map((room) => [room.id, room.name])),
@@ -115,6 +121,12 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     setTimeout(() => router.refresh(), ZONE_SETTLE_MS);
     return null;
   }
+
+  const equippedRooms = visibleRooms.filter(roomHasEquipment);
+  const emptyRooms = visibleRooms.filter((room) => !roomHasEquipment(room));
+  const climateRoom = climateRoomId != null ? data.rooms.find((r) => r.id === climateRoomId) ?? null : null;
+  const openEquipment = (room: (typeof data.rooms)[number]) =>
+    setEquipmentRoom({ id: room.id, name: room.name, scheduleId: room.schedule?.id ?? null });
 
   const deviceCount = data.rooms.reduce((sum, r) => sum + r.devices.length, 0);
   const cameraCount = data.rooms.reduce((sum, r) => sum + r.cameras.length, 0);
@@ -222,27 +234,66 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
       ) : visibleRooms.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground/70">Keine Treffer.</p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          {visibleRooms.map((room) => (
-            <RoomPanel
-              key={room.id}
-              room={room}
-              statuses={statuses}
-              nowMs={nowMs}
-              timezone={data.timezone}
-              readonly={readonly}
-              onAction={handleAction}
-              onZoneAction={handleZoneAction}
-              onEdit={() =>
-                setEquipmentRoom({
-                  id: room.id,
-                  name: room.name,
-                  scheduleId: room.schedule?.id ?? null,
-                })
-              }
-            />
-          ))}
-        </div>
+        <>
+          {equippedRooms.length > 0 && (
+            <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">
+              {equippedRooms.map((room) => (
+                <RoomPanel
+                  key={room.id}
+                  room={room}
+                  statuses={statuses}
+                  nowMs={nowMs}
+                  timezone={data.timezone}
+                  readonly={readonly}
+                  onAction={handleAction}
+                  onZoneAction={handleZoneAction}
+                  onEdit={() => openEquipment(room)}
+                  onClimate={() => setClimateRoomId(room.id)}
+                />
+              ))}
+            </div>
+          )}
+          {emptyRooms.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Räume ohne Ausstattung</CardTitle>
+                <CardDescription className="text-xs">
+                  Noch keine Geräte, Kameras oder Beschallung zugeordnet. Antippen zum Ausstatten.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-1.5">
+                {emptyRooms.map((room) => (
+                  <button
+                    key={room.id}
+                    type="button"
+                    disabled={readonly}
+                    onClick={() => openEquipment(room)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary disabled:pointer-events-none"
+                  >
+                    {!readonly && <Plus className="h-3 w-3" />}
+                    {room.name}
+                    {(room.building || room.floor) && (
+                      <span className="text-muted-foreground/60">{[room.building, room.floor].filter(Boolean).join(" · ")}</span>
+                    )}
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {climateRoom && (
+        <ClimateDialog
+          roomId={climateRoom.id}
+          roomName={climateRoom.name}
+          roomScheduleName={climateRoom.schedule?.name ?? null}
+          climate={climateRoom.climate}
+          roomDevices={climateRoom.devices}
+          allShellys={allShellys}
+          scheduleOptions={data.scheduleOptions}
+          onClose={() => setClimateRoomId(null)}
+        />
       )}
 
       {equipmentRoom && (

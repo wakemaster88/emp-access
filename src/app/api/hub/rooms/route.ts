@@ -3,6 +3,7 @@ import { validateApiToken } from "@/lib/api-auth";
 import { isOperatingAt } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
+import { climateView } from "@/lib/room-climate";
 
 /**
  * GET (Hub, Token-Auth): Raeume mit Geraeten, Kameras, Audiozonen und Regeln
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
     keyRoomId: true,
   } as const;
 
-  const [rooms, unassigned, acc] = await Promise.all([
+  const [rooms, unassigned, acc, schedules] = await Promise.all([
     db.keyRoom.findMany({
       where: { accountId: account.id },
       orderBy: [{ building: "asc" }, { floor: "asc" }, { name: "asc" }],
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
           orderBy: { sortOrder: "asc" },
         },
         operatingSchedule: { select: { id: true, name: true, ...scheduleSpecInclude } },
+        climate: true,
         rules: {
           select: { id: true, name: true, trigger: true, isActive: true, lastRunAt: true },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -65,6 +67,11 @@ export async function GET(request: NextRequest) {
       orderBy: { name: "asc" },
     }),
     db.account.findUnique({ where: { id: account.id }, select: { timezone: true } }),
+    db.operatingSchedule.findMany({
+      where: { accountId: account.id },
+      select: { id: true, name: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
   ]);
 
   const tz = acc?.timezone || DEFAULT_TIMEZONE;
@@ -73,8 +80,10 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     at: now.toISOString(),
     timezone: tz,
-    rooms: rooms.map(({ operatingSchedule, ...room }) => ({
+    schedules,
+    rooms: rooms.map(({ operatingSchedule, climate, ...room }) => ({
       ...room,
+      climate: climate ? climateView(climate) : null,
       operating: operatingSchedule
         ? {
             id: operatingSchedule.id,
