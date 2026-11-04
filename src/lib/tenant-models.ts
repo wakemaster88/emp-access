@@ -52,6 +52,7 @@ export const TENANT_MODELS = new Set<string>([
   "PersonFaceEmbedding",
   "PersonSighting",
   "PushSubscription",
+  "RoomClimate",
   "RoomRule",
   "RoomRuleRun",
   "Scan",

@@ -32,14 +32,25 @@ export function EquipmentPicker({
   emptyText: string;
 }) {
   const [query, setQuery] = useState("");
+  const [showTaken, setShowTaken] = useState(false);
+  // Reihenfolge beim Oeffnen: Gewaehltes oben, dann Freies, dann Eintraege aus
+  // anderen Raeumen. Fest beim Oeffnen, damit nichts unter dem Finger springt.
+  const [initial] = useState(() => new Set(value));
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (i) => i.label.toLowerCase().includes(q) || (i.meta ?? "").toLowerCase().includes(q),
-    );
-  }, [items, query]);
+    const rank = (i: EquipmentItem) => (initial.has(i.id) ? 0 : i.takenBy ? 2 : 1);
+    const sorted = [...items].sort((a, b) => rank(a) - rank(b));
+    if (q) {
+      return sorted.filter(
+        (i) => i.label.toLowerCase().includes(q) || (i.meta ?? "").toLowerCase().includes(q),
+      );
+    }
+    return showTaken ? sorted : sorted.filter((i) => !i.takenBy || value.includes(i.id) || initial.has(i.id));
+  }, [items, query, showTaken, initial, value]);
+  const hiddenTaken = query.trim()
+    ? 0
+    : items.filter((i) => i.takenBy && !value.includes(i.id) && !initial.has(i.id)).length;
 
   const toggle = (id: number) => {
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
@@ -70,7 +81,7 @@ export function EquipmentPicker({
         )}
       </div>
 
-      <div className="max-h-44 space-y-0.5 overflow-y-auto">
+      <div className="max-h-64 space-y-0.5 overflow-y-auto">
         {filtered.length === 0 ? (
           <p className="py-4 text-center text-[11px] text-muted-foreground/70">
             {items.length === 0 ? emptyText : "Keine Treffer."}
@@ -99,21 +110,31 @@ export function EquipmentPicker({
                   {selected && <Check className="h-2.5 w-2.5 text-white" />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs text-foreground/80">
+                  <span className="block break-words text-xs text-foreground/80">
                     {item.label}
                   </span>
-                  {item.meta && (
-                    <span className="block truncate text-[10px] text-muted-foreground/70">{item.meta}</span>
-                  )}
-                </span>
-                {!selected && item.takenBy && (
-                  <span className="shrink-0 text-[10px] text-warning">
-                    in {item.takenBy}
+                  <span className="block break-words text-[10px] text-muted-foreground/70">
+                    {item.meta}
+                    {item.takenBy && (
+                      <span className={selected ? "text-warning" : "text-warning/80"}>
+                        {item.meta ? " · " : ""}
+                        {selected ? `wird aus ${item.takenBy} hierher verschoben` : `in ${item.takenBy}`}
+                      </span>
+                    )}
                   </span>
-                )}
+                </span>
               </button>
             );
           })
+        )}
+        {hiddenTaken > 0 && !showTaken && (
+          <button
+            type="button"
+            onClick={() => setShowTaken(true)}
+            className="w-full rounded px-2 py-1.5 text-left text-[11px] text-primary hover:bg-muted/50"
+          >
+            + {hiddenTaken} aus anderen Räumen zeigen
+          </button>
         )}
       </div>
     </div>

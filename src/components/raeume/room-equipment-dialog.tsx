@@ -102,7 +102,7 @@ export function RoomEquipmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="text-base">{roomName}: Ausstattung und Betriebszeit</DialogTitle>
         </DialogHeader>

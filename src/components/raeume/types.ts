@@ -7,6 +7,7 @@
  */
 
 import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
+import type { RoomActivity } from "@/lib/room-activity";
 
 export interface RoomDevice {
   id: number;
@@ -90,6 +91,26 @@ export interface ScheduleOption {
   isDefault: boolean;
 }
 
+/** Klima des Raums (Solltemperatur halten), siehe src/lib/room-climate.ts. */
+export interface RoomClimateView {
+  id: number;
+  roomId: number;
+  isActive: boolean;
+  sensorDeviceId: number;
+  heaterDeviceIds: number[];
+  targetC: number;
+  hysteresisC: number;
+  setbackC: number | null;
+  preheatMinutes: number;
+  operatingScheduleId: number | null;
+  lastTempC: number | null;
+  lastReadAt: string | null;
+  heating: boolean | null;
+  lastSwitchAt: string | null;
+  currentTargetC: number | null;
+  lastError: string | null;
+}
+
 export interface RoomPanel {
   id: number;
   name: string;
@@ -106,6 +127,9 @@ export interface RoomPanel {
   /** `null` = keine Betriebszeit, der Raum gilt dann als dauerhaft verfügbar. */
   schedule: RoomSchedule | null;
   rules: RoomRuleSummary[];
+  climate: RoomClimateView | null;
+  /** Personen heute laut Kameras des Raums; null = keine Kamera mit Daten. */
+  activity: RoomActivity | null;
 }
 
 export interface RaeumeData {

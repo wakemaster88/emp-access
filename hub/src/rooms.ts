@@ -48,6 +48,16 @@ export interface Room {
   audioZones: { id: number; name: string }[];
   operating: { id: number; name: string; open: boolean } | null;
   rules: { id: number; name: string; trigger: string; isActive: boolean; lastRunAt: string | null }[];
+  /** Solltemperatur halten; geregelt von der Cloud (src/lib/room-climate.ts). */
+  climate?: {
+    isActive: boolean;
+    targetC: number;
+    currentTargetC: number | null;
+    lastTempC: number | null;
+    lastReadAt: string | null;
+    heating: boolean | null;
+    lastError: string | null;
+  } | null;
 }
 
 interface RoomsSnapshot {

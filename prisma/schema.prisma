@@ -177,6 +177,7 @@ model Account {
   operatingSchedules   OperatingSchedule[]
   roomRules            RoomRule[]
   roomRuleRuns         RoomRuleRun[]
+  roomClimates         RoomClimate[]
   keyDoors             KeyDoor[]
   keyLocks             KeyLock[]
   keyItems             KeyItem[]
@@ -335,6 +336,7 @@ model Device {
   updatedAt            DateTime             @updatedAt
   ruleTriggers         RoomRule[]           @relation("RoomRuleTriggerDevice")
   ruleActions          RoomRuleAction[]     @relation("RoomRuleActionDevice")
+  climateSensors       RoomClimate[]        @relation("RoomClimateSensor")
 
   @@index([accountId])
   @@index([keyRoomId])
@@ -2408,6 +2410,8 @@ model KeyRoom {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   rules               RoomRule[]
+  /// Solltemperatur halten (Fuehler + Heizung), hoechstens eine je Raum.
+  climate             RoomClimate?
 
   @@index([accountId])
   @@index([accountId, building])
@@ -2665,6 +2669,7 @@ model OperatingSchedule {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   rules          RoomRule[]
+  climates       RoomClimate[]
   audioSchedules AudioSchedule[]
 
   @@index([accountId])
@@ -2914,4 +2919,49 @@ model RoomRuleRun {
 
   @@index([accountId, triggeredAt])
   @@index([ruleId])
+}
+
+/// Klima eines Raums: eine Solltemperatur halten. Ein Fuehler (Shelly, auch
+/// BLU ueber die Cloud) misst, eine oder mehrere Heizungen (Shelly-Kanaele)
+/// schalten mit Hysterese. Laeuft im 5-Minuten-Takt der Cloud
+/// (src/lib/room-climate.ts).
+model RoomClimate {
+  id                  Int                @id @default(autoincrement())
+  accountId           Int
+  account             Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  roomId              Int                @unique
+  room                KeyRoom            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  isActive            Boolean            @default(true)
+  sensorDeviceId      Int
+  sensorDevice        Device             @relation("RoomClimateSensor", fields: [sensorDeviceId], references: [id], onDelete: Cascade)
+  /// Shelly-Geraete, die heizen. Ohne Fremdschluessel; beim Speichern geprueft.
+  heaterDeviceIds     Int[]
+  /// Solltemperatur waehrend der Betriebszeit.
+  targetC             Float              @default(21)
+  /// Schaltet unter `targetC - hysteresisC` ein und ueber `targetC + hysteresisC` aus.
+  hysteresisC         Float              @default(0.5)
+  /// Ausserhalb der Betriebszeit diese Temperatur halten; null = Heizung aus.
+  setbackC            Float?
+  /// So viele Minuten vor Betriebsbeginn schon auf `targetC` heizen.
+  preheatMinutes      Int                @default(30)
+  /// Welche Betriebszeit gilt; null = die des Raums. Ohne beide: immer `targetC`.
+  operatingScheduleId Int?
+  operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
+
+  /// Laufzustand, vom Takt geschrieben.
+  lastTempC           Float?
+  lastReadAt          DateTime?
+  /// Zuletzt gesendeter Zustand der Heizung; null = noch nie geschaltet.
+  heating             Boolean?
+  lastSwitchAt        DateTime?
+  /// Aktuelles Soll (targetC, setbackC oder null = aus), zur Anzeige.
+  currentTargetC      Float?
+  lastError           String?
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([accountId])
+  @@index([sensorDeviceId])
+  @@index([operatingScheduleId])
 }
