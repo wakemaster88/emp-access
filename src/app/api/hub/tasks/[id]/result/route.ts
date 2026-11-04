@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { ingestHubScanDevices } from "@/lib/network-scan-ingest";
+import { queueFaceAnalysis } from "@/lib/unknown-persons";
 
 /** Hub meldet das Ergebnis eines Tasks zurueck (Token-Auth). */
 export async function POST(
@@ -52,5 +53,13 @@ export async function POST(
       finishedAt: new Date(),
     },
   });
-  return NextResponse.json({ ...updated, ingest });
+  // Gesichts-Analyse alter Sichtungen: naechsten Stapel gleich nachschieben,
+  // bis der Rueckstand abgearbeitet ist (stoppt, wenn nichts mehr analysiert wurde).
+  let nextAnalyze: { queued: number; taskId: number | null } | null = null;
+  if (success && task.type === "FACE_ANALYZE") {
+    const analyzed = Number((body.result as { analyzed?: unknown } | null)?.analyzed ?? 0);
+    if (analyzed > 0) nextAnalyze = await queueFaceAnalysis(account.id);
+  }
+
+  return NextResponse.json({ ...updated, ingest, nextAnalyze });
 }

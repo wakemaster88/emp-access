@@ -297,11 +297,13 @@ export async function analyzeSightings(
   for (const id of sightingIds) {
     try {
       const snap = await api(`/api/hub/person-sightings/${id}/snapshot`);
-      if (!snap.ok) {
+      if (!snap.ok && snap.status !== 404) {
         failed++;
         continue;
       }
-      const face = await embedJpeg(Buffer.from(await snap.arrayBuffer()));
+      // 404 = Bild weg (Aufbewahrung): als „kein Gesicht“ melden, sonst kaeme
+      // die Sichtung in jedem Analyse-Stapel wieder.
+      const face = snap.ok ? await embedJpeg(Buffer.from(await snap.arrayBuffer())) : null;
       const res = await api(`/api/hub/person-sightings/${id}/embedding`, {
         method: "POST",
         body: JSON.stringify({ embedding: face?.embedding ?? null }),

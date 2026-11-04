@@ -204,3 +204,45 @@ export function pickDiverseSamples(items: FaceItem[], max = 5): number[] {
   }
   return chosen.map((c) => c.id);
 }
+
+/** Unter dieser Aehnlichkeit zum Personen-Mittel gilt ein Sample als Fehlgriff. */
+export const OUTLIER_THRESHOLD = 0.3;
+
+/**
+ * Erkennungsprofil einer Person aus allen Kandidaten (bisherige Samples +
+ * zugeordnete Sichtungen) neu waehlen: offensichtliche Fehlgriffe raus,
+ * dann bis zu `max` moeglichst verschiedene Gesichter behalten.
+ */
+export function chooseProfile(
+  items: FaceItem[],
+  max = 12,
+  outlier = OUTLIER_THRESHOLD
+): { keep: number[]; outliers: number[] } {
+  const faces = items.filter((f) => f.embedding.length > 0);
+  if (faces.length < 3) return { keep: faces.map((f) => f.id), outliers: [] };
+  const centroid = meanOf(faces.map((f) => normalize(f.embedding)));
+  const outliers = faces.filter((f) => cosine(f.embedding, centroid) < outlier).map((f) => f.id);
+  const rest = faces.filter((f) => !outliers.includes(f.id));
+  return { keep: pickDiverseSamples(rest, max), outliers };
+}
+
+/**
+ * Neues Sample nach sicherem Auto-Match lernen? Nur wenn der Match deutlich
+ * ist (kein Grenzfall, der falsch sein koennte) und das Gesicht den
+ * vorhandenen Samples noch nicht stark gleicht (neuer Winkel / neues Licht).
+ */
+export function shouldAutoLearn(opts: {
+  embedding: number[];
+  samples: number[][];
+  matchScore: number;
+  maxSamples?: number;
+  minScore?: number;
+  maxSimilarity?: number;
+}): boolean {
+  const { embedding, samples, matchScore } = opts;
+  if (embedding.length < 64) return false;
+  if (matchScore < (opts.minScore ?? 0.5)) return false;
+  if (samples.length >= (opts.maxSamples ?? 20)) return false;
+  const nearest = samples.reduce((m, s) => Math.max(m, cosine(embedding, s)), -1);
+  return nearest < (opts.maxSimilarity ?? 0.8);
+}

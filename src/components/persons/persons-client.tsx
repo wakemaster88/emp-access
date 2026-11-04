@@ -20,10 +20,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Pencil, Trash2, Loader2, UserRound, History, ShieldAlert, ShieldCheck,
-  Cctv, Play, CheckCircle2, XCircle, Link2, UserPlus, ScanFace,
+  Cctv, Play, CheckCircle2, XCircle, Link2, UserPlus, ScanFace, ScanSearch, Wand2, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UnknownPersonsPanel } from "./unknown-persons-panel";
+import { PersonSearchDialog } from "./person-search-dialog";
 
 export interface PersonRow {
   id: number;
@@ -115,6 +116,32 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [searchPerson, setSearchPerson] = useState<{ id: number; name: string } | null>(null);
+  const [optimizingId, setOptimizingId] = useState<number | null>(null);
+  const [flash, setFlash] = useState("");
+
+  async function optimizeProfile(p: PersonRow) {
+    setOptimizingId(p.id);
+    try {
+      const res = await fetch(`/api/persons/${p.id}/optimize-profile`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFlash(typeof body.error === "string" ? body.error : "Optimieren fehlgeschlagen");
+        return;
+      }
+      setFlash(
+        body.candidates === 0
+          ? `${p.name}: noch keine Gesichter zum Auswerten – erst Sichtungen zuordnen.`
+          : `${p.name}: Profil jetzt ${body.after} Samples` +
+              (body.added ? `, ${body.added} neu aus Sichtungen` : "") +
+              (body.removed ? `, ${body.removed} unpassende/doppelte entfernt` : "") +
+              "."
+      );
+      refresh();
+    } finally {
+      setOptimizingId(null);
+    }
+  }
 
   const whitelist = useMemo(() => people.filter((p) => p.listType === "WHITELIST"), [people]);
   const blacklist = useMemo(() => people.filter((p) => p.listType === "BLACKLIST"), [people]);
@@ -376,6 +403,23 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                           {p._count.sightings} Sichtung{p._count.sightings !== 1 ? "en" : ""}
                           {" · "}
                           {p._count.faceEmbeddings} Face-Sample{p._count.faceEmbeddings !== 1 ? "s" : ""}
+                          {p._count.sightings > 0 && (
+                            <>
+                              {" · "}
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-50"
+                                disabled={optimizingId === p.id}
+                                onClick={() => optimizeProfile(p)}
+                                title="Profil aus allen zugeordneten Sichtungen neu wählen, unpassende Samples entfernen"
+                              >
+                                {optimizingId === p.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <Wand2 className="h-3 w-3" />}
+                                Profil optimieren
+                              </button>
+                            </>
+                          )}
                           {p.notes ? <> · {p.notes}</> : null}
                         </p>
                         {p._count.faceEmbeddings === 0 && (
@@ -385,6 +429,17 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1"
+                          title="Diese Person in den unbekannten Sichtungen suchen"
+                          disabled={p._count.faceEmbeddings === 0}
+                          onClick={() => setSearchPerson({ id: p.id, name: p.name })}
+                        >
+                          <ScanSearch className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Suchen</span>
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -480,6 +535,23 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-6xl">
+      {flash && (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+          <span>{flash}</span>
+          <button type="button" onClick={() => setFlash("")} className="opacity-70 hover:opacity-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      <PersonSearchDialog
+        person={searchPerson}
+        onClose={() => setSearchPerson(null)}
+        onAssigned={(msg) => {
+          setSearchPerson(null);
+          setFlash(msg);
+          refresh();
+        }}
+      />
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="max-w-full overflow-x-auto justify-start">
           <TabsTrigger value="whitelist" className="gap-1.5">
