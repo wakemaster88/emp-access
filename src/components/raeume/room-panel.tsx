@@ -3,18 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
-  Building2,
   CalendarClock,
   Cctv,
   Cpu,
   Lightbulb,
-  Loader2,
+  ListTree,
   Lock,
   Pencil,
   Thermometer,
   TriangleAlert,
   Users,
   Volume2,
+  Wifi,
   Workflow,
   Zap,
 } from "lucide-react";
@@ -22,18 +22,23 @@ import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeviceRow } from "@/components/raeume/device-row";
 import type { ZoneAction } from "@/components/raeume/zone-row";
-import { eventTypeLabel, fmtAgo } from "@/components/raeume/shared";
+import { eventTypeLabel, fmtAgo, shortDeviceName } from "@/components/raeume/shared";
 import { triggerLabel } from "@/components/regeln/shared";
 import type { DeviceStatus } from "@/components/raeume/status";
 import type {
   RoomDevice,
+  NetworkItem,
   RoomPanel as RoomPanelData,
   RoomZone,
 } from "@/components/raeume/types";
 import { isLatchingSwitchDevice } from "@/lib/device-controls";
+import { RoomIcon } from "@/components/raeume/room-icons";
+import { NetworkWidget } from "@/components/raeume/network-widget";
 import { ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
-import { ActivityChart, CameraTile, ClimateHero, DeviceTile, ZoneCard } from "@/components/raeume/room-widgets";
+import { ActivityChart, CameraTile, ClimateHero, DeviceTile, GroupTile, ZoneCard } from "@/components/raeume/room-widgets";
 import { cn } from "@/lib/utils";
+
+const FAN_RE = /l(ü|ue)ft|ventil/i;
 
 /** Geraete, die zum Klima gehoeren: Heizung, Lueftung, Klima, Fuehler. */
 const CLIMATE_NAME_RE = /heiz|l(ü|ue)ft|klima|thermo|temperatur|ventil/i;
@@ -46,7 +51,7 @@ export interface RoomGroups {
 
 /** Geraete eines Raums auf die Widgets verteilen. */
 export function groupRoomDevices(room: RoomPanelData): RoomGroups {
-  const heaterIds = new Set(room.climate?.heaterDeviceIds ?? []);
+  const heaterIds = new Set([...(room.climate?.heaterDeviceIds ?? []), ...(room.climate?.fanDeviceIds ?? [])]);
   const groups: RoomGroups = { climate: [], light: [], other: [] };
   for (const d of room.devices) {
     if (
@@ -70,37 +75,6 @@ function roomReading(devices: RoomDevice[], statuses: Map<number, DeviceStatus>,
   return null;
 }
 
-/** "Alle an" / "Alle aus" fuer die Beleuchtung eines Raums. */
-function AllLightsButton({
-  lights,
-  statuses,
-  onAction,
-}: {
-  lights: RoomDevice[];
-  statuses: Map<number, DeviceStatus>;
-  onAction: (device: RoomDevice, action: string) => Promise<string | null>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const switchable = lights.filter((d) => isLatchingSwitchDevice(d) && d.isActive);
-  if (switchable.length < 2) return null;
-  const anyOn = switchable.some((d) => statuses.get(d.id)?.output === true);
-  async function run() {
-    setBusy(true);
-    for (const d of switchable) await onAction(d, anyOn ? "reset" : "open");
-    setBusy(false);
-  }
-  return (
-    <button
-      type="button"
-      onClick={() => void run()}
-      disabled={busy}
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
-    >
-      {busy && <Loader2 className="h-3 w-3 animate-spin" />}
-      {anyOn ? "Alle aus" : "Alle an"}
-    </button>
-  );
-}
 
 /** Ob ein Raum irgendetwas zum Anzeigen hat. */
 export function roomHasEquipment(room: RoomPanelData): boolean {
@@ -171,8 +145,11 @@ export function RoomPanel({
   onZoneAction,
   onEdit,
   onClimate,
+  network = [],
 }: {
   room: RoomPanelData;
+  /** Netzwerkgeraete in diesem Raum. */
+  network?: NetworkItem[];
   statuses: Map<number, DeviceStatus>;
   nowMs: number;
   timezone: string;
@@ -208,8 +185,25 @@ export function RoomPanel({
   const otherRows = groups.other.filter((d) => !tileable(d));
   const lightTiles = groups.light.filter(tileable);
   const lightRows = groups.light.filter((d) => !tileable(d));
-  const climateTiles = climateDevices.filter(tileable);
+  const fanIds = new Set(room.climate?.fanDeviceIds ?? []);
+  const heaterIds = new Set(room.climate?.heaterDeviceIds ?? []);
+  const isFan = (d: RoomDevice) => fanIds.has(d.id) || (!heaterIds.has(d.id) && FAN_RE.test(d.name));
+  const fanTiles = climateDevices.filter((d) => tileable(d) && isFan(d));
+  const heatTiles = climateDevices.filter((d) => tileable(d) && !isFan(d));
   const climateRows = climateDevices.filter((d) => !tileable(d));
+  const [showAll, setShowAll] = useState(false);
+  const group = (title: string, list: RoomDevice[], wide = false) =>
+    list.length > 0 && (
+      <GroupTile
+        title={title}
+        devices={list}
+        roomName={room.name}
+        statuses={statuses}
+        readonly={readonly}
+        onAction={onAction}
+        wide={wide}
+      />
+    );
   const eventLabel = room.lastEvent ? `${eventTypeLabel(room.lastEvent.type)} ${fmtAgo(room.lastEvent.startedAt, nowMs)}` : null;
 
   const tiles = (list: RoomDevice[]) =>
@@ -238,7 +232,7 @@ export function RoomPanel({
       <CardHeader className="relative space-y-2 bg-gradient-to-br from-primary/[0.07] via-transparent to-transparent pb-3">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 text-white shadow-[0_6px_16px_-6px_var(--primary)]">
-            <Building2 className="h-5 w-5" />
+            <RoomIcon room={room} className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
             <p className="flex flex-wrap items-baseline gap-x-1.5 text-base font-semibold tracking-tight text-foreground">
@@ -333,9 +327,14 @@ export function RoomPanel({
                   {room.climate.lastError}
                 </p>
               )}
+              {(heatTiles.length > 0 || fanTiles.length > 0) && (
+                <div className="mt-2 grid grid-cols-2 gap-2 pl-1">
+                  {group("Heizung", heatTiles)}
+                  {group("Belüftung", fanTiles)}
+                </div>
+              )}
+              {climateRows.length > 0 && <div className="mt-2 space-y-1.5 pl-1">{rows(climateRows)}</div>}
             </div>
-            {tiles(climateTiles)}
-            {rows(climateRows)}
           </Section>
         )}
 
@@ -343,9 +342,8 @@ export function RoomPanel({
           <Section
             icon={<Lightbulb className="h-3.5 w-3.5" />}
             title="Beleuchtung"
-            action={!readonly && <AllLightsButton lights={groups.light} statuses={statuses} onAction={onAction} />}
           >
-            {tiles(lightTiles)}
+            {lightTiles.length > 0 && <div className="grid grid-cols-2 gap-2">{group("Alle Lichter", lightTiles, true)}</div>}
             {rows(lightRows)}
           </Section>
         )}
@@ -401,6 +399,58 @@ export function RoomPanel({
           <Section icon={<Cpu className="h-3.5 w-3.5" />} title="Geräte">
             {tiles(otherTiles)}
             {rows(otherRows)}
+          </Section>
+        )}
+
+        {network.length > 0 && (
+          <Section icon={<Wifi className="h-3.5 w-3.5" />} title="Netzwerk">
+            <NetworkWidget items={network} nowMs={nowMs} />
+          </Section>
+        )}
+
+        {room.devices.length > 0 && (
+          <Section
+            icon={<ListTree className="h-3.5 w-3.5" />}
+            title={`Alle Geräte & Sensoren · ${room.devices.length}`}
+            action={
+              <button
+                type="button"
+                onClick={() => setShowAll(!showAll)}
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+              >
+                {showAll ? "Ausblenden" : "Anzeigen"}
+              </button>
+            }
+          >
+            {showAll ? (
+              <div className="space-y-1.5">{rows(room.devices)}</div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="flex w-full flex-wrap gap-1.5 rounded-2xl border border-dashed border-border p-2 text-left"
+              >
+                {room.devices.map((d) => {
+                  const s = statuses.get(d.id);
+                  const reading = s?.readings?.[0];
+                  return (
+                    <span
+                      key={d.id}
+                      className="inline-flex max-w-full items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px]"
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          s ? (s.online ? (s.output ? "bg-emerald-500" : "bg-slate-400") : "bg-destructive") : "bg-slate-300",
+                        )}
+                      />
+                      <span className="truncate">{shortDeviceName(d.name, room.name)}</span>
+                      {reading && <span className="shrink-0 text-muted-foreground">{reading.value}</span>}
+                    </span>
+                  );
+                })}
+              </button>
+            )}
           </Section>
         )}
 

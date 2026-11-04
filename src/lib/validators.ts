@@ -519,6 +519,8 @@ const optionalDate = z
 
 export const keyRoomCreateSchema = z.object({
   name: z.string().min(1).max(120),
+  /// Symbol in der Raumuebersicht; null = aus dem Namen geraten.
+  icon: z.string().max(30).nullable().optional(),
   number: z.string().max(40).nullable().optional(),
   building: z.string().max(120).nullable().optional(),
   floor: z.string().max(60).nullable().optional(),
@@ -529,6 +531,10 @@ export const keyRoomCreateSchema = z.object({
   cameraIds: z.array(z.coerce.number().int().positive()).optional(),
   /// Beschallungszonen, die diesen Raum beschallen (Vollersetzung).
   audioZoneIds: z.array(z.coerce.number().int().positive()).optional(),
+  /// Netzwerk-Infrastruktur (Switch, AP, Router) in diesem Raum (Vollersetzung).
+  networkDeviceIds: z.array(z.coerce.number().int().positive()).optional(),
+  /// Netzwerk-Endgeraete in diesem Raum (Vollersetzung).
+  networkClientIds: z.array(z.coerce.number().int().positive()).optional(),
   /// Betriebszeit-Profil; null = keines.
   operatingScheduleId: z.coerce.number().int().positive().nullable().optional(),
 });

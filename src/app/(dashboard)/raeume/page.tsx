@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { RaeumeClient } from "@/components/raeume/raeume-client";
 import type {
+  NetworkItem,
   RoomCamera,
   RoomDevice,
   RoomEvent,
@@ -134,7 +135,7 @@ export default async function RaeumePage() {
   const since = new Date(now);
   since.setHours(since.getHours() - EVENT_LOOKBACK_HOURS);
 
-  const [rooms, looseDevices, looseCameras, looseZones, events, schedules, account] = await Promise.all([
+  const [rooms, looseDevices, looseCameras, looseZones, events, schedules, account, netDevices, netClients] = await Promise.all([
     db.keyRoom.findMany({
       where: accountFilter,
       include: {
@@ -219,7 +220,61 @@ export default async function RaeumePage() {
           where: { id: session.user.accountId! },
           select: { timezone: true },
         }),
+    db.networkDevice.findMany({
+      where: accountFilter,
+      select: { id: true, name: true, type: true, ipAddress: true, lastSeenAt: true, location: true, keyRoomId: true },
+      orderBy: { name: "asc" },
+    }),
+    db.networkClient.findMany({
+      where: accountFilter,
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        ipAddress: true,
+        lastSeenAt: true,
+        keyRoomId: true,
+        area: { select: { name: true } },
+        device: { select: { keyRoomId: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
   ]);
+
+  // Netzwerk je Raum: ausdruecklich zugeordnet, sonst erraten ueber den
+  // Standort/Bereich (heisst wie der Raum) oder das verknuepfte IoT-Geraet.
+  const roomByName = new Map(rooms.map((r) => [r.name.trim().toLowerCase(), r.id]));
+  const byName = (name: string | null | undefined) => (name ? roomByName.get(name.trim().toLowerCase()) ?? null : null);
+  const network: NetworkItem[] = [
+    ...netDevices.map((d) => {
+      const guess = byName(d.location);
+      return {
+        key: `d${d.id}`,
+        kind: "device" as const,
+        id: d.id,
+        name: d.name,
+        type: d.type,
+        ipAddress: d.ipAddress,
+        lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
+        roomId: d.keyRoomId ?? guess,
+        inferred: d.keyRoomId == null && guess != null,
+      };
+    }),
+    ...netClients.map((c) => {
+      const guess = c.device?.keyRoomId ?? byName(c.area?.name);
+      return {
+        key: `c${c.id}`,
+        kind: "client" as const,
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        ipAddress: c.ipAddress,
+        lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
+        roomId: c.keyRoomId ?? guess,
+        inferred: c.keyRoomId == null && guess != null,
+      };
+    }),
+  ];
 
   // Personen heute je Raum (Kameras mit Raum). Laeuft nach dem ersten Block,
   // weil die Zeitzone des Mandanten gebraucht wird.
@@ -268,6 +323,7 @@ export default async function RaeumePage() {
   const roomPanels: RoomPanel[] = rooms.map((room) => ({
     id: room.id,
     name: room.name,
+    icon: room.icon,
     number: room.number,
     building: room.building,
     floor: room.floor,
@@ -335,6 +391,7 @@ export default async function RaeumePage() {
             looseDevices: looseDevices.map(toDevice),
             looseCameras: looseCameras.map(toCamera),
             looseZones: looseZones.map(toZone),
+            network,
             scheduleOptions: schedules,
             timezone: tz,
             renderedAt: now.toISOString(),

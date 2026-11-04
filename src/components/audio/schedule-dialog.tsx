@@ -33,6 +33,8 @@ import type {
   ZoneRow,
 } from "./types";
 
+/** PLAY ohne Playlist: Quelle, die an der Zone eingestellt ist. */
+const ZONE_SOURCE = "zone";
 const ROOM_SCHEDULE = "__room__";
 
 const TRIGGER_HINTS: Record<AudioScheduleTrigger, string> = {
@@ -45,7 +47,7 @@ const DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 const ACTION_LABELS: Record<AudioScheduleAction, string> = {
   ANNOUNCE: "Durchsage abspielen",
-  PLAY: "Playlist starten",
+  PLAY: "Musik starten",
   STOP: "Wiedergabe stoppen",
   VOLUME: "Lautstärke setzen",
 };
@@ -91,7 +93,7 @@ export function ScheduleDialog({
     schedule?.announcementId ? String(schedule.announcementId) : String(templates[0]?.id ?? "")
   );
   const [playlistId, setPlaylistId] = useState<string>(
-    schedule?.playlistId ? String(schedule.playlistId) : String(playlists[0]?.id ?? "")
+    schedule?.playlistId ? String(schedule.playlistId) : ZONE_SOURCE
   );
   const [volume, setVolume] = useState(schedule?.volume ?? 50);
   const [saving, setSaving] = useState(false);
@@ -113,10 +115,6 @@ export function ScheduleDialog({
     }
     if (action === "ANNOUNCE" && !announcementId) {
       setError("Bitte eine gespeicherte Durchsage auswählen");
-      return;
-    }
-    if (action === "PLAY" && !playlistId) {
-      setError("Bitte eine Playlist auswählen");
       return;
     }
     if (trigger === "TIME" && !timeOfDay) {
@@ -151,7 +149,7 @@ export function ScheduleDialog({
         daysOfWeek,
         zoneIds,
         announcementId: action === "ANNOUNCE" ? Number(announcementId) : null,
-        playlistId: action === "PLAY" ? Number(playlistId) : null,
+        playlistId: action === "PLAY" && playlistId !== ZONE_SOURCE ? Number(playlistId) : null,
         volume: action === "VOLUME" ? volume : null,
       };
       const res = await fetch(
@@ -242,12 +240,13 @@ export function ScheduleDialog({
 
           {action === "PLAY" && (
             <div>
-              <Label>Playlist</Label>
+              <Label>Was spielen</Label>
               <Select value={playlistId} onValueChange={setPlaylistId} disabled={isEdit}>
                 <SelectTrigger>
                   <SelectValue placeholder="Auswählen" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={ZONE_SOURCE}>Vorgabe der Zone (Webradio oder Playlist)</SelectItem>
                   {playlists.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
                       {p.name}

@@ -8,7 +8,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { EquipmentPicker, type EquipmentItem } from "@/components/schliessanlage/equipment-picker";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
-import type { RoomCamera, RoomDevice, RoomZone, ScheduleOption } from "@/components/raeume/types";
+import type { NetworkItem, RoomCamera, RoomDevice, RoomZone, ScheduleOption } from "@/components/raeume/types";
+import { ROOM_ICONS, roomIconKey } from "@/components/raeume/room-icons";
+import { networkTypeLabel } from "@/components/raeume/network-widget";
+import { cn } from "@/lib/utils";
 
 export interface Placed<T> {
   item: T;
@@ -30,6 +33,8 @@ export function RoomEquipmentDialog({
   roomNames,
   scheduleOptions,
   currentScheduleId,
+  roomIcon,
+  network,
   open,
   onClose,
 }: {
@@ -41,6 +46,8 @@ export function RoomEquipmentDialog({
   roomNames: Map<number, string>;
   scheduleOptions: ScheduleOption[];
   currentScheduleId: number | null;
+  roomIcon: string | null;
+  network: NetworkItem[];
   open: boolean;
   onClose: () => void;
 }) {
@@ -55,6 +62,14 @@ export function RoomEquipmentDialog({
     () => zones.filter((z) => z.roomId === roomId).map((z) => z.item.id),
   );
   const [scheduleId, setScheduleId] = useState<number | null>(currentScheduleId);
+  const [name, setName] = useState(roomName);
+  const [icon, setIcon] = useState<string>(roomIconKey({ name: roomName, icon: roomIcon }));
+  // Netzwerk: Infrastruktur und Endgeraete in einer Liste; gerade Ids =
+  // NetworkDevice, ungerade = NetworkClient.
+  const netId = (n: NetworkItem) => n.id * 2 + (n.kind === "client" ? 1 : 0);
+  const [networkIds, setNetworkIds] = useState<number[]>(
+    () => network.filter((n) => n.roomId === roomId).map(netId),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -82,6 +97,13 @@ export function RoomEquipmentDialog({
     takenBy: takenBy(z.roomId),
   }));
 
+  const networkItems: EquipmentItem[] = network.map((n) => ({
+    id: netId(n),
+    label: n.name,
+    meta: [networkTypeLabel(n.type), n.ipAddress].filter(Boolean).join(" · "),
+    takenBy: takenBy(n.roomId),
+  }));
+
   async function save() {
     setSaving(true);
     setError("");
@@ -89,7 +111,11 @@ export function RoomEquipmentDialog({
       deviceIds,
       cameraIds,
       audioZoneIds,
+      networkDeviceIds: networkIds.filter((id) => id % 2 === 0).map((id) => id / 2),
+      networkClientIds: networkIds.filter((id) => id % 2 === 1).map((id) => (id - 1) / 2),
       operatingScheduleId: scheduleId,
+      ...(name.trim() && name.trim() !== roomName ? { name: name.trim() } : {}),
+      icon,
     });
     setSaving(false);
     if (!res.ok) {
@@ -104,10 +130,44 @@ export function RoomEquipmentDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="text-base">{roomName}: Ausstattung und Betriebszeit</DialogTitle>
+          <DialogTitle className="text-base">Raum bearbeiten</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Name</Label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={120}
+              className="h-9 w-full rounded-md border border-neutral-200 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Symbol</Label>
+            <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-9">
+              {ROOM_ICONS.map(({ key, label, Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  title={label}
+                  aria-label={label}
+                  aria-pressed={icon === key}
+                  onClick={() => setIcon(key)}
+                  className={cn(
+                    "flex aspect-square items-center justify-center rounded-xl border transition",
+                    icon === key
+                      ? "border-transparent bg-gradient-to-br from-primary to-violet-500 text-white shadow-md"
+                      : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-1">
             <Label className="text-xs">Betriebszeit</Label>
             <select
@@ -165,6 +225,17 @@ export function RoomEquipmentDialog({
               Zonen im Raum richten sich mit „Betriebsbeginn“ und „Betriebsende“ nach der
               Betriebszeit dieses Raums.
             </p>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Netzwerk in diesem Raum</Label>
+            <EquipmentPicker
+              items={networkItems}
+              value={networkIds}
+              onChange={setNetworkIds}
+              placeholder="Switch, Access Point, Drucker, Kasse …"
+              emptyText="Noch keine Netzwerkgeräte erfasst."
+            />
           </div>
 
           <ErrorLine message={error} />

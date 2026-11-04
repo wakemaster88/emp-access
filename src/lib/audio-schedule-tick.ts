@@ -26,6 +26,7 @@ import {
   type ScheduleSpec,
 } from "@/lib/operating-hours";
 import { scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { controlAudioZone } from "@/lib/audio-integration";
 
 const DEFAULT_TIMEZONE = "Europe/Berlin";
 
@@ -213,6 +214,15 @@ export async function runAudioScheduleTick(now = new Date()): Promise<AudioTickR
               { kind: "PLAYLIST", ...(payload as object) },
               triggerKind,
             );
+          }
+        } else if (schedule.action === "PLAY") {
+          // Ohne Playlist: Vorgabe der Zone (Webradio/Playlist, wie im Raum eingestellt).
+          const zones = await db.audioZone.findMany({
+            where: { accountId: account.id, id: { in: due.map((z) => z.id) } },
+            select: { id: true, volume: true, defaultSource: true, streamId: true, streamUrl: true, playlistId: true },
+          });
+          for (const zone of zones) {
+            await controlAudioZone(db, account.id, zone, { action: "PLAY", persistStreamUrl: false });
           }
         } else if (schedule.action === "STOP") {
           await queueZoneCommand(db, account.id, due, "STOP", null, triggerKind);

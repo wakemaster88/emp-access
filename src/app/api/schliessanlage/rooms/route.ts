@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     data: {
       accountId,
       name: data.name.trim(),
+      icon: data.icon || null,
       number: data.number?.trim() || null,
       building: data.building?.trim() || null,
       floor: data.floor?.trim() || null,

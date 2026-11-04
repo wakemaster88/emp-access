@@ -41,7 +41,7 @@ export async function PUT(request: NextRequest) {
   const room = await db.keyRoom.findFirst({ where: { id: roomId, accountId }, select: { id: true } });
   if (!room) return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 404 });
 
-  const { minC, maxC, maxHysteresisC, maxPreheatMinutes, maxAfterrunMinutes } = CLIMATE_LIMITS;
+  const { minC, maxC, maxHysteresisC, maxPreheatMinutes, maxAfterrunMinutes, maxFanAfterrunMinutes } = CLIMATE_LIMITS;
   const targetC = num(body.targetC);
   if (targetC === null || targetC < minC || targetC > maxC) return bad(`Solltemperatur zwischen ${minC} und ${maxC} °C`);
   const setbackC = body.setbackC == null || body.setbackC === "" ? null : num(body.setbackC);
@@ -60,19 +60,37 @@ export async function PUT(request: NextRequest) {
     : null;
   if (!sensor) return bad("Temperaturfühler wählen (Shelly)");
 
-  const heaterIds = Array.isArray(body.heaterDeviceIds)
-    ? [...new Set(body.heaterDeviceIds.map(Number).filter((n) => Number.isInteger(n)))]
-    : [];
-  if (heaterIds.length === 0) return bad("Mindestens eine Heizung wählen");
-  const heaters = await db.device.findMany({
-    where: { id: { in: heaterIds }, accountId, type: "SHELLY" },
+  const ids = (v: unknown) =>
+    Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isInteger(n)))] : [];
+  const heaterIds = ids(body.heaterDeviceIds);
+  const fanIds = ids(body.fanDeviceIds);
+  if (heaterIds.length === 0 && fanIds.length === 0) return bad("Mindestens eine Heizung oder Lüftung wählen");
+  const switches = await db.device.findMany({
+    where: { id: { in: [...heaterIds, ...fanIds] }, accountId, type: "SHELLY" },
     select: { id: true, category: true },
   });
-  if (heaters.length !== heaterIds.length) return bad("Heizung nicht gefunden (nur Shelly-Schalter)");
-  if (heaters.some((h) => h.category === "MARKISE" || h.category === "ROLLTOR" || h.category === "SENSOR")) {
-    return bad("Als Heizung nur Schalter wählen");
+  if (switches.length !== new Set([...heaterIds, ...fanIds]).size) return bad("Heizung oder Lüftung nicht gefunden (nur Shelly-Schalter)");
+  if (switches.some((h) => h.category === "MARKISE" || h.category === "ROLLTOR" || h.category === "SENSOR")) {
+    return bad("Für Heizung und Lüftung nur Schalter wählen");
   }
-  if (heaterIds.includes(sensorDeviceId)) return bad("Fühler und Heizung müssen verschiedene Geräte sein");
+  if (heaterIds.includes(sensorDeviceId) || fanIds.includes(sensorDeviceId)) {
+    return bad("Fühler und Schalter müssen verschiedene Geräte sein");
+  }
+  if (heaterIds.some((id) => fanIds.includes(id))) return bad("Ein Gerät kann nicht Heizung und Lüftung zugleich sein");
+
+  const fanOnHumidity = body.fanOnHumidity == null || body.fanOnHumidity === "" ? 65 : num(body.fanOnHumidity);
+  const fanOffHumidity = body.fanOffHumidity == null || body.fanOffHumidity === "" ? 58 : num(body.fanOffHumidity);
+  if (fanOnHumidity === null || fanOnHumidity < 30 || fanOnHumidity > 95) return bad("Lüftung an: Luftfeuchte zwischen 30 und 95 %");
+  if (fanOffHumidity === null || fanOffHumidity < 20 || fanOffHumidity >= fanOnHumidity) {
+    return bad("Lüftung aus: Luftfeuchte unter dem Einschaltwert");
+  }
+  const fanAfterrunMinutes =
+    body.fanAfterrunMinutes == null || body.fanAfterrunMinutes === "" ? 45 : Math.round(num(body.fanAfterrunMinutes) ?? -1);
+  if (fanAfterrunMinutes < 0 || fanAfterrunMinutes > maxFanAfterrunMinutes) {
+    return bad(`Lüftungs-Nachlauf zwischen 0 und ${maxFanAfterrunMinutes} Minuten`);
+  }
+  const fanMinTempC = body.fanMinTempC == null || body.fanMinTempC === "" ? 8 : num(body.fanMinTempC);
+  if (fanMinTempC === null || fanMinTempC < 0 || fanMinTempC > 20) return bad("Frostschutz der Lüftung zwischen 0 und 20 °C");
 
   let operatingScheduleId: number | null = null;
   if (body.operatingScheduleId != null && body.operatingScheduleId !== "") {
@@ -90,6 +108,11 @@ export async function PUT(request: NextRequest) {
     setbackC,
     preheatMinutes,
     afterrunMinutes,
+    fanDeviceIds: fanIds,
+    fanOnHumidity,
+    fanOffHumidity,
+    fanAfterrunMinutes,
+    fanMinTempC,
     operatingScheduleId,
   };
   const climate = await db.roomClimate.upsert({

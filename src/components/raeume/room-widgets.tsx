@@ -12,6 +12,7 @@ import {
   Activity,
   Blinds,
   Cctv,
+  ChevronDown,
   CircleDot,
   DoorOpen,
   Fan,
@@ -146,8 +147,16 @@ export function ClimateHero({
       <TempGauge tempC={tempC} targetC={target} heating={heating} />
       <div className="grid min-w-0 flex-1 grid-cols-1 gap-2">
         {humidity && stat("Luftfeuchte", humidity)}
+        {climate?.isActive && climate.fanDeviceIds.length > 0 &&
+          stat(
+            "Lüftung",
+            climate.fanOn ? "lüftet" : `aus · an ab ${climate.fanOnHumidity.toLocaleString("de-DE")} %`,
+            climate.fanOn ? "text-sky-500" : undefined,
+          )}
         {climate
-          ? climate.isActive
+          ? climate.isActive && climate.heaterDeviceIds.length === 0
+            ? null
+            : climate.isActive
             ? stat(
                 "Heizung",
                 heating ? "heizt" : target == null ? "aus · geschlossen" : "aus",
@@ -561,3 +570,155 @@ export function ActivityChart({
     </div>
   );
 }
+
+// ─── Gruppe ──────────────────────────────────────────────────────────────────
+
+/**
+ * Mehrere gleichartige Geraete als eine Kachel: "Belüftung · 1 von 2 an".
+ * Antippen schaltet alle (eins an → alle aus, sonst alle an); der Pfeil klappt
+ * die einzelnen Geraete auf. Mit nur einem Geraet die normale Kachel.
+ */
+export function GroupTile({
+  title,
+  devices,
+  roomName,
+  statuses,
+  readonly,
+  onAction,
+  wide = false,
+}: {
+  title: string;
+  devices: RoomDevice[];
+  roomName: string;
+  statuses: Map<number, DeviceStatus>;
+  readonly: boolean;
+  onAction: (device: RoomDevice, action: string) => Promise<string | null>;
+  wide?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (pending === null) return;
+    const t = setTimeout(() => setPending(null), 10_000);
+    return () => clearTimeout(t);
+  }, [pending]);
+
+  if (devices.length === 1) {
+    return (
+      <div className={cn("grid", wide && "col-span-2")}>
+        <DeviceTile
+          device={devices[0]}
+          roomName={roomName}
+          status={statuses.get(devices[0].id)}
+          readonly={readonly}
+          onAction={onAction}
+        />
+      </div>
+    );
+  }
+
+  const isOn = (d: RoomDevice) => {
+    const s = statuses.get(d.id);
+    return s ? s.output === true : d.type === "HUE_LIGHT" && d.task === 1;
+  };
+  const switchable = devices.filter(
+    (d) => isLatchingSwitchDevice(d) && d.isActive && statuses.get(d.id)?.online !== false,
+  );
+  const onCount = pending === null ? devices.filter(isOn).length : pending ? switchable.length : 0;
+  const anyOn = onCount > 0;
+  const tone = toneFor(devices[0]);
+  const canToggle = !readonly && switchable.length > 0;
+  const power = devices.reduce((sum, d) => sum + (isOn(d) ? (statuses.get(d.id)?.power ?? 0) : 0), 0);
+
+  async function toggle() {
+    if (!canToggle || busy) return;
+    const next = !anyOn;
+    setPending(next);
+    setBusy(true);
+    setError("");
+    const errors: string[] = [];
+    for (const d of switchable) {
+      const message = await onAction(d, next ? "open" : "reset");
+      if (message) errors.push(`${shortDeviceName(d.name, roomName)}: ${message}`);
+    }
+    setBusy(false);
+    if (errors.length) {
+      setPending(null);
+      setError(errors.join(" · "));
+    }
+  }
+
+  return (
+    <div className={cn("space-y-2", (wide || open) && "col-span-2")}>
+      <div
+        className={cn(
+          "relative flex min-h-[92px] flex-col justify-between rounded-2xl border p-3 transition-all duration-300",
+          anyOn ? TONE_ON[tone] : "border-border bg-card dark:bg-muted/30",
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => void toggle()}
+            disabled={!canToggle}
+            aria-pressed={anyOn}
+            title={error || `${title}: alle ${anyOn ? "aus" : "an"}`}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full transition-all duration-300 enabled:active:scale-90",
+              anyOn ? TONE_ICON_ON[tone] : "bg-muted text-muted-foreground enabled:hover:bg-muted/70",
+            )}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <TileIcon device={devices[0]} tone={tone} className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="flex items-center gap-1 rounded-full bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-border/60 hover:text-foreground"
+            aria-expanded={open}
+          >
+            {devices.length}
+            <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
+          </button>
+        </div>
+        <button type="button" onClick={() => void toggle()} disabled={!canToggle} className="mt-2 block text-left">
+          <span className="block text-[13px] font-semibold leading-tight text-foreground">{title}</span>
+          <span className={cn("block text-[11px]", error ? "text-destructive" : anyOn ? "text-foreground/70" : "text-muted-foreground")}>
+            {error
+              ? "Fehler"
+              : anyOn
+                ? `${onCount} von ${devices.length} an${power > 0 ? ` · ${Math.round(power)} W` : ""}`
+                : `alle ${devices.length} aus`}
+          </span>
+        </button>
+        {/* Fortschritt: wie viele an */}
+        <div className="mt-2 flex gap-1">
+          {devices.map((d, i) => (
+            <span
+              key={d.id}
+              className={cn(
+                "h-1 flex-1 rounded-full transition-colors",
+                (pending === null ? isOn(d) : i < onCount) ? TONE_BAR[tone] : "bg-foreground/10",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+      {open && (
+        <div className="grid grid-cols-2 gap-2 rounded-2xl bg-muted/30 p-1.5">
+          {devices.map((d) => (
+            <DeviceTile key={d.id} device={d} roomName={roomName} status={statuses.get(d.id)} readonly={readonly} onAction={onAction} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TONE_BAR: Record<Tone, string> = {
+  light: "bg-amber-400",
+  heat: "bg-orange-500",
+  air: "bg-sky-500",
+  default: "bg-primary",
+};

@@ -92,8 +92,36 @@ export async function syncRoomEquipment(
   db: TenantDb,
   accountId: number,
   roomId: number,
-  input: { deviceIds?: number[]; cameraIds?: number[]; audioZoneIds?: number[] },
+  input: {
+    deviceIds?: number[];
+    cameraIds?: number[];
+    audioZoneIds?: number[];
+    networkDeviceIds?: number[];
+    networkClientIds?: number[];
+  },
 ): Promise<void> {
+  if (input.networkDeviceIds) {
+    const next = [...new Set(input.networkDeviceIds)];
+    await db.networkDevice.updateMany({
+      where: { accountId, keyRoomId: roomId, ...(next.length && { id: { notIn: next } }) },
+      data: { keyRoomId: null },
+    });
+    if (next.length) {
+      await db.networkDevice.updateMany({ where: { accountId, id: { in: next } }, data: { keyRoomId: roomId } });
+    }
+  }
+
+  if (input.networkClientIds) {
+    const next = [...new Set(input.networkClientIds)];
+    await db.networkClient.updateMany({
+      where: { accountId, keyRoomId: roomId, ...(next.length && { id: { notIn: next } }) },
+      data: { keyRoomId: null },
+    });
+    if (next.length) {
+      await db.networkClient.updateMany({ where: { accountId, id: { in: next } }, data: { keyRoomId: roomId } });
+    }
+  }
+
   if (input.audioZoneIds) {
     const next = [...new Set(input.audioZoneIds)];
     await db.audioZone.updateMany({
