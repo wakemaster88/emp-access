@@ -15,6 +15,7 @@ interface TelegramCardProps {
     dailyReport: boolean;
     dailyReportTime: string;
     notifyNewDevices?: boolean;
+    notifyOutages?: boolean;
   } | null;
 }
 
@@ -35,6 +36,22 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
   const [config, setConfig] = useState(initialConfig);
   const [notifyNewDevices, setNotifyNewDevices] = useState(initialConfig?.notifyNewDevices ?? true);
+  const [notifyOutages, setNotifyOutages] = useState(initialConfig?.notifyOutages ?? true);
+
+  const toggleNotifyOutages = async () => {
+    const next = !notifyOutages;
+    setNotifyOutages(next);
+    try {
+      const res = await fetch("/api/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "settings", notifyOutages: next }),
+      });
+      if (!res.ok) setNotifyOutages(!next);
+    } catch {
+      setNotifyOutages(!next);
+    }
+  };
 
   const toggleNotifyNewDevices = async () => {
     const next = !notifyNewDevices;
@@ -154,6 +171,25 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               <span className={cn(
                 "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform",
                 notifyNewDevices && "translate-x-5",
+              )} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Ausfälle melden (Hub, Kameras, Switch-Prüfung)</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notifyOutages}
+              aria-label="Ausfälle melden"
+              onClick={toggleNotifyOutages}
+              className={cn(
+                "relative h-6 w-11 rounded-full transition-colors",
+                notifyOutages ? "bg-primary" : "bg-slate-300 dark:bg-accent",
+              )}
+            >
+              <span className={cn(
+                "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform",
+                notifyOutages && "translate-x-5",
               )} />
             </button>
           </div>

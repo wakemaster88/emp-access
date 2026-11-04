@@ -42,7 +42,7 @@ export interface SwitchSnapshot {
   macTable: MacEntry[];
 }
 
-function snmpTargets(): string[] {
+export function snmpTargets(): string[] {
   return (process.env.HUB_SNMP_TARGETS || "")
     .split(",")
     .map((s) => s.trim())
@@ -84,11 +84,16 @@ export function snmpConfigured(): boolean {
   return snmpTargets().length > 0;
 }
 
-function parseWalk(stdout: string): Array<{ oid: string; value: string }> {
+export function parseWalk(stdout: string): Array<{ oid: string; value: string }> {
   const rows: Array<{ oid: string; value: string }> = [];
   for (const line of stdout.split("\n")) {
     const m = line.match(/^(\.?[0-9]+(?:\.[0-9]+)*)\s*=\s*(?:[A-Z0-9-]+:\s*)?(.*)$/);
-    if (!m) continue;
+    if (!m) {
+      // net-snmp bricht lange Hex-Strings (Port-Bitmaps) auf mehrere Zeilen um.
+      const last = rows[rows.length - 1];
+      if (last && line.trim()) last.value = `${last.value} ${line.trim()}`.trim();
+      continue;
+    }
     rows.push({ oid: m[1].replace(/^\./, ""), value: m[2].trim().replace(/^"|"$/g, "") });
   }
   return rows;
@@ -107,10 +112,14 @@ export async function snmpGet(host: string, oid: string): Promise<string | null>
   }
 }
 
-export async function snmpWalk(host: string, oid: string): Promise<Array<{ oid: string; value: string }>> {
+export async function snmpWalk(
+  host: string,
+  oid: string,
+  extraFlags: string[] = []
+): Promise<Array<{ oid: string; value: string }>> {
   const { stdout } = await execFileAsync(
     "snmpwalk",
-    ["-v2c", "-c", community(), "-On", "-Oe", host, oid],
+    ["-v2c", "-c", community(), "-On", "-Oe", ...extraFlags, host, oid],
     { timeout: 45_000 }
   );
   return parseWalk(stdout);

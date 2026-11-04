@@ -48,8 +48,17 @@ export async function POST(request: NextRequest) {
         // Der Hub meldet sich – auch „getrennt“ ist eine frische Meldung.
         lastSeenAt: now,
         ...(hubName ? { hubName } : {}),
+        // Verbunden: Trennzeitpunkt vergessen (Basis der Ausfall-Meldung).
+        ...(connected ? { disconnectedAt: null } : {}),
       },
     });
+    if (!connected) {
+      // Erste „getrennt“-Meldung merkt sich den Zeitpunkt, spaetere nicht.
+      await db.soundwebDevice.updateMany({
+        where: { id, accountId: account.id, disconnectedAt: null },
+        data: { disconnectedAt: now },
+      });
+    }
     devicesUpdated += result.count;
   }
 
