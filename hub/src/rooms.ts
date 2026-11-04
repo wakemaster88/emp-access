@@ -57,6 +57,8 @@ export interface Room {
   /** Solltemperatur halten; geregelt von der Cloud (src/lib/room-climate.ts). */
   climate?: {
     isActive: boolean;
+    /** Fuehler, dessen Temperatur geregelt wird (fuer den Klimaverlauf). */
+    sensorDeviceId?: number;
     targetC: number;
     currentTargetC: number | null;
     lastTempC: number | null;
@@ -129,6 +131,19 @@ function isHue(d: RoomDevice): boolean {
 function allDevices(): RoomDevice[] {
   if (!snapshot) return [];
   return snapshot.rooms.flatMap((r) => r.devices).concat(snapshot.unassigned);
+}
+
+/**
+ * Klimafuehler, die der Hub im LAN lesen kann: Shellys mit IP, die als Fuehler
+ * eingetragen sind oder die Temperatur eines Raumklimas liefern.
+ */
+export function sensorDevices(): RoomDevice[] {
+  const climateSensors = new Set(
+    (snapshot?.rooms ?? []).map((r) => r.climate?.sensorDeviceId).filter((id): id is number => typeof id === "number"),
+  );
+  return allDevices().filter(
+    (d) => d.type === "SHELLY" && !!d.ipAddress && IPV4_RE.test(d.ipAddress) && (d.category === "SENSOR" || climateSensors.has(d.id)),
+  );
 }
 
 async function saveCache(data: RoomsSnapshot): Promise<void> {

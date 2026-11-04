@@ -20,6 +20,7 @@ import { ensureFfmpeg } from "./ffmpeg-setup.js";
 import { startHueSync } from "./smart-devices.js";
 import { startSoundweb } from "./soundweb.js";
 import { startRooms } from "./rooms.js";
+import { startClimate } from "./climate.js";
 import { startRules } from "./rules.js";
 import { startMower, stopMowerSidecar } from "./mower.js";
 
@@ -262,7 +263,11 @@ setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 // Soundweb London: Konfiguration aus der Cloud, dann je Prozessor eine
 // DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.
 startSoundweb();
-void startRooms().then(() => startRules());
+void startRooms().then(() => {
+  startRules();
+  // Klimaverlauf: Fuehler im LAN jede Minute lesen, 5-Minuten-Mittel an die Cloud.
+  startClimate();
+});
 // Mammotion-Maeher: nur mit Zweit-Account in hub/.env (MAMMOTION_EMAIL/-PASSWORD).
 startMower();
 // Welche Kameras geprüft werden, steht in der Cloud ("Halteverbot" an der
