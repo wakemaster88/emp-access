@@ -59,6 +59,25 @@ test("Soll folgt der Betriebszeit, mit Vorheizen und Absenkung", () => {
   assert.equal(climateTarget(climate, null, new Date("2026-11-04T22:00:00Z"), tz).targetC, 21);
 });
 
+test("Heizfenster mit Vorheizen und Nachlauf: Wasserski 12–16 → 11:30–16:30", () => {
+  const tz = "Europe/Berlin";
+  const ski: ScheduleSpec = {
+    name: "Wasserski",
+    seasons: [{ name: "Ganzjahr", startMmDd: "01-01", endMmDd: "12-31", sortOrder: 0,
+      periods: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opensAt: "12:00", closesAt: "16:00" })) }],
+    exceptions: [],
+  };
+  const c = { targetC: 22, setbackC: null, preheatMinutes: 30, afterrunMinutes: 30 };
+  // November: Berlin = UTC+1
+  const at = (hhmm: string) => new Date(`2026-11-04T${hhmm}:00+01:00`);
+  assert.equal(climateTarget(c, ski, at("11:29"), tz).targetC, null);
+  assert.equal(climateTarget(c, ski, at("11:30"), tz).targetC, 22);
+  assert.equal(climateTarget(c, ski, at("16:29"), tz).targetC, 22);
+  assert.equal(climateTarget(c, ski, at("16:30"), tz).targetC, null);
+  // Ohne Nachlauf endet das Fenster mit der Betriebszeit
+  assert.equal(climateTarget({ ...c, afterrunMinutes: 0 }, ski, at("16:10"), tz).targetC, null);
+});
+
 test("Zeitstempel aus dem Cloud-Status", () => {
   assert.equal(statusUpdatedAt({ _updated: "2026-11-04 10:12:13" })?.toISOString(), "2026-11-04T10:12:13.000Z");
   assert.equal(statusUpdatedAt({}), null);

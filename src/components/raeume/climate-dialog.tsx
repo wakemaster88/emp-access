@@ -16,6 +16,13 @@ const fieldClass =
 
 const HEATER_RE = /heiz|klima|radiator|ofen/i;
 
+/** "12:00" um Minuten verschieben, fuer das Beispiel im Dialog. */
+function shiftLabel(hhmm: string, minutes: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const t = (((h * 60 + m + minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
 /**
  * Klima eines Raums einstellen: Fuehler, Heizung(en), Solltemperatur zur
  * Betriebszeit, Absenkung ausserhalb, Vorheizen. Gespeichert in der Cloud,
@@ -59,6 +66,7 @@ export function ClimateDialog({
   const [setbackOn, setSetbackOn] = useState(climate?.setbackC != null);
   const [setbackC, setSetbackC] = useState(String(climate?.setbackC ?? 16).replace(".", ","));
   const [preheat, setPreheat] = useState(String(climate?.preheatMinutes ?? 30));
+  const [afterrun, setAfterrun] = useState(String(climate?.afterrunMinutes ?? 30));
   const [hysteresis, setHysteresis] = useState(String(climate?.hysteresisC ?? 0.5).replace(".", ","));
   const [scheduleId, setScheduleId] = useState<number | null>(climate?.operatingScheduleId ?? null);
   const [saving, setSaving] = useState(false);
@@ -78,6 +86,7 @@ export function ClimateDialog({
       targetC,
       setbackC: setbackOn ? setbackC : null,
       preheatMinutes: preheat,
+      afterrunMinutes: afterrun,
       hysteresisC: hysteresis,
       operatingScheduleId: scheduleId,
     });
@@ -137,14 +146,24 @@ export function ClimateDialog({
           </div>
 
           {scheduleName && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Vorheizen (Minuten vor Öffnung)</Label>
-                <input inputMode="numeric" value={preheat} onChange={(e) => setPreheat(e.target.value)} className={fieldClass} />
+            <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Vorlauf (Min. vor Öffnung)</Label>
+                  <input inputMode="numeric" value={preheat} onChange={(e) => setPreheat(e.target.value)} className={fieldClass} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Nachlauf (Min. nach Schluss)</Label>
+                  <input inputMode="numeric" value={afterrun} onChange={(e) => setAfterrun(e.target.value)} className={fieldClass} />
+                </div>
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                Beispiel: {scheduleName} 12–16 Uhr mit {preheat || 0} / {afterrun || 0} Min. → Heizung hält {targetC} °C von{" "}
+                {shiftLabel("12:00", -(Number(preheat) || 0))} bis {shiftLabel("16:00", Number(afterrun) || 0)} Uhr.
+              </p>
               <div className="space-y-1">
                 <Label className="flex items-center justify-between text-xs">
-                  Außerhalb der Betriebszeit
+                  Außerhalb dieser Zeit
                   <span className="flex items-center gap-1.5 font-normal text-muted-foreground">
                     {setbackOn ? "absenken" : "Heizung aus"}
                     <Switch size="sm" checked={setbackOn} onCheckedChange={setSetbackOn} aria-label="Absenkung" />

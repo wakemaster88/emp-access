@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { runRuleTick } from "@/lib/room-rules";
 import { runClimateTick } from "@/lib/room-climate";
+import { runMotionTick } from "@/lib/room-motion";
 import { runIrrigationTick } from "@/lib/irrigation";
 import { runOfflineCheckTick } from "@/lib/device-offline";
 import { runTelegramReportTick } from "@/lib/telegram-report-tick";
@@ -9,7 +10,7 @@ import { runTelegramReportTick } from "@/lib/telegram-report-tick";
 export const maxDuration = 120;
 
 /**
- * Ein Cron alle fuenf Minuten statt einzelner: Raumregeln, Raumklima, Bewaesserung,
+ * Ein Cron alle fuenf Minuten statt einzelner: Raumregeln, Raumklima, Bewegungsmelder, Bewaesserung,
  * Geraete-Offline-Check und der Telegram-Tagesbericht. Jeder Job laeuft in
  * seinem eigenen try/catch; ein Fehler bremst die anderen nicht.
  */
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
   const jobs = {
     roomRules: runRuleTick,
     climate: runClimateTick,
+    motion: runMotionTick,
     irrigation: runIrrigationTick,
     deviceOffline: runOfflineCheckTick,
     telegramReport: runTelegramReportTick,

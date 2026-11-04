@@ -181,6 +181,7 @@ model Account {
   roomRules            RoomRule[]
   roomRuleRuns         RoomRuleRun[]
   roomClimates         RoomClimate[]
+  roomMotionEvents     RoomMotionEvent[]
   keyDoors             KeyDoor[]
   keyLocks             KeyLock[]
   keyItems             KeyItem[]
@@ -343,6 +344,7 @@ model Device {
   ruleTriggers         RoomRule[]           @relation("RoomRuleTriggerDevice")
   ruleActions          RoomRuleAction[]     @relation("RoomRuleActionDevice")
   climateSensors       RoomClimate[]        @relation("RoomClimateSensor")
+  motionEvents         RoomMotionEvent[]
 
   @@index([accountId])
   @@index([keyRoomId])
@@ -2423,6 +2425,7 @@ model KeyRoom {
   rules               RoomRule[]
   /// Solltemperatur halten (Fuehler + Heizung), hoechstens eine je Raum.
   climate             RoomClimate?
+  motionEvents        RoomMotionEvent[]
 
   @@index([accountId])
   @@index([accountId, building])
@@ -2955,6 +2958,8 @@ model RoomClimate {
   setbackC            Float?
   /// So viele Minuten vor Betriebsbeginn schon auf `targetC` heizen.
   preheatMinutes      Int                @default(30)
+  /// So viele Minuten nach Betriebsende noch auf `targetC` heizen (Nachlauf).
+  afterrunMinutes     Int                @default(0)
   /// Welche Betriebszeit gilt; null = die des Raums. Ohne beide: immer `targetC`.
   operatingScheduleId Int?
   operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
@@ -2975,4 +2980,22 @@ model RoomClimate {
   @@index([accountId])
   @@index([sensorDeviceId])
   @@index([operatingScheduleId])
+}
+
+/// Bewegung, gemeldet von einem Bewegungsmelder (Shelly) in einem Raum. Wird
+/// im 5-Minuten-Takt aus dem Shelly-Cloud-Status gelesen und zaehlt im
+/// Ereignis-Widget wie ein Personen-Ereignis einer Kamera (src/lib/room-motion.ts).
+model RoomMotionEvent {
+  id        Int      @id @default(autoincrement())
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  roomId    Int
+  room      KeyRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  deviceId  Int
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// Zeitpunkt der Bewegung (vom Melder, sonst Zeitpunkt der Abfrage).
+  at        DateTime
+
+  @@unique([deviceId, at])
+  @@index([accountId, roomId, at])
 }
