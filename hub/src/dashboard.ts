@@ -39,6 +39,7 @@ import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
 import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
+import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 
 let actionCounter = 0;
 
@@ -699,6 +700,28 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       } catch (e) {
         return json(res, 502, { error: `Cloud nicht erreichbar (${e instanceof Error ? e.message : e})` });
       }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/mower") {
+      return json(res, 200, await mowerStatus());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/mower/map") {
+      const r = await mowerMap(url.searchParams.get("mower") ?? "");
+      return json(res, r.status, r.body);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/mower/action") {
+      const body = await readBody(req);
+      const r = await mowerAction(body);
+      recordTask({
+        id: --actionCounter,
+        type: `MÄHER ${String(body.action ?? "")} (lokal)`,
+        success: r.ok,
+        error: r.error,
+        result: { mower: body.mower ?? null },
+      });
+      return json(res, r.ok ? 200 : 409, r);
     }
 
     if (url.pathname.startsWith("/api/detection")) {

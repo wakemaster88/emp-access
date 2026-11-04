@@ -84,6 +84,7 @@
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></symbol>
   <symbol id="i-blinds" viewBox="0 0 24 24"><path d="M3 3h18M5 3v12h14V3M5 7h14M5 11h14M12 15v4"/><circle cx="12" cy="20" r="1"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.4 5.1-6C9.5 14.5 12 13 13 12"/></symbol>
   <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 2.7s-6 6.4-6 11.3a6 6 0 0 0 12 0c0-4.9-6-11.3-6-11.3z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
 </svg>
@@ -120,6 +121,7 @@
     <a href="#lage" data-view="lage"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-activity"/></svg><span class="nav-label">Lage</span><span class="nav-count" data-count="lage"></span></a>
     <a href="#raeume" data-view="raeume"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-home"/></svg><span class="nav-label">Räume</span><span class="nav-count" data-count="raeume"></span></a>
     <a href="#geraete" data-view="geraete" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-chip"/></svg><span class="nav-label">Geräte</span><span class="nav-count" data-count="geraete"></span></a>
+    <a href="#maeher" data-view="maeher" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-leaf"/></svg><span class="nav-label">Mäher</span><span class="nav-count" data-count="maeher"></span></a>
     <a href="#regeln" data-view="regeln" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-tasks"/></svg><span class="nav-label">Regeln</span><span class="nav-count" data-count="regeln"></span></a>
     <a href="#systeme" data-view="systeme" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-cpu"/></svg><span class="nav-label">Systeme</span><span class="nav-count" data-count="systeme"></span></a>
     <a href="#netzwerk" data-view="netzwerk" class="nav-extra"><svg class="ico nav-ico" aria-hidden="true"><use href="#i-network"/></svg><span class="nav-label">Netzwerk</span><span class="nav-count" data-count="netzwerk"></span></a>
@@ -225,6 +227,21 @@
       </header>
       <div class="segment" id="smartFilter" role="group" aria-label="Hersteller"></div>
       <div class="grid rooms" id="smartGrid"></div>
+    </section>
+
+    <!-- Maeher: Mammotion ueber den Maeher-Dienst (hub/mower, PyMammotion) -->
+    <section class="view" id="view-maeher" hidden>
+      <header class="view-head">
+        <div>
+          <h1 class="view-title">Mäher</h1>
+          <p class="view-sub" id="mowerSub">Mammotion-Mäher: Status, Aufgaben und Karte.</p>
+        </div>
+        <div class="head-actions">
+          <button type="button" class="btn small" id="mowerRefresh"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Aktualisieren</button>
+        </div>
+      </header>
+      <div id="mowerNote"></div>
+      <div class="grid rooms" id="mowerGrid"></div>
     </section>
 
     <!-- Regeln: Automationen je Raum bearbeiten (gespeichert in der Cloud) -->

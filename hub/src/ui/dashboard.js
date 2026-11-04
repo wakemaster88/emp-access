@@ -19,6 +19,7 @@ const VIEWS = [
   "personen",
   "fahrzeuge",
   "aktionen",
+  "maeher",
 ];
 
 const state = {
@@ -47,6 +48,11 @@ const state = {
   rulesError: null,
   /** Shelly-Status je IP (per SHELLY_STATUS geholt). */
   shelly: {},
+  /** Mammotion-Maeher (GET /api/mower) und ihre Karten je Name. */
+  mower: null,
+  mowerMaps: {},
+  mowerMapsAt: 0,
+  mowerBusy: new Set(),
   loaded: false,
 };
 
@@ -313,6 +319,7 @@ async function refresh() {
     ]);
     if (rooms) state.rooms = rooms;
     if (state.view === "geraete") state.smart = await getJson("/api/smart");
+    if (state.view === "maeher") await loadMower();
     if (state.view === "regeln" && (!state.rules || Date.now() - (state.rulesAt || 0) > 30000)) await loadRules();
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
@@ -375,6 +382,7 @@ function render() {
     case "personen": renderPersonen(d); break;
     case "fahrzeuge": renderFahrzeuge(d); break;
     case "aktionen": renderAktionen(d); break;
+    case "maeher": renderMaeher(); break;
   }
 }
 
@@ -419,6 +427,9 @@ function renderNavCounts(d) {
   const roomsOn = state.rooms && state.rooms.live ? Object.values(state.rooms.live).filter((l) => l.on === true).length : 0;
   set("raeume", roomsOn, "ok");
   set("geraete", state.smart ? state.smart.devices.filter((x) => x.needsPairing).length : 0, "warn");
+  const mowing = state.mower ? state.mower.mowers.filter((m) => m.active).length : 0;
+  const mowerErr = state.mower ? state.mower.mowers.filter((m) => m.errors && m.errors.length).length : 0;
+  set("maeher", mowerErr || mowing, mowerErr ? "warn" : "ok");
 }
 
 /* --------------------------------------------------------------- Zentrale */
@@ -2988,6 +2999,247 @@ $("smartFilter").addEventListener("click", (ev) => {
   if (!b) return;
   state.smartVendor = b.dataset.vendor;
   renderGeraete();
+});
+
+/* ------------------------------------------------------------------ Maeher */
+
+/*
+ * Mammotion-Maeher ueber den Maeher-Dienst des Hubs (hub/mower, PyMammotion).
+ * Status alle paar Sekunden, die Karte nur jede Minute: sie aendert sich selten.
+ */
+const MOWER_STATE_TEXT = {
+  no_credentials: "Noch kein Mammotion-Account eingetragen.",
+  installing: "Der Hub richtet den Mäher-Dienst ein, das dauert beim ersten Mal ein paar Minuten …",
+  starting: "Der Mäher-Dienst startet …",
+  logging_in: "Melde mich bei Mammotion an …",
+  retrying: "Mammotion-Cloud gerade nicht erreichbar, neuer Versuch in 15 Minuten.",
+  rejected: "Mammotion hat die Anmeldung abgelehnt.",
+  error: "Der Mäher-Dienst hat ein Problem.",
+};
+
+async function loadMower() {
+  try {
+    state.mower = await getJson("/api/mower");
+  } catch {
+    return;
+  }
+  const names = state.mower.mowers.map((m) => m.name);
+  if (names.length && Date.now() - state.mowerMapsAt > 60_000) {
+    state.mowerMapsAt = Date.now();
+    await Promise.all(
+      names.map(async (name) => {
+        try {
+          state.mowerMaps[name] = await getJson(`/api/mower/map?mower=${encodeURIComponent(name)}`);
+        } catch {
+          /* Karte kommt beim naechsten Mal */
+        }
+      })
+    );
+  }
+}
+
+/** Alle [lon, lat]-Paare einer GeoJSON-Geometrie. */
+function geoPoints(geom, out = []) {
+  if (!geom) return out;
+  const walk = (c) => {
+    if (typeof c[0] === "number") out.push(c);
+    else for (const x of c) walk(x);
+  };
+  if (geom.coordinates) walk(geom.coordinates);
+  return out;
+}
+
+/** Karte als SVG: Zonen, Hindernisse, Wege, Station und Maeher. */
+function mowerMapSvg(map, mower) {
+  const feats = (map && map.areas && map.areas.features) || [];
+  const progress = (map && map.mowPath && map.mowPath.features) || [];
+  const pts = [];
+  for (const f of feats) geoPoints(f.geometry, pts);
+  if (map && map.mower) pts.push([map.mower.lon, map.mower.lat]);
+  if (map && map.dock) pts.push([map.dock.lon, map.dock.lat]);
+  if (pts.length < 3) {
+    return `<div class="mower-map empty-map muted small-note">${map ? "Noch keine Karte vom Mäher geladen." : "Karte wird geladen …"}</div>`;
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const lat0 = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  const kx = Math.cos((lat0 * Math.PI) / 180);
+  for (const [lon, lat] of pts) {
+    const x = lon * kx;
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, lat); maxY = Math.max(maxY, lat);
+  }
+  const W = 320, H = 220, pad = 10;
+  const span = Math.max(maxX - minX, maxY - minY) || 1e-6;
+  const scale = Math.min((W - 2 * pad) / (maxX - minX || span), (H - 2 * pad) / (maxY - minY || span));
+  const offX = (W - (maxX - minX) * scale) / 2;
+  const offY = (H - (maxY - minY) * scale) / 2;
+  const P = ([lon, lat]) => `${(offX + (lon * kx - minX) * scale).toFixed(1)},${(H - offY - (lat - minY) * scale).toFixed(1)}`;
+  const ring = (r) => r.map(P).join(" ");
+  const shapes = [];
+  const labels = [];
+  for (const f of feats) {
+    const g = f.geometry || {};
+    const t = (f.properties && f.properties.type_name) || "";
+    if (g.type === "Polygon" && g.coordinates && g.coordinates[0]) {
+      const cls = t === "obstacle" || t.includes("no_go") ? "mm-obstacle" : t === "area" ? "mm-area" : "mm-zone";
+      shapes.push(`<polygon class="${cls}" points="${ring(g.coordinates[0])}"><title>${esc((f.properties && f.properties.title) || t)}</title></polygon>`);
+      if (t === "area" && f.properties.title) {
+        const c = g.coordinates[0];
+        const cx = c.reduce((a, p) => a + p[0], 0) / c.length;
+        const cy = c.reduce((a, p) => a + p[1], 0) / c.length;
+        const [x, y] = P([cx, cy]).split(",");
+        labels.push(`<text class="mm-label" x="${x}" y="${y}">${esc(f.properties.title)}</text>`);
+      }
+    } else if (g.type === "LineString" && g.coordinates) {
+      shapes.push(`<polyline class="mm-path" points="${ring(g.coordinates)}"/>`);
+    }
+  }
+  for (const f of progress) {
+    const g = f.geometry || {};
+    if (g.type === "LineString" && g.coordinates) shapes.push(`<polyline class="mm-done" points="${ring(g.coordinates)}"/>`);
+  }
+  if (map.dock) {
+    const [x, y] = P([map.dock.lon, map.dock.lat]).split(",");
+    shapes.push(`<rect class="mm-dock" x="${x - 5}" y="${y - 5}" width="10" height="10" rx="2"><title>Station</title></rect>`);
+  }
+  if (map.mower) {
+    const [x, y] = P([map.mower.lon, map.mower.lat]).split(",");
+    shapes.push(`<circle class="mm-mower${mower.active ? " is-active" : ""}" cx="${x}" cy="${y}" r="6"><title>${esc(mower.label)}</title></circle>`);
+  }
+  return `<svg class="mower-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="Karte ${esc(mower.label)}">${shapes.join("")}${labels.join("")}</svg>`;
+}
+
+function mowerButtons(m) {
+  const busy = state.mowerBusy.has(m.name);
+  const dis = busy || !m.online ? " disabled" : "";
+  const btn = (action, label, ico, cls = "") =>
+    `<button type="button" class="btn small ${cls}" data-mower="${esc(m.name)}" data-mower-act="${action}"${dis}>${icon(ico)}${label}</button>`;
+  const out = [];
+  if (m.status === "MODE_WORKING") out.push(btn("pause", "Pause", "minus"));
+  if (m.status === "MODE_PAUSE" || m.status === "MODE_CHARGING_PAUSE") out.push(btn("resume", "Fortsetzen", "zap", "primary"));
+  if (m.active) out.push(btn("stop", "Auftrag beenden", "x"));
+  if (!m.charging) out.push(btn("dock", "Zur Station", "home"));
+  return out.join("");
+}
+
+function mowerTaskRow(m, t) {
+  const busy = state.mowerBusy.has(m.name);
+  const when = [t.weekdays.length === 7 ? "täglich" : t.weekdays.join(" "), t.startTime].filter(Boolean).join(" · ");
+  const meta = [when, t.zones.length ? t.zones.join(", ") : "", t.bladeHeightMm ? `${t.bladeHeightMm} mm` : ""].filter(Boolean).join(" · ");
+  const canStart = !m.active && m.online && !busy;
+  return `<div class="dev${t.running ? " is-on" : ""}">
+    <span class="tile-ico ${t.running ? "accent" : ""}">${icon("tasks")}</span>
+    <div class="dev-main"><div class="dev-name">${esc(t.name)}</div>
+      <div class="dev-meta muted">${t.running ? badge("ok", "läuft") : ""}${t.enabled ? "" : badge("off", "Zeitplan aus")}<span>${esc(meta || "kein Zeitplan")}</span></div></div>
+    <div class="dev-actions">
+      <label class="switch" title="Zeitplan ${t.enabled ? "an" : "aus"}"><input type="checkbox" data-mower="${esc(m.name)}" data-mower-plan="${esc(t.id)}"${t.enabled ? " checked" : ""}${busy ? " disabled" : ""} aria-label="Zeitplan ${esc(t.name)}"><span></span></label>
+      <button type="button" class="btn small primary" data-mower="${esc(m.name)}" data-mower-act="start_task" data-plan="${esc(t.id)}"${canStart ? "" : " disabled"}>Jetzt mähen</button>
+    </div>
+  </div>`;
+}
+
+function mowerCard(m) {
+  const tone = m.errors.length ? "warn" : !m.online ? "off" : m.active ? "ok" : "idle";
+  const batt = Number.isFinite(m.battery) ? m.battery : null;
+  const chips = [
+    badge(tone, m.online ? m.statusLabel : "Offline"),
+    batt != null ? badge(batt < 20 ? "warn" : "outline", `Akku ${batt} %${m.charging ? " ⚡" : ""}`) : "",
+    m.currentZone && m.active ? badge("outline", m.currentZone) : "",
+  ].join("");
+  const progress =
+    m.progress != null
+      ? `<div class="mower-progress"><div class="meter grad"><span style="width:${Math.max(0, Math.min(100, m.progress))}%"></span></div><span class="muted small-note">${m.progress} % gemäht</span></div>`
+      : "";
+  const errors = m.errors.length
+    ? `<div class="pair-hint">${icon("alert")}<span>${m.errors.map((e) => esc(e.text || `Fehlercode ${e.code}`)).join("<br>")}</span></div>`
+    : "";
+  const tasks = m.tasks.length
+    ? m.tasks.map((t) => mowerTaskRow(m, t)).join("")
+    : '<div class="muted small-note">Noch keine Aufgaben geladen. Aufgaben legst du in der Mammotion-App an.</div>';
+  return `<article class="card room mower">
+    <div class="place-head"><span class="tile-ico accent">${icon("leaf")}</span><h3>${esc(m.label)}</h3>${m.label !== m.model ? `<span class="host">${esc(m.model)}</span>` : ""}</div>
+    <div class="chips">${chips}</div>
+    ${progress}
+    ${errors}
+    ${mowerMapSvg(state.mowerMaps[m.name], m)}
+    <div class="card-foot">${mowerButtons(m)}</div>
+    <div class="devs">${tasks}</div>
+  </article>`;
+}
+
+function renderMaeher() {
+  const st = state.mower;
+  if (!st) {
+    setHTML("mowerGrid", '<div class="skeleton"></div><div class="skeleton"></div>');
+    return;
+  }
+  const n = st.mowers.length;
+  const sub =
+    st.state === "ready"
+      ? `${n === 1 ? "1 Mäher" : `${n} Mäher`} über den Account ${st.account || ""}${st.lastPollAt ? ` · zuletzt abgefragt ${ago(new Date(st.lastPollAt * 1000).toISOString())}` : ""}`
+      : "Mammotion-Mäher: Status, Aufgaben und Karte.";
+  if ($("mowerSub").textContent !== sub) $("mowerSub").textContent = sub;
+
+  let note = "";
+  if (st.state !== "ready") {
+    const text = MOWER_STATE_TEXT[st.state] || st.state;
+    const howto =
+      st.state === "no_credentials" || st.state === "rejected"
+        ? " Trag in hub/.env einen eigenen Zweit-Account ein, mit dem du die Mäher in der App geteilt hast: MAMMOTION_EMAIL und MAMMOTION_PASSWORD. Danach den Hub neu starten."
+        : "";
+    note = `<div class="banner${st.state === "rejected" || st.state === "error" ? " alert" : ""}" role="status">${icon("info")}<span>${esc(text + howto)}${st.error && st.state !== "no_credentials" ? `<br><span class="muted small-note">${esc(st.error)}</span>` : ""}</span></div>`;
+  }
+  setHTML("mowerNote", note);
+  setHTML(
+    "mowerGrid",
+    n ? st.mowers.map(mowerCard).join("") : st.state === "ready" ? empty("Der Account sieht keine Mäher. Sind sie in der App mit diesem Account geteilt?") : ""
+  );
+}
+
+const MOWER_CONFIRM = {
+  stop: ["Auftrag beenden?", "Der Mäher hält an und der laufende Auftrag wird abgebrochen.", "Beenden"],
+  dock: ["Zur Station schicken?", "Der Mäher unterbricht und fährt zur Ladestation.", "Zur Station"],
+  start_task: ["Jetzt mähen?", "Der Mäher startet diese Aufgabe sofort.", "Starten"],
+};
+
+async function mowerCommand(body, okText) {
+  state.mowerBusy.add(body.mower);
+  renderMaeher();
+  const r = await postJson("/api/mower/action", body);
+  state.mowerBusy.delete(body.mower);
+  toast(r.ok ? okText : `Fehlgeschlagen: ${r.data.error || "?"}`, r.ok ? "ok" : "err");
+  state.mowerMapsAt = 0;
+  await loadMower();
+  renderMaeher();
+}
+
+$("mowerGrid").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button[data-mower-act]");
+  if (!btn) return;
+  const action = btn.dataset.mowerAct;
+  const c = MOWER_CONFIRM[action];
+  if (c && !(await ask(c[0], c[1], c[2]))) return;
+  await mowerCommand({ mower: btn.dataset.mower, action, planId: btn.dataset.plan }, "Befehl gesendet");
+});
+
+$("mowerGrid").addEventListener("change", async (ev) => {
+  const box = ev.target.closest("input[data-mower-plan]");
+  if (!box) return;
+  await mowerCommand(
+    { mower: box.dataset.mower, action: "enable_task", planId: box.dataset.mowerPlan, enabled: box.checked },
+    box.checked ? "Zeitplan an" : "Zeitplan aus"
+  );
+});
+
+$("mowerRefresh").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  const names = state.mower ? state.mower.mowers.map((m) => m.name) : [];
+  await Promise.all(names.map((mower) => postJson("/api/mower/action", { mower, action: "refresh" })));
+  state.mowerMapsAt = 0;
+  await loadMower();
+  renderMaeher();
+  btn.disabled = false;
 });
 
 $("smartScan").addEventListener("click", async (ev) => {

@@ -59,6 +59,16 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
   (`POST /api/hub/soundweb/state`) und setzt Werte per Task `SOUNDWEB_SET`;
   `SOUNDWEB_SYNC` lädt die Konfiguration sofort neu. Lebenszeichen alle zwei
   Minuten per erneutem Abonnement, Wiederverbinden mit Backoff 3–60 s.
+- **Mammotion-Mäher** (`src/mower.ts`, Dienst `mower/server.py`): Status,
+  Akku, Fortschritt, Karte und die Aufgaben aus der Mammotion-App; Aufgabe
+  sofort starten, Zeitplan an/aus, Pause, Fortsetzen, Auftrag beenden, zur
+  Station. Läuft über die inoffizielle Bibliothek PyMammotion und die
+  Mammotion-Cloud, nur mit `MAMMOTION_EMAIL`/`MAMMOTION_PASSWORD` eines
+  Zweit-Accounts (siehe `.env.example`). Der Dienst meldet sich einmal an und
+  stellt die Sitzung danach aus `mower/.cache/session.json` wieder her, weil
+  Mammotion Konten mit ständigen Passwort-Logins sperrt. Python 3.13+ nötig,
+  das venv richtet der Hub beim Start selbst ein (`mower/install.sh`).
+  Zonen zeichnen geht nur in der App; die Mäher-Kameras folgen in Schritt 2.
 - **Streams**: Cloud-Camera ist führend; der Hub schreibt IPs in
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).
 - **Selbst-Update**: alle 5 min `git fetch` (async). Bei neuen Commits:

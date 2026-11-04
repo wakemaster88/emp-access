@@ -19,6 +19,7 @@ import { startSystemSetup } from "./system-setup.js";
 import { startSoundweb } from "./soundweb.js";
 import { startRooms } from "./rooms.js";
 import { startRules } from "./rules.js";
+import { startMower, stopMowerSidecar } from "./mower.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
 
@@ -253,6 +254,8 @@ setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 // DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.
 startSoundweb();
 void startRooms().then(() => startRules());
+// Mammotion-Maeher: nur mit Zweit-Account in hub/.env (MAMMOTION_EMAIL/-PASSWORD).
+startMower();
 // Welche Kameras geprüft werden, steht in der Cloud ("Halteverbot" an der
 // Kamera) und ist beim Start noch nicht bekannt – der Takt läuft deshalb
 // immer und ist ohne ausgewählte Kamera ein Leerlauf.
@@ -270,9 +273,11 @@ alprWarmup();
 
 process.on("SIGTERM", () => {
   log("SIGTERM – Hub beendet sich.");
+  stopMowerSidecar();
   void flushImproveSnapshot("exit").finally(() => process.exit(0));
 });
 process.on("SIGINT", () => {
   log("SIGINT – Hub beendet sich.");
+  stopMowerSidecar();
   void flushImproveSnapshot("exit").finally(() => process.exit(0));
 });

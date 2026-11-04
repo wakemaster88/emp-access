@@ -1,0 +1,5 @@
+# Inoffizielle Mammotion-Bibliothek (Community). Version fest, weil Mammotion
+# die Schnittstelle ohne Ankuendigung aendert: Updates bewusst testen.
+pymammotion==0.10.13
+# Fehlt in den Abhaengigkeiten von pymammotion, wird aber importiert.
+packaging>=24.0
