@@ -21,7 +21,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { CONFIG, log } from "./config.js";
+import { CONFIG, api, log } from "./config.js";
 import { lastScanResult } from "./scanner.js";
 import { shellyStatus, shellySwitch, type ShellyStatus } from "./shelly.js";
 
@@ -542,6 +542,8 @@ export async function pairSmart(id: string): Promise<{ ok: boolean; error?: stri
     await savePairings();
     cache = null;
     log(`Geräte: ${dev.vendor} ${dev.ip} gekoppelt`);
+    // Lampen und Gruppen sofort in der Cloud bekannt machen.
+    if (vendor === "hue") void syncHueToCloud();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -577,4 +579,39 @@ export async function hueLightStates(
   } catch {
     return null;
   }
+}
+
+/**
+ * Hue-Lampen und -Gruppen der gekoppelten Bridges an die Cloud melden. Dort
+ * werden sie als Geraete ohne Raum angelegt und lassen sich im Raum-Dialog
+ * zuordnen. Laeuft beim Start und danach alle zehn Minuten.
+ */
+export async function syncHueToCloud(): Promise<void> {
+  try {
+    const { devices } = await listSmartDevices(true);
+    const bridges = devices
+      .filter((d) => d.vendor === "Philips Hue" && !d.needsPairing && d.controls.length > 0)
+      .map((d) => ({
+        bridgeId: d.id.split(":")[1],
+        items: d.controls.map((c) => ({
+          lightId: c.key.split(":")[2],
+          name: c.name.replace(/\s*\(Gruppe, \d+ Lampen\)$/, ""),
+        })),
+      }));
+    if (bridges.length === 0) return;
+    const res = await api("/api/hub/hue-sync", { method: "POST", body: JSON.stringify({ bridges }) });
+    if (!res.ok) {
+      log(`Hue-Sync: HTTP ${res.status}`);
+      return;
+    }
+    const r = (await res.json().catch(() => ({}))) as { created?: number };
+    if (r.created) log(`Hue-Sync: ${r.created} neue Hue-Geräte in der Cloud angelegt`);
+  } catch (e) {
+    log(`Hue-Sync: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export function startHueSync(): void {
+  setTimeout(() => void syncHueToCloud(), 60_000);
+  setInterval(() => void syncHueToCloud(), 10 * 60_000);
 }

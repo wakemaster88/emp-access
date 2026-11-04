@@ -17,6 +17,7 @@ import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js
 import { startSystemMetrics } from "./system-metrics.js";
 import { startSystemSetup } from "./system-setup.js";
 import { ensureFfmpeg } from "./ffmpeg-setup.js";
+import { startHueSync } from "./smart-devices.js";
 import { startSoundweb } from "./soundweb.js";
 import { startRooms } from "./rooms.js";
 import { startRules } from "./rules.js";
@@ -205,6 +206,8 @@ startSystemMetrics();
 startSystemSetup();
 // ffmpeg fuer go2rtc-Standbilder: bei Bedarf per Homebrew nachinstallieren.
 void ensureFfmpeg();
+// Hue-Lampen und -Gruppen in die Cloud melden (dort im Raum zuordnen).
+startHueSync();
 recordHubEvent({
   kind: "system",
   severity: "info",
