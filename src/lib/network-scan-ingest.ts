@@ -1,4 +1,5 @@
 import { isVirtualMac } from "@/lib/oui";
+import { macSpellings, normalizeMac, sameDeviceMac } from "@/lib/mac";
 import { findVlanForIp } from "@/lib/ip";
 import type { tenantClient } from "@/lib/prisma";
 import { alertNewDevices } from "@/lib/new-device-alert";
@@ -6,7 +7,6 @@ import { alertNewDevices } from "@/lib/new-device-alert";
 type Db = ReturnType<typeof tenantClient>;
 
 const MAX_DEVICES_PER_SCAN = 1000;
-const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
 const MAX_IP_HISTORY = 10;
 
 /** Multicast-IPs (224.0.0.0/4) und Broadcast sind keine echten Geraete. */
@@ -63,6 +63,10 @@ function pushIpHistory(history: unknown, ip: string | null, seenUntil: Date): Ip
 /**
  * Hub-Scan-Ergebnisse (Auto-Scan oder NETWORK_SCAN-Task) in DiscoveredDevice
  * schreiben und bekannte Clients/Infra per MAC/IP aktualisieren.
+ *
+ * Eintraege ohne MAC kommen aus gerouteten VLANs (der Hub sieht dort keine
+ * ARP-Tabelle). Sie landen nicht in DiscoveredDevice (Schluessel ist die MAC),
+ * markieren aber bekannte Clients/Infra mit genau dieser IP als gesehen.
  */
 const ABSENT_SCANS_BEFORE_PRUNE = 2;
 
@@ -73,14 +77,15 @@ export async function ingestHubScanDevices(
   hubName: string | null = null
 ): Promise<{ processed: number; synced: number; pruned: number }> {
   const byMac = new Map<string, DeviceInfo>();
+  /** Erreichbare Geraete ohne MAC (geroutete VLANs), per IP. */
+  const ipOnly = new Map<string, DeviceInfo>();
   for (const d of rawDevices.slice(0, MAX_DEVICES_PER_SCAN)) {
     const row = d as Record<string, unknown> | null;
-    const mac = String(row?.mac ?? "").toUpperCase();
-    if (!MAC_RE.test(mac) || isVirtualMac(mac)) continue;
-    if (isVirtualIp(typeof row?.ip === "string" ? row.ip : null)) continue;
+    const ip = str(row?.ip, 45);
+    if (isVirtualIp(ip)) continue;
     const responseMs = Number(row?.responseMs);
-    byMac.set(mac, {
-      ip: str(row?.ip, 45),
+    const info: DeviceInfo = {
+      ip,
       iface: str(row?.iface, 30),
       hostname: str(row?.hostname, 255),
       vendor: str(row?.vendor, 120),
@@ -88,10 +93,16 @@ export async function ingestHubScanDevices(
       deviceType: str(row?.deviceType, 60),
       responseMs: Number.isFinite(responseMs) && responseMs >= 0 ? Math.round(responseMs) : null,
       reachable: row?.reachable !== false,
-    });
+    };
+    const mac = normalizeMac(row?.mac);
+    if (mac) {
+      if (!isVirtualMac(mac)) byMac.set(mac, info);
+    } else if (ip && info.reachable) {
+      ipOnly.set(ip, info);
+    }
   }
 
-  if (byMac.size === 0) return { processed: 0, synced: 0, pruned: 0 };
+  if (byMac.size === 0 && ipOnly.size === 0) return { processed: 0, synced: 0, pruned: 0 };
 
   const now = new Date();
   const existing = await db.discoveredDevice.findMany({
@@ -163,23 +174,34 @@ export async function ingestHubScanDevices(
 
   let synced = 0;
   const macs = [...byMac.keys()];
-  const byIp = new Map<string, DeviceInfo>();
-  for (const info of byMac.values()) {
-    if (info.ip) byIp.set(info.ip, info);
+  const spellings = macSpellings(macs);
+  /** IP -> MAC aus diesem Scan, um IP-Treffer mit fremder MAC zu erkennen. */
+  const macByIp = new Map<string, string>();
+  for (const [mac, info] of byMac) {
+    if (info.ip) macByIp.set(info.ip, mac);
   }
-  const ips = [...byIp.keys()];
-  if (macs.length > 0) {
+  const ipOnlyIps = [...ipOnly.keys()];
+  const allIps = [...macByIp.keys(), ...ipOnlyIps];
+  if (spellings.length > 0 || ipOnlyIps.length > 0) {
+    // Bewusst kein `mode: "insensitive"` beim `in`: das findet unter Prisma 7
+    // nichts (siehe lib/mac.ts). Stattdessen alle Schreibweisen abfragen.
     const [managedClients, managedDevices, vlans] = await Promise.all([
       db.networkClient.findMany({
-        where: { accountId, macAddress: { in: macs, mode: "insensitive" } },
+        where: {
+          accountId,
+          OR: [
+            ...(spellings.length > 0 ? [{ macAddress: { in: spellings } }] : []),
+            ...(ipOnlyIps.length > 0 ? [{ ipAddress: { in: ipOnlyIps } }] : []),
+          ],
+        },
         select: { id: true, macAddress: true, ipAddress: true, vlanId: true },
       }),
       db.networkDevice.findMany({
         where: {
           accountId,
           OR: [
-            { macAddress: { in: macs, mode: "insensitive" } },
-            ...(ips.length > 0 ? [{ ipAddress: { in: ips } }] : []),
+            ...(spellings.length > 0 ? [{ macAddress: { in: spellings } }] : []),
+            ...(allIps.length > 0 ? [{ ipAddress: { in: allIps } }] : []),
           ],
         },
         select: { id: true, macAddress: true, ipAddress: true },
@@ -189,28 +211,47 @@ export async function ingestHubScanDevices(
         select: { id: true, subnet: true },
       }),
     ]);
-    for (const c of managedClients) {
-      const info = c.macAddress ? byMac.get(c.macAddress.toUpperCase()) : undefined;
-      if (!info) continue;
-      const data: { ipAddress?: string; vlanId?: number; lastSeenAt: Date } = { lastSeenAt: now };
-      if (info.ip && info.ip !== c.ipAddress) data.ipAddress = info.ip;
-      if (c.vlanId === null && info.ip) {
-        const vlan = findVlanForIp(info.ip, vlans);
-        if (vlan) data.vlanId = vlan.id;
+
+    /**
+     * Scan-Treffer fuer einen bekannten Eintrag: zuerst per MAC (dann darf
+     * die IP nachgezogen werden), sonst per IP. Ein IP-Treffer zaehlt nicht,
+     * wenn dort laut Scan ein anderes Geraet antwortet (fremde MAC; eine
+     * Schnittstellen-MAC desselben Switches gilt nicht als fremd).
+     */
+    const match = (macRaw: string | null, ip: string | null) => {
+      const mac = normalizeMac(macRaw);
+      const viaMac = mac ? byMac.get(mac) : undefined;
+      if (viaMac) return { info: viaMac, viaMac: true };
+      if (!ip) return null;
+      const macAtIp = macByIp.get(ip);
+      if (macAtIp && (!mac || sameDeviceMac(macAtIp, mac))) {
+        return { info: byMac.get(macAtIp)!, viaMac: false };
       }
+      const routed = ipOnly.get(ip);
+      return routed ? { info: routed, viaMac: false } : null;
+    };
+
+    for (const c of managedClients) {
+      const hit = match(c.macAddress, c.ipAddress);
+      if (!hit) continue;
+      const data: { ipAddress?: string; vlanId?: number; lastSeenAt: Date } = { lastSeenAt: now };
+      const ip = hit.viaMac && hit.info.ip ? hit.info.ip : c.ipAddress;
+      if (ip && ip !== c.ipAddress) data.ipAddress = ip;
+      // VLAN folgt der IP (z. B. Kamera von VLAN 1 nach 30 umgezogen).
+      const vlan = findVlanForIp(ip, vlans);
+      if (vlan && vlan.id !== c.vlanId) data.vlanId = vlan.id;
       await db.networkClient.update({ where: { id: c.id }, data });
       synced++;
     }
     for (const d of managedDevices) {
-      const info =
-        (d.macAddress ? byMac.get(d.macAddress.toUpperCase()) : undefined) ??
-        (d.ipAddress ? byIp.get(d.ipAddress) : undefined);
-      if (!info) continue;
+      const hit = match(d.macAddress, d.ipAddress);
+      if (!hit) continue;
+      const ip = hit.viaMac && hit.info.ip ? hit.info.ip : d.ipAddress;
       await db.networkDevice.update({
         where: { id: d.id },
         data: {
           lastSeenAt: now,
-          ...(info.ip && info.ip !== d.ipAddress ? { ipAddress: info.ip } : {}),
+          ...(ip && ip !== d.ipAddress ? { ipAddress: ip } : {}),
         },
       });
       synced++;
@@ -219,6 +260,8 @@ export async function ingestHubScanDevices(
 
   // Fehlende Hosts: absentScans++. Unzugeordnete nach 2 Scans in Folge loeschen
   // (gleiche Zuordnungslogik wie in der UI: Client/Infra per MAC, IoT per IP).
+  // Nur MAC-lose Eintraege (geroutete VLANs) sagen nichts ueber fehlende MACs.
+  if (byMac.size === 0) return { processed, synced, pruned: 0 };
   const missing = await db.discoveredDevice.findMany({
     where: { accountId, macAddress: { notIn: [...byMac.keys()] } },
     select: { id: true, macAddress: true, ipAddress: true, absentScans: true },
@@ -229,11 +272,11 @@ export async function ingestHubScanDevices(
     const missingIps = missing.map((m) => m.ipAddress).filter((ip): ip is string => !!ip);
     const [knownClients, knownInfra, knownIot] = await Promise.all([
       db.networkClient.findMany({
-        where: { accountId, macAddress: { in: missingMacs, mode: "insensitive" } },
+        where: { accountId, macAddress: { in: macSpellings(missingMacs) } },
         select: { macAddress: true },
       }),
       db.networkDevice.findMany({
-        where: { accountId, macAddress: { in: missingMacs, mode: "insensitive" } },
+        where: { accountId, macAddress: { in: macSpellings(missingMacs) } },
         select: { macAddress: true },
       }),
       missingIps.length > 0
@@ -245,7 +288,7 @@ export async function ingestHubScanDevices(
     ]);
     const assignedMacs = new Set(
       [...knownClients, ...knownInfra]
-        .map((x) => x.macAddress?.toUpperCase())
+        .map((x) => normalizeMac(x.macAddress))
         .filter((m): m is string => !!m)
     );
     const assignedIps = new Set(

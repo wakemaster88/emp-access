@@ -18,6 +18,15 @@ export interface ShellyInfo {
   name: string | null;
   fw: string | null;
   auth: boolean;
+  /** MAC laut /shelly ("AA:BB:CC:DD:EE:FF"); in gerouteten VLANs die einzige MAC-Quelle. */
+  mac?: string | null;
+}
+
+/** "A8032ABE54DC" / "a8:03:2a:be:54:dc" -> "A8:03:2A:BE:54:DC"; sonst null. */
+function shellyMac(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const hex = v.trim().replace(/[:-]/g, "").toUpperCase();
+  return /^[0-9A-F]{12}$/.test(hex) ? hex.match(/../g)!.join(":") : null;
 }
 
 export interface ShellyChannel {
@@ -108,6 +117,7 @@ export async function probeShelly(host: string, timeoutMs = 1500): Promise<Shell
         name: typeof d.name === "string" ? d.name : null,
         fw: typeof d.ver === "string" ? d.ver : null,
         auth: d.auth_en === true,
+        mac: shellyMac(d.mac),
       };
     }
     if (typeof d.type === "string" && typeof d.mac === "string") {
@@ -118,6 +128,7 @@ export async function probeShelly(host: string, timeoutMs = 1500): Promise<Shell
         name: null,
         fw: typeof d.fw === "string" ? d.fw : null,
         auth: d.auth === true,
+        mac: shellyMac(d.mac),
       };
     }
     return null;
