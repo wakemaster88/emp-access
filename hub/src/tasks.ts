@@ -14,7 +14,7 @@ import {
   getCameraCaps,
   ensureCameraConfigs,
 } from "./cameras.js";
-import { enrollFromSighting } from "./face.js";
+import { analyzeSightings, enrollFromSighting } from "./face.js";
 import { readHubLog } from "./hublog.js";
 import { restartService } from "./services.js";
 import { runSoundwebTask } from "./soundweb.js";
@@ -201,6 +201,14 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       }
       const r = await enrollFromSighting(sightingId, listedPersonId);
       if (!r.ok) return { success: false, error: r.error ?? "Enroll fehlgeschlagen" };
+      return { success: true, result: r };
+    }
+    case "FACE_ANALYZE": {
+      const rawIds = task.payload?.sightingIds;
+      const ids = Array.isArray(rawIds) ? rawIds.map(Number).filter(Number.isInteger) : [];
+      if (ids.length === 0) return { success: false, error: "sightingIds fehlt" };
+      const r = await analyzeSightings(ids.slice(0, 200));
+      if (!r.ok) return { success: false, error: r.error ?? "Analyse fehlgeschlagen" };
       return { success: true, result: r };
     }
     case "CAMERA_PTZ":

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
-import { processCameraPersonEvent } from "@/lib/persons";
+import { parseEmbeddingHeader, processCameraPersonEvent } from "@/lib/persons";
 
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
 /**
  * POST (Hub, Token-Auth): Schnappschuss bei klarer Gesichtserkennung.
  * Query: cameraId, optional listedPersonId, matchScore, matchMethod
+ * Header: optional X-Face-Embedding (Base64, Float32 LE) fuer die Gruppierung
  * Body: raw JPEG (Content-Type image/jpeg)
  */
 export async function POST(request: NextRequest) {
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
     matchedPersonId: Number.isInteger(matchedPersonId) ? matchedPersonId : null,
     matchScore: Number.isFinite(matchScore) ? matchScore : null,
     matchMethod: matchMethod || null,
+    faceEmbedding: parseEmbeddingHeader(request.headers.get("x-face-embedding")),
   });
 
   return NextResponse.json({

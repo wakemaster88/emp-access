@@ -471,6 +471,27 @@ export const personSightingAssignSchema = z.object({
   listedPersonId: z.coerce.number().int().positive(),
 });
 
+const sightingIdList = z.array(z.coerce.number().int().positive()).min(1).max(600);
+
+export const personSightingsBulkAssignSchema = z
+  .object({
+    sightingIds: sightingIdList,
+    listedPersonId: z.coerce.number().int().positive().optional(),
+    newPerson: z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        listType: z.enum(["WHITELIST", "BLACKLIST"]),
+      })
+      .optional(),
+  })
+  .refine((d) => Boolean(d.listedPersonId) !== Boolean(d.newPerson), {
+    message: "Entweder bestehende Person oder neue Person angeben",
+  });
+
+export const personSightingsDismissSchema = z.object({
+  sightingIds: sightingIdList,
+});
+
 const hhmm = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Ungültige Zeit (HH:mm)")

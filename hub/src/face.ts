@@ -272,3 +272,50 @@ export async function enrollFromSighting(
   galleryLoadedAt = 0;
   return { ok: true, dims: face.embedding.length };
 }
+
+/** Embedding als Header-Wert (Base64, Float32 LE) fuer den Sichtungs-Upload. */
+export function embeddingHeader(embedding: number[]): string {
+  const buf = Buffer.alloc(embedding.length * 4);
+  embedding.forEach((v, i) => buf.writeFloatLE(v, i * 4));
+  return buf.toString("base64");
+}
+
+/**
+ * Unbekannte Sichtungen nachtraeglich analysieren (Task FACE_ANALYZE):
+ * Bild holen, Gesicht embedden, Embedding (oder „kein Gesicht“) zurueckmelden.
+ * Damit kann die Cloud aehnliche Gesichter gruppieren.
+ */
+export async function analyzeSightings(
+  sightingIds: number[]
+): Promise<{ ok: boolean; error?: string; analyzed: number; faces: number; failed: number }> {
+  if (!(await ensureFaceSidecar())) {
+    return { ok: false, error: "Face-Sidecar nicht erreichbar", analyzed: 0, faces: 0, failed: 0 };
+  }
+  let analyzed = 0;
+  let faces = 0;
+  let failed = 0;
+  for (const id of sightingIds) {
+    try {
+      const snap = await api(`/api/hub/person-sightings/${id}/snapshot`);
+      if (!snap.ok) {
+        failed++;
+        continue;
+      }
+      const face = await embedJpeg(Buffer.from(await snap.arrayBuffer()));
+      const res = await api(`/api/hub/person-sightings/${id}/embedding`, {
+        method: "POST",
+        body: JSON.stringify({ embedding: face?.embedding ?? null }),
+      });
+      if (!res.ok) {
+        failed++;
+        continue;
+      }
+      analyzed++;
+      if (face) faces++;
+    } catch {
+      failed++;
+    }
+  }
+  log(`Face-Analyse: ${analyzed} Sichtungen, ${faces} mit Gesicht, ${failed} Fehler`);
+  return { ok: true, analyzed, faces, failed };
+}

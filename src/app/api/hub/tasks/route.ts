@@ -11,6 +11,8 @@ const VALID_TASK_TYPES = [
   "WAKE_ON_LAN",
   "CAMERA_SNAPSHOT",
   "FACE_ENROLL",
+  // Unbekannte Sichtungen nachtraeglich analysieren (payload.sightingIds).
+  "FACE_ANALYZE",
   "DOORBIRD_OPEN",
   // Tor offen halten: Hub loest das Relais bis payload.until im Takt aus (null = beenden).
   "DOORBIRD_HOLD",

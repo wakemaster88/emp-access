@@ -10,7 +10,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
-import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
+import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery } from "./face.js";
 import { findAllowedVehicle, scorePlateFromJpeg, type PlateScore } from "./plate.js";
 import { jpegContainsVehicle } from "./vision.js";
 import { speakOnCamera } from "./camera-talk.js";
@@ -616,7 +616,7 @@ async function uploadPersonSnapshotBody(
   const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
   const upload = await api(`/api/hub/person-sightings?${qs}`, {
     method: "POST",
-    headers: { "Content-Type": "image/jpeg" },
+    headers: { "Content-Type": "image/jpeg", "X-Face-Embedding": embeddingHeader(face.embedding) },
     body: new Uint8Array(uploadBuf),
     signal: AbortSignal.timeout(60_000),
   });

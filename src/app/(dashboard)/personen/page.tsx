@@ -30,7 +30,7 @@ export default async function PersonenPage() {
     listedPerson: { select: { id: true, name: true, listType: true } },
   } as const;
 
-  const [people, sightings, cameras, shellyDevices] = await Promise.all([
+  const [people, sightings, cameras, shellyDevices, unknownCount] = await Promise.all([
     db.listedPerson.findMany({
       where: { accountId },
       include: {
@@ -61,6 +61,7 @@ export default async function PersonenPage() {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    db.personSighting.count({ where: { accountId, listedPersonId: null } }),
   ]);
 
   const allSightingIds = [
@@ -74,7 +75,7 @@ export default async function PersonenPage() {
     const rows = await prisma.$queryRaw<{ id: number }[]>`
       SELECT id FROM "PersonSighting"
       WHERE "accountId" = ${accountId}
-        AND snapshot IS NOT NULL
+        AND (snapshot IS NOT NULL OR "snapshotBlob" IS NOT NULL)
         AND id IN (${Prisma.join(uniqueIds)})
     `;
     for (const r of rows) snapIds.add(r.id);
@@ -105,6 +106,7 @@ export default async function PersonenPage() {
           sightings={sightings.map(mapSighting)}
           cameras={cameras}
           shellyDevices={shellyDevices}
+          unknownCount={unknownCount}
         />
       </div>
     </>

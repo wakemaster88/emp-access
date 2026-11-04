@@ -20,9 +20,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Pencil, Trash2, Loader2, UserRound, History, ShieldAlert, ShieldCheck,
-  Cctv, Play, CheckCircle2, XCircle, Link2, UserPlus,
+  Cctv, Play, CheckCircle2, XCircle, Link2, UserPlus, ScanFace,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UnknownPersonsPanel } from "./unknown-persons-panel";
 
 export interface PersonRow {
   id: number;
@@ -68,6 +69,8 @@ interface Props {
   sightings: PersonSightingRow[];
   cameras: Option[];
   shellyDevices: Option[];
+  /** Unzugeordnete Sichtungen (Badge am Tab „Unbekannt“). */
+  unknownCount: number;
 }
 
 type ListFilter = "WHITELIST" | "BLACKLIST";
@@ -87,10 +90,12 @@ const EMPTY = {
   cooldownMinutes: "5",
 };
 
-export function PersonsClient({ people, sightings, cameras, shellyDevices }: Props) {
+export function PersonsClient({ people, sightings, cameras, shellyDevices, unknownCount }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [tab, setTab] = useState<"whitelist" | "blacklist" | "history">("whitelist");
+  const [tab, setTab] = useState<"unknown" | "whitelist" | "blacklist" | "history">(
+    unknownCount > 0 ? "unknown" : "whitelist"
+  );
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PersonRow | null>(null);
   const [form, setForm] = useState(EMPTY);
@@ -476,7 +481,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
   return (
     <div className="space-y-4 sm:space-y-6 max-w-6xl">
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList>
+        <TabsList className="max-w-full overflow-x-auto justify-start">
           <TabsTrigger value="whitelist" className="gap-1.5">
             <ShieldCheck className="h-4 w-4" /> Whitelist
             <Badge variant="secondary" className="ml-1 text-xs">{whitelist.length}</Badge>
@@ -484,6 +489,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
           <TabsTrigger value="blacklist" className="gap-1.5">
             <ShieldAlert className="h-4 w-4" /> Blacklist
             <Badge variant="secondary" className="ml-1 text-xs">{blacklist.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="unknown" className="gap-1.5">
+            <ScanFace className="h-4 w-4" /> Unbekannt
+            {unknownCount > 0 && (
+              <Badge variant="warning" className="ml-1 text-xs">{unknownCount}</Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1.5">
             <History className="h-4 w-4" /> Historie
@@ -495,6 +506,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices }: Pro
         </TabsContent>
         <TabsContent value="blacklist" className="mt-4">
           <PersonList items={blacklist} kind="BLACKLIST" />
+        </TabsContent>
+        <TabsContent value="unknown" className="mt-4">
+          <UnknownPersonsPanel
+            people={people.map((p) => ({ id: p.id, name: p.name, listType: p.listType }))}
+            onChanged={refresh}
+          />
         </TabsContent>
         <TabsContent value="history" className="space-y-4 mt-4">
           <Card>
