@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
 import { runMotionRules } from "@/lib/room-rules";
-import { maybeSurveillanceAlert } from "@/lib/surveillance";
 
 const VALID_TYPES = ["MOTION", "PERSON", "VEHICLE", "ANIMAL", "DOORBELL", "OTHER"];
 const MAX_EVENTS_PER_REQUEST = 100;
@@ -63,20 +62,10 @@ export async function POST(request: NextRequest) {
         console.error("[camera-events] room rules failed:", err);
       });
 
-      if (type === "VEHICLE") {
-        maybeSurveillanceAlert({
-          accountId: account.id,
-          cameraId,
-          type,
-          cameraName: camera.name,
-          at,
-        }).catch((err) => {
-          console.error("[camera-events] surveillance failed:", err);
-        });
-      }
-      // PERSON: Push/Telegram erst nach Face-Match in person-sightings,
-      // damit Whitelist-Personen keine Überwachungs-Alarm auslösen.
-
+      // Ueberwachungs-Push nicht auf den rohen KI-Alarm der Kamera: der
+      // flackert und meldet geparkte Autos/Strasse. PERSON pusht erst nach
+      // dem Face-Match (person-sightings), VEHICLE erst nach der Pruefung
+      // auf dem Hub (vehicle-sightings: Kennzeichen oder Fahrzeug im Bild).
       // PERSON-/VEHICLE-Sichtungen inkl. Schnappschuss laufen ueber
       // POST /api/hub/person-sightings bzw. /api/hub/vehicle-sightings.
     } else if (phase === "end") {

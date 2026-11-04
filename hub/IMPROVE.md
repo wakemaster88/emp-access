@@ -650,3 +650,30 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 - Restaurant im Dashboard auf „Eigene Zeiten“ stellen und die Oktober-Zeiten eintragen. Insel ebenso, oder Raum mit Betriebszeit zuordnen.
 - Am nächsten Morgen prüfen: Zonenkarte „Musik an bis …“ und im Pi-Journal „Betriebszeit beginnt – Quelle wird fortgesetzt“.
 - Offen: Per Hand außerhalb der Musikzeit starten geht weiterhin nicht (Pi verwirft PLAY still). Falls für Abendveranstaltungen gewünscht: Override „bis Ende heute“.
+
+## 2026-11-04 (Ereigniserkennung nach dem Kamera-Umzug in VLAN 30)
+
+### Befunde
+
+- Pro Kamera und Poll zwei HTTP-Requests (GetMdState, GetAiState), Takt 5 s. Im Mittel ~2,5 s plus Poll-Dauer, bis ein Burst überhaupt startet.
+- Die Bild-Pipelines (Kennzeichen, Gesicht) starteten erst nach dem `await` auf den Cloud-Upload der Ereignisliste. Jede Cloud-Latenz lag damit vor dem ersten Burst-Frame und vor der Tür.
+- KI-Alarme flackern; jede Flanke wurde ein eigenes Cloud-Ereignis mit Raumregeln. Frühere Auswertung: nachts 100–200 Ereignisse pro Stunde.
+- Überwachungs-Push für VEHICLE ging auf den rohen Kamera-Alarm (geparkte Autos, Straße, Flackern), Personen dagegen erst nach dem Face-Match.
+- Auto-Snapshots bei Bewegung gingen in voller Auflösung in die Datenbank, obwohl sie nur angezeigt werden.
+
+### Änderungen
+
+- `pollStates`: GetMdState + GetAiState in einem Batch-Request. Kameras, die kein Batch können, fallen einmalig auf Einzelabfragen zurück (Log-Zeile).
+- Poll-Takt 2 s statt 5 s (`HUB_CAMERA_POLL_INTERVAL`, ab 1 s).
+- `event-debounce.ts`: Ereignis endet erst nach `HUB_EVENT_END_HOLD_MS` (6 s) Ruhe; Ende trägt den Zeitpunkt der letzten aktiven Messung. Pipelines hängen weiter an den rohen Flanken (zweiter Wagen geht nicht verloren).
+- Pipelines starten vor dem Cloud-Upload der Ereignisse.
+- Auto-Snapshot bei Bewegung auf 1280 px verkleinert; Snapshot per Task bleibt in voller Größe.
+- Cloud: VEHICLE-Überwachungs-Push erst in `processVehicleSighting` (nach Prüfung auf dem Hub), nicht für freigegebene Fahrzeuge.
+- Geprüft: `tsc` Hub und Cloud, ESLint, Tests 113/113 (neu: Entprellung), Mock mit zwei Fake-Reolinks (Batch und Fallback, Flackern 1-0-1 → ein Start, ein Ende).
+
+### Offen
+
+- Echtzeit statt Polling: Reolink-Push (Baichuan, Port 9000) oder ONVIF-PullPoint, < 0,5 s bis zum Burst.
+- Erkennungszonen, Objektgröße und Empfindlichkeit in den Kameras selbst setzen (v. a. Eingang: Straße oben links, Parkplatz Halle).
+- Personen ohne Gesicht: YOLO-Gegenprüfung statt nur Face-Detektor.
+- Nach dem Deploy im Log prüfen: keine „Batch-Abfrage nicht unterstützt“-Zeilen, Ereignisse pro Stunde vorher/nachher.
