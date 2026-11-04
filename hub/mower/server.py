@@ -208,6 +208,9 @@ class MowerService:
                 await self.client.login_and_initiate_cloud(EMAIL, PASSWORD, self.http)
         except Exception as err:  # noqa: BLE001 - jede Ursache wird unten eingeordnet
             msg = str(err) or type(err).__name__
+            # Mammotion nennt die Adresse im Klartext; Log und Dashboard zeigen sie maskiert.
+            if EMAIL:
+                msg = msg.replace(EMAIL, _mask(EMAIL))
             if _is_rejected(err, self.client):
                 self.state = "rejected"
                 self.error = f"Mammotion lehnt die Anmeldung ab: {msg}. Zugangsdaten in hub/.env pruefen."
