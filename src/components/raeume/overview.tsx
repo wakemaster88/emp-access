@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import {
   Cctv,
   Clock,
+  Droplets,
   Flame,
   Lightbulb,
   Loader2,
@@ -220,6 +221,13 @@ function RoomTile({
       Icon: Sprout,
       text: `${s.mowersTotal === 1 ? "Mäher" : `${s.mowersTotal} Mäher`} · ${s.mowersMowing > 0 ? "mäht" : "parkt"}`,
       tone: s.mowersMowing > 0 ? "text-emerald-600 dark:text-emerald-400" : undefined,
+    });
+  }
+  if (s.irrigationLabel) {
+    chips.push({
+      Icon: Droplets,
+      text: `Bewässerung · ${s.irrigationLabel}`,
+      tone: s.irrigationRunning ? "text-sky-600 dark:text-sky-400" : undefined,
     });
   }
   const lightsSwitchable = !readonly && s.switchableLights.length > 0;

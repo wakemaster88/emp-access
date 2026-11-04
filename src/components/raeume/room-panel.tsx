@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   CalendarClock,
   Cpu,
+  Droplets,
   Lightbulb,
   Loader2,
   Lock,
@@ -35,6 +36,7 @@ import type {
 import { deviceControlModel, isLatchingSwitchDevice } from "@/lib/device-controls";
 import { RoomIcon } from "@/components/raeume/room-icons";
 import { TechTable } from "@/components/raeume/tech-table";
+import { IrrigationWidget } from "@/components/raeume/irrigation-widget";
 import { ClimateHistory, type HistoryRange } from "@/components/raeume/climate-history";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { fmtWhen, ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
@@ -53,16 +55,21 @@ export interface RoomGroups {
   climate: RoomDevice[];
   light: RoomDevice[];
   mower: RoomDevice[];
+  /** GARDENA-Ventile – gehoeren zum Bewaesserungs-Widget. */
+  water: RoomDevice[];
   other: RoomDevice[];
 }
 
 /** Geraete eines Raums auf die Widgets verteilen. */
 export function groupRoomDevices(room: RoomPanelData): RoomGroups {
   const heaterIds = new Set([...(room.climate?.heaterDeviceIds ?? []), ...(room.climate?.fanDeviceIds ?? [])]);
-  const groups: RoomGroups = { climate: [], light: [], mower: [], other: [] };
+  const groups: RoomGroups = { climate: [], light: [], mower: [], water: [], other: [] };
   for (const d of room.devices) {
     if (d.type === "MAMMOTION_MOWER") {
       groups.mower.push(d);
+    } else if (d.type === "GARDENA_VALVE") {
+      // "Ventil" im Namen darf nicht als Lueftung durchgehen.
+      groups.water.push(d);
     } else if (
       heaterIds.has(d.id) ||
       d.id === room.climate?.sensorDeviceId ||
@@ -255,7 +262,12 @@ export function RoomPanel({
   const offline = room.devices.filter((d) => statuses.get(d.id)?.online === false).length;
   const activeAutomations = room.automations.filter((a) => a.isActive).length;
   const hasControl =
-    showClimate || groups.light.length > 0 || groups.mower.length > 0 || room.zones.length > 0 || groups.other.length > 0;
+    showClimate ||
+    groups.light.length > 0 ||
+    groups.mower.length > 0 ||
+    groups.water.length > 0 ||
+    room.zones.length > 0 ||
+    groups.other.length > 0;
   const hasSecurity = room.cameras.length > 0 || !!room.activity || hasMotionSensor || room.locks.length > 0;
   const hasTech = network.length > 0 || room.devices.length > 0;
   type TabSpec = { key: TabKey; label: string; icon: ReactNode; badge?: string | null; live?: boolean; alert?: boolean };
@@ -557,6 +569,35 @@ export function RoomPanel({
                     />
                   ))}
                 </div>
+              </Section>
+            )}
+
+            {groups.water.length > 0 && (
+              <Section
+                icon={<Droplets className="h-3.5 w-3.5" />}
+                title="Bewässerung"
+                action={
+                  !readonly && (
+                    <Link href="/bewaesserung" className="text-[11px] font-medium text-primary hover:underline">
+                      Bearbeiten
+                    </Link>
+                  )
+                }
+              >
+                {room.irrigation ? (
+                  <IrrigationWidget
+                    irrigation={room.irrigation}
+                    devices={groups.water}
+                    statuses={statuses}
+                    nowMs={nowMs}
+                    timezone={timezone}
+                    readonly={readonly}
+                    roomName={room.name}
+                    onAction={onAction}
+                  />
+                ) : (
+                  <div className="space-y-1.5">{rows(groups.water)}</div>
+                )}
               </Section>
             )}
 

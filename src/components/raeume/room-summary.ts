@@ -16,6 +16,7 @@ import type { MowerLive } from "@/components/raeume/mower-card";
 import type { RoomDevice, RoomPanel, RoomZone } from "@/components/raeume/types";
 import { operatingSpanState } from "@/lib/operating-hours";
 import { isLatchingSwitchDevice } from "@/lib/device-controls";
+import { fmtNextRun, runProgress } from "@/lib/room-irrigation";
 
 /** Ein Grund, warum ein Raum Aufmerksamkeit braucht. */
 export interface RoomAlert {
@@ -46,6 +47,9 @@ export interface RoomSummary {
   climateTone: "heat" | "air" | "danger" | "idle" | null;
   mowersTotal: number;
   mowersMowing: number;
+  /** "läuft · Liegewiese 2 von 3", "morgen 05:30", "heute ausgesetzt"; null ohne Ventile. */
+  irrigationLabel: string | null;
+  irrigationRunning: boolean;
   camerasTotal: number;
   /** Kameras ohne Bild in den letzten 5 Minuten. */
   camerasStale: number;
@@ -138,6 +142,32 @@ export function summarizeRoom(
     return !!s?.online && s.status === "MODE_WORKING";
   }).length;
 
+  // Bewaesserung: laufender Plan vor dem naechsten Start.
+  let irrigationLabel: string | null = null;
+  let irrigationRunning = false;
+  const irrigation = room.irrigation;
+  if (irrigation) {
+    const running = irrigation.schedules.find((s) => s.run && !runProgress(s.run, irrigation.valves, nowMs).finished);
+    if (running) {
+      const p = runProgress(running.run!, irrigation.valves, nowMs);
+      const step = p.current != null ? running.run!.steps[p.current] : null;
+      irrigationLabel = step ? `läuft · ${step.name} ${p.done + 1} von ${p.total}` : "läuft";
+      irrigationRunning = true;
+    } else {
+      const next = irrigation.schedules
+        .filter((s) => s.nextRunAt)
+        .sort((a, b) => Date.parse(a.nextRunAt!) - Date.parse(b.nextRunAt!))[0];
+      const skipped = next && next.skipOnRain && irrigation.recommendation?.level === "skip";
+      irrigationLabel = skipped
+        ? "heute ausgesetzt"
+        : next
+          ? fmtNextRun(new Date(next.nextRunAt!), now, timezone)
+          : irrigation.schedules.length > 0
+            ? "pausiert"
+            : `${irrigation.valves.length} ${irrigation.valves.length === 1 ? "Ventil" : "Ventile"}`;
+    }
+  }
+
   const camerasStale = room.cameras.filter(
     (c) => c.enabled && !(c.snapshotAt && nowMs - new Date(c.snapshotAt).getTime() < SNAPSHOT_FRESH_MS),
   ).length;
@@ -196,6 +226,8 @@ export function summarizeRoom(
     climateTone,
     mowersTotal: groups.mower.length,
     mowersMowing,
+    irrigationLabel,
+    irrigationRunning,
     camerasTotal: room.cameras.length,
     camerasStale,
     alerts,

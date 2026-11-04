@@ -20,6 +20,9 @@ import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 import { climateView } from "@/lib/room-climate";
 import { buildRoomActivity, dayStart } from "@/lib/room-activity";
 import { readMowerMap, readMowerState } from "@/lib/mower";
+import { getWeather } from "@/lib/weather";
+import { getIrrigationRecommendation, parseRunState, parseValveSequence } from "@/lib/irrigation";
+import { bucketRunsByDay, nextScheduleRun, type RoomIrrigation, type RoomIrrigationSchedule } from "@/lib/room-irrigation";
 
 /** Fenster, in dem eine Bewegung im Raum noch als "zuletzt" gezeigt wird. */
 const EVENT_LOOKBACK_HOURS = 24;
@@ -240,7 +243,7 @@ export default async function RaeumePage() {
       ? Promise.resolve(null)
       : db.account.findUnique({
           where: { id: session.user.accountId! },
-          select: { timezone: true },
+          select: { timezone: true, latitude: true, longitude: true },
         }),
     db.networkDevice.findMany({
       where: accountFilter,
@@ -315,6 +318,7 @@ export default async function RaeumePage() {
   // weil die Zeitzone des Mandanten gebraucht wird.
   const tz = account?.timezone || DEFAULT_TIMEZONE;
   const todayStart = dayStart(now, tz);
+  const irrigationByRoom = await loadIrrigation(db, accountFilter, rooms, now, tz, account);
   const [personEvents, sightings, motions, audioSchedules] = await Promise.all([
     db.cameraEvent.findMany({
       where: { ...accountFilter, type: "PERSON", startedAt: { gte: todayStart }, camera: { keyRoomId: { not: null } } },
@@ -456,6 +460,7 @@ export default async function RaeumePage() {
     automations: automationsByRoom.get(room.id) ?? [],
     climate: room.climate ? climateView(room.climate) : null,
     activity: activity.get(room.id) ?? null,
+    irrigation: irrigationByRoom.get(room.id) ?? null,
     schedule: room.operatingSchedule
       ? {
           id: room.operatingSchedule.id,
@@ -504,6 +509,98 @@ export default async function RaeumePage() {
       </div>
     </>
   );
+}
+
+/**
+ * Bewaesserung je Raum (Mockup W18): Zeitplaene, deren Pumpe oder Ventile im
+ * Raum stehen, dazu der laufende Plan, die Wetter-Empfehlung und der Verbrauch
+ * der letzten sieben Tage aus den protokollierten Laeufen. Nur fuer Mandanten
+ * mit GARDENA-Ventilen; sonst bleibt alles null.
+ */
+async function loadIrrigation(
+  db: TenantDb,
+  accountFilter: { accountId?: number },
+  rooms: { id: number; devices: { id: number; type: string }[] }[],
+  now: Date,
+  tz: string,
+  account: { latitude: number | null; longitude: number | null } | null,
+): Promise<Map<number, RoomIrrigation>> {
+  const result = new Map<number, RoomIrrigation>();
+  const roomByValve = new Map<number, number>();
+  for (const room of rooms) {
+    for (const d of room.devices) if (d.type === "GARDENA_VALVE") roomByValve.set(d.id, room.id);
+  }
+  if (roomByValve.size === 0) return result;
+
+  const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
+  const [valves, schedules, runs, weather] = await Promise.all([
+    db.device.findMany({
+      where: { ...accountFilter, type: "GARDENA_VALVE" },
+      select: { id: true, name: true, isActive: true, flowLph: true },
+      orderBy: { name: "asc" },
+    }),
+    db.irrigationSchedule.findMany({
+      where: accountFilter,
+      include: { device: { select: { id: true, name: true, keyRoomId: true } } },
+      orderBy: { startTime: "asc" },
+    }),
+    db.irrigationRun.findMany({
+      where: { ...accountFilter, deviceId: { in: [...roomByValve.keys()] }, startedAt: { gte: weekAgo } },
+      select: { deviceId: true, startedAt: true, durationMinutes: true, litersEstimate: true },
+    }),
+    account ? getWeather(account.latitude, account.longitude).catch(() => null) : Promise.resolve(null),
+  ]);
+  const valveById = new Map(valves.map((v) => [v.id, v]));
+  const recommendation = account ? getIrrigationRecommendation(weather) : null;
+
+  for (const roomId of new Set(roomByValve.values())) {
+    const roomValves = valves.filter((v) => roomByValve.get(v.id) === roomId);
+    const inRoom = (deviceId: number) => roomByValve.get(deviceId) === roomId;
+    const roomSchedules: RoomIrrigationSchedule[] = schedules
+      .filter((s) => inRoom(s.deviceId) || (parseValveSequence(s.valveSequence) ?? []).some(inRoom))
+      .map((s) => {
+        const run = parseRunState(s.runState);
+        return {
+          id: s.id,
+          name: s.device?.name ?? "Zeitplan",
+          deviceId: s.deviceId,
+          daysOfWeek: s.daysOfWeek,
+          startTime: s.startTime,
+          durationMinutes: s.durationMinutes,
+          isActive: s.isActive,
+          skipOnRain: s.skipOnRain,
+          smartRain: s.smartRain,
+          sensorServiceId: s.sensorServiceId,
+          moistureThresholdPct: s.moistureThresholdPct,
+          valveIds: parseValveSequence(s.valveSequence),
+          run: run
+            ? {
+                startedAt: run.startedAt,
+                steps: run.steps.map((step) => ({
+                  deviceId: step.deviceId,
+                  name: valveById.get(step.deviceId)?.name ?? `Ventil ${step.deviceId}`,
+                  minutes: step.minutes,
+                  startedAt: step.startedAt ?? null,
+                })),
+              }
+            : null,
+          lastRunAt: s.lastRunAt ? s.lastRunAt.toISOString() : null,
+          nextRunAt: nextScheduleRun(s, now, tz)?.toISOString() ?? null,
+        };
+      });
+    result.set(roomId, {
+      valves: roomValves.map((v) => ({ id: v.id, name: v.name, isActive: v.isActive, flowLph: v.flowLph })),
+      schedules: roomSchedules,
+      recommendation: recommendation
+        ? { level: recommendation.level, factor: recommendation.factor, reason: recommendation.reason }
+        : null,
+      weather: weather
+        ? { tempMaxToday: weather.tempMaxToday, precipSumToday: weather.precipSumToday, precipProbToday: weather.precipProbToday }
+        : null,
+      days: bucketRunsByDay(runs.filter((r) => inRoom(r.deviceId)), now, tz),
+    });
+  }
+  return result;
 }
 
 type RuleActionRow = {
