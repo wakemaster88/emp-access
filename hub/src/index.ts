@@ -12,6 +12,7 @@ import { STATE, recordHeartbeat, recordHubEvent, recordTask } from "./state.js";
 import { collectParkingSnapshot, ensureParkingCameras, uploadParkingTrackerFrames } from "./parking.js";
 import { checkNoParking, noParkingConfigSummary, NOPARK_INTERVAL_MS } from "./noparking.js";
 import { runSwitchSync, snmpConfigured } from "./snmp.js";
+import { startVlanCheck } from "./vlan-check.js";
 import { improve, startImproveLog, flushImproveSnapshot } from "./improve-log.js";
 import { startSystemMetrics } from "./system-metrics.js";
 import { startSystemSetup } from "./system-setup.js";
@@ -244,6 +245,9 @@ if (snmpConfigured()) {
     void runSwitchSync("SNMP-Auto");
   }, snmpMs);
 }
+// VLAN-Soll/Ist je Switch-Port (nur lesend) – meldet halb umgesetzte
+// Insight-Aenderungen, bevor eine Kamera tagelang unbemerkt fehlt.
+startVlanCheck();
 setInterval(pollCameras, CAMERA_POLL_INTERVAL_MS);
 // Soundweb London: Konfiguration aus der Cloud, dann je Prozessor eine
 // DI-Verbindung mit Abonnements. Ohne eingerichtete Geräte ein Leerlauf.

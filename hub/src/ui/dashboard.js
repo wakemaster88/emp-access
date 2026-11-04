@@ -1750,6 +1750,18 @@ function renderNetzwerk() {
   setHTML("netSubnets", subnetHtml);
 
   const sw = n.switches || [];
+  const vc = n.vlanCheck || { hosts: [], confirmed: [] };
+  const vlanByHost = {};
+  for (const h of vc.hosts || []) vlanByHost[h.host] = h;
+  const vlanLine = (host) => {
+    const h = vlanByHost[host];
+    if (!h) return "";
+    if (!h.ok) return "";
+    if (!h.issues.length) return `<div class="line"><span class="k">VLAN-Prüfung</span><span class="v">${badge("ok", "Soll = Ist")}</span></div>`;
+    return `<div class="line"><span class="k">VLAN-Prüfung</span><span class="v">${badge("alert", `${h.issues.length} Befund${h.issues.length === 1 ? "" : "e"}`)}</span></div>${h.issues
+      .map((m) => `<div class="line"><span class="v muted">${esc(m)}</span></div>`)
+      .join("")}`;
+  };
   setHTML(
     "netSwitches",
     sw.length
@@ -1761,6 +1773,7 @@ function renderNetzwerk() {
         ${s.error ? `<div class="chips">${badge("alert", s.error)}</div>` : `<div class="line"><span class="k">Ports aktiv</span><span class="v"><strong>${esc(s.portsUp)}</strong><span class="muted"> / ${esc(s.portsTotal)}</span></span></div><div class="meter grad"><span style="width:${p.toFixed(1)}%"></span></div>`}
         <div class="line"><span class="k">Laufzeit</span><span class="v">${esc(typeof s.uptimeS === "number" ? uptime(s.uptimeS) : "–")}</span></div>
         <div class="line"><span class="k">MACs</span><span class="v">${esc(s.macs)}</span></div>
+        ${vlanLine(s.host)}
         <div class="line"><span class="k">Stand</span><span class="v muted">${esc(ago(s.polledAt))}</span></div>
       </article>`;
           })

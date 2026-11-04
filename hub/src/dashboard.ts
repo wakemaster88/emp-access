@@ -33,6 +33,7 @@ import { listWhitelistPublic } from "./plate.js";
 import { handleDetectionApi } from "./detection-settings.js";
 import { recentImproveEvents } from "./improve-log.js";
 import { lastSwitchSnapshots, snmpConfigured } from "./snmp.js";
+import { vlanCheckSummary } from "./vlan-check.js";
 import { configuredVlans, routerHost } from "./netmap.js";
 import { soundwebSummary } from "./soundweb.js";
 import { systemMetrics, type SystemMetrics } from "./system-metrics.js";
@@ -606,6 +607,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       return json(res, 200, {
         ...lastScanResult(),
         switches: lastSwitchSnapshots(),
+        vlanCheck: vlanCheckSummary(),
         router: routerHost(),
         vlansConfigured: configuredVlans().length > 0,
       });

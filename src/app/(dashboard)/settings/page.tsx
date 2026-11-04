@@ -49,7 +49,7 @@ export default async function SettingsPage() {
     }),
     db.telegramConfig.findFirst({
       where: { accountId: session.user.accountId },
-      select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true, notifyNewDevices: true },
+      select: { id: true, chatId: true, isActive: true, dailyReport: true, dailyReportTime: true, notifyNewDevices: true, notifyOutages: true },
     }),
   ]);
 

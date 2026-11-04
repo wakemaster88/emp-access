@@ -23,6 +23,7 @@ export const TENANT_MODELS = new Set<string>([
   "EmailRule",
   "EmailSend",
   "HubAgent",
+  "HubAlert",
   "HubTask",
   "InfoFormTemplate",
   "InfoRequest",
