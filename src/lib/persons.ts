@@ -19,6 +19,22 @@ export function floatsToEmbeddingBytes(values: number[]): Buffer {
   return buf;
 }
 
+/** Embedding aus dem Hub-Header `X-Face-Embedding` (Base64, Float32 LE). */
+export function parseEmbeddingHeader(value: string | null): Uint8Array<ArrayBuffer> | null {
+  if (!value) return null;
+  try {
+    const buf = Buffer.from(value, "base64");
+    // 64..2048 Dimensionen, ganze Floats.
+    if (buf.length < 256 || buf.length > 8192 || buf.length % 4 !== 0) return null;
+    for (let i = 0; i < buf.length; i += 4) {
+      if (!Number.isFinite(buf.readFloatLE(i))) return null;
+    }
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+}
+
 export function embeddingBytesToFloats(bytes: Uint8Array | Buffer): number[] {
   const buf = Buffer.from(bytes);
   const out: number[] = [];
@@ -123,6 +139,8 @@ export async function processCameraPersonEvent(opts: {
   matchedPersonId?: number | null;
   matchScore?: number | null;
   matchMethod?: string | null;
+  /** Float32-Bytes vom Hub, fuer Gruppierung/Zuordnung unbekannter Personen. */
+  faceEmbedding?: Uint8Array<ArrayBuffer> | null;
 }): Promise<{ sightings: number; triggered: number }> {
   const seenAt = opts.seenAt ?? new Date();
   const snapshot =
@@ -182,6 +200,7 @@ export async function processCameraPersonEvent(opts: {
           shellyTriggered,
           shellyOk,
           seenAt,
+          faceEmbedding: opts.faceEmbedding ?? null,
           ...storedSnapshot,
         },
         // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
@@ -226,6 +245,7 @@ export async function processCameraPersonEvent(opts: {
       matchScore: opts.matchScore ?? null,
       matchMethod: null,
       seenAt,
+      faceEmbedding: opts.faceEmbedding ?? null,
       ...storedSnapshot,
     },
     // select {id}: RETURNING soll die Snapshot-Bytes nicht zurueckuebertragen.
@@ -311,10 +331,14 @@ export async function assignPersonToSighting(opts: {
 }> {
   const sighting = await prisma.personSighting.findFirst({
     where: { id: opts.sightingId, accountId: opts.accountId },
-    select: { id: true, snapshotBlob: true, snapshot: true },
+    select: { id: true, snapshotBlob: true, faceEmbedding: true },
   });
   if (!sighting) throw new Error("Sichtung nicht gefunden");
-  const hasSnapshot = Boolean(sighting.snapshotBlob) || Boolean(sighting.snapshot?.length);
+  const hasSnapshot =
+    Boolean(sighting.snapshotBlob) ||
+    (await prisma.personSighting.count({
+      where: { id: sighting.id, snapshot: { not: null } },
+    })) > 0;
 
   const person = await prisma.listedPerson.findFirst({
     where: { id: opts.listedPersonId, accountId: opts.accountId },
@@ -339,7 +363,18 @@ export async function assignPersonToSighting(opts: {
   });
 
   let enrollTaskId: number | null = null;
-  if (hasSnapshot) {
+  const stored = sighting.faceEmbedding?.length
+    ? embeddingBytesToFloats(sighting.faceEmbedding)
+    : null;
+  if (stored && stored.length >= 64) {
+    // Embedding liegt schon vor: direkt als Sample speichern, kein Hub-Umweg.
+    await storePersonFaceEmbedding({
+      accountId: opts.accountId,
+      listedPersonId: person.id,
+      embedding: stored,
+      sourceSightingId: sighting.id,
+    });
+  } else if (hasSnapshot) {
     const task = await prisma.hubTask.create({
       data: {
         accountId: opts.accountId,

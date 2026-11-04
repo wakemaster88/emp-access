@@ -13,7 +13,7 @@ import { onCameraEvent } from "./rules.js";
 import { kickIfRulesTriggered } from "./task-kick.js";
 import { api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
-import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
+import { embedJpeg, embeddingHeader, scoreGallery, refreshGallery } from "./face.js";
 import { jpegContainsVehicle } from "./vision.js";
 import type { CameraConfig, LastPerson } from "./cameras.js";
 import { updateLocalStreams } from "./streams.js";
@@ -579,7 +579,7 @@ async function runSnapshotPipeline(rt: DoorbirdRuntime, trigger: "DOORBELL" | "M
     const uploadBuf = await shrinkJpeg(buf, PERSON_SNAPSHOT_MAX_PX);
     const upload = await api(`/api/hub/person-sightings?${qs}`, {
       method: "POST",
-      headers: { "Content-Type": "image/jpeg" },
+      headers: { "Content-Type": "image/jpeg", "X-Face-Embedding": embeddingHeader(face.embedding) },
       body: new Uint8Array(uploadBuf),
       signal: AbortSignal.timeout(60_000),
     });

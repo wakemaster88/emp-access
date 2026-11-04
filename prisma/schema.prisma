@@ -1808,6 +1808,10 @@ model PersonSighting {
   snapshot        Bytes?
   /// Pfad im Blob-Speicher; gesetzt statt `snapshot` bei neuen Sichtungen.
   snapshotBlob    String?
+  /// Face-Embedding (Float32, buffalo_l) des Schnappschusses, vom Hub.
+  /// Leere Bytes = analysiert, aber kein Gesicht gefunden. Basis fuer das
+  /// Gruppieren unbekannter Personen und fuer Ein-Klick-Zuordnung.
+  faceEmbedding   Bytes?
   seenAt          DateTime      @default(now())
   createdAt       DateTime      @default(now())
 
