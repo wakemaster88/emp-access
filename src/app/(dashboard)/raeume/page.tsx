@@ -12,7 +12,9 @@ import type {
 import { safeAuth } from "@/lib/auth";
 import { superAdminClient, tenantClient, type TenantDb } from "@/lib/prisma";
 import { isPlayerOnline } from "@/lib/audio-constants";
-import { scheduleInclude } from "@/lib/operating-queries";
+import { scheduleInclude, scheduleSpecInclude, toScheduleSpec } from "@/lib/operating-queries";
+import { audioActionLabel, buildRoomAutomation, sortAutomations, type AutomationInput } from "@/lib/room-automations";
+import { deviceControls } from "@/lib/device-controls";
 import { DEFAULT_TIMEZONE } from "@/lib/tz-time";
 import { climateView } from "@/lib/room-climate";
 import { buildRoomActivity, dayStart } from "@/lib/room-activity";
@@ -151,6 +153,24 @@ export default async function RaeumePage() {
             trigger: true,
             isActive: true,
             lastRunAt: true,
+            offsetMinutes: true,
+            timeOfDay: true,
+            daysOfWeek: true,
+            operatingSchedule: { include: scheduleSpecInclude },
+            actions: {
+              select: {
+                kind: true,
+                deviceAction: true,
+                timerSeconds: true,
+                channel: true,
+                device: { select: { name: true, type: true, category: true } },
+                audioZone: { select: { name: true } },
+                audioAnnouncement: { select: { name: true } },
+                audioPlaylist: { select: { name: true } },
+                targetCamera: { select: { name: true } },
+              },
+              orderBy: { sortOrder: "asc" },
+            },
             _count: { select: { actions: true } },
           },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -280,7 +300,7 @@ export default async function RaeumePage() {
   // weil die Zeitzone des Mandanten gebraucht wird.
   const tz = account?.timezone || DEFAULT_TIMEZONE;
   const todayStart = dayStart(now, tz);
-  const [personEvents, sightings, motions] = await Promise.all([
+  const [personEvents, sightings, motions, audioSchedules] = await Promise.all([
     db.cameraEvent.findMany({
       where: { ...accountFilter, type: "PERSON", startedAt: { gte: todayStart }, camera: { keyRoomId: { not: null } } },
       select: { startedAt: true, endedAt: true, camera: { select: { keyRoomId: true } } },
@@ -297,7 +317,72 @@ export default async function RaeumePage() {
       where: { ...accountFilter, at: { gte: todayStart } },
       select: { roomId: true, at: true },
     }),
+    db.audioSchedule.findMany({
+      where: accountFilter,
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        action: true,
+        trigger: true,
+        offsetMinutes: true,
+        timeOfDay: true,
+        daysOfWeek: true,
+        zoneIds: true,
+        volume: true,
+        lastRunAt: true,
+        operatingSchedule: { include: scheduleSpecInclude },
+        announcement: { select: { name: true } },
+        playlist: { select: { name: true } },
+      },
+    }),
   ]);
+
+  // Ablaeufe je Raum: Regeln des Raums plus Audio-Zeitplaene, die eine Zone
+  // des Raums bespielen. Ohne eigene Betriebszeit gilt die des Raums.
+  const automationsByRoom = new Map<number, ReturnType<typeof buildRoomAutomation>[]>();
+  for (const room of rooms) {
+    const roomSchedule = room.operatingSchedule ? toScheduleSpec(room.operatingSchedule) : null;
+    const zoneNames = new Map(room.audioZones.map((z) => [z.id, z.name]));
+    const inputs: AutomationInput[] = room.rules.map((rule) => ({
+      key: `r${rule.id}`,
+      kind: "rule",
+      name: rule.name,
+      isActive: rule.isActive,
+      trigger: rule.trigger,
+      offsetMinutes: rule.offsetMinutes,
+      timeOfDay: rule.timeOfDay,
+      daysOfWeek: rule.daysOfWeek,
+      schedule: rule.operatingSchedule ? toScheduleSpec(rule.operatingSchedule) : roomSchedule,
+      actions: rule.actions.map(ruleActionLabel),
+      lastRunAt: rule.lastRunAt,
+    }));
+    for (const a of audioSchedules) {
+      const ids = Array.isArray(a.zoneIds) ? (a.zoneIds as unknown[]).filter((v): v is number => typeof v === "number") : [];
+      const here = ids.filter((id) => zoneNames.has(id));
+      if (here.length === 0) continue;
+      inputs.push({
+        key: `a${a.id}`,
+        kind: "audio",
+        name: a.name,
+        isActive: a.isActive,
+        trigger: a.trigger,
+        offsetMinutes: a.offsetMinutes,
+        timeOfDay: a.timeOfDay,
+        daysOfWeek: a.daysOfWeek,
+        schedule: a.operatingSchedule ? toScheduleSpec(a.operatingSchedule) : roomSchedule,
+        actions: [
+          audioActionLabel(
+            a.action,
+            here.map((id) => zoneNames.get(id)!),
+            { announcement: a.announcement?.name, playlist: a.playlist?.name, volume: a.volume },
+          ),
+        ],
+        lastRunAt: a.lastRunAt,
+      });
+    }
+    automationsByRoom.set(room.id, sortAutomations(inputs.map((i) => buildRoomAutomation(i, now, tz))));
+  }
   const activity = buildRoomActivity(
     personEvents.map((e) => ({ roomId: e.camera.keyRoomId!, startedAt: e.startedAt, endedAt: e.endedAt })),
     sightings
@@ -353,6 +438,7 @@ export default async function RaeumePage() {
       lastRunAt: rule.lastRunAt ? rule.lastRunAt.toISOString() : null,
       actionCount: rule._count.actions,
     })),
+    automations: automationsByRoom.get(room.id) ?? [],
     climate: room.climate ? climateView(room.climate) : null,
     activity: activity.get(room.id) ?? null,
     schedule: room.operatingSchedule
@@ -401,4 +487,44 @@ export default async function RaeumePage() {
       </div>
     </>
   );
+}
+
+type RuleActionRow = {
+  kind: string;
+  deviceAction: string | null;
+  timerSeconds: number | null;
+  channel: string | null;
+  device: { name: string; type: string; category: string | null } | null;
+  audioZone: { name: string } | null;
+  audioAnnouncement: { name: string } | null;
+  audioPlaylist: { name: string } | null;
+  targetCamera: { name: string } | null;
+};
+
+const GENERIC_ACTION: Record<string, string> = {
+  open: "einschalten",
+  reset: "ausschalten",
+  close: "schließen",
+  stop: "stoppen",
+  deactivate: "abschließen",
+  emergency: "NOT-AUF",
+};
+
+/** "Rolltor Verleih: Öffnen" – Beschriftung wie an der Geräte-Kachel. */
+function ruleActionLabel(a: RuleActionRow): string {
+  if (a.kind === "DEVICE") {
+    const name = a.device?.name ?? "Gerät";
+    const control = a.device && a.deviceAction ? deviceControls(a.device).find((c) => c.action === a.deviceAction) : null;
+    const verb = control?.label ?? (a.deviceAction ? GENERIC_ACTION[a.deviceAction] ?? a.deviceAction : "schalten");
+    return `${name}: ${verb}${a.timerSeconds ? ` (${a.timerSeconds} s)` : ""}`;
+  }
+  if (a.kind === "AUDIO") {
+    const zone = a.audioZone?.name ?? "Zone";
+    if (a.audioAnnouncement) return `${zone}: Durchsage „${a.audioAnnouncement.name}“`;
+    if (a.audioPlaylist) return `${zone}: Playlist „${a.audioPlaylist.name}“`;
+    return `${zone}: Musik stoppen`;
+  }
+  if (a.kind === "NOTIFY") return a.channel === "TELEGRAM" ? "Telegram-Nachricht" : "Benachrichtigung";
+  if (a.kind === "CAMERA") return `${a.targetCamera?.name ?? "Kamera"} steuern`;
+  return a.kind;
 }

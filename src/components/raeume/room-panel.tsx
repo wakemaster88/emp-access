@@ -23,7 +23,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeviceRow } from "@/components/raeume/device-row";
 import type { ZoneAction } from "@/components/raeume/zone-row";
 import { eventTypeLabel, fmtAgo, shortDeviceName } from "@/components/raeume/shared";
-import { triggerLabel } from "@/components/regeln/shared";
 import type { DeviceStatus } from "@/components/raeume/status";
 import type {
   RoomDevice,
@@ -34,6 +33,7 @@ import type {
 import { isLatchingSwitchDevice } from "@/lib/device-controls";
 import { RoomIcon } from "@/components/raeume/room-icons";
 import { NetworkWidget } from "@/components/raeume/network-widget";
+import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
 import { ActivityChart, CameraTile, ClimateHero, DeviceTile, GroupTile, ZoneCard } from "@/components/raeume/room-widgets";
 import { cn } from "@/lib/utils";
@@ -294,6 +294,21 @@ export function RoomPanel({
             <ScheduleEmpty onEdit={readonly ? undefined : onEdit} />
           )}
         </Section>
+        {room.automations.length > 0 && (
+          <Section
+            icon={<Workflow className="h-3.5 w-3.5" />}
+            title={`Regeln & Abläufe · ${room.automations.filter((a) => a.isActive).length}`}
+            action={
+              !readonly && (
+                <Link href="/regeln" className="text-[11px] font-medium text-primary hover:underline">
+                  Bearbeiten
+                </Link>
+              )
+            }
+          >
+            <AutomationWidget items={room.automations} nowMs={nowMs} timezone={timezone} />
+          </Section>
+        )}
         {showClimate && (
           <Section
             icon={<Thermometer className="h-3.5 w-3.5" />}
@@ -468,25 +483,6 @@ export function RoomPanel({
               </div>
             ))}
           </Section>
-        )}
-
-        {room.rules.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 border-t border-border/60 pt-3">
-            {room.rules.map((rule) => (
-              <Link
-                key={rule.id}
-                href="/regeln"
-                className={cn(
-                  "inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-violet-400/50 hover:text-foreground",
-                  rule.isActive ? "" : "opacity-50",
-                )}
-                title={`${triggerLabel(rule.trigger)} · ${rule.isActive ? `zuletzt ${fmtAgo(rule.lastRunAt, nowMs)}` : "pausiert"}`}
-              >
-                <Workflow className="h-3 w-3 shrink-0 text-violet-500" />
-                <span className="truncate">{rule.name}</span>
-              </Link>
-            ))}
-          </div>
         )}
       </CardContent>
     </Card>
