@@ -28,6 +28,7 @@ import {
   type TtsVoice,
 } from "@/lib/audio-constants";
 import { Chip, TEXTAREA_CLASS } from "./ui";
+import { ANNOUNCEMENT_PLACEHOLDERS } from "@/lib/announcement-text";
 import type { AnnouncementRow, TrackRow, ZoneRow } from "./types";
 
 interface Props {
@@ -173,9 +174,26 @@ export function AnnouncementDialog({
                   maxLength={MAX_ANNOUNCEMENT_CHARS}
                   onChange={(e) => setText(e.target.value)}
                   rows={3}
-                  placeholder="Liebe Gäste, der Badebetrieb endet in fünfzehn Minuten."
+                  placeholder="Liebe Gäste, es ist {uhrzeit} – in {minuten} Minuten schließen wir."
                   className={TEXTAREA_CLASS}
                 />
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  <span className="text-[11px] text-muted-foreground">Echte Zeiten einsetzen:</span>
+                  {ANNOUNCEMENT_PLACEHOLDERS.map((p) => (
+                    <button
+                      key={p.token}
+                      type="button"
+                      title={p.label}
+                      onClick={() => setText((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${p.token}`)}
+                      className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:border-primary/50 hover:text-primary"
+                    >
+                      {p.token}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Wird beim Abspielen aus der Uhrzeit und der Betriebszeit des Raums gefüllt.
+                </p>
               </div>
 
               <div>

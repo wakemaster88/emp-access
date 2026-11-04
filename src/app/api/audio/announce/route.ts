@@ -9,11 +9,13 @@ import { getSessionWithDb } from "@/lib/api-auth";
 import {
   MAX_ANNOUNCEMENT_CHARS,
   TtsNotConfiguredError,
+  announcementContextForZones,
   parseZoneIds,
   queueAnnouncement,
   renderTtsTrack,
   resolveTargetZones,
 } from "@/lib/audio";
+import { hasPlaceholders, resolveAnnouncementText } from "@/lib/announcement-text";
 
 export async function POST(request: NextRequest) {
   const session = await getSessionWithDb();
@@ -63,7 +65,13 @@ export async function POST(request: NextRequest) {
     track = created;
   } else {
     try {
-      track = await renderTtsTrack(db, accountId!, text!, body.voice ?? null);
+      const spoken = hasPlaceholders(text)
+        ? resolveAnnouncementText(
+            text!,
+            await announcementContextForZones(db, accountId!, zones.map((z) => z.id)),
+          )
+        : text!;
+      track = await renderTtsTrack(db, accountId!, spoken, body.voice ?? null);
     } catch (error) {
       if (error instanceof TtsNotConfiguredError) {
         return NextResponse.json({ error: error.message }, { status: 501 });

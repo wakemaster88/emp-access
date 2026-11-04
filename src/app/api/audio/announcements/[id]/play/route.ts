@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import {
   TtsNotConfiguredError,
+  announcementContextForZones,
   ensureAnnouncementTrack,
   parseZoneIds,
   queueAnnouncement,
@@ -45,7 +46,12 @@ export async function POST(
 
   let track;
   try {
-    track = await ensureAnnouncementTrack(db, accountId!, announcement);
+    track = await ensureAnnouncementTrack(
+      db,
+      accountId!,
+      announcement,
+      await announcementContextForZones(db, accountId!, zones.map((z) => z.id)),
+    );
   } catch (error) {
     if (error instanceof TtsNotConfiguredError) {
       return NextResponse.json({ error: error.message }, { status: 501 });
