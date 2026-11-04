@@ -2083,6 +2083,12 @@ function detCardHtml(c) {
       <div class="det-row"><span class="k">Mindestgröße</span><span class="unit"><input class="field" type="number" inputmode="decimal" min="0" max="50" step="0.5" data-det-field="vehicleMinArea" value="${esc(area)}" placeholder="${esc(Math.round(defArea * 1000) / 10)}" aria-label="Mindestgröße in Prozent">%</span></div>
       <div class="det-row"><span class="k">Einfahrtszone</span>${zoneButton("vehicleZone", c.vehicleZone)}</div>
     </div>
+    <div class="det-block ${c.deliveryMode ? "" : "is-off"}">
+      <div class="det-row"><span class="k">Lieferdienste</span><select class="field" data-det-field="deliveryMode" aria-label="Lieferdienste">${[["", "Aus"], ["NOTIFY", "Melden"], ["OPEN", "Tor öffnen"]]
+        .map(([v, l]) => `<option value="${v}"${(c.deliveryMode || "") === v ? " selected" : ""}>${l}</option>`)
+        .join("")}</select></div>
+      <div class="det-row"><span class="k">Öffnen von–bis</span><span class="unit"><input class="field" type="time" data-det-field="deliveryFrom" value="${esc(c.deliveryFrom || "")}" aria-label="Öffnen ab"><input class="field" type="time" data-det-field="deliveryTo" value="${esc(c.deliveryTo || "")}" aria-label="Öffnen bis"></span></div>
+    </div>
     <div class="det-block ${c.noParkDetection ? "" : "is-off"}">
       <div class="det-row"><label class="tgl"><input type="checkbox" data-det-field="noParkDetection" ${c.noParkDetection ? "checked" : ""}><span class="knob"></span>Halteverbot</label></div>
       <div class="det-row"><span class="k">Standzeit</span><span class="unit"><input class="field" type="number" inputmode="decimal" min="0.25" max="240" step="0.25" data-det-field="noParkMinutes" value="${esc(c.noParkMinutes ?? "")}" placeholder="${esc(defMin)}" aria-label="Standzeit in Minuten">min</span></div>
@@ -2170,6 +2176,7 @@ $("detGrid").addEventListener("change", (ev) => {
   let value;
   if (input.type === "checkbox") value = input.checked;
   else if (input.value.trim() === "") value = null;
+  else if (input.tagName === "SELECT" || input.type === "time") value = input.value;
   else {
     value = Number(input.value.replace(",", "."));
     if (!Number.isFinite(value)) return toast("Bitte eine Zahl eingeben", "err");

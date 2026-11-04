@@ -693,3 +693,17 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 ### Offen
 
 - Live an der Halle prüfen, ob die Kamera `aiTrack` in `GetAiCfg` liefert (sonst Fehlermeldung im Regelverlauf).
+
+## 2026-11-04 (Lieferdienste am Eingang erkennen)
+
+### Änderungen
+
+- `delivery.ts`: Nach dem Fahrzeug-Burst liest der Hub die Aufschrift (macOS Vision, `readTextFromJpeg`) auf bis zu 4 Bildern mit Fahrzeug in Zone/Mindestgröße. DHL/Deutsche Post, UPS, GLS, DPD, Hermes, Amazon als eigenes Wort; Treffer erst ab 2 Bildern (`HUB_DELIVERY_MIN_FRAMES`).
+- Kamera-Einstellung `deliveryMode` (Aus / Melden / Tor öffnen) plus Zeitfenster `deliveryFrom`/`deliveryTo` (Standard 07:00–20:00, Mo–Sa über `HUB_DELIVERY_DAYS`), Sperrzeit 5 min nach Öffnung. DoorBird: der einzige oder `HUB_DELIVERY_DOORBIRD_ID`. Migration `20261104160000_delivery_detection`.
+- Cloud: Sichtung speichert `deliveryBrand`/`deliveryOpened`, Push bei jedem Treffer („DHL am Eingang“ bzw. „Tor geöffnet“).
+- Einstellungen in der Kamera-Bearbeitung (Cloud) und unter Fahrzeuge im Hub-Dashboard.
+- Aaron (04.11.): erst 3–5 Tage nur melden, dann entscheiden.
+
+### Offen
+
+- Eingang auf „Melden“ stellen und nach ein paar Tagen Treffer/Fehltreffer im Log (`Lieferdienst`) und in den Sichtungen prüfen. Fahrzeuge ohne Logo (Subunternehmer) erkennt das nicht.

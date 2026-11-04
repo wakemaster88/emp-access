@@ -46,6 +46,10 @@ export interface CameraRow {
   noParkZone: ZonePoint[] | null;
   /** Standzeit in Minuten bis zur Meldung; null = Hub-Standard (2 min). */
   noParkMinutes: number | null;
+  /** Lieferdienste: null = aus, "NOTIFY" = melden, "OPEN" = Tor öffnen. */
+  deliveryMode: string | null;
+  deliveryFrom: string | null;
+  deliveryTo: string | null;
   notes: string | null;
   snapshotAt: string | null;
   lastSeenAt: string | null;
@@ -90,6 +94,10 @@ const EMPTY = {
   noParkZone: [] as ZonePoint[],
   /** Standzeit in Minuten als Text; leer = Hub-Standard. */
   noParkMinutes: "",
+  /** "" = aus, "NOTIFY", "OPEN". */
+  deliveryMode: "",
+  deliveryFrom: "",
+  deliveryTo: "",
   notes: "",
 };
 
@@ -173,6 +181,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
       noParkDetection: c.noParkDetection,
       noParkZone: c.noParkZone ?? [],
       noParkMinutes: c.noParkMinutes != null ? String(c.noParkMinutes) : "",
+      deliveryMode: c.deliveryMode ?? "",
+      deliveryFrom: c.deliveryFrom ?? "",
+      deliveryTo: c.deliveryTo ?? "",
       notes: c.notes ?? "",
     });
     setError("");
@@ -206,6 +217,9 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
           noParkZone: form.noParkZone.length >= 3 ? form.noParkZone : null,
           noParkDetection: form.noParkDetection && form.noParkZone.length >= 3,
           noParkMinutes: form.noParkMinutes.trim() === "" ? null : Number(form.noParkMinutes),
+          deliveryMode: form.vehicleDetection && form.deliveryMode ? form.deliveryMode : null,
+          deliveryFrom: form.deliveryFrom || null,
+          deliveryTo: form.deliveryTo || null,
           notes: form.notes,
         }),
       });
@@ -668,6 +682,52 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
                     onChange={(pts) => set("vehicleZone", pts)}
                   />
                 </div>
+              </div>
+            )}
+
+            {form.vehicleDetection && form.kind === "REOLINK" && (
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <div className="space-y-1.5">
+                  <Label>Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes)</Label>
+                  <select
+                    className="h-9 w-full rounded-md border border-border bg-transparent px-2 text-sm"
+                    value={form.deliveryMode}
+                    onChange={(e) => set("deliveryMode", e.target.value)}
+                  >
+                    <option value="">Aus</option>
+                    <option value="NOTIFY">Erkennen und melden</option>
+                    <option value="OPEN">Erkennen und Tor öffnen</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground/70">
+                    Der Hub liest die Aufschrift am Fahrzeug. Sie muss auf zwei Bildern stehen. Jeder
+                    Treffer kommt als Push mit Foto.
+                  </p>
+                </div>
+                {form.deliveryMode === "OPEN" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Tor öffnen ab</Label>
+                      <Input
+                        type="time"
+                        value={form.deliveryFrom}
+                        onChange={(e) => set("deliveryFrom", e.target.value)}
+                        placeholder="07:00"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>bis</Label>
+                      <Input
+                        type="time"
+                        value={form.deliveryTo}
+                        onChange={(e) => set("deliveryTo", e.target.value)}
+                        placeholder="20:00"
+                      />
+                    </div>
+                    <p className="col-span-2 text-xs text-muted-foreground/70">
+                      Leer = 07:00 bis 20:00. Außerhalb meldet der Hub nur.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

@@ -16,6 +16,7 @@ import { jpegContainsVehicle } from "./vision.js";
 import { speakOnCamera } from "./camera-talk.js";
 import { syncDoorbirds } from "./doorbird.js";
 import { actuateIfAllowed } from "./vehicle-actuate.js";
+import { checkDelivery, type DeliveryResult } from "./delivery.js";
 import { findIpByMac, macForIp, normalizeMac } from "./netmap.js";
 import { lastScanResult } from "./scanner.js";
 import { syncLocalStreamsFromCloud, updateLocalStreams } from "./streams.js";
@@ -48,6 +49,11 @@ export interface CameraConfig {
   noParkZone?: [number, number][] | null;
   /** Standzeit in Minuten bis zur Meldung (Cloud-Einstellung, null = HUB_NOPARK_MINUTES). */
   noParkMinutes?: number | null;
+  /** Lieferdienste: null = aus, "NOTIFY" = melden, "OPEN" = Tor öffnen (delivery.ts). */
+  deliveryMode?: string | null;
+  /** Öffnungsfenster "HH:mm" (null = 07:00–20:00). */
+  deliveryFrom?: string | null;
+  deliveryTo?: string | null;
   /** DoorBird: Tor offen halten bis (ISO), null = aus – Wiederaufnahme nach Neustart. */
   doorHoldUntil?: string | null;
 }
@@ -852,9 +858,23 @@ async function uploadVehicleSnapshotBody(
     plate = await tryReadPlate(cam);
   }
 
+  // Lieferdienst (DHL, UPS, …) an der Aufschrift – nur wenn kein freigegebenes
+  // Kennzeichen schon gehandelt hat. Öffnet je nach Einstellung das Tor.
+  let delivery: DeliveryResult | null = null;
+  if (!localPromise && cam.config.deliveryMode) {
+    delivery = await checkDelivery(cam.config, snaps).catch((e) => {
+      log(`Lieferdienst ${cam.config.name}: Prüfung fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      return null;
+    });
+    if (delivery) {
+      buf = snaps[delivery.frameIndex];
+      bestIdx = delivery.frameIndex;
+    }
+  }
+
   // Gleiches Kennzeichen kurz hintereinander (Alarm flackert, Nachzieh-Burst):
   // ein Eintrag reicht. Aktoren haben ihren eigenen Cooldown.
-  if (plate && cam.lastPlate && isRepeatPlate(plate) && !localPromise) {
+  if (plate && cam.lastPlate && isRepeatPlate(plate) && !localPromise && !delivery) {
     const ago = Date.now() - Date.parse(cam.lastPlate.at);
     log(
       `Fahrzeug-Snapshot ${cam.config.name}: ${plate} schon vor ${Math.round(ago / 1000)} s gemeldet – kein zweiter Upload`
@@ -904,6 +924,10 @@ async function uploadVehicleSnapshotBody(
 
   if (plate && !localPromise && !isRepeatPlate(plate)) {
     localPromise = actuateIfAllowed({ cameraId, plate });
+  }
+  if (delivery) {
+    qs.set("delivery", delivery.brand);
+    if (delivery.opened) qs.set("deliveryOpened", "1");
   }
   const local = localPromise ? await localPromise : null;
   if (local?.skipCloud) {

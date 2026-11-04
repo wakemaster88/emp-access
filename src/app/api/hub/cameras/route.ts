@@ -31,6 +31,10 @@ export async function GET(request: NextRequest) {
       noParkDetection: true,
       noParkZone: true,
       noParkMinutes: true,
+      // Lieferdienste an der Aufschrift (delivery.ts am Hub).
+      deliveryMode: true,
+      deliveryFrom: true,
+      deliveryTo: true,
       // Laufende Tor-Offenhaltung: Der Hub nimmt sie nach einem Neustart
       // wieder auf (doorbird.ts, syncDoorbirds).
       doorHoldUntil: true,
