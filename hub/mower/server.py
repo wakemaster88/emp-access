@@ -23,8 +23,10 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sys
 import time
+import traceback
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -209,8 +211,7 @@ class MowerService:
         except Exception as err:  # noqa: BLE001 - jede Ursache wird unten eingeordnet
             msg = str(err) or type(err).__name__
             # Mammotion nennt die Adresse im Klartext; Log und Dashboard zeigen sie maskiert.
-            if EMAIL:
-                msg = msg.replace(EMAIL, _mask(EMAIL))
+            msg = _scrub(msg)
             if _is_rejected(err, self.client):
                 self.state = "rejected"
                 self.error = f"Mammotion lehnt die Anmeldung ab: {msg}. Zugangsdaten in hub/.env pruefen."
@@ -461,6 +462,26 @@ def _mask(email: str) -> str:
     return f"{user[:2]}…@{domain}" if domain else "…"
 
 
+def _scrub(text: str) -> str:
+    """Maskiert Account-Adresse und Passwort in Texten fuer Log und Dashboard.
+
+    PyMammotion und die Aliyun-Cloud schreiben die Adresse in Fehlermeldungen
+    und Warnungen im Klartext, teils klein geschrieben.
+    """
+    if EMAIL:
+        text = re.sub(re.escape(EMAIL), _mask(EMAIL), text, flags=re.IGNORECASE)
+    if len(PASSWORD) >= 4:
+        text = text.replace(PASSWORD, "***")
+    return text
+
+
+class _ScrubFormatter(logging.Formatter):
+    """Log-Format, das jede Zeile (auch Tracebacks) durch _scrub schickt."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _scrub(super().format(record))
+
+
 def _mode(dev: Any) -> WorkMode:
     try:
         return WorkMode(dev.report_data.dev.sys_status)
@@ -597,10 +618,12 @@ def _dumps(obj: Any) -> str:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=os.environ.get("MOWER_LOG_LEVEL", "INFO"),
-        format="%(levelname)s %(name)s: %(message)s",
-        stream=sys.stdout,
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(_ScrubFormatter("%(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=os.environ.get("MOWER_LOG_LEVEL", "INFO"), handlers=[handler])
+    # Auch ein unerwarteter Absturz landet im Hub-Log, also ebenfalls maskiert.
+    sys.excepthook = lambda typ, val, tb: sys.stderr.write(
+        _scrub("".join(traceback.format_exception(typ, val, tb)))
     )
     for noisy in ("pymammotion", "aiomqtt", "paho", "aiohttp.access"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
