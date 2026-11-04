@@ -738,7 +738,7 @@ const ruleTrigger = z.enum([
 
 export const roomRuleActionSchema = z
   .object({
-    kind: z.enum(["DEVICE", "NOTIFY", "AUDIO"]),
+    kind: z.enum(["DEVICE", "NOTIFY", "AUDIO", "CAMERA"]),
     sortOrder: z.coerce.number().int().min(0).optional(),
     deviceId: z.coerce.number().int().positive().nullable().optional(),
     deviceAction: z.string().max(40).nullable().optional(),
@@ -748,7 +748,19 @@ export const roomRuleActionSchema = z
     audioZoneId: z.coerce.number().int().positive().nullable().optional(),
     audioAnnouncementId: z.coerce.number().int().positive().nullable().optional(),
     audioPlaylistId: z.coerce.number().int().positive().nullable().optional(),
+    targetCameraId: z.coerce.number().int().positive().nullable().optional(),
+    ptzPresetId: z.coerce.number().int().min(0).max(255).nullable().optional(),
+    autoTrack: z.boolean().nullable().optional(),
+    returnAfterSeconds: z.coerce.number().int().min(5).max(3600).nullable().optional(),
   })
+  .refine((v) => v.kind !== "CAMERA" || !!v.targetCameraId, {
+    message: "Kamera-Aktion braucht eine Kamera",
+    path: ["targetCameraId"],
+  })
+  .refine(
+    (v) => v.kind !== "CAMERA" || v.ptzPresetId != null || v.autoTrack != null,
+    { message: "Preset oder „Folgen“ wählen", path: ["ptzPresetId"] },
+  )
   .refine((v) => v.kind !== "DEVICE" || (!!v.deviceId && !!v.deviceAction), {
     message: "Geräte-Aktion braucht Gerät und Schaltbefehl",
     path: ["deviceId"],

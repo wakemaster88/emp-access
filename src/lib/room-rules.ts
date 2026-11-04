@@ -278,6 +278,45 @@ async function runNotifyAction(rule: LoadedRule, action: RoomRuleAction): Promis
   };
 }
 
+/**
+ * Kamera steuern: der Hub faehrt das Preset an und schaltet „automatisch
+ * folgen“ (Reolink Auto-Tracking). Laeuft als Hub-Task, weil nur der Hub die
+ * Kamera im LAN erreicht; der Hub holt Tasks nach einem Ereignis sofort ab.
+ */
+async function runCameraAction(rule: LoadedRule, action: RoomRuleAction): Promise<ActionResult> {
+  const base = { actionId: action.id, kind: "CAMERA" };
+  if (!action.targetCameraId) return { ...base, target: "–", ok: false, error: "Kamera fehlt" };
+  const camera = await prisma.camera.findFirst({
+    where: { id: action.targetCameraId, accountId: rule.accountId },
+    select: { id: true, name: true, enabled: true },
+  });
+  if (!camera) return { ...base, target: `#${action.targetCameraId}`, ok: false, error: "Kamera nicht gefunden" };
+  if (!camera.enabled) return { ...base, target: camera.name, ok: false, error: "Kamera ist deaktiviert" };
+
+  const parts = [
+    action.ptzPresetId != null ? `Preset ${action.ptzPresetId}` : null,
+    action.autoTrack == null ? null : action.autoTrack ? "folgen an" : "folgen aus",
+  ].filter(Boolean);
+  try {
+    await prisma.hubTask.create({
+      data: {
+        accountId: rule.accountId,
+        type: "CAMERA_SCENE",
+        payload: {
+          cameraId: camera.id,
+          presetId: action.ptzPresetId,
+          autoTrack: action.autoTrack,
+          returnAfterSeconds: action.returnAfterSeconds,
+          ruleId: rule.id,
+        },
+      },
+    });
+    return { ...base, target: `${camera.name} · ${parts.join(", ")}`, ok: true };
+  } catch (e) {
+    return { ...base, target: camera.name, ok: false, error: (e as Error).message };
+  }
+}
+
 async function runAudioAction(rule: LoadedRule, action: RoomRuleAction): Promise<ActionResult> {
   const base = { actionId: action.id, kind: "AUDIO" };
   if (!action.audioZoneId) return { ...base, target: "–", ok: false, error: "Zone fehlt" };
@@ -391,6 +430,7 @@ export async function executeRule(
     if (action.kind === "DEVICE") results.push(await runDeviceAction(rule, action, depth));
     else if (action.kind === "NOTIFY") results.push(await runNotifyAction(rule, action));
     else if (action.kind === "AUDIO") results.push(await runAudioAction(rule, action));
+    else if (action.kind === "CAMERA") results.push(await runCameraAction(rule, action));
   }
 
   const success = results.length > 0 && results.every((r) => r.ok);
@@ -664,6 +704,10 @@ export interface HubRulePlanRule {
     deviceId: number | null;
     deviceAction: string | null;
     timerSeconds: number | null;
+    targetCameraId: number | null;
+    ptzPresetId: number | null;
+    autoTrack: boolean | null;
+    returnAfterSeconds: number | null;
   }>;
 }
 
@@ -742,6 +786,10 @@ export async function buildHubRulePlan(
         deviceId: a.deviceId,
         deviceAction: a.deviceAction,
         timerSeconds: a.timerSeconds,
+        targetCameraId: a.targetCameraId,
+        ptzPresetId: a.ptzPresetId,
+        autoTrack: a.autoTrack,
+        returnAfterSeconds: a.returnAfterSeconds,
       })),
     });
   }

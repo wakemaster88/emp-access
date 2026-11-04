@@ -170,6 +170,14 @@ export function describeAction(action: RuleAction): string {
   if (action.kind === "NOTIFY") {
     return `${CHANNEL_LABELS[action.channel ?? "PUSH"]}: ${action.message?.trim() || "Regelname als Text"}`;
   }
+  if (action.kind === "CAMERA") {
+    const parts = [
+      action.ptzPresetId != null ? `Preset ${action.ptzPresetId}` : null,
+      action.autoTrack == null ? null : action.autoTrack ? "folgen an" : "folgen aus",
+      action.returnAfterSeconds ? `zurück nach ${action.returnAfterSeconds} Sek.` : null,
+    ].filter(Boolean);
+    return `${action.targetCamera?.name ?? "Kamera"}: ${parts.join(", ")}`;
+  }
   const zone = action.audioZone?.name ?? "Zone";
   if (action.audioAnnouncement) return `${zone}: Durchsage „${action.audioAnnouncement.name}“`;
   if (action.audioPlaylist) return `${zone}: Playlist „${action.audioPlaylist.name}“`;

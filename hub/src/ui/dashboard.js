@@ -3000,7 +3000,7 @@ function ruleSummary(rule) {
   let what = t;
   if (rule.trigger === "TIME") what = `um ${rule.timeOfDay || "?"}`;
   else if (["OPENING", "CLOSING", "SUNRISE", "SUNSET"].includes(rule.trigger)) what = `${t}${off}`;
-  else if (rule.trigger === "MOTION") what = `${rule.eventType ? { PERSON: "Person", VEHICLE: "Fahrzeug", MOTION: "Bewegung" }[rule.eventType] : "Bewegung"}${rule.camera ? ` an ${rule.camera.name}` : " im Raum"}`;
+  else if (rule.trigger === "MOTION") what = `${rule.eventType ? { PERSON: "Person", VEHICLE: "Fahrzeug", MOTION: "Bewegung", DOORBELL: "Klingel" }[rule.eventType] : "Bewegung"}${rule.camera ? ` an ${rule.camera.name}` : " im Raum"}`;
   else if (rule.trigger === "DEVICE_SWITCHED") what = `${rule.triggerDevice ? rule.triggerDevice.name : "Gerät"} geschaltet`;
   else if (rule.trigger === "IDLE") what = `${rule.idleMinutes} min ohne Bewegung`;
   const days = rule.daysOfWeek === 127 ? "" : ` · ${DAY_NAMES.filter((_, i) => (rule.daysOfWeek >> i) & 1).join(", ")}`;
@@ -3012,6 +3012,10 @@ function ruleSummary(rule) {
   const acts = (rule.actions || []).map((a) => {
     if (a.kind === "DEVICE") return `${a.device ? a.device.name : "Gerät"}: ${ACTION_LABEL[a.deviceAction] || a.deviceAction}`;
     if (a.kind === "NOTIFY") return `${a.channel === "TELEGRAM" ? "Telegram" : a.channel === "BOTH" ? "Push + Telegram" : "Push"}`;
+    if (a.kind === "CAMERA") {
+      const parts = [a.ptzPresetId != null ? `Preset ${a.ptzPresetId}` : null, a.autoTrack == null ? null : a.autoTrack ? "folgen" : "folgen aus"].filter(Boolean);
+      return `${a.targetCamera ? a.targetCamera.name : "Kamera"}: ${parts.join(", ")}`;
+    }
     return `Audio${a.audioZone ? ` ${a.audioZone.name}` : ""}`;
   });
   return { what: `${what}${days}${cond.length ? ` · ${cond.join(", ")}` : ""}`, acts: acts.join(" → ") || "keine Aktion" };
@@ -3085,6 +3089,19 @@ function renderRuleActions() {
       body = `<select class="field" data-act="${i}" data-field="channel" aria-label="Kanal">${[["PUSH", "Push"], ["TELEGRAM", "Telegram"], ["BOTH", "Push + Telegram"]]
         .map(([v, l]) => `<option value="${v}"${v === (a.channel || "PUSH") ? " selected" : ""}>${l}</option>`)
         .join("")}</select><input class="field" data-act="${i}" data-field="message" maxlength="500" placeholder="Text (leer = Regelname)" value="${esc(a.message || "")}">`;
+    } else if (a.kind === "CAMERA") {
+      const presets = a.targetCameraId ? live.presets[a.targetCameraId] : null;
+      const cams = allCameras(state.overview);
+      const presetField = presets && presets.length
+        ? `<select class="field" data-act="${i}" data-field="ptzPresetId" aria-label="Position"><option value="">nicht bewegen</option>${presets
+            .map((p) => `<option value="${p.id}"${p.id === a.ptzPresetId ? " selected" : ""}>${esc(p.name)} (#${p.id})</option>`)
+            .join("")}</select>`
+        : `<input class="field" type="number" min="0" data-act="${i}" data-field="ptzPresetId" placeholder="Preset-Nr." value="${a.ptzPresetId == null ? "" : a.ptzPresetId}"><button type="button" class="btn small" data-act-presets="${i}"${a.targetCameraId ? "" : " disabled"}>Positionen laden</button>`;
+      body = `<select class="field" data-act="${i}" data-field="targetCameraId" aria-label="Kamera"><option value="">Kamera wählen …</option>${cams
+        .map((c) => `<option value="${c.id}"${c.id === a.targetCameraId ? " selected" : ""}>${esc(c.name)}</option>`)
+        .join("")}</select>${presetField}<select class="field" data-act="${i}" data-field="autoTrack" aria-label="Automatisch folgen">${[["on", "folgen an"], ["off", "folgen aus"], ["", "folgen unverändert"]]
+        .map(([v, l]) => `<option value="${v}"${v === (a.autoTrack == null ? "" : a.autoTrack ? "on" : "off") ? " selected" : ""}>${l}</option>`)
+        .join("")}</select><input class="field" type="number" min="5" max="3600" data-act="${i}" data-field="returnAfterSeconds" placeholder="zurück nach Sek. (optional)" value="${a.returnAfterSeconds == null ? "" : a.returnAfterSeconds}">`;
     } else {
       body = `<span class="muted">Audio${a.audioZone ? ` · ${esc(a.audioZone.name)}` : ""}${a.audioAnnouncement ? ` · ${esc(a.audioAnnouncement.name)}` : a.audioPlaylist ? ` · ${esc(a.audioPlaylist.name)}` : ""} (online bearbeiten)</span>`;
     }
@@ -3176,6 +3193,10 @@ function ruleFormPayload() {
       audioZoneId: a.kind === "AUDIO" ? a.audioZoneId : null,
       audioAnnouncementId: a.kind === "AUDIO" ? a.audioAnnouncementId ?? null : null,
       audioPlaylistId: a.kind === "AUDIO" ? a.audioPlaylistId ?? null : null,
+      targetCameraId: a.kind === "CAMERA" ? a.targetCameraId ?? null : null,
+      ptzPresetId: a.kind === "CAMERA" ? a.ptzPresetId ?? null : null,
+      autoTrack: a.kind === "CAMERA" ? a.autoTrack ?? null : null,
+      returnAfterSeconds: a.kind === "CAMERA" ? a.returnAfterSeconds ?? null : null,
     })),
   };
 }
@@ -3205,7 +3226,13 @@ $("ruleActions").addEventListener("change", (ev) => {
   if (!el) return;
   const a = ruleDraft.actions[Number(el.dataset.act)];
   const field = el.dataset.field;
-  a[field] = field === "deviceId" ? (el.value ? Number(el.value) : null) : el.value;
+  if (["deviceId", "targetCameraId", "ptzPresetId", "returnAfterSeconds"].includes(field)) a[field] = el.value === "" ? null : Number(el.value);
+  else if (field === "autoTrack") a[field] = el.value === "" ? null : el.value === "on";
+  else a[field] = el.value;
+  if (field === "targetCameraId") {
+    a.ptzPresetId = null;
+    renderRuleActions();
+  }
   if (field === "deviceId") {
     const dev = allRoomDevices().find((x) => x.id === a.deviceId);
     const opts = deviceActionOptions(dev).map(([v]) => v);
@@ -3215,9 +3242,23 @@ $("ruleActions").addEventListener("change", (ev) => {
 });
 $("ruleActions").addEventListener("input", (ev) => {
   const el = ev.target.closest("input[data-act]");
-  if (el) ruleDraft.actions[Number(el.dataset.act)][el.dataset.field] = el.value;
+  if (!el) return;
+  const numeric = el.type === "number";
+  ruleDraft.actions[Number(el.dataset.act)][el.dataset.field] = numeric ? (el.value === "" ? null : Number(el.value)) : el.value;
 });
-$("ruleActions").addEventListener("click", (ev) => {
+$("ruleActions").addEventListener("click", async (ev) => {
+  const load = ev.target.closest("[data-act-presets]");
+  if (load) {
+    const a = ruleDraft.actions[Number(load.dataset.actPresets)];
+    if (!a || !a.targetCameraId) return;
+    load.disabled = true;
+    const r = await shellyAction("CAMERA_PTZ_PRESETS", { cameraId: a.targetCameraId });
+    live.presets[a.targetCameraId] = r.success ? r.result.presets || [] : [];
+    if (!r.success) toast(`Positionen nicht lesbar: ${r.error || "Fehler"}`, "err");
+    else if (!live.presets[a.targetCameraId].length) toast("Diese Kamera hat keine gespeicherten Positionen.", "err");
+    renderRuleActions();
+    return;
+  }
   const del = ev.target.closest("[data-act-del]");
   if (!del) return;
   ruleDraft.actions.splice(Number(del.dataset.actDel), 1);
@@ -3226,7 +3267,14 @@ $("ruleActions").addEventListener("click", (ev) => {
 document.querySelector("#ruleDlg").addEventListener("click", (ev) => {
   const add = ev.target.closest("[data-add-action]");
   if (!add) return;
-  ruleDraft.actions.push(add.dataset.addAction === "DEVICE" ? { kind: "DEVICE", deviceId: null, deviceAction: "open" } : { kind: "NOTIFY", channel: "PUSH", message: "" });
+  const kind = add.dataset.addAction;
+  ruleDraft.actions.push(
+    kind === "DEVICE"
+      ? { kind: "DEVICE", deviceId: null, deviceAction: "open" }
+      : kind === "CAMERA"
+        ? { kind: "CAMERA", targetCameraId: null, ptzPresetId: null, autoTrack: true, returnAfterSeconds: null }
+        : { kind: "NOTIFY", channel: "PUSH", message: "" }
+  );
   renderRuleActions();
 });
 
@@ -3236,6 +3284,11 @@ $("ruleForm").addEventListener("submit", async (ev) => {
   const err = $("ruleErr");
   if (!body.actions.length) {
     err.textContent = "Mindestens eine Aktion anlegen.";
+    err.hidden = false;
+    return;
+  }
+  if (body.actions.some((a) => a.kind === "CAMERA" && (!a.targetCameraId || (a.ptzPresetId == null && a.autoTrack == null)))) {
+    err.textContent = "Bei „Kamera steuern“ eine Kamera und Position oder Folgen wählen.";
     err.hidden = false;
     return;
   }

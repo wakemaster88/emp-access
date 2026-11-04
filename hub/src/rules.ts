@@ -26,6 +26,7 @@ import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
 import { STATE, recordHubEvent } from "./state.js";
 import { deviceAction, roomCameraIds } from "./rooms.js";
+import { cameraScene } from "./cameras.js";
 
 interface PlanInterval {
   from: string;
@@ -45,7 +46,17 @@ interface PlanRule {
   idleMinutes: number | null;
   allowed: PlanInterval[];
   fireAt: string[];
-  actions: { id: number; kind: string; deviceId: number | null; deviceAction: string | null; timerSeconds: number | null }[];
+  actions: {
+    id: number;
+    kind: string;
+    deviceId: number | null;
+    deviceAction: string | null;
+    timerSeconds: number | null;
+    targetCameraId?: number | null;
+    ptzPresetId?: number | null;
+    autoTrack?: boolean | null;
+    returnAfterSeconds?: number | null;
+  }[];
 }
 
 interface Plan {
@@ -159,6 +170,26 @@ async function executeLocal(rule: PlanRule, triggerKind: string, depth = 0): Pro
   lastRun.set(rule.id, now);
   const details: PendingRun["details"] = [];
   for (const a of rule.actions) {
+    // Kamera steuern geht auch ohne Cloud: die Kamera haengt im LAN.
+    if (a.kind === "CAMERA" && a.targetCameraId) {
+      try {
+        await cameraScene(a.targetCameraId, {
+          presetId: a.ptzPresetId ?? null,
+          autoTrack: a.autoTrack ?? null,
+          returnAfterSeconds: a.returnAfterSeconds ?? null,
+        });
+        details.push({ actionId: a.id, kind: a.kind, target: `Kamera #${a.targetCameraId}`, ok: true });
+      } catch (e) {
+        details.push({
+          actionId: a.id,
+          kind: a.kind,
+          target: `Kamera #${a.targetCameraId}`,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+      continue;
+    }
     if (a.kind !== "DEVICE") {
       details.push({ actionId: a.id, kind: a.kind, target: a.kind, ok: false, error: "Im Notbetrieb nicht möglich (braucht die Cloud)" });
       continue;

@@ -25,6 +25,7 @@ export const ruleInclude = {
       audioZone: { select: { id: true, name: true } },
       audioAnnouncement: { select: { id: true, name: true } },
       audioPlaylist: { select: { id: true, name: true } },
+      targetCamera: { select: { id: true, name: true } },
     },
   },
 };
@@ -58,6 +59,10 @@ export async function replaceRuleActions(
       audioZoneId: action.kind === "AUDIO" ? (action.audioZoneId ?? null) : null,
       audioAnnouncementId: action.kind === "AUDIO" ? (action.audioAnnouncementId ?? null) : null,
       audioPlaylistId: action.kind === "AUDIO" ? (action.audioPlaylistId ?? null) : null,
+      targetCameraId: action.kind === "CAMERA" ? (action.targetCameraId ?? null) : null,
+      ptzPresetId: action.kind === "CAMERA" ? (action.ptzPresetId ?? null) : null,
+      autoTrack: action.kind === "CAMERA" ? (action.autoTrack ?? null) : null,
+      returnAfterSeconds: action.kind === "CAMERA" ? (action.returnAfterSeconds ?? null) : null,
     })),
   });
 }
@@ -136,13 +141,24 @@ export async function validateRuleReferences(
     ),
   ];
 
-  const [results, devices, zones] = await Promise.all([
+  const cameraIds = [
+    ...new Set(
+      (input.actions ?? [])
+        .filter((a) => a.kind === "CAMERA" && a.targetCameraId)
+        .map((a) => a.targetCameraId as number),
+    ),
+  ];
+
+  const [results, devices, zones, cameras] = await Promise.all([
     Promise.all(checks.map(([, promise]) => promise)),
     deviceIds.length > 0
       ? db.device.findMany({ where: { id: { in: deviceIds }, accountId }, select: { id: true } })
       : Promise.resolve([]),
     zoneIds.length > 0
       ? db.audioZone.findMany({ where: { id: { in: zoneIds }, accountId }, select: { id: true } })
+      : Promise.resolve([]),
+    cameraIds.length > 0
+      ? db.camera.findMany({ where: { id: { in: cameraIds }, accountId }, select: { id: true } })
       : Promise.resolve([]),
   ]);
 
@@ -151,6 +167,7 @@ export async function validateRuleReferences(
   }
   if (devices.length !== deviceIds.length) return "Zielgerät nicht gefunden";
   if (zones.length !== zoneIds.length) return "Audio-Zone nicht gefunden";
+  if (cameras.length !== cameraIds.length) return "Kamera für Kamera-Aktion nicht gefunden";
 
   return null;
 }

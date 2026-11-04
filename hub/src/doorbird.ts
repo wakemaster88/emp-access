@@ -10,6 +10,7 @@
  * Klingel/Bewegung → Snapshot → Gesichts-Pipeline (wie Reolink-PERSON).
  */
 import { onCameraEvent } from "./rules.js";
+import { kickIfRulesTriggered } from "./task-kick.js";
 import { api, log } from "./config.js";
 import { recordHubEvent } from "./state.js";
 import { embedJpeg, scoreGallery, refreshGallery } from "./face.js";
@@ -416,7 +417,7 @@ async function reportEvent(
 ): Promise<void> {
   if (phase === "start") onCameraEvent(cameraId, type);
   try {
-    await api("/api/hub/camera-events", {
+    const res = await api("/api/hub/camera-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -424,6 +425,8 @@ async function reportEvent(
         events: [{ cameraId, type, phase, at: new Date().toISOString() }],
       }),
     });
+    // Regel ausgelöst (z. B. Klingel → Kamera auf Preset): Tasks sofort holen.
+    await kickIfRulesTriggered(res);
   } catch (e) {
     log(`DoorBird Event-Meldung fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
   }

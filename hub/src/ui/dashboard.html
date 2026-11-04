@@ -521,7 +521,7 @@
       <label data-for="TIME">Uhrzeit<input class="field" name="timeOfDay" type="time"></label>
       <label data-for="OPENING CLOSING SUNRISE SUNSET">Versatz (Minuten, ± )<input class="field" name="offsetMinutes" type="number" min="-720" max="720" value="0"></label>
       <label data-for="MOTION">Kamera<select class="field" name="cameraId"></select></label>
-      <label data-for="MOTION">Ereignis<select class="field" name="eventType"><option value="">Jedes</option><option value="PERSON">Person</option><option value="VEHICLE">Fahrzeug</option><option value="MOTION">Bewegung</option></select></label>
+      <label data-for="MOTION">Ereignis<select class="field" name="eventType"><option value="">Jedes</option><option value="PERSON">Person</option><option value="VEHICLE">Fahrzeug</option><option value="MOTION">Bewegung</option><option value="DOORBELL">Klingel (DoorBird)</option></select></label>
       <label data-for="DEVICE_SWITCHED">Auslösendes Gerät<select class="field" name="triggerDeviceId"></select></label>
       <label data-for="DEVICE_SWITCHED">Bei Aktion<select class="field" name="triggerAction"><option value="">Jede</option><option value="open">Ein / Öffnen</option><option value="deactivate">Aus / Abschließen</option><option value="close">Zu</option><option value="stop">Stopp</option></select></label>
       <label data-for="IDLE">Ruhe seit (Minuten)<input class="field" name="idleMinutes" type="number" min="1" max="1440" value="15"></label>
@@ -547,6 +547,7 @@
       <div class="chips">
         <button type="button" class="btn small" data-add-action="DEVICE"><svg class="ico" aria-hidden="true"><use href="#i-power"/></svg>Gerät schalten</button>
         <button type="button" class="btn small" data-add-action="NOTIFY"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg>Benachrichtigen</button>
+        <button type="button" class="btn small" data-add-action="CAMERA"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg>Kamera steuern</button>
       </div>
     </fieldset>
 

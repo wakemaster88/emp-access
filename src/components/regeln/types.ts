@@ -11,7 +11,7 @@ export type RuleTrigger =
   | "SCAN"
   | "IDLE";
 
-export type RuleActionKind = "DEVICE" | "NOTIFY" | "AUDIO";
+export type RuleActionKind = "DEVICE" | "NOTIFY" | "AUDIO" | "CAMERA";
 export type RuleOperating = "ANY" | "OPEN" | "CLOSED";
 export type RuleNotifyChannel = "TELEGRAM" | "PUSH" | "BOTH";
 
@@ -36,6 +36,11 @@ export interface RuleAction {
   audioAnnouncement: Named | null;
   audioPlaylistId: number | null;
   audioPlaylist: Named | null;
+  targetCameraId: number | null;
+  targetCamera: Named | null;
+  ptzPresetId: number | null;
+  autoTrack: boolean | null;
+  returnAfterSeconds: number | null;
 }
 
 export interface Rule {

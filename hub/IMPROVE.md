@@ -677,3 +677,19 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 - Erkennungszonen, Objektgröße und Empfindlichkeit in den Kameras selbst setzen (v. a. Eingang: Straße oben links, Parkplatz Halle).
 - Personen ohne Gesicht: YOLO-Gegenprüfung statt nur Face-Detektor.
 - Nach dem Deploy im Log prüfen: keine „Batch-Abfrage nicht unterstützt“-Zeilen, Ereignisse pro Stunde vorher/nachher.
+
+## 2026-11-04 (Regel-Aktion „Kamera steuern“: Klingel → Halle auf Position, dann folgen)
+
+### Änderungen
+
+- Neue Regel-Aktion `CAMERA` (Migration `20261104110000_rule_camera_action`): Kamera, Preset, automatisch folgen (an/aus/unverändert), optional „danach zurück nach N s“.
+- Cloud legt dafür den Hub-Task `CAMERA_SCENE` an. Hub (`cameraScene`): Folgen kurz aus, Preset anfahren, nach `HUB_CAMERA_SCENE_SETTLE_MS` (2,5 s) Folgen an; Rückkehr stellt Preset und vorherigen Folgen-Zustand wieder her, ein neuer Auslöser verlängert.
+- Auto-Tracking über `GetAiCfg`/`SetAiCfg` (`aiTrack`, ältere Firmware `bSmartTrack`).
+- `/api/hub/camera-events` wartet jetzt auf die Regeln und meldet `rulesTriggered`; der Hub holt seine Tasks dann sofort (`task-kick.ts`) statt bis zu 5 s später. Gilt auch für die DoorBird-Klingel.
+- Notbetrieb: Kamera-Aktionen führt der Hub ohne Cloud selbst aus.
+- Regel-Dialog (Cloud und Hub-Dashboard): Aktion „Kamera steuern“ mit Positionen laden, Ereignisart „Klingel (DoorBird)“.
+- Geprüft: `tsc` Hub und Cloud, ESLint, Tests 115/115, Mock-Reolink: Preset → Folgen an → nach 1 s zurück, Folgen wieder aus.
+
+### Offen
+
+- Live an der Halle prüfen, ob die Kamera `aiTrack` in `GetAiCfg` liefert (sonst Fehlermeldung im Regelverlauf).

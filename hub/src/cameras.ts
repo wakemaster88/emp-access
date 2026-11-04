@@ -5,6 +5,7 @@
  * Schnappschuesse hoch (bei Ereignis-Beginn und auf Task-Anforderung).
  */
 import { onCameraEvent } from "./rules.js";
+import { kickIfRulesTriggered } from "./task-kick.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
@@ -123,6 +124,8 @@ const TOKEN_SAFETY_MS = 60_000;
 /** Bei Ereignis-Beginn hoechstens alle 30 s ein Auto-Snapshot pro Kamera. */
 const EVENT_SNAPSHOT_THROTTLE_MS = 30_000;
 /** Ereignis endet erst nach so langer Ruhe (KI flackert), siehe event-debounce.ts. */
+/** Zeit fuers Anfahren eines Presets, bevor „folgen“ eingeschaltet wird. */
+const SCENE_SETTLE_MS = Number(process.env.HUB_CAMERA_SCENE_SETTLE_MS || 2_500);
 const EVENT_END_HOLD_MS = Number(process.env.HUB_EVENT_END_HOLD_MS || 6_000);
 /** Personen: kurz warten, dann mehrere Versuche solange PERSON aktiv (Gesicht oft erst frontal). */
 const PERSON_SNAP_DELAY_MS = 1_000;
@@ -1005,6 +1008,111 @@ export async function ptzControl(
   return { op, speed };
 }
 
+/* ---------------------------------------------------------------------------
+ * Automatisch folgen (Reolink Auto-Tracking) und Regel-Aktion „Kamera steuern“
+ * ------------------------------------------------------------------------- */
+
+/** Schluessel in Get/SetAiCfg: neuere Firmware `aiTrack`, aeltere `bSmartTrack`. */
+async function readAutoTrack(cam: CameraRuntime): Promise<{ key: string; on: boolean }> {
+  await ensureLogin(cam);
+  const cfg = await cgi(cam, "GetAiCfg", { channel: cam.config.channel });
+  for (const key of ["aiTrack", "bSmartTrack"]) {
+    if (typeof cfg[key] === "number") return { key, on: cfg[key] === 1 };
+  }
+  throw new Error("Kamera kann nicht automatisch folgen (kein Auto-Tracking in GetAiCfg)");
+}
+
+async function writeAutoTrack(cam: CameraRuntime, key: string, on: boolean): Promise<void> {
+  await cgi(cam, "SetAiCfg", { channel: cam.config.channel, [key]: on ? 1 : 0 });
+}
+
+/** Automatisch folgen an/aus. Liefert den vorherigen Zustand. */
+export async function setAutoTrack(cameraId: number, on: boolean): Promise<{ autoTrack: boolean; was: boolean }> {
+  const cam = await getControlCam(cameraId);
+  const cur = await readAutoTrack(cam);
+  if (cur.on !== on) await writeAutoTrack(cam, cur.key, on);
+  return { autoTrack: on, was: cur.on };
+}
+
+/** Laufende „zurueck nach N s“-Timer je Kamera; ein neuer Lauf verlaengert. */
+const sceneReturns = new Map<number, { timer: NodeJS.Timeout; restoreTrack: boolean | null; presetId: number | null }>();
+
+/**
+ * Regel-Aktion „Kamera steuern“: erst automatisch folgen aus (sonst zieht die
+ * Kamera sofort zurueck zum Ziel), Preset anfahren, dann folgen an/aus wie
+ * gewuenscht. Optional nach `returnAfterSeconds` zurueck aufs Preset und
+ * Folgen wieder wie vorher.
+ */
+export async function cameraScene(
+  cameraId: number,
+  payload: Record<string, unknown> | null
+): Promise<Record<string, unknown>> {
+  const cam = await getControlCam(cameraId);
+  const presetId = payload?.presetId == null ? null : Number(payload.presetId);
+  const autoTrack = typeof payload?.autoTrack === "boolean" ? payload.autoTrack : null;
+  const returnAfter = Number(payload?.returnAfterSeconds) || 0;
+  if (presetId != null && !Number.isInteger(presetId)) throw new Error("presetId ungültig");
+  if (presetId == null && autoTrack == null) throw new Error("Weder Preset noch Folgen angegeben");
+
+  // Nur Preset: eine Kamera ohne Auto-Tracking ist in Ordnung.
+  const track = await readAutoTrack(cam).catch((e) => {
+    if (autoTrack != null) throw e;
+    return null;
+  });
+
+  // Zustand vor der Szene merken – bei einer Verlaengerung den urspruenglichen.
+  const pending = sceneReturns.get(cameraId);
+  const restoreTrack = pending ? pending.restoreTrack : track?.on ?? null;
+  if (pending) clearTimeout(pending.timer);
+  sceneReturns.delete(cameraId);
+
+  if (presetId != null) {
+    if (track?.on) await writeAutoTrack(cam, track.key, false);
+    await cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 });
+  }
+  // „unveraendert“ heisst: nach dem Anfahren wieder wie vorher.
+  const wantTrack = autoTrack ?? track?.on ?? null;
+  if (track && wantTrack != null) {
+    const isOn = presetId != null ? false : track.on;
+    if (wantTrack !== isOn) {
+      // Erst ankommen lassen, sonst folgt die Kamera schon unterwegs.
+      if (wantTrack && presetId != null) await new Promise((r) => setTimeout(r, SCENE_SETTLE_MS));
+      await writeAutoTrack(cam, track.key, wantTrack);
+    }
+  }
+
+  if (returnAfter > 0) {
+    const timer = setTimeout(() => {
+      sceneReturns.delete(cameraId);
+      void (async () => {
+        try {
+          const now = await readAutoTrack(cam).catch(() => null);
+          if (now?.on) await writeAutoTrack(cam, now.key, false);
+          if (presetId != null) {
+            await cgi(cam, "PtzCtrl", { channel: cam.config.channel, op: "ToPos", id: presetId, speed: 48 });
+          }
+          if (now && restoreTrack) {
+            await new Promise((r) => setTimeout(r, SCENE_SETTLE_MS));
+            await writeAutoTrack(cam, now.key, true);
+          }
+          log(`Kamera ${cam.config.name}: Szene beendet, zurück${presetId != null ? ` auf Preset ${presetId}` : ""}`);
+        } catch (e) {
+          log(`Kamera ${cam.config.name}: Zurückstellen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        }
+      })();
+    }, returnAfter * 1000);
+    sceneReturns.set(cameraId, { timer, restoreTrack, presetId });
+  }
+
+  log(
+    `Kamera ${cam.config.name}: Szene` +
+      (presetId != null ? ` Preset ${presetId}` : "") +
+      (wantTrack != null ? `, folgen ${wantTrack ? "an" : "aus"}` : "") +
+      (returnAfter > 0 ? `, zurück nach ${returnAfter} s` : "")
+  );
+  return { presetId, autoTrack: wantTrack, returnAfterSeconds: returnAfter || null };
+}
+
 /** Weisslicht-Scheinwerfer an/aus (manueller Modus). */
 export async function setSpotlight(
   cameraId: number,
@@ -1609,7 +1717,10 @@ export async function pollCameras(): Promise<void> {
         body: JSON.stringify({ events, seen }),
       });
       if (!res.ok) log(`Kamera-Event-Upload fehlgeschlagen: HTTP ${res.status}`);
-      else if (seen.length > 0) lastSeenReportAt = Date.now();
+      else {
+        if (seen.length > 0) lastSeenReportAt = Date.now();
+        await kickIfRulesTriggered(res);
+      }
       for (const e of events) {
         const cam = cameras.get(e.cameraId);
         log(`Kamera ${cam?.config.name ?? e.cameraId}: ${e.type} ${e.phase === "start" ? "erkannt" : "beendet"}`);

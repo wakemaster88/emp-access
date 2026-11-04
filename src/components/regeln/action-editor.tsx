@@ -1,8 +1,9 @@
 "use client";
 
-/** Aktionsliste einer Regel: Gerät schalten, benachrichtigen, Audio. */
+/** Aktionsliste einer Regel: Gerät schalten, benachrichtigen, Audio, Kamera. */
 
-import { ArrowDown, ArrowUp, Bell, Plus, Trash2, Volume2, Zap } from "lucide-react";
+import { useState } from "react";
+import { ArrowDown, ArrowUp, Bell, Cctv, Plus, Trash2, Volume2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +28,11 @@ export interface ActionDraft {
    * nicht auf "Stopp" zurückfallen.
    */
   audioMode: "announcement" | "playlist" | "stop";
+  /** CAMERA: Kamera, Preset, folgen (null = unverändert), zurück nach Sek. */
+  targetCameraId: number | null;
+  ptzPresetId: number | null;
+  autoTrack: boolean | null;
+  returnAfterSeconds: number | null;
 }
 
 export function emptyAction(kind: RuleActionKind): ActionDraft {
@@ -41,6 +47,10 @@ export function emptyAction(kind: RuleActionKind): ActionDraft {
     audioAnnouncementId: null,
     audioPlaylistId: null,
     audioMode: "announcement",
+    targetCameraId: null,
+    ptzPresetId: null,
+    autoTrack: kind === "CAMERA" ? true : null,
+    returnAfterSeconds: null,
   };
 }
 
@@ -51,7 +61,176 @@ const KIND_ICONS: Record<RuleActionKind, React.ReactNode> = {
   DEVICE: <Zap className="h-3.5 w-3.5 text-warning" />,
   NOTIFY: <Bell className="h-3.5 w-3.5 text-info" />,
   AUDIO: <Volume2 className="h-3.5 w-3.5 text-violet-500" />,
+  CAMERA: <Cctv className="h-3.5 w-3.5 text-success" />,
 };
+
+/**
+ * Kamera steuern: Preset anfahren und „automatisch folgen“ schalten. Presets
+ * fragt der Hub live bei der Kamera ab; ohne Hub geht die Nummer von Hand.
+ */
+function CameraFields({
+  action,
+  options,
+  disabled,
+  onChange,
+}: {
+  action: ActionDraft;
+  options: RuleOptions;
+  disabled?: boolean;
+  onChange: (next: ActionDraft) => void;
+}) {
+  const [presets, setPresets] = useState<Array<{ id: number; name: string }> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadPresets(cameraId: number) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cameras/${cameraId}/control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "presets" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        result?: { presets?: Array<{ id: number; name: string }> };
+        error?: string;
+      };
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setPresets(body.result?.presets ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPresets(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-3">
+      <div className="space-y-1">
+        <Label className="text-[11px] text-neutral-500">Kamera</Label>
+        <select
+          className={selectClass}
+          disabled={disabled}
+          value={action.targetCameraId ?? ""}
+          onChange={(e) => {
+            const id = e.target.value ? Number(e.target.value) : null;
+            setPresets(null);
+            setError(null);
+            onChange({ ...action, targetCameraId: id, ptzPresetId: null });
+            if (id) void loadPresets(id);
+          }}
+        >
+          <option value="">— Kamera wählen —</option>
+          {options.cameras.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[11px] text-neutral-500">Position (Preset)</Label>
+        {presets && presets.length > 0 ? (
+          <select
+            className={selectClass}
+            disabled={disabled}
+            value={action.ptzPresetId ?? ""}
+            onChange={(e) =>
+              onChange({ ...action, ptzPresetId: e.target.value ? Number(e.target.value) : null })
+            }
+          >
+            <option value="">— nicht bewegen —</option>
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} (#{p.id})
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="flex gap-1">
+            <Input
+              type="number"
+              min={0}
+              placeholder="Nr., optional"
+              className="h-8 text-xs"
+              disabled={disabled}
+              value={action.ptzPresetId ?? ""}
+              onChange={(e) =>
+                onChange({ ...action, ptzPresetId: e.target.value ? Number(e.target.value) : null })
+              }
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 px-2 text-xs"
+              disabled={disabled || loading || !action.targetCameraId}
+              onClick={() => action.targetCameraId && void loadPresets(action.targetCameraId)}
+            >
+              {loading ? "…" : "Laden"}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[11px] text-neutral-500">Automatisch folgen</Label>
+        <select
+          className={selectClass}
+          disabled={disabled}
+          value={action.autoTrack == null ? "" : action.autoTrack ? "on" : "off"}
+          onChange={(e) =>
+            onChange({
+              ...action,
+              autoTrack: e.target.value === "" ? null : e.target.value === "on",
+            })
+          }
+        >
+          <option value="on">an</option>
+          <option value="off">aus</option>
+          <option value="">unverändert</option>
+        </select>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[11px] text-neutral-500">Danach zurück</Label>
+        <Input
+          type="number"
+          min={5}
+          max={3600}
+          placeholder="Sek., optional"
+          className="h-8 text-xs"
+          disabled={disabled}
+          value={action.returnAfterSeconds ?? ""}
+          onChange={(e) =>
+            onChange({
+              ...action,
+              returnAfterSeconds: e.target.value ? Number(e.target.value) : null,
+            })
+          }
+        />
+      </div>
+
+      <p className="text-[11px] text-neutral-500 sm:col-span-2 sm:self-end">
+        Die Kamera fährt die Position an und folgt danach Personen bzw. Fahrzeugen. Mit
+        „Danach zurück“ geht sie nach der Zeit wieder auf die Position, Folgen wie vorher.
+      </p>
+      {loading && <p className="text-[11px] text-neutral-500 sm:col-span-3">Presets werden vom Hub geladen …</p>}
+      {error && (
+        <p className="text-[11px] text-warning sm:col-span-3">
+          Presets nicht geladen ({error}). Nummer von Hand eintragen.
+        </p>
+      )}
+      {presets && presets.length === 0 && (
+        <p className="text-[11px] text-warning sm:col-span-3">
+          Diese Kamera hat keine Presets. Im Kamera-Kontrollzentrum eine Position speichern.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function DeviceFields({
   action,
@@ -310,6 +489,7 @@ export function ActionEditor({
                 <option value="DEVICE">Gerät schalten</option>
                 <option value="NOTIFY">Benachrichtigen</option>
                 <option value="AUDIO">Audio</option>
+                <option value="CAMERA">Kamera steuern</option>
               </select>
             </div>
             <div className="flex gap-0.5">
@@ -361,6 +541,14 @@ export function ActionEditor({
               onChange={(next) => update(index, next)}
             />
           )}
+          {action.kind === "CAMERA" && (
+            <CameraFields
+              action={action}
+              options={options}
+              disabled={disabled}
+              onChange={(next) => update(index, next)}
+            />
+          )}
           {action.kind === "AUDIO" && (
             <AudioFields
               action={action}
@@ -402,6 +590,16 @@ export function ActionEditor({
         >
           <Plus className="mr-1 h-3.5 w-3.5" />
           Audio
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          disabled={disabled || options.cameras.length === 0}
+          onClick={() => onChange([...actions, emptyAction("CAMERA")])}
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Kamera
         </Button>
       </div>
 
