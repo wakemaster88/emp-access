@@ -114,24 +114,15 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
         onClick={onNavigate}
         aria-current={isActive ? "page" : undefined}
         className={cn(
-          "group relative flex items-center gap-3 rounded-lg text-sm font-medium transition-colors outline-none",
+          "press group relative flex items-center gap-3 rounded-md text-sm font-medium outline-none",
           "focus-visible:ring-2 focus-visible:ring-sidebar-ring/60",
           collapsed ? "h-10 w-10 justify-center mx-auto" : "px-3 py-2",
+          // Aktiv: getönte Glas-Pille in Akzentfarbe mit Lichtkante, wie im Mockup.
           isActive
-            ? "bg-sidebar-primary/15 text-white"
+            ? "bg-sidebar-primary/[0.16] font-semibold text-sidebar-accent-foreground shadow-[inset_0_1px_0_var(--glass-highlight)]"
             : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground",
         )}
       >
-        {/* Aktiv-Marke: schmaler Balken am linken Rand. */}
-        {isActive && (
-          <span
-            aria-hidden
-            className={cn(
-              "absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-sidebar-primary",
-              collapsed && "-left-2",
-            )}
-          />
-        )}
         <Icon
           className={cn(
             "h-[18px] w-[18px] shrink-0 transition-colors",
@@ -163,7 +154,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
 
     if (collapsed) {
       return (
-        <div className={cn("space-y-1", !isFirst && "pt-2 mt-2 border-t border-sidebar-border")}>
+        <div className={cn("space-y-1", !isFirst && "pt-2 mt-2 border-t border-sidebar-foreground/[0.08]")}>
           {group.items.map((item) => (
             <NavLink key={item.href} {...item} />
           ))}
@@ -200,8 +191,9 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
   return (
     <aside
       className={cn(
-        "flex h-full min-h-0 shrink-0 flex-col bg-sidebar text-sidebar-foreground",
-        !inSheet && "border-r border-sidebar-border transition-[width] duration-300",
+        "flex h-full min-h-0 shrink-0 flex-col text-sidebar-foreground",
+        // Am Desktop eine Glasfläche über dem Farbgrund; im Handy-Menü trägt das Sheet das Glas.
+        !inSheet && "bg-sidebar backdrop-blur-2xl backdrop-saturate-[1.7] border-r border-sidebar-border transition-[width] duration-300",
         inSheet ? "w-full" : collapsed ? "w-16" : "w-64",
       )}
     >
@@ -212,11 +204,12 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
           className={cn("flex items-center gap-2.5 outline-none rounded-md focus-visible:ring-2 focus-visible:ring-sidebar-ring/60", collapsed && "justify-center")}
           onClick={onNavigate}
         >
-          <Image src="/logo-dark.png" alt="EMP Access" width={28} height={28} className="shrink-0" />
+          <Image src="/logo.png" alt="EMP Access" width={28} height={28} className="shrink-0 dark:hidden" />
+          <Image src="/logo-dark.png" alt="EMP Access" width={28} height={28} className="hidden shrink-0 dark:block" />
           {!collapsed && (
             <span className="flex flex-col leading-none">
-              <span className="text-[15px] font-semibold tracking-tight text-white">EMP Access</span>
-              <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-sidebar-muted">
+              <span className="text-[15px] font-semibold tracking-tight text-sidebar-accent-foreground">EMP Access</span>
+              <span className="mt-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-sidebar-muted">
                 {isSuperAdmin ? "Superadmin" : "Leitstand"}
               </span>
             </span>
@@ -227,7 +220,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
             variant="ghost"
             size="icon"
             onClick={toggleCollapsed}
-            className="h-8 w-8 shrink-0 text-sidebar-muted hover:bg-sidebar-accent hover:text-white"
+            className="h-8 w-8 shrink-0 rounded-full text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             aria-label="Seitenleiste einklappen"
           >
             <PanelLeftClose className="h-4 w-4" />
@@ -235,7 +228,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
         )}
       </div>
 
-      <div className="mx-3 h-px bg-sidebar-border" />
+      <div className="mx-3 h-px bg-sidebar-foreground/[0.08]" />
 
       <nav className={cn("flex-1 min-h-0 overflow-y-auto overscroll-contain py-3 scrollbar-thin", collapsed ? "px-2" : "px-3")}>
         {isSuperAdmin ? (
@@ -259,7 +252,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
                 variant="ghost"
                 size="icon"
                 onClick={toggleCollapsed}
-                className="h-10 w-10 mx-auto flex text-sidebar-muted hover:bg-sidebar-accent hover:text-white"
+                className="h-10 w-10 mx-auto flex rounded-full text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 aria-label="Seitenleiste erweitern"
               >
                 <PanelLeftOpen className="h-4 w-4" />
@@ -270,7 +263,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
         </div>
       )}
 
-      <div className="mx-3 h-px bg-sidebar-border" />
+      <div className="mx-3 h-px bg-sidebar-foreground/[0.08]" />
 
       {/* Benutzerblock: führt zu Konto & Sicherheit, daneben Abmelden. */}
       <div className={cn("p-3", collapsed && "px-2")}>
@@ -282,12 +275,12 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
                 onClick={onNavigate}
                 aria-current={accountActive ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg min-w-0 transition-colors outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring/60",
+                  "flex items-center gap-3 rounded-md min-w-0 transition-colors outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring/60",
                   collapsed ? "p-1" : "flex-1 px-2 py-1.5",
-                  accountActive && "bg-sidebar-primary/15",
+                  accountActive && "bg-sidebar-primary/[0.16] shadow-[inset_0_1px_0_var(--glass-highlight)]",
                 )}
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-chart-5 text-sm font-semibold text-white ring-2 ring-sidebar">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-chart-5 text-sm font-semibold text-white shadow-[inset_0_1px_0_oklch(1_0_0/30%)] ring-2 ring-white/40 dark:ring-white/10">
                   {userName.charAt(0).toUpperCase()}
                 </div>
                 {!collapsed && (
@@ -307,7 +300,7 @@ export function Sidebar({ userName, role, onSignOut, onNavigate }: SidebarProps)
                 size="icon"
                 onClick={onSignOut}
                 aria-label="Abmelden"
-                className="h-10 w-10 md:h-8 md:w-8 shrink-0 text-sidebar-muted hover:bg-destructive/15 hover:text-destructive"
+                className="h-10 w-10 md:h-8 md:w-8 shrink-0 rounded-full text-sidebar-muted hover:bg-destructive/15 hover:text-destructive"
               >
                 <LogOut className="h-4 w-4" />
               </Button>

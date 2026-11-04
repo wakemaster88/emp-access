@@ -7,6 +7,7 @@ import Image from "next/image";
 import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
@@ -127,12 +128,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-[100dvh] bg-background bg-grid-dots">
-      {/* Farbverlauf oben: gibt der Seite Tiefe, ohne den Inhalt zu stören. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-[45vh] bg-[radial-gradient(ellipse_at_top,_color-mix(in_oklch,var(--primary)_22%,transparent),transparent_65%)]"
-      />
+    // Farbgrund wie im Dashboard: das Anmeldefenster ist eine Glaskarte darüber.
+    <div className="page-ambient relative min-h-[100dvh]">
       <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-6xl flex-col lg:grid lg:grid-cols-[1.1fr_minmax(0,26rem)] lg:items-center lg:gap-16 px-4 py-8 sm:px-6 lg:px-8">
         {/* Markenfläche: nur auf großen Bildschirmen. */}
         <section className="hidden lg:flex flex-col gap-8 animate-fade-up">
@@ -141,7 +138,7 @@ export default function LoginPage() {
             <Image src="/logo-dark.png" alt="EMP Access" width={44} height={44} className="hidden dark:block" priority />
             <div className="leading-none">
               <p className="text-xl font-semibold tracking-tight">EMP Access</p>
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>
             </div>
           </div>
           <div className="space-y-3">
@@ -158,7 +155,7 @@ export default function LoginPage() {
               { k: "Technik", v: "Geräte · Regeln · Netz" },
               { k: "Sicherheit", v: "Kameras · Personen · Kfz" },
             ].map((f) => (
-              <div key={f.k} className="rounded-lg border bg-card/70 px-3 py-2.5 backdrop-blur-sm">
+              <div key={f.k} className="glass-tile px-3 py-2.5">
                 <dt className="text-label">{f.k}</dt>
                 <dd className="mt-1 text-xs text-foreground/80">{f.v}</dd>
               </div>
@@ -168,14 +165,14 @@ export default function LoginPage() {
 
         {/* Anmeldung */}
         <div className="flex flex-1 items-center justify-center lg:flex-none animate-fade-up">
-          <Card className="w-full max-w-md gap-4 py-7 shadow-lg shadow-black/5 dark:shadow-none">
+          <Card className="w-full max-w-md gap-4 py-7">
             <CardHeader className="gap-1 px-6 sm:px-8">
               <div className="mb-3 flex items-center gap-3 lg:hidden">
                 <Image src="/logo.png" alt="EMP Access" width={40} height={40} className="dark:hidden" priority />
                 <Image src="/logo-dark.png" alt="EMP Access" width={40} height={40} className="hidden dark:block" priority />
                 <div className="leading-none">
                   <p className="text-lg font-semibold tracking-tight">EMP Access</p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>
+                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Leitstand</p>
                 </div>
               </div>
               <h1 className="text-xl font-semibold tracking-tight">
@@ -226,9 +223,7 @@ export default function LoginPage() {
                     />
                   </div>
                   {error && (
-                    <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      {error}
-                    </p>
+                    <Notice tone="danger" compact title={error} />
                   )}
                   <Button type="submit" size="lg" className="w-full" disabled={loading}>
                     {loading ? (
@@ -242,13 +237,10 @@ export default function LoginPage() {
                 </form>
               ) : (
                 <form onSubmit={handleCode} className="space-y-4">
-                  <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/8 px-3 py-2.5">
-                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                    <p className="text-sm text-foreground/80">
-                      Bitte den aktuellen Code aus der Authenticator-App eingeben. Ersatzweise geht auch ein
-                      Wiederherstellungscode.
-                    </p>
-                  </div>
+                  <Notice tone="info" icon={ShieldCheck} compact>
+                    Bitte den aktuellen Code aus der Authenticator-App eingeben. Ersatzweise geht auch ein
+                    Wiederherstellungscode.
+                  </Notice>
                   <div className="space-y-2">
                     <Label htmlFor="code">Code</Label>
                     <Input
@@ -270,9 +262,7 @@ export default function LoginPage() {
                     />
                   </div>
                   {error && (
-                    <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      {error}
-                    </p>
+                    <Notice tone="danger" compact title={error} />
                   )}
                   <Button type="submit" size="lg" className="w-full" disabled={loading}>
                     {loading ? (

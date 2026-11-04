@@ -36,7 +36,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/45 backdrop-blur-[3px]",
         className
       )}
       {...props}
@@ -58,10 +58,10 @@ function AlertDialogContent({
         data-slot="alert-dialog-content"
         data-size={size}
         className={cn(
-          "bg-background group/alert-dialog-content fixed z-50 grid w-full gap-4 border shadow-lg outline-none duration-300",
-          "bottom-0 left-0 max-h-[92dvh] overflow-y-auto rounded-t-2xl p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]",
+          "bg-popover text-popover-foreground group/alert-dialog-content fixed z-50 grid w-full gap-4 border border-glass-border shadow-[inset_0_1px_0_var(--glass-highlight),0_30px_80px_-24px_oklch(0_0_0/55%)] outline-none duration-300",
+          "bottom-0 left-0 max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-card p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
-          "sm:bottom-auto sm:left-[50%] sm:top-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg sm:pb-6",
+          "sm:bottom-auto sm:left-[50%] sm:top-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-card sm:p-6",
           "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
           "data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-lg",
           className
@@ -141,7 +141,7 @@ function AlertDialogMedia({
     <div
       data-slot="alert-dialog-media"
       className={cn(
-        "bg-muted mb-2 inline-flex size-16 items-center justify-center rounded-md sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-8",
+        "bg-glass-tile ring-1 ring-inset ring-glass-border mb-2 inline-flex size-16 items-center justify-center rounded-tile sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-8",
         className
       )}
       {...props}

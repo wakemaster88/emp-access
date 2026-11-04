@@ -19,10 +19,14 @@ const ADMIN_TABS = [
   { href: "/admin/accounts", label: "Mandanten", icon: Building },
 ] as const;
 
+const ITEM =
+  "press relative flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-medium select-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
 /**
- * Untere Tab-Leiste fuer Handys (unter md). Die haeufigsten Ziele direkt,
- * alles andere ueber "Mehr" im Seitenmenue. Safe-Area unten wird
- * beruecksichtigt, damit auf dem iPhone nichts hinter der Home-Leiste liegt.
+ * Untere Tab-Leiste fuer Handys (unter md) im Stil von iOS 26: eine
+ * schwebende Glas-Kapsel ueber dem Inhalt, der aktive Eintrag als helle
+ * Glas-Pille. Die haeufigsten Ziele direkt, alles andere ueber "Mehr" im
+ * Seitenmenue. Die Kapsel haelt Abstand zur Home-Leiste (Safe-Area).
  */
 export function MobileTabBar({ role }: { role?: string }) {
   const pathname = usePathname();
@@ -33,7 +37,7 @@ export function MobileTabBar({ role }: { role?: string }) {
   return (
     <nav
       aria-label="Hauptnavigation"
-      className="md:hidden fixed inset-x-0 bottom-0 z-30 glass border-t pb-[env(safe-area-inset-bottom)]"
+      className="md:hidden fixed inset-x-3 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] z-30 glass-dock p-1"
     >
       <ul className="grid h-14" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {tabs.map((tab) => {
@@ -45,14 +49,11 @@ export function MobileTabBar({ role }: { role?: string }) {
                 href={tab.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative flex h-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium select-none transition-colors",
-                  active ? "text-primary" : "text-muted-foreground active:text-foreground",
+                  ITEM,
+                  active ? "glass-pill-active text-primary" : "text-muted-foreground active:text-foreground",
                 )}
               >
-                {active && (
-                  <span aria-hidden className="absolute top-0 h-0.5 w-8 rounded-b-full bg-primary" />
-                )}
-                <tab.icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
+                <tab.icon className="h-5 w-5" strokeWidth={active ? 2.4 : 2} />
                 <span className="truncate max-w-full px-1">{tab.label}</span>
               </Link>
             </li>
@@ -64,8 +65,8 @@ export function MobileTabBar({ role }: { role?: string }) {
             onClick={menu?.toggle}
             aria-expanded={menu?.open}
             className={cn(
-              "flex h-full w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium select-none transition-colors",
-              menu?.open ? "text-primary" : "text-muted-foreground active:text-foreground",
+              ITEM,
+              menu?.open ? "glass-pill-active text-primary" : "text-muted-foreground active:text-foreground",
             )}
           >
             <Menu className="h-5 w-5" />
