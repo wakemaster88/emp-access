@@ -70,7 +70,8 @@ export function deviceSendsRemoteCommand(type: string): boolean {
     type === "SHELLY" ||
     type === "NUKI_SMARTLOCK" ||
     type === "LOQED_SMARTLOCK" ||
-    type === "GARDENA_VALVE"
+    type === "GARDENA_VALVE" ||
+    type === "HUE_LIGHT"
   );
 }
 
@@ -113,6 +114,9 @@ interface DeviceForAction {
   /// wird.
   pumpDeviceId?: number | null;
   flowLph?: number | null;
+  /// HUE_LIGHT: Bridge und Lampe – geschaltet vom Hub.
+  hueBridgeId?: string | null;
+  hueLightId?: string | null;
 }
 
 /** Optionale Parameter fuer einzelne Aktionen (z. B. GARDENA-Bewässerungsdauer). */
@@ -127,6 +131,11 @@ interface TriggerOptions {
  * Client (`getSessionWithDb`) zu uebergeben, ohne TypeScript-Konflikte.
  */
 interface DbLike {
+  hubTask: {
+    create: (args: {
+      data: { accountId: number; type: string; payload: { deviceId: number; bridgeId: string; lightId: string; on: boolean } };
+    }) => Promise<unknown>;
+  };
   device: {
     update: (args: { where: { id: number }; data: { task: number } }) => Promise<unknown>;
     findFirst: (args: {
@@ -332,6 +341,26 @@ export async function triggerDeviceAction(
           : "night_lock";
     const res = await loqedSetBoltState(config.token, device.loqedLockId, state);
     return { task, sent: res.ok, ...(res.error ? { error: res.error } : {}) };
+  }
+
+  if (device.type === "HUE_LIGHT") {
+    // Hue haengt nur im LAN: Der Hub schaltet, sobald er den Task abholt (≤ 5 s).
+    if (!device.hueBridgeId || !device.hueLightId) {
+      return { task, sent: false, error: "Hue-Lampe ohne Bridge-Zuordnung – im Hub unter Geräte neu zuordnen." };
+    }
+    await db.hubTask.create({
+      data: {
+        accountId,
+        type: "HUE_SET",
+        payload: {
+          deviceId: device.id,
+          bridgeId: device.hueBridgeId,
+          lightId: device.hueLightId,
+          on: action === "open" || action === "emergency",
+        },
+      },
+    });
+    return { task, sent: true };
   }
 
   if (device.type !== "SHELLY") return { task, sent: false };

@@ -23,6 +23,9 @@ enum DeviceType {
   /// NICHT ueber die Shelly Cloud: Die kennt das Schloss zwar und liefert
   /// seinen Zustand, nimmt aber keine Befehle dafuer an.
   LOQED_SMARTLOCK
+  /// Philips-Hue-Lampe hinter einer Hue Bridge. Nur im LAN erreichbar: Der
+  /// Hub schaltet sie, Befehle aus der Cloud gehen als Hub-Task (HUE_SET).
+  HUE_LIGHT
 }
 
 enum DeviceCategory {
@@ -234,6 +237,9 @@ model Device {
   ipAddress            String?
   shellyId             String?
   shellyAuthKey        String?
+  /// HUE_LIGHT: Bridge-ID (aus /api/config) und Lampen-ID auf der Bridge.
+  hueBridgeId          String?
+  hueLightId           String?
   /// Antriebe (MARKISE/ROLLTOR) mit zwei getrennten Relais: Shelly-Kanal, der
   /// die Fahrtrichtung "Auf" schaltet (0-basiert). NULL = Gerät ist kein
   /// Antrieb bzw. noch nicht eingerichtet.
@@ -340,6 +346,7 @@ model Device {
 
   @@index([accountId])
   @@index([keyRoomId])
+  @@index([accountId, hueBridgeId, hueLightId])
   @@index([accessIn])
   @@index([accessOut])
   @@index([pumpDeviceId])

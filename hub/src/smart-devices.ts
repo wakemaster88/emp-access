@@ -503,3 +503,31 @@ export async function pairSmart(id: string): Promise<{ ok: boolean; error?: stri
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+/* ------------------------------------------------------- Hue fuer Raeume */
+
+/** Zustand aller Lampen einer gekoppelten Bridge; null = nicht gekoppelt/erreichbar. */
+export async function hueLightStates(
+  bridgeId: string
+): Promise<Record<string, { on: boolean; reachable: boolean; brightness: number | null }> | null> {
+  await loadPairings();
+  const pair = pairings.hue[bridgeId];
+  if (!pair) return null;
+  try {
+    const lights = (await getJson(`http://${pair.ip}/api/${pair.username}/lights`)) as
+      | Record<string, { state: { on: boolean; bri?: number; reachable?: boolean } }>
+      | unknown[];
+    if (Array.isArray(lights)) return null;
+    const out: Record<string, { on: boolean; reachable: boolean; brightness: number | null }> = {};
+    for (const [id, l] of Object.entries(lights)) {
+      out[id] = {
+        on: l.state.on,
+        reachable: l.state.reachable !== false,
+        brightness: typeof l.state.bri === "number" ? Math.round((l.state.bri / 254) * 100) : null,
+      };
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}

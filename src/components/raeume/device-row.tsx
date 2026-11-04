@@ -82,7 +82,8 @@ export function DeviceRow({
   const [error, setError] = useState("");
   const controls = visibleDeviceControls(device, status?.output);
   const isLatching = isLatchingSwitchDevice(device);
-  const reported = status?.output === true;
+  // Hue meldet keinen Status in die Cloud: dort zaehlt der letzte Befehl.
+  const reported = status ? status.output === true : device.type === "HUE_LIGHT" && device.task === 1;
   // Schalter springen sofort um und warten nicht auf die naechste Abfrage.
   const [pending, setPending] = useState<boolean | null>(null);
   useEffect(() => {
@@ -155,7 +156,7 @@ export function DeviceRow({
           <span className="flex shrink-0 items-center gap-2">
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/70" />}
             <span className={cn("text-[11px] tabular-nums", on ? "text-warning" : "text-muted-foreground/70")}>
-              {status || pending !== null ? (on ? "an" : "aus") : ""}
+              {status || pending !== null || device.type === "HUE_LIGHT" ? (on ? "an" : "aus") : ""}
             </span>
             <Switch
               checked={on}

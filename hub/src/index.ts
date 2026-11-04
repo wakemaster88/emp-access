@@ -28,6 +28,8 @@ const TASK_CONCURRENCY = 4;
 
 const HIGH_PRIORITY = new Set([
   "SCAN_SNAPSHOT",
+  // Licht aus der Cloud oder einer Regel: sofort schalten.
+  "HUE_SET",
   // Regel „Kamera steuern“ (z. B. Klingel → Halle auf Preset): sofort.
   "CAMERA_SCENE",
   "DOORBIRD_OPEN",

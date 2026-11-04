@@ -7,6 +7,7 @@ const DEVICE_TYPE_LABELS: Record<string, string> = {
   SHELLY: "Shelly",
   NUKI_SMARTLOCK: "Nuki",
   LOQED_SMARTLOCK: "LOQED",
+  HUE_LIGHT: "Philips Hue",
   GARDENA_VALVE: "GARDENA",
   AUDIO_PLAYER: "Audio",
 };
