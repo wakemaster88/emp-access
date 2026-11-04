@@ -13,7 +13,9 @@
  * an einer Stelle stimmen, und Hell/Dunkel bleiben automatisch konsistent.
  *
  * Grundton ist ein kühles, leicht blaues Grau (Hue ≈ 260), Akzent ist Indigo.
- * Die Seitenleiste ist in beiden Modi dunkel – das ist der "Leitstand"-Look.
+ * Flächen sind Liquid Glass (docs/design-regeln.md): durchscheinend über einem
+ * weichen Farbgrund, in Hell und Dunkel gleichwertig. Die Seitenleiste ist
+ * selbst eine Glasfläche und folgt dem Farbschema.
  */
 @theme inline {
   --color-background: var(--background);
@@ -57,6 +59,14 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Glas als Farbe, damit Seiten `bg-glass-tile`, `border-glass-border` und
+     `hover:bg-glass-strong` schreiben können statt eigener Weiß-Töne. */
+  --color-glass: var(--glass-bg);
+  --color-glass-strong: var(--glass-bg-strong);
+  --color-glass-tile: var(--glass-tile);
+  --color-glass-border: var(--glass-border);
+  --color-glass-highlight: var(--glass-highlight);
+  --color-field: var(--field);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -76,7 +86,10 @@
 }
 
 :root {
-  --radius: 0.625rem;
+  /* 14 px: rounded-lg = Bedienelement, rounded-xl = Kachel (18 px),
+     rounded-md 12 px, rounded-sm 10 px – passt zur Radius-Regel, ohne jede
+     Seite anzufassen. Karten nutzen rounded-card (24 px). */
+  --radius: 0.875rem;
 
   --background: oklch(0.978 0.004 255);
   --foreground: oklch(0.2 0.03 262);
@@ -105,9 +118,12 @@
   --info: oklch(0.55 0.15 242);
   --info-foreground: oklch(0.99 0 0);
 
-  --border: oklch(0.925 0.012 255);
-  --input: oklch(0.905 0.014 255);
+  --border: oklch(0.2 0.03 262 / 9%);
+  --input: oklch(0.2 0.03 262 / 14%);
   --ring: oklch(0.585 0.233 277);
+  /* Füllung von Eingabefeldern: leicht grau getönt, damit Felder auf heller
+     Glasfläche als Feld erkennbar bleiben (wie iOS). */
+  --field: oklch(0.2 0.03 262 / 4.5%);
 
   --chart-1: oklch(0.585 0.233 277);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -115,15 +131,16 @@
   --chart-4: oklch(0.685 0.169 237.323);
   --chart-5: oklch(0.606 0.25 292.717);
 
-  /* Seitenleiste: immer dunkel. */
-  --sidebar: oklch(0.175 0.028 262);
-  --sidebar-foreground: oklch(0.87 0.012 255);
-  --sidebar-muted: oklch(0.6 0.025 258);
-  --sidebar-primary: oklch(0.68 0.17 276);
+  /* Seitenleiste: helle Glasfläche über dem Farbgrund. */
+  --sidebar: oklch(1 0 0 / 42%);
+  --sidebar-solid: oklch(0.975 0.006 262);
+  --sidebar-foreground: oklch(0.27 0.03 262);
+  --sidebar-muted: oklch(0.48 0.03 258);
+  --sidebar-primary: oklch(0.53 0.24 276);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(1 0 0 / 6%);
-  --sidebar-accent-foreground: oklch(0.97 0 0);
-  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-accent: oklch(0.2 0.03 262 / 6%);
+  --sidebar-accent-foreground: oklch(0.2 0.03 262);
+  --sidebar-border: oklch(1 0 0 / 80%);
   --sidebar-ring: oklch(0.585 0.233 277);
 
   /* Liquid Glass (hell): weiße, durchscheinende Flächen auf farbigem Grund. */
@@ -168,9 +185,10 @@
   --info: oklch(0.746 0.16 232.661);
   --info-foreground: oklch(0.15 0.02 240);
 
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 13%);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 16%);
   --ring: oklch(0.68 0.17 276);
+  --field: oklch(1 0 0 / 5.5%);
 
   --chart-1: oklch(0.68 0.17 276);
   --chart-2: oklch(0.765 0.177 163.223);
@@ -178,14 +196,15 @@
   --chart-4: oklch(0.746 0.16 232.661);
   --chart-5: oklch(0.714 0.203 305.504);
 
-  --sidebar: oklch(0.15 0.026 262);
-  --sidebar-foreground: oklch(0.87 0.012 255);
-  --sidebar-muted: oklch(0.6 0.025 258);
-  --sidebar-primary: oklch(0.72 0.16 276);
+  --sidebar: oklch(1 0 0 / 3.5%);
+  --sidebar-solid: oklch(0.17 0.028 262);
+  --sidebar-foreground: oklch(0.9 0.012 255);
+  --sidebar-muted: oklch(0.7 0.025 258);
+  --sidebar-primary: oklch(0.74 0.15 276);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(1 0 0 / 6%);
-  --sidebar-accent-foreground: oklch(0.97 0 0);
-  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-accent: oklch(1 0 0 / 7%);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
   --sidebar-ring: oklch(0.68 0.17 276);
 
   /* Liquid Glass (dunkel): Flächen aus Weiß mit wenig Deckung, Lichtkante oben. */
@@ -333,8 +352,8 @@
     inset 0 1px 0 var(--glass-highlight),
     inset 0 -1px 0 oklch(1 0 0 / 4%),
     var(--glass-shadow);
-  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
 }
 
 @utility glass-tile {
@@ -351,8 +370,8 @@
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
   box-shadow: inset 0 1px 0 var(--glass-highlight);
-  backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
 }
 
 /* Aktiver Eintrag in einer Kapsel: helle Glas-Pille statt Unterstreichung. */
@@ -379,6 +398,76 @@
   .glass-card,
   .glass-tile {
     transition: none;
+  }
+}
+
+/*
+ * Weitere Glasflächen (docs/design-regeln.md, Abschnitt 14)
+ * ---------------------------------------------------------
+ * glass-bar      Kopfbalken und andere Leisten, die über dem Inhalt kleben.
+ * glass-surface  Schwebende Ebenen: Menüs, Auswahllisten, Popover. Deckender
+ *                als eine Karte, weil darunter Text liegt.
+ * glass-dock     Schwebende Tab-Leiste unten auf dem Handy.
+ * glass-field    Eingabefelder: getönte Füllung, sichtbarer Rand, Lichtkante.
+ */
+@utility glass-bar {
+  background: color-mix(in oklch, var(--background) 55%, transparent);
+  border-color: var(--glass-border);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+}
+
+@utility glass-surface {
+  border: 1px solid var(--glass-border);
+  background: color-mix(in oklch, var(--popover) 82%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 24px 60px -24px oklch(0 0 0 / 50%),
+    0 2px 8px -2px oklch(0 0 0 / 12%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(32px) saturate(180%);
+}
+
+@utility glass-dock {
+  border-radius: 9999px;
+  border: 1px solid var(--glass-border);
+  background: color-mix(in oklch, var(--background) 62%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 18px 40px -18px oklch(0 0 0 / 55%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+}
+
+@utility glass-field {
+  border-radius: var(--radius-control);
+  border: 1px solid var(--input);
+  background: var(--field);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 5%);
+}
+
+/* Antippen gibt nach (97 %), wie die Regeln es für Tasten und Kacheln vorsehen. */
+@utility press {
+  transition-property: transform, background-color, border-color, box-shadow, color, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+}
+
+/*
+ * „Transparenz reduzieren“ (iOS, macOS): Glas wird zu ruhigen, deckenden
+ * Flächen, kein Weichzeichner. Der Farbgrund bleibt, er liegt nur dahinter.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  .dark {
+    --glass-bg: var(--card);
+    --glass-bg-strong: var(--popover);
+    --glass-tile: var(--muted);
+    --glass-blur: 0px;
+    --sidebar: var(--sidebar-solid);
   }
 }
 

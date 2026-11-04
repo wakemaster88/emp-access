@@ -40,15 +40,17 @@ function Clock() {
   const now = useSyncExternalStore(subscribeClock, readClock, () => null);
   if (!now) return <span className="hidden sm:inline-block w-[4.5ch]" aria-hidden />;
   return (
-    <time className="hidden sm:inline-block font-mono text-xs tabular-nums text-muted-foreground w-[4.5ch] text-right" suppressHydrationWarning>
+    <time className="hidden sm:inline-block text-[13px] font-medium tabular-nums text-muted-foreground w-[5ch] text-right" suppressHydrationWarning>
       {now}
     </time>
   );
 }
 
 /**
- * Kopfbalken jeder Dashboard-Seite: Menü-Knopf (Handy), Seitentitel,
- * Mandant, optionale Aktionen, Uhrzeit und Farbschema.
+ * Kopfbalken jeder Dashboard-Seite: Menü-Knopf (Handy), Seitentitel
+ * (20 px / 600), Mandant als Kapsel, optionale Aktionen, Uhrzeit und
+ * Farbschema. Eine Glasleiste (`glass-bar`), unter der der Inhalt
+ * weichgezeichnet durchscrollt.
  */
 export function Header({ title, accountName, badge, children, className }: HeaderProps) {
   const { setTheme, theme } = useTheme();
@@ -57,28 +59,28 @@ export function Header({ title, accountName, badge, children, className }: Heade
   return (
     <header
       className={cn(
-        "sticky top-0 z-30 glass border-b",
+        "sticky top-0 z-30 glass-bar border-b border-glass-border/60 dark:border-white/[0.08]",
         "pt-[env(safe-area-inset-top)]",
         className,
       )}
     >
-      <div className="flex h-14 items-center gap-2 px-3 sm:px-5 md:px-6">
+      <div className="flex h-14 items-center gap-2 px-3 sm:px-5 md:px-6 md:h-16">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {mobileMenu && (
             <Button
               variant="ghost"
               size="icon"
               onClick={mobileMenu.toggle}
-              className="md:hidden h-10 w-10 -ml-1 shrink-0 text-muted-foreground"
+              className="md:hidden h-10 w-10 -ml-1 shrink-0 rounded-full text-muted-foreground"
               aria-label="Menü öffnen"
             >
               <Menu className="h-5 w-5" />
             </Button>
           )}
-          <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">{title}</h1>
+          <h1 className="truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl">{title}</h1>
           {badge}
           {accountName && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-border/80 bg-muted/60 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground shrink-0">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-glass-border bg-glass-tile px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground shrink-0">
               {accountName}
             </span>
           )}
@@ -92,7 +94,7 @@ export function Header({ title, accountName, badge, children, className }: Heade
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 sm:h-9 sm:w-9 text-muted-foreground hover:text-foreground"
+                className="h-10 w-10 sm:h-9 sm:w-9 rounded-full text-muted-foreground hover:text-foreground"
                 aria-label="Farbschema"
               >
                 <Sun className="h-[18px] w-[18px] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
@@ -100,13 +102,13 @@ export function Header({ title, accountName, badge, children, className }: Heade
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-36">
-              <DropdownMenuItem onClick={() => setTheme("light")} className={cn(theme === "light" && "bg-accent")}>
+              <DropdownMenuItem onClick={() => setTheme("light")} className={cn(theme === "light" && "bg-primary/12 text-foreground")}>
                 <Sun className="h-4 w-4" /> Hell
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("dark")} className={cn(theme === "dark" && "bg-accent")}>
+              <DropdownMenuItem onClick={() => setTheme("dark")} className={cn(theme === "dark" && "bg-primary/12 text-foreground")}>
                 <Moon className="h-4 w-4" /> Dunkel
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("system")} className={cn(theme === "system" && "bg-accent")}>
+              <DropdownMenuItem onClick={() => setTheme("system")} className={cn(theme === "system" && "bg-primary/12 text-foreground")}>
                 <Monitor className="h-4 w-4" /> System
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -5,31 +5,32 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 /**
- * Badge mit Status-Varianten. `success`, `warning`, `danger`, `info` und
- * `neutral` sind weiche Tönungen (Fläche 12 %, Text in Vollfarbe) und lösen
- * die früheren Hand-Kombinationen wie `bg-emerald-100 text-emerald-700 …` ab.
+ * Pille mit Status-Varianten (Radius 999 px, docs/design-regeln.md). `success`,
+ * `warning`, `danger`, `info` und `neutral` sind weiche Tönungen (Fläche 12 bis
+ * 16 %, Text in Vollfarbe) und lösen Hand-Kombinationen wie
+ * `bg-emerald-100 text-emerald-700 …` ab. `outline` und `secondary` sind Glas.
  * `mono` ist für Codes, Tokens und IP-Adressen gedacht.
  */
 const badgeVariants = cva(
-  "inline-flex items-center justify-center rounded-full border border-transparent px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",
+  "inline-flex items-center justify-center rounded-full border border-transparent px-2 py-0.5 text-xs font-semibold leading-4 w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",
   {
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
         secondary:
-          "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
+          "bg-glass-tile text-foreground ring-1 ring-inset ring-glass-border [a&]:hover:bg-glass-strong",
         destructive:
           "bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
-          "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
-        ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+          "border-glass-border text-foreground [a&]:hover:bg-glass-tile",
+        ghost: "[a&]:hover:bg-glass-tile",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
-        success: "bg-success/12 text-success dark:bg-success/15 [a&]:hover:bg-success/20",
-        warning: "bg-warning/14 text-warning dark:bg-warning/15 [a&]:hover:bg-warning/22",
-        danger: "bg-destructive/12 text-destructive dark:bg-destructive/15 [a&]:hover:bg-destructive/20",
-        info: "bg-info/12 text-info dark:bg-info/15 [a&]:hover:bg-info/20",
-        neutral: "bg-muted text-muted-foreground [a&]:hover:bg-muted/80",
-        mono: "rounded-md border-border bg-muted/60 font-mono text-[11px] tracking-tight text-foreground/80",
+        success: "bg-success/12 text-success dark:bg-success/16 [a&]:hover:bg-success/20",
+        warning: "bg-warning/14 text-warning dark:bg-warning/16 [a&]:hover:bg-warning/22",
+        danger: "bg-destructive/12 text-destructive dark:bg-destructive/16 [a&]:hover:bg-destructive/20",
+        info: "bg-info/12 text-info dark:bg-info/16 [a&]:hover:bg-info/20",
+        neutral: "bg-foreground/[0.06] text-muted-foreground dark:bg-white/[0.08] [a&]:hover:bg-foreground/10",
+        mono: "rounded-md border-glass-border bg-glass-tile font-mono text-[11px] font-medium tracking-tight text-foreground/80",
       },
     },
     defaultVariants: {

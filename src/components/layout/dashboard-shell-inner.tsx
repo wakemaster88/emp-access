@@ -19,16 +19,16 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
 
   return (
     <>
-      {/* Desktop: feste Seitenleiste (Breite bestimmt die Sidebar selbst). */}
-      <div className="hidden md:flex h-[100dvh] max-h-[100dvh] shrink-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] bg-sidebar">
+      {/* Desktop: feste Seitenleiste als Glasfläche (Breite bestimmt die Sidebar selbst). */}
+      <div className="hidden md:flex h-[100dvh] max-h-[100dvh] shrink-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <Sidebar userName={userName} role={role} onSignOut={onSignOut} />
       </div>
 
-      {/* Handy: Seitenleiste als Sheet von links. */}
+      {/* Handy: Seitenleiste als Sheet von links, deckender als am Desktop. */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent
           side="left"
-          className="w-[280px] max-w-[85vw] p-0 gap-0 bg-sidebar border-sidebar-border text-sidebar-foreground [&>button]:text-sidebar-muted"
+          className="w-[288px] max-w-[85vw] p-0 gap-0 rounded-r-card border-r border-glass-border bg-[color-mix(in_oklch,var(--background)_80%,transparent)] backdrop-blur-2xl backdrop-saturate-[1.8] text-sidebar-foreground [&>button]:text-sidebar-muted"
           showCloseButton={true}
         >
           <SheetTitle className="sr-only">Navigation</SheetTitle>
@@ -38,7 +38,8 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
         </SheetContent>
       </Sheet>
 
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background scrollbar-thin pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
+      {/* Inhalt: transparent, der Farbgrund der Hülle scheint durch das Glas. */}
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto scrollbar-thin pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-0">
         {children}
       </main>
 
@@ -48,13 +49,14 @@ function Inner({ userName, role, onSignOut, children }: DashboardShellInnerProps
 }
 
 /**
- * Rahmen aller angemeldeten Seiten (Mandant und Superadmin): Seitenleiste,
- * scrollender Inhalt, Tab-Leiste auf dem Handy.
+ * Rahmen aller angemeldeten Seiten (Mandant und Superadmin): Farbgrund
+ * (`page-ambient`), Seitenleiste aus Glas, scrollender Inhalt, schwebende
+ * Tab-Leiste auf dem Handy.
  */
 export function DashboardShellInner(props: DashboardShellInnerProps) {
   return (
     <MobileMenuProvider>
-      <div className="flex min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-background">
+      <div className="page-ambient flex min-h-[100dvh] max-h-[100dvh] overflow-hidden">
         <Inner {...props} />
       </div>
     </MobileMenuProvider>

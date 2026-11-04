@@ -13,9 +13,10 @@ interface EmptyStateProps {
 }
 
 /**
- * Leerer Zustand: sagt, was hier stehen würde, und bietet den nächsten
- * Schritt an. Einheitlich für Tabellen ohne Zeilen, Listen ohne Einträge
- * und Bereiche ohne Konfiguration.
+ * Leerer Zustand: ein Satz, der sagt, was hier stehen würde, und der nächste
+ * Schritt (docs/design-regeln.md, Abschnitt 11: „Leere Zustände sind ein
+ * Satz, keine Grafik“). Das Symbol ist klein und gedämpft. Einheitlich für
+ * Tabellen ohne Zeilen, Listen ohne Einträge und Bereiche ohne Konfiguration.
  */
 export function EmptyState({ icon: Icon, title, description, action, className, compact }: EmptyStateProps) {
   return (
@@ -29,15 +30,15 @@ export function EmptyState({ icon: Icon, title, description, action, className, 
       {Icon && (
         <div
           className={cn(
-            "flex items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 text-muted-foreground",
-            compact ? "h-9 w-9" : "h-12 w-12",
+            "flex items-center justify-center rounded-full bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border",
+            compact ? "h-9 w-9" : "h-11 w-11",
           )}
         >
           <Icon className={compact ? "h-4 w-4" : "h-5 w-5"} />
         </div>
       )}
       <div className="space-y-1">
-        <p className={cn("font-medium text-foreground", compact ? "text-sm" : "text-base")}>{title}</p>
+        <p className={cn("font-semibold text-foreground", compact ? "text-sm" : "text-[15px]")}>{title}</p>
         {description && (
           <p className={cn("text-muted-foreground max-w-sm", compact ? "text-xs" : "text-sm")}>{description}</p>
         )}

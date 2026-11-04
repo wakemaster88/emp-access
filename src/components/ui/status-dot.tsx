@@ -11,6 +11,16 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   primary: "bg-primary",
 };
 
+/** Im Dunkeln leuchten aktive Punkte leicht (wie in den Raum-Mockups). */
+const GLOW_CLASSES: Record<StatusTone, string> = {
+  success: "dark:shadow-[0_0_8px_var(--success)]",
+  warning: "dark:shadow-[0_0_8px_var(--warning)]",
+  danger: "dark:shadow-[0_0_8px_var(--destructive)]",
+  info: "dark:shadow-[0_0_8px_var(--info)]",
+  neutral: "",
+  primary: "dark:shadow-[0_0_8px_var(--primary)]",
+};
+
 interface StatusDotProps {
   tone?: StatusTone;
   /** Pulsierender Ring – für „lebt gerade“ (online, spielt, läuft). */
@@ -36,7 +46,7 @@ export function StatusDot({ tone = "neutral", pulse = false, size = "sm", classN
           className={cn("absolute inset-0 rounded-full opacity-60 animate-ping motion-reduce:animate-none", TONE_CLASSES[tone])}
         />
       )}
-      <span className={cn("relative inline-flex h-full w-full rounded-full", TONE_CLASSES[tone])} />
+      <span className={cn("relative inline-flex h-full w-full rounded-full", TONE_CLASSES[tone], GLOW_CLASSES[tone])} />
       {label && <span className="sr-only">{label}</span>}
     </span>
   );
