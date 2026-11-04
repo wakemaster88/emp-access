@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { climateDecision, climateTarget, statusUpdatedAt } from "./room-climate";
+import { climateDecision, climateTarget, inAfterrun, statusUpdatedAt, ventDecision } from "./room-climate";
 import type { ScheduleSpec } from "./operating-hours";
 
 const base = { fresh: true, targetC: 21, hysteresisC: 0.5, heating: false as boolean | null };
@@ -81,4 +81,37 @@ test("Heizfenster mit Vorheizen und Nachlauf: Wasserski 12–16 → 11:30–16:3
 test("Zeitstempel aus dem Cloud-Status", () => {
   assert.equal(statusUpdatedAt({ _updated: "2026-11-04 10:12:13" })?.toISOString(), "2026-11-04T10:12:13.000Z");
   assert.equal(statusUpdatedAt({}), null);
+});
+
+const vent = { humidity: 60, tempC: 18, fresh: true, onHumidity: 65, offHumidity: 58, minTempC: 8, afterrun: false, fanOn: false as boolean | null };
+
+test("Lüftung: an ab 65 %, aus unter 58 %, dazwischen bleibt der Zustand", () => {
+  assert.equal(ventDecision({ ...vent, humidity: 65 }).on, true);
+  assert.equal(ventDecision({ ...vent, humidity: 57.9, fanOn: true }).on, false);
+  assert.equal(ventDecision({ ...vent, humidity: 60, fanOn: true }).on, true);
+  assert.equal(ventDecision({ ...vent, humidity: 60, fanOn: false }).on, false);
+});
+
+test("Lüftung: Nachlauf nach Betriebsende, Frostschutz geht vor", () => {
+  assert.equal(ventDecision({ ...vent, humidity: 40, afterrun: true }).on, true);
+  assert.equal(ventDecision({ ...vent, humidity: 80, tempC: 7.5 }).on, false);
+  assert.equal(ventDecision({ ...vent, afterrun: true, tempC: 7.5 }).on, false);
+  assert.equal(ventDecision({ ...vent, humidity: 80, fresh: false }).on, false);
+});
+
+test("Nachlauf-Fenster: 16:00 Schluss, 45 Min. → bis 16:45, nicht während des Betriebs", () => {
+  const tz = "Europe/Berlin";
+  const ski: ScheduleSpec = {
+    name: "Wasserski",
+    seasons: [{ name: "Ganzjahr", startMmDd: "01-01", endMmDd: "12-31", sortOrder: 0,
+      periods: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opensAt: "12:00", closesAt: "16:00" })) }],
+    exceptions: [],
+  };
+  const at = (hhmm: string) => new Date(`2026-11-04T${hhmm}:00+01:00`);
+  assert.equal(inAfterrun(ski, at("15:59"), tz, 45), false);
+  assert.equal(inAfterrun(ski, at("16:00"), tz, 45), true);
+  assert.equal(inAfterrun(ski, at("16:44"), tz, 45), true);
+  assert.equal(inAfterrun(ski, at("16:45"), tz, 45), false);
+  assert.equal(inAfterrun(ski, at("11:50"), tz, 45), false);
+  assert.equal(inAfterrun(null, at("16:10"), tz, 45), false);
 });

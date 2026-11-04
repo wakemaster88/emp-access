@@ -8,12 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { RoomPanel, roomHasEquipment } from "@/components/raeume/room-panel";
+import { RoomIcon } from "@/components/raeume/room-icons";
 import { ClimateDialog } from "@/components/raeume/climate-dialog";
 import { RoomEquipmentDialog, type Placed } from "@/components/raeume/room-equipment-dialog";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
 import { useDeviceStatuses, useNow } from "@/components/raeume/status";
 import type { ZoneAction } from "@/components/raeume/zone-row";
-import type { RaeumeData, RoomCamera, RoomDevice, RoomZone } from "@/components/raeume/types";
+import type { NetworkItem, RaeumeData, RoomCamera, RoomDevice, RoomZone } from "@/components/raeume/types";
 
 /** Wartezeit, bevor nach einer Schaltaktion neu abgefragt wird. */
 const STATUS_SETTLE_MS = 1200;
@@ -30,6 +31,7 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
   const [equipmentRoom, setEquipmentRoom] = useState<{
     id: number;
     name: string;
+    icon: string | null;
     scheduleId: number | null;
   } | null>(null);
   const [climateRoomId, setClimateRoomId] = useState<number | null>(null);
@@ -124,11 +126,16 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     return null;
   }
 
-  const equippedRooms = visibleRooms.filter(roomHasEquipment);
-  const emptyRooms = visibleRooms.filter((room) => !roomHasEquipment(room));
+  const networkByRoom = new Map<number, NetworkItem[]>();
+  for (const item of data.network) {
+    if (item.roomId != null) networkByRoom.set(item.roomId, [...(networkByRoom.get(item.roomId) ?? []), item]);
+  }
+  const equipped = (room: (typeof data.rooms)[number]) => roomHasEquipment(room) || networkByRoom.has(room.id);
+  const equippedRooms = visibleRooms.filter(equipped);
+  const emptyRooms = visibleRooms.filter((room) => !equipped(room));
   const climateRoom = climateRoomId != null ? data.rooms.find((r) => r.id === climateRoomId) ?? null : null;
   const openEquipment = (room: (typeof data.rooms)[number]) =>
-    setEquipmentRoom({ id: room.id, name: room.name, scheduleId: room.schedule?.id ?? null });
+    setEquipmentRoom({ id: room.id, name: room.name, icon: room.icon, scheduleId: room.schedule?.id ?? null });
 
   const deviceCount = data.rooms.reduce((sum, r) => sum + r.devices.length, 0);
   const cameraCount = data.rooms.reduce((sum, r) => sum + r.cameras.length, 0);
@@ -251,11 +258,12 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
                   onZoneAction={handleZoneAction}
                   onEdit={() => openEquipment(room)}
                   onClimate={() => setClimateRoomId(room.id)}
+                  network={networkByRoom.get(room.id) ?? []}
                 />
               ))}
             </div>
           )}
-          {emptyRooms.length > 0 && (
+          {(emptyRooms.length > 0 || !readonly) && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Räume ohne Ausstattung</CardTitle>
@@ -272,13 +280,14 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
                     onClick={() => openEquipment(room)}
                     className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary disabled:pointer-events-none"
                   >
-                    {!readonly && <Plus className="h-3 w-3" />}
+                    <RoomIcon room={room} className="h-3 w-3" />
                     {room.name}
                     {(room.building || room.floor) && (
                       <span className="text-muted-foreground/60">{[room.building, room.floor].filter(Boolean).join(" · ")}</span>
                     )}
                   </button>
                 ))}
+                {!readonly && <NewRoomButton />}
               </CardContent>
             </Card>
           )}
@@ -308,10 +317,71 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
           roomNames={roomNames}
           scheduleOptions={data.scheduleOptions}
           currentScheduleId={equipmentRoom.scheduleId}
+          roomIcon={equipmentRoom.icon}
+          network={data.network}
           open
           onClose={() => setEquipmentRoom(null)}
         />
       )}
     </div>
+  );
+}
+
+/** Neuen Raum direkt aus der Raumuebersicht anlegen. */
+function NewRoomButton() {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function create() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    const res = await apiRequest("/api/schliessanlage/rooms", "POST", { name: name.trim() });
+    setBusy(false);
+    if (!res.ok) return setError(res.message);
+    setName("");
+    setEditing(false);
+    router.refresh();
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/15"
+      >
+        <Plus className="h-3 w-3" />
+        Neuer Raum
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void create();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        placeholder="Name, z. B. Büro"
+        maxLength={120}
+        className="h-7 w-40 rounded-md border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+      />
+      <button
+        type="button"
+        onClick={() => void create()}
+        disabled={busy || !name.trim()}
+        className="h-7 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+      >
+        {busy ? "…" : "Anlegen"}
+      </button>
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
+    </span>
   );
 }

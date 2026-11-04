@@ -105,6 +105,13 @@ export interface RoomClimateView {
   setbackC: number | null;
   preheatMinutes: number;
   afterrunMinutes: number;
+  fanDeviceIds: number[];
+  fanOnHumidity: number;
+  fanOffHumidity: number;
+  fanAfterrunMinutes: number;
+  fanMinTempC: number;
+  fanOn: boolean | null;
+  lastHumidity: number | null;
   operatingScheduleId: number | null;
   lastTempC: number | null;
   lastReadAt: string | null;
@@ -117,6 +124,8 @@ export interface RoomClimateView {
 export interface RoomPanel {
   id: number;
   name: string;
+  /** Symbol-Schluessel; null = aus dem Namen geraten. */
+  icon: string | null;
   number: string | null;
   building: string | null;
   floor: string | null;
@@ -135,8 +144,26 @@ export interface RoomPanel {
   activity: RoomActivity | null;
 }
 
+/** Netzwerkgeraet: Infrastruktur (Switch, AP, Router) oder Endgeraet. */
+export interface NetworkItem {
+  /** "d12" = NetworkDevice 12, "c7" = NetworkClient 7. */
+  key: string;
+  kind: "device" | "client";
+  id: number;
+  name: string;
+  type: string;
+  ipAddress: string | null;
+  lastSeenAt: string | null;
+  /** Raum: ausdruecklich zugeordnet oder erraten. */
+  roomId: number | null;
+  /** true = nur erraten (Standort/Bereich heisst wie der Raum, oder IoT-Geraet im Raum). */
+  inferred: boolean;
+}
+
 export interface RaeumeData {
   rooms: RoomPanel[];
+  /** Alle Netzwerkgeraete mit (ggf. erratenem) Raum. */
+  network: NetworkItem[];
   /** Geräte, Kameras und Zonen, die noch keinem Raum zugeordnet sind. */
   looseDevices: RoomDevice[];
   looseCameras: RoomCamera[];

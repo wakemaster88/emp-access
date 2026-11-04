@@ -41,6 +41,7 @@ export async function PUT(
     where: { id: roomId },
     data: {
       ...(data.name !== undefined && { name: data.name.trim() }),
+      ...(data.icon !== undefined && { icon: data.icon || null }),
       ...(data.number !== undefined && { number: data.number?.trim() || null }),
       ...(data.building !== undefined && { building: data.building?.trim() || null }),
       ...(data.floor !== undefined && { floor: data.floor?.trim() || null }),

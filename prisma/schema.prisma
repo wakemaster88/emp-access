@@ -1385,6 +1385,9 @@ model NetworkDevice {
   /// Zuletzt vom Hub-Netzwerk-Scan gesehen (MAC-Abgleich). Basis fuer den
   /// Online-/Offline-Status in der UI.
   lastSeenAt DateTime?
+  /// Raum, in dem das Geraet steht (Raumuebersicht, Widget "Netzwerk").
+  keyRoomId  Int?
+  keyRoom    KeyRoom?          @relation(fields: [keyRoomId], references: [id], onDelete: SetNull)
   accountId  Int
   account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   ports      NetworkPort[]
@@ -1392,6 +1395,7 @@ model NetworkDevice {
   updatedAt  DateTime          @updatedAt
 
   @@index([accountId])
+  @@index([keyRoomId])
 }
 
 /// Physischer Port eines Switches/Routers.
@@ -1485,6 +1489,9 @@ model NetworkClient {
   /// Zuletzt vom Hub-Netzwerk-Scan gesehen (MAC-Abgleich).
   lastSeenAt DateTime?
   notes      String?
+  /// Raum, in dem das Endgeraet steht (Raumuebersicht, Widget "Netzwerk").
+  keyRoomId  Int?
+  keyRoom    KeyRoom?          @relation(fields: [keyRoomId], references: [id], onDelete: SetNull)
   accountId  Int
   account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt  DateTime          @default(now())
@@ -1493,6 +1500,7 @@ model NetworkClient {
   @@index([accountId])
   @@index([vlanId])
   @@index([areaId])
+  @@index([keyRoomId])
 }
 
 // ── Lokaler Hub (On-Site-Agent) ──────────────────────────────────────────────
@@ -2404,6 +2412,8 @@ model KeyRoom {
   accountId           Int
   account             Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   name                String
+  /// Symbol in der Raumuebersicht (Schluessel aus src/components/raeume/room-icons.tsx); null = aus dem Namen geraten.
+  icon                String?
   /// Raumnummer/Kennung, z. B. "1.03".
   number              String?
   building            String?
@@ -2425,6 +2435,8 @@ model KeyRoom {
   rules               RoomRule[]
   /// Solltemperatur halten (Fuehler + Heizung), hoechstens eine je Raum.
   climate             RoomClimate?
+  networkDevices      NetworkDevice[]
+  networkClients      NetworkClient[]
   motionEvents        RoomMotionEvent[]
 
   @@index([accountId])
@@ -2960,6 +2972,19 @@ model RoomClimate {
   preheatMinutes      Int                @default(30)
   /// So viele Minuten nach Betriebsende noch auf `targetC` heizen (Nachlauf).
   afterrunMinutes     Int                @default(0)
+  /// Lueftung nach Luftfeuchte: Shelly-Geraete, die lueften. Leer = keine Lueftungsregelung.
+  fanDeviceIds        Int[]              @default([])
+  /// Lueftung an ab dieser Luftfeuchte (%).
+  fanOnHumidity       Float              @default(65)
+  /// Lueftung aus unter dieser Luftfeuchte (%).
+  fanOffHumidity      Float              @default(58)
+  /// So viele Minuten nach Betriebsende laeuft die Lueftung immer (Trocknen).
+  fanAfterrunMinutes  Int                @default(45)
+  /// Frostschutz: unter dieser Raumtemperatur wird nie gelueftet.
+  fanMinTempC         Float              @default(8)
+  /// Zuletzt gesendeter Zustand der Lueftung; null = noch nie geschaltet.
+  fanOn               Boolean?
+  lastHumidity        Float?
   /// Welche Betriebszeit gilt; null = die des Raums. Ohne beide: immer `targetC`.
   operatingScheduleId Int?
   operatingSchedule   OperatingSchedule? @relation(fields: [operatingScheduleId], references: [id], onDelete: SetNull)
