@@ -21,7 +21,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { CONFIG, log } from "./config.js";
+import { CONFIG, api, log } from "./config.js";
 import { lastScanResult } from "./scanner.js";
 import { shellyStatus, shellySwitch, type ShellyStatus } from "./shelly.js";
 
@@ -186,6 +186,35 @@ function shellyControls(ip: string, st: ShellyStatus | null): SmartControl[] {
     }));
 }
 
+type HueGroupState = { name: string; lights: number; on: boolean; brightness: number | null };
+
+/** Raeume, Zonen und Lampengruppen der Bridge (ohne die Gruppe 0 "alle"). */
+async function hueGroups(pair: { ip: string; username: string }): Promise<Record<string, HueGroupState>> {
+  try {
+    const groups = (await getJson(`http://${pair.ip}/api/${pair.username}/groups`)) as
+      | Record<
+          string,
+          { name: string; type?: string; lights?: string[]; state?: { any_on?: boolean }; action?: { bri?: number } }
+        >
+      | unknown[];
+    if (Array.isArray(groups)) return {};
+    const out: Record<string, HueGroupState> = {};
+    for (const [id, g] of Object.entries(groups)) {
+      if (!/^\d+$/.test(id) || !g.lights?.length) continue;
+      if (g.type && !["Room", "Zone", "LightGroup"].includes(g.type)) continue;
+      out[id] = {
+        name: g.name,
+        lights: g.lights.length,
+        on: g.state?.any_on === true,
+        brightness: typeof g.action?.bri === "number" ? Math.round((g.action.bri / 254) * 100) : null,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 async function hueDevice(bridge: { id: string; ip: string; name: string | null; model: string | null }): Promise<SmartDevice> {
   const pair = pairings.hue[bridge.id];
   const base: SmartDevice = {
@@ -220,14 +249,27 @@ async function hueDevice(bridge: { id: string; ip: string; name: string | null; 
       }
       return { ...base, error: err?.description ?? "Unbekannte Antwort" };
     }
-    base.controls = Object.entries(lights).map(([id, l]) => ({
-      key: `hue:${bridge.id}:${id}`,
-      name: l.name,
-      kind: "light" as const,
-      on: l.state.on,
-      brightness: typeof l.state.bri === "number" ? Math.round((l.state.bri / 254) * 100) : null,
-      reachable: l.state.reachable !== false,
-    }));
+    // Gruppen aus der Hue-App (Raeume/Zonen) zuerst: "Restaurant Deckenbeleuchtung"
+    // schaltet alle Lampen darin mit einem Befehl.
+    const groups = await hueGroups(pair);
+    base.controls = [
+      ...Object.entries(groups).map(([id, g]) => ({
+        key: `hue:${bridge.id}:g${id}`,
+        name: `${g.name} (Gruppe, ${g.lights} Lampen)`,
+        kind: "light" as const,
+        on: g.on,
+        brightness: g.brightness,
+        reachable: true,
+      })),
+      ...Object.entries(lights).map(([id, l]) => ({
+        key: `hue:${bridge.id}:${id}`,
+        name: l.name,
+        kind: "light" as const,
+        on: l.state.on,
+        brightness: typeof l.state.bri === "number" ? Math.round((l.state.bri / 254) * 100) : null,
+        reachable: l.state.reachable !== false,
+      })),
+    ];
   } catch (e) {
     base.error = e instanceof Error ? e.message : String(e);
   }
@@ -430,12 +472,14 @@ export async function controlSmart(key: string, on: boolean, brightness?: number
       const [, bridgeId, lightId] = parts;
       const pair = pairings.hue[bridgeId];
       if (!pair) throw new Error("Hue Bridge nicht gekoppelt");
-      if (!/^\d+$/.test(lightId)) throw new Error("Ungültige Lampe");
+      if (!/^g?\d+$/.test(lightId)) throw new Error("Ungültige Lampe");
       const state: Record<string, unknown> = { on };
       if (on && typeof brightness === "number" && brightness > 0) {
         state.bri = Math.max(1, Math.min(254, Math.round((brightness / 100) * 254)));
       }
-      const r = (await getJson(`http://${pair.ip}/api/${pair.username}/lights/${lightId}/state`, {
+      // "g12" = Hue-Gruppe 12: ein Befehl fuer alle Lampen der Gruppe.
+      const path = lightId.startsWith("g") ? `groups/${lightId.slice(1)}/action` : `lights/${lightId}/state`;
+      const r = (await getJson(`http://${pair.ip}/api/${pair.username}/${path}`, {
         method: "PUT",
         body: JSON.stringify(state),
       })) as { error?: { description: string } }[];
@@ -498,6 +542,8 @@ export async function pairSmart(id: string): Promise<{ ok: boolean; error?: stri
     await savePairings();
     cache = null;
     log(`Geräte: ${dev.vendor} ${dev.ip} gekoppelt`);
+    // Lampen und Gruppen sofort in der Cloud bekannt machen.
+    if (vendor === "hue") void syncHueToCloud();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -526,8 +572,46 @@ export async function hueLightStates(
         brightness: typeof l.state.bri === "number" ? Math.round((l.state.bri / 254) * 100) : null,
       };
     }
+    for (const [id, g] of Object.entries(await hueGroups(pair))) {
+      out[`g${id}`] = { on: g.on, reachable: true, brightness: g.brightness };
+    }
     return out;
   } catch {
     return null;
   }
+}
+
+/**
+ * Hue-Lampen und -Gruppen der gekoppelten Bridges an die Cloud melden. Dort
+ * werden sie als Geraete ohne Raum angelegt und lassen sich im Raum-Dialog
+ * zuordnen. Laeuft beim Start und danach alle zehn Minuten.
+ */
+export async function syncHueToCloud(): Promise<void> {
+  try {
+    const { devices } = await listSmartDevices(true);
+    const bridges = devices
+      .filter((d) => d.vendor === "Philips Hue" && !d.needsPairing && d.controls.length > 0)
+      .map((d) => ({
+        bridgeId: d.id.split(":")[1],
+        items: d.controls.map((c) => ({
+          lightId: c.key.split(":")[2],
+          name: c.name.replace(/\s*\(Gruppe, \d+ Lampen\)$/, ""),
+        })),
+      }));
+    if (bridges.length === 0) return;
+    const res = await api("/api/hub/hue-sync", { method: "POST", body: JSON.stringify({ bridges }) });
+    if (!res.ok) {
+      log(`Hue-Sync: HTTP ${res.status}`);
+      return;
+    }
+    const r = (await res.json().catch(() => ({}))) as { created?: number };
+    if (r.created) log(`Hue-Sync: ${r.created} neue Hue-Geräte in der Cloud angelegt`);
+  } catch (e) {
+    log(`Hue-Sync: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export function startHueSync(): void {
+  setTimeout(() => void syncHueToCloud(), 60_000);
+  setInterval(() => void syncHueToCloud(), 10 * 60_000);
 }

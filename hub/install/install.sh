@@ -12,6 +12,15 @@ if [[ ! -f "$HUB_DIR/.env" ]]; then
   exit 1
 fi
 
+if ! command -v ffmpeg >/dev/null 2>&1 && [[ ! -x /opt/homebrew/bin/ffmpeg && ! -x /usr/local/bin/ffmpeg ]]; then
+  if command -v brew >/dev/null 2>&1; then
+    echo "0/6  ffmpeg (für Kamera-Standbilder in go2rtc) …"
+    brew install ffmpeg
+  else
+    echo "     WARNUNG: ffmpeg fehlt und Homebrew nicht gefunden – Kamera-Standbilder bleiben aus"
+  fi
+fi
+
 echo "1/6  npm install …"
 (cd "$HUB_DIR" && npm install --no-audit --no-fund)
 
