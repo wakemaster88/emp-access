@@ -8,12 +8,10 @@ import {
   Cpu,
   DoorClosed,
   DoorOpen,
-  Flame,
   Lightbulb,
   Loader2,
   Lock,
   Pencil,
-  Radio,
   Thermometer,
   TriangleAlert,
   Users,
@@ -24,7 +22,7 @@ import {
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeviceRow } from "@/components/raeume/device-row";
-import { ZoneRow, type ZoneAction } from "@/components/raeume/zone-row";
+import type { ZoneAction } from "@/components/raeume/zone-row";
 import { eventTypeLabel, fmtAgo } from "@/components/raeume/shared";
 import { triggerLabel } from "@/components/regeln/shared";
 import type { DeviceStatus } from "@/components/raeume/status";
@@ -34,6 +32,7 @@ import type {
   RoomZone,
 } from "@/components/raeume/types";
 import { isLatchingSwitchDevice } from "@/lib/device-controls";
+import { ActivityChart, CameraTile, ClimateHero, DeviceTile, ZoneCard } from "@/components/raeume/room-widgets";
 import { describeDay, isOperatingAt, openingForDay } from "@/lib/operating-hours";
 import { tzYmd } from "@/lib/tz-time";
 import { cn } from "@/lib/utils";
@@ -106,10 +105,6 @@ export function groupRoomDevices(room: RoomPanelData): RoomGroups {
   return groups;
 }
 
-function fmtC(v: number | null | undefined, digits = 1): string {
-  return v == null ? "–" : `${v.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits })} °C`;
-}
-
 /** Erster Messwert einer Art aus den Fuehlern im Raum. */
 function roomReading(devices: RoomDevice[], statuses: Map<number, DeviceStatus>, kind: string): string | null {
   for (const d of devices) {
@@ -117,88 +112,6 @@ function roomReading(devices: RoomDevice[], statuses: Map<number, DeviceStatus>,
     if (r) return r.value;
   }
   return null;
-}
-
-function Widget({
-  icon,
-  title,
-  tone = "default",
-  action,
-  children,
-}: {
-  icon: ReactNode;
-  title: string;
-  tone?: "default" | "active" | "warn";
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      className={cn(
-        "rounded-lg border p-2",
-        tone === "active"
-          ? "border-warning/30 bg-warning/5"
-          : tone === "warn"
-            ? "border-destructive/30 bg-destructive/5"
-            : "border-border bg-muted/20",
-      )}
-    >
-      <div className="mb-1.5 flex items-center gap-1.5 px-0.5">
-        <span className="text-muted-foreground">{icon}</span>
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</h4>
-        {action && <span className="ml-auto flex items-center gap-1">{action}</span>}
-      </div>
-      <div className="space-y-1.5">{children}</div>
-    </section>
-  );
-}
-
-function ClimateSummary({
-  room,
-  devices,
-  statuses,
-  nowMs,
-}: {
-  room: RoomPanelData;
-  devices: RoomDevice[];
-  statuses: Map<number, DeviceStatus>;
-  nowMs: number;
-}) {
-  const c = room.climate;
-  const live = roomReading(devices, statuses, "temperature");
-  const humidity = roomReading(devices, statuses, "humidity");
-  const temp = live ?? (c?.lastTempC != null ? fmtC(c.lastTempC) : null);
-  return (
-    <div className="flex items-end gap-3 px-0.5">
-      <div>
-        <p className="text-2xl font-semibold tabular-nums leading-none text-foreground">{temp ?? "–"}</p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {humidity ? `Luftfeuchte ${humidity}` : temp ? "Raumtemperatur" : "kein Fühler im Raum"}
-        </p>
-      </div>
-      {c && (
-        <div className="ml-auto text-right text-[11px] leading-tight text-muted-foreground">
-          {!c.isActive ? (
-            <p>Regelung pausiert</p>
-          ) : (
-            <>
-              <p>
-                Soll{" "}
-                <span className="font-medium text-foreground">
-                  {c.currentTargetC != null ? fmtC(c.currentTargetC, 1) : "aus"}
-                </span>
-              </p>
-              <p className={cn("inline-flex items-center gap-1", c.heating ? "text-warning" : "")}>
-                <Flame className="h-3 w-3" />
-                {c.heating ? "heizt" : "Heizung aus"}
-                {c.lastSwitchAt && <span className="opacity-70">· {fmtAgo(c.lastSwitchAt, nowMs)}</span>}
-              </p>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 /** "Alle an" / "Alle aus" fuer die Beleuchtung eines Raums. */
@@ -233,97 +146,64 @@ function AllLightsButton({
   );
 }
 
-function clock(iso: string): string {
-  return new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-}
-
-/** Personen heute: Verlauf nach Stunde, gerade jemand da, erkannte Personen. */
-function ActivityWidget({ room, nowMs }: { room: RoomPanelData; nowMs: number }) {
-  const a = room.activity;
-  const max = a ? Math.max(1, ...a.hours) : 1;
-  const currentHour = new Date(nowMs).getHours();
-  return (
-    <Widget
-      icon={<Users className="h-3.5 w-3.5" />}
-      title="Ereignisse heute"
-      tone={a?.present ? "active" : "default"}
-      action={
-        a?.present ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-success">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
-            gerade jemand da
-          </span>
-        ) : a?.lastAt ? (
-          <span className="text-[11px] text-muted-foreground">zuletzt {fmtAgo(a.lastAt, nowMs)}</span>
-        ) : null
-      }
-    >
-      {!a || a.total === 0 ? (
-        <p className="px-0.5 text-[11px] text-muted-foreground">Heute noch keine Person erkannt.</p>
-      ) : (
-        <>
-          <p className="px-0.5 text-[11px] text-muted-foreground">
-            <span className="text-lg font-semibold tabular-nums text-foreground">{a.total}</span>{" "}
-            Personen-Ereignisse
-          </p>
-          <div className="px-0.5">
-            <div className="flex h-10 items-end gap-px" role="img" aria-label="Personen-Ereignisse je Stunde">
-              {a.hours.map((n, h) => (
-                <div
-                  key={h}
-                  title={`${String(h).padStart(2, "0")}–${String(h + 1).padStart(2, "0")} Uhr: ${n}`}
-                  className={cn(
-                    "flex-1 rounded-t-sm",
-                    n === 0 ? "bg-muted" : h === currentHour ? "bg-primary" : "bg-primary/45",
-                  )}
-                  style={{ height: `${n === 0 ? 6 : Math.max(12, (n / max) * 100)}%` }}
-                />
-              ))}
-            </div>
-            <div className="mt-0.5 flex justify-between text-[9px] tabular-nums text-muted-foreground/70">
-              <span>0</span>
-              <span>6</span>
-              <span>12</span>
-              <span>18</span>
-              <span>24</span>
-            </div>
-          </div>
-        </>
-      )}
-      {a && (a.people.length > 0 || a.unknown > 0) && (
-        <div className="flex flex-wrap gap-1 px-0.5">
-          {a.people.map((p) => (
-            <span
-              key={p.name}
-              title={`${p.count}× gesehen, zuletzt ${clock(p.lastAt)}`}
-              className={cn(
-                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
-                p.listType === "BLACKLIST" ? "bg-destructive/12 text-destructive" : "bg-muted text-foreground/80",
-              )}
-            >
-              {p.name}
-              <span className="tabular-nums text-muted-foreground">{p.count}× · {clock(p.lastAt)}</span>
-            </span>
-          ))}
-          {a.unknown > 0 && (
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {a.unknown}× unbekannte Person
-            </span>
-          )}
-        </div>
-      )}
-    </Widget>
-  );
-}
-
 /** Ob ein Raum irgendetwas zum Anzeigen hat. */
 export function roomHasEquipment(room: RoomPanelData): boolean {
   return room.devices.length + room.zones.length + room.cameras.length + room.locks.length > 0 || !!room.climate;
 }
 
+function Section({
+  icon,
+  title,
+  action,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-1.5 px-0.5">
+        <span className="text-muted-foreground">{icon}</span>
+        <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h4>
+        {action && <span className="ml-auto flex items-center gap-1">{action}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Pill({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "warm" | "live" | "violet" }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums",
+        tone === "warm" && "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+        tone === "live" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+        tone === "violet" && "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
+        tone === "muted" && "bg-muted text-foreground/80",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+const sensorValue = (devices: RoomDevice[], statuses: Map<number, DeviceStatus>, kind: string) =>
+  roomReading(devices, statuses, kind);
+
+/** "17,5 °C" → 17.5 */
+function parseC(v: string | null): number | null {
+  if (!v) return null;
+  const n = Number(v.replace(/[^0-9,.-]/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
- * Ein Raum als Leitstand-Karte mit Widgets: Klima, Beleuchtung, Beschallung,
- * Ueberwachung und uebrige Geraete. Darunter die Regeln und Schliesspunkte.
+ * Ein Raum als Karte im Stil einer Smart-Home-App: Kopf mit Status-Pillen,
+ * darunter Klima (Ring), Licht- und Schalter-Kacheln, Beschallung, Kamera,
+ * Ereignis-Kurve und uebrige Geraete.
  */
 export function RoomPanel({
   room,
@@ -348,184 +228,218 @@ export function RoomPanel({
 }) {
   const location = [room.building, room.floor].filter(Boolean).join(" · ");
   const groups = groupRoomDevices(room);
-  const lightsOn = groups.light.filter((d) => statuses.get(d.id)?.output === true).length;
   const sensorIds = new Set(
     groups.climate.filter((d) => d.category === "SENSOR" || d.id === room.climate?.sensorDeviceId).map((d) => d.id),
   );
-  const climateDevices = groups.climate.filter((d) => !sensorIds.has(d.id));
   const sensors = groups.climate.filter((d) => sensorIds.has(d.id));
-  const headTemp =
-    roomReading(sensors, statuses, "temperature") ??
-    (room.climate?.lastTempC != null ? fmtC(room.climate.lastTempC) : null);
+  const climateDevices = groups.climate.filter((d) => !sensorIds.has(d.id));
+  const liveTemp = parseC(sensorValue(sensors, statuses, "temperature"));
+  const tempC = liveTemp ?? room.climate?.lastTempC ?? null;
+  const humidity = sensorValue(sensors, statuses, "humidity");
   const showClimate = groups.climate.length > 0 || !!room.climate;
+  const isOn = (d: RoomDevice) =>
+    statuses.has(d.id) ? statuses.get(d.id)?.output === true : d.type === "HUE_LIGHT" && d.task === 1;
+  const lightsOn = groups.light.filter(isOn).length;
   const playing = room.zones.filter((z) => z.isPlaying).length;
+  const tileable = (d: RoomDevice) => isLatchingSwitchDevice(d);
+  const otherTiles = groups.other.filter(tileable);
+  const otherRows = groups.other.filter((d) => !tileable(d));
+  const lightTiles = groups.light.filter(tileable);
+  const lightRows = groups.light.filter((d) => !tileable(d));
+  const climateTiles = climateDevices.filter(tileable);
+  const climateRows = climateDevices.filter((d) => !tileable(d));
+  const eventLabel = room.lastEvent ? `${eventTypeLabel(room.lastEvent.type)} ${fmtAgo(room.lastEvent.startedAt, nowMs)}` : null;
 
-  const row = (device: RoomDevice) => (
-    <DeviceRow
-      key={device.id}
-      device={device}
-      roomName={room.name}
-      status={statuses.get(device.id)}
-      nowMs={nowMs}
-      readonly={readonly}
-      onAction={onAction}
-    />
-  );
+  const tiles = (list: RoomDevice[]) =>
+    list.length > 0 && (
+      <div className="grid grid-cols-2 gap-2">
+        {list.map((d) => (
+          <DeviceTile key={d.id} device={d} roomName={room.name} status={statuses.get(d.id)} readonly={readonly} onAction={onAction} />
+        ))}
+      </div>
+    );
+  const rows = (list: RoomDevice[]) =>
+    list.map((d) => (
+      <DeviceRow
+        key={d.id}
+        device={d}
+        roomName={room.name}
+        status={statuses.get(d.id)}
+        nowMs={nowMs}
+        readonly={readonly}
+        onAction={onAction}
+      />
+    ));
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-start gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <Building2 className="h-4 w-4" />
+    <Card className="overflow-hidden rounded-3xl border-border/70 shadow-sm">
+      <CardHeader className="relative space-y-2 bg-gradient-to-br from-primary/[0.07] via-transparent to-transparent pb-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 text-white shadow-[0_6px_16px_-6px_var(--primary)]">
+            <Building2 className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="flex flex-wrap items-center gap-x-1.5 text-sm font-semibold text-foreground/90">
+            <p className="flex flex-wrap items-baseline gap-x-1.5 text-base font-semibold tracking-tight text-foreground">
               {room.name}
-              {room.number && (
-                <span className="font-mono text-[11px] font-normal text-muted-foreground/70">{room.number}</span>
-              )}
+              {room.number && <span className="font-mono text-[11px] font-normal text-muted-foreground/70">{room.number}</span>}
             </p>
             {(location || room.doorCount > 0) && (
-              <p className="truncate text-[11px] text-muted-foreground/70">
+              <p className="truncate text-[11px] text-muted-foreground">
                 {[location, room.doorCount > 0 ? `${room.doorCount} ${room.doorCount === 1 ? "Tür" : "Türen"}` : null]
                   .filter(Boolean)
                   .join(" · ")}
               </p>
             )}
           </div>
-          {headTemp && (
-            <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-foreground/80"
-              title="Raumtemperatur"
-            >
-              <Thermometer className="h-3 w-3 text-muted-foreground" />
-              {headTemp}
-            </span>
-          )}
           {!readonly && (
             <button
               type="button"
               onClick={onEdit}
               title="Geräte, Kameras und Beschallung dieses Raums zuordnen"
-              className="shrink-0 p-1 text-muted-foreground/70 hover:text-primary"
+              className="shrink-0 rounded-full p-2 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-primary"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
-
+        <div className="flex flex-wrap gap-1.5">
+          {tempC != null && (
+            <Pill>
+              <Thermometer className="h-3 w-3" />
+              {tempC.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} °C
+            </Pill>
+          )}
+          {lightsOn > 0 && (
+            <Pill tone="warm">
+              <Lightbulb className="h-3 w-3" />
+              {lightsOn} an
+            </Pill>
+          )}
+          {playing > 0 && (
+            <Pill tone="violet">
+              <Volume2 className="h-3 w-3" />
+              Musik
+            </Pill>
+          )}
+          {room.activity?.present && (
+            <Pill tone="live">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+              jemand da
+            </Pill>
+          )}
+        </div>
         {room.schedule && <OperatingLine schedule={room.schedule} timezone={timezone} nowMs={nowMs} />}
       </CardHeader>
 
-      <CardContent className="space-y-2.5">
+      <CardContent className="space-y-5 pt-1">
         {showClimate && (
-          <Widget
+          <Section
             icon={<Thermometer className="h-3.5 w-3.5" />}
             title="Klima"
-            tone={room.climate?.lastError ? "warn" : room.climate?.heating ? "active" : "default"}
             action={
               !readonly && (
                 <button
                   type="button"
                   onClick={onClimate}
-                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+                  className="rounded-full px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
                 >
                   {room.climate ? "Einstellen" : "Temperatur halten …"}
                 </button>
               )
             }
           >
-            <ClimateSummary room={room} devices={sensors} statuses={statuses} nowMs={nowMs} />
-            {room.climate?.lastError && (
-              <p className="flex items-center gap-1 px-0.5 text-[11px] text-destructive">
-                <TriangleAlert className="h-3 w-3 shrink-0" />
-                {room.climate.lastError}
-              </p>
-            )}
-            {climateDevices.map(row)}
-          </Widget>
+            <div
+              className={cn(
+                "rounded-2xl border p-2 pr-3",
+                room.climate?.lastError
+                  ? "border-destructive/40 bg-destructive/5"
+                  : room.climate?.heating
+                    ? "border-orange-300/50 bg-gradient-to-br from-orange-50 to-transparent dark:border-orange-400/20 dark:from-orange-500/10"
+                    : "border-border bg-gradient-to-br from-sky-50/70 to-transparent dark:from-sky-500/5",
+              )}
+            >
+              <ClimateHero tempC={tempC} humidity={humidity} climate={room.climate} nowMs={nowMs} />
+              {room.climate?.lastError && (
+                <p className="flex items-center gap-1 px-1 pb-1 text-[11px] text-destructive">
+                  <TriangleAlert className="h-3 w-3 shrink-0" />
+                  {room.climate.lastError}
+                </p>
+              )}
+            </div>
+            {tiles(climateTiles)}
+            {rows(climateRows)}
+          </Section>
         )}
 
         {groups.light.length > 0 && (
-          <Widget
+          <Section
             icon={<Lightbulb className="h-3.5 w-3.5" />}
-            title={lightsOn ? `Beleuchtung · ${lightsOn} an` : "Beleuchtung"}
-            tone={lightsOn ? "active" : "default"}
+            title="Beleuchtung"
             action={!readonly && <AllLightsButton lights={groups.light} statuses={statuses} onAction={onAction} />}
           >
-            {groups.light.map(row)}
-          </Widget>
+            {tiles(lightTiles)}
+            {rows(lightRows)}
+          </Section>
         )}
 
         {room.zones.length > 0 && (
-          <Widget
-            icon={<Volume2 className="h-3.5 w-3.5" />}
-            title={playing ? `Beschallung · ${playing} spielt` : "Beschallung"}
-            tone={playing ? "active" : "default"}
+          <Section icon={<Volume2 className="h-3.5 w-3.5" />} title="Beschallung">
+            <div className="space-y-2">
+              {room.zones.map((zone) => (
+                <ZoneCard key={zone.id} zone={zone} nowMs={nowMs} readonly={readonly} onAction={onZoneAction} />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {room.cameras.length > 0 && (
+          <Section icon={<Cctv className="h-3.5 w-3.5" />} title="Überwachung">
+            <div className="grid grid-cols-2 gap-2">
+              {room.cameras.map((camera, i) => (
+                <CameraTile
+                  key={camera.id}
+                  camera={camera}
+                  nowMs={nowMs}
+                  wide={room.cameras.length === 1 || (room.cameras.length % 2 === 1 && i === 0)}
+                  eventLabel={room.lastEvent?.cameraId === camera.id ? eventLabel : null}
+                />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {(room.activity || room.cameras.length > 0) && (
+          <Section
+            icon={<Users className="h-3.5 w-3.5" />}
+            title="Ereignisse"
+            action={
+              room.activity?.present ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  gerade jemand da
+                </span>
+              ) : room.activity?.lastAt ? (
+                <span className="text-[11px] text-muted-foreground">zuletzt {fmtAgo(room.activity.lastAt, nowMs)}</span>
+              ) : null
+            }
           >
-            {room.zones.map((zone) => (
-              <ZoneRow key={`zone-${zone.id}`} zone={zone} nowMs={nowMs} readonly={readonly} onAction={onZoneAction} />
-            ))}
-          </Widget>
+            <div className="rounded-2xl border border-border bg-gradient-to-b from-primary/[0.04] to-transparent p-3">
+              <ActivityChart activity={room.activity} nowMs={nowMs} timezone={timezone} />
+            </div>
+          </Section>
         )}
-
-        {(room.cameras.length > 0 || room.lastEvent) && (
-          <Widget icon={<Cctv className="h-3.5 w-3.5" />} title="Überwachung">
-            {room.lastEvent && (
-              <p className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
-                <Radio className="h-3 w-3 shrink-0 text-info" />
-                {eventTypeLabel(room.lastEvent.type)} {fmtAgo(room.lastEvent.startedAt, nowMs)}
-                <span className="truncate text-muted-foreground/70">· {room.lastEvent.cameraName}</span>
-              </p>
-            )}
-            {room.cameras.length > 0 && (
-              <div className="grid grid-cols-2 gap-1.5">
-                {room.cameras.map((camera) => (
-                  <Link
-                    key={camera.id}
-                    href="/kameras"
-                    className="overflow-hidden rounded-md border border-border bg-card hover:border-primary/40"
-                  >
-                    <div className="relative flex aspect-video items-center justify-center bg-muted dark:bg-card">
-                      {camera.snapshotAt ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={`/api/cameras/${camera.id}/snapshot?t=${encodeURIComponent(camera.snapshotAt)}`}
-                          alt={`Schnappschuss ${camera.name}`}
-                          loading="lazy"
-                          decoding="async"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <Cctv className="h-6 w-6 text-slate-300 dark:text-slate-600" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 px-1.5 py-1">
-                      <span className="truncate text-[10px] text-muted-foreground">{camera.name}</span>
-                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">
-                        {camera.enabled ? fmtAgo(camera.snapshotAt, nowMs) : "aus"}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Widget>
-        )}
-
-        {(room.activity || room.cameras.length > 0) && <ActivityWidget room={room} nowMs={nowMs} />}
 
         {groups.other.length > 0 && (
-          <Widget icon={<Cpu className="h-3.5 w-3.5" />} title="Geräte">
-            {groups.other.map(row)}
-          </Widget>
+          <Section icon={<Cpu className="h-3.5 w-3.5" />} title="Geräte">
+            {tiles(otherTiles)}
+            {rows(otherRows)}
+          </Section>
         )}
 
         {room.locks.length > 0 && (
-          <Widget icon={<Lock className="h-3.5 w-3.5" />} title="Schließung">
+          <Section icon={<Lock className="h-3.5 w-3.5" />} title="Schließung">
             {room.locks.map((lock) => (
-              <div key={lock.id} className="flex items-center gap-1.5 px-0.5 text-[11px]">
+              <div key={lock.id} className="flex items-center gap-1.5 rounded-xl bg-muted/50 px-2.5 py-1.5 text-[11px]">
                 <span className="min-w-0 break-words text-muted-foreground">{lock.label}</span>
                 {lock.deviceName && (
                   <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-primary" title="Wird elektronisch geöffnet">
@@ -535,24 +449,23 @@ export function RoomPanel({
                 )}
               </div>
             ))}
-          </Widget>
+          </Section>
         )}
 
         {room.rules.length > 0 && (
-          <div className="space-y-0.5">
+          <div className="flex flex-wrap gap-1.5 border-t border-border/60 pt-3">
             {room.rules.map((rule) => (
               <Link
                 key={rule.id}
                 href="/regeln"
                 className={cn(
-                  "flex items-center gap-1.5 rounded px-2 py-1 text-[11px] hover:bg-muted",
+                  "inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-violet-400/50 hover:text-foreground",
                   rule.isActive ? "" : "opacity-50",
                 )}
-                title={rule.isActive ? `Zuletzt ausgelöst: ${fmtAgo(rule.lastRunAt, nowMs)}` : "Regel ist pausiert"}
+                title={`${triggerLabel(rule.trigger)} · ${rule.isActive ? `zuletzt ${fmtAgo(rule.lastRunAt, nowMs)}` : "pausiert"}`}
               >
                 <Workflow className="h-3 w-3 shrink-0 text-violet-500" />
-                <span className="truncate text-muted-foreground">{rule.name}</span>
-                <span className="ml-auto shrink-0 text-muted-foreground/70">{triggerLabel(rule.trigger)}</span>
+                <span className="truncate">{rule.name}</span>
               </Link>
             ))}
           </div>
