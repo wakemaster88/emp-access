@@ -98,6 +98,11 @@ if [[ -n "$GO2RTC_BIN" ]]; then
   <string>com.local.go2rtc</string>
   <key>WorkingDirectory</key>
   <string>$REPO_DIR</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
   <key>ProgramArguments</key>
   <array>
     <string>$GO2RTC_BIN</string>
