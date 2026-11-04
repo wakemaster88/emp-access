@@ -237,6 +237,172 @@ export function projectOnMap(map: MowerMap, p: { lat: number; lon: number } | nu
   return [x, y];
 }
 
+/* ------------------------------------------------------------ Anzeige */
+
+const ZONE_NUMBER_RE = /^(?:area|zone|bereich)\s*(\d+)$/i;
+
+/** "area 2" (Mammotion-Standardname) wird "Zone 2", eigene Namen bleiben. */
+export function zoneLabel(name: string | null | undefined): string {
+  const t = (name ?? "").trim();
+  const m = ZONE_NUMBER_RE.exec(t);
+  return m ? `Zone ${m[1]}` : t;
+}
+
+/** Kurzform fuer die Karte: "2" statt "area 2", sonst der Name. */
+export function zoneBadge(name: string | null | undefined): string {
+  const t = (name ?? "").trim();
+  const m = ZONE_NUMBER_RE.exec(t);
+  return m ? m[1] : t.length > 12 ? `${t.slice(0, 11)}…` : t;
+}
+
+function eachPoint(list: string, fn: (x: number, y: number) => void): void {
+  for (const p of list.split(" ")) {
+    const [x, y] = p.split(",").map(Number);
+    if (Number.isFinite(x) && Number.isFinite(y)) fn(x, y);
+  }
+}
+
+export interface MapBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Ausschnitt der Karte, der alle Flaechen, Wege, die Station und die
+ * Position zeigt, mit etwas Rand. Die Karte vom Hub ist quadratisch, die
+ * Wiesen fuellen davon oft nur einen schmalen Streifen.
+ */
+export function mapBounds(map: MowerMap, extra: ([number, number] | null)[] = []): MapBox {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const add = (x: number, y: number) => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
+  for (const a of map.areas) eachPoint(a.pts, add);
+  for (const p of map.paths) eachPoint(p, add);
+  for (const p of map.obstacles) eachPoint(p, add);
+  for (const p of [map.dock, ...extra]) if (p) add(p[0], p[1]);
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, w: map.w, h: map.h };
+  const pad = Math.max(maxX - minX, maxY - minY, 10) * 0.06;
+  return { x: minX - pad, y: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad };
+}
+
+/** Schwerpunkt einer Flaeche (fuer die Beschriftung). */
+export function polygonCenter(pts: string): [number, number] | null {
+  const xy: [number, number][] = [];
+  eachPoint(pts, (x, y) => xy.push([x, y]));
+  if (xy.length < 3) return null;
+  let a = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < xy.length; i++) {
+    const [x0, y0] = xy[i];
+    const [x1, y1] = xy[(i + 1) % xy.length];
+    const f = x0 * y1 - x1 * y0;
+    a += f;
+    cx += (x0 + x1) * f;
+    cy += (y0 + y1) * f;
+  }
+  if (Math.abs(a) < 1e-6) {
+    const n = xy.length;
+    return [xy.reduce((s, p) => s + p[0], 0) / n, xy.reduce((s, p) => s + p[1], 0) / n];
+  }
+  return [cx / (3 * a), cy / (3 * a)];
+}
+
+export interface MowerSummary {
+  /** Gross und farbig: was der Maeher gerade tut. */
+  title: string;
+  /** Eine Zeile dazu: wo, wie weit. */
+  detail: string;
+  /** Fortschrittsbalken zeigen (laufender Auftrag). */
+  progress: boolean;
+}
+
+/** Lage in Worten, so wie man sie jemandem zurufen wuerde. */
+export function describeMower(s: MowerState): MowerSummary {
+  const zone = zoneLabel(s.currentZone);
+  const done = s.progress != null ? `${Math.round(s.progress)} % geschafft` : "";
+  const join = (...parts: (string | false | null)[]) => parts.filter(Boolean).join(" · ");
+  if (!s.online) return { title: "Offline", detail: "meldet sich nicht bei Mammotion", progress: false };
+  if (s.errors.length > 0) {
+    const e = s.errors[0];
+    return { title: "Störung", detail: e.text || `Fehler ${e.code}`, progress: false };
+  }
+  switch (s.status) {
+    case "MODE_WORKING":
+      return { title: "Mäht", detail: join(zone && `in ${zone}`, done), progress: s.progress != null };
+    case "MODE_PAUSE":
+      return { title: "Pausiert", detail: join(zone && `in ${zone}`, done), progress: s.progress != null };
+    case "MODE_CHARGING_PAUSE":
+      return { title: "Lädt zwischendurch", detail: join("mäht danach weiter", done), progress: s.progress != null };
+    case "MODE_RETURNING":
+      return { title: "Fährt zur Station", detail: s.battery != null && s.battery < 20 ? "Akku fast leer" : "", progress: false };
+  }
+  if (s.charging) {
+    const full = s.battery != null && s.battery >= 100;
+    return { title: full ? "In der Station" : "Lädt", detail: full ? "Akku voll, bereit zum Mähen" : "in der Station", progress: false };
+  }
+  if (s.status === "MODE_READY") return { title: "Bereit", detail: "steht außerhalb der Station", progress: false };
+  return { title: s.statusLabel || "Unbekannt", detail: "", progress: false };
+}
+
+export interface MowerButton {
+  action: MowerAction;
+  label: string;
+  /** primary: die naheliegende Aktion; danger: erst nach Bestaetigung. */
+  kind: "primary" | "secondary" | "danger";
+  /** Text auf dem Knopf beim zweiten Tippen (Bestaetigung). */
+  confirm?: string;
+  /** Hinweis, solange der Befehl unterwegs ist. */
+  pending: string;
+  hint?: string;
+}
+
+const STOP: MowerButton = {
+  action: "stop",
+  label: "Beenden",
+  kind: "danger",
+  confirm: "Wirklich?",
+  pending: "Auftrag wird beendet …",
+  hint: "Auftrag beenden, der Mäher bleibt stehen",
+};
+const DOCK: MowerButton = {
+  action: "dock",
+  label: "Station",
+  kind: "secondary",
+  pending: "Fährt gleich zur Station …",
+  hint: "Zur Ladestation fahren",
+};
+
+/** Die Knoepfe, die im aktuellen Zustand Sinn ergeben, wichtigster zuerst. */
+export function mowerButtons(s: MowerState): MowerButton[] {
+  if (!s.online) return [];
+  switch (s.status) {
+    case "MODE_WORKING":
+      return [{ action: "pause", label: "Pausieren", kind: "primary", pending: "Wird pausiert …" }, DOCK, STOP];
+    case "MODE_PAUSE":
+      return [{ action: "resume", label: "Fortsetzen", kind: "primary", pending: "Geht gleich weiter …" }, DOCK, STOP];
+    case "MODE_RETURNING":
+      return [{ action: "pause", label: "Anhalten", kind: "secondary", pending: "Hält an …", hint: "Fahrt zur Station abbrechen" }, STOP];
+    case "MODE_READY":
+      return s.charging ? [] : [{ ...DOCK, label: "Zur Station", kind: "primary" }];
+  }
+  return [];
+}
+
+/** Kann eine Aufgabe jetzt gestartet werden (kein Auftrag offen)? */
+export function canStartTask(s: MowerState): boolean {
+  return s.online && !s.active && (s.status === "MODE_READY" || s.status === "MODE_CHARGING");
+}
+
 /* -------------------------------------------------------- Naechste Mahd */
 
 const WEEKDAY_INDEX: Record<string, number> = { So: 0, Mo: 1, Di: 2, Mi: 3, Do: 4, Fr: 5, Sa: 6 };

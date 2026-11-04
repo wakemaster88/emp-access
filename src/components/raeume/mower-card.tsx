@@ -1,26 +1,43 @@
 "use client";
 
 /**
- * Maehroboter im Raum: Karte mit Zonen und Live-Position, Akku, Fortschritt,
- * naechste Mahd und die Befehle, die der Hub an den Maeher weitergibt.
+ * Maehroboter im Raum, aufgebaut wie das Betriebszeit-Widget: gross, was der
+ * Maeher gerade tut, darunter wo und wie weit, dann Akku und naechste Mahd.
+ * Daneben die Karte, zugeschnitten auf die Wiesen, mit Zonennummern und der
+ * Live-Position; Antippen vergroessert sie.
+ *
+ * Unten nur die Knoepfe, die im Zustand Sinn ergeben, der naheliegende zuerst
+ * und hervorgehoben. Beenden und Starten brauchen ein zweites Tippen. Nach
+ * einem Befehl zeigt die Karte, dass er unterwegs ist, bis der Maeher
+ * antwortet.
  *
  * Der Zustand kommt vom Hub (POST /api/hub/mower-sync) und wird hier alle
  * 30 s neu gelesen; Befehle gehen als Hub-Task (POST /api/devices/[id]/mower).
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { BatteryCharging, CalendarClock, Home, Loader2, Pause, Play, Square, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { BatteryCharging, CalendarClock, ChevronDown, Home, Loader2, Maximize2, Pause, Play, Square, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  canStartTask,
+  describeMower,
+  mapBounds,
+  mowerButtons,
   mowerTone,
   nextMowing,
+  polygonCenter,
   projectOnMap,
   weekdaysLabel,
+  zoneBadge,
+  zoneLabel,
   type MowerAction,
+  type MowerButton,
   type MowerMap,
   type MowerState,
+  type MowerTaskView,
   type MowerTone,
 } from "@/lib/mower";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { fmtAgo } from "@/components/raeume/shared";
 import type { RoomDevice } from "@/components/raeume/types";
 
@@ -32,6 +49,10 @@ export interface MowerLive {
 /** Ohne Meldung seit dieser Zeit gilt der Stand als veraltet. */
 const STALE_MS = 10 * 60_000;
 const POLL_MS = 30_000;
+/** So lange wartet die Karte nach einem Befehl auf eine Antwort. */
+const PENDING_MS = 75_000;
+/** So lange bleibt ein Knopf "scharf" fuer das zweite Tippen. */
+const ARM_MS = 4_000;
 
 /** Zustand aller Maeher, solange einer auf der Seite ist. */
 export function useMowerStates(enabled: boolean): { live: Map<number, MowerLive>; refreshSoon: () => void } {
@@ -63,157 +84,218 @@ export function useMowerStates(enabled: boolean): { live: Map<number, MowerLive>
 
   // Der Hub holt den Befehl in ~5 s ab, der Maeher meldet sich danach.
   const refreshSoon = useCallback(() => {
-    timers.current.push(setTimeout(() => void load(), 8_000), setTimeout(() => void load(), 20_000));
+    timers.current.push(
+      setTimeout(() => void load(), 6_000),
+      setTimeout(() => void load(), 12_000),
+      setTimeout(() => void load(), 25_000),
+      setTimeout(() => void load(), 45_000),
+    );
   }, [load]);
 
   return { live, refreshSoon };
 }
 
-const TONE: Record<MowerTone, { pill: string; dot: string; label?: string }> = {
-  mowing: { pill: "bg-white/20 text-white", dot: "bg-white animate-pulse" },
-  paused: { pill: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300", dot: "bg-amber-500" },
-  returning: { pill: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300", dot: "bg-sky-500 animate-pulse" },
-  charging: { pill: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300", dot: "bg-emerald-500" },
-  idle: { pill: "bg-muted text-foreground/80", dot: "bg-slate-400" },
-  error: { pill: "bg-destructive/10 text-destructive", dot: "bg-destructive" },
-  offline: { pill: "bg-muted text-muted-foreground", dot: "bg-slate-300", label: "offline" },
+const TONE: Record<MowerTone, { text: string; dot: string; ping?: boolean; card: string; marker: string }> = {
+  mowing: {
+    text: "text-emerald-700 dark:text-emerald-400",
+    dot: "bg-emerald-500",
+    ping: true,
+    card: "border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-teal-50/60 dark:border-emerald-500/25 dark:from-emerald-500/10 dark:via-card dark:to-card",
+    marker: "#10b981",
+  },
+  paused: {
+    text: "text-amber-700 dark:text-amber-400",
+    dot: "bg-amber-500",
+    card: "border-amber-200/70 bg-gradient-to-br from-amber-50/80 to-white dark:border-amber-500/20 dark:from-amber-500/[0.07] dark:to-card",
+    marker: "#f59e0b",
+  },
+  returning: {
+    text: "text-sky-700 dark:text-sky-400",
+    dot: "bg-sky-500",
+    ping: true,
+    card: "border-sky-200/70 bg-gradient-to-br from-sky-50/80 to-white dark:border-sky-500/20 dark:from-sky-500/[0.07] dark:to-card",
+    marker: "#0ea5e9",
+  },
+  charging: {
+    text: "text-foreground",
+    dot: "bg-emerald-500",
+    card: "border-border bg-gradient-to-br from-slate-50 to-white dark:from-muted/30 dark:to-card",
+    marker: "#64748b",
+  },
+  idle: {
+    text: "text-foreground",
+    dot: "bg-slate-400",
+    card: "border-border bg-gradient-to-br from-slate-50 to-white dark:from-muted/30 dark:to-card",
+    marker: "#64748b",
+  },
+  error: {
+    text: "text-destructive",
+    dot: "bg-destructive",
+    ping: true,
+    card: "border-destructive/40 bg-destructive/5",
+    marker: "#ef4444",
+  },
+  offline: {
+    text: "text-muted-foreground",
+    dot: "bg-slate-300 dark:bg-slate-600",
+    card: "border-dashed border-border bg-transparent",
+    marker: "#94a3b8",
+  },
 };
 
-/** Maehroboter von oben: Gehaeuse, zwei Raeder, Maehwerk. */
-function MowerGlyph({ className }: { className?: string }) {
+function StatusDot({ tone }: { tone: MowerTone }) {
+  const t = TONE[tone];
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
-      <rect x="5" y="4" width="14" height="16" rx="5" />
-      <path d="M3 8v3M21 8v3M3 14v3M21 14v3" />
-      <circle cx="12" cy="13" r="3" />
-      <path d="M9.5 7.5h5" />
-    </svg>
+    <span className={cn("relative flex h-2.5 w-2.5 shrink-0 rounded-full", t.dot)}>
+      {t.ping && <span className={cn("absolute inset-0 animate-ping rounded-full opacity-60", t.dot)} />}
+    </span>
   );
 }
 
-function BatteryBar({ value, charging, inverted }: { value: number | null; charging: boolean; inverted: boolean }) {
+function BatteryLevel({ value, charging }: { value: number | null; charging: boolean }) {
   const v = value ?? 0;
-  const tone = v < 15 ? "bg-red-500" : v < 30 ? "bg-amber-500" : inverted ? "bg-white" : "bg-emerald-500";
+  const fill = v < 15 ? "bg-red-500" : v < 30 ? "bg-amber-500" : "bg-emerald-500";
   return (
-    <div className="flex items-center gap-1.5">
-      <div className={cn("relative h-3.5 w-8 rounded-[4px] border p-[2px]", inverted ? "border-white/70" : "border-foreground/30")}>
-        <div className={cn("h-full rounded-[2px] transition-all", tone)} style={{ width: `${Math.max(4, Math.min(100, v))}%` }} />
-        <span className={cn("absolute -right-[3px] top-1/2 h-1.5 w-[2px] -translate-y-1/2 rounded-r", inverted ? "bg-white/70" : "bg-foreground/30")} />
-      </div>
-      <span className="text-xs font-semibold tabular-nums">{value != null ? `${Math.round(value)} %` : "–"}</span>
-      {charging && <BatteryCharging className="h-3.5 w-3.5" />}
-    </div>
+    <span className="flex items-center gap-1.5" title={charging ? "Akku, lädt" : "Akku"}>
+      <span className="relative h-3 w-6 shrink-0 rounded-[3px] border border-foreground/35 p-px">
+        <span className={cn("block h-full rounded-[2px] transition-all", fill)} style={{ width: `${Math.max(6, Math.min(100, v))}%` }} />
+        <span className="absolute -right-[3px] top-1/2 h-1.5 w-[2px] -translate-y-1/2 rounded-r bg-foreground/35" />
+      </span>
+      <span className="font-semibold tabular-nums">{value != null ? `${Math.round(value)} %` : "–"}</span>
+      {charging && <BatteryCharging className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
+    </span>
   );
 }
 
-function centroid(pts: string): [number, number] | null {
-  const xy = pts.split(" ").map((p) => p.split(",").map(Number));
-  if (xy.length < 3) return null;
-  let x = 0;
-  let y = 0;
-  for (const [a, b] of xy) {
-    x += a;
-    y += b;
-  }
-  return [x / xy.length, y / xy.length];
-}
-
+/**
+ * Karte: Wiesen, Wege, Hindernisse, Station und Maeher. `px` ist die
+ * ungefaehre Darstellungsgroesse, damit Marker und Schrift in der kleinen
+ * und der grossen Ansicht gleich gross wirken.
+ */
 function MowerMapView({
   map,
   state,
   tone,
   label,
+  px,
+  className,
 }: {
   map: MowerMap;
   state: MowerState | null;
   tone: MowerTone;
   label: string;
+  px: number;
+  className?: string;
 }) {
   const uid = useId().replace(/:/g, "");
   const pos = projectOnMap(map, state?.position ?? null);
-  const active = tone === "mowing" || tone === "returning";
-  const r = Math.max(map.w, map.h) / 60;
-  const fontSize = Math.max(map.w, map.h) / 32;
+  const box = mapBounds(map, [pos]);
+  const centers = useMemo(() => map.areas.map((a) => (a.name ? polygonCenter(a.pts) : null)), [map]);
+  const u = Math.max(box.w, box.h) / px;
+  const moving = tone === "mowing" || tone === "returning";
+  const job = tone === "mowing" || tone === "paused";
   const currentZone = state?.currentZone ?? null;
+  const marker = TONE[tone].marker;
   return (
-    <svg viewBox={`0 0 ${map.w} ${map.h}`} className="h-auto max-h-56 w-full" role="img" aria-label={`Karte ${label}`}>
+    <svg
+      viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}
+      className={className}
+      role="img"
+      aria-label={`Karte ${label}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
       <defs>
         <linearGradient id={`lawn-${uid}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#4ade80" />
           <stop offset="100%" stopColor="#16a34a" />
         </linearGradient>
         <linearGradient id={`lawn-hot-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#bef264" />
-          <stop offset="100%" stopColor="#22c55e" />
+          <stop offset="0%" stopColor="#d9f99d" />
+          <stop offset="100%" stopColor="#4ade80" />
         </linearGradient>
-        <pattern id={`stripes-${uid}`} width={r * 2.4} height={r * 2.4} patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-          <rect width={r * 1.2} height={r * 2.4} fill="white" opacity="0.13" />
+        <pattern id={`stripes-${uid}`} width={u * 7} height={u * 7} patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+          <rect width={u * 3.5} height={u * 7} fill="white" opacity="0.12" />
         </pattern>
-        <pattern id={`hatch-${uid}`} width={r} height={r} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2={r} stroke="#ef4444" strokeWidth={r / 3} opacity="0.8" />
+        <pattern id={`hatch-${uid}`} width={u * 4} height={u * 4} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2={u * 4} stroke="#ef4444" strokeWidth={u * 1.4} opacity="0.8" />
         </pattern>
       </defs>
       {map.areas.map((a, i) => {
-        const hot = !!currentZone && a.name === currentZone && active;
+        const hot = job && !!currentZone && a.name === currentZone;
         return (
-          <g key={`a${i}`}>
+          <g key={`a${i}`} opacity={tone === "offline" ? 0.45 : 1}>
             <polygon
               points={a.pts}
               fill={`url(#${hot ? "lawn-hot" : "lawn"}-${uid})`}
-              stroke="#15803d"
-              strokeWidth={r / 3}
+              stroke={hot ? "white" : "#15803d"}
+              strokeWidth={u * (hot ? 1.6 : 1)}
               strokeLinejoin="round"
-              opacity={tone === "offline" ? 0.5 : 0.95}
             >
-              <title>{a.name}</title>
+              <title>{zoneLabel(a.name) || "Fläche"}</title>
             </polygon>
-            <polygon points={a.pts} fill={`url(#stripes-${uid})`} />
+            <polygon points={a.pts} fill={`url(#stripes-${uid})`} className="pointer-events-none" />
           </g>
         );
       })}
       {map.paths.map((p, i) => (
-        <polyline key={`p${i}`} points={p} fill="none" stroke="#fbbf24" strokeWidth={r / 2.2} strokeDasharray={`${r} ${r / 1.5}`} strokeLinecap="round" opacity="0.85" />
+        <polyline
+          key={`p${i}`}
+          points={p}
+          fill="none"
+          stroke="#fbbf24"
+          strokeWidth={u * 1.6}
+          strokeDasharray={`${u * 3} ${u * 2}`}
+          strokeLinecap="round"
+          opacity="0.9"
+        />
       ))}
       {map.obstacles.map((p, i) => (
-        <polygon key={`o${i}`} points={p} fill={`url(#hatch-${uid})`} stroke="#dc2626" strokeWidth={r / 3} />
+        <polygon key={`o${i}`} points={p} fill={`url(#hatch-${uid})`} stroke="#dc2626" strokeWidth={u} />
       ))}
       {map.areas.map((a, i) => {
-        const c = a.name ? centroid(a.pts) : null;
-        return c ? (
-          <text
-            key={`l${i}`}
-            x={c[0]}
-            y={c[1]}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize={fontSize}
-            fontWeight={600}
-            fill="white"
-            stroke="#14532d"
-            strokeWidth={fontSize / 5}
-            paintOrder="stroke"
-            className="pointer-events-none select-none"
-          >
-            {a.name}
-          </text>
-        ) : null;
+        const c = centers[i];
+        const text = zoneBadge(a.name);
+        if (!c || !text) return null;
+        const hot = job && !!currentZone && a.name === currentZone;
+        const rw = Math.max(u * 8, u * (text.length * 5.6 + 4));
+        return (
+          <g key={`l${i}`} transform={`translate(${c[0]} ${c[1]})`} className="pointer-events-none select-none">
+            <rect x={-rw / 2} y={-u * 7} width={rw} height={u * 14} rx={u * 7} fill={hot ? "white" : "#052e16"} opacity={hot ? 1 : 0.72} />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={u * 9.5}
+              fontWeight={700}
+              fill={hot ? "#166534" : "white"}
+            >
+              {text}
+            </text>
+          </g>
+        );
       })}
       {map.dock && (
         <g transform={`translate(${map.dock[0]} ${map.dock[1]})`}>
-          <rect x={-r * 1.3} y={-r * 1.3} width={r * 2.6} height={r * 2.6} rx={r / 2} fill="#0f172a" stroke="white" strokeWidth={r / 4} />
-          <path d={`M${-r * 0.7} ${r * 0.1} L0 ${-r * 0.7} L${r * 0.7} ${r * 0.1} M${-r * 0.45} ${0} V${r * 0.7} H${r * 0.45} V${0}`} fill="none" stroke="white" strokeWidth={r / 4} strokeLinejoin="round" />
+          <rect x={-u * 7} y={-u * 7} width={u * 14} height={u * 14} rx={u * 3.5} fill="#0f172a" stroke="white" strokeWidth={u * 1.4} />
+          <path
+            d={`M${-u * 3.8} ${u * 0.6} L0 ${-u * 3.6} L${u * 3.8} ${u * 0.6} M${-u * 2.4} 0 V${u * 3.6} H${u * 2.4} V0`}
+            fill="none"
+            stroke="white"
+            strokeWidth={u * 1.3}
+            strokeLinejoin="round"
+          />
           <title>Ladestation</title>
         </g>
       )}
-      {pos && (
+      {pos && tone !== "offline" && (
         <g transform={`translate(${pos[0]} ${pos[1]})`}>
-          {active && (
-            <circle r={r} fill="#0ea5e9" opacity="0.45">
-              <animate attributeName="r" values={`${r};${r * 3.2}`} dur="1.8s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.5;0" dur="1.8s" repeatCount="indefinite" />
+          {moving && (
+            <circle r={u * 7} fill={marker} opacity="0.45">
+              <animate attributeName="r" values={`${u * 7};${u * 20}`} dur="1.8s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.55;0" dur="1.8s" repeatCount="indefinite" />
             </circle>
           )}
-          <circle r={r * 1.15} fill="#0284c7" stroke="white" strokeWidth={r / 2.5} />
+          <circle r={u * 9} fill="black" opacity="0.25" />
+          <circle r={u * 7} fill={marker} stroke="white" strokeWidth={u * 2.4} />
           <title>{label}</title>
         </g>
       )}
@@ -221,50 +303,74 @@ function MowerMapView({
   );
 }
 
+/** Knopf mit zweitem Tippen zur Bestaetigung, wo noetig. */
 function ActionButton({
-  onClick,
+  label,
+  confirm,
+  armed,
+  icon,
+  kind,
   busy,
   disabled,
-  icon,
-  children,
-  primary,
-  inverted,
+  hint,
+  onClick,
+  className,
 }: {
-  onClick: () => void;
+  label: string;
+  confirm?: string;
+  armed: boolean;
+  icon: React.ReactNode;
+  kind: MowerButton["kind"];
   busy: boolean;
   disabled: boolean;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  primary?: boolean;
-  inverted: boolean;
+  hint?: string;
+  onClick: () => void;
+  className?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={hint}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-transform active:scale-95 disabled:opacity-50",
-        inverted
-          ? primary
-            ? "bg-white text-emerald-700 shadow"
-            : "bg-white/15 text-white hover:bg-white/25"
-          : primary
-            ? "bg-primary text-primary-foreground shadow-sm"
-            : "bg-muted text-foreground hover:bg-muted/70",
+        "inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-xs font-semibold transition-all active:scale-[0.97] disabled:opacity-50 [&_svg]:shrink-0",
+        armed
+          ? kind === "danger"
+            ? "bg-destructive text-white shadow-sm ring-2 ring-destructive/30"
+            : "bg-amber-500 text-white shadow-sm ring-2 ring-amber-500/30"
+          : kind === "primary"
+            ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+            : kind === "danger"
+              ? "border border-border bg-background/60 text-muted-foreground hover:border-destructive/40 hover:text-destructive"
+              : "border border-border bg-background/60 text-foreground hover:bg-muted",
+        className,
       )}
     >
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : icon}
-      {children}
+      {armed && confirm ? confirm : label}
     </button>
   );
 }
 
-const CONFIRM: Partial<Record<MowerAction, string>> = {
-  stop: "Laufenden Mähauftrag beenden? Der Mäher bleibt stehen, wo er ist.",
-  dock: "Mäher zur Ladestation schicken?",
-  start_task: "Diese Aufgabe jetzt starten?",
+const ICONS: Record<MowerAction, React.ReactNode> = {
+  start_task: <Play className="h-3.5 w-3.5" />,
+  pause: <Pause className="h-3.5 w-3.5" />,
+  resume: <Play className="h-3.5 w-3.5" />,
+  stop: <Square className="h-3.5 w-3.5" />,
+  dock: <Home className="h-3.5 w-3.5" />,
 };
+
+function taskLine(t: MowerTaskView): string {
+  return [
+    t.weekdays.length ? weekdaysLabel(t.weekdays) : null,
+    t.startTime || null,
+    t.bladeHeightMm ? `${t.bladeHeightMm} mm` : null,
+    t.zones.length ? t.zones.map(zoneLabel).join(", ") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export function MowerCard({
   device,
@@ -289,7 +395,30 @@ export function MowerCard({
   const lastUpdate = live?.lastUpdate ?? device.lastUpdate;
   const stale = !lastUpdate || nowMs - new Date(lastUpdate).getTime() > STALE_MS;
   const [busy, setBusy] = useState<string | null>(null);
+  const [armed, setArmed] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ text: string; status: string; at: number } | null>(null);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [bigMap, setBigMap] = useState(false);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Antwort des Maehers: der Zustand hat sich geaendert.
+  const answered = !!pending && (state?.status ?? "") !== pending.status;
+  const waiting = pending && !answered ? pending : null;
+  useEffect(() => {
+    if (!pending) return;
+    const t = setTimeout(
+      () => {
+        setPending(null);
+        if (!answered) setMessage({ text: "Noch keine Rückmeldung vom Mäher. Stand bitte gleich nochmal prüfen.", error: false });
+      },
+      answered ? 0 : Math.max(0, pending.at + PENDING_MS - Date.now()),
+    );
+    return () => clearTimeout(t);
+  }, [pending, answered]);
+  useEffect(() => () => {
+    if (armTimer.current) clearTimeout(armTimer.current);
+  }, []);
 
   if (!state) {
     return (
@@ -300,161 +429,146 @@ export function MowerCard({
   }
 
   const tone: MowerTone = stale ? "offline" : mowerTone(state);
-  const inverted = tone === "mowing";
-  const style = TONE[tone];
+  const summary = stale
+    ? { title: "Keine Meldung", detail: lastUpdate ? `letzte Meldung ${fmtAgo(lastUpdate, nowMs)}` : "der Hub hat noch nichts gemeldet", progress: false }
+    : describeMower(state);
   const next = nextMowing(state.tasks, nowMs, timezone);
-  const statusText = stale ? "keine Meldung" : style.label ?? (state.statusLabel || state.status);
   const canControl = !readonly && !stale && state.online;
-  const paused = state.status === "MODE_PAUSE" || state.status === "MODE_CHARGING_PAUSE";
-  const working = state.status === "MODE_WORKING";
+  const buttons = canControl ? mowerButtons(state) : [];
+  const startable = canControl && canStartTask(state);
+  const runningTask = state.tasks.find((t) => t.running) ?? null;
+  const showMap = !!map && map.areas.length > 0;
+  const box = showMap ? mapBounds(map, [projectOnMap(map, state.position)]) : null;
+  const tall = !!box && box.w / box.h < 0.85;
+  const locked = busy !== null || waiting !== null;
 
-  async function run(action: MowerAction, planId?: string) {
-    const ask = CONFIRM[action];
-    if (ask && !window.confirm(ask)) return;
-    setBusy(planId ? `${action}:${planId}` : action);
-    setMessage(null);
-    const err = await onAction(device, action, planId);
-    setBusy(null);
-    setMessage(err ? { text: err, error: true } : { text: "Befehl an den Hub gesendet", error: false });
-    if (!err) setTimeout(() => setMessage(null), 12_000);
+  function arm(key: string): boolean {
+    if (armed === key) {
+      setArmed(null);
+      if (armTimer.current) clearTimeout(armTimer.current);
+      return true;
+    }
+    setArmed(key);
+    if (armTimer.current) clearTimeout(armTimer.current);
+    armTimer.current = setTimeout(() => setArmed(null), ARM_MS);
+    return false;
   }
 
-  return (
-    <div
+  async function run(action: MowerAction, pendingText: string, opts: { confirm?: boolean; planId?: string } = {}) {
+    const key = opts.planId ? `${action}:${opts.planId}` : action;
+    if (opts.confirm && !arm(key)) return;
+    setArmed(null);
+    setBusy(key);
+    setMessage(null);
+    const err = await onAction(device, action, opts.planId);
+    setBusy(null);
+    if (err) setMessage({ text: err, error: true });
+    else setPending({ text: pendingText, status: state!.status, at: Date.now() });
+  }
+
+  function startNow() {
+    if (state!.tasks.length === 1) {
+      void run("start_task", "Startet gleich …", { confirm: true, planId: state!.tasks[0].id });
+    } else {
+      setPlanOpen(true);
+    }
+  }
+
+  const progress = summary.progress && state.progress != null ? Math.max(0, Math.min(100, state.progress)) : null;
+
+  const mapTile = showMap && (
+    <button
+      type="button"
+      onClick={() => setBigMap(true)}
+      aria-label={`Karte von ${device.name} vergrößern`}
       className={cn(
-        "relative overflow-hidden rounded-2xl border p-3 transition-colors",
-        inverted
-          ? "border-emerald-400/40 bg-gradient-to-br from-emerald-500 via-green-600 to-teal-700 text-white shadow-[0_10px_30px_-12px_rgba(16,185,129,0.8)]"
-          : tone === "error"
-            ? "border-destructive/40 bg-destructive/5"
-            : "border-border bg-gradient-to-br from-emerald-50/80 via-card to-card dark:from-emerald-500/10 dark:via-muted/20 dark:to-muted/20",
+        "group relative shrink-0 overflow-hidden rounded-xl bg-emerald-950/[0.06] ring-1 ring-inset ring-black/5 transition hover:ring-primary/40 dark:bg-black/30 dark:ring-white/5",
+        tall ? "aspect-[3/5] w-[38%] min-w-[104px] max-w-[170px] self-start" : "h-40 w-full",
       )}
     >
-      {inverted && <div className="pointer-events-none absolute -right-8 -top-12 h-32 w-32 rounded-full bg-white/15 blur-2xl" />}
+      <MowerMapView map={map!} state={stale ? null : state} tone={tone} label={device.name} px={tall ? 190 : 170} className="absolute inset-0 h-full w-full p-1" />
+      <span className="absolute bottom-1 right-1 rounded-md bg-black/45 p-1 text-white opacity-70 transition group-hover:opacity-100">
+        <Maximize2 className="h-3 w-3" />
+      </span>
+    </button>
+  );
 
-      <div className="relative flex items-center gap-3">
-        <span
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-            inverted ? "bg-white/20" : "bg-emerald-600 text-white shadow-[0_6px_16px_-8px_rgba(5,150,105,0.9)]",
+  return (
+    <div className={cn("overflow-hidden rounded-2xl border p-3.5 transition-colors", TONE[tone].card)}>
+      <div className={cn("flex gap-3", !tall && "flex-col")}>
+        {tall && mapTile}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="truncate text-xs font-semibold text-foreground/80">{device.name}</p>
+            {lastUpdate && !stale && (
+              <span className="shrink-0 text-[10px] text-muted-foreground" title="Stand vom Hub">
+                {fmtAgo(lastUpdate, nowMs)}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <StatusDot tone={tone} />
+            <span className={cn("text-lg font-semibold leading-tight tracking-tight", TONE[tone].text)}>{summary.title}</span>
+          </div>
+          {waiting ? (
+            <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-primary">
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+              {waiting.text}
+            </p>
+          ) : (
+            summary.detail && (
+              <p className={cn("mt-0.5 text-xs", tone === "error" ? "text-destructive" : "text-muted-foreground")}>{summary.detail}</p>
+            )
           )}
-        >
-          <MowerGlyph className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-semibold leading-tight">{device.name}</p>
-          <p className={cn("truncate text-[11px]", inverted ? "text-white/80" : "text-muted-foreground")}>
-            {[state.model || "Mammotion", state.firmware ? `FW ${state.firmware}` : null].filter(Boolean).join(" · ")}
-          </p>
+          {progress != null && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/10" aria-label={`${Math.round(progress)} % geschafft`}>
+              <div
+                className={cn("h-full rounded-full transition-all", tone === "mowing" ? "bg-emerald-500" : "bg-amber-500")}
+                style={{ width: `${Math.max(progress, 1.5)}%` }}
+              />
+            </div>
+          )}
+
+          <div className={cn("space-y-1.5 text-xs", tall ? "mt-auto pt-3" : "mt-3 flex flex-wrap gap-x-4 gap-y-1.5 space-y-0")}>
+            <BatteryLevel value={state.battery} charging={state.charging} />
+            {state.tasks.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setPlanOpen((v) => !v)}
+                aria-expanded={planOpen}
+                className="flex max-w-full items-center gap-1.5 text-left text-foreground/90 hover:text-primary"
+              >
+                <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">
+                  {runningTask ? (
+                    <>
+                      <span className="font-semibold">{runningTask.name}</span> läuft
+                    </>
+                  ) : next ? (
+                    <>
+                      mäht <span className="font-semibold">{next.label}</span>
+                    </>
+                  ) : (
+                    "kein Termin geplant"
+                  )}
+                </span>
+                <ChevronDown className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", planOpen && "rotate-180")} />
+              </button>
+            ) : (
+              <p className="flex items-center gap-1.5 text-muted-foreground">
+                <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                kein Zeitplan
+              </p>
+            )}
+          </div>
         </div>
-        <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium", style.pill)}>
-          <span className={cn("h-1.5 w-1.5 rounded-full", style.dot)} />
-          {statusText}
-        </span>
+        {!tall && mapTile}
       </div>
 
-      {map && map.areas.length > 0 && (
-        <div className={cn("relative mt-3 overflow-hidden rounded-xl p-1.5", inverted ? "bg-emerald-950/45 ring-1 ring-white/10" : "bg-emerald-950/[0.04] dark:bg-black/20")}>
-          <MowerMapView map={map} state={stale ? null : state} tone={tone} label={device.name} />
-        </div>
-      )}
-
-      <div className="relative mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
-        <div>
-          <p className={cn("mb-0.5", inverted ? "text-white/70" : "text-muted-foreground")}>Akku</p>
-          <BatteryBar value={state.battery} charging={state.charging} inverted={inverted} />
-        </div>
-        {state.active && state.progress != null ? (
-          <div>
-            <p className={cn("mb-0.5", inverted ? "text-white/70" : "text-muted-foreground")}>
-              Fortschritt{state.currentZone ? ` · ${state.currentZone}` : ""}
-            </p>
-            <div className="flex items-center gap-1.5">
-              <div className={cn("h-1.5 flex-1 overflow-hidden rounded-full", inverted ? "bg-white/25" : "bg-muted")}>
-                <div className={cn("h-full rounded-full", inverted ? "bg-white" : "bg-emerald-500")} style={{ width: `${state.progress}%` }} />
-              </div>
-              <span className="text-xs font-semibold tabular-nums">{Math.round(state.progress)} %</span>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <p className={cn("mb-0.5", inverted ? "text-white/70" : "text-muted-foreground")}>Nächste Mahd</p>
-            <p className="flex items-center gap-1 text-xs font-semibold">
-              <CalendarClock className="h-3.5 w-3.5 shrink-0 opacity-70" />
-              {next ? next.label : "kein Plan"}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {state.tasks.length > 0 && (
-        <div className="relative mt-3 space-y-1">
-          {state.tasks.map((t) => (
-            <div
-              key={t.id}
-              className={cn(
-                "flex items-center gap-2 rounded-xl px-2 py-1.5 text-[11px]",
-                inverted ? "bg-white/10" : "bg-muted/50",
-                !t.enabled && "opacity-60",
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">
-                  {t.name}
-                  {t.running && <span className={cn("ml-1.5 font-semibold", inverted ? "text-white" : "text-emerald-600")}>läuft</span>}
-                  {!t.enabled && <span className="ml-1.5 text-muted-foreground">pausiert</span>}
-                </p>
-                <p className={cn("truncate", inverted ? "text-white/70" : "text-muted-foreground")}>
-                  {[weekdaysLabel(t.weekdays), t.startTime, t.bladeHeightMm ? `${t.bladeHeightMm} mm` : null, t.zones.join(", ")]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              </div>
-              {canControl && !state.active && (
-                <ActionButton
-                  onClick={() => void run("start_task", t.id)}
-                  busy={busy === `start_task:${t.id}`}
-                  disabled={busy !== null}
-                  icon={<Play className="h-3.5 w-3.5" />}
-                  inverted={inverted}
-                >
-                  Jetzt
-                </ActionButton>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {canControl && (state.active || !state.charging) && (
-        <div className="relative mt-3 flex flex-wrap gap-1.5">
-          {working && (
-            <ActionButton onClick={() => void run("pause")} busy={busy === "pause"} disabled={busy !== null} icon={<Pause className="h-3.5 w-3.5" />} inverted={inverted} primary>
-              Pause
-            </ActionButton>
-          )}
-          {paused && (
-            <ActionButton onClick={() => void run("resume")} busy={busy === "resume"} disabled={busy !== null} icon={<Play className="h-3.5 w-3.5" />} inverted={inverted} primary>
-              Fortsetzen
-            </ActionButton>
-          )}
-          {state.active && (
-            <ActionButton onClick={() => void run("stop")} busy={busy === "stop"} disabled={busy !== null} icon={<Square className="h-3.5 w-3.5" />} inverted={inverted}>
-              Beenden
-            </ActionButton>
-          )}
-          {!state.charging && (
-            <ActionButton onClick={() => void run("dock")} busy={busy === "dock"} disabled={busy !== null} icon={<Home className="h-3.5 w-3.5" />} inverted={inverted}>
-              Zur Station
-            </ActionButton>
-          )}
-        </div>
-      )}
-
-      {state.errors.length > 0 && (
-        <div className="relative mt-2 space-y-0.5">
-          {state.errors.map((e) => (
-            <p key={e.code} className={cn("flex items-start gap-1 text-[11px]", inverted ? "text-white" : "text-destructive")}>
+      {state.errors.length > 1 && !stale && (
+        <div className="mt-2 space-y-0.5">
+          {state.errors.slice(1).map((e) => (
+            <p key={e.code} className="flex items-start gap-1 text-[11px] text-destructive">
               <TriangleAlert className="mt-px h-3 w-3 shrink-0" />
               {e.text || `Fehler ${e.code}`}
             </p>
@@ -462,9 +576,121 @@ export function MowerCard({
         </div>
       )}
 
-      <p className={cn("relative mt-2 text-[10px]", message?.error ? "text-destructive" : inverted ? "text-white/70" : "text-muted-foreground")}>
-        {message ? message.text : lastUpdate ? `Stand ${fmtAgo(lastUpdate, nowMs)} · über den Hub` : "über den Hub"}
-      </p>
+      {(buttons.length > 0 || (startable && state.tasks.length > 0)) && (
+        <div className="mt-3 flex gap-1.5">
+          {startable && state.tasks.length > 0 && (
+            <ActionButton
+              label="Jetzt mähen"
+              confirm={state.tasks.length === 1 ? "Starten?" : undefined}
+              armed={state.tasks.length === 1 && armed === `start_task:${state.tasks[0].id}`}
+              icon={ICONS.start_task}
+              kind="primary"
+              busy={state.tasks.length === 1 && busy === `start_task:${state.tasks[0].id}`}
+              disabled={locked}
+              hint={state.tasks.length === 1 ? `Aufgabe „${state.tasks[0].name}“ jetzt starten` : "Aufgabe wählen"}
+              onClick={startNow}
+              className="min-w-0 flex-1"
+            />
+          )}
+          {buttons.map((b) => (
+            <ActionButton
+              key={b.action + b.label}
+              label={b.label}
+              confirm={b.confirm}
+              armed={armed === b.action}
+              icon={ICONS[b.action]}
+              kind={startable && state.tasks.length > 0 && b.kind === "primary" ? "secondary" : b.kind}
+              busy={busy === b.action}
+              disabled={locked}
+              hint={b.hint}
+              onClick={() => void run(b.action, b.pending, { confirm: !!b.confirm })}
+              className={b.kind === "primary" && !(startable && state.tasks.length > 0) ? "min-w-0 flex-1" : "shrink-0"}
+            />
+          ))}
+        </div>
+      )}
+      {canControl && state.tasks.length === 0 && !state.active && (
+        <p className="mt-2 text-[11px] text-muted-foreground">Zum Mähen in der Mammotion-App eine Aufgabe anlegen, sie erscheint dann hier.</p>
+      )}
+
+      {planOpen && state.tasks.length > 0 && (
+        <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-background/50">
+          {state.tasks.map((t) => (
+            <div key={t.id} className={cn("flex items-center gap-2 px-2.5 py-2 text-xs", !t.enabled && "opacity-60")}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">
+                  {t.name}
+                  {t.running && <span className="ml-1.5 text-emerald-600 dark:text-emerald-400">läuft</span>}
+                  {!t.enabled && <span className="ml-1.5 text-muted-foreground">aus</span>}
+                </p>
+                <p className="truncate text-[11px] text-muted-foreground">{taskLine(t) || "ohne Termin"}</p>
+              </div>
+              {startable && (
+                <ActionButton
+                  label="Starten"
+                  confirm="Sicher?"
+                  armed={armed === `start_task:${t.id}`}
+                  icon={ICONS.start_task}
+                  kind="secondary"
+                  busy={busy === `start_task:${t.id}`}
+                  disabled={locked}
+                  hint={`Aufgabe „${t.name}“ jetzt starten`}
+                  onClick={() => void run("start_task", "Startet gleich …", { confirm: true, planId: t.id })}
+                  className="h-8 px-2.5"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {message && (
+        <p className={cn("mt-2 text-[11px]", message.error ? "text-destructive" : "text-muted-foreground")}>{message.text}</p>
+      )}
+
+      {showMap && (
+        <Dialog open={bigMap} onOpenChange={setBigMap}>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{device.name}</DialogTitle>
+              <DialogDescription>
+                {[summary.title, summary.detail].filter(Boolean).join(" · ")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="overflow-hidden rounded-xl bg-emerald-950/[0.06] p-2 dark:bg-black/30">
+              <MowerMapView map={map!} state={stale ? null : state} tone={tone} label={device.name} px={400} className="mx-auto h-[min(62vh,560px)] w-full" />
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-[11px]">
+              {map!.areas
+                .filter((a) => a.name)
+                .map((a, i) => {
+                  const hot = !stale && !!state.currentZone && a.name === state.currentZone;
+                  return (
+                    <span
+                      key={`${i}-${a.name}`}
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2 py-0.5 font-medium",
+                        hot ? "bg-emerald-500 text-white" : "bg-muted text-foreground/80",
+                      )}
+                    >
+                      {zoneLabel(a.name)}
+                      {hot && " · hier"}
+                    </span>
+                  );
+                })}
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-foreground/80">
+                <span className="h-2 w-2 rounded-full ring-2 ring-white" style={{ background: TONE[tone].marker }} />
+                Mäher
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {[state.model, state.firmware ? `Firmware ${state.firmware}` : null, lastUpdate ? `Stand ${fmtAgo(lastUpdate, nowMs)}` : null]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

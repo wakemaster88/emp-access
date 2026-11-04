@@ -1,6 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mowerTone, nextMowing, projectOnMap, readMowerMap, sanitizeMowerMap, sanitizeMowerState, weekdaysLabel } from "./mower";
+import {
+  canStartTask,
+  describeMower,
+  mapBounds,
+  mowerButtons,
+  mowerTone,
+  nextMowing,
+  polygonCenter,
+  projectOnMap,
+  readMowerMap,
+  sanitizeMowerMap,
+  sanitizeMowerState,
+  weekdaysLabel,
+  zoneBadge,
+  zoneLabel,
+  type MowerMap,
+  type MowerState,
+} from "./mower";
 import { buildCloudMap } from "../../hub/src/mower-map";
 
 const hubPayload = {
@@ -72,4 +89,86 @@ test("Nächste Mahd in der Zeitzone des Mandanten", () => {
   assert.equal(nextMowing([task], tueLate, "Europe/Berlin")?.label, "Do 20:00");
   assert.equal(nextMowing([{ ...task, enabled: false }], wed, "Europe/Berlin"), null);
   assert.equal(weekdaysLabel(["Sa", "Di", "Do"]), "Di, Do, Sa");
+});
+
+const paused: MowerState = {
+  model: "Luba 2 AWD",
+  label: "Luba 2 AWD",
+  online: true,
+  status: "MODE_PAUSE",
+  statusLabel: "Pausiert",
+  active: true,
+  charging: false,
+  battery: 68,
+  progress: 0,
+  currentZone: "area 2",
+  runningTaskId: null,
+  firmware: "1.30.31.19",
+  position: null,
+  zones: ["area 1", "area 2"],
+  tasks: [],
+  errors: [],
+  at: "2026-11-04T20:00:00Z",
+};
+
+test("Zonen heißen auf Deutsch, eigene Namen bleiben", () => {
+  assert.equal(zoneLabel("area 2"), "Zone 2");
+  assert.equal(zoneLabel("Area12"), "Zone 12");
+  assert.equal(zoneLabel("Strandwiese"), "Strandwiese");
+  assert.equal(zoneLabel(null), "");
+  assert.equal(zoneBadge("area 4"), "4");
+  assert.equal(zoneBadge("Große Liegewiese am See"), "Große Liege…");
+});
+
+test("Lage in Worten", () => {
+  assert.deepEqual(describeMower(paused), { title: "Pausiert", detail: "in Zone 2 · 0 % geschafft", progress: true });
+  assert.equal(describeMower({ ...paused, status: "MODE_WORKING", progress: 34.4 }).detail, "in Zone 2 · 34 % geschafft");
+  assert.equal(describeMower({ ...paused, currentZone: null, progress: 2 }).detail, "2 % geschafft");
+  const docked = { ...paused, status: "MODE_READY", active: false, charging: true, progress: null, currentZone: null };
+  assert.equal(describeMower(docked).title, "Lädt");
+  assert.equal(describeMower({ ...docked, battery: 100 }).title, "In der Station");
+  assert.equal(describeMower({ ...docked, charging: false }).title, "Bereit");
+  assert.equal(describeMower({ ...paused, online: false }).title, "Offline");
+  assert.deepEqual(describeMower({ ...paused, errors: [{ code: 1005, text: "Regen erkannt" }] }), {
+    title: "Störung",
+    detail: "Regen erkannt",
+    progress: false,
+  });
+});
+
+test("Knöpfe passen zum Zustand", () => {
+  const actions = (s: MowerState) => mowerButtons(s).map((b) => `${b.action}:${b.kind}`);
+  assert.deepEqual(actions(paused), ["resume:primary", "dock:secondary", "stop:danger"]);
+  assert.deepEqual(actions({ ...paused, status: "MODE_WORKING" }), ["pause:primary", "dock:secondary", "stop:danger"]);
+  assert.deepEqual(actions({ ...paused, status: "MODE_RETURNING" }), ["pause:secondary", "stop:danger"]);
+  assert.deepEqual(actions({ ...paused, status: "MODE_CHARGING_PAUSE", charging: true }), [], "lädt zwischendurch, geht von selbst weiter");
+  const docked = { ...paused, status: "MODE_READY", active: false, charging: true };
+  assert.deepEqual(actions(docked), []);
+  assert.deepEqual(actions({ ...docked, charging: false }), ["dock:primary"]);
+  assert.deepEqual(actions({ ...paused, online: false }), []);
+  assert.ok(mowerButtons(paused).find((b) => b.action === "stop")?.confirm, "Beenden nur mit Bestätigung");
+  assert.equal(canStartTask(docked), true);
+  assert.equal(canStartTask(paused), false);
+  assert.equal(canStartTask({ ...docked, online: false }), false);
+});
+
+test("Kartenausschnitt zeigt nur die Wiesen", () => {
+  const map: MowerMap = {
+    v: 1,
+    w: 1000,
+    h: 1000,
+    areas: [{ name: "area 1", pts: "400,100 600,100 600,900 400,900" }],
+    obstacles: [],
+    paths: [],
+    dock: null,
+    proj: null,
+  };
+  const box = mapBounds(map);
+  assert.ok(box.w < 300 && box.h > 800, "schmaler Streifen statt ganzer Karte");
+  assert.ok(box.x < 400 && box.x + box.w > 600 && box.y < 100 && box.y + box.h > 900);
+  const withPos = mapBounds(map, [[700, 500]]);
+  assert.ok(withPos.x + withPos.w > 700, "Position bleibt im Bild");
+  assert.deepEqual(mapBounds({ ...map, areas: [] }), { x: 0, y: 0, w: 1000, h: 1000 });
+  assert.deepEqual(polygonCenter("0,0 10,0 10,10 0,10"), [5, 5]);
+  assert.equal(polygonCenter("0,0 1,1"), null);
 });
