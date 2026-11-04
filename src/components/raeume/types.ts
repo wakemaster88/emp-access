@@ -89,6 +89,8 @@ export interface RoomRuleSummary {
   isActive: boolean;
   lastRunAt: string | null;
   actionCount: number;
+  /** Lesbare Aktionen ("Deckenlicht: Anschalten"), fuer Szenen-Kacheln. */
+  actions: string[];
 }
 
 /** Auswahleintrag für die Zuordnung im Raum-Dialog. */

@@ -761,6 +761,7 @@ const ruleTrigger = z.enum([
   "DEVICE_SWITCHED",
   "SCAN",
   "IDLE",
+  "MANUAL",
 ]);
 
 export const roomRuleActionSchema = z

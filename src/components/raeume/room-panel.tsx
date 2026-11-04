@@ -12,6 +12,7 @@ import {
   Pencil,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Sprout,
   Thermometer,
   TriangleAlert,
@@ -38,6 +39,7 @@ import { RoomIcon } from "@/components/raeume/room-icons";
 import { TechTable } from "@/components/raeume/tech-table";
 import { IrrigationWidget } from "@/components/raeume/irrigation-widget";
 import { ClimateOverride } from "@/components/raeume/climate-override";
+import { SceneTiles } from "@/components/raeume/scene-tiles";
 import { ClimateHistory, type HistoryRange } from "@/components/raeume/climate-history";
 import { AutomationWidget } from "@/components/raeume/automation-widget";
 import { fmtWhen, ScheduleEmpty, ScheduleWidget } from "@/components/raeume/schedule-widget";
@@ -262,7 +264,11 @@ export function RoomPanel({
   const openState = spec ? operatingSpanState(spec, now, timezone) : null;
   const offline = room.devices.filter((d) => statuses.get(d.id)?.online === false).length;
   const activeAutomations = room.automations.filter((a) => a.isActive).length;
+  const scenes = room.rules.filter((r) => r.trigger === "MANUAL");
+  const canScene = !readonly && (room.devices.some((d) => d.isActive && d.category !== "SENSOR") || room.zones.some((z) => z.hasPlayer));
+  const showScenes = scenes.length > 0 || canScene;
   const hasControl =
+    showScenes ||
     showClimate ||
     groups.light.length > 0 ||
     groups.mower.length > 0 ||
@@ -465,6 +471,23 @@ export function RoomPanel({
       >
         {tab === "control" && (
           <>
+            {showScenes && (
+              <Section
+                icon={<Sparkles className="h-3.5 w-3.5" />}
+                title={scenes.length > 0 ? `Szenen · ${scenes.length}` : "Szenen"}
+                action={
+                  scenes.length > 0 &&
+                  !readonly && (
+                    <Link href="/regeln" className="text-[11px] font-medium text-primary hover:underline">
+                      Bearbeiten
+                    </Link>
+                  )
+                }
+              >
+                <SceneTiles room={room} scenes={scenes} readonly={readonly} />
+              </Section>
+            )}
+
             {showClimate && (
               <Section
                 icon={<Thermometer className="h-3.5 w-3.5" />}

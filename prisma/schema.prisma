@@ -2847,6 +2847,8 @@ enum RuleTrigger {
   SCAN
   /// Seit `idleMinutes` keine Bewegung im Raum gemeldet.
   IDLE
+  /// Szene: kein Ausloeser, laeuft nur von Hand (Kachel in der Raumkarte).
+  MANUAL
 }
 
 /// Bedingung an die Betriebszeit.
