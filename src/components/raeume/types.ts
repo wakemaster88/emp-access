@@ -9,6 +9,7 @@
 import type { ExceptionSpec, SeasonSpec } from "@/lib/operating-hours";
 import type { RoomActivity } from "@/lib/room-activity";
 import type { RoomAutomation } from "@/lib/room-automations";
+import type { MowerMap, MowerState } from "@/lib/mower";
 
 export interface RoomDevice {
   id: number;
@@ -24,6 +25,8 @@ export interface RoomDevice {
   pulseSeconds: number | null;
   /** Letzter Befehl (1 = an, 3 = aus) – Zustand fuer Geraete ohne Statusabfrage (Hue). */
   task: number;
+  /** MAMMOTION_MOWER: letzter gemeldeter Zustand und Karte. */
+  mower?: { state: MowerState | null; map: MowerMap | null };
 }
 
 /** Beschallungszone im Raum – Zustand aus dem letzten Heartbeat des Abspielers. */

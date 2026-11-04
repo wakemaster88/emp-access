@@ -13,6 +13,8 @@ import { ClimateDialog } from "@/components/raeume/climate-dialog";
 import { RoomEquipmentDialog, type Placed } from "@/components/raeume/room-equipment-dialog";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
 import { useDeviceStatuses, useNow } from "@/components/raeume/status";
+import { useMowerStates } from "@/components/raeume/mower-card";
+import type { MowerAction } from "@/lib/mower";
 import type { ZoneAction } from "@/components/raeume/zone-row";
 import type { NetworkItem, RaeumeData, RoomCamera, RoomDevice, RoomZone } from "@/components/raeume/types";
 
@@ -49,6 +51,11 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
   );
   const { statuses, refresh } = useDeviceStatuses(shellyIds);
   const nowMs = useNow(new Date(data.renderedAt).getTime());
+  const hasMowers = useMemo(
+    () => data.rooms.some((room) => room.devices.some((device) => device.type === "MAMMOTION_MOWER")),
+    [data.rooms],
+  );
+  const { live: mowers, refreshSoon: refreshMowers } = useMowerStates(hasMowers);
 
   const placedDevices: Placed<RoomDevice>[] = useMemo(
     () => [
@@ -112,6 +119,14 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
     // Hue: Zustand ist der letzte Befehl; die Seite neu laden, sobald der Hub geschaltet hat.
     if (device.type === "HUE_LIGHT") setTimeout(() => router.refresh(), 6_000);
     return remoteError ?? null;
+  }
+
+  async function handleMowerAction(device: RoomDevice, action: MowerAction, planId?: string): Promise<string | null> {
+    setError("");
+    const res = await apiRequest<{ error?: string }>(`/api/devices/${device.id}/mower`, "POST", { action, planId });
+    if (!res.ok) return res.message;
+    refreshMowers();
+    return null;
   }
 
   async function handleZoneAction(zone: RoomZone, action: ZoneAction): Promise<string | null> {
@@ -259,6 +274,8 @@ export function RaeumeClient({ data, readonly }: { data: RaeumeData; readonly: b
                   onEdit={() => openEquipment(room)}
                   onClimate={() => setClimateRoomId(room.id)}
                   network={networkByRoom.get(room.id) ?? []}
+                  mowers={mowers}
+                  onMowerAction={handleMowerAction}
                 />
               ))}
             </div>

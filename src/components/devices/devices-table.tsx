@@ -38,6 +38,7 @@ import {
   Zap,
   Blinds,
   CircleDot,
+  Tractor,
   Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ import { coverMotionLabel, type CoverMotion } from "@/lib/cover-constants";
 import { loqedBoltStateLabel } from "@/lib/loqed-constants";
 import type { SensorReading } from "@/lib/shelly-sensor";
 import { SensorReadings } from "./sensor-readings";
+import { mowerTone, readMowerState } from "@/lib/mower";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -271,6 +273,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           const isLoqed  = device.type === "LOQED_SMARTLOCK";
           const isGardena = device.type === "GARDENA_VALVE";
           const isAudio  = device.type === "AUDIO_PLAYER";
+          const isMower  = device.type === "MAMMOTION_MOWER";
           const isSensor = device.category === "SENSOR";
           const cat      = device.category ? CATEGORY_META[device.category] : null;
           const lastUpd  = device.lastUpdate ? new Date(device.lastUpdate) : null;
@@ -434,6 +437,39 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               );
             }
 
+            // Maehroboter: Zustand und Akku, wie der Hub sie zuletzt gemeldet hat.
+            if (isMower) {
+              const ms = readMowerState(device.systemInfo);
+              const fresh = !!(lastUpd && lastUpd.getTime() > fiveMinAgo.getTime() - 5 * 60_000);
+              if (!ms || !fresh) {
+                return (
+                  <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> keine Meldung
+                  </Badge>
+                );
+              }
+              const tone = mowerTone(ms);
+              const toneCls =
+                tone === "mowing" ? "bg-success/12 text-success"
+                : tone === "error" ? "bg-destructive/12 text-destructive"
+                : tone === "paused" ? "bg-warning/14 text-warning"
+                : "bg-muted text-muted-foreground";
+              const charge = ms.battery;
+              const BatIcon = charge != null && charge < 15 ? BatteryWarning : charge != null && charge < 30 ? BatteryLow : Battery;
+              return (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge className={cn("gap-1 text-xs h-5", toneCls)}>
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" /> {ms.online ? ms.statusLabel || ms.status : "Offline"}
+                  </Badge>
+                  {charge != null && (
+                    <Badge className="gap-1 text-xs h-5 bg-success/12 text-success">
+                      <BatIcon className="h-3 w-3" /> {Math.round(charge)}%
+                    </Badge>
+                  )}
+                </div>
+              );
+            }
+
             // LOQED-Schloss: Riegelzustand + Batterie
             if (isLoqed) {
               const ls = loqedStatus(device.systemInfo);
@@ -526,9 +562,11 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                           ? "bg-success/10 text-success"
                           : isAudio
                             ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
-                            : "bg-primary/10 text-primary"
+                            : isMower
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : "bg-primary/10 text-primary"
                   )}>
-                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : isGardena ? <Sprout className="h-4 w-4" /> : isAudio ? <Volume2 className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
+                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : isGardena ? <Sprout className="h-4 w-4" /> : isAudio ? <Volume2 className="h-4 w-4" /> : isMower ? <Tractor className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
                   </div>
                   <div className="min-w-0">
                     <p className="font-medium text-sm text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
@@ -548,7 +586,7 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     <cat.icon className="h-3 w-3" /> {cat.label}
                   </Badge>
                 ) : (
-                  <span className="text-xs text-muted-foreground/70">{isShelly ? "Shelly" : isNuki ? "Nuki" : isGardena ? "GARDENA" : "Pi"}</span>
+                  <span className="text-xs text-muted-foreground/70">{isShelly ? "Shelly" : isNuki ? "Nuki" : isGardena ? "GARDENA" : isMower ? "Mähroboter" : "Pi"}</span>
                 )}
               </TableCell>
 

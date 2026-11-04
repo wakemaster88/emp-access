@@ -38,6 +38,8 @@ const VALID_TASK_TYPES = [
   // Philips Hue im LAN schalten (payload: bridgeId, lightId, on, deviceId).
   "HUE_SET",
   "SHELLY_SWITCH",
+  // Mammotion-Maeher: Befehl ueber den Maeher-Dienst des Hubs (payload: mower, action, planId).
+  "MOWER_ACTION",
 ];
 
 /**

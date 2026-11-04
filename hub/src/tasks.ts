@@ -249,6 +249,17 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
       const r = await controlSmart(`hue:${bridgeId}:${lightId}`, task.payload?.on === true);
       return r.ok ? { success: true, result: { bridgeId, lightId, on: task.payload?.on === true } } : { success: false, error: r.error };
     }
+    case "MOWER_ACTION": {
+      // Befehl aus der Cloud (Raum-Widget): ueber den Maeher-Dienst ausfuehren.
+      const mower = String(task.payload?.mower ?? "");
+      const action = String(task.payload?.action ?? "");
+      if (!/^[\w.-]{3,64}$/.test(mower)) return { success: false, error: "Mäher fehlt" };
+      if (!["start_task", "pause", "resume", "stop", "dock"].includes(action)) return { success: false, error: "Aktion unbekannt" };
+      const { mowerAction, syncMowersSoon } = await import("./mower.js");
+      const r = await mowerAction({ mower, action, planId: task.payload?.planId });
+      syncMowersSoon();
+      return r.ok ? { success: true, result: { mower, action } } : { success: false, error: r.error ?? "fehlgeschlagen" };
+    }
     case "CAMERA_SCENE": {
       const cameraId = Number(task.payload?.cameraId);
       if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };

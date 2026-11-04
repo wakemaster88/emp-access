@@ -320,6 +320,8 @@ async function refresh() {
     if (rooms) state.rooms = rooms;
     if (state.view === "geraete") state.smart = await getJson("/api/smart");
     if (state.view === "maeher") await loadMower();
+    // Geraete und Raeume zeigen die Maeher mit, ohne Karte.
+    else if (state.view === "geraete" || state.view === "raeume") await loadMowerStatus();
     if (state.view === "regeln" && (!state.rules || Date.now() - (state.rulesAt || 0) > 30000)) await loadRules();
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
@@ -2517,6 +2519,7 @@ const TYPE_LABELS = {
   NUKI_SMARTLOCK: "Nuki",
   LOQED_SMARTLOCK: "LOQED",
   HUE_LIGHT: "Philips Hue",
+  MAMMOTION_MOWER: "Mammotion",
   GARDENA_VALVE: "Gardena",
   AUDIO_PLAYER: "Audio-Player",
   RASPBERRY_PI: "Scanner-Pi",
@@ -2525,6 +2528,7 @@ const TYPE_LABELS = {
 /** Bedienart eines Geraets – entscheidet Knoepfe, Icon und Rueckfrage. */
 function devKind(dev) {
   const cat = dev.category || "";
+  if (dev.type === "MAMMOTION_MOWER") return "mower";
   if (dev.type === "NUKI_SMARTLOCK" || dev.type === "LOQED_SMARTLOCK") return "lock";
   if (dev.type === "GARDENA_VALVE") return "valve";
   if (dev.type === "HUE_LIGHT") return "toggle";
@@ -2545,6 +2549,7 @@ const KIND_ICON = {
   pulse: "zap",
   toggle: "bulb",
   door: "door",
+  mower: "leaf",
 };
 
 function devButtons(dev, kind, live) {
@@ -2565,6 +2570,8 @@ function devButtons(dev, kind, live) {
       return b("open", "Abspielen", "primary") + b("stop", "Stopp");
     case "sensor":
       return "";
+    case "mower":
+      return `<a class="btn small" href="#maeher">Steuern</a>`;
     default:
       return b("open", "Öffnen", "primary");
   }
@@ -2581,7 +2588,11 @@ function devTile(dev, liveMap) {
     else if (live.on === false) status = badge("idle", "aus");
   }
   const via = dev.local ? badge("outline", "LAN") : badge("outline", "Cloud");
-  const on = live && live.on === true;
+  if (kind === "mower") {
+    const m = state.mower && state.mower.mowers ? state.mower.mowers.find((x) => x.name === dev.mowerName) : null;
+    if (m) status = mowerChips(m);
+  }
+  const on = kind === "mower" ? !!(state.mower && state.mower.mowers && state.mower.mowers.some((x) => x.name === dev.mowerName && x.active)) : live && live.on === true;
   return `<div class="dev ${on ? "is-on" : ""}">
     <span class="tile-ico ${on ? "ok" : "accent"}">${icon(KIND_ICON[kind] || "dot")}</span>
     <div class="dev-main">
@@ -2812,7 +2823,53 @@ $("roomGrid").addEventListener("click", (ev) => {
  * Zuordnung speichert die Cloud, danach erscheinen sie unter "Raeume".
  */
 
-const VENDOR_ICON = { Shelly: "power", "Philips Hue": "bulb", Nuki: "lock", Tasmota: "power" };
+const VENDOR_ICON = { Shelly: "power", "Philips Hue": "bulb", Nuki: "lock", Tasmota: "power", Mammotion: "leaf" };
+
+/** Cloud-Geraet zu einem Maeher (gleicher Geraetename bei Mammotion). */
+function cloudMowerFor(name) {
+  const r = state.rooms;
+  if (!r) return null;
+  const all = r.rooms.flatMap((room) => room.devices.map((dev) => ({ dev, room }))).concat(r.unassigned.map((dev) => ({ dev, room: null })));
+  return all.find(({ dev }) => dev.type === "MAMMOTION_MOWER" && dev.mowerName === name) || null;
+}
+
+/** Status, Akku und Zone eines Maehers als Chips. */
+function mowerChips(m) {
+  const tone = m.errors.length ? "warn" : !m.online ? "off" : m.active ? "ok" : "idle";
+  const batt = Number.isFinite(m.battery) ? m.battery : null;
+  return [
+    badge(tone, m.online ? m.statusLabel : "Offline"),
+    batt != null ? badge(batt < 20 ? "warn" : "outline", `Akku ${batt} %${m.charging ? " ⚡" : ""}`) : "",
+    m.active && m.progress != null ? badge("outline", `${m.progress} %${m.currentZone ? ` · ${m.currentZone}` : ""}`) : "",
+  ].join("");
+}
+
+/** Maeher unter Geraete: Kurzstatus, Raum-Zuordnung (Cloud), Sprung zur Steuerung. */
+function mowerDeviceCard(m) {
+  const hit = cloudMowerFor(m.name);
+  const r = state.rooms;
+  let room = "";
+  if (r && hit) {
+    const current = hit.room ? hit.room.id : "";
+    const opts = [`<option value="">Kein Raum</option>`]
+      .concat(r.rooms.map((x) => `<option value="${x.id}"${x.id === current ? " selected" : ""}>${esc(x.name)}</option>`))
+      .join("");
+    room = `<select class="field small-select" aria-label="Raum für ${esc(m.label)}" data-assign="mower:${esc(m.name)}" data-device-id="${hit.dev.id}">${opts}</select>`;
+  } else if (r) {
+    room = `<span class="muted small-note">erscheint in wenigen Minuten in der Cloud</span>`;
+  }
+  const meta = [m.model, m.name, m.firmware ? `FW ${m.firmware}` : ""].filter(Boolean).join(" · ");
+  const tasks = m.tasks.filter((t) => t.enabled).length;
+  return `<article class="card room">
+    <div class="place-head"><span class="tile-ico ${m.active ? "ok" : "accent"}">${icon("leaf")}</span><h3>${esc(m.label)}</h3><span class="host">Mammotion</span></div>
+    <div class="muted small-note mono">${esc(meta)}</div>
+    <div class="devs"><div class="dev ${m.active ? "is-on" : ""}">
+      <span class="tile-ico ${m.active ? "ok" : "accent"}">${icon("leaf")}</span>
+      <div class="dev-main"><div class="dev-name">${m.zones ? m.zones.length : 0} Zonen · ${tasks === 1 ? "1 Aufgabe" : `${tasks} Aufgaben`}</div><div class="dev-meta">${mowerChips(m)}${room}</div></div>
+      <div class="dev-actions"><a class="btn small primary" href="#maeher">Steuern</a></div>
+    </div></div>
+  </article>`;
+}
 
 /** Cloud-Geraet zu einem Shelly-Kanal (gleiche IP, gleicher Kanal). */
 function cloudDeviceFor(ip, channel) {
@@ -2896,17 +2953,19 @@ function renderGeraete() {
     setHTML("smartGrid", '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>');
     return;
   }
-  const sub = `${sm.devices.length === 1 ? "1 steuerbares Gerät" : `${sm.devices.length} steuerbare Geräte`} gefunden${sm.scannedAt ? ` · letzter Netz-Scan ${ago(sm.scannedAt)}` : " · noch kein Netz-Scan"}. Shelly-Kanäle kannst du einem Raum zuordnen.`;
+  const mowers = state.mower && Array.isArray(state.mower.mowers) ? state.mower.mowers : [];
+  const total = sm.devices.length + mowers.length;
+  const sub = `${total === 1 ? "1 steuerbares Gerät" : `${total} steuerbare Geräte`}${mowers.length ? ` (davon ${mowers.length} Mäher)` : ""}${sm.scannedAt ? ` · letzter Netz-Scan ${ago(sm.scannedAt)}` : " · noch kein Netz-Scan"}. Shelly-Kanäle, Hue-Lampen und Mäher kannst du einem Raum zuordnen.`;
   if ($("smartSub").textContent !== sub) $("smartSub").textContent = sub;
 
-  const vendors = [...new Set(sm.devices.map((dev) => dev.vendor))];
+  const vendors = [...new Set(sm.devices.map((dev) => dev.vendor).concat(mowers.length ? ["Mammotion"] : []))];
   if (vendors.length > 1) {
     if (state.smartVendor !== "alle" && !vendors.includes(state.smartVendor)) state.smartVendor = "alle";
     setHTML(
       "smartFilter",
       ["alle", ...vendors]
         .map((v) => {
-          const n = v === "alle" ? sm.devices.length : sm.devices.filter((dev) => dev.vendor === v).length;
+          const n = v === "alle" ? total : v === "Mammotion" ? mowers.length : sm.devices.filter((dev) => dev.vendor === v).length;
           return `<button type="button" data-vendor="${esc(v)}" aria-pressed="${state.smartVendor === v}">${esc(v === "alle" ? "Alle" : v)} <span class="n">${n}</span></button>`;
         })
         .join("")
@@ -2915,10 +2974,11 @@ function renderGeraete() {
     setHTML("smartFilter", "");
   }
   const list = sm.devices.filter((dev) => state.smartVendor === "alle" || dev.vendor === state.smartVendor);
+  const mowerList = state.smartVendor === "alle" || state.smartVendor === "Mammotion" ? mowers : [];
   setHTML(
     "smartGrid",
-    list.length
-      ? list.map(smartCard).join("")
+    list.length + mowerList.length
+      ? mowerList.map(mowerDeviceCard).join("") + list.map(smartCard).join("")
       : empty("Noch keine steuerbaren Geräte gefunden. Starte einen Netz-Scan, oder prüfe, ob der Hub das VLAN der Geräte erreicht.")
   );
 }
@@ -3016,6 +3076,15 @@ const MOWER_STATE_TEXT = {
   rejected: "Mammotion hat die Anmeldung abgelehnt.",
   error: "Der Mäher-Dienst hat ein Problem.",
 };
+
+async function loadMowerStatus() {
+  if (state.mower && !state.mower.configured) return;
+  try {
+    state.mower = await getJson("/api/mower");
+  } catch {
+    /* naechster Poll */
+  }
+}
 
 async function loadMower() {
   try {

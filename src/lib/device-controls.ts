@@ -41,7 +41,10 @@ export type DeviceControlModel =
   | "SENSOR"
   /// Audio-Zone: Start/Stopp. Lautstaerke und Quelle laufen ueber
   /// `POST /api/devices/[id]/audio`, nicht als weitere Aktions-Knoepfe.
-  | "AUDIO";
+  | "AUDIO"
+  /// Maehroboter: eigene Befehle ueber `POST /api/devices/[id]/mower`
+  /// (Aufgabe starten, Pause, Station), keine Schalt-Aktionen.
+  | "MOWER";
 
 export type DeviceControlAction =
   | "open"
@@ -97,6 +100,7 @@ export function visibleDeviceControls(
 
 /** Bedienmodell eines Geraets aus Typ und Kategorie ableiten. */
 export function deviceControlModel(device: ControllableDevice): DeviceControlModel {
+  if (device.type === "MAMMOTION_MOWER") return "MOWER";
   if (device.category === "SENSOR") return "SENSOR";
   if (isAudioDevice(device)) return "AUDIO";
   if (isCoverDevice(device)) return "COVER";
@@ -123,6 +127,7 @@ export function deviceControlModel(device: ControllableDevice): DeviceControlMod
 export function deviceControls(device: ControllableDevice): DeviceControl[] {
   switch (deviceControlModel(device)) {
     case "SENSOR":
+    case "MOWER":
       return [];
 
     case "AUDIO":
@@ -202,6 +207,7 @@ export function deviceControls(device: ControllableDevice): DeviceControl[] {
  * angenommen?" diese hier.
  */
 export function availableDeviceActions(device: ControllableDevice): DeviceControlAction[] {
+  if (device.type === "MAMMOTION_MOWER") return [];
   if (isAudioDevice(device)) return ["open", "stop"];
   if (isCoverDevice(device)) return ["open", "stop", "close"];
   return ["open", "emergency", "deactivate", "reset"];
