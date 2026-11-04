@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { Suspense } from "react";
 import { RaeumeClient } from "@/components/raeume/raeume-client";
 import type {
   NetworkItem,
@@ -484,20 +485,22 @@ export default async function RaeumePage() {
   return (
     <>
       <Header title="Räume" accountName={session.user.accountName} />
-      <div className="page-content">
-        <RaeumeClient
-          data={{
-            rooms: roomPanels,
-            looseDevices: looseDevices.map(toRoomDevice),
-            looseCameras: looseCameras.map(toCamera),
-            looseZones: looseZones.map(toZone),
-            network,
-            scheduleOptions: schedules,
-            timezone: tz,
-            renderedAt: now.toISOString(),
-          }}
-          readonly={isSuperAdmin}
-        />
+      <div className="page-content page-ambient flex-1">
+        <Suspense fallback={null}>
+          <RaeumeClient
+            data={{
+              rooms: roomPanels,
+              looseDevices: looseDevices.map(toRoomDevice),
+              looseCameras: looseCameras.map(toCamera),
+              looseZones: looseZones.map(toZone),
+              network,
+              scheduleOptions: schedules,
+              timezone: tz,
+              renderedAt: now.toISOString(),
+            }}
+            readonly={isSuperAdmin}
+          />
+        </Suspense>
       </div>
     </>
   );

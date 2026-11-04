@@ -23,7 +23,7 @@ const ANCHOR: Record<RoomAutomation["anchor"], { Icon: LucideIcon; tone: string;
 };
 
 /** "heute" / "morgen" / "Sa 06.12." und die Uhrzeit, in der Zeitzone des Betriebs. */
-function nextParts(iso: string, nowMs: number, tz: string): { day: string; time: string } {
+export function nextParts(iso: string, nowMs: number, tz: string): { day: string; time: string } {
   const at = new Date(iso);
   const today = tzYmd(new Date(nowMs), tz);
   const ymd = tzYmd(at, tz);
