@@ -14,6 +14,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, log } from "./config.js";
+import { isMowerStream } from "./mower-streams.js";
 
 interface Frame {
   buf: Buffer;
@@ -119,8 +120,9 @@ export function startFrameWarmer(go2rtcUrl: string): void {
     } catch {
       return;
     }
-    // Nur Kachel-Streams: *_sub, oder Streams ohne main/sub-Endung.
-    const want = names.filter((n) => n.endsWith("_sub") || !/_(main|sub)$/.test(n));
+    // Nur Kachel-Streams: *_sub, oder Streams ohne main/sub-Endung. Maeher-Kameras
+    // nie: Jedes Bild wuerde die Kamera am Maeher einschalten.
+    const want = names.filter((n) => !isMowerStream(n) && (n.endsWith("_sub") || !/_(main|sub)$/.test(n)));
     let failed = 0;
     for (let i = 0; i < want.length; i += WARM_PARALLEL) {
       const batch = want.slice(i, i + WARM_PARALLEL);

@@ -27,5 +27,5 @@ echo "2/2  Dependencies …"
 # Merkt sich den Stand, damit der Hub bei geaenderten Requirements neu installiert.
 shasum -a 256 "$MOWER_DIR/requirements.txt" | cut -d' ' -f1 > "$VENV/.requirements.sha256"
 
-"$VENV/bin/python" -I -c "import pymammotion, aiohttp; print('OK pymammotion')"
+"$VENV/bin/python" -I -c "import pymammotion, aiohttp, pyagorartc; print('OK pymammotion + pyagorartc')"
 echo "Fertig. Der Hub startet den Dienst selbst, sobald MAMMOTION_EMAIL in hub/.env steht."

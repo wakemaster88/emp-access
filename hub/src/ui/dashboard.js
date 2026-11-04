@@ -322,6 +322,8 @@ async function refresh() {
     if (state.view === "maeher") await loadMower();
     // Geraete und Raeume zeigen die Maeher mit, ohne Karte.
     else if (state.view === "geraete" || state.view === "raeume") await loadMowerStatus();
+    // Die Zentrale braucht sie fuer die Maeher-Kameras; sie pollt alle 2 s, also seltener.
+    else if (state.view === "zentrale") await loadMowerStatus(10_000);
     if (state.view === "regeln" && (!state.rules || Date.now() - (state.rulesAt || 0) > 30000)) await loadRules();
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;
@@ -482,6 +484,8 @@ const live = {
   zoom: { scale: 1, x: 50, y: 50 },
   /** Ersatz-Vollbild fuers iPhone (kein Element-Fullscreen in Safari). */
   kiosk: false,
+  /** Kamera, deren Grossansicht nach dem Wechsel in die Zentrale aufgehen soll. */
+  pendingFocus: null,
 };
 
 /** Finger statt Maus: andere Hinweise, Gesten in der Grossansicht. */
@@ -557,6 +561,8 @@ async function loadCaps(cams) {
 
 /** Passenden go2rtc-Stream finden: per Kamera-Host aus der RTSP-URL. */
 function streamFor(cam, quality) {
+  // Maeher-Kameras: immer der H264-Stream, den jeder Browser abspielt.
+  if (cam.kind === "MOWER") return live.streams.some((s) => s.name === cam.cam.streamH264) ? cam.cam.streamH264 : null;
   const names = live.streams.filter((s) => s.host === cam.host).map((s) => s.name);
   if (!names.length && cam.kind === "DOORBIRD" && live.streams.some((s) => s.name === "doorbird")) {
     return "doorbird";
@@ -589,11 +595,52 @@ function liveCams(d) {
         hold: b.hold,
         caps: null,
       }))
-    );
+    )
+    .concat(mowerLiveCams());
 }
 
-/** Minimaler WebRTC-Client fuer go2rtc; verbindet bei Abbruch neu. */
-function startRtc(video, src, onState) {
+/*
+ * Maeher-Kameras (Mammotion, ueber die Cloud). Sie verbinden nie von selbst:
+ * Jede Verbindung schaltet die Kamera am Maeher ein, die Mammotion-App
+ * verliert dann ihr Bild. Live gibt es nur in der Grossansicht.
+ */
+function mowerLiveCams() {
+  const st = state.mower;
+  if (!st || !Array.isArray(st.mowers) || !(st.camera && st.camera.available)) return [];
+  const out = [];
+  st.mowers.forEach((m, i) => {
+    const cams = m.cameras || [];
+    for (const cam of cams) {
+      out.push({
+        // negative IDs, damit sie nie mit Kamera-IDs aus der Cloud kollidieren
+        id: -1000 - i * 10 - cam.uid,
+        name: cams.length > 1 ? `${m.label} · ${cam.label.replace(/^Kamera /, "")}` : m.label,
+        host: null,
+        kind: "MOWER",
+        mower: m,
+        cam,
+        reachable: !!m.online,
+        states: m.active ? [m.statusLabel] : [],
+        lastEventAt: null,
+        caps: null,
+      });
+    }
+  });
+  return out;
+}
+
+function mowerTileNote(c) {
+  const m = c.mower;
+  const batt = Number.isFinite(m.battery) ? `Akku ${m.battery} %${m.charging ? " ⚡" : ""}` : "";
+  return [m.online ? (m.active ? "" : m.statusLabel) : "", batt].filter(Boolean).join(" · ");
+}
+
+/**
+ * Minimaler WebRTC-Client fuer go2rtc; verbindet bei Abbruch neu.
+ * maxAttempts begrenzt die Fehlversuche in Folge (Maeher: jeder Versuch
+ * holt ein Token bei Mammotion), danach meldet er "failed".
+ */
+function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   if (typeof RTCPeerConnection === "undefined") {
     onState("error");
     return () => {};
@@ -617,9 +664,13 @@ function startRtc(video, src, onState) {
   const retry = () => {
     if (stopped) return;
     attempts++;
-    onState("error");
     cleanup();
     clearTimeout(timer);
+    if (maxAttempts && attempts >= maxAttempts) {
+      onState("failed");
+      return;
+    }
+    onState("error");
     timer = setTimeout(connect, Math.min(15000, 2000 * 2 ** Math.min(3, attempts - 1)));
   };
 
@@ -744,8 +795,20 @@ function tileHtml(c) {
   return `<article class="live-tile${live.wide.has(c.id) ? " is-wide" : ""}${pic ? " has-picture" : ""}" data-live="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)} groß anzeigen">
     <img alt=""${pic ? ` src="${pic.url}" data-blob="${pic.url}" data-at="${pic.at}"` : ""}>
     <video autoplay muted playsinline></video>
-    <div class="live-empty">${icon(c.kind === "DOORBIRD" ? "door" : "camera")}<span>${
-      src ? "Verbinde …" : live.go2rtc === false ? "go2rtc nicht erreichbar" : live.go2rtc === null ? "Lade Streams …" : "Kein Stream in go2rtc"
+    <div class="live-empty">${icon(c.kind === "DOORBIRD" ? "door" : c.kind === "MOWER" ? "leaf" : "camera")}<span>${
+      c.kind === "MOWER" && src
+        ? c.reachable
+          ? "Antippen für Livebild"
+          : "Mäher offline"
+        : src
+          ? "Verbinde …"
+          : live.go2rtc === false
+            ? "go2rtc nicht erreichbar"
+            : live.go2rtc === null
+              ? "Lade Streams …"
+              : c.kind === "MOWER"
+                ? "Kamera wird in go2rtc eingetragen …"
+                : "Kein Stream in go2rtc"
     }</span></div>
     <div class="live-top">
       <span class="live-tag mode" hidden></span>
@@ -781,6 +844,8 @@ function markWide(id, w, h) {
 }
 
 function ensureTileStream(tile, c) {
+  // Maeher-Kameras nur auf Wunsch in der Grossansicht (kein Dauer-Livebild, kein Standbild).
+  if (c.kind === "MOWER") return;
   const src = streamFor(c, "sub");
   if (!src) return;
   const visible = tile.dataset.vis !== "0";
@@ -925,7 +990,8 @@ function renderZentrale(d) {
       capsEl.dataset.h = capsHtml;
     }
     tile.querySelector(".live-tag.off").hidden = c.reachable;
-    tile.querySelector(".live-ago").textContent = c.lastEventAt ? `Signal ${ago(c.lastEventAt)}` : "";
+    tile.querySelector(".live-ago").textContent =
+      c.kind === "MOWER" ? mowerTileNote(c) : c.lastEventAt ? `Signal ${ago(c.lastEventAt)}` : "";
     ensureTileStream(tile, c);
   }
 
@@ -935,6 +1001,12 @@ function renderZentrale(d) {
     live.go2rtc === false
       ? `go2rtc auf dem Hub antwortet nicht – ${cams.length} Kameras ohne Livebild.`
       : `${liveCount} von ${cams.length} live${active.length ? ` · ${active.map((c) => `${c.name}: ${c.states.join(", ")}`).join(" · ")}` : ""}`;
+
+  if (live.pendingFocus != null && live.go2rtc !== null) {
+    const id = live.pendingFocus;
+    live.pendingFocus = null;
+    if (cams.some((c) => c.id === id)) openFocus(id);
+  }
 
   if ($("camDlg").open) {
     renderFocusState(d);
@@ -961,6 +1033,7 @@ function capsKey(c) {
 
 function focusSubtitle(c) {
   if (c.kind === "DOORBIRD") return `${c.host} · DoorBird`;
+  if (c.kind === "MOWER") return `${c.mower.model} · ${c.cam.label} · über die Mammotion-Cloud`;
   const k = c.caps;
   return `${c.host} · ${k && k.model ? `Reolink ${k.model}` : "Reolink"}${k && k.firmware ? ` · FW ${k.firmware}` : ""}`;
 }
@@ -1002,17 +1075,26 @@ function openFocus(id) {
   live.focusStop = null;
   delete dlg.dataset.rtc;
   const src = streamFor(c, "main");
+  const isMower = c.kind === "MOWER";
   if (src) {
     const want = c.id;
-    // Erst das gemerkte Hauptbild (sofort), dann ein frisches.
-    loadFrame(img, src, null, true).then(() => {
-      if (live.focusId === want && $("camDlg").dataset.rtc !== "live") loadFrame(img, src, null, false);
-    });
-    live.focusStop = startRtc(video, src, (st) => {
-      video.style.opacity = st === "live" ? "1" : "0";
-      $("camDlg").dataset.rtc = st;
-      renderFocusState(state.overview);
-    });
+    // Erst das gemerkte Hauptbild (sofort), dann ein frisches. Maeher haben keins.
+    if (!isMower) {
+      loadFrame(img, src, null, true).then(() => {
+        if (live.focusId === want && $("camDlg").dataset.rtc !== "live") loadFrame(img, src, null, false);
+      });
+    }
+    live.focusStop = startRtc(
+      video,
+      src,
+      (st) => {
+        video.style.opacity = st === "live" ? "1" : "0";
+        $("camDlg").dataset.rtc = st;
+        if (isMower && st === "failed") loadMowerStatus().then(() => renderFocusState(state.overview));
+        renderFocusState(state.overview);
+      },
+      { maxAttempts: isMower ? 3 : 0 }
+    );
   }
   if (!dlg.open) {
     dlg.showModal();
@@ -1029,7 +1111,8 @@ function openFocus(id) {
 /** Naechste/vorige Kamera in der Grossansicht. */
 function stepFocus(dir) {
   if (!state.overview) return;
-  const cams = liveCams(state.overview);
+  // Maeher-Kameras nicht beim Durchblaettern starten (schaltet die Kamera am Maeher ein).
+  const cams = liveCams(state.overview).filter((c) => c.kind !== "MOWER" || c.id === live.focusId);
   const i = cams.findIndex((c) => c.id === live.focusId);
   if (i < 0) return;
   openFocus(cams[(i + dir + cams.length) % cams.length].id);
@@ -1039,7 +1122,19 @@ function renderFocusState(d) {
   const c = d && focusCam();
   if (!c) return;
   const rtc = $("camDlg").dataset.rtc;
-  const html = `${rtc === "live" ? '<span class="live-tag live">LIVE</span>' : !streamFor(c, "main") ? '<span class="live-tag off">KEIN STREAM</span>' : rtc === "error" ? '<span class="live-tag snap">STANDBILD</span>' : '<span class="live-tag snap">VERBINDE …</span>'}${c.states
+  const mower = c.kind === "MOWER";
+  const tag =
+    rtc === "live"
+      ? '<span class="live-tag live">LIVE</span>'
+      : !streamFor(c, "main")
+        ? '<span class="live-tag off">KEIN STREAM</span>'
+        : rtc === "failed"
+          ? '<span class="live-tag off">KEIN BILD</span>'
+          : rtc === "error"
+            ? `<span class="live-tag snap">${mower ? "NEUER VERSUCH …" : "STANDBILD"}</span>`
+            : `<span class="live-tag snap">${mower ? "VERBINDE ÜBER MAMMOTION …" : "VERBINDE …"}</span>`;
+  const why = mower && rtc !== "live" && c.cam.error ? `<span class="badge warn">${esc(c.cam.error)}</span>` : "";
+  const html = `${tag}${why}${c.states
     .map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`)
     .join("")}`;
   const el = $("camDlgState");
@@ -1065,6 +1160,18 @@ function controlsHtml(c) {
       }</span>
     </div>`;
   const snap = `<div class="ctl-group"><span class="ctl-label">Bild</span><div class="ctl-row"><button type="button" class="btn small" data-cam="CAMERA_SNAPSHOT">${icon("snap")}Schnappschuss in die Cloud</button></div></div>`;
+
+  if (c.kind === "MOWER") {
+    const m = c.mower;
+    const tone = m.errors && m.errors.length ? "warn" : !m.online ? "off" : m.active ? "ok" : "idle";
+    const batt = Number.isFinite(m.battery) ? badge(m.battery < 20 ? "warn" : "outline", `Akku ${m.battery} %${m.charging ? " ⚡" : ""}`) : "";
+    const maxMin = Math.round(((state.mower && state.mower.camera && state.mower.camera.maxS) || 900) / 60);
+    return `<div class="ctl-group"><span class="ctl-label">Mäher</span>
+      <div class="ctl-row">${badge(tone, m.online ? m.statusLabel : "Offline")}${batt}</div>
+      <div class="ctl-row"><a class="btn small" href="#maeher">${icon("leaf")}Mäher steuern</a></div>
+      <span class="ctl-hint">Das Bild kommt über die Mammotion-Cloud, der Start dauert bis zu 20 Sekunden. Solange es hier läuft, zeigt die Mammotion-App kein Bild. Schaut niemand mehr zu oder nach ${maxMin} Minuten schaltet der Hub die Kamera am Mäher wieder ab.</span>
+    </div>${digital}`;
+  }
 
   if (c.kind === "DOORBIRD") {
     return `<div class="ctl-group"><span class="ctl-label">Tür</span><div class="ctl-row"><button type="button" class="btn primary" data-cam="DOORBIRD_OPEN">${icon("unlock")}Tür öffnen</button></div>
@@ -3077,10 +3184,12 @@ const MOWER_STATE_TEXT = {
   error: "Der Mäher-Dienst hat ein Problem.",
 };
 
-async function loadMowerStatus() {
+async function loadMowerStatus(maxAgeMs = 0) {
   if (state.mower && !state.mower.configured) return;
+  if (maxAgeMs && Date.now() - (state.mowerAt || 0) < maxAgeMs) return;
   try {
     state.mower = await getJson("/api/mower");
+    state.mowerAt = Date.now();
   } catch {
     /* naechster Poll */
   }
@@ -3191,6 +3300,20 @@ function mowerButtons(m) {
   return out.join("");
 }
 
+/** Kamera-Knoepfe: oeffnen die Grossansicht in der Zentrale. */
+function mowerCamButtons(m) {
+  const st = state.mower;
+  if (!st || !(st.camera && st.camera.available)) return "";
+  const i = st.mowers.indexOf(m);
+  const cams = m.cameras || [];
+  return cams
+    .map(
+      (cam) =>
+        `<button type="button" class="btn small" data-mower-cam="${-1000 - i * 10 - cam.uid}"${m.online ? "" : " disabled"}>${icon("camera")}${esc(cams.length > 1 ? cam.label : "Kamera")}</button>`
+    )
+    .join("");
+}
+
 function mowerTaskRow(m, t) {
   const busy = state.mowerBusy.has(m.name);
   const when = [t.weekdays.length === 7 ? "täglich" : t.weekdays.join(" "), t.startTime].filter(Boolean).join(" · ");
@@ -3231,7 +3354,7 @@ function mowerCard(m) {
     ${progress}
     ${errors}
     ${mowerMapSvg(state.mowerMaps[m.name], m)}
-    <div class="card-foot">${mowerButtons(m)}</div>
+    <div class="card-foot">${mowerButtons(m)}${mowerCamButtons(m)}</div>
     <div class="devs">${tasks}</div>
   </article>`;
 }
@@ -3283,6 +3406,12 @@ async function mowerCommand(body, okText) {
 }
 
 $("mowerGrid").addEventListener("click", async (ev) => {
+  const cam = ev.target.closest("button[data-mower-cam]");
+  if (cam) {
+    live.pendingFocus = Number(cam.dataset.mowerCam);
+    location.hash = "zentrale";
+    return;
+  }
   const btn = ev.target.closest("button[data-mower-act]");
   if (!btn) return;
   const action = btn.dataset.mowerAct;

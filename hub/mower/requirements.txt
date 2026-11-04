@@ -3,3 +3,5 @@
 pymammotion==0.10.13
 # Fehlt in den Abhaengigkeiten von pymammotion, wird aber importiert.
 packaging>=24.0
+# Agora-Signalisierung fuer die Maeher-Kameras (go2rtc holt das Bild per WHEP).
+pyagorartc==0.2.3

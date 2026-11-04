@@ -68,7 +68,17 @@ Technikraum), verbindet sich **ausschließlich outbound** mit der Cloud
   stellt die Sitzung danach aus `mower/.cache/session.json` wieder her, weil
   Mammotion Konten mit ständigen Passwort-Logins sperrt. Python 3.13+ nötig,
   das venv richtet der Hub beim Start selbst ein (`mower/install.sh`).
-  Zonen zeichnen geht nur in der App; die Mäher-Kameras folgen in Schritt 2.
+  Zonen zeichnen geht nur in der App.
+- **Mäher-Kameras** (`src/mower-streams.ts`, WHEP im Mäher-Dienst): Der Hub
+  trägt je Kamera zwei Streams in go2rtc ein, `mower_<name>_<uid>` (H265 per
+  WHEP vom Dienst, der dafür mit pyagorartc dem Agora-Kanal beitritt) und
+  `…_h264` (ffmpeg, für jeden Browser). Die Zentrale zeigt sie als Kachel,
+  live nur in der Großansicht; kein Standbild, keine Vorschau-Auffrischung,
+  weil jede Verbindung die Kamera am Mäher einschaltet und die
+  Mammotion-App dann kein Bild hat. Schaut in go2rtc niemand mehr zu oder
+  nach `MOWER_CAMERA_MAX_S` (900 s), beendet der Dienst die Sitzung und
+  schaltet die Kamera ab. Bei Bildproblemen helfen `MOWER_CAMERA_STRIP_MID=0`
+  oder `MOWER_CAMERA_H265_FMTP=0` in `hub/.env`.
 - **Streams**: Cloud-Camera ist führend; der Hub schreibt IPs in
   `webcams/config.json` und `go2rtc.yaml` (gitignored, kein Auto-Commit).
 - **Selbst-Update**: alle 5 min `git fetch` (async). Bei neuen Commits:
