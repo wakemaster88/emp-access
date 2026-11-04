@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
   const events = Array.isArray(body.events) ? body.events.slice(0, MAX_EVENTS_PER_REQUEST) : [];
   let created = 0;
   let closed = 0;
+  let rulesTriggered = 0;
 
   for (const e of events) {
     const cameraId = Number(e?.cameraId);
@@ -56,11 +57,14 @@ export async function POST(request: NextRequest) {
         data: { cameraId, type, startedAt: at, accountId: account.id },
       });
       created++;
-      // Raumregeln mit Bewegungs-Trigger asynchron ausloesen
-      // (Fehler duerfen den Event-Ingest nicht blockieren).
-      runMotionRules(account.id, cameraId, type, at).catch((err) => {
+      // Raumregeln mit Bewegungs-Trigger: abwarten (serverless beendet
+      // offene Promises nach der Antwort), Fehler blockieren den Ingest nicht.
+      // Der Hub holt danach sofort seine Tasks ab (z. B. Kamera steuern).
+      try {
+        rulesTriggered += (await runMotionRules(account.id, cameraId, type, at)).triggered;
+      } catch (err) {
         console.error("[camera-events] room rules failed:", err);
-      });
+      }
 
       // Ueberwachungs-Push nicht auf den rohen KI-Alarm der Kamera: der
       // flackert und meldet geparkte Autos/Strasse. PERSON pusht erst nach
@@ -80,5 +84,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, created, closed });
+  return NextResponse.json({ ok: true, created, closed, rulesTriggered });
 }

@@ -1605,6 +1605,7 @@ model Camera {
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   motionRules         RoomRule[]
+  ruleActions         RoomRuleAction[]     @relation("RoomRuleActionCamera")
 
   @@unique([accountId, name])
   @@index([accountId])
@@ -2768,6 +2769,8 @@ enum RuleActionKind {
   DEVICE
   NOTIFY
   AUDIO
+  /// Kamera steuern: Preset anfahren, automatisch folgen an/aus.
+  CAMERA
 }
 
 enum RuleNotifyChannel {
@@ -2875,9 +2878,19 @@ model RoomRuleAction {
   audioPlaylistId     Int?
   audioPlaylist       AudioPlaylist?     @relation(fields: [audioPlaylistId], references: [id], onDelete: SetNull)
 
+  /// CAMERA: Zielkamera (PTZ), Preset-ID der Kamera, automatisch folgen
+  /// (true = an, false = aus, null = unveraendert) und optional nach
+  /// `returnAfterSeconds` zurueck aufs Preset, Folgen wieder wie vorher.
+  targetCameraId     Int?
+  targetCamera       Camera?  @relation("RoomRuleActionCamera", fields: [targetCameraId], references: [id], onDelete: Cascade)
+  ptzPresetId        Int?
+  autoTrack          Boolean?
+  returnAfterSeconds Int?
+
   @@index([ruleId])
   @@index([deviceId])
   @@index([audioZoneId])
+  @@index([targetCameraId])
 }
 
 /// Verlauf: was hat wann ausgeloest und was ist dabei passiert.

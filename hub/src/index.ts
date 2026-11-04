@@ -3,6 +3,7 @@ import { executeTask, type HubTask } from "./tasks.js";
 import { checkForUpdate } from "./updater.js";
 import { startDashboard } from "./dashboard.js";
 import { autoScan } from "./scanner.js";
+import { onTaskKick } from "./task-kick.js";
 import { pollCameras, CAMERA_POLL_INTERVAL_MS } from "./cameras.js";
 import { ensureFaceSidecar, refreshGallery } from "./face.js";
 import { refreshVehicleWhitelist } from "./plate.js";
@@ -27,6 +28,8 @@ const TASK_CONCURRENCY = 4;
 
 const HIGH_PRIORITY = new Set([
   "SCAN_SNAPSHOT",
+  // Regel „Kamera steuern“ (z. B. Klingel → Halle auf Preset): sofort.
+  "CAMERA_SCENE",
   "DOORBIRD_OPEN",
   "DOORBIRD_HOLD",
   "CAMERA_PTZ",
@@ -154,6 +157,13 @@ async function runWithSlot(task: HubTask): Promise<void> {
   }
 }
 
+/** Kam während eines Abrufs ein Kick (Regel ausgelöst), gleich noch einmal holen. */
+let taskPollAgain = false;
+onTaskKick(() => {
+  if (taskPollBusy) taskPollAgain = true;
+  else void pollTasks();
+});
+
 async function pollTasks() {
   if (taskPollBusy) return;
   taskPollBusy = true;
@@ -176,6 +186,10 @@ async function pollTasks() {
     log(`Task-Poll-Fehler: ${e instanceof Error ? e.message : e}`);
   } finally {
     taskPollBusy = false;
+    if (taskPollAgain) {
+      taskPollAgain = false;
+      void pollTasks();
+    }
   }
 }
 

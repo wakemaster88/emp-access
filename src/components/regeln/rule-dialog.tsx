@@ -48,6 +48,10 @@ function toDrafts(rule: Rule | null): ActionDraft[] {
       : a.audioPlaylistId
         ? "playlist"
         : "stop",
+    targetCameraId: a.targetCameraId,
+    ptzPresetId: a.ptzPresetId,
+    autoTrack: a.autoTrack,
+    returnAfterSeconds: a.returnAfterSeconds,
   }));
 }
 
@@ -190,6 +194,10 @@ export function RuleDialog({
         audioZoneId: a.audioZoneId,
         audioAnnouncementId: a.audioMode === "announcement" ? a.audioAnnouncementId : null,
         audioPlaylistId: a.audioMode === "playlist" ? a.audioPlaylistId : null,
+        targetCameraId: a.targetCameraId,
+        ptzPresetId: a.ptzPresetId,
+        autoTrack: a.autoTrack,
+        returnAfterSeconds: a.returnAfterSeconds,
       })),
     };
 
@@ -341,6 +349,7 @@ export function RuleDialog({
                       <option value="PERSON">Person</option>
                       <option value="VEHICLE">Fahrzeug</option>
                       <option value="MOTION">Bewegung</option>
+                      <option value="DOORBELL">Klingel (DoorBird)</option>
                     </select>
                   </div>
                 </div>

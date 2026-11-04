@@ -19,6 +19,8 @@ const VALID_TASK_TYPES = [
   "CAMERA_IR",
   "CAMERA_SIREN",
   "CAMERA_PTZ_PRESETS",
+  // Regel-Aktion „Kamera steuern“: Preset anfahren, automatisch folgen an/aus.
+  "CAMERA_SCENE",
   "SWITCH_SYNC",
   // Log-Ausschnitt vom Hub abrufen (Netzwerk-Seite, Karte „Lokaler Hub“).
   "HUB_LOG",

@@ -4,6 +4,7 @@ import dgram from "node:dgram";
 import { log, api } from "./config.js";
 import {
   uploadSnapshot,
+  cameraScene,
   captureSnapshot,
   ptzControl,
   setSpotlight,
@@ -228,6 +229,16 @@ export async function executeTask(task: HubTask): Promise<TaskResult> {
             result = await getPtzPresets(cameraId);
         }
         return { success: true, result: { cameraId, ...(result as object) } };
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    case "CAMERA_SCENE": {
+      const cameraId = Number(task.payload?.cameraId);
+      if (!Number.isInteger(cameraId)) return { success: false, error: "cameraId fehlt" };
+      try {
+        const result = await cameraScene(cameraId, task.payload);
+        return { success: true, result: { cameraId, ...result } };
       } catch (e) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
       }
