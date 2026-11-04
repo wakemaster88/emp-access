@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { findAreaForIp, findVlanForIp } from "@/lib/ip";
+import { normalizeMac } from "@/lib/mac";
 
 const VALID_TYPES = ["PC", "PRINTER", "CAMERA", "NAS", "PHONE", "IOT", "MONITOR", "OTHER"];
 
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
       name: body.name.trim(),
       type: body.type ?? "OTHER",
       ipAddress,
-      macAddress: body.macAddress?.trim() || null,
+      macAddress: normalizeMac(body.macAddress) ?? (body.macAddress?.trim() || null),
       isStatic: body.isStatic ?? false,
       deviceId,
       portId,

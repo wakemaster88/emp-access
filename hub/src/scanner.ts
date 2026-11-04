@@ -37,10 +37,10 @@ let lastSubnets: SubnetSummary[] = [];
 
 export interface ScannedDevice {
   ip: string;
-  /** null = geroutetes VLAN ohne Router-ARP (wird nicht in die Cloud gemeldet). */
+  /** null = geroutetes VLAN ohne Router-ARP und ohne MAC aus der Geraete-API. */
   mac: string | null;
-  /** Woher die MAC stammt: lokale ARP-Tabelle oder Router (SNMP). */
-  macSource: "arp" | "router" | null;
+  /** Woher die MAC stammt: lokale ARP-Tabelle, Router (SNMP) oder Shelly-API. */
+  macSource: "arp" | "router" | "shelly" | null;
   iface: string | null;
   vlanId: number | null;
   vlanName: string | null;
@@ -234,18 +234,20 @@ async function fullScan(): Promise<{ devices: ScannedDevice[]; subnets: SubnetSu
     while (index < list.length) {
       const ip = list[index++];
       const sighting = table.get(ip) ?? null;
-      const mac = sighting?.mac ?? null;
       const subnet = subnetForIp(ip, subnets);
       // Ohne MAC und ohne Ping-Antwort gibt es nichts Verlaessliches zu melden.
-      if (!mac && !pings.has(ip)) continue;
+      if (!sighting?.mac && !pings.has(ip)) continue;
 
       const [hostname, openPorts] = await Promise.all([lookupHostname(ip), scanPorts(ip)]);
       const shelly = openPorts.includes(80) ? await probeShelly(ip) : null;
+      // Geroutete VLANs haben keine ARP-MAC; Shellys nennen ihre MAC selbst.
+      const mac = sighting?.mac ?? shelly?.mac ?? null;
+      const macSource = sighting?.mac ? sighting.source : mac ? "shelly" : null;
       const vendor = mac ? lookupVendor(mac) : null;
       devices.push({
         ip,
         mac,
-        macSource: sighting?.source ?? null,
+        macSource,
         iface: sighting?.iface ?? subnet?.iface ?? null,
         vlanId: subnet?.vlanId ?? null,
         vlanName: subnet?.vlanName ?? null,
@@ -320,10 +322,15 @@ export async function runCloudScan(label = "Auto-Scan"): Promise<CloudScanResult
       detail: `${Math.round((Date.now() - startedAt) / 1000)} s · ${coverage}`,
     });
 
-    // Die Cloud identifiziert Geraete per MAC – Eintraege ohne MAC bleiben lokal.
+    // Die Cloud identifiziert Geraete per MAC. Erreichbare Geraete ohne MAC
+    // (geroutete VLANs) gehen trotzdem mit: die Cloud markiert damit bekannte
+    // Geraete mit genau dieser IP als online, legt aber nichts Neues an.
     const res = await api("/api/hub/scan", {
       method: "POST",
-      body: JSON.stringify({ hubName: CONFIG.name, devices: devices.filter((d) => d.mac) }),
+      body: JSON.stringify({
+        hubName: CONFIG.name,
+        devices: devices.filter((d) => d.mac || d.reachable),
+      }),
     });
     if (!res.ok) {
       const error = `HTTP ${res.status}`;

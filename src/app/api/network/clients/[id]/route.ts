@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
 import { findAreaForIp, findVlanForIp } from "@/lib/ip";
+import { normalizeMac } from "@/lib/mac";
 
 const VALID_TYPES = ["PC", "PRINTER", "CAMERA", "NAS", "PHONE", "IOT", "MONITOR", "OTHER"];
 
@@ -102,7 +103,10 @@ export async function PUT(
       name: body.name?.trim() || existing.name,
       type: body.type ?? existing.type,
       ipAddress: newIp,
-      macAddress: body.macAddress !== undefined ? (body.macAddress?.trim() || null) : existing.macAddress,
+      macAddress:
+        body.macAddress !== undefined
+          ? normalizeMac(body.macAddress) ?? (body.macAddress?.trim() || null)
+          : existing.macAddress,
       isStatic: typeof body.isStatic === "boolean" ? body.isStatic : existing.isStatic,
       deviceId,
       portId,

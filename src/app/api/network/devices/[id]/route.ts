@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithDb } from "@/lib/api-auth";
+import { normalizeMac } from "@/lib/mac";
 
 const VALID_TYPES = ["SWITCH", "ROUTER", "ACCESS_POINT", "FIREWALL", "OTHER"];
 const MAX_PORTS = 96;
@@ -66,7 +67,10 @@ export async function PUT(
       vendor: body.vendor !== undefined ? (body.vendor?.trim() || null) : existing.vendor,
       model: body.model !== undefined ? (body.model?.trim() || null) : existing.model,
       ipAddress: body.ipAddress !== undefined ? (body.ipAddress?.trim() || null) : existing.ipAddress,
-      macAddress: body.macAddress !== undefined ? (body.macAddress?.trim() || null) : existing.macAddress,
+      macAddress:
+        body.macAddress !== undefined
+          ? normalizeMac(body.macAddress) ?? (body.macAddress?.trim() || null)
+          : existing.macAddress,
       location: body.location !== undefined ? (body.location?.trim() || null) : existing.location,
       notes: body.notes !== undefined ? (body.notes?.trim() || null) : existing.notes,
     },
