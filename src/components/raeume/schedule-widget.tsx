@@ -24,7 +24,7 @@ function fmtTime(d: Date, tz: string): string {
 }
 
 /** "16:00", "morgen 12:00" oder "Do 12:00". */
-function fmtWhen(d: Date, now: Date, tz: string): string {
+export function fmtWhen(d: Date, now: Date, tz: string): string {
   const today = tzYmd(now, tz);
   const ymd = tzYmd(d, tz);
   if (ymd === today) return fmtTime(d, tz);
@@ -54,11 +54,14 @@ export function ScheduleWidget({
   climate,
   timezone,
   nowMs,
+  hideStatus = false,
 }: {
   schedule: RoomSchedule;
   climate: RoomClimateView | null;
   timezone: string;
   nowMs: number;
+  /** Zustand (geoeffnet/geschlossen) steht schon im Kopf der Raumkarte. */
+  hideStatus?: boolean;
 }) {
   const now = new Date(nowMs);
   const spec: ScheduleSpec = { name: schedule.name, seasons: schedule.seasons, exceptions: schedule.exceptions };
@@ -104,6 +107,9 @@ export function ScheduleWidget({
       )}
     >
       <div className="flex items-start justify-between gap-3">
+        {hideStatus ? (
+          <p className="min-w-0 truncate pt-1 text-xs font-medium text-muted-foreground">{schedule.name}</p>
+        ) : (
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span
@@ -126,6 +132,7 @@ export function ScheduleWidget({
             {schedule.name}
           </p>
         </div>
+        )}
         {heatState && (
           <div
             className={cn(
