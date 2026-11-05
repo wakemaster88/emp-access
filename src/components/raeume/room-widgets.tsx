@@ -274,7 +274,7 @@ export function DeviceTile({
       title={error || (label !== device.name ? device.name : undefined)}
       aria-pressed={on}
       className={cn(
-        "group relative flex min-h-[92px] flex-col justify-between rounded-tile border p-3 text-left transition-all duration-300",
+        "group relative flex min-h-[52px] items-center gap-2.5 rounded-tile border py-2 pl-2 pr-3 text-left transition-all duration-300",
         "disabled:cursor-default enabled:hover:-translate-y-0.5 enabled:active:scale-[0.97]",
         on ? TONE_ON[tone] : "glass-tile enabled:hover:bg-foreground/5",
         offline && "opacity-60",
@@ -282,15 +282,15 @@ export function DeviceTile({
     >
       <span
         className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-full transition-all duration-300",
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-300",
           on ? TONE_ICON_ON[tone] : "bg-muted text-muted-foreground",
         )}
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <TileIcon device={device} tone={tone} className="h-4 w-4" />}
       </span>
-      <span className="mt-2 block">
-        <span className="block break-words text-[13px] font-semibold leading-tight text-foreground">{label}</span>
-        <span className={cn("block text-[11px]", error ? "text-destructive" : on ? "text-foreground/70" : "text-muted-foreground")}>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-semibold leading-tight text-foreground">{label}</span>
+        <span className={cn("block truncate text-[11px]", error ? "text-destructive" : on ? "text-foreground/70" : "text-muted-foreground")}>
           {error ? "Fehler" : busy ? "schaltet …" : sub}
         </span>
       </span>
@@ -350,13 +350,13 @@ export function PulseTile({
       disabled={!canPress}
       title={error || (label !== device.name ? device.name : undefined)}
       className={cn(
-        "group relative flex min-h-[92px] flex-col justify-between rounded-tile border p-3 text-left transition-all duration-300",
+        "group relative flex min-h-[52px] items-center gap-2.5 rounded-tile border py-2 pl-2 pr-3 text-left transition-all duration-300",
         "disabled:cursor-default enabled:hover:-translate-y-0.5 enabled:active:scale-[0.97]",
         running ? TONE_ON.default : "glass-tile enabled:hover:bg-foreground/5",
         offline && "opacity-60",
       )}
     >
-      <span className="relative flex h-8 w-8 items-center justify-center">
+      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center">
         <svg viewBox="0 0 32 32" className="absolute inset-0 h-8 w-8 -rotate-90" aria-hidden>
           <circle cx="16" cy="16" r={R} fill="none" strokeWidth="2.5" className={running ? "stroke-primary/25" : "stroke-foreground/10"} />
           {running && (
@@ -377,9 +377,9 @@ export function PulseTile({
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CircleDot className="h-3.5 w-3.5" />}
         </span>
       </span>
-      <span className="mt-2 block">
-        <span className="block break-words text-[13px] font-semibold leading-tight text-foreground">{label}</span>
-        <span className={cn("block text-[11px] tabular-nums", error ? "text-destructive" : running ? "text-foreground/70" : "text-muted-foreground")}>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-semibold leading-tight text-foreground">{label}</span>
+        <span className={cn("block truncate text-[11px] tabular-nums", error ? "text-destructive" : running ? "text-foreground/70" : "text-muted-foreground")}>
           {error
             ? "Fehler"
             : offline

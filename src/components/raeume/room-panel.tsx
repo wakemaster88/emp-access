@@ -233,7 +233,7 @@ export function RoomPanel({
 
   const tiles = (list: RoomDevice[]) =>
     list.length > 0 && (
-      <div className="grid grid-cols-2 gap-2">
+      <div className={cn("grid grid-cols-2 gap-2", wide && "sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3")}>
         {list.map((d) =>
           isPulse(d) ? (
             <PulseTile key={d.id} device={d} roomName={room.name} status={statuses.get(d.id)} readonly={readonly} onAction={onAction} />
@@ -318,6 +318,9 @@ export function RoomPanel({
   return (
     <section className="glass-card overflow-hidden">
       <div className={cn("relative space-y-3 p-4 pb-3", wide && "sm:p-5 sm:pb-3")}>
+        {/* Ab lg stehen Name und Pillen links, die Schnellsteuerung rechts daneben. */}
+        <div className={cn(wide && "lg:flex lg:items-start lg:gap-5")}>
+        <div className="min-w-0 flex-1 space-y-3">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 text-white shadow-[0_6px_16px_-6px_var(--primary)]">
             <RoomIcon room={room} className="h-5 w-5" />
@@ -341,7 +344,10 @@ export function RoomPanel({
               onClick={onEdit}
               title="Geräte, Kameras und Beschallung dieses Raums zuordnen"
               aria-label="Raum bearbeiten"
-              className="shrink-0 rounded-full p-2 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-primary"
+              className={cn(
+                "shrink-0 rounded-full p-2 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-primary",
+                wide && "lg:absolute lg:right-3 lg:top-3",
+              )}
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
@@ -376,10 +382,16 @@ export function RoomPanel({
             </StatusPill>
           )}
         </div>
+        </div>
 
-        {/* Schnellsteuerung */}
+        {/* Schnellsteuerung: unter dem Namen, ab lg rechts daneben (zwei je Zeile, ab 2xl eine Zeile). */}
         {(switchableLights.length > 1 || playableZones.length > 0 || showClimate || groups.mower.length > 0) && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div
+            className={cn(
+              "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4",
+              wide && "lg:mt-0 lg:w-[24.5rem] lg:shrink-0 lg:grid-cols-2 lg:mr-9 lg:self-start 2xl:flex 2xl:w-auto 2xl:[&>*]:w-48",
+            )}
+          >
             {switchableLights.length > 1 && (
               <LightQuick devices={switchableLights} total={groups.light.length} onCount={lightsOn} readonly={readonly} onAction={onAction} />
             )}
@@ -429,6 +441,7 @@ export function RoomPanel({
             )}
           </div>
         )}
+        </div>
 
         {tabs.length > 1 && (
           <div role="tablist" className={cn("glass-strip flex gap-0.5", wide && "sm:max-w-xl")}>
