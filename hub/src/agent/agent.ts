@@ -23,6 +23,8 @@ import { AI_LOAD, aiLoadText, startAiLoad } from "./ai-load.js";
 import { answerVehicle } from "./vehicles.js";
 import { answerPersonOk } from "./people.js";
 import { stripThinking } from "./think.js";
+import { beginWork, endWork, recordActivity } from "./activity.js";
+import { toolLabel } from "./activity-rules.js";
 import {
   answerCallback,
   downloadFile,
@@ -196,6 +198,7 @@ async function converse(chatId: string, history: ChatMessage[], allowAct = true)
       const name = call.function?.name ?? "";
       const args = parseArgs(call.function?.arguments);
       const tool = findTool(name);
+      if (tool) recordActivity({ kind: "tool", text: `Sieht nach: ${toolLabel(name, args)}` });
       let content: string;
       if (!tool || !tools.some((t) => t.function.name === name)) {
         content = `Fehler: Werkzeug ${name} gibt es nicht.`;
@@ -289,6 +292,7 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
   history.push({ role: "user", content: prompt });
   await typing(chatId);
   const keepTyping = setInterval(() => void typing(chatId), 4_500);
+  beginWork(`chat:${chatId}`, "Antwortet auf Telegram …");
   try {
     const answer = await converse(chatId, history);
     histories.set(chatId, trimHistory(history));
@@ -300,6 +304,7 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
     await sendText(chatId, `Da ist etwas schiefgegangen: ${msg}`);
   } finally {
     clearInterval(keepTyping);
+    endWork(`chat:${chatId}`);
   }
 }
 
@@ -452,6 +457,12 @@ async function onUpdate(u: TgUpdate): Promise<void> {
     return;
   }
   const voice = msg.voice ?? msg.audio;
+  recordActivity({
+    kind: "user",
+    telegram: true,
+    where: name,
+    text: voice ? "🎙 Sprachnachricht" : msg.photo ? `📷 Foto${text ? `: ${text}` : ""}` : text,
+  });
   if (voice) {
     enqueue(chatId, () => handleVoice(chatId, voice));
     return;
@@ -565,7 +576,11 @@ async function watchTick(): Promise<void> {
   const lines: string[] = [];
   for (const f of now) lines.push(`${f.severity === "alert" ? "‼️" : "⚠️"} ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`);
   for (const f of resolved) lines.push(`✅ Wieder in Ordnung: ${f.title} (nach ${Math.max(1, Math.round(f.sinceMs / 60_000))} min)`);
+  for (const f of diff.opened.filter((x) => deferred.includes(x))) {
+    recordActivity({ kind: "warn", text: `⚠️ ${f.title} (Ruhezeit – Meldung kommt morgens)` });
+  }
   if (lines.length && chatIds().length) await broadcast(lines.join("\n"));
+  else if (lines.length) for (const l of lines) recordActivity({ kind: l.startsWith("‼️") ? "alert" : l.startsWith("✅") ? "ok" : "warn", text: l });
 }
 
 /* ------------------------------------------------------------ Tagesbericht */
@@ -587,7 +602,13 @@ async function dailyReport(): Promise<string> {
         "nutze day_preview nur, wenn ein Vorschlag davon abhängt (z. B. Personal zur Stoßzeit, Heizung oder Bewässerung nach Wetter).",
     },
   ];
-  const text = await converse("report", history, false);
+  beginWork("report", "Schreibt den Tagesbericht …");
+  let text: string;
+  try {
+    text = await converse("report", history, false);
+  } finally {
+    endWork("report");
+  }
   AGENT.lastReportAt = new Date().toISOString();
   return `Tagesbericht ${new Date().toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })}\n\n${text}`;
 }

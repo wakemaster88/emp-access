@@ -6,6 +6,7 @@
  * einen Empfangsweg haben – deshalb ein eigener Bot fuer den Assistenten.
  */
 import { log } from "../config.js";
+import { recordTelegramOut } from "./activity.js";
 
 const TOKEN = (process.env.HUB_AGENT_TELEGRAM_TOKEN || "").trim();
 const MAX_TEXT = 4000;
@@ -79,6 +80,7 @@ export async function sendText(chatId: string, text: string, buttons?: TgButton[
     });
     last = r.message_id;
   }
+  recordTelegramOut(text, { buttons: !!buttons });
   return last;
 }
 
@@ -89,9 +91,11 @@ export async function sendPhoto(chatId: string, jpeg: Buffer, caption?: string, 
   if (buttons) form.set("reply_markup", JSON.stringify({ inline_keyboard: buttons }));
   form.set("photo", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "bild.jpg");
   await call("sendPhoto", form, 60_000);
+  recordTelegramOut(caption || "Bild", { buttons: !!buttons, jpeg });
 }
 
 export async function editText(chatId: string, messageId: number, text: string): Promise<void> {
+  recordTelegramOut(text);
   // Foto-Nachrichten (Waechter, Kennzeichen-Frage) haben eine Bildunterschrift statt Text.
   await call("editMessageText", { chat_id: chatId, message_id: messageId, text: text.slice(0, MAX_TEXT) }).catch(() =>
     call("editMessageCaption", { chat_id: chatId, message_id: messageId, caption: text.slice(0, 1024) }).catch((e) =>

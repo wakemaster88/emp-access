@@ -45,6 +45,7 @@ import { getFrame, startFrameWarmer } from "./frame-cache.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 import { isMowerStream } from "./mower-streams.js";
 import { assistantHealth } from "./agent/agent.js";
+import { activityImage, activityPayload } from "./agent/activity.js";
 
 let actionCounter = 0;
 
@@ -643,6 +644,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     // Zentrale: wer wurde gerade wo gesehen (eine Zeile je Kamera).
     if (req.method === "GET" && url.pathname === "/api/live/people") {
       return json(res, 200, { people: await seenPeople() });
+    }
+
+    // Zentrale, Kachel „KI“: was der Hub-Assistent tut und getan hat.
+    if (req.method === "GET" && url.pathname === "/api/agent/activity") {
+      return json(res, 200, await activityPayload(Number(url.searchParams.get("since")) || 0));
+    }
+    const actImg = url.pathname.match(/^\/api\/agent\/activity\/img\/(\d{1,9})$/);
+    if (req.method === "GET" && actImg) {
+      const jpeg = await activityImage(Number(actImg[1]));
+      if (!jpeg) return json(res, 404, { error: "Bild nicht mehr vorhanden" });
+      res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+      return void res.end(jpeg);
     }
 
     // Mitarbeiter (emp-control) und was die KI heute ueber sie bemerkt hat.
