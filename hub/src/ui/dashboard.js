@@ -608,6 +608,8 @@ const live = {
   streamsAt: 0,
   loading: false,
   signature: "",
+  /** Fehlgeschlagene Abrufe der Stream-Liste in Folge. */
+  streamsFail: 0,
   /** Kamera-ID -> Stop-Funktion der WebRTC-Verbindung. */
   peers: new Map(),
   focusId: null,
@@ -674,16 +676,28 @@ function stopTile(tile, id) {
   setTileMode(tile);
 }
 
+/*
+ * Stream-Liste von go2rtc. Ein einzelner Fehlschlag (Hub startet nach einem
+ * Update neu, kurzer Timeout) darf die laufenden Kacheln nicht abbauen: Die
+ * letzte gute Liste bleibt, erst nach drei Fehlschlaegen in Folge gilt go2rtc
+ * als nicht erreichbar. Nach einem Fehlschlag wird schon nach 5 s neu gefragt.
+ */
 async function loadStreams(force = false) {
-  if (live.loading || (!force && Date.now() - live.streamsAt < 30000)) return;
+  const wait = live.streamsFail ? 5000 : 30000;
+  if (live.loading || (!force && Date.now() - live.streamsAt < wait)) return;
   live.loading = true;
   try {
     const r = await getJson("/api/go2rtc/streams");
-    live.go2rtc = !!r.reachable;
+    if (!r.reachable) throw new Error("go2rtc nicht erreichbar");
+    live.go2rtc = true;
     live.streams = r.streams || [];
+    live.streamsFail = 0;
   } catch {
-    live.go2rtc = false;
-    live.streams = [];
+    live.streamsFail = (live.streamsFail || 0) + 1;
+    if (live.streamsFail >= 3 || !live.streams.length) {
+      live.go2rtc = false;
+      live.streams = [];
+    }
   } finally {
     live.streamsAt = Date.now();
     live.loading = false;
@@ -902,7 +916,14 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
           clearInterval(watch);
           watch = setInterval(checkDelay, 4000);
           onState("live");
-        } else if (st === "failed" || st === "disconnected" || st === "closed") {
+        } else if (st === "disconnected") {
+          // Oft nur ein kurzer Aussetzer (WLAN): ICE erholt sich meist von
+          // selbst. Erst nach 8 s ohne Erholung neu verbinden.
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            if (pc && pc.connectionState === "disconnected") retry();
+          }, 8000);
+        } else if (st === "failed" || st === "closed") {
           retry();
         }
       };
@@ -1024,6 +1045,7 @@ function stopTiles() {
 function stopLive() {
   stopTiles();
   live.signature = "";
+  if ($("liveGrid")) $("liveGrid").innerHTML = "";
   if ($("camDlg") && $("camDlg").open) $("camDlg").close();
 }
 
@@ -1099,13 +1121,42 @@ function renderZentrale(d) {
     b.setAttribute("aria-pressed", String(b.dataset.cols === String(live.cols)));
   }
 
-  const sig = `${live.go2rtc}|${cams.map((c) => `${c.id}:${c.host}:${streamFor(c, "sub")}`).join("|")}`;
+  const tileKey = (c) => `${c.id}:${c.host}:${streamFor(c, "sub")}:${streamFor(c, "sub") ? "" : live.go2rtc}`;
+  const sig = cams.map(tileKey).join("|");
   if (sig !== live.signature) {
     live.signature = sig;
-    stopTiles();
-    tileObserver?.disconnect();
-    grid.innerHTML = cams.length ? cams.map(tileHtml).join("") : empty("Keine Kameras konfiguriert.");
-    if (tileObserver) for (const t of grid.querySelectorAll(".live-tile")) tileObserver.observe(t);
+    // Nur Kacheln neu bauen, die sich geaendert haben; laufende Livebilder
+    // der anderen bleiben stehen (z. B. wenn ein Maeher dazukommt).
+    const old = new Map([...grid.querySelectorAll(".live-tile")].map((t) => [t.dataset.live, t]));
+    const keep = new Set();
+    const tiles = cams.map((c) => {
+      const key = tileKey(c);
+      const prev = old.get(String(c.id));
+      if (prev && prev.dataset.key === key) {
+        keep.add(prev);
+        return prev;
+      }
+      const tpl = document.createElement("template");
+      tpl.innerHTML = tileHtml(c).trim();
+      const t = tpl.content.firstElementChild;
+      t.dataset.key = key;
+      return t;
+    });
+    for (const [id, t] of old) {
+      if (keep.has(t)) continue;
+      for (const [pid, stop] of live.peers) {
+        if (String(pid) !== id) continue;
+        stop();
+        live.peers.delete(pid);
+      }
+      tileObserver?.unobserve(t);
+    }
+    if (!cams.length) grid.innerHTML = empty("Keine Kameras konfiguriert.");
+    else {
+      for (const n of [...grid.childNodes]) if (!keep.has(n)) n.remove();
+      tiles.forEach((t) => grid.appendChild(t));
+    }
+    if (tileObserver) for (const t of tiles) if (!keep.has(t)) tileObserver.observe(t);
   }
   layoutGrid();
 
