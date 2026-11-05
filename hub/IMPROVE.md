@@ -707,3 +707,59 @@ Zwei fertig eingerichtete BSS-Soundweb-Prozessoren sollen aus EMP Access bedient
 ### Offen
 
 - Eingang auf „Melden“ stellen und nach ein paar Tagen Treffer/Fehltreffer im Log (`Lieferdienst`) und in den Sichtungen prüfen. Fahrzeuge ohne Logo (Subunternehmer) erkennt das nicht.
+
+## 2026-11-05 (Hub-Dashboard im Liquid-Glass-Stil der Cloud)
+
+Snapshot nicht verfügbar: `/api/improve` ließ sich nicht lesen, in dieser Umgebung lief kein Hub. Abgleich deshalb im Hub-Mock gegen Aufnahmen der Cloud und `docs/design-regeln.md` §21.
+
+### Befunde
+
+- Akzent: Hub Cyan→Violett (`#06b6d4`→`#6d4aff`, dunkel `#22d3ee`→`#8b6dff`), Cloud Indigo `oklch(0.53 0.24 276)`, dunkel `oklch(0.6 0.22 277)`, Violett nur im Verlauf.
+- Grund: Hub `#f3f5fa`/`#060912` mit zwei Glows, Cloud `oklch(0.978 0.004 255)`/`oklch(0.145 0.025 262)` mit Aurora aus vier Verläufen.
+- Karten: Hub Radius 1.1rem, Fläche Weiß 86 % bzw. `rgb(17 24 41 / 72 %)`, Blur 12 px. Cloud Radius 1.5rem, Glas Weiß 58 % bzw. 5,5 %, Blur 28 px, Lichtkante oben.
+- Schrift: Seitentitel Hub 1.75rem/720, Cloud 1.25rem (Desktop 1.375rem)/600. Abschnittslabel Hub 0.72rem/0.1em, Cloud 11 px/0.12em.
+- Knöpfe: Hub 2.6rem hoch, Radius 0.75rem, Primär im Cyan-Verlauf. Cloud 2.25rem (Touch 2.75rem), Radius 0.875rem, Primär Indigo flächig.
+- Navigation: Hub Tab-Leiste über die volle Breite (4.5rem) bzw. Sidebar unter der Kopfleiste. Cloud schwebendes Glas-Dock mit Pille bzw. Sidebar über die volle Höhe mit eigenem Kopf.
+- Gerätekacheln: Hub „an“ immer grün. Cloud färbt nach Art (Licht Amber, Heizung Orange, Lüftung/Wasser Himmelblau, Audio Violett, Mäher Smaragd).
+
+### Änderungen
+
+- `dashboard.css` neu auf den Cloud-Tokens: Grund, Text, Indigo-Akzent, Statusfarben (Smaragd/Amber/Rose/Himmelblau), Glas-Ebenen, Radien 1.5rem/1.125rem/0.875rem, Aurora. Hell/dunkel und `data-theme` wie bisher, `prefers-reduced-transparency` macht die Flächen deckend.
+- Telefon: schwebendes Dock (4rem, Pille für den aktiven Bereich), Kopfleiste als Glasbalken, Dialoge als Bottom-Sheet. Ab 900 px Sidebar über die volle Höhe mit Logo-Kopf, Kopfleiste nur über dem Inhalt.
+- Karten, Kennzahlen, Hinweise (mit Ton-Chip), Segment-Leisten, Felder, Knöpfe, Tabellen mit festem Kopf, Zeitleiste, Regel-Karten, Schalter (40×24) und Räume (Tönung bei offen, Warnung, Fehler) im Cloud-Stil.
+- `dashboard.js` nur für die Optik: `.dev` bekommt eine `tone-*`-Klasse (`devTone`). Ids, data-/aria-Attribute, Handler, Abrufe, Bedingungen und Texte unverändert.
+- `dashboard.html`/`manifest.webmanifest`: `theme-color` `#f6f8fa`/`#050a15`, Ring-Verlauf Indigo→Violett.
+- Alle Farben liegen in sRGB (nur Chroma gesenkt, L und H wie in der Cloud), Mischungen `in oklab`. Sonst zeichnet Chromium türkise Eckpixel an getönten Rändern und rosa Kachelverläufe.
+
+### Geprüft
+
+- Hub-Mock: 13 Bereiche plus 9 Extras (Kamera-, Regel-, Fahrzeug-, Zonen-Dialog, Bestätigung, Toast, Shelly, Mehr-Sheet, Theme-Wechsel), jeweils hell und dunkel, 1440 px und 390 px: 86 Aufnahmen ohne Überlauf. Dazu die Zustände Notbetrieb, leer und Mäher-Einrichtung.
+- Kontrast: 163 Text- und Flächenpaare in beiden Themes ohne Befund. Keine abgeschnittenen Knöpfe oder Labels (bis auf gewollte Ellipsen bei Kachelnamen).
+- Jede Klasse aus Templates, HTML und `classList` hat weiter eine Regel im CSS. `node --check hub/src/ui/dashboard.js`, `npm test` 197/197.
+
+### Offen
+
+- Live auf dem iPhone (App vom Home-Bildschirm) nach dem Hub-Update ansehen. Der Service Worker braucht eventuell einmal Neuladen, bis die neue CSS greift.
+- Noch im alten Stil: die Icons (`icons/icon.svg`, PNGs Cyan→Violett). Login-Seite (`hub/src/dashboard.ts`) und Offline-Seite (`sw.js`) sind seit dem Nachtrag unten Glaskarten im Cloud-Stil.
+- Raum-Tönung (`:has()`) und VLAN-Töne (relative Farben) brauchen Safari 16.4+ bzw. Chrome 119+. Ältere Browser zeigen ungetönte Räume und die HSL-Farben von vorher.
+- In Headless-Chromium wird der Inhalt unter dem Dock bei Scroll-Position 0 nicht weichgezeichnet. Das Dock ist deshalb zu 72 % deckend (Cloud-Balken 65 %). Auf dem Gerät prüfen, ob weniger reicht.
+
+### Nachtrag: Prüfbefunde aus zwei Reviews
+
+Übernommen:
+
+- Telefon: Fahrzeug-, Regel- und Zonen-Dialog sind wieder Bottom-Sheets über die volle Breite. Ihre festen Breiten galten auch unter 640 px, die Dialoge hingen links mit 32 px Lücke.
+- Zustandsfarben nach §3: Kamera-Erkennung himmelblau (Kacheln, Orte, Puls-Leiste, Lage-Kopf, Zähler), Klingel violett, mähender Mäher smaragd statt Rot. Offline, „nicht erreichbar“ und „getrennt“ rot statt gelb, das OFFLINE-Schild der Kamerakacheln rot statt amber. „KEIN STREAM“/„KEIN BILD“ sind Hinweise (gelb).
+- Raumkarten: Hinweise (Akku, Mäher-Pause, Gerätefehler) tönen gelb. Rot nur bei Klima-Fehler oder nicht erreichbarem Gerät.
+- Ring- und Balkenverlauf entfernt: gesund grün, Ports im Akzent, Mäh-Fortschritt smaragd (pausiert gelb).
+- Kontrast: Über der Kamerawand der Zentrale ist das Dock zu 92 % deckend (Labels vorher 2,9:1). Graue Badges und Segment-Zähler sind im Dunkeln heller (`--badge-muted`, oklch 0.81), vorher 3,4:1 über den hellen Farbflecken.
+- Segment-Leisten brechen mit Maus oder Trackpad um, auf Touch wischt man weiter. Bei 1024 px waren vorher Filter unsichtbar abgeschnitten.
+- Raum-Auswahl auf Touch mit 16 px Schrift und 44 px Höhe, damit iOS beim Fokus nicht zoomt. Radien wie in der Cloud: kleiner Knopf 18 px, Klima und Hinweis als Kachel 18 px, Raum-Chip rund. Seitentitel bleibt auf dem Desktop bei 1.25rem.
+- Schloss: entriegelt wieder mit grünem Icon, verriegelt grau. Im Kiosk und Vollbild haben Kamerakacheln eine dunkle statt einer weißen Kante.
+
+Nicht übernommen:
+
+- Volle Cloud-Chroma: Alle Cloud-Werte liegen außerhalb von sRGB. Chromium zeichnet damit an getönten Rändern farbfremde Pixel, beim Violett 325 Pixel gegenüber 0. Der Hub behält die größte Chroma in sRGB bei gleichem L und H.
+- Inter: Dafür bräuchte es eine Font-Datei und eine eigene Route in `hub/src/dashboard.ts`. Es bleibt bei der Systemschrift.
+- `.live-tag.live` auf `--emerald-solid`: Weiße Schrift fiele von 5,5:1 auf 3,8:1. Eine feste Farbe auf dem Kamerabild erlaubt §15.
+- Login- und Offline-Seite: Glaskarte über der Aurora mit denselben Tokens wie `dashboard.css`, hell und dunkel nach Systemeinstellung, `theme-color` `#f6f8fa`/`#050a15`, Tasten 44 px. Texte und Formular (GET mit `token`) unverändert.

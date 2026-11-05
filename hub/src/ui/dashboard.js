@@ -147,7 +147,7 @@ function meter(percent) {
   return `<div class="meter ${loadTone(p)}"><span style="width:${p.toFixed(1)}%"></span></div>`;
 }
 
-/** Ring-Anzeige 0–100 %. tone: ok/warn/alert/grad. */
+/** Ring-Anzeige 0–100 %. tone: ok/warn/alert/sky. */
 function ring(percent, label, small = "", tone = "ok", size = "") {
   const r = 40;
   const c = 2 * Math.PI * r;
@@ -158,10 +158,10 @@ function ring(percent, label, small = "", tone = "ok", size = "") {
   </div>`;
 }
 
-/* Alarmzustand → Farbklasse. */
+/* Alarmzustand → Farbklasse (wie die Cloud: Erkennung sky, Klingel violett). */
 function stateTone(name) {
-  if (name === "PERSON" || name === "DOORBELL") return "alert";
-  if (name === "VEHICLE") return "warn";
+  if (name === "DOORBELL") return "violet";
+  if (name === "PERSON" || name === "VEHICLE" || name === "MOTION" || name === "ANIMAL") return "sky";
   return "idle";
 }
 
@@ -420,11 +420,11 @@ function renderNavCounts(d) {
     el.className = `nav-count ${tone}`;
   };
   const active = d.cameras.filter((c) => c.activeStates.length).length + d.doorbirds.filter((b) => b.activeStates.length).length;
-  set("zentrale", active, "alert");
+  set("zentrale", active, "sky");
   set("systeme", d.health.filter((h) => h.state === "warn").length, "warn");
   set("netzwerk", d.autoScan && d.autoScan.devices ? d.autoScan.devices : "");
   const camDown = d.cameras.filter((c) => !c.reachable).length + d.doorbirds.filter((b) => !b.connected).length;
-  set("kameras", camDown, "warn");
+  set("kameras", camDown, "alert");
   const since = Date.now() - 10 * 60 * 1000;
   const recentAlerts = state.events.filter((e) => e.severity === "alert" && new Date(e.ts).getTime() > since).length;
   set("ereignisse", recentAlerts, "alert");
@@ -975,7 +975,8 @@ function renderZentrale(d) {
   for (const c of cams) {
     const tile = grid.querySelector(`[data-live="${c.id}"]`);
     if (!tile) continue;
-    tile.classList.toggle("is-active", c.states.length > 0);
+    tile.classList.toggle("is-active", c.kind !== "MOWER" && c.states.length > 0);
+    tile.classList.toggle("is-mowing", c.kind === "MOWER" && c.states.length > 0);
     tile.classList.toggle("is-offline", !c.reachable);
     const st = tile.querySelector(".live-states");
     const html = c.states.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("");
@@ -1127,9 +1128,9 @@ function renderFocusState(d) {
     rtc === "live"
       ? '<span class="live-tag live">LIVE</span>'
       : !streamFor(c, "main")
-        ? '<span class="live-tag off">KEIN STREAM</span>'
+        ? '<span class="live-tag warn">KEIN STREAM</span>'
         : rtc === "failed"
-          ? '<span class="live-tag off">KEIN BILD</span>'
+          ? '<span class="live-tag warn">KEIN BILD</span>'
           : rtc === "error"
             ? `<span class="live-tag snap">${mower ? "NEUER VERSUCH …" : "STANDBILD"}</span>`
             : `<span class="live-tag snap">${mower ? "VERBINDE ÜBER MAMMOTION …" : "VERBINDE …"}</span>`;
@@ -1553,13 +1554,13 @@ function placeCard(p) {
     rows.push('<div class="line"><span class="k">Sichtungen</span><span class="v muted">noch keine</span></div>');
   }
   const warn = !p.reachable
-    ? badge("warn", "offline")
+    ? badge("alert", "offline")
     : p.busy
       ? badge("idle", "Pipeline läuft")
       : p.pendingVehicle
         ? badge("idle", "Fahrzeug wartet")
         : "";
-  const tone = p.active.length ? "alert" : p.reachable ? "accent" : "warn";
+  const tone = p.active.length ? "sky" : p.reachable ? "accent" : "alert";
 
   return `<article class="card place ${p.active.length ? "is-active" : ""}">
     <div class="place-head"><span class="tile-ico ${tone}">${icon(p.kind === "DOORBIRD" ? "door" : "camera")}</span><h3>${esc(p.name)}</h3><span class="host mono">${esc(p.host)}</span></div>
@@ -1595,7 +1596,7 @@ function renderLage(d) {
   const ok = relevant.filter((h) => h.state === "ok").length;
   const warnings = relevant.filter((h) => h.state === "warn");
   const pct = relevant.length ? (ok / relevant.length) * 100 : 100;
-  const tone = active.length ? "alert" : warnings.length ? "warn" : "ok";
+  const tone = active.length ? "sky" : warnings.length ? "warn" : "ok";
   const headline = active.length
     ? `${active.length} ${active.length === 1 ? "Ort meldet" : "Orte melden"} gerade etwas`
     : warnings.length
@@ -1613,7 +1614,7 @@ function renderLage(d) {
   setHTML(
     "lageHero",
     `<article class="card hero-status ${tone}">
-      ${ring(pct, `${ok}/${relevant.length}`, "OK", tone === "ok" ? "grad" : tone)}
+      ${ring(pct, `${ok}/${relevant.length}`, "OK", tone)}
       <div><h2>${esc(headline)}</h2><p>${esc(detail)}</p></div>
     </article>
     <div class="hero-kpis">
@@ -1712,7 +1713,7 @@ function renderLeistung(sys) {
   const gauge = (label, percent, sub) => {
     const p = percent == null ? null : Math.round(percent);
     return `<article class="card stat gauge">
-      ${ring(p ?? 0, p == null ? "–" : `${p}%`, "", p == null ? "ok" : loadTone(p) === "ok" ? "grad" : loadTone(p), "sm")}
+      ${ring(p ?? 0, p == null ? "–" : `${p}%`, "", p == null ? "ok" : loadTone(p), "sm")}
       <div class="txt"><span class="label top">${esc(label)}</span><span class="value">${esc(sub)}</span></div>
     </article>`;
   };
@@ -1890,7 +1891,7 @@ function renderNetzwerk() {
             const p = s.portsTotal ? (s.portsUp / s.portsTotal) * 100 : 0;
             return `<article class="card place">
         <div class="place-head"><span class="tile-ico ${s.error ? "alert" : "accent"}">${icon("switch")}</span><h3>${esc(s.sysName || s.host)}</h3><span class="host mono">${esc(s.host)}</span></div>
-        ${s.error ? `<div class="chips">${badge("alert", s.error)}</div>` : `<div class="line"><span class="k">Ports aktiv</span><span class="v"><strong>${esc(s.portsUp)}</strong><span class="muted"> / ${esc(s.portsTotal)}</span></span></div><div class="meter grad"><span style="width:${p.toFixed(1)}%"></span></div>`}
+        ${s.error ? `<div class="chips">${badge("alert", s.error)}</div>` : `<div class="line"><span class="k">Ports aktiv</span><span class="v"><strong>${esc(s.portsUp)}</strong><span class="muted"> / ${esc(s.portsTotal)}</span></span></div><div class="meter accent"><span style="width:${p.toFixed(1)}%"></span></div>`}
         <div class="line"><span class="k">Laufzeit</span><span class="v">${esc(typeof s.uptimeS === "number" ? uptime(s.uptimeS) : "–")}</span></div>
         <div class="line"><span class="k">MACs</span><span class="v">${esc(s.macs)}</span></div>
         ${vlanLine(s.host)}
@@ -1980,11 +1981,11 @@ function renderKameras(d) {
 
   const camCards = cams.map((c) => {
     const chips = c.activeStates.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("");
-    const tone = c.activeStates.length ? "alert" : c.reachable ? "accent" : "warn";
+    const tone = c.activeStates.length ? "sky" : c.reachable ? "accent" : "alert";
     return `<article class="card place ${c.activeStates.length ? "is-active" : ""}">
       <div class="place-head"><span class="tile-ico ${tone}">${icon("camera")}</span><h3>${esc(c.name)}</h3><span class="host mono">${esc(c.host)}</span></div>
       <div class="chips">
-        ${c.reachable ? badge("ok", "erreichbar") : badge("warn", "offline")}
+        ${c.reachable ? badge("ok", "erreichbar") : badge("alert", "offline")}
         ${c.vehicleDetection ? badge("idle", "Fahrzeuge an") : badge("off", "Fahrzeuge aus")}
         ${chips}
       </div>
@@ -1997,10 +1998,10 @@ function renderKameras(d) {
 
   const birdCards = birds.map(
     (b) => `<article class="card place ${b.activeStates.length ? "is-active" : ""}">
-      <div class="place-head"><span class="tile-ico ${b.activeStates.length ? "alert" : b.connected ? "accent" : "warn"}">${icon("door")}</span><h3>${esc(b.name)}</h3><span class="host mono">${esc(b.host)}</span></div>
+      <div class="place-head"><span class="tile-ico ${b.activeStates.length ? "sky" : b.connected ? "accent" : "alert"}">${icon("door")}</span><h3>${esc(b.name)}</h3><span class="host mono">${esc(b.host)}</span></div>
       <div class="chips">
         ${badge("idle", "DoorBird")}
-        ${b.connected ? badge("ok", "Monitor verbunden") : badge("warn", "getrennt")}
+        ${b.connected ? badge("ok", "Monitor verbunden") : badge("alert", "getrennt")}
         ${b.hold ? badge(b.hold.lastError ? "warn" : "ok", `Offen bis ${clock(b.hold.until)}`) : ""}
         ${b.activeStates.map((s) => `<span class="badge ${stateTone(s)}">${esc(s)}</span>`).join("")}
       </div>
@@ -2647,6 +2648,17 @@ function devKind(dev) {
   return "door";
 }
 
+/** Farbton der Geraete-Kachel, nur Optik (Zustands-Vokabular wie toneFor in der Cloud). */
+function devTone(name, kind, category, type) {
+  if (kind === "mower") return "live";
+  if (kind === "audio") return "music";
+  if (kind === "valve") return "water";
+  if (category === "BELEUCHTUNG" || type === "HUE_LIGHT" || kind === "light" || /licht|lampe|leuchte/i.test(name || "")) return "light";
+  if (/heiz|ofen|radiator/i.test(name || "")) return "heat";
+  if (/l(ü|ue)ft|ventil|klima|fan/i.test(name || "")) return "air";
+  return "primary";
+}
+
 const KIND_ICON = {
   lock: "lock",
   valve: "drop",
@@ -2690,7 +2702,7 @@ function devTile(dev, liveMap) {
   const what = [CATEGORY_LABELS[dev.category] || null, TYPE_LABELS[dev.type] || dev.type].filter(Boolean).join(" · ");
   let status = "";
   if (dev.local && live) {
-    if (!live.reachable) status = badge("warn", "nicht erreichbar");
+    if (!live.reachable) status = badge("alert", "nicht erreichbar");
     else if (live.on === true) status = badge("ok", live.powerW != null && live.powerW > 0 ? `an · ${num(live.powerW, 0)} W` : "an");
     else if (live.on === false) status = badge("idle", "aus");
   }
@@ -2700,7 +2712,7 @@ function devTile(dev, liveMap) {
     if (m) status = mowerChips(m);
   }
   const on = kind === "mower" ? !!(state.mower && state.mower.mowers && state.mower.mowers.some((x) => x.name === dev.mowerName && x.active)) : live && live.on === true;
-  return `<div class="dev ${on ? "is-on" : ""}">
+  return `<div class="dev tone-${devTone(dev.name, kind, dev.category, dev.type)} ${on ? "is-on" : ""}">
     <span class="tile-ico ${on ? "ok" : "accent"}">${icon(KIND_ICON[kind] || "dot")}</span>
     <div class="dev-main">
       <div class="dev-name">${esc(dev.name)}</div>
@@ -2970,7 +2982,7 @@ function mowerDeviceCard(m) {
   return `<article class="card room">
     <div class="place-head"><span class="tile-ico ${m.active ? "ok" : "accent"}">${icon("leaf")}</span><h3>${esc(m.label)}</h3><span class="host">Mammotion</span></div>
     <div class="muted small-note mono">${esc(meta)}</div>
-    <div class="devs"><div class="dev ${m.active ? "is-on" : ""}">
+    <div class="devs"><div class="dev tone-live ${m.active ? "is-on" : ""}">
       <span class="tile-ico ${m.active ? "ok" : "accent"}">${icon("leaf")}</span>
       <div class="dev-main"><div class="dev-name">${m.zones ? m.zones.length : 0} Zonen · ${tasks === 1 ? "1 Aufgabe" : `${tasks} Aufgaben`}</div><div class="dev-meta">${mowerChips(m)}${room}</div></div>
       <div class="dev-actions"><a class="btn small primary" href="#maeher">Steuern</a></div>
@@ -3015,7 +3027,7 @@ function roomSelect(dev, ctl) {
 function smartControl(dev, ctl) {
   const busy = state.smartBusy.has(ctl.key);
   let status;
-  if (!ctl.reachable) status = badge("warn", "nicht erreichbar");
+  if (!ctl.reachable) status = badge("alert", "nicht erreichbar");
   else if (ctl.kind === "lock") status = badge(ctl.on ? "ok" : "idle", ctl.stateText || "?");
   else if (ctl.on === true)
     status = badge("ok", ctl.powerW ? `an · ${num(ctl.powerW, 0)} W` : ctl.brightness != null ? `an · ${ctl.brightness} %` : "an");
@@ -3027,7 +3039,7 @@ function smartControl(dev, ctl) {
       : ctl.on
         ? `<button type="button" class="btn small on" data-smart="${esc(ctl.key)}" data-on="false"${busy ? " disabled" : ""}>Ausschalten</button>`
         : `<button type="button" class="btn small primary" data-smart="${esc(ctl.key)}" data-on="true"${busy ? " disabled" : ""}>Einschalten</button>`;
-  return `<div class="dev ${ctl.on && ctl.kind !== "lock" ? "is-on" : ""}">
+  return `<div class="dev tone-${devTone(ctl.name, ctl.kind)} ${ctl.on && ctl.kind !== "lock" ? "is-on" : ""}">
     <span class="tile-ico ${ctl.on ? "ok" : "accent"}">${icon(ctl.kind === "lock" ? "lock" : ctl.kind === "light" ? "bulb" : "power")}</span>
     <div class="dev-main"><div class="dev-name">${esc(ctl.name)}</div><div class="dev-meta">${status}${roomSelect(dev, ctl)}</div></div>
     <div class="dev-actions">${btn}</div>
@@ -3319,7 +3331,7 @@ function mowerTaskRow(m, t) {
   const when = [t.weekdays.length === 7 ? "täglich" : t.weekdays.join(" "), t.startTime].filter(Boolean).join(" · ");
   const meta = [when, t.zones.length ? t.zones.join(", ") : "", t.bladeHeightMm ? `${t.bladeHeightMm} mm` : ""].filter(Boolean).join(" · ");
   const canStart = !m.active && m.online && !busy;
-  return `<div class="dev${t.running ? " is-on" : ""}">
+  return `<div class="dev tone-live${t.running ? " is-on" : ""}">
     <span class="tile-ico ${t.running ? "accent" : ""}">${icon("tasks")}</span>
     <div class="dev-main"><div class="dev-name">${esc(t.name)}</div>
       <div class="dev-meta muted">${t.running ? badge("ok", "läuft") : ""}${t.enabled ? "" : badge("off", "Zeitplan aus")}<span>${esc(meta || "kein Zeitplan")}</span></div></div>
@@ -3340,7 +3352,7 @@ function mowerCard(m) {
   ].join("");
   const progress =
     m.progress != null
-      ? `<div class="mower-progress"><div class="meter grad"><span style="width:${Math.max(0, Math.min(100, m.progress))}%"></span></div><span class="muted small-note">${m.progress} % gemäht</span></div>`
+      ? `<div class="mower-progress"><div class="meter ${m.active ? "live" : "warn"}"><span style="width:${Math.max(0, Math.min(100, m.progress))}%"></span></div><span class="muted small-note">${m.progress} % gemäht</span></div>`
       : "";
   const errors = m.errors.length
     ? `<div class="pair-hint">${icon("alert")}<span>${m.errors.map((e) => esc(e.text || `Fehlercode ${e.code}`)).join("<br>")}</span></div>`
