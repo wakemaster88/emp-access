@@ -18,6 +18,7 @@ import { CONFIG, api, log } from "../config.js";
 import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import { SENTINEL, startSentinel } from "./sentinel.js";
+import { answerVehicle } from "./vehicles.js";
 import { stripThinking } from "./think.js";
 import {
   answerCallback,
@@ -279,13 +280,24 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
 
 async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Promise<void> {
   const chatId = String(cb.message?.chat.id ?? "");
+  const veh = (cb.data ?? "").match(/^v(ok|no):([A-Z0-9ÄÖÜ]{4,12})$/);
   const m = (cb.data ?? "").match(/^(ok|no):([0-9a-f]{12})$/);
-  if (!chatId || !isPaired(pairing, chatId, ENV_CHAT_IDS) || !m) {
+  if (!chatId || !isPaired(pairing, chatId, ENV_CHAT_IDS) || (!m && !veh)) {
     await answerCallback(cb.id, "Nicht berechtigt.");
     return;
   }
-  const p = pending.get(m[2]);
   const msgId = cb.message?.message_id;
+  if (veh) {
+    await answerCallback(cb.id, veh[1] === "ok" ? "Wird genehmigt …" : "Ok");
+    const line = await answerVehicle(veh[1] === "ok", veh[2]).catch((e) => `Fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+    if (msgId) await editText(chatId, msgId, line);
+    const h = histories.get(chatId) ?? [];
+    h.push({ role: "assistant", content: `(${line})` });
+    histories.set(chatId, trimHistory(h));
+    return;
+  }
+  if (!m) return;
+  const p = pending.get(m[2]);
   if (!p || (p.chatId !== "*" && p.chatId !== chatId) || Date.now() - p.createdAt > PENDING_TTL_MS) {
     pending.delete(m[2]);
     await answerCallback(cb.id, "Abgelaufen – bitte neu fragen.");

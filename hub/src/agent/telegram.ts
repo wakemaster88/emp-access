@@ -92,8 +92,11 @@ export async function sendPhoto(chatId: string, jpeg: Buffer, caption?: string, 
 }
 
 export async function editText(chatId: string, messageId: number, text: string): Promise<void> {
-  await call("editMessageText", { chat_id: chatId, message_id: messageId, text: text.slice(0, MAX_TEXT) }).catch((e) =>
-    log(`Assistent: ${e instanceof Error ? e.message : e}`)
+  // Foto-Nachrichten (Waechter, Kennzeichen-Frage) haben eine Bildunterschrift statt Text.
+  await call("editMessageText", { chat_id: chatId, message_id: messageId, text: text.slice(0, MAX_TEXT) }).catch(() =>
+    call("editMessageCaption", { chat_id: chatId, message_id: messageId, caption: text.slice(0, 1024) }).catch((e) =>
+      log(`Assistent: ${e instanceof Error ? e.message : e}`)
+    )
   );
 }
 

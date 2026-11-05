@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiToken } from "@/lib/api-auth";
+import { createAllowedVehicle } from "@/lib/allowed-vehicle-service";
 
 /**
  * GET (Hub): aktive Fahrzeuge inkl. Aktoren, damit Erkennung und Schaltung
@@ -46,4 +47,28 @@ export async function GET(request: NextRequest) {
       shellyIp: v.shellyDevice?.ipAddress ?? null,
     })),
   });
+}
+
+/**
+ * POST (Hub): Fahrzeug auf die genehmigte Liste setzen – der Hub-Assistent
+ * fragt per Telegram, wenn ein unbekanntes Kennzeichen mehrfach da war, und
+ * legt es nach „Genehmigen“ an, beschraenkt auf die Kamera, an der es gesehen
+ * wurde. Shelly/DoorBird-Zuordnung bleibt der Fahrzeugverwaltung in der Cloud.
+ */
+export async function POST(request: NextRequest) {
+  const auth = await validateApiToken(request);
+  if ("error" in auth) return auth.error;
+  const { db, account } = auth;
+  const body = (await request.json().catch(() => ({}))) as {
+    plate?: unknown;
+    name?: unknown;
+    notes?: unknown;
+    cameraId?: unknown;
+  };
+  const plate = typeof body.plate === "string" ? body.plate.trim() : "";
+  const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 80) : `Genehmigt ${plate}`;
+  const notes = typeof body.notes === "string" ? body.notes.slice(0, 500) : "Per Telegram vom Hub-Assistenten genehmigt.";
+  const cameraId = typeof body.cameraId === "number" && Number.isInteger(body.cameraId) ? body.cameraId : undefined;
+  const r = await createAllowedVehicle(db, account.id, { plate, name, notes, cameraId });
+  return NextResponse.json(r.body, { status: r.status });
 }
