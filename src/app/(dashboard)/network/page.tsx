@@ -22,7 +22,7 @@ export default async function NetworkPage() {
   const accountId = session.user.accountId;
   const db = tenantClient(accountId);
 
-  const [networkDevices, vlans, areas, outlets, clients, iotDevices, hubAgents, discoveredDevices] = await Promise.all([
+  const [networkDevices, vlans, areas, outlets, clients, iotDevices, hubAgents, discoveredDevices, blockedDevices] = await Promise.all([
     db.networkDevice.findMany({
       where: { accountId },
       include: {
@@ -95,6 +95,10 @@ export default async function NetworkPage() {
     db.discoveredDevice.findMany({
       where: { accountId },
       orderBy: { lastSeenAt: "desc" },
+    }),
+    db.blockedNetworkDevice.findMany({
+      where: { accountId },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
 
@@ -352,6 +356,16 @@ export default async function NetworkPage() {
           }))}
           allPorts={allPorts}
           discoveredDevices={discoveredRows}
+          blockedDevices={blockedDevices.map((b) => ({
+            id: b.id,
+            macAddress: b.macAddress,
+            name: b.name,
+            reason: b.reason,
+            enforcedAt: b.enforcedAt?.toISOString() ?? null,
+            lastSeenAt: b.lastSeenAt?.toISOString() ?? null,
+            lastSeenIp: b.lastSeenIp,
+            createdAt: b.createdAt.toISOString(),
+          }))}
         />
       </div>
     </>

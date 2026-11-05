@@ -29,11 +29,12 @@ import { StatusDot } from "@/components/ui/status-dot";
 import {
   Plus, Loader2, Pencil, Trash2, MonitorSmartphone, Monitor as MonitorIcon,
   Printer, Camera, HardDrive, Phone, Cpu, Laptop, EthernetPort, Link2,
-  Radar, AlertTriangle, RefreshCw, BadgeCheck, Lock,
+  Radar, AlertTriangle, RefreshCw, BadgeCheck, Lock, Ban,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { findAreaForIp, findVlanForIp, ipToInt } from "@/lib/ip";
+import { BlockedDevicesCard, type BlockPrefill } from "@/components/network/blocked-devices-card";
 import {
   CLIENT_TYPES,
   ONLINE_THRESHOLD_MS,
@@ -43,6 +44,7 @@ import {
   vlanGroupSortKey,
   type AreaRow,
   type ClientRow,
+  type BlockedRow,
   type DiscoveredRow,
   type IotDeviceOption,
   type PortOption,
@@ -175,6 +177,7 @@ interface ClientsTabProps {
   areas: AreaRow[];
   ports: PortOption[];
   discovered: DiscoveredRow[];
+  blocked: BlockedRow[];
 }
 
 export function ClientsTab({
@@ -184,8 +187,14 @@ export function ClientsTab({
   areas,
   ports,
   discovered,
+  blocked,
 }: ClientsTabProps) {
   const router = useRouter();
+  const [blockPrefill, setBlockPrefill] = useState<BlockPrefill | null>(null);
+  const blockedByMac = useMemo(
+    () => new Map(blocked.map((b) => [b.macAddress.toUpperCase(), b])),
+    [blocked]
+  );
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ClientRow | null>(null);
   const [form, setForm] = useState(EMPTY);
@@ -709,6 +718,7 @@ export function ClientsTab({
   );
 
   return (
+    <div className="space-y-4 sm:space-y-5">
     <Card flush>
       {/* Kopf: Titel und Scan-Stand links, „Gerät hinzufügen“ oben rechts; auf dem Handy
           „+ Gerät“ (docs/design-regeln.md, Abschnitt 13). */}
@@ -1044,7 +1054,9 @@ export function ClientsTab({
 
                           const d = row.discovered;
                           const active = new Date(d.lastSeenAt).getTime() > activeCutoff;
-                          const label = d.hostname?.split(".")[0]
+                          const blockedEntry = blockedByMac.get(d.macAddress.toUpperCase());
+                          const label = blockedEntry?.name
+                            || d.hostname?.split(".")[0]
                             || d.deviceType
                             || d.vendor
                             || "Unbekanntes Gerät";
@@ -1063,7 +1075,7 @@ export function ClientsTab({
                                       {label}
                                     </p>
                                     <p className="text-[11px] text-muted-foreground truncate">
-                                      neu vom Scan
+                                      {blockedEntry ? "gesperrt" : "neu vom Scan"}
                                       {d.deviceType ? ` · ${d.deviceType}` : ""}
                                     </p>
                                     <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 sm:hidden">
@@ -1100,7 +1112,19 @@ export function ClientsTab({
                                 )}
                               </TableCell>
                               <TableCell>
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {!blockedEntry && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="max-sm:size-11"
+                                      onClick={() => setBlockPrefill({ macAddress: d.macAddress, name: label })}
+                                      aria-label="Sperren"
+                                    >
+                                      <Ban />
+                                      <span className="hidden sm:inline">Sperren</span>
+                                    </Button>
+                                  )}
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -1349,5 +1373,11 @@ export function ClientsTab({
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+    <BlockedDevicesCard
+      blocked={blocked}
+      prefill={blockPrefill}
+      onPrefillConsumed={() => setBlockPrefill(null)}
+    />
+    </div>
   );
 }
