@@ -1173,7 +1173,7 @@ export default function PublicMonitorPage({ params }: Props) {
                             {/* Pillen auf der getönten Karte: Tönung trägt den Zustand, die Schrift steht
                                 in foreground – Zustandsfarbe auf Zustandsfläche bliebe unter 4,5:1. */}
                             {aboExpired && (
-                              <Badge variant="danger" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground">Abo abgelaufen</Badge>
+                              <Badge variant="danger" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground dark:text-foreground">Abo abgelaufen</Badge>
                             )}
                             {aboExpiring && (
                               <Badge variant="warning" className="mt-1.5 px-3 py-1 text-sm font-bold text-foreground">
@@ -1264,7 +1264,7 @@ export default function PublicMonitorPage({ params }: Props) {
                     {/* Wie auf den Karten: getönte Pille, Schrift in foreground (Kontrast 4,5:1). */}
                     <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                       {aboExpired && (
-                        <Badge variant="danger" className="font-bold text-foreground">Abo abgelaufen</Badge>
+                        <Badge variant="danger" className="font-bold text-foreground dark:text-foreground">Abo abgelaufen</Badge>
                       )}
                       {aboExpiring && (
                         <Badge variant="warning" className="font-bold text-foreground">
