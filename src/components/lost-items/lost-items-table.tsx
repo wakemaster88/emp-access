@@ -36,10 +36,27 @@ function contactLabel(item: LostItemData): string | null {
   return item.contact;
 }
 
+/**
+ * Primärhandlung „Eintrag anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „anlegen“; der volle Name bleibt als `aria-label`.
+ */
+export function CreateLostItemButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Eintrag anlegen">
+        <Plus className="h-4 w-4" />
+        <span><span className="max-sm:hidden">Eintrag </span>anlegen</span>
+      </Button>
+      <LostItemDialog item={null} open={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
 export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<LostItemData | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
@@ -73,6 +90,7 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
 
   return (
     <>
+      {/* „Eintrag anlegen“ steht im Kartenkopf (CreateLostItemButton). */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 px-4 sm:px-[18px]">
         <Segmented
           aria-label="Filter"
@@ -81,16 +99,6 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
           className="self-start sm:self-auto"
           options={filterButtons.map((f) => ({ value: f.id, label: f.label, count: f.count }))}
         />
-        {!readonly && (
-          <Button
-            onClick={() => setAddOpen(true)}
-            type="button"
-            className="h-11 sm:h-9 sm:ml-auto"
-          >
-            <Plus className="h-4 w-4" />
-            Eintrag anlegen
-          </Button>
-        )}
       </div>
 
       <div className="border-t border-border">
@@ -215,7 +223,6 @@ export function LostItemsTable({ items, readonly }: LostItemsTableProps) {
         </Table>
       </div>
 
-      <LostItemDialog item={null} open={addOpen} onClose={() => setAddOpen(false)} />
       <LostItemDialog item={selected} open={!!selected} onClose={() => setSelected(null)} />
     </>
   );

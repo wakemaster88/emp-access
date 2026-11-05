@@ -40,11 +40,9 @@ interface AreasTableProps {
   annyMappings?: Record<string, number>;
 }
 
-export function AreasTable({ areas, readonly, annyResources, annyServices, annyMappings }: AreasTableProps) {
-  const [selected, setSelected] = useState<AreaData | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-
-  const allAreaData: AreaData[] = areas.map((a) => ({
+/** Alle Ressourcen als Dialog-Daten (Auswahl „In Resource“ im Dialog). */
+function toAllAreaData(areas: AreaRow[]): AreaData[] {
+  return areas.map((a) => ({
     id: a.id,
     name: a.name,
     parentId: a.parentId,
@@ -54,6 +52,38 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
     showOnDashboard: a.showOnDashboard,
     openingHours: a.openingHours,
   }));
+}
+
+/**
+ * Primärhandlung „Resource anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „anlegen“; der volle Name bleibt als `aria-label`.
+ */
+export function CreateAreaButton({ areas, annyResources, annyServices, annyMappings }: Omit<AreasTableProps, "readonly">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} className="max-sm:h-11" aria-label="Resource anlegen">
+        <Plus className="h-4 w-4" />
+        <span><span className="max-sm:hidden">Resource </span>anlegen</span>
+      </Button>
+      <AreaDialog
+        area={null}
+        allAreas={toAllAreaData(areas)}
+        annyResources={annyResources}
+        annyServices={annyServices}
+        annyMappings={annyMappings}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
+export function AreasTable({ areas, readonly, annyResources, annyServices, annyMappings }: AreasTableProps) {
+  const [selected, setSelected] = useState<AreaData | null>(null);
+
+  const allAreaData = toAllAreaData(areas);
 
   const maxDeviceBadges = 3;
 
@@ -79,18 +109,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
 
   return (
     <>
-      {!readonly && (
-        <div className="flex justify-end mb-4">
-          <Button
-            onClick={() => setAddOpen(true)}
-            className="max-sm:h-11"
-          >
-            <Plus className="h-4 w-4" />
-            Resource anlegen
-          </Button>
-        </div>
-      )}
-
+      {/* „Resource anlegen“ steht im Kartenkopf (CreateAreaButton). */}
       {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein (`Table edge`).
           Auf dem Handy ist „#“ ausgeblendet, daher bekommt „Name“ dort den Randabstand. */}
       <div className="-mx-4 sm:-mx-[18px]">
@@ -168,7 +187,8 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                 })}
               >
                 <TableCell className="hidden sm:table-cell text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
-                <TableCell className="pl-4 sm:pl-2">
+                {/* Handy: lange Namen brechen um, statt die Tabelle zu verbreitern. */}
+                <TableCell className="pl-4 sm:pl-2 max-sm:whitespace-normal max-sm:text-pretty">
                   <div className="min-w-0">
                     <span className="inline-flex items-center gap-2 font-medium text-foreground">
                       <MapPin className="h-4 w-4 text-primary shrink-0" />
@@ -234,16 +254,6 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
           </TableBody>
         </Table>
       </div>
-
-      <AreaDialog
-        area={null}
-        allAreas={allAreaData}
-        annyResources={annyResources}
-        annyServices={annyServices}
-        annyMappings={annyMappings}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
 
       <AreaDialog
         area={selected}

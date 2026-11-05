@@ -3,8 +3,8 @@ import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { VereineTable } from "@/components/vereine/vereine-table";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { CreateVereinButton, VereineTable } from "@/components/vereine/vereine-table";
 
 export default async function VereinePage() {
   const session = await safeAuth();
@@ -110,6 +110,12 @@ export default async function VereinePage() {
             <CardDescription>
               Vereine bündeln <Link href="/tickets" className="text-primary hover:underline">Mitglieds-Tickets</Link> und erben beim Scan automatisch den Zutritt der hinterlegten <Link href="/tickets" className="text-primary hover:underline">Zutritts-Tickets</Link> (z. B. „Bahnmiete“).
             </CardDescription>
+            {/* Primärhandlung oben rechts im Kartenkopf (docs/design-regeln.md, Abschnitt 13). */}
+            {!isSuperAdmin && (
+              <CardAction>
+                <CreateVereinButton allTickets={allTicketsForUI} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
             <VereineTable

@@ -76,10 +76,34 @@ function LockCountBadge({ locker, className }: { locker: Pick<LockerRow, "lockTy
   );
 }
 
+/**
+ * Primärhandlung „Schließfach anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „anlegen“; der volle Name bleibt als `aria-label`.
+ */
+export function CreateLockerButton({ aboTickets, currentYear }: Pick<LockersTableProps, "aboTickets" | "currentYear">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Schließfach anlegen">
+        <Plus className="h-4 w-4" />
+        <span><span className="max-sm:hidden">Schließfach </span>anlegen</span>
+      </Button>
+      <LockerDialog
+        locker={null}
+        initialRentals={[]}
+        aboTickets={aboTickets}
+        currentYear={currentYear}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 export function LockersTable({ lockers, aboTickets, currentYear, readonly }: LockersTableProps) {
   const [selected, setSelected] = useState<LockerData | null>(null);
   const [selectedRentals, setSelectedRentals] = useState<RentalRow[]>([]);
-  const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "assigned" | "free" | "openKeys">("all");
 
@@ -161,7 +185,9 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                   value: "openKeys" as const,
                   label: (
                     <span className="inline-flex items-center gap-1.5">
-                      <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+                      {/* Handy: ohne Symbol passt die Kapsel bei 360 px in zwei Zeilen (sonst drei);
+                          die Warnung steht im Hinweis darunter. */}
+                      <AlertTriangle className="h-3.5 w-3.5 text-warning max-sm:hidden" />
                       Offene Schlüssel
                     </span>
                   ),
@@ -173,27 +199,15 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           ]}
         />
 
-        {/* Handy: Suche und Taste untereinander in voller Breite, damit der Platzhalter lesbar bleibt. */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:ml-auto">
-          <SearchInput
-            placeholder="Nr., Standort, Mieter, Abo, Jahr…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            containerClassName="sm:flex-1 lg:w-64 lg:flex-none"
-            className="h-11 sm:h-9"
-          />
-
-          {!readonly && (
-            <Button
-              onClick={() => { setSelected(null); setAddOpen(true); }}
-              type="button"
-              className="h-11 shrink-0 sm:h-9"
-            >
-              <Plus className="h-4 w-4" />
-              Schließfach anlegen
-            </Button>
-          )}
-        </div>
+        {/* Suche immer sichtbar: auf dem Handy volle Breite, ab sm 16 rem, ab lg rechts neben der
+            Kapsel. „Schließfach anlegen“ steht im Kartenkopf (CreateLockerButton). */}
+        <SearchInput
+          placeholder="Nr., Standort, Mieter, Abo, Jahr…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          containerClassName="w-full sm:w-64 lg:ml-auto"
+          className="h-11 sm:h-9"
+        />
       </div>
 
       {lockersWithOpenPast.length > 0 && (
@@ -228,11 +242,12 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
             {lockersWithOpenPast.slice(0, 12).map((l) => {
               const newest = l.openPast[0];
               return (
-                <li key={l.id} className="inline-flex items-center gap-1">
-                  <span className="font-mono text-foreground">#{l.number}</span>
+                // Handy: die Teile brechen als Ganzes um, statt Nummer und Namen zu zerteilen („#D-/04“).
+                <li key={l.id} className="inline-flex flex-wrap items-center gap-x-1">
+                  <span className="font-mono text-foreground whitespace-nowrap">#{l.number}</span>
                   <span className="text-muted-foreground/60">·</span>
                   <span className="font-medium text-foreground">{rentalDisplayName(newest)}</span>
-                  <span className="tabular-nums">
+                  <span className="tabular-nums whitespace-nowrap">
                     ({newest.year}, {newest.keysIssued - newest.keysReturned} offen)
                   </span>
                 </li>
@@ -248,7 +263,9 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
       )}
 
       <div className="border-t border-border">
-        <Table edge>
+        {/* Handy: feste Aufteilung (je Hälfte), lange Inhalte brechen um oder werden gekürzt,
+            statt die Tabelle zu verbreitern (vorher 337 px in 326 px). */}
+        <Table edge className="max-sm:table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="hidden sm:table-cell w-[90px]">
@@ -307,7 +324,8 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                 {/* Text bricht um, statt die Tabelle auf dem Handy zu verbreitern. */}
                 <TableCell className="whitespace-normal max-sm:pl-4">
                   <div className="min-w-0">
-                    <span className="inline-flex items-center gap-2 font-medium text-foreground">
+                    {/* Handy: `text-pretty` bricht „Board-Spind B-02“ vor „B-02“ um statt nach „B-“. */}
+                    <span className="inline-flex items-center gap-2 font-medium text-foreground max-sm:text-pretty">
                       <Lock className="h-4 w-4 text-primary shrink-0" />
                       {l.name}
                       <LockCountBadge locker={l} className="hidden sm:inline-flex" />
@@ -357,10 +375,10 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                       <div className="flex flex-wrap items-center gap-1">
                         {l.current.ticket?.subscription && (
                           // Abo-Verknüpfung ist der Normalfall, kein Zustand: Glas statt Grün.
-                          // Handy: lange Abo-Namen kürzen, statt die Tabelle zu verbreitern.
+                          // Handy: lange Abo-Namen auf die Spaltenbreite kürzen, statt die Tabelle zu verbreitern.
                           <Badge
                             variant="secondary"
-                            className="font-medium text-foreground/80 max-sm:max-w-[10.5rem]"
+                            className="font-medium text-foreground/80 max-sm:max-w-full"
                             title={l.current.ticket.subscription.name}
                           >
                             <CreditCard className="h-2.5 w-2.5 text-muted-foreground/70" />
@@ -462,15 +480,6 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
           </TableBody>
         </Table>
       </div>
-
-      <LockerDialog
-        locker={null}
-        initialRentals={[]}
-        aboTickets={aboTickets}
-        currentYear={currentYear}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
 
       <LockerDialog
         locker={selected}

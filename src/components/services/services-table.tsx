@@ -38,10 +38,35 @@ interface ServicesTableProps {
   readonly?: boolean;
 }
 
+/**
+ * Primärhandlung „Service anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „anlegen“; der volle Name bleibt als `aria-label`.
+ */
+export function CreateServiceButton({ areas, annyServices, annyResources }: Omit<ServicesTableProps, "services" | "readonly">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} className="max-sm:h-11" aria-label="Service anlegen">
+        <Plus className="h-4 w-4" />
+        <span><span className="max-sm:hidden">Service </span>anlegen</span>
+      </Button>
+      <ServiceDialog
+        service={null}
+        initialServiceAreas={[]}
+        areas={areas}
+        annyServices={annyServices}
+        annyResources={annyResources}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 export function ServicesTable({ services, areas, annyServices, annyResources, readonly }: ServicesTableProps) {
   const [selected, setSelected] = useState<ServiceData | null>(null);
   const [initialServiceAreas, setInitialServiceAreas] = useState<InitialServiceAreaInput[]>([]);
-  const [addOpen, setAddOpen] = useState(false);
 
   function openEdit(svc: SvcRow) {
     setSelected({
@@ -133,18 +158,7 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
 
   return (
     <>
-      {!readonly && (
-        <div className="flex justify-end mb-4">
-          <Button
-            onClick={() => { setSelected(null); setInitialServiceAreas([]); setAddOpen(true); }}
-            className="max-sm:h-11"
-          >
-            <Plus className="h-4 w-4" />
-            Service anlegen
-          </Button>
-        </div>
-      )}
-
+      {/* „Service anlegen“ steht im Kartenkopf (CreateServiceButton). */}
       {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein (`Table edge`).
           Auf dem Handy ist „#“ ausgeblendet, daher bekommt „Name“ dort den Randabstand. */}
       <div className="-mx-4 sm:-mx-[18px]">
@@ -206,7 +220,8 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
                   onClick={() => !readonly && openEdit(svc)}
                 >
                   <TableCell className="hidden sm:table-cell text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
-                  <TableCell className="pl-4 sm:pl-2">
+                  {/* Handy: lange Namen brechen um, statt die Tabelle zu verbreitern (vorher 358 px in 326 px). */}
+                  <TableCell className="pl-4 sm:pl-2 max-sm:whitespace-normal max-sm:text-pretty">
                     <div className="min-w-0">
                       <span className="inline-flex items-center gap-2 font-medium text-foreground">
                         <Box className="h-4 w-4 text-primary shrink-0" />
@@ -249,16 +264,6 @@ export function ServicesTable({ services, areas, annyServices, annyResources, re
           </TableBody>
         </Table>
       </div>
-
-      <ServiceDialog
-        service={null}
-        initialServiceAreas={[]}
-        areas={areas}
-        annyServices={annyServices}
-        annyResources={annyResources}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
 
       <ServiceDialog
         service={selected}

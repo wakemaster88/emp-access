@@ -2,8 +2,8 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { LostItemsTable } from "@/components/lost-items/lost-items-table";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { CreateLostItemButton, LostItemsTable } from "@/components/lost-items/lost-items-table";
 
 export default async function FundsachenPage() {
   const session = await safeAuth();
@@ -29,6 +29,12 @@ export default async function FundsachenPage() {
             <CardDescription>
               Gefundene Gegenstände und Verlustmeldungen können hier im Backend oder am Shop-Monitor erfasst und als erledigt markiert werden.
             </CardDescription>
+            {/* Primärhandlung oben rechts im Kartenkopf (docs/design-regeln.md, Abschnitt 13). */}
+            {!isSuperAdmin && (
+              <CardAction>
+                <CreateLostItemButton />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="px-0 sm:px-0">
             <LostItemsTable

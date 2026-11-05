@@ -84,11 +84,35 @@ function memberValidity(t: MemberRow): "valid" | "expired" | "invalid" | "paused
   return "valid";
 }
 
+/**
+ * Primärhandlung „Verein anlegen“ mit eigenem Dialog – steht im Kartenkopf
+ * (`CardAction`, docs/design-regeln.md, Abschnitt 13). Auf dem Handy nur Symbol
+ * und „anlegen“; der volle Name bleibt als `aria-label`.
+ */
+export function CreateVereinButton({ allTickets }: Pick<VereineTableProps, "allTickets">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} type="button" className="max-sm:h-11" aria-label="Verein anlegen">
+        <Plus className="h-4 w-4" />
+        <span><span className="max-sm:hidden">Verein </span>anlegen</span>
+      </Button>
+      <VereinDialog
+        verein={null}
+        initialAccessTicketIds={[]}
+        initialMemberIds={[]}
+        allTickets={allTickets}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 export function VereineTable({ vereine, allTickets, readonly }: VereineTableProps) {
   const [selected, setSelected] = useState<VereinData | null>(null);
   const [selectedAccessTicketIds, setSelectedAccessTicketIds] = useState<number[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
-  const [addOpen, setAddOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [searchMap, setSearchMap] = useState<Record<number, string>>({});
 
@@ -121,20 +145,22 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
             `Gültigkeit: ${validity}`,
           ].filter(Boolean).join(" · ");
           return (
+            // Handy (Nebenzeile in der ersten Spalte): Name in der ersten Zeile, Bereiche und
+            // Gültigkeit darunter – sonst blieben vom Namen nur zwei Buchstaben („DL…“).
             <div
               key={t.id}
-              className="flex items-center gap-1.5 min-w-0"
+              className="flex items-center gap-1.5 min-w-0 max-sm:flex-wrap max-sm:gap-y-0.5"
               title={tooltip}
             >
               <TicketIcon className="h-3 w-3 text-muted-foreground/70 shrink-0" />
-              <span className="truncate text-foreground">{t.name}</span>
+              <span className="truncate text-foreground max-sm:basis-[calc(100%-1.125rem)]">{t.name}</span>
               {t.areaNames.length > 0 && (
                 <span className="text-[11px] text-muted-foreground inline-flex items-center gap-0.5 shrink-0 tabular-nums">
                   <MapPin className="h-2.5 w-2.5" />
                   {t.areaNames.length}
                 </span>
               )}
-              <span className="text-[11px] text-muted-foreground tabular-nums shrink-0 ml-auto">
+              <span className="text-[11px] text-muted-foreground tabular-nums shrink-0 ml-auto max-sm:ml-0">
                 {validity}
               </span>
             </div>
@@ -149,19 +175,7 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
 
   return (
     <>
-      {!readonly && (
-        <div className="flex justify-end mb-4 px-4 sm:px-[18px]">
-          <Button
-            onClick={() => { setSelected(null); setSelectedAccessTicketIds([]); setSelectedMembers([]); setAddOpen(true); }}
-            type="button"
-            className="h-11 sm:h-9"
-          >
-            <Plus className="h-4 w-4" />
-            Verein anlegen
-          </Button>
-        </div>
-      )}
-
+      {/* „Verein anlegen“ steht im Kartenkopf (CreateVereinButton). */}
       <div className="border-t border-border">
         <Table edge>
           <TableHeader>
@@ -250,7 +264,8 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                       <div className="hidden md:block w-[280px] shrink-0 py-2 px-2 min-w-0">
                         <AccessTicketBadges tickets={v.accessTickets} />
                       </div>
-                      <div className="w-[110px] shrink-0 text-right">
+                      {/* Handy: schmaler (Zahl und Pfeil), damit der Vereinsname mehr Platz hat. */}
+                      <div className="w-16 shrink-0 text-right sm:w-[110px]">
                         {members.length > 0 ? (
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleExpand(v.id); }}
@@ -307,7 +322,8 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
                               const va = memberValidity(m);
                               return (
                                 <TableRow key={m.id} className="max-sm:h-11">
-                                  <TableCell>
+                                  {/* Handy: lange Namen brechen um, statt die Mitgliedertabelle zu verbreitern. */}
+                                  <TableCell className="max-sm:whitespace-normal">
                                     <span className="font-medium text-foreground/90">
                                       {m.firstName ?? ""} {m.lastName ?? ""}
                                     </span>
@@ -365,15 +381,6 @@ export function VereineTable({ vereine, allTickets, readonly }: VereineTableProp
           </TableBody>
         </Table>
       </div>
-
-      <VereinDialog
-        verein={null}
-        initialAccessTicketIds={[]}
-        initialMemberIds={[]}
-        allTickets={allTickets}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
 
       <VereinDialog
         verein={selected}
