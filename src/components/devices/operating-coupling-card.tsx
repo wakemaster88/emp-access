@@ -370,9 +370,10 @@ export function OperatingCouplingCard({
             )}
 
             <div className="space-y-1.5">
-              <Label>Betriebszeit</Label>
+              <Label htmlFor="coupling-schedule">Betriebszeit</Label>
               {/* Natives Auswahlfeld im Feld-Look (NativeSelect); auf dem Handy 44 px wie die übrigen Felder der Kachel. */}
               <NativeSelect
+                id="coupling-schedule"
                 value={scheduleId}
                 onChange={(e) => setScheduleId(e.target.value)}
                 className="max-sm:h-11"

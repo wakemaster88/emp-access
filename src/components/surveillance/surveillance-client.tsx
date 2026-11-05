@@ -354,6 +354,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               <NativeSelect
                 containerClassName="w-auto max-w-[220px] max-sm:w-0 max-sm:max-w-none max-sm:flex-1"
                 className="h-8 md:text-xs max-sm:h-11"
+                aria-label="Periode"
                 value={reportKey ?? ""}
                 disabled={reportLoading || !report}
                 onChange={(e) => void loadReport(e.target.value)}
@@ -701,6 +702,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               return (
                 // Kamera als Kippkachel: dabei = Auswahl-Tönung, aus = Glas mit gedämpftem Namen
                 // (keine Deckkraft auf der ganzen Kachel, sonst fallen Nebentext und Badge unter 4,5:1).
+                // Aus: Rand wie glass-tile (Glas auf Glas, im Hellen eine dunkle Haarlinie).
                 <button
                   type="button"
                   key={c.id}
@@ -710,7 +712,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     "press w-full flex items-center justify-between gap-3 rounded-tile border px-3 py-2.5 text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:min-h-11",
                     on
                       ? "border-primary/40 bg-primary/10"
-                      : "border-glass-border bg-glass-tile"
+                      : "border-glass-tile-border bg-glass-tile"
                   )}
                 >
                   <span className={cn("min-w-0 font-medium", on ? "text-foreground" : "text-muted-foreground")}>

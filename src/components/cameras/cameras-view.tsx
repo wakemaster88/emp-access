@@ -717,9 +717,10 @@ export function CamerasView({ cameras, events, hubOnline, networkCameras }: Came
             {form.vehicleDetection && form.kind === "REOLINK" && (
               <div className="glass-tile space-y-3 p-3">
                 <div className="space-y-1.5">
-                  <Label className="leading-snug">Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes)</Label>
+                  <Label htmlFor="camera-delivery-mode" className="leading-snug">Lieferdienste (DHL, UPS, GLS, Amazon, DPD, Hermes)</Label>
                   {/* Natives Auswahlfeld im Feld-Look (NativeSelect); im Dialog auf dem Handy 44 px (globals.css). */}
                   <NativeSelect
+                    id="camera-delivery-mode"
                     value={form.deliveryMode}
                     onChange={(e) => set("deliveryMode", e.target.value)}
                   >
