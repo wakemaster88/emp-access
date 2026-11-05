@@ -11,6 +11,7 @@
  * vergessener Runner 14 GB festgehalten (hub/IMPROVE.md), das soll hier nicht
  * wieder passieren.
  */
+import { noteModelWork } from "./ai-load.js";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
@@ -222,6 +223,7 @@ export async function chat(messages: ChatMessage[], tools: ToolSpec[]): Promise<
     throw new Error(body.error ?? `Ollama HTTP ${res.status}`);
   }
   LLM.lastReplyMs = Date.now() - started;
+  noteModelWork(started, Date.now());
   return body.message;
 }
 
@@ -311,5 +313,6 @@ export async function askVision(jpeg: Buffer, prompt: string, json = false): Pro
     throw new Error(body.error ?? `Ollama HTTP ${res.status}`);
   }
   VISION.lastMs = Date.now() - started;
+  noteModelWork(started, Date.now());
   return (body.message.content ?? "").trim();
 }

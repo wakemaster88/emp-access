@@ -19,6 +19,7 @@ import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import { SENTINEL, startSentinel } from "./sentinel.js";
 import { startEnergy } from "./energy.js";
+import { AI_LOAD, aiLoadText, startAiLoad } from "./ai-load.js";
 import { answerVehicle } from "./vehicles.js";
 import { answerPersonOk } from "./people.js";
 import { stripThinking } from "./think.js";
@@ -40,6 +41,7 @@ import { TOOLS, findTool, readNotes, toolResultText, toolSpecs, type ToolContext
 import { diffFindings, newWatchState, openFindings, type Finding } from "./findings.js";
 import { berlinHHMM, berlinHour, collectFindings, inQuietHours } from "./watch.js";
 import { VOICE, ensureWhisper, transcribe } from "./voice.js";
+import { dayPreviewText } from "../day-preview.js";
 import { handleUnknownChat, isPaired, newPairingState, type PairingState } from "./pairing.js";
 
 const ENV_CHAT_IDS = (process.env.HUB_AGENT_TELEGRAM_CHAT_IDS || "")
@@ -257,6 +259,10 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
   }
   if (cmd === "/status" && !LLM.ready) {
     await sendText(chatId, await plainStatus());
+    return;
+  }
+  if (cmd === "/heute" || cmd === "/morgen") {
+    await sendText(chatId, await dayPreviewText(cmd === "/morgen" ? 1 : 0));
     return;
   }
   if (cmd === "/bericht") {
@@ -555,9 +561,11 @@ async function dailyReport(): Promise<string> {
       content:
         "Erstelle den Tagesbericht für Aaron. Hol dir dafür hub_status, improve_report, list_events (limit 60) und energy_plan. " +
         "Aufbau: 1) Lage in zwei Sätzen. 2) Auffälligkeiten der letzten 24 Stunden (nur Belegtes). " +
-        "3) Tagesplanung aus energy_plan: Wetter heute/morgen in einem Satz, Mäh-Aufgaben mit Urteil und trockene Mähfenster, Bewässerung, Frost, Geräte, die außerhalb der Betriebszeit laufen. Nur, was es gibt. " +
+        "3) Energie und Technik aus energy_plan: Mäh-Aufgaben mit Urteil und trockene Mähfenster, Bewässerungs-Hinweise, Frost, Geräte, die außerhalb der Betriebszeit laufen. Nur, was es gibt, ohne das Wetter selbst zu wiederholen. " +
         "4) Höchstens drei konkrete Vorschläge zur Optimierung, jeweils mit Begründung aus den Daten und wer es umsetzen muss. " +
-        "Netzwerk-Änderungen nur als Vorschlag. Maximal 30 Zeilen.",
+        "Netzwerk-Änderungen nur als Vorschlag. Maximal 30 Zeilen. " +
+        "Die Tagesvorschau (Buchungen, Wetter, Personal) bekommt Aaron separat, wiederhole sie nicht; " +
+        "nutze day_preview nur, wenn ein Vorschlag davon abhängt (z. B. Personal zur Stoßzeit, Heizung oder Bewässerung nach Wetter).",
     },
   ];
   const text = await converse("report", history, false);
@@ -571,6 +579,8 @@ async function reportTick(): Promise<void> {
   if (lastReportDay === today || berlinHHMM() < REPORT_TIME) return;
   lastReportDay = today;
   await saveStore();
+  // Erst die Tagesvorschau (feste Zahlen, ohne Sprachmodell), dann der Bericht.
+  await broadcast(await dayPreviewText(0));
   if (!(await ensureOllama())) {
     await broadcast(`Tagesbericht ohne Sprachmodell (${LLM.error ?? "nicht bereit"}):\n\n${await plainStatus()}`);
     return;
@@ -586,7 +596,13 @@ async function reportTick(): Promise<void> {
 /* ------------------------------------------------------------ Dashboard */
 
 /** Kachel „KI-Assistent“ unter Systeme: Modell, Zustand, gekoppelte Chats. */
-export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string; detail: string } {
+export function assistantHealth(): {
+  state: "ok" | "warn" | "off";
+  value: string;
+  detail: string;
+  /** Auslastung fuer Balken und Verlauf in der Kachel (0..100). */
+  meter?: { pct: number; label: string; history: number[] };
+} {
   if (!AGENT.enabled) return { state: "off", value: "aus", detail: "HUB_AGENT_TELEGRAM_TOKEN fehlt" };
   const chats = `${AGENT.pairedChats} Chat${AGENT.pairedChats === 1 ? "" : "s"}`;
   if (LLM.ready) {
@@ -599,7 +615,14 @@ export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string
       : VISION.installing
         ? " · Bildmodell wird geladen"
         : "";
-    return { state: "ok", value: LLM.model, detail: `${ram} · ${chats}${speed}${voice}${eyes}` };
+    const load = aiLoadText();
+    const pct = AI_LOAD.gpuPct ?? AI_LOAD.cpuPct;
+    return {
+      state: "ok",
+      value: LLM.model,
+      detail: `${load ? `${load} · ` : ""}${ram} · ${chats}${speed}${voice}${eyes}`,
+      meter: pct != null ? { pct: Math.round(pct), label: AI_LOAD.gpuPct != null ? "GPU" : "CPU", history: AI_LOAD.gpuHistory.slice(-30) } : undefined,
+    };
   }
   if (LLM.installing) {
     const pct = LLM.pullPct != null ? ` ${LLM.pullPct} %` : "";
@@ -616,6 +639,7 @@ export async function startAgent(): Promise<void> {
     return;
   }
   AGENT.enabled = true;
+  startAiLoad();
   await loadStore();
   log(`Assistent: an, ${TOOLS.length} Werkzeuge, ${AGENT.pairedChats} Chat(s) gekoppelt`);
   void setCommands();

@@ -31,6 +31,7 @@ import { vlanCheckSummary } from "../vlan-check.js";
 import { recentImproveEvents } from "../improve-log.js";
 import { readHubLog } from "../hublog.js";
 import { staffSummary } from "../staff.js";
+import { dayPreviewForAgent } from "../day-preview.js";
 import { LLM, askVision } from "./ollama.js";
 import type { ToolSpec } from "./ollama.js";
 
@@ -158,6 +159,14 @@ export const TOOLS: AgentTool[] = [
     parameters: obj(),
     risk: "read",
     run: async () => staffSummary(),
+  },
+  {
+    name: "day_preview",
+    description:
+      "Tagesvorschau: gebuchte Gäste (ANNY) je Angebot, Termine mit Uhrzeit, Stoßzeiten, Gruppen, Verleihmaterial, Wetter (Temperatur, Regen mit Uhrzeit, Wind/Böen, Sonne) und für heute die Schichten aus emp-control. Für Fragen wie „Was ist heute/morgen los?“, Personal- oder Wetterplanung.",
+    parameters: obj({ day: str("heute oder morgen", { enum: ["heute", "morgen"] }) }),
+    risk: "read",
+    run: async (args) => dayPreviewForAgent(args.day === "morgen" ? 1 : 0),
   },
   {
     name: "list_cameras",

@@ -132,6 +132,8 @@ export async function setCommands(): Promise<void> {
       { command: "status", description: "Lage des Hubs" },
       { command: "befunde", description: "Offene Befunde des Wächters" },
       { command: "bericht", description: "Tagesbericht jetzt erstellen" },
+      { command: "heute", description: "Tagesvorschau: Buchungen, Wetter, Personal" },
+      { command: "morgen", description: "Vorschau für morgen" },
       { command: "neu", description: "Gespräch neu beginnen" },
     ],
   }).catch((e) => log(`Assistent: ${e instanceof Error ? e.message : e}`));
