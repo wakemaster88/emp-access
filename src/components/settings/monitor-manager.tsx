@@ -531,6 +531,33 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
 
   return (
     <div className="space-y-4 sm:space-y-5">
+      {/* Kopf der Liste (docs/design-regeln.md, Abschnitt 13): „Monitor erstellen“ oben rechts statt als
+          Taste unter der Liste. Handy: Anzahl links und Taste rechts in der ersten Zeile, die Erklärung
+          darunter in voller Breite; ab sm die Erklärung links, Anzahl und Taste rechts daneben. */}
+      <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 sm:grid-cols-[1fr_auto_auto]">
+        <p className="col-span-2 row-start-2 text-sm text-muted-foreground sm:col-span-1 sm:row-start-1">
+          Erstelle und verwalte öffentliche Monitore für Scan-Ansichten, Check-ins, Ressourcen-Übersichten und Token-Scanner.
+        </p>
+        <Badge variant="secondary" className="tabular-nums">
+          {monitors.length} Monitor{monitors.length !== 1 ? "e" : ""}
+        </Badge>
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="max-sm:h-11">
+              <Plus className="h-4 w-4" />
+              Monitor erstellen
+            </Button>
+          </DialogTrigger>
+          <MonitorDialog
+            monitor={null}
+            devices={devices}
+            accessAreas={accessAreas}
+            baseUrl={baseUrl}
+            onClose={() => setAddOpen(false)}
+          />
+        </Dialog>
+      </div>
+
       {monitors.length === 0 && (
         <Card>
           <EmptyState
@@ -679,22 +706,6 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
           </Card>
         );
       })}
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogTrigger asChild>
-          <Button variant="outline" className="w-full gap-2 max-sm:h-11">
-            <Plus className="h-4 w-4" />
-            Monitor erstellen
-          </Button>
-        </DialogTrigger>
-        <MonitorDialog
-          monitor={null}
-          devices={devices}
-          accessAreas={accessAreas}
-          baseUrl={baseUrl}
-          onClose={() => setAddOpen(false)}
-        />
-      </Dialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent aria-describedby={undefined}>

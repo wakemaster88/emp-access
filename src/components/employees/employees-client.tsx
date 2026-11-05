@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
@@ -153,8 +153,11 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
     <>
       {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
       <Card flush>
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-wrap">
-          {/* Zähler auch auf dem Handy sichtbar: sie rutschen dort unter den Titel. */}
+        {/* Kopf der Karte (docs/design-regeln.md, Abschnitt 13): Titel mit Zählern links, die Tasten
+            oben rechts – auch auf dem Handy. Die Zähler rutschen dort unter den Titel. Der letzte
+            EMP-Control-Abgleich steht ab md als Beschreibung darunter statt neben den Tasten, damit die
+            Tastenspalte bei schmalem Inhalt (md mit offener Seitenleiste) nicht über die Karte wächst. */}
+        <CardHeader>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <CardTitle className="flex items-center gap-2 tabular-nums">
               <IdCard className="h-4 w-4 text-primary" />
@@ -176,36 +179,40 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {empControlLastSync && (
-              <span className="text-xs text-muted-foreground tabular-nums hidden md:flex items-center gap-1">
-                <RefreshCw className="h-3 w-3" />
-                EMP-Control: {fmtDateTime(empControlLastSync)}
-              </span>
-            )}
+          {empControlLastSync && (
+            <CardDescription className="hidden md:flex items-center gap-1 tabular-nums">
+              <RefreshCw className="h-3 w-3" />
+              EMP-Control: {fmtDateTime(empControlLastSync)}
+            </CardDescription>
+          )}
+          <CardAction className="flex items-center gap-2">
+            {/* Handy: „Neu laden“ nur als Symbol (44 px, Name bleibt für Screenreader), damit Titel und
+                „+ Mitarbeiter“ in eine Zeile passen; ab sm mit Text wie bisher. */}
             <Button
               variant="outline"
               size="sm"
               onClick={() => load()}
               disabled={loading}
-              className="gap-1.5 max-sm:h-11"
+              className="gap-1.5 max-sm:size-11"
             >
               <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-              Neu laden
+              <span className="max-sm:sr-only">Neu laden</span>
             </Button>
             <Button size="sm" onClick={() => setEditingId("new")} className="gap-1.5 max-sm:h-11">
               <Plus className="h-4 w-4" /> Mitarbeiter
             </Button>
-          </div>
+          </CardAction>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-2">
+          {/* Handy: Suche in voller Breite, darunter beide Auswahlfelder in zwei gleich breiten Spalten
+              (docs/design-regeln.md, Abschnitt 13); ab sm eine Zeile wie bisher. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
             <SearchInput
               placeholder="Name, RFID oder Email suchen…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              containerClassName="flex-1"
+              containerClassName="col-span-2 flex-1"
             />
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-48">
@@ -238,11 +245,13 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
         </CardContent>
 
         {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein.
-            Der Tabellen-Container scrollt auf dem Handy waagerecht, nicht die Seite. */}
+            Handy (326 px): Name mit Status als Nebenzeile und die beiden Tasten. Die Namensspalte
+            nimmt dort den Rest und kürzt lange Namen, statt die Tabelle zu verbreitern; die
+            Mindestbreite 220 px gilt erst ab sm (docs/design-regeln.md, Abschnitt 17). */}
         <Table edge>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-[220px]">Mitarbeiter</TableHead>
+              <TableHead className="sm:min-w-[220px]">Mitarbeiter</TableHead>
               <TableHead className="hidden sm:table-cell w-[160px]">RFID / Email</TableHead>
               <TableHead className="hidden md:table-cell w-[200px]">Vertrag</TableHead>
               <TableHead className="hidden md:table-cell min-w-[200px]">Zugang</TableHead>
@@ -284,7 +293,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
                   className="group cursor-pointer"
                   onClick={() => setEditingId(e.id)}
                 >
-                  <TableCell>
+                  <TableCell className="max-sm:w-full max-sm:max-w-0">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="h-9 w-9 rounded-full bg-primary/10 text-primary dark:text-foreground flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
                         {e.profileImage ? (

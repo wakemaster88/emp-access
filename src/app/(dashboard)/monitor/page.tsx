@@ -345,13 +345,15 @@ export default function MonitorPage() {
                     const wasOpened = openedIds.has(d.id);
                     const online = d.lastUpdate && d.lastUpdate > fiveMinAgo;
                     return (
+                      // max-w-full und truncate: Lange Gerätenamen kürzen in der Karte, statt die Seite auf
+                      // dem Handy seitlich zu verbreitern (docs/design-regeln.md, Abschnitt 5).
                       <Button
                         key={d.id}
                         size="sm"
                         variant="outline"
                         disabled={openingId !== null}
                         onClick={() => handleQuickOpen(d.id)}
-                        className={`gap-1.5 max-sm:h-11 ${
+                        className={`gap-1.5 max-w-full max-sm:h-11 ${
                           wasOpened
                             ? "bg-success hover:bg-success/90 text-success-foreground border-success"
                             : "hover:bg-success/10 "
@@ -364,9 +366,9 @@ export default function MonitorPage() {
                         ) : (
                           <DoorOpen className="h-4 w-4" />
                         )}
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
                           <StatusDot size="xs" tone={online ? "success" : "neutral"} />
-                          {d.name}
+                          <span className="truncate">{d.name}</span>
                         </span>
                       </Button>
                     );

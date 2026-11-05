@@ -269,18 +269,21 @@ export function EmailSettings({ initialConfig, subscriptions = [], services = []
             <CardDescription>
               Regelbasierte Mails zu Aboablauf, Followups und Welcome-Nachrichten.
             </CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-3">
-            {/* Werkzeugleiste statt CardAction: zwei Tasten passen auf dem Handy nicht neben den Titel. */}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setPresetPickerOpen(true)} className={cn("gap-1.5", TOUCH_SM)}>
-                <Sparkles className="h-4 w-4 text-primary" />
-                Aus Vorlage
-              </Button>
+            {/* Kopf der Karte (docs/design-regeln.md, Abschnitt 13): die Primärhandlung oben rechts,
+                „Aus Vorlage“ als weitere Handlung in der Zeile darunter. */}
+            <CardAction>
               <Button size="sm" className={cn("gap-1.5", TOUCH_SM)} onClick={handleNewBlank}>
                 <Plus className="h-4 w-4" />
                 Neue Regel
+              </Button>
+            </CardAction>
+          </CardHeader>
+
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPresetPickerOpen(true)} className={cn("gap-1.5", TOUCH_SM)}>
+                <Sparkles className="h-4 w-4 text-primary" />
+                Aus Vorlage
               </Button>
             </div>
             {rulesLoading && rules == null ? (
@@ -478,17 +481,18 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
         <CardDescription>
           Wer hat wann welche Mail bekommen – inkl. Cron, manuell ausgeloester Sends und Tests.
         </CardDescription>
-        {/* Wie bei den Info-Anfragen: die Kopf-Taste sitzt im CardAction-Platz. */}
+        {/* Wie bei den Info-Anfragen: die Kopf-Taste sitzt im CardAction-Platz. Auf dem Handy nur als
+            Symbol (44 px, Name bleibt für Screenreader), damit die Beschreibung daneben Platz hat. */}
         <CardAction>
           <Button
             variant="outline"
             size="sm"
             onClick={refresh}
             disabled={loading}
-            className={cn("gap-1.5", TOUCH_SM)}
+            className={cn("gap-1.5 max-sm:w-11", TOUCH_SM)}
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Aktualisieren
+            <span className="max-sm:sr-only">Aktualisieren</span>
           </Button>
         </CardAction>
       </CardHeader>

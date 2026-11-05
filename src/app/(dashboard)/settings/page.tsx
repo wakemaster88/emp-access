@@ -93,7 +93,8 @@ export default async function SettingsPage() {
                 <Badge variant="mono">{account?.subdomain}</Badge>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-muted-foreground">API Token (Geräte)</span>
+                {/* shrink-0: Die Beschriftung bleibt eine Zeile (auf dem Handy sonst drei Zeilen neben dem Token). */}
+                <span className="shrink-0 text-sm text-muted-foreground">API Token (Geräte)</span>
                 {/* Langer Token: Pille darf schrumpfen, der Text kürzt mit Auslassung. */}
                 <Badge variant="mono" className="min-w-0 max-w-[220px] shrink">
                   <span className="truncate">{account?.apiToken}</span>
