@@ -160,6 +160,21 @@ function ring(percent, label, small = "", tone = "ok", size = "") {
 }
 
 /* Alarmzustand → Farbklasse (wie die Cloud: Erkennung sky, Klingel violett). */
+/* ------------------------------------------------- Uhren der Kameras */
+
+const CLOCK_WARN_S = 3;
+function clockText(s) {
+  const a = Math.abs(s);
+  const v = a >= 3600 && a % 3600 < 60 ? `${Math.round(a / 3600)} h` : a >= 120 ? `${Math.round(a / 60)} min` : `${a} s`;
+  return `${s > 0 ? "+" : "−"}${v}`;
+}
+/** Hinweis fuer die Zentrale, wenn eingeblendete Uhrzeiten auseinanderlaufen. */
+function clockNote(cams) {
+  const off = cams.filter((c) => c.clock && Math.abs(c.clock.offsetS) >= CLOCK_WARN_S);
+  if (!off.length) return "";
+  return ` · Kamera-Uhren weichen ab: ${off.map((c) => `${c.name} ${clockText(c.clock.offsetS)}`).join(", ")}`;
+}
+
 /* -------------------------------------------- Erkannte Personen (Zentrale) */
 
 const SEEN_TONE = { face: "ok", staff: "ok", cleared: "ok", suspicious: "warn", unknown: "sky" };
@@ -714,6 +729,7 @@ function liveCams(d) {
       states: c.activeStates,
       lastEventAt: c.lastEventAt,
       caps: c.caps || null,
+      clock: c.clock || null,
     }))
     .concat(
       d.doorbirds.map((b) => ({
@@ -781,8 +797,60 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   let stopped = false;
   let timer = null;
   let attempts = 0;
+  let watch = null;
+  let late = 0;
+  let prevStats = null;
+
+  /*
+   * Gleiche, niedrige Verzoegerung fuer alle Kacheln: Der Browser puffert
+   * jede Verbindung fuer sich und laesst den Puffer bei Netzschwankungen
+   * wachsen, dann laufen die Bilder auseinander. Ziel 0 ms Puffer; waechst
+   * die Verzoegerung trotzdem ueber 1 s, wird neu verbunden.
+   */
+  const lowLatency = () => {
+    if (!pc) return;
+    for (const r of pc.getReceivers()) {
+      try {
+        if ("jitterBufferTarget" in r) r.jitterBufferTarget = 0;
+        if ("playoutDelayHint" in r) r.playoutDelayHint = 0;
+      } catch {
+        // nicht unterstuetzt
+      }
+    }
+  };
+  const checkDelay = async () => {
+    if (!pc || pc.connectionState !== "connected") return;
+    // Ein im Hintergrund angehaltenes Video wieder anwerfen.
+    if (video.paused && video.srcObject) video.play().catch(() => {});
+    let stats;
+    try {
+      stats = await pc.getStats();
+    } catch {
+      return;
+    }
+    let cur = null;
+    stats.forEach((r) => {
+      if (r.type === "inbound-rtp" && r.kind === "video") cur = { d: r.jitterBufferDelay || 0, n: r.jitterBufferEmittedCount || 0 };
+    });
+    if (!cur) return;
+    if (prevStats && cur.n > prevStats.n) {
+      const delay = (cur.d - prevStats.d) / (cur.n - prevStats.n);
+      late = delay > 1 ? late + 1 : 0;
+      if (late >= 2) {
+        late = 0;
+        prevStats = null;
+        retry(true);
+        return;
+      }
+    }
+    prevStats = cur;
+  };
 
   const cleanup = () => {
+    clearInterval(watch);
+    watch = null;
+    prevStats = null;
+    late = 0;
     if (!pc) return;
     pc.ontrack = null;
     pc.onconnectionstatechange = null;
@@ -793,11 +861,16 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     }
     pc = null;
   };
-  const retry = () => {
+  const retry = (resync = false) => {
     if (stopped) return;
-    attempts++;
     cleanup();
     clearTimeout(timer);
+    // Neu verbinden wegen Verzoegerung: sofort und ohne Fehlversuch zu zaehlen.
+    if (resync) {
+      connect();
+      return;
+    }
+    attempts++;
     if (maxAttempts && attempts >= maxAttempts) {
       onState("failed");
       return;
@@ -823,6 +896,9 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
         const st = pc.connectionState;
         if (st === "connected") {
           attempts = 0;
+          lowLatency();
+          clearInterval(watch);
+          watch = setInterval(checkDelay, 4000);
           onState("live");
         } else if (st === "failed" || st === "disconnected" || st === "closed") {
           retry();
@@ -839,6 +915,7 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
       const answer = await res.text();
       if (stopped || !pc) return;
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
+      lowLatency();
     } catch {
       retry();
     }
@@ -1133,7 +1210,7 @@ function renderZentrale(d) {
   $("liveSub").textContent =
     live.go2rtc === false
       ? `go2rtc auf dem Hub antwortet nicht – ${cams.length} Kameras ohne Livebild.`
-      : `${liveCount} von ${cams.length} live${active.length ? ` · ${active.map((c) => `${c.name}: ${c.states.join(", ")}`).join(" · ")}` : ""}`;
+      : `${liveCount} von ${cams.length} live${active.length ? ` · ${active.map((c) => `${c.name}: ${c.states.join(", ")}`).join(" · ")}` : ""}${clockNote(cams)}`;
 
   if (live.pendingFocus != null && live.go2rtc !== null) {
     const id = live.pendingFocus;
@@ -1278,7 +1355,11 @@ function renderFocusState(d) {
   const who = n
     ? `<span class="badge ${b.label ? SEEN_TONE[b.label.kind] : "sky"}">${icon("user")}${n === 1 ? "1 Person" : `${n} Personen`}${b.label ? ` · ${esc(b.label.text)}` : ""}</span>`
     : "";
-  const html = `${tag}${why}${who}${c.states
+  const clk =
+    c.clock && Math.abs(c.clock.offsetS) >= CLOCK_WARN_S
+      ? `<span class="badge warn" title="${esc(c.clock.ntp === false ? "NTP an der Kamera aus" : c.clock.ntpServer ? `NTP: ${c.clock.ntpServer}` : "Uhr der Kamera")}">Uhr ${clockText(c.clock.offsetS)}</span>`
+      : "";
+  const html = `${tag}${why}${who}${clk}${c.states
     .filter((s) => !(n && s === "PERSON"))
     .map((s) => stateBadge(c, s))
     .join("")}`;

@@ -26,7 +26,7 @@ import {
   recordTask,
 } from "./state.js";
 import { executeTask } from "./tasks.js";
-import { listCameraStatus } from "./cameras.js";
+import { listCameraStatus, refreshCameraClocks } from "./cameras.js";
 import { listDoorbirdStatus } from "./doorbird.js";
 import { lastParkingSnapshot } from "./parking.js";
 import { lastScanResult } from "./scanner.js";
@@ -511,6 +511,8 @@ function healthItems(
 }
 
 function overviewPayload() {
+  // Uhren der Kameras nebenbei pruefen (hoechstens alle 30 min).
+  void refreshCameraClocks().catch(() => undefined);
   const cameras = listCameraStatus();
   const doorbirds = listDoorbirdStatus();
   const parking = lastParkingSnapshot();

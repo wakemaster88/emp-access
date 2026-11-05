@@ -5,6 +5,7 @@
  * Schnappschuesse hoch (bei Ereignis-Beginn und auf Task-Anforderung).
  */
 import { zoomStep } from "./zoom-step.js";
+import { clockOffsetSeconds, type ReolinkTime } from "./camera-clock.js";
 import { onCameraEvent } from "./rules.js";
 import { kickIfRulesTriggered } from "./task-kick.js";
 import { promises as fs } from "node:fs";
@@ -122,6 +123,17 @@ export interface CameraStatus {
   lastPlate: LastPlate | null;
   /** Faehigkeiten (null = noch nicht abgefragt). */
   caps: CameraCaps | null;
+  /** Uhr der Kamera gegen den Hub (null = noch nicht gelesen). */
+  clock: CameraClock | null;
+}
+
+export interface CameraClock {
+  /** Sekunden, positiv = Kamera geht vor. */
+  offsetS: number;
+  /** NTP an der Kamera eingeschaltet; null = nicht lesbar. */
+  ntp: boolean | null;
+  ntpServer: string | null;
+  checkedAt: string;
 }
 
 const cameras = new Map<number, CameraRuntime>();
@@ -1459,8 +1471,69 @@ export function listCameraStatus(): CameraStatus[] {
       lastPerson: cam.lastPerson,
       lastPlate: cam.lastPlate,
       caps: capsCache.get(cam.config.id)?.caps ?? null,
+      clock: clockCache.get(cam.config.id) ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+/* ---------------------------------------------------------------------------
+ * Uhrzeit der Kameras (nur lesen). Zeigt in der Zentrale, ob die
+ * eingeblendeten Uhrzeiten auseinanderlaufen. Alle 30 Minuten, angestossen
+ * vom Dashboard.
+ * ------------------------------------------------------------------------- */
+
+const CLOCK_EVERY_MS = 30 * 60_000;
+const clockCache = new Map<number, CameraClock>();
+let clockCheckAt = 0;
+
+async function readCameraClock(cam: CameraRuntime): Promise<CameraClock> {
+  await ensureLogin(cam);
+  const t0 = Date.now();
+  const v = await cgi(cam, "GetTime", {});
+  const time = v.Time as Partial<ReolinkTime> | undefined;
+  if (!time || ![time.year, time.mon, time.day, time.hour, time.min, time.sec].every((x) => Number.isFinite(Number(x)))) {
+    throw new Error("GetTime ohne Uhrzeit");
+  }
+  // Mitte der Anfrage als Vergleichszeitpunkt.
+  const mid = new Date((t0 + Date.now()) / 2);
+  const offsetS = clockOffsetSeconds(
+    { year: +time.year!, mon: +time.mon!, day: +time.day!, hour: +time.hour!, min: +time.min!, sec: +time.sec! },
+    mid
+  );
+  let ntp: boolean | null = null;
+  let ntpServer: string | null = null;
+  try {
+    const n = (await cgi(cam, "GetNtp", {})).Ntp as { enable?: number; server?: string } | undefined;
+    if (n) {
+      ntp = n.enable === 1;
+      ntpServer = typeof n.server === "string" && n.server ? n.server : null;
+    }
+  } catch {
+    // aeltere Firmware ohne GetNtp
+  }
+  return { offsetS, ntp, ntpServer, checkedAt: new Date().toISOString() };
+}
+
+/** Uhren aller erreichbaren Kameras lesen (hoechstens alle 30 min, force = sofort). */
+export async function refreshCameraClocks(force = false): Promise<void> {
+  if (!force && Date.now() - clockCheckAt < CLOCK_EVERY_MS) return;
+  clockCheckAt = Date.now();
+  for (const cam of cameras.values()) {
+    if (!cam.reachable) continue;
+    try {
+      clockCache.set(cam.config.id, await readCameraClock(cam));
+    } catch (e) {
+      log(`Kamera ${cam.config.name}: Uhrzeit nicht lesbar (${e instanceof Error ? e.message : e})`);
+    }
+  }
+  const off = [...clockCache.entries()].filter(([, c]) => Math.abs(c.offsetS) >= 3);
+  if (off.length) {
+    log(
+      `Kamera-Uhren weichen ab: ${off
+        .map(([id, c]) => `${cameras.get(id)?.config.name ?? id} ${c.offsetS > 0 ? "+" : ""}${c.offsetS} s${c.ntp === false ? " (NTP aus)" : ""}`)
+        .join(", ")}`
+    );
+  }
 }
 
 /* ---------------------------------------------------------------------------
