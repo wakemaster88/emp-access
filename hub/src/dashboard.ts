@@ -99,6 +99,7 @@ const ALLOWED_ACTIONS = [
   // Kamera-Zentrale: dieselben Steuer-Tasks wie aus der Cloud.
   "CAMERA_PTZ",
   "CAMERA_PTZ_PRESETS",
+  "CAMERA_ZOOM",
   "CAMERA_CAPS",
   "CAMERA_SPOTLIGHT",
   "CAMERA_IR",
