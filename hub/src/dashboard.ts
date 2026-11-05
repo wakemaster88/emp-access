@@ -42,6 +42,7 @@ import { caDer, loadDashboardTls, type TlsMaterial } from "./dashboard-tls.js";
 import { getFrame, startFrameWarmer } from "./frame-cache.js";
 import { mowerAction, mowerMap, mowerStatus } from "./mower.js";
 import { isMowerStream } from "./mower-streams.js";
+import { assistantHealth } from "./agent/agent.js";
 
 let actionCounter = 0;
 
@@ -503,6 +504,7 @@ function healthItems(
       value: snmpConfigured() ? "aktiv" : "aus",
       detail: snmpConfigured() ? "Switch-Sync" : "HUB_SNMP_TARGETS fehlt",
     },
+    { id: "assistant", label: "KI-Assistent", ...assistantHealth() },
   ];
 }
 

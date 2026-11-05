@@ -471,6 +471,23 @@ async function reportTick(): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------ Dashboard */
+
+/** Kachel „KI-Assistent“ unter Systeme: Modell, Zustand, gekoppelte Chats. */
+export function assistantHealth(): { state: "ok" | "warn" | "off"; value: string; detail: string } {
+  if (!AGENT.enabled) return { state: "off", value: "aus", detail: "HUB_AGENT_TELEGRAM_TOKEN fehlt" };
+  const chats = `${AGENT.pairedChats} Chat${AGENT.pairedChats === 1 ? "" : "s"}`;
+  if (LLM.ready) {
+    const speed = LLM.lastReplyMs != null ? ` · Antwort ${(LLM.lastReplyMs / 1000).toFixed(1)} s` : "";
+    return { state: "ok", value: LLM.model, detail: `${chats}${speed}` };
+  }
+  if (LLM.installing) {
+    const pct = LLM.pullPct != null ? ` ${LLM.pullPct} %` : "";
+    return { state: "warn", value: LLM.model, detail: `${LLM.phase ?? "wird eingerichtet"}${pct} · ${chats}` };
+  }
+  return { state: "warn", value: LLM.model, detail: LLM.error ?? "nicht bereit" };
+}
+
 /* ------------------------------------------------------------ Start */
 
 export async function startAgent(): Promise<void> {
