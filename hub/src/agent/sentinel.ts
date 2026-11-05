@@ -7,12 +7,16 @@
  *  - PTZ-Kamera folgt dem Objekt fuer 3 Minuten (cameraScene, autoTrack),
  *    danach zurueck wie vorher.
  *  - Bildserie: drei Standbilder im Abstand von 4 s.
+ * Personen: heranzoomen (Zoom-Objektiv, PTZ folgt), Nahaufnahme bewerten und
+ * mit eingestempelten Mitarbeitern (emp-control) und der bestehenden
+ * Gesichtserkennung abgleichen; vermutlich Mitarbeiter → kein Alarm
+ * (Regeln in sentinel-rules.ts, decidePerson).
  * Mit Knopf in Telegram (Aaron entscheidet): Scheinwerfer, Sirene, neues Bild.
  * Nie automatisch: Tor oeffnen, Sirene, Licht, Netzwerk.
  */
 import { log } from "../config.js";
 import { currentEventSeq, hubEventsSince, recordHubEvent } from "../state.js";
-import { captureSnapshot, findCameraByRef, getCameraCaps, cameraScene } from "../cameras.js";
+import { captureSnapshot, findCameraByRef, getCameraCaps, cameraScene, cameraZoom, type CameraCaps } from "../cameras.js";
 import { captureDoorbirdSnapshot, isDoorbird } from "../doorbird.js";
 import { roomsPayload } from "../rooms.js";
 import { improve } from "../improve-log.js";
@@ -20,7 +24,8 @@ import { VISION, askVision } from "./ollama.js";
 import { sendPhoto } from "./telegram.js";
 import type { TgButton } from "./telegram.js";
 import { berlinHour } from "./watch.js";
-import { parseVerdict, shouldInspect, type Verdict } from "./sentinel-rules.js";
+import { decidePerson, parsePersonLook, parseVerdict, shouldInspect, type PersonLook, type Verdict } from "./sentinel-rules.js";
+import { faceAt, notePersonEvents, staffClockedIn } from "./people.js";
 import { cameraSawKnownPlate, vehicleTick } from "./vehicles.js";
 
 const MODE = (process.env.HUB_AGENT_SENTINEL || "on").trim().toLowerCase();
@@ -44,6 +49,13 @@ const PROMPT =
   "Fahrzeuge auf einer öffentlichen Straße im Hintergrund. " +
   'Antworte nur mit JSON: {"auffaellig": true|false, "was": "ein Satz auf Deutsch, was zu sehen ist", "dringlichkeit": "niedrig"|"mittel"|"hoch"}';
 
+const PERSON_PROMPT =
+  "Nahaufnahme einer Überwachungskamera auf dem Gelände einer Wasserski- und Freizeitanlage, außerhalb der Öffnungszeit. " +
+  "Zähle die Personen und beurteile: Tragen sie Arbeitskleidung (Warnweste, Firmenshirt, Arbeitshose, Handschuhe)? " +
+  "Wirken sie wie Mitarbeiter bei der Arbeit (Werkzeug, Schubkarre, Mäher, Reinigung, Boot, Technik)? " +
+  "Verdächtig ist: Klettern, Hantieren an Tür/Fenster/Schloss, Vermummung, Wegtragen von Sachen, Verstecken. " +
+  'Antworte nur mit JSON: {"personen": Zahl, "arbeitskleidung": true|false, "mitarbeiter": true|false, "verdaechtig": true|false, "was": "ein Satz auf Deutsch"}';
+
 let seq = 0;
 const lastInspect = new Map<string, number>();
 const recent: number[] = [];
@@ -64,6 +76,24 @@ async function snap(cameraId: number): Promise<Buffer> {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Heranzoomen fuer ein Detailbild: Zoom-Objektiv auf ~60 % fahren, Bild,
+ * zurueck auf die vorige Position. Ohne Zoom: null (dann zaehlt das Weitbild).
+ */
+async function closeUp(cameraId: number, caps: CameraCaps | null): Promise<Buffer | null> {
+  if (!caps?.zoom) return null;
+  const cur = await cameraZoom(cameraId, null);
+  const target = Math.round(cur.min + (cur.max - cur.min) * 0.6);
+  if (target <= cur.pos) return snap(cameraId);
+  try {
+    await cameraZoom(cameraId, { pos: target });
+    await sleep(3_000); // Fokus nachziehen lassen
+    return await snap(cameraId);
+  } finally {
+    await cameraZoom(cameraId, { pos: cur.pos }).catch(() => undefined);
+  }
+}
 
 async function inspect(where: string, title: string, at: number): Promise<void> {
   const cam = findCameraByRef(where);
@@ -97,21 +127,60 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
       return;
     }
   }
-  SENTINEL.alerts++;
-  log(`Wächter: ${cam.name} AUFFÄLLIG (${verdict.dringlichkeit}): ${verdict.was}`);
-  recordHubEvent({ kind: "camera", severity: "alert", where: cam.name, title: "Assistent: auffällig", detail: verdict.was });
-
   // Automatisch: PTZ folgen lassen (stellt sich nach 3 min selbst zurueck).
   const caps = isDoorbird(cam.id) ? null : await getCameraCaps(cam.id).catch(() => null);
   let followed = false;
-  if (caps?.pan) {
+  const follow = async () => {
+    if (!caps?.pan || followed) return;
     try {
       await cameraScene(cam.id, { autoTrack: true, returnAfterSeconds: FOLLOW_SECONDS });
       followed = true;
     } catch (e) {
       log(`Wächter: ${cam.name}: Folgen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
     }
+  };
+
+  // Person: heranzoomen, genauer ansehen, mit Stempeldaten/Gesicht abgleichen.
+  let close: Buffer | null = null;
+  let reason = "";
+  if (/^PERSON\b/.test(title)) {
+    await follow();
+    if (followed) await sleep(2_500); // Kamera richtet sich auf die Person aus
+    close = await closeUp(cam.id, caps).catch((e) => {
+      log(`Wächter: ${cam.name}: Heranzoomen fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      return null;
+    });
+    let look: PersonLook | null = null;
+    try {
+      look = parsePersonLook(await askVision(close ?? first, PERSON_PROMPT, true));
+    } catch (e) {
+      log(`Wächter: ${cam.name}: Nahaufnahme: ${e instanceof Error ? e.message : e}`);
+    }
+    let face = faceAt(cam.name, at);
+    for (let i = 0; i < 3 && !face && Date.now() - at < 12_000; i++) {
+      await sleep(2_000);
+      face = faceAt(cam.name, at);
+    }
+    const staff = await staffClockedIn();
+    const decision = decidePerson({ face, staff, look, hour: berlinHour() });
+    reason = decision.reason;
+    log(
+      `Wächter: ${cam.name} Person: ${decision.alarm ? "ALARM" : "kein Alarm"} – ${decision.reason}` +
+        (look ? ` (${look.personen} Pers., Arbeitskleidung ${look.arbeitskleidung ? "ja" : "nein"}: ${look.was})` : "")
+    );
+    improve("camera", decision.alarm ? "sentinel_person_alarm" : "sentinel_person_staff", { camera: cam.name, reason });
+    if (!decision.alarm) {
+      SENTINEL.lastVerdict = `${cam.name}: vermutlich Mitarbeiter – ${decision.reason}`;
+      recordHubEvent({ kind: "camera", severity: "info", where: cam.name, title: "Assistent: vermutlich Mitarbeiter", detail: decision.reason });
+      return;
+    }
+    if (look?.was) verdict = { ...verdict, was: look.was };
   }
+
+  SENTINEL.alerts++;
+  log(`Wächter: ${cam.name} AUFFÄLLIG (${verdict.dringlichkeit}): ${verdict.was}`);
+  recordHubEvent({ kind: "camera", severity: "alert", where: cam.name, title: "Assistent: auffällig", detail: verdict.was });
+  await follow();
 
   const buttons: TgButton[][] = [];
   const row: TgButton[] = [];
@@ -124,9 +193,13 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
 
   const icon = verdict.dringlichkeit === "hoch" ? "‼️" : "⚠️";
   const time = new Date().toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
-  const caption = `${icon} ${cam.name}, ${time}: ${verdict.was}${followed ? `\nKamera folgt ${FOLLOW_SECONDS / 60} Minuten.` : ""}`;
+  const caption =
+    `${icon} ${cam.name}, ${time}: ${verdict.was}` +
+    (reason ? `\n${reason}.` : "") +
+    (followed ? `\nKamera folgt ${FOLLOW_SECONDS / 60} Minuten.` : "");
   const ids = deps?.chatIds() ?? [];
-  for (const id of ids) await sendPhoto(id, first, caption, buttons.length ? buttons : undefined).catch(() => undefined);
+  for (const id of ids) await sendPhoto(id, close ?? first, caption, buttons.length ? buttons : undefined).catch(() => undefined);
+  if (close) for (const id of ids) await sendPhoto(id, first, `${cam.name} · Übersicht`).catch(() => undefined);
 
   // Bildserie: zwei weitere Bilder, damit der Verlauf zu sehen ist.
   for (let i = 1; i <= 2; i++) {
@@ -143,6 +216,7 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
 async function tick(): Promise<void> {
   const events = hubEventsSince(seq);
   seq = currentEventSeq();
+  notePersonEvents(events);
   if (deps) await vehicleTick(events, deps.chatIds()).catch((e) => log(`Assistent: Kennzeichen: ${e instanceof Error ? e.message : e}`));
   if (!SENTINEL.enabled || !VISION.ready) return;
   const now = Date.now();

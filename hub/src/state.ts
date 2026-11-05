@@ -42,6 +42,8 @@ export interface HubEvent {
   score?: number;
   plate?: string;
   listed?: boolean;
+  /** Personen: Liste des Gesichts-Treffers (WHITELIST | BLACKLIST). */
+  list?: string;
 }
 
 /** Systemzustand des Hub-Macs (Auto-Login, Ruhezustand, Einschaltplan) – system-setup.ts. */

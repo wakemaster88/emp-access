@@ -219,17 +219,17 @@ export function scoreGallery(
   embedding: number[],
   opts?: { upscaled?: boolean }
 ): {
-  match: { listedPersonId: number; name: string; score: number } | null;
-  nearest: { listedPersonId: number; name: string; score: number } | null;
+  match: { listedPersonId: number; name: string; score: number; listType: string } | null;
+  nearest: { listedPersonId: number; name: string; score: number; listType: string } | null;
   threshold: number;
   gallery: number;
 } {
   const threshold = opts?.upscaled ? FACE_UPSCALED_THRESHOLD : FACE_MATCH_THRESHOLD;
-  let nearest: { listedPersonId: number; name: string; score: number } | null = null;
+  let nearest: { listedPersonId: number; name: string; score: number; listType: string } | null = null;
   for (const g of gallery) {
     const score = cosine(embedding, g.embedding);
     if (!nearest || score > nearest.score) {
-      nearest = { listedPersonId: g.listedPersonId, name: g.name, score };
+      nearest = { listedPersonId: g.listedPersonId, name: g.name, score, listType: g.listType };
     }
   }
   const match = nearest && nearest.score >= threshold ? nearest : null;
