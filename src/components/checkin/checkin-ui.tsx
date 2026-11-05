@@ -341,15 +341,15 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
           <ChevronLeft />
         </Button>
         <div className="flex min-w-0 flex-1 justify-center">
-          {/* Handy: 10 statt 14 px Innenabstand seitlich, damit die drei Tage auch bei 360 px in einer
-              Zeile stehen, statt umzubrechen; Höhe und Schrift bleiben (Abschnitte 5 und 20). */}
+          {/* Handy: drei Tage; mit dem engeren Innenabstand der Kapsel (10 px) stehen sie auch bei
+              360 px in einer Zeile. Höhe und Schrift bleiben (Abschnitte 5 und 20). */}
           <Segmented
             aria-label="Tag"
             value={date}
             onValueChange={onChange}
             options={dayOptions.slice(2, 5)}
             stretch
-            className={cn(daySegmentClass, "md:hidden max-sm:[&>button]:px-2.5")}
+            className={cn(daySegmentClass, "md:hidden")}
           />
           <Segmented
             aria-label="Tag"
