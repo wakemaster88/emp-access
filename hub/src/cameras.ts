@@ -4,6 +4,7 @@
  * GetAiState), meldet Start/Ende der Ereignisse an die Cloud und laedt
  * Schnappschuesse hoch (bei Ereignis-Beginn und auf Task-Anforderung).
  */
+import { noteLink } from "./health-trends.js";
 import { zoomStep } from "./zoom-step.js";
 import { clockOffsetSeconds, type ReolinkTime } from "./camera-clock.js";
 import { onCameraEvent } from "./rules.js";
@@ -1819,6 +1820,7 @@ export async function pollCameras(): Promise<void> {
       try {
         const states = await pollStates(cam);
         seen.push(cam.config.id);
+        noteLink(`cam:${cam.config.id}`, cam.config.name, "camera", true);
         if (!cam.reachable && cam.lastError) {
           recordHubEvent({
             kind: "camera",
@@ -1875,6 +1877,7 @@ export async function pollCameras(): Promise<void> {
         }
         cam.reachable = false;
         cam.lastError = msg;
+        noteLink(`cam:${cam.config.id}`, cam.config.name, "camera", false, msg);
         if (!cam.unreachableLogged) {
           log(`Kamera ${cam.config.name}: ${msg}`);
           cam.unreachableLogged = true;

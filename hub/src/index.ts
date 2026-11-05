@@ -24,6 +24,7 @@ import { startClimate } from "./climate.js";
 import { startRules } from "./rules.js";
 import { startMower, stopMowerSidecar } from "./mower.js";
 import { startAgent } from "./agent/agent.js";
+import { startHealthTrends } from "./health-trends.js";
 import { startStaff } from "./staff.js";
 
 log(`EMP-Access-Hub startet: ${CONFIG.name} (${CONFIG.version}) -> ${CONFIG.apiUrl}`);
@@ -277,6 +278,8 @@ startMower();
 void startStaff();
 // Hub-Assistent: lokales Sprachmodell (Ollama) + eigener Telegram-Bot.
 // Nur mit HUB_AGENT_TELEGRAM_TOKEN in hub/.env, sonst ein Leerlauf.
+// Verlaeufe fuer die Frueherkennung (Aussetzer, Neustarts, Port-Fehler, Platte).
+void startHealthTrends();
 void startAgent();
 // Welche Kameras geprüft werden, steht in der Cloud ("Halteverbot" an der
 // Kamera) und ist beim Start noch nicht bekannt – der Takt läuft deshalb

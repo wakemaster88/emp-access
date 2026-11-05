@@ -11,6 +11,7 @@
  * und laufen nicht ueber den Assistenten – er darf sie nur vorschlagen.
  * Ebenso kein freier Shell-Befehl: nur die festen Hub-Aktionen.
  */
+import { healthFindings, healthSummary } from "../health-trends.js";
 import { readFile, appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG } from "../config.js";
@@ -361,6 +362,14 @@ export const TOOLS: AgentTool[] = [
     parameters: obj(),
     risk: "read",
     run: async () => mowerStatus(),
+  },
+  {
+    name: "early_warnings",
+    description:
+      "Frueherkennung aus den Verläufen der letzten 7 Tage: Geräte mit gehäuften Zeitüberschreitungen (Aussetzer pro Stunde/Tag, Vergleich zur Vorwoche), häufige Neustarts (Switches, Shellys, Hub-Mac), Switch-Port-Fehler und Flattern, Shelly-Temperaturen, Platten-Prognose und abgelaufene Anmeldungen. Dazu die aktiven Vorwarnungen.",
+    parameters: obj(),
+    risk: "read",
+    run: async () => ({ ...healthSummary(), active: healthFindings(new Set()) }),
   },
   {
     name: "weather_forecast",

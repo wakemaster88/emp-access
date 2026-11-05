@@ -555,6 +555,17 @@ export function startSoundweb(): void {
   setInterval(() => void flushReport(true), REPORT_FULL_MS);
 }
 
+/** Je Prozessor verbunden ja/nein (Frueherkennung). */
+export function soundwebLinkStates(): Array<{ id: number; name: string; host: string; connected: boolean; lastError: string | null }> {
+  return [...links.values()].map((l) => ({
+    id: l.config.id,
+    name: l.config.name,
+    host: l.config.host,
+    connected: l.connected,
+    lastError: l.lastError,
+  }));
+}
+
 export function soundwebSummary(): { devices: number; connected: number; lastError: string | null } {
   const all = [...links.values()];
   const failing = all.find((l) => !l.connected && l.lastError);
