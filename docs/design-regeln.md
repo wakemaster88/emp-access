@@ -107,9 +107,16 @@ Ein Zustand hat genau eine Farbe, eine Farbe genau eine Bedeutung. Keine Farbe a
 
 ## 10. Hell und Dunkel
 
-Beide Modi sind gleichwertig. Glas-Tokens haben je einen Wert in `:root` und `.dark`.
+Beide Modi sind gleichwertig. Glas-Tokens haben je einen Wert in `:root, .light` und `.dark`.
 Zustandsfarben nutzen für Hell die 100er- bis 600er-Töne, für Dunkel die 400er-Töne auf
 Flächen mit 15 bis 25 % Deckung. Kontrast Text zu Fläche mindestens 4,5:1, Nebentext 3:1.
+
+Eine Fläche mit eigenem Schema (Wandmonitor mit eigener Hell/Dunkel-Taste, Kiosk, Ressourcen-Monitor)
+setzt `dark scheme-dark` bzw. `light scheme-light` an ihre Wurzel: Der nächste Vorfahr mit `light`
+oder `dark` bestimmt alle Tokens darunter, `dark:`-Varianten greifen in einem `light`-Bereich nicht,
+`scheme-*` zeichnet Eingabefelder und Bildlaufleisten passend. Dialoge, Menüs und Tooltips liegen
+außerhalb dieser Wurzel im `<body>` und bekommen dieselbe Klasse. Eine solche Taste ändert nie das
+Schema des Dashboards (kein `setTheme`). Nicht weiter verschachteln (kein `dark` in `light` in `dark`).
 
 ## 11. Sprache
 

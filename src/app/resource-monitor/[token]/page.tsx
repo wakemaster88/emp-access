@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback, use, useRef } from "react";
+import { useEffect, useState, useCallback, use, useRef, type CSSProperties } from "react";
 import { useWakeLock } from "@/hooks/use-wake-lock";
+import { CalendarDays, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
 
 interface TimeSlot {
@@ -38,10 +43,11 @@ const HOUR_END = 22;
 const TOTAL_HOURS = HOUR_END - HOUR_START;
 const TOTAL_MINUTES = TOTAL_HOURS * 60;
 const POLL_INTERVAL = 60_000;
-const HEADER_HEIGHT = 52;
 const COL_HEADER_HEIGHT = 36;
 const TIME_GUTTER = 54;
 const GRID_PAD = 12;
+/** Handy: Mindestbreite je Ressource, damit Titel und Pillen lesbar bleiben; sonst scrollt das Raster. */
+const MIN_COL_WIDTH = 112;
 
 function timeToMinutes(timeStr: string): number | null {
   const parts = timeStr.split(":");
@@ -76,10 +82,14 @@ function getNowBerlinTime(): string {
   });
 }
 
-function formatDateDE(dateStr: string): string {
+const LONG_DATE: Intl.DateTimeFormatOptions = { weekday: "long", day: "2-digit", month: "long", year: "numeric" };
+/** Kurzform für die Datumstaste auf dem Handy („Do., 05.11.“). */
+const SHORT_DATE: Intl.DateTimeFormatOptions = { weekday: "short", day: "2-digit", month: "2-digit" };
+
+function formatDateDE(dateStr: string, options: Intl.DateTimeFormatOptions = LONG_DATE): string {
   try {
     const d = new Date(dateStr + "T12:00:00");
-    return d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+    return d.toLocaleDateString("de-DE", options);
   } catch {
     return dateStr;
   }
@@ -131,19 +141,21 @@ export default function ResourceMonitorPage({
     return () => clearInterval(iv);
   }, []);
 
+  // Farbgrund, dunkles Farbschema und Bildschirmhöhe kommen aus dem Layout (page-ambient,
+  // `dark`, Rahmen ohne Safe-Area); die Seite füllt den Rahmen (`flex-1`).
   if (error) {
     return (
-      <div className="h-dvh bg-white flex items-center justify-center">
-        <p className="text-gray-500 text-lg">Monitor nicht gefunden oder inaktiv.</p>
+      <div className="flex-1 flex items-center justify-center p-4">
+        <Notice tone="danger" title={<span className="sm:text-xl">Monitor nicht gefunden oder inaktiv.</span>} className="w-full max-w-md sm:max-w-xl sm:p-6" />
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="h-dvh bg-white flex items-center justify-center">
-        <div className="flex items-center gap-3 text-gray-500">
-          <div className="h-5 w-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-lg text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
           Laden…
         </div>
       </div>
@@ -156,21 +168,27 @@ export default function ResourceMonitorPage({
   const resources = data.resources;
 
   return (
-    <div className="h-dvh bg-white text-gray-900 flex flex-col overflow-hidden select-none">
-      {/* Header */}
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden select-none">
+      {/* Header: Glasleiste mit Titel links, Datum und großer Uhr rechts (Zahlen 48 px). Tasten
+          56 px wie auf allen Wandmonitoren, auf dem Handy 44 px (docs/design-regeln.md,
+          Abschnitte 20 und 23); dort steht das Datum kurz, damit der
+          Titel Platz behält. Der Titel nimmt den Rest und kürzt zuerst; reicht selbst das nicht,
+          kürzt das Datum – die Uhr bleibt immer ganz sichtbar. */}
       <header
-        className="shrink-0 bg-gray-50 border-b border-gray-300 px-3 sm:px-5 flex items-center justify-between"
-        style={{ height: HEADER_HEIGHT }}
+        className="shrink-0 h-16 sm:h-18 glass-bar border-b border-border px-3 sm:px-5 flex items-center justify-between"
       >
-        <h1 className="text-sm sm:text-base font-bold tracking-tight truncate text-gray-900">{data.name}</h1>
-        <div className="flex items-baseline gap-2 sm:gap-3 shrink-0 pl-3">
-          <button
+        <h1 className="flex-1 text-lg sm:text-xl 2xl:text-2xl font-semibold tracking-tight truncate">{data.name}</h1>
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3 pl-3">
+          <Button
             type="button"
+            variant="secondary"
             onClick={() => dateInputRef.current?.showPicker()}
-            className="text-[11px] sm:text-xs text-gray-500 hover:text-gray-900 truncate cursor-pointer underline decoration-dotted underline-offset-2 transition-colors"
+            className="h-11 min-w-0 shrink gap-2 rounded-full px-3 sm:h-14 sm:px-4 sm:text-base"
           >
-            {formatDateDE(data.date)}
-          </button>
+            <CalendarDays className="text-muted-foreground" />
+            <span className="truncate sm:hidden">{formatDateDE(data.date, SHORT_DATE)}</span>
+            <span className="hidden truncate sm:inline">{formatDateDE(data.date)}</span>
+          </Button>
           <input
             ref={dateInputRef}
             type="date"
@@ -180,49 +198,61 @@ export default function ResourceMonitorPage({
             tabIndex={-1}
           />
           {!isToday && (
-            <button
+            // Glas-Pille statt Akzent-Text: primary bliebe auf der dunklen Leiste knapp unter 4,5:1.
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setSelectedDate("")}
-              className="text-[10px] sm:text-xs text-emerald-600 hover:text-emerald-800 font-medium transition-colors"
+              className="h-11 rounded-full px-4 font-semibold sm:h-14 sm:px-5 sm:text-base"
             >
               Heute
-            </button>
+            </Button>
           )}
-          <p className="text-lg sm:text-2xl font-mono font-bold tabular-nums text-emerald-600">{nowTime}</p>
+          <p className="shrink-0 text-2xl sm:text-5xl leading-none font-mono font-bold tabular-nums">{nowTime}</p>
         </div>
       </header>
 
       {resources.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-500">Keine Ressourcen konfiguriert.</p>
+        <div className="flex-1 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <EmptyState icon={CalendarDays} title="Keine Ressourcen konfiguriert." />
+          </Card>
         </div>
       ) : (
-        <>
+        // Spaltenköpfe und Raster scrollen gemeinsam in ihrem Rahmen waagerecht, nie die Seite
+        // (docs/design-regeln.md, Abschnitt 17): Auf dem Handy sind beide Zeilen mindestens
+        // Zeitleiste + MIN_COL_WIDTH je Ressource breit, die Zeitleiste bleibt links stehen. Ab sm
+        // teilen sich die Spalten die Breite wie bisher – ein Wandmonitor zeigt alles ohne Scrollen.
+        <div
+          className="flex-1 min-h-0 flex flex-col overflow-x-auto overflow-y-hidden monitor-scrollbar"
+          style={{ "--grid-min-w": `${TIME_GUTTER + resources.length * MIN_COL_WIDTH}px` } as CSSProperties}
+        >
           {/* Column headers */}
           <div
-            className="shrink-0 flex border-b border-gray-300 bg-gray-50"
+            className="shrink-0 flex border-b border-border bg-glass max-sm:min-w-(--grid-min-w)"
             style={{ height: COL_HEADER_HEIGHT }}
           >
-            <div className="shrink-0" style={{ width: TIME_GUTTER }} />
+            <div className="w-[54px] 2xl:w-16 shrink-0 max-sm:sticky max-sm:left-0 max-sm:z-30 max-sm:bg-background/80" />
             {resources.map((r) => (
               <div
                 key={r.id}
-                className="flex-1 min-w-0 px-1 flex items-center justify-center border-l border-gray-300"
+                className="flex-1 min-w-0 px-1 flex items-center justify-center border-l border-border"
               >
-                <p className="text-base sm:text-lg font-bold truncate max-w-full text-gray-900">{r.name}</p>
+                <p className="text-base sm:text-lg 2xl:text-xl font-bold truncate max-w-full">{r.name}</p>
               </div>
             ))}
           </div>
 
-          {/* Grid */}
+          {/* Grid – ohne eigenes overflow-hidden, damit die Zeitleiste am Rahmen kleben kann;
+              der Rahmen darüber schneidet senkrecht ab. */}
           <div
             ref={gridRef}
-            className="flex flex-1 overflow-hidden"
+            className="flex flex-1 max-sm:min-w-(--grid-min-w)"
             style={{ paddingTop: GRID_PAD, paddingBottom: GRID_PAD }}
           >
             <div className="relative flex w-full h-full">
-              {/* Time gutter */}
-              <div className="shrink-0 relative z-10" style={{ width: TIME_GUTTER }}>
+              {/* Time gutter: auf dem Handy klebt sie links und deckt die Spalten darunter ab. */}
+              <div className="w-[54px] 2xl:w-16 shrink-0 relative z-10 max-sm:sticky max-sm:left-0 max-sm:z-30 max-sm:bg-background/80">
                 {hours.map((h) => {
                   const pct = ((h - HOUR_START) / TOTAL_HOURS) * 100;
                   return (
@@ -231,7 +261,7 @@ export default function ResourceMonitorPage({
                       className="absolute right-0 left-0 flex justify-end pr-1.5 sm:pr-2"
                       style={{ top: `${pct}%`, transform: "translateY(-50%)" }}
                     >
-                      <span className="text-xs sm:text-sm text-gray-500 font-mono font-medium leading-none tabular-nums">
+                      <span className="text-xs sm:text-sm 2xl:text-base text-muted-foreground font-mono font-medium leading-none tabular-nums">
                         {String(h).padStart(2, "0")}:00
                       </span>
                     </div>
@@ -243,7 +273,7 @@ export default function ResourceMonitorPage({
                     className="absolute left-0 right-0 flex justify-end pr-1.5 sm:pr-2 z-30"
                     style={{ top: `${nowPct}%`, transform: "translateY(-50%)" }}
                   >
-                    <span className="text-[10px] sm:text-xs font-mono font-bold text-red-600 bg-white px-0.5 rounded leading-none tabular-nums">
+                    <span className="text-[10px] sm:text-xs 2xl:text-sm font-mono font-bold text-foreground bg-background px-0.5 2xl:px-1 rounded leading-none tabular-nums">
                       {nowTime}
                     </span>
                   </div>
@@ -254,7 +284,7 @@ export default function ResourceMonitorPage({
               {resources.map((resource) => (
                 <div
                   key={resource.id}
-                  className="flex-1 min-w-0 relative border-l border-gray-300"
+                  className="flex-1 min-w-0 relative border-l border-border"
                 >
                   {/* Hour lines */}
                   {hours.map((h) => {
@@ -262,7 +292,7 @@ export default function ResourceMonitorPage({
                     return (
                       <div
                         key={h}
-                        className="absolute left-0 right-0 border-t border-gray-200"
+                        className="absolute left-0 right-0 border-t border-border"
                         style={{ top: `${pct}%` }}
                       />
                     );
@@ -274,13 +304,17 @@ export default function ResourceMonitorPage({
                     return (
                       <div
                         key={`half-${h}`}
-                        className="absolute left-0 right-0 border-t border-dashed border-gray-100"
+                        className="absolute left-0 right-0 border-t border-dashed border-border/50"
                         style={{ top: `${pct}%` }}
                       />
                     );
                   })}
 
-                  {/* Slots: free (green), public/ÖB (blue), booked (red) */}
+                  {/* Slots: frei = success, öffentlich/ÖB = info, gebucht = violett („jemand da“,
+                      docs/design-regeln.md, Abschnitt 3) – gebucht ist Normalbetrieb, Rot heißt Störung.
+                      Die Seite läuft immer dunkel, deshalb die 400er-Töne (Abschnitte 10 und 15).
+                      Deckender Grund (bg-background) unter der Tönung, weil sich Slots überlappen
+                      und der obere den unteren verdecken muss (z-Reihenfolge). */}
                   {resource.slots.map((slot, i) => {
                     const startMin = timeToMinutes(slot.start);
                     const endMin = slot.end ? timeToMinutes(slot.end) : null;
@@ -307,13 +341,17 @@ export default function ResourceMonitorPage({
                       <div
                         key={`slot-${i}`}
                         className={cn(
-                          "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded",
-                          "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden shadow-sm border",
+                          "absolute left-1 right-1 sm:left-1.5 sm:right-1.5 rounded-lg",
+                          // bg-linear-to-*, nicht bg-gradient-to-*: tailwind-merge hielte das für eine
+                          // Hintergrundfarbe und würfe bg-background in cn() weg.
+                          "flex flex-col justify-center px-1.5 sm:px-2 overflow-hidden border bg-background bg-linear-to-br text-foreground",
+                          // Kurze Slots (15 Min.): Titel kleiner und ohne Zeilenabstand, sonst abgeschnitten.
+                          heightPct < 4 && "[&>p]:text-xs [&>p]:leading-none",
                           isPublic
-                            ? "bg-sky-50 border-sky-300 text-sky-800 z-[2]"
+                            ? "from-info/22 to-info/12 border-info/45 z-[2]"
                             : isFree
-                              ? "bg-emerald-50 border-emerald-300 text-emerald-800 z-[1]"
-                              : "bg-red-50 border-red-300 text-red-900 z-[5]",
+                              ? "from-success/22 to-success/12 border-success/45 z-[1]"
+                              : "from-violet-400/28 to-violet-400/16 border-violet-400/50 z-[5]",
                         )}
                         style={{ top: `${topPct}%`, height: `${heightPct}%` }}
                         title={isPublic
@@ -324,60 +362,62 @@ export default function ResourceMonitorPage({
                       >
                         {badge && (
                           <span className={cn(
-                            "absolute top-0.5 right-0.5 sm:top-1 sm:right-1 px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold leading-tight whitespace-nowrap",
+                            "absolute right-0.5 sm:right-1 px-1.5 sm:px-2 rounded-full text-[11px] sm:text-xs 2xl:text-sm font-bold whitespace-nowrap tabular-nums",
+                            heightPct < 4 ? "top-1/2 -translate-y-1/2 leading-none" : "top-0.5 sm:top-1 py-0.5 leading-tight",
+                            // Schrift in foreground: Zustandsfarbe auf getönter Fläche bliebe unter 4,5:1.
                             isPublic
-                              ? "bg-sky-200/80 text-sky-900"
+                              ? "bg-info/25 text-foreground"
                               : isFree
-                                ? "bg-emerald-200/80 text-emerald-900"
-                                : "bg-red-200/80 text-red-900",
+                                ? "bg-success/25 text-foreground"
+                                : "bg-violet-400/25 text-foreground",
                           )}>
                             {badge}
                           </span>
                         )}
                         {isFree && !isPublic ? (
                           <>
-                            <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
+                            <p className="text-xs sm:text-sm 2xl:text-base font-bold leading-tight truncate pr-8 sm:pr-10 2xl:pr-14">
                               {slot.source || "Frei"}
                             </p>
                             {heightPct > 4 && (
-                              <p className="text-[10px] sm:text-xs font-medium leading-tight truncate opacity-70">
+                              <p className="text-[11px] sm:text-xs 2xl:text-sm font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}
                               </p>
                             )}
                             {slot.price && heightPct > 6 && slot.price.split("\n").map((p, j) => (
-                              <p key={j} className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
+                              <p key={j} className="text-[11px] sm:text-xs 2xl:text-sm font-semibold leading-tight truncate">
                                 {p}
                               </p>
                             ))}
                           </>
                         ) : isPublic ? (
                           <>
-                            <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
+                            <p className="text-xs sm:text-sm 2xl:text-base font-bold leading-tight truncate pr-8 sm:pr-10 2xl:pr-14">
                               {slot.source || "Öffentlicher Betrieb"}
                             </p>
                             {heightPct > 4 && (
-                              <p className="text-[10px] sm:text-xs font-medium leading-tight truncate opacity-70">
+                              <p className="text-[11px] sm:text-xs 2xl:text-sm font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}
                               </p>
                             )}
                             {slot.price && heightPct > 6 && slot.price.split("\n").map((p, j) => (
-                              <p key={j} className="text-[10px] sm:text-xs font-semibold leading-tight truncate">
+                              <p key={j} className="text-[11px] sm:text-xs 2xl:text-sm font-semibold leading-tight truncate">
                                 {p}
                               </p>
                             ))}
                           </>
                         ) : (
                           <>
-                            <p className="text-xs sm:text-sm font-bold leading-tight truncate pr-8 sm:pr-10">
+                            <p className="text-xs sm:text-sm 2xl:text-base font-bold leading-tight truncate pr-8 sm:pr-10 2xl:pr-14">
                               {slot.count}x gebucht
                             </p>
                             {heightPct > 4 && (
-                              <p className="text-[10px] sm:text-xs font-medium leading-tight truncate opacity-70">
+                              <p className="text-[11px] sm:text-xs 2xl:text-sm font-medium leading-tight truncate opacity-70">
                                 {slot.start} – {slot.end}
                               </p>
                             )}
                             {heightPct > 7 && slot.names.length > 0 && (
-                              <p className="text-[9px] sm:text-[10px] leading-tight truncate opacity-60 mt-px">
+                              <p className="text-[11px] sm:text-xs 2xl:text-sm leading-tight truncate opacity-60 mt-px">
                                 {slot.names.slice(0, 3).join(", ")}
                                 {slot.count > 3 ? " …" : ""}
                               </p>
@@ -394,14 +434,17 @@ export default function ResourceMonitorPage({
                       className="absolute left-0 right-0 z-20 pointer-events-none"
                       style={{ top: `${nowPct}%` }}
                     >
-                      <div className="h-[2px] bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
+                      {/* Jetzt-Marke gestrichelt (docs/design-regeln.md, Abschnitt 8); der Punkt am
+                          Spaltenrand macht sie als Marke lesbar, nicht als Durchstreichung im Slot. */}
+                      <div className="border-t-2 border-dashed border-foreground/70" />
+                      <div className="absolute -left-1 top-px size-2 -translate-y-1/2 rounded-full bg-foreground" />
                     </div>
                   )}
                 </div>
               ))}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

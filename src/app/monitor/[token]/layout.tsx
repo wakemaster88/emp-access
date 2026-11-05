@@ -22,10 +22,15 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
  * Der Body traegt die Safe-Area als Padding; unter der transparenten iOS-
  * Statusleiste wuerde sonst der helle Body-Hintergrund durchscheinen. Der
  * Rahmen hebt das Padding auf und paddet selbst – mit dunklem Grund.
+ *
+ * Der Monitor schaltet Hell/Dunkel selbst (Klasse `dark` an seiner Wurzel),
+ * deshalb ist hier nur der Streifen unter der Statusleiste fest dunkel: Die
+ * Statusleiste schreibt weiß, auch wenn der Monitor hell läuft.
  */
 export default function TokenLayout({ children }: LayoutProps) {
   return (
-    <div className="min-h-[100dvh] bg-slate-950 mt-[calc(env(safe-area-inset-top)*-1)] pt-[env(safe-area-inset-top)]">
+    <div className="relative min-h-[100dvh] mt-[calc(env(safe-area-inset-top)*-1)] pt-[env(safe-area-inset-top)]">
+      <div aria-hidden className="dark absolute inset-x-0 top-0 h-[env(safe-area-inset-top)] bg-background" />
       {children}
     </div>
   );

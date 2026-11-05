@@ -2,7 +2,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* `dark:` gilt unter einem `.dark`-Vorfahren – außer in einem `.light`-Bereich darin
+   (Wandmonitor mit eigener Hell/Dunkel-Taste unter einem dunklen <html>). */
+@custom-variant dark (&:is(.dark *):not(:where(.dark .light, .dark .light *)));
 
 /*
  * Design-Tokens
@@ -85,7 +87,10 @@
   --radius-control: 0.875rem;
 }
 
-:root {
+/* Helle Werte. `.light` setzt einen Bereich unter einem dunklen <html> zurück auf Hell
+   (der nächste Vorfahr mit `.light` oder `.dark` gewinnt). */
+:root,
+.light {
   /* 14 px: rounded-lg = Bedienelement, rounded-xl = Kachel (18 px),
      rounded-md 12 px, rounded-sm 10 px – passt zur Radius-Regel, ohne jede
      Seite anzufassen. Karten nutzen rounded-card (24 px). */
@@ -478,9 +483,10 @@
  * Dialog, AlertDialog und Sheet sind deckend. Glasflächen darin (Kacheln,
  * Kapseln, Glas-Tasten, Badges) nehmen die getönten Ebenen-Werte, damit sie im
  * Hellen sichtbar bleiben. Die Werte hängen am Element selbst, so greift auch
- * ein Dialog mit eigener Klasse `dark` (Kiosk, Wandmonitor).
+ * ein Dialog mit eigener Klasse `dark` oder `light` (Kiosk, Wandmonitor):
+ * `:is()` hat dieselbe Spezifität wie `.dark`/`.light` und steht weiter hinten.
  */
-:where([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
   --glass-bg: var(--layer-glass-bg);
   --glass-bg-strong: var(--layer-glass-bg-strong);
   --glass-tile: var(--layer-glass-tile);
@@ -509,6 +515,7 @@
  */
 @media (prefers-reduced-transparency: reduce) {
   :root,
+  .light,
   .dark {
     --glass-bg: var(--card);
     --glass-bg-strong: var(--popover);
