@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip, type ChipTone } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
 import {
   Battery, BatteryLow, BatteryWarning, BatteryFull,
   Lock, Unlock, KeyRound, RefreshCw, Loader2, AlertTriangle,
@@ -53,35 +56,58 @@ interface Props {
   lastUpdate: string | null;
 }
 
-// Nuki state codes — siehe lib/nuki.ts.
-function stateMeta(state: number | null | undefined) {
+/**
+ * Zustandsfarbe eines Nuki-Codes, gemeinsam für diese Karte und die Geräteliste:
+ * verriegelt = grün, entriegelt oder am Entriegeln = Hinweis, blockiert = Störung.
+ */
+export function nukiStateTone(state: number | null | undefined): "success" | "warning" | "danger" | "neutral" {
   switch (state) {
-    case 1: return { label: "Verschlossen",     icon: Lock,           cls: "bg-success/12 text-success" };
-    case 2: return { label: "Entriegeln…",      icon: Unlock,         cls: "bg-warning/14 text-warning" };
-    case 3: return { label: "Entriegelt",       icon: Unlock,         cls: "bg-warning/14 text-warning" };
-    case 4: return { label: "Verriegeln…",      icon: Lock,           cls: "bg-success/12 text-success" };
-    case 5: return { label: "Entriegelt (Falle)", icon: Unlock,       cls: "bg-warning/14 text-warning" };
-    case 6: return { label: "Lock'n'Go",        icon: Unlock,         cls: "bg-info/12 text-info" };
-    case 7: return { label: "Falle wird geöffnet", icon: Unlock,      cls: "bg-warning/14 text-warning" };
-    case 254: return { label: "Motor blockiert", icon: AlertTriangle, cls: "bg-destructive/12 text-destructive" };
-    case 0:
-    case 255:
-    default: return { label: "Unbekannt", icon: Activity, cls: "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground" };
+    case 1:
+    case 4: return "success";
+    case 2:
+    case 3:
+    case 5:
+    case 6:
+    case 7: return "warning";
+    case 254: return "danger";
+    default: return "neutral";
   }
 }
 
-function batteryMeta(charge: number | null, critical: boolean, charging: boolean) {
+// Nuki state codes — siehe lib/nuki.ts. `tone` färbt den Symbol-Chip der Kachel.
+function stateMeta(state: number | null | undefined): { label: string; icon: typeof Lock; tone: ChipTone } {
+  const tone = nukiStateTone(state);
+  switch (state) {
+    case 1: return { label: "Verschlossen",     icon: Lock,           tone };
+    case 2: return { label: "Entriegeln…",      icon: Unlock,         tone };
+    case 3: return { label: "Entriegelt",       icon: Unlock,         tone };
+    case 4: return { label: "Verriegeln…",      icon: Lock,           tone };
+    case 5: return { label: "Entriegelt (Falle)", icon: Unlock,       tone };
+    case 6: return { label: "Lock'n'Go",        icon: Unlock,         tone };
+    case 7: return { label: "Falle wird geöffnet", icon: Unlock,      tone };
+    case 254: return { label: "Motor blockiert", icon: AlertTriangle, tone };
+    case 0:
+    case 255:
+    default: return { label: "Unbekannt", icon: Activity, tone };
+  }
+}
+
+function batteryMeta(
+  charge: number | null,
+  critical: boolean,
+  charging: boolean,
+): { icon: typeof Battery; text: string; tone: ChipTone; barCls: string; pct: number | null } {
   // Wenn kein Wert (z. B. Smart Lock 1/2 ohne Charge-Info): nur critical-Flag.
   if (charge == null) {
-    if (critical) return { icon: BatteryLow,  text: "Schwach", cls: "text-destructive bg-destructive/10", barCls: "bg-destructive", pct: null };
-    return { icon: Battery, text: "OK", cls: "text-muted-foreground bg-slate-500/10", barCls: "bg-slate-400", pct: null };
+    if (critical) return { icon: BatteryLow,  text: "Schwach", tone: "danger", barCls: "bg-destructive", pct: null };
+    return { icon: Battery, text: "OK", tone: "neutral", barCls: "bg-muted-foreground/50", pct: null };
   }
   const pct = Math.max(0, Math.min(100, Math.round(charge)));
-  if (charging) return { icon: Plug,         text: `${pct}% (lädt)`, cls: "text-info bg-info/10",         barCls: "bg-info",     pct };
-  if (critical || pct < 15) return { icon: BatteryWarning, text: `${pct}%`, cls: "text-destructive bg-destructive/10",     barCls: "bg-destructive",    pct };
-  if (pct < 30)             return { icon: BatteryLow,     text: `${pct}%`, cls: "text-warning bg-warning/10", barCls: "bg-warning",   pct };
-  if (pct >= 80)            return { icon: BatteryFull,    text: `${pct}%`, cls: "text-success bg-success/10", barCls: "bg-success", pct };
-  return                          { icon: Battery,         text: `${pct}%`, cls: "text-success bg-success/10", barCls: "bg-success", pct };
+  if (charging) return { icon: Plug,         text: `${pct}% (lädt)`, tone: "info",    barCls: "bg-info",     pct };
+  if (critical || pct < 15) return { icon: BatteryWarning, text: `${pct}%`, tone: "danger",  barCls: "bg-destructive",    pct };
+  if (pct < 30)             return { icon: BatteryLow,     text: `${pct}%`, tone: "warning", barCls: "bg-warning",   pct };
+  if (pct >= 80)            return { icon: BatteryFull,    text: `${pct}%`, tone: "success", barCls: "bg-success", pct };
+  return                          { icon: Battery,         text: `${pct}%`, tone: "success", barCls: "bg-success", pct };
 }
 
 function serverStateMeta(state: number | null | undefined) {
@@ -136,169 +162,145 @@ export function NukiStatusCard({ deviceId, initialInfo, firmware, lastUpdate }: 
 
   return (
     <Card>
-      <CardContent className="pt-5 pb-5 space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center">
-              <KeyRound className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">
+      {/* Header */}
+      <CardHeader>
+        <div className="flex min-w-0 items-center gap-2">
+          <IconChip icon={KeyRound} />
+          <div className="min-w-0">
+            <CardTitle>
+              <h3>
                 Nuki Status
                 {info?.nukiTypeLabel && (
                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">· {info.nukiTypeLabel}</span>
                 )}
               </h3>
-              <p className="text-[11px] text-muted-foreground/70">
-                Aktualisiert: {refreshedAt ? fmtDateTime(refreshedAt) : "—"}
-              </p>
-            </div>
+            </CardTitle>
+            <p className="text-[11px] text-muted-foreground tabular-nums">
+              Aktualisiert: {refreshedAt ? fmtDateTime(refreshedAt) : "—"}
+            </p>
           </div>
+        </div>
+        <CardAction>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={refresh}
             disabled={refreshing}
-            className="h-8 gap-1.5"
+            className="h-8 gap-1.5 max-sm:h-11"
           >
             {refreshing
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <RefreshCw className="h-3.5 w-3.5" />}
             Aktualisieren
           </Button>
-        </div>
+        </CardAction>
+      </CardHeader>
 
-        {error && (
-          <div className="rounded-lg bg-destructive/10 text-destructive text-xs px-3 py-2">
-            {error}
-          </div>
-        )}
+      <CardContent className="space-y-4">
+        {error && <Notice tone="danger" compact title={error} />}
 
-        {/* Stat-Tiles */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Stat-Tiles: Kacheln in der Karte (glass-tile), 8 px Abstand */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           {/* Battery */}
-          <div className="rounded-lg border border-border p-3 space-y-1.5">
+          <div className="glass-tile p-3 space-y-1.5">
             <div className="flex items-center gap-1.5">
-              <div className={cn("h-6 w-6 rounded-md flex items-center justify-center", bat.cls)}>
-                <BatIcon className="h-3.5 w-3.5" />
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Batterie</p>
+              <IconChip icon={BatIcon} size="sm" tone={bat.tone} />
+              <p className="text-label">Batterie</p>
             </div>
             <p className="text-lg font-bold text-foreground leading-tight tabular-nums">
               {bat.text}
             </p>
             {bat.pct !== null && (
-              <div className="h-1.5 rounded-full bg-border dark:bg-accent overflow-hidden">
+              <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                 <div className={cn("h-full transition-all", bat.barCls)} style={{ width: `${bat.pct}%` }} />
               </div>
             )}
             {batteryCharging && (
-              <p className="text-[10px] text-info inline-flex items-center gap-0.5">
+              <p className="text-[11px] text-info inline-flex items-center gap-0.5">
                 <Plug className="h-2.5 w-2.5" /> wird geladen
               </p>
             )}
           </div>
 
           {/* State */}
-          <div className="rounded-lg border border-border p-3 space-y-1.5">
+          <div className="glass-tile p-3 space-y-1.5">
             <div className="flex items-center gap-1.5">
-              <div className={cn("h-6 w-6 rounded-md flex items-center justify-center", st.cls)}>
-                <StIcon className="h-3.5 w-3.5" />
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Zustand</p>
+              <IconChip icon={StIcon} size="sm" tone={st.tone} />
+              <p className="text-label">Zustand</p>
             </div>
             <p className="text-lg font-bold text-foreground leading-tight">
               {st.label}
             </p>
-            <p className="text-[10px] text-muted-foreground/70">Code {stateCode ?? "—"}</p>
+            <p className="text-[11px] text-muted-foreground tabular-nums">Code {stateCode ?? "—"}</p>
           </div>
 
           {/* Server-Verbindung */}
-          <div className="rounded-lg border border-border p-3 space-y-1.5">
+          <div className="glass-tile p-3 space-y-1.5">
             <div className="flex items-center gap-1.5">
-              <div className={cn(
-                "h-6 w-6 rounded-md flex items-center justify-center",
-                server.online
-                  ? "bg-success/10 text-success"
-                  : "bg-destructive/10 text-destructive",
-              )}>
-                {server.online
-                  ? <Wifi className="h-3.5 w-3.5" />
-                  : <WifiOff className="h-3.5 w-3.5" />}
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Cloud</p>
+              <IconChip
+                icon={server.online ? Wifi : WifiOff}
+                size="sm"
+                tone={server.online ? "success" : "danger"}
+              />
+              <p className="text-label">Cloud</p>
             </div>
             <p className="text-lg font-bold text-foreground leading-tight">
               {server.label}
             </p>
             {firmware && (
-              <p className="text-[10px] text-muted-foreground/70">FW {firmware}</p>
+              <p className="text-[11px] text-muted-foreground">FW {firmware}</p>
             )}
           </div>
 
           {/* Keypad / Extras */}
-          <div className="rounded-lg border border-border p-3 space-y-1.5">
+          <div className="glass-tile p-3 space-y-1.5">
             <div className="flex items-center gap-1.5">
-              <div className={cn(
-                "h-6 w-6 rounded-md flex items-center justify-center",
-                keypadCritical
-                  ? "bg-destructive/10 text-destructive"
-                  : "bg-slate-500/10 text-muted-foreground",
-              )}>
-                <KeyRound className="h-3.5 w-3.5" />
-              </div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Keypad</p>
+              <IconChip icon={KeyRound} size="sm" tone={keypadCritical ? "danger" : "neutral"} />
+              <p className="text-label">Keypad</p>
             </div>
             <p className="text-sm font-semibold text-foreground leading-tight">
               {keypadCritical ? "Batterie schwach" : "OK"}
             </p>
             {info?.virtualDevice && (
-              <Badge variant="secondary" className="text-[9px]">Virtuell</Badge>
+              <Badge variant="secondary">Virtuell</Badge>
             )}
           </div>
         </div>
 
-        {/* Warnungen */}
+        {/* Warnungen: bleibender Zustand, deshalb role="status" statt Alarm. */}
         {(batteryCritical || keypadCritical) && (
-          <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-            <div className="text-xs text-destructive">
-              <p className="font-semibold">Batterie-Warnung</p>
-              <p className="opacity-90">
-                {batteryCritical && "Smart Lock-Batterie schwach. "}
-                {keypadCritical && "Keypad-Batterie schwach. "}
-                Batterien bald ersetzen oder Lock aufladen.
-              </p>
-            </div>
-          </div>
+          <Notice tone="danger" compact role="status" icon={AlertTriangle} title="Batterie-Warnung">
+            {batteryCritical && "Smart Lock-Batterie schwach. "}
+            {keypadCritical && "Keypad-Batterie schwach. "}
+            Batterien bald ersetzen oder Lock aufladen.
+          </Notice>
         )}
 
         {/* Letztes Event (vom Webhook) */}
         {info?.lastEvent && (
-          <div className="rounded-lg bg-muted/40 border border-border px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+          <div className="glass-tile px-3 py-2">
+            <p className="text-label mb-1.5 inline-flex items-center gap-1">
               <Activity className="h-3 w-3" /> Letztes Ereignis
             </p>
-            <div className="flex items-center gap-3 text-xs">
-              <span className="font-semibold text-foreground/80 inline-flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <span className="font-semibold text-foreground/80 inline-flex items-center gap-1 tabular-nums">
                 <Clock className="h-3 w-3 text-muted-foreground/70" />
                 {info.lastEvent.at ? fmtDateTime(info.lastEvent.at) : "—"}
               </span>
-              <span className="text-slate-300">·</span>
+              <span className="text-muted-foreground/60">·</span>
               <span className="text-foreground/80">
                 {info.lastEvent.stateLabel ?? "—"}
               </span>
               {info.lastEvent.triggerLabel && (
                 <>
-                  <span className="text-slate-300">·</span>
+                  <span className="text-muted-foreground/60">·</span>
                   <span className="text-muted-foreground">via {info.lastEvent.triggerLabel}</span>
                 </>
               )}
               {info.lastEvent.authName && (
                 <>
-                  <span className="text-slate-300">·</span>
+                  <span className="text-muted-foreground/60">·</span>
                   <span className="text-foreground/80 inline-flex items-center gap-0.5">
                     <UserIcon className="h-3 w-3 text-muted-foreground/70" />
                     {info.lastEvent.authName}
@@ -310,9 +312,12 @@ export function NukiStatusCard({ deviceId, initialInfo, firmware, lastUpdate }: 
         )}
 
         {!info && (
-          <p className="text-xs text-muted-foreground/70 italic text-center py-4">
-            Noch keine Nuki-Daten. Klicke auf &bdquo;Aktualisieren&ldquo;, um den aktuellen Zustand abzurufen.
-          </p>
+          <EmptyState
+            compact
+            icon={KeyRound}
+            title="Noch keine Nuki-Daten."
+            description="Klicke auf „Aktualisieren“, um den aktuellen Zustand abzurufen."
+          />
         )}
       </CardContent>
     </Card>

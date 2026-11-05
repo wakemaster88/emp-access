@@ -5,6 +5,8 @@ import Link from "next/link";
 import { fmtDateTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -22,6 +24,7 @@ import {
   Globe,
   KeyRound,
   Lightbulb,
+  Loader2,
   Lock,
   MapPin,
   Plug,
@@ -34,7 +37,6 @@ import {
   Unlock,
   Umbrella,
   Wifi,
-  WifiOff,
   Zap,
   Blinds,
   CircleDot,
@@ -46,6 +48,7 @@ import { coverMotionLabel, type CoverMotion } from "@/lib/cover-constants";
 import { loqedBoltStateLabel } from "@/lib/loqed-constants";
 import type { SensorReading } from "@/lib/shelly-sensor";
 import { SensorReadings } from "./sensor-readings";
+import { nukiStateTone } from "./nuki-status-card";
 import { mowerTone, readMowerState } from "@/lib/mower";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -148,23 +151,49 @@ interface DevicesTableProps {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const CATEGORY_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  DREHKREUZ:   { label: "Drehkreuz",   icon: GitMerge,    color: "bg-primary/10 text-primary " },
-  TUER:        { label: "Tür",         icon: DoorOpen,    color: "bg-info/12 text-info" },
-  SENSOR:      { label: "Sensor",      icon: Activity,    color: "bg-success/12 text-success" },
-  SCHALTER:    { label: "Schalter",    icon: ToggleRight, color: "bg-warning/14 text-warning" },
-  BELEUCHTUNG: { label: "Beleuchtung", icon: Lightbulb,   color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" },
-  MARKISE:     { label: "Markise",     icon: Umbrella,    color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
-  ROLLTOR:     { label: "Rolltor",     icon: Blinds,      color: "bg-muted text-muted-foreground" },
-  TASTER:      { label: "Taster",      icon: CircleDot,   color: "bg-destructive/12 text-destructive" },
-  AUDIO:       { label: "Audio-Zone",  icon: Volume2,     color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
+// Die Funktion ist eine Art, kein Zustand: einheitlich als Glas-Pille, ohne eigene Farbe.
+const CATEGORY_META: Record<string, { label: string; icon: React.ElementType }> = {
+  DREHKREUZ:   { label: "Drehkreuz",   icon: GitMerge },
+  TUER:        { label: "Tür",         icon: DoorOpen },
+  SENSOR:      { label: "Sensor",      icon: Activity },
+  SCHALTER:    { label: "Schalter",    icon: ToggleRight },
+  BELEUCHTUNG: { label: "Beleuchtung", icon: Lightbulb },
+  MARKISE:     { label: "Markise",     icon: Umbrella },
+  ROLLTOR:     { label: "Rolltor",     icon: Blinds },
+  TASTER:      { label: "Taster",      icon: CircleDot },
+  AUDIO:       { label: "Audio-Zone",  icon: Volume2 },
 };
 
-const TASK_LABEL: Record<number, { label: string; color: string }> = {
-  1: { label: "Öffne einmal", color: "bg-success/12 text-success" },
-  2: { label: "NOT-AUF",      color: "bg-destructive/12 text-destructive" },
-  3: { label: "Deaktiviert",  color: "bg-warning/14 text-warning" },
+const TASK_LABEL: Record<number, { label: string; variant: "success" | "danger" | "warning" }> = {
+  1: { label: "Öffne einmal", variant: "success" },
+  2: { label: "NOT-AUF",      variant: "danger" },
+  3: { label: "Deaktiviert",  variant: "warning" },
 };
+
+type BadgeTone = "success" | "warning" | "danger" | "neutral";
+
+/** Eine Batterie-Skala für alle Geräte: unter 15 % (oder kritisch gemeldet) Störung, unter 30 % Hinweis. */
+function batteryTone(charge: number | null, critical = false): BadgeTone {
+  if (critical || (charge != null && charge < 15)) return "danger";
+  if (charge != null && charge < 30) return "warning";
+  return "success";
+}
+
+const BATTERY_ICON: Record<BadgeTone, React.ElementType> = {
+  danger: BatteryWarning,
+  warning: BatteryLow,
+  success: Battery,
+  neutral: Battery,
+};
+
+/** Laden: Ladekreis und ein Verb statt eines stummen Platzhalters. */
+function StatusLoading() {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Loader2 className="h-3 w-3 animate-spin" /> Lädt …
+    </span>
+  );
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -203,60 +232,60 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
       .catch(() => {});
   }, [devices]);
 
+  // Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein.
   return (
-    <div className="rounded-lg border border-border overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow className="border-border hover:bg-transparent bg-muted/40">
-            <TableHead className="min-w-[180px] text-muted-foreground font-medium">
+          <TableRow>
+            <TableHead className="pl-4 sm:min-w-[180px] sm:pl-[18px]">
               <span className="inline-flex items-center gap-1.5">
                 <Wifi className="h-4 w-4 text-muted-foreground/70" />
                 Gerät
               </span>
             </TableHead>
-            <TableHead className="hidden sm:table-cell w-[140px] text-muted-foreground font-medium">
+            <TableHead className="hidden sm:table-cell w-[140px]">
               <span className="inline-flex items-center gap-1.5">
                 <Activity className="h-4 w-4 text-muted-foreground/70" />
                 Funktion
               </span>
             </TableHead>
-            <TableHead className="hidden lg:table-cell w-[130px] text-muted-foreground font-medium">
+            <TableHead className="hidden lg:table-cell w-[130px]">
               <span className="inline-flex items-center gap-1.5">
                 <Globe className="h-4 w-4 text-muted-foreground/70" />
                 IP-Adresse
               </span>
             </TableHead>
-            <TableHead className="hidden md:table-cell min-w-[140px] text-muted-foreground font-medium">
+            <TableHead className="hidden md:table-cell min-w-[140px]">
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="h-4 w-4 text-muted-foreground/70" />
                 Resourcen
               </span>
             </TableHead>
-            <TableHead className="w-[200px] text-muted-foreground font-medium">
+            <TableHead className="max-sm:pr-4 sm:w-[200px]">
               <span className="inline-flex items-center gap-1.5">
                 <Activity className="h-4 w-4 text-muted-foreground/70" />
                 Status
               </span>
             </TableHead>
-            <TableHead className="hidden lg:table-cell w-[120px] text-muted-foreground font-medium">
+            <TableHead className="hidden lg:table-cell w-[120px]">
               <span className="inline-flex items-center gap-1.5">
                 <Clock className="h-4 w-4 text-muted-foreground/70" />
                 Letzte Aktivität
               </span>
             </TableHead>
-            <TableHead className="hidden sm:table-cell w-[80px] text-right text-muted-foreground font-medium">
+            <TableHead className="hidden sm:table-cell w-[80px] text-right">
               <span className="inline-flex items-center justify-end gap-1.5">
                 <ScanLine className="h-4 w-4 text-muted-foreground/70" />
                 Scans
               </span>
             </TableHead>
-            <TableHead className="w-10" />
+            <TableHead className="hidden w-10 sm:table-cell sm:pr-[18px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {devices.length === 0 && (
-            <TableRow className="hover:bg-transparent border-border">
-              <TableCell colSpan={8} className="p-0">
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={8} className="p-0 whitespace-normal">
                 <EmptyState
                   icon={Cpu}
                   title="Keine Geräte konfiguriert"
@@ -280,43 +309,41 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           const piOnline = !!(lastUpd && lastUpd > fiveMinAgo);
           const shelly   = shellyStatus.get(device.id);
           const gardena  = gardenaStatus.get(device.id);
+          // Außer Betrieb ist „Offline“ erwartet: ruhig statt Störungsrot.
+          const offTone: BadgeTone = device.isActive ? "danger" : "neutral";
 
           // Compute status cell content
           const statusCell = (() => {
             if (isShelly) {
               if (statusLoading && !shelly) {
-                return (
-                  <span className="flex items-center gap-1.5 text-xs text-slate-300 animate-pulse">
-                    <span className="h-2 w-2 rounded-full bg-border" /> …
-                  </span>
-                );
+                return <StatusLoading />;
               }
               if (!shelly) {
-                return <span className="text-xs text-muted-foreground/70">–</span>;
+                return <span className="text-xs text-muted-foreground">–</span>;
               }
               return (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {shelly.online ? (
                     <Badge variant="success" className="gap-1 text-xs h-5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Online
+                      <StatusDot tone="success" size="xs" /> Online
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Offline
+                    <Badge variant={offTone} className="gap-1 text-xs h-5">
+                      <StatusDot tone={offTone} size="xs" /> Offline
                     </Badge>
                   )}
                   {shelly.online && shelly.motion && shelly.motion !== "unknown" && (
                     <Badge
-                      className={cn(
-                        "gap-1 text-xs h-5",
+                      className="gap-1 text-xs h-5"
+                      variant={
                         shelly.motion === "conflict"
-                          ? "bg-destructive/12 text-destructive"
+                          ? "danger"
                           // Nur eine laufende Fahrt wird hervorgehoben; Endlagen
                           // und Stillstand bleiben ruhig.
                           : shelly.motion === "opening" || shelly.motion === "closing"
-                            ? "bg-warning/14 text-warning"
-                            : "bg-muted text-muted-foreground",
-                      )}
+                            ? "warning"
+                            : "neutral"
+                      }
                     >
                       {coverMotionLabel(shelly.motion, device.category)}
                       {shelly.position != null && ` · ${shelly.position} %`}
@@ -325,13 +352,20 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                   {/* Ein Sensor hat keinen Ausgang. Steht er auf demselben
                       Shelly wie ein Schaltkanal, wuerde dessen Zustand hier
                       sonst als der des Sensors erscheinen. */}
+                  {/* Zustandsfarbe: Licht an = amber, sonst eingeschaltet = grün. */}
                   {shelly.online && !shelly.motion && !isSensor && shelly.output === true && (
-                    <Badge variant="warning" className="gap-1 text-xs h-5">
+                    <Badge
+                      variant={device.category === "BELEUCHTUNG" ? "neutral" : "success"}
+                      className={cn(
+                        "gap-1 text-xs h-5",
+                        device.category === "BELEUCHTUNG" && "bg-amber-500/15 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+                      )}
+                    >
                       <Power className="h-3 w-3" /> Ein
                     </Badge>
                   )}
                   {shelly.online && !shelly.motion && !isSensor && shelly.output === false && (
-                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
+                    <Badge variant="neutral" className="gap-1 text-xs h-5">
                       <PowerOff className="h-3 w-3" /> Aus
                     </Badge>
                   )}
@@ -341,8 +375,8 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     <SensorReadings readings={shelly.readings} />
                   )}
                   {shelly.power !== undefined && shelly.power > 0.5 && (
-                    <span className="flex items-center gap-0.5 text-xs text-muted-foreground/70">
-                      <Zap className="h-3 w-3 text-warning" />{shelly.power.toFixed(0)} W
+                    <span className="flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums">
+                      <Zap className="h-3 w-3" />{shelly.power.toFixed(0)} W
                     </span>
                   )}
                 </div>
@@ -352,22 +386,20 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
             // GARDENA Ventil/Pumpe: Online + Bewässerungs-Aktivität + Batterie
             if (isGardena) {
               if (!gardena) {
-                return (
-                  <span className="flex items-center gap-1.5 text-xs text-slate-300 animate-pulse">
-                    <span className="h-2 w-2 rounded-full bg-border" /> …
-                  </span>
-                );
+                return <StatusLoading />;
               }
               const hasBat = gardena.batteryState != null && gardena.batteryState !== "NO_BATTERY";
+              const batTone = batteryTone(gardena.batteryLevel);
+              const BatIcon = BATTERY_ICON[batTone];
               return (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {gardena.online ? (
                     <Badge variant="success" className="gap-1 text-xs h-5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Online
+                      <StatusDot tone="success" size="xs" /> Online
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
-                      <WifiOff className="h-3 w-3" /> Offline
+                    <Badge variant={offTone} className="gap-1 text-xs h-5">
+                      <StatusDot tone={offTone} size="xs" /> Offline
                     </Badge>
                   )}
                   {gardena.watering ? (
@@ -375,16 +407,18 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                       <Droplets className="h-3 w-3" /> {gardenaActivityLabel(gardena.activity)}
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
+                    <Badge variant="neutral" className="gap-1 text-xs h-5">
                       <Square className="h-3 w-3" /> {gardenaActivityLabel(gardena.activity)}
                     </Badge>
                   )}
                   {hasBat && gardena.batteryLevel != null && (
                     <span className={cn(
-                      "flex items-center gap-0.5 text-xs",
-                      gardena.batteryLevel < 20 ? "text-destructive" : "text-muted-foreground/70",
+                      "flex items-center gap-0.5 text-xs tabular-nums",
+                      batTone === "danger" ? "text-destructive"
+                        : batTone === "warning" ? "text-warning"
+                        : "text-muted-foreground",
                     )}>
-                      {gardena.batteryLevel < 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />}
+                      <BatIcon className="h-3 w-3" />
                       {gardena.batteryLevel}%
                     </span>
                   )}
@@ -396,20 +430,9 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
             if (isNuki) {
               const ns = nukiStatus(device.systemInfo);
               const charge = ns.charge;
-              const batCls = ns.critical || (charge != null && charge < 15)
-                ? "bg-destructive/12 text-destructive"
-                : (charge != null && charge < 30)
-                  ? "bg-warning/14 text-warning"
-                  : "bg-success/12 text-success";
-              const BatIcon = ns.charging ? Plug
-                : (ns.critical || (charge != null && charge < 15)) ? BatteryWarning
-                : (charge != null && charge < 30) ? BatteryLow
-                : Battery;
-              const stateCls =
-                ns.state === 1 || ns.state === 4 ? "bg-success/12 text-success"
-                : ns.state === 3 || ns.state === 5 || ns.state === 6 || ns.state === 7 ? "bg-warning/14 text-warning"
-                : ns.state === 254 ? "bg-destructive/12 text-destructive"
-                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground";
+              const batTone = batteryTone(charge, ns.critical);
+              const BatIcon = ns.charging ? Plug : BATTERY_ICON[batTone];
+              const stateTone: BadgeTone = nukiStateTone(ns.state);
               const stateLabel =
                 ns.state === 1 ? "Verschlossen"
                 : ns.state === 3 ? "Entriegelt"
@@ -421,10 +444,10 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               const StIcon = ns.state === 1 || ns.state === 4 ? Lock : Unlock;
               return (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge className={cn("gap-1 text-xs h-5", stateCls)}>
+                  <Badge variant={stateTone} className="gap-1 text-xs h-5">
                     <StIcon className="h-3 w-3" /> {stateLabel}
                   </Badge>
-                  <Badge className={cn("gap-1 text-xs h-5", batCls)}>
+                  <Badge variant={batTone} className="gap-1 text-xs h-5 tabular-nums">
                     <BatIcon className="h-3 w-3" />
                     {charge != null ? `${Math.round(charge)}%` : (ns.critical ? "schwach" : "OK")}
                   </Badge>
@@ -443,26 +466,28 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               const fresh = !!(lastUpd && lastUpd.getTime() > fiveMinAgo.getTime() - 5 * 60_000);
               if (!ms || !fresh) {
                 return (
-                  <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> keine Meldung
+                  <Badge variant="neutral" className="gap-1 text-xs h-5">
+                    <StatusDot tone="neutral" size="xs" /> keine Meldung
                   </Badge>
                 );
               }
               const tone = mowerTone(ms);
-              const toneCls =
-                tone === "mowing" ? "bg-success/12 text-success"
-                : tone === "error" ? "bg-destructive/12 text-destructive"
-                : tone === "paused" ? "bg-warning/14 text-warning"
-                : "bg-muted text-muted-foreground";
+              // Mäht = grün (Live), Störung und offline = rot, Pause = Hinweis, sonst ruhig.
+              const toneVariant: BadgeTone =
+                tone === "mowing" ? "success"
+                : tone === "error" || tone === "offline" ? "danger"
+                : tone === "paused" ? "warning"
+                : "neutral";
               const charge = ms.battery;
-              const BatIcon = charge != null && charge < 15 ? BatteryWarning : charge != null && charge < 30 ? BatteryLow : Battery;
+              const batTone = batteryTone(charge);
+              const BatIcon = BATTERY_ICON[batTone];
               return (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge className={cn("gap-1 text-xs h-5", toneCls)}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-current" /> {ms.online ? ms.statusLabel || ms.status : "Offline"}
+                  <Badge variant={toneVariant} className="gap-1 text-xs h-5">
+                    <StatusDot tone={toneVariant} size="xs" /> {ms.online ? ms.statusLabel || ms.status : "Offline"}
                   </Badge>
                   {charge != null && (
-                    <Badge className="gap-1 text-xs h-5 bg-success/12 text-success">
+                    <Badge variant={batTone} className="gap-1 text-xs h-5 tabular-nums">
                       <BatIcon className="h-3 w-3" /> {Math.round(charge)}%
                     </Badge>
                   )}
@@ -473,26 +498,20 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
             // LOQED-Schloss: Riegelzustand + Batterie
             if (isLoqed) {
               const ls = loqedStatus(device.systemInfo);
-              const boltCls =
-                ls.bolt === "night_lock" ? "bg-success/12 text-success"
-                : ls.bolt === "open" ? "bg-warning/14 text-warning"
-                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground";
-              const batCls = ls.charge != null && ls.charge < 15
-                ? "bg-destructive/12 text-destructive"
-                : ls.charge != null && ls.charge < 30
-                  ? "bg-warning/14 text-warning"
-                  : "bg-success/12 text-success";
-              const BatIcon = ls.charge != null && ls.charge < 15 ? BatteryWarning
-                : ls.charge != null && ls.charge < 30 ? BatteryLow
-                : Battery;
+              const boltTone: BadgeTone =
+                ls.bolt === "night_lock" ? "success"
+                : ls.bolt === "open" ? "warning"
+                : "neutral";
+              const batTone = batteryTone(ls.charge);
+              const BatIcon = BATTERY_ICON[batTone];
               return (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge className={cn("gap-1 text-xs h-5", boltCls)}>
+                  <Badge variant={boltTone} className="gap-1 text-xs h-5">
                     {ls.bolt === "night_lock" ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
                     {loqedBoltStateLabel(ls.bolt)}
                   </Badge>
                   {ls.charge != null && (
-                    <Badge className={cn("gap-1 text-xs h-5", batCls)}>
+                    <Badge variant={batTone} className="gap-1 text-xs h-5 tabular-nums">
                       <BatIcon className="h-3 w-3" /> {Math.round(ls.charge)}%
                     </Badge>
                   )}
@@ -505,15 +524,15 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               <div className="flex flex-wrap items-center gap-1.5">
                 {piOnline ? (
                   <Badge variant="success" className="gap-1 text-xs h-5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-success" /> Online
+                    <StatusDot tone="success" size="xs" /> Online
                   </Badge>
                 ) : (
-                  <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs h-5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Offline
+                  <Badge variant={offTone} className="gap-1 text-xs h-5">
+                    <StatusDot tone={offTone} size="xs" /> Offline
                   </Badge>
                 )}
                 {device.task > 0 && TASK_LABEL[device.task] && (
-                  <Badge className={cn("gap-1 text-xs h-5", TASK_LABEL[device.task].color)}>
+                  <Badge variant={TASK_LABEL[device.task].variant} className="gap-1 text-xs h-5">
                     {TASK_LABEL[device.task].label}
                   </Badge>
                 )}
@@ -523,22 +542,22 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
 
           // Resourcen: Einlass/Auslass mit Icons
           const bereicheCell = (() => {
-            if (!isPi || (!device.accessIn && !device.accessOut)) return <span className="text-muted-foreground/70">–</span>;
+            if (!isPi || (!device.accessIn && !device.accessOut)) return <span className="text-muted-foreground">–</span>;
             const inName  = device.accessIn  ? (areaMap[device.accessIn]  ?? `#${device.accessIn}`)  : null;
             const outName = device.accessOut ? (areaMap[device.accessOut] ?? `#${device.accessOut}`) : null;
             return (
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {inName && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5" title="Einlass">
+                  <Badge variant="secondary" className="font-medium" title="Einlass">
                     <MapPin className="h-3 w-3 text-success shrink-0" />
                     {inName}
-                  </span>
+                  </Badge>
                 )}
                 {outName && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5" title="Auslass">
+                  <Badge variant="secondary" className="font-medium" title="Auslass">
                     <MapPin className="h-3 w-3 text-info shrink-0" />
                     {outName}
-                  </span>
+                  </Badge>
                 )}
               </div>
             );
@@ -547,33 +566,21 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
           return (
             <TableRow
               key={device.id}
-              className="group cursor-pointer border-border hover:bg-primary/10 transition-colors"
+              className="group"
             >
-              {/* Gerät */}
-              <TableCell>
+              {/* Gerät – auf dem Handy nimmt die Spalte den Rest der Breite und kürzt den Namen. */}
+              <TableCell className="pl-4 max-sm:w-full max-sm:max-w-0 sm:pl-[18px]">
                 <Link href={`/devices/${device.id}`} className="flex items-center gap-3 min-w-0">
-                  <div className={cn(
-                    "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
-                    isShelly
-                      ? "bg-warning/10 text-warning"
-                      : isNuki
-                        ? "bg-destructive/10 text-destructive"
-                        : isGardena
-                          ? "bg-success/10 text-success"
-                          : isAudio
-                            ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
-                            : isMower
-                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                              : "bg-primary/10 text-primary"
-                  )}>
-                    {isShelly ? <Wifi className="h-4 w-4" /> : isNuki ? <KeyRound className="h-4 w-4" /> : isGardena ? <Sprout className="h-4 w-4" /> : isAudio ? <Volume2 className="h-4 w-4" /> : isMower ? <Tractor className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
-                  </div>
+                  {/* Symbol-Chip ruhig: die Geräteart ist kein Zustand, den zeigt die Spalte „Status“ (Abschnitt 3). */}
+                  <IconChip
+                    icon={isShelly ? Wifi : isNuki ? KeyRound : isGardena ? Sprout : isAudio ? Volume2 : isMower ? Tractor : Cpu}
+                  />
                   <div className="min-w-0">
-                    <p className="font-medium text-sm text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+                    <p className="font-medium text-sm text-foreground group-hover:text-primary transition-colors truncate">
                       {device.name}
                     </p>
                     {!device.isActive && (
-                      <span className="text-xs text-muted-foreground/70 italic">Inaktiv</span>
+                      <span className="text-xs text-muted-foreground italic">Inaktiv</span>
                     )}
                   </div>
                 </Link>
@@ -582,34 +589,34 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
               {/* Funktion */}
               <TableCell className="hidden sm:table-cell">
                 {cat ? (
-                  <Badge className={cn("text-xs gap-1 w-fit", cat.color)}>
+                  <Badge variant="secondary" className="text-xs gap-1 w-fit">
                     <cat.icon className="h-3 w-3" /> {cat.label}
                   </Badge>
                 ) : (
-                  <span className="text-xs text-muted-foreground/70">{isShelly ? "Shelly" : isNuki ? "Nuki" : isGardena ? "GARDENA" : isMower ? "Mähroboter" : "Pi"}</span>
+                  <span className="text-xs text-muted-foreground">{isShelly ? "Shelly" : isNuki ? "Nuki" : isGardena ? "GARDENA" : isMower ? "Mähroboter" : "Pi"}</span>
                 )}
               </TableCell>
 
               {/* IP */}
               <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
-                {device.ipAddress || <span className="text-slate-300">–</span>}
+                {device.ipAddress || <span className="text-muted-foreground">–</span>}
               </TableCell>
 
               {/* Bereiche */}
               <TableCell className="hidden md:table-cell">{bereicheCell}</TableCell>
 
-              {/* Status */}
-              <TableCell>{statusCell}</TableCell>
+              {/* Status – auf dem Handy die letzte Spalte, deshalb mit Karten-Innenabstand. */}
+              <TableCell className="max-sm:pr-4">{statusCell}</TableCell>
 
               {/* Letzte Aktivität */}
-              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground/70 whitespace-nowrap">
+              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                 {lastUpd
                   ? fmtDateTime(lastUpd, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
-                  : <span className="text-slate-300">–</span>}
+                  : <span className="text-muted-foreground">–</span>}
               </TableCell>
 
               {/* Scans */}
-              <TableCell className="hidden sm:table-cell text-right font-medium text-sm">
+              <TableCell className="hidden sm:table-cell text-right font-medium text-sm tabular-nums">
                 {device._count.scans > 0 ? (
                   <Link
                     href={`/scans?device=${device.id}`}
@@ -619,19 +626,20 @@ export function DevicesTable({ devices, areas }: DevicesTableProps) {
                     {device._count.scans}
                   </Link>
                 ) : (
-                  <span className="text-muted-foreground/70">0</span>
+                  <span className="text-muted-foreground">0</span>
                 )}
               </TableCell>
 
-              {/* Pfeil */}
-              <TableCell>
-                <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+              {/* Pfeil – führt wie der Name zur Detailseite; für Tastatur und Screenreader reicht der Name-Link. */}
+              <TableCell className="hidden sm:table-cell sm:pr-[18px]">
+                <Link href={`/devices/${device.id}`} tabIndex={-1} aria-hidden="true" className="flex">
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary transition-colors" />
+                </Link>
               </TableCell>
             </TableRow>
           );
         })}
       </TableBody>
     </Table>
-    </div>
   );
 }

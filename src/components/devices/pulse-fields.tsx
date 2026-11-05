@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { AlertCircle, Timer } from "lucide-react";
 import {
   DEFAULT_PULSE_SECONDS,
@@ -43,8 +44,9 @@ export function PulseFields({ values, onChange }: Props) {
   const seconds = Number(values.pulseSeconds);
 
   return (
-    <div className="rounded-xl border border-border p-3 space-y-3">
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Taster</p>
+    // Gruppe im Dialog als Glas-Kachel (glass-tile, Radius 18 px); in der Ebene getönt (Abschnitt 18).
+    <div className="glass-tile p-3 space-y-3">
+      <p className="text-label">Taster</p>
       <p className="text-xs text-muted-foreground">
         Ein Druck schaltet das Relais ein; nach der eingestellten Dauer fällt es
         von selbst wieder ab. Den Timer übernimmt der Shelly – das Relais geht
@@ -52,7 +54,7 @@ export function PulseFields({ values, onChange }: Props) {
       </p>
 
       <div className="space-y-1.5">
-        <Label htmlFor="d-pulse-seconds" className="text-xs flex items-center gap-1.5">
+        <Label htmlFor="d-pulse-seconds" className="flex items-center gap-1.5">
           <Timer className="h-3.5 w-3.5" /> Einschaltdauer in Sekunden
         </Label>
         <Input
@@ -70,25 +72,20 @@ export function PulseFields({ values, onChange }: Props) {
               key={s}
               type="button"
               onClick={() => onChange({ pulseSeconds: String(s) })}
-              className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:border-primary/60 hover:text-primary transition-colors"
+              className="press inline-flex h-9 items-center rounded-full border border-border px-3 text-xs text-muted-foreground tabular-nums hover:border-primary/60 hover:text-primary max-sm:h-11"
             >
               {formatPulseDuration(s)}
             </button>
           ))}
         </div>
         {!error && (
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-muted-foreground">
             Betätigen schaltet für {formatPulseDuration(seconds)} ein.
           </p>
         )}
       </div>
 
-      {error && (
-        <div className="flex items-start gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>{error}</span>
-        </div>
-      )}
+      {error && <Notice tone="warning" compact icon={AlertCircle} title={error} />}
     </div>
   );
 }

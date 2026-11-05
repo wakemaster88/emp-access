@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { StatusDot } from "@/components/ui/status-dot";
 
 interface Props {
   deviceId: number;
@@ -25,9 +27,9 @@ export function ShellyOnlineDot({ deviceId }: Props) {
 
   if (online === null) {
     return (
-      <Badge variant="secondary" className="text-slate-300 gap-1 animate-pulse text-xs">
-        <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
-        …
+      <Badge variant="neutral" className="gap-1 text-xs">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Lädt …
       </Badge>
     );
   }
@@ -36,17 +38,17 @@ export function ShellyOnlineDot({ deviceId }: Props) {
     <div className="flex items-center gap-1.5">
       {online ? (
         <Badge variant="success" className="gap-1 text-xs">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          <StatusDot tone="success" size="xs" />
           Online
         </Badge>
       ) : (
-        <Badge variant="secondary" className="text-muted-foreground/70 gap-1 text-xs">
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+        <Badge variant="danger" className="gap-1 text-xs">
+          <StatusDot tone="danger" size="xs" />
           Offline
         </Badge>
       )}
       {online && output !== null && (
-        <span className={`text-xs font-medium ${output ? "text-warning" : "text-muted-foreground/70"}`}>
+        <span className={`text-xs font-medium ${output ? "text-success" : "text-muted-foreground"}`}>
           {output ? "Ein" : "Aus"}
         </span>
       )}

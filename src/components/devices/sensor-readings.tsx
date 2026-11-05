@@ -24,9 +24,10 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { SensorReading } from "@/lib/shelly-sensor";
 
-const EMPHASIS_BADGE: Record<string, string> = {
-  warn: "bg-warning/14 text-warning",
-  alert: "bg-destructive/12 text-destructive",
+// Hervorgehobene Zustände als Badge-Variante: Hinweis gelb, Alarm rot.
+const EMPHASIS_BADGE: Record<string, "warning" | "danger"> = {
+  warn: "warning",
+  alert: "danger",
 };
 
 const EMPHASIS_TEXT: Record<string, string> = {
@@ -71,12 +72,8 @@ export function SensorReadings({ readings }: { readings: SensorReading[] }) {
           return (
             <Badge
               key={key}
-              className={cn(
-                "gap-1 text-xs h-5",
-                reading.emphasis
-                  ? EMPHASIS_BADGE[reading.emphasis]
-                  : "bg-muted text-muted-foreground",
-              )}
+              variant={reading.emphasis ? EMPHASIS_BADGE[reading.emphasis] : "neutral"}
+              className="gap-1 text-xs h-5"
               title={reading.label}
             >
               <Icon className="h-3 w-3" />
@@ -89,8 +86,8 @@ export function SensorReadings({ readings }: { readings: SensorReading[] }) {
           <span
             key={key}
             className={cn(
-              "flex items-center gap-0.5 text-xs",
-              reading.emphasis ? EMPHASIS_TEXT[reading.emphasis] : "text-muted-foreground/70",
+              "flex items-center gap-0.5 text-xs tabular-nums",
+              reading.emphasis ? EMPHASIS_TEXT[reading.emphasis] : "text-muted-foreground",
             )}
             title={reading.label}
           >

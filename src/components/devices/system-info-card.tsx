@@ -2,9 +2,12 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
 import {
   Thermometer, Cpu, HardDrive, MemoryStick, Clock, Wifi,
   Server, AlertTriangle, Zap, Activity,
+  type LucideIcon,
 } from "lucide-react";
 import { cn, fmtDateTime } from "@/lib/utils";
 
@@ -17,34 +20,33 @@ interface SystemInfoCardProps {
 function ProgressBar({ value, max = 100, color }: { value: number; max?: number; color: string }) {
   const pct = Math.min((value / max) * 100, 100);
   return (
-    <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+    <div className="h-2 w-full rounded-full bg-foreground/10 overflow-hidden">
       <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
     </div>
   );
 }
 
-function InfoRow({ icon: Icon, label, value, sub, className }: {
-  icon: React.ElementType; label: string; value: React.ReactNode; sub?: string; className?: string;
+function InfoRow({ icon, label, value, sub, className }: {
+  icon: LucideIcon; label: string; value: React.ReactNode; sub?: string; className?: string;
 }) {
   return (
     <div className={cn("flex items-center gap-3 py-2", className)}>
-      <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
+      <IconChip icon={icon} />
       <div className="flex-1 min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-sm font-medium text-foreground/90 truncate">{value}</p>
       </div>
-      {sub && <span className="text-xs text-muted-foreground/70 shrink-0">{sub}</span>}
+      {sub && <span className="text-xs text-muted-foreground tabular-nums shrink-0">{sub}</span>}
     </div>
   );
 }
 
-function tempColor(temp: number): string {
+// Ab 60 °C Hinweis (warning), ab 80 °C Störung; darunter keine Zustandsfarbe (null),
+// dann gelten die ruhigen Farben der übrigen Werte.
+function tempColor(temp: number): string | null {
   if (temp >= 80) return "text-destructive";
-  if (temp >= 70) return "text-warning";
-  if (temp >= 60) return "text-yellow-600";
-  return "text-success";
+  if (temp >= 60) return "text-warning";
+  return null;
 }
 
 function barColor(pct: number): string {
@@ -71,14 +73,14 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold text-foreground/90 flex items-center gap-2">
-            <Server className="h-4 w-4" />
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <Server className="h-4 w-4 text-muted-foreground" />
             Raspberry Pi System
           </CardTitle>
           {lastUpdate && (
-            <span className="text-xs text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground tabular-nums">
               Letzter Bericht: {fmtDateTime(lastUpdate)}
             </span>
           )}
@@ -88,11 +90,18 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
       <CardContent className="space-y-4">
         {/* Warnungen */}
         {throttle && (throttle.undervoltage_now || throttle.throttled_now) && (
-          <div className="flex items-center gap-2 text-sm bg-destructive/10 border border-destructive/30 text-destructive rounded-lg px-3 py-2">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            {throttle.undervoltage_now && <span>Unterspannung erkannt – Netzteil prüfen!</span>}
-            {throttle.throttled_now && <span>CPU wird gedrosselt – Kühlung prüfen!</span>}
-          </div>
+          <Notice
+            tone="danger"
+            compact
+            role="status"
+            icon={AlertTriangle}
+            title={
+              <>
+                {throttle.undervoltage_now && <span className="block">Unterspannung erkannt – Netzteil prüfen!</span>}
+                {throttle.throttled_now && <span className="block">CPU wird gedrosselt – Kühlung prüfen!</span>}
+              </>
+            }
+          />
         )}
 
         {/* Modell + Version */}
@@ -108,12 +117,12 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
                 <span className="flex items-center gap-2">
                   v{scannerVersion}
                   {latestVersion && scannerVersion === latestVersion && (
-                    <Badge variant="outline" className="text-xs text-success border-success/30">
+                    <Badge variant="success" className="text-xs">
                       aktuell
                     </Badge>
                   )}
                   {latestVersion && scannerVersion !== latestVersion && (
-                    <Badge variant="outline" className="text-xs text-warning border-warning/30">
+                    <Badge variant="warning" className="text-xs">
                       Update v{latestVersion}
                     </Badge>
                   )}
@@ -123,34 +132,34 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
           )}
         </div>
 
-        {/* Temperatur + CPU */}
-        <div className="rounded-xl border border-border/60 p-4 space-y-3">
+        {/* Temperatur + CPU: Kachel in der Karte */}
+        <div className="glass-tile p-4 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {cpuTemp !== undefined && (
               <div className="text-center">
-                <Thermometer className={cn("h-5 w-5 mx-auto mb-1", tempColor(cpuTemp))} />
-                <p className={cn("text-2xl font-bold", tempColor(cpuTemp))}>{cpuTemp}°</p>
+                <Thermometer className={cn("h-5 w-5 mx-auto mb-1", tempColor(cpuTemp) ?? "text-muted-foreground")} />
+                <p className={cn("text-2xl font-bold tabular-nums", tempColor(cpuTemp) ?? "text-foreground/90")}>{cpuTemp}°</p>
                 <p className="text-xs text-muted-foreground">CPU Temp</p>
               </div>
             )}
             {gpuTemp !== undefined && (
               <div className="text-center">
-                <Thermometer className={cn("h-5 w-5 mx-auto mb-1", tempColor(gpuTemp))} />
-                <p className={cn("text-2xl font-bold", tempColor(gpuTemp))}>{gpuTemp}°</p>
+                <Thermometer className={cn("h-5 w-5 mx-auto mb-1", tempColor(gpuTemp) ?? "text-muted-foreground")} />
+                <p className={cn("text-2xl font-bold tabular-nums", tempColor(gpuTemp) ?? "text-foreground/90")}>{gpuTemp}°</p>
                 <p className="text-xs text-muted-foreground">GPU Temp</p>
               </div>
             )}
             {cpuUsage !== undefined && (
               <div className="text-center">
-                <Cpu className="h-5 w-5 mx-auto mb-1 text-primary" />
-                <p className="text-2xl font-bold text-foreground/90">{cpuUsage}%</p>
+                <Cpu className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                <p className="text-2xl font-bold text-foreground/90 tabular-nums">{cpuUsage}%</p>
                 <p className="text-xs text-muted-foreground">CPU Last</p>
               </div>
             )}
             {cpuFreq !== undefined && (
               <div className="text-center">
-                <Zap className="h-5 w-5 mx-auto mb-1 text-warning" />
-                <p className="text-2xl font-bold text-foreground/90">{cpuFreq}</p>
+                <Zap className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                <p className="text-2xl font-bold text-foreground/90 tabular-nums">{cpuFreq}</p>
                 <p className="text-xs text-muted-foreground">MHz</p>
               </div>
             )}
@@ -160,32 +169,32 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
         {/* Speicher */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {memory && (
-            <div className="rounded-xl border border-border/60 p-4 space-y-2">
+            <div className="glass-tile p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <MemoryStick className="h-4 w-4 text-primary" />
+                  <MemoryStick className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground/80">RAM</span>
                 </div>
-                <span className="text-sm font-bold text-foreground/90">{memory.percent}%</span>
+                <span className="text-sm font-bold text-foreground/90 tabular-nums">{memory.percent}%</span>
               </div>
               <ProgressBar value={memory.percent} color={barColor(memory.percent)} />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground tabular-nums">
                 {memory.used_mb} MB / {memory.total_mb} MB ({memory.available_mb} MB frei)
               </p>
             </div>
           )}
 
           {disk && (
-            <div className="rounded-xl border border-border/60 p-4 space-y-2">
+            <div className="glass-tile p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <HardDrive className="h-4 w-4 text-primary" />
+                  <HardDrive className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground/80">Speicher</span>
                 </div>
-                <span className="text-sm font-bold text-foreground/90">{disk.percent}%</span>
+                <span className="text-sm font-bold text-foreground/90 tabular-nums">{disk.percent}%</span>
               </div>
               <ProgressBar value={disk.percent} color={barColor(disk.percent)} />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground tabular-nums">
                 {disk.used_gb} GB / {disk.total_gb} GB ({disk.free_gb} GB frei)
               </p>
             </div>
@@ -218,11 +227,17 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
 
         {/* Throttle-Historie */}
         {throttle && (throttle.undervoltage_occurred || throttle.throttled_occurred) && !throttle.undervoltage_now && !throttle.throttled_now && (
-          <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            {throttle.undervoltage_occurred && "Unterspannung wurde erkannt (nicht aktuell). "}
-            {throttle.throttled_occurred && "CPU-Drosselung wurde erkannt (nicht aktuell)."}
-          </div>
+          <Notice
+            tone="warning"
+            compact
+            icon={AlertTriangle}
+            title={
+              <>
+                {throttle.undervoltage_occurred && "Unterspannung wurde erkannt (nicht aktuell). "}
+                {throttle.throttled_occurred && "CPU-Drosselung wurde erkannt (nicht aktuell)."}
+              </>
+            }
+          />
         )}
       </CardContent>
     </Card>

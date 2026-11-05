@@ -18,12 +18,16 @@ interface DeviceActionsProps {
   onEdit: () => void;
 }
 
+// Tastenfarbe nach Rolle wie in `lib/device-controls`: Öffnen/Einschalten
+// primär, NOT-AUF Gefahr, alles andere Glas.
+type ActionVariant = "default" | "secondary" | "destructive";
+
 // Actions for access control devices (Drehkreuz, Tür)
-const ACCESS_ACTIONS = [
-  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, className: "bg-destructive hover:bg-destructive/90 text-white",   activeTask: 2 },
-  { key: "open",       label: "Öffnen",       icon: DoorOpen,      className: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
-  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   className: "bg-warning hover:bg-warning/90 text-warning-foreground",  activeTask: 3 },
-  { key: "reset",      label: "Reset",        icon: RotateCcw,     className: "bg-slate-600 hover:bg-slate-700 text-white",  activeTask: 0 },
+const ACCESS_ACTIONS: { key: string; label: string; icon: typeof AlertTriangle; variant: ActionVariant; activeTask: number }[] = [
+  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, variant: "destructive", activeTask: 2 },
+  { key: "open",       label: "Öffnen",       icon: DoorOpen,      variant: "default",     activeTask: 1 },
+  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   variant: "secondary",   activeTask: 3 },
+  { key: "reset",      label: "Reset",        icon: RotateCcw,     variant: "secondary",   activeTask: 0 },
 ];
 
 // Actions for Drehkreuz only – includes NOT-AUF
@@ -31,9 +35,9 @@ const ACCESS_ACTIONS = [
 const TUER_ACTIONS = ACCESS_ACTIONS.filter((a) => a.key !== "emergency");
 
 // Actions for Schalter & Beleuchtung
-const SWITCH_ACTIONS = [
-  { key: "open",  label: "Einschalten", icon: Power,    className: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
-  { key: "reset", label: "Ausschalten", icon: PowerOff, className: "bg-slate-600 hover:bg-slate-700 text-white",    activeTask: 0 },
+const SWITCH_ACTIONS: { key: string; label: string; icon: typeof Power; variant: ActionVariant; activeTask: number }[] = [
+  { key: "open",  label: "Einschalten", icon: Power,    variant: "default",   activeTask: 1 },
+  { key: "reset", label: "Ausschalten", icon: PowerOff, variant: "secondary", activeTask: 0 },
 ];
 
 export function DeviceActions({ deviceId, deviceCategory, currentTask, onEdit }: DeviceActionsProps) {
@@ -71,13 +75,13 @@ export function DeviceActions({ deviceId, deviceCategory, currentTask, onEdit }:
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5">
+      <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5 max-sm:h-11">
         <Pencil className="h-4 w-4" />
         Bearbeiten
       </Button>
 
       {isSensor ? (
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70 px-2 italic">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground px-2 italic">
           <Activity className="h-3.5 w-3.5" /> Sensor – nur Anzeige
         </span>
       ) : isSwitch ? (() => {
@@ -87,13 +91,14 @@ export function DeviceActions({ deviceId, deviceCategory, currentTask, onEdit }:
         return (
           <Button
             size="sm"
+            variant={a.variant}
             onClick={() => handleAction(a.key)}
             disabled={loading !== null}
-            className={a.className}
+            className="max-sm:h-11"
           >
             {loading === a.key
-              ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-              : <Icon className="h-4 w-4 mr-1.5" />}
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Icon className="h-4 w-4" />}
             {a.label}
           </Button>
         );
@@ -105,16 +110,17 @@ export function DeviceActions({ deviceId, deviceCategory, currentTask, onEdit }:
             <Button
               key={a.key}
               size="sm"
+              variant={a.variant}
               onClick={() => handleAction(a.key)}
               disabled={loading !== null}
               className={cn(
-                a.className,
-                isActiveTask && "ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-950 ring-current"
+                "max-sm:h-11",
+                isActiveTask && "outline-solid outline-2 outline-offset-2 outline-primary"
               )}
             >
               {loading === a.key
-                ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-                : <Icon className="h-4 w-4 mr-1.5" />}
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Icon className="h-4 w-4" />}
               {a.label}
             </Button>
           );

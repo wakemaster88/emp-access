@@ -62,16 +62,16 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
     <>
       <canvas
         ref={canvasRef}
-        className="rounded-lg border border-border cursor-pointer hover:ring-2 hover:ring-indigo-400 transition-all"
+        className="rounded-lg border border-border cursor-pointer hover:ring-2 hover:ring-primary/60 transition-all"
         onClick={() => setOpen(true)}
         title="Klicken für Installationshinweise"
       />
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5 text-primary" />
+              <QrCode className="h-5 w-5 text-muted-foreground" />
               Raspberry Pi einrichten
             </DialogTitle>
           </DialogHeader>
@@ -80,25 +80,26 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
             {/* Step 1 */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <Badge className="bg-primary/10 text-primary text-xs">1</Badge>
+                <Badge variant="secondary" className="tabular-nums">1</Badge>
                 <h3 className="text-sm font-semibold text-foreground">Software installieren</h3>
               </div>
               <p className="text-sm text-muted-foreground">
                 Auf dem Raspberry Pi folgenden Befehl im Terminal ausführen:
               </p>
               <div className="relative">
-                <div className="bg-slate-900 dark:bg-slate-950 rounded-lg p-3 pr-12 font-mono text-xs text-emerald-400 overflow-x-auto">
+                {/* Befehle als ruhige Glas-Kachel (in der Ebene getönt), ohne eigene Terminal-Farben. */}
+                <div className="glass-tile p-3 font-mono text-xs text-foreground overflow-x-auto">
                   <div className="flex items-start gap-2">
                     <Terminal className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                     <span className="break-all select-all">sudo bash install.sh</span>
                   </div>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Alternativ das Repository manuell klonen:
               </p>
               <div className="relative group">
-                <div className="bg-slate-900 dark:bg-slate-950 rounded-lg p-3 pr-12 font-mono text-xs text-slate-300 overflow-x-auto">
+                <div className="glass-tile p-3 font-mono text-xs text-foreground/90 overflow-x-auto">
                   <p className="text-muted-foreground mb-1"># Repository klonen</p>
                   <p>git clone https://github.com/wakemaster88/emp-access.git</p>
                   <p>cd emp-access/raspberry-pi</p>
@@ -111,7 +112,7 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
             {/* Step 2 */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <Badge className="bg-primary/10 text-primary text-xs">2</Badge>
+                <Badge variant="secondary" className="tabular-nums">2</Badge>
                 <h3 className="text-sm font-semibold text-foreground">USB-Scanner anschließen</h3>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -123,7 +124,7 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
             {/* Step 3 – QR Code */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <Badge className="bg-primary/10 text-primary text-xs">3</Badge>
+                <Badge variant="secondary" className="tabular-nums">3</Badge>
                 <h3 className="text-sm font-semibold text-foreground">Konfigurations-QR scannen</h3>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -131,11 +132,12 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
                 Er verbindet das Gerät automatisch mit dem Server.
               </p>
               <div className="flex justify-center">
+                {/* Weißer Grund bleibt: der Scanner braucht die helle Ruhezone um den QR-Code, auch im Dunkelmodus. */}
                 <div className="bg-white p-4 rounded-xl border-2 border-dashed border-border">
                   <canvas ref={dialogCanvasRef} className="rounded-lg" />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground/70 text-center">
+              <p className="text-xs text-muted-foreground text-center">
                 Enthält Server-URL, API-Token und Geräte-ID
               </p>
             </div>
@@ -156,24 +158,25 @@ export function DeviceQr({ value, size = 96 }: DeviceQrProps) {
             </div>
 
             {/* Troubleshooting */}
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Nützliche Befehle</h4>
+            {/* Gruppe im Dialog als Glas-Kachel (glass-tile, Radius 18 px); in der Ebene getönt (Abschnitt 18). */}
+            <div className="glass-tile p-4 space-y-2">
+              <h4 className="text-label">Nützliche Befehle</h4>
               <div className="grid grid-cols-1 gap-1.5 text-xs font-mono">
                 <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground/70">Status:</span>
-                  <span className="text-muted-foreground">sudo systemctl status emp-scanner</span>
+                  <span className="text-muted-foreground">Status:</span>
+                  <span className="text-foreground/80">sudo systemctl status emp-scanner</span>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground/70">Logs:</span>
-                  <span className="text-muted-foreground">sudo journalctl -u emp-scanner -f</span>
+                  <span className="text-muted-foreground">Logs:</span>
+                  <span className="text-foreground/80">sudo journalctl -u emp-scanner -f</span>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground/70">Neustart:</span>
-                  <span className="text-muted-foreground">sudo systemctl restart emp-scanner</span>
+                  <span className="text-muted-foreground">Neustart:</span>
+                  <span className="text-foreground/80">sudo systemctl restart emp-scanner</span>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground/70">Update:</span>
-                  <span className="text-muted-foreground">cd /opt/emp-scanner && sudo git pull</span>
+                  <span className="text-muted-foreground">Update:</span>
+                  <span className="text-foreground/80">cd /opt/emp-scanner && sudo git pull</span>
                 </div>
               </div>
             </div>

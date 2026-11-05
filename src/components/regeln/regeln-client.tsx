@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   Building2,
   CheckCircle2,
   Clock,
@@ -14,11 +15,24 @@ import {
   Workflow,
   XCircle,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ErrorLine, apiRequest, fmtAgo } from "@/components/raeume/shared";
+import { apiRequest, fmtAgo } from "@/components/raeume/shared";
 import { useNow } from "@/components/raeume/status";
 import { RuleDialog } from "@/components/regeln/rule-dialog";
 import {
@@ -52,26 +66,28 @@ function RuleCard({
   onDelete: () => void;
 }) {
   return (
-    <Card className={rule.isActive ? "p-4" : "p-4 opacity-60"}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    <Card className={rule.isActive ? undefined : "opacity-60"}>
+      <CardHeader className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="truncate text-sm font-semibold">{rule.name}</h3>
-            <Badge variant="secondary" className="h-5 text-[10px]">
+            <CardTitle className="min-w-0">
+              <h3 className="truncate">{rule.name}</h3>
+            </CardTitle>
+            <Badge variant="secondary">
               {TRIGGER_LABELS[rule.trigger]}
             </Badge>
             {!rule.isActive && (
-              <Badge className="h-5 border-0 bg-neutral-100 text-[10px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+              <Badge variant="neutral">
                 pausiert
               </Badge>
             )}
           </div>
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-neutral-500">
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             <Building2 className="h-3 w-3 shrink-0" />
             {rule.room?.name ?? "betriebsweit"}
           </p>
           {rule.description && (
-            <p className="mt-0.5 truncate text-xs text-neutral-500">{rule.description}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{rule.description}</p>
           )}
         </div>
 
@@ -79,18 +95,19 @@ function RuleCard({
           <div className="flex gap-1">
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-success"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-success max-sm:size-11"
               disabled={busy}
               onClick={onRun}
               title="Jetzt ausführen"
+              aria-label="Jetzt ausführen"
             >
               <Play className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-[11px] text-neutral-500"
+              className="px-2 text-xs text-muted-foreground max-sm:h-11"
               disabled={busy}
               onClick={onToggle}
             >
@@ -98,48 +115,55 @@ function RuleCard({
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground max-sm:size-11"
               onClick={onEdit}
               title="Bearbeiten"
+              aria-label="Bearbeiten"
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-destructive"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-destructive max-sm:size-11"
               onClick={onDelete}
               title="Löschen"
+              aria-label="Löschen"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </div>
         )}
-      </div>
+      </CardHeader>
 
-      <dl className="mt-3 space-y-1 text-xs">
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-neutral-500">Auslöser</dt>
-          <dd className="font-medium">{describeTrigger(rule)}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-neutral-500">Dann</dt>
-          <dd>
-            {rule.actions.length === 0 ? (
-              <span className="text-warning">keine Aktion hinterlegt</span>
-            ) : (
-              <ul className="space-y-0.5">
-                {rule.actions.map((action) => (
-                  <li key={action.id}>{describeAction(action)}</li>
-                ))}
-              </ul>
-            )}
-          </dd>
-        </div>
-      </dl>
+      <CardContent>
+        <dl className="space-y-1 text-xs">
+          <div className="flex gap-2">
+            <dt className="w-16 shrink-0 text-muted-foreground">Auslöser</dt>
+            <dd className="font-medium">{describeTrigger(rule)}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-16 shrink-0 text-muted-foreground">Dann</dt>
+            <dd>
+              {rule.actions.length === 0 ? (
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />
+                  keine Aktion hinterlegt
+                </span>
+              ) : (
+                <ul className="space-y-0.5">
+                  {rule.actions.map((action) => (
+                    <li key={action.id}>{describeAction(action)}</li>
+                  ))}
+                </ul>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </CardContent>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-neutral-100 pt-2 text-[11px] text-neutral-500 dark:border-neutral-800">
+      <CardFooter className="flex-wrap gap-x-1.5 gap-y-1 border-t text-[11px] text-muted-foreground tabular-nums">
         <span>{weekdayLabel(rule.daysOfWeek)}</span>
         {rule.windowStart && rule.windowEnd && (
           <>
@@ -169,7 +193,7 @@ function RuleCard({
         <span>{cooldownLabel(rule.cooldownSeconds)}</span>
         <span>·</span>
         <span>zuletzt {fmtAgo(rule.lastRunAt, nowMs)}</span>
-      </div>
+      </CardFooter>
     </Card>
   );
 }
@@ -180,6 +204,9 @@ export function RegelnClient({ data }: { data: RegelnData }) {
   const [editing, setEditing] = useState<Rule | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  // Rückfrage vor dem Löschen; die Regel bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<Rule | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -233,8 +260,12 @@ export function RegelnClient({ data }: { data: RegelnData }) {
     router.refresh();
   }
 
+  function askRemove(rule: Rule) {
+    setToDelete(rule);
+    setConfirmOpen(true);
+  }
+
   async function remove(rule: Rule) {
-    if (!confirm(`Regel „${rule.name}“ löschen? Der Verlauf bleibt erhalten.`)) return;
     setError("");
     const res = await apiRequest(`/api/regeln/${rule.id}`, "DELETE");
     if (!res.ok) {
@@ -245,9 +276,9 @@ export function RegelnClient({ data }: { data: RegelnData }) {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <div className="page-content space-y-4 sm:space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted-foreground tabular-nums">
           {data.rules.length === 0
             ? "Noch keine Regel angelegt."
             : `${activeCount} von ${data.rules.length} ${data.rules.length === 1 ? "Regel" : "Regeln"} aktiv.`}
@@ -255,49 +286,42 @@ export function RegelnClient({ data }: { data: RegelnData }) {
         {!data.readonly && (
           <Button
             size="sm"
-            className="h-8 text-xs"
+            className="h-8 text-xs max-sm:h-11"
             onClick={() => setCreating(true)}
           >
-            <Plus className="mr-1 h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5" />
             Regel
           </Button>
         )}
       </div>
 
-      <ErrorLine message={error} />
-      {notice && (
-        <p className="rounded bg-success/10 px-2 py-1.5 text-xs text-success">
-          {notice}
-        </p>
-      )}
+      {error && <Notice tone="danger" compact title={error} />}
+      {notice && <Notice tone="success" compact title={notice} />}
 
-      <Tabs defaultValue="rules">
-        <TabsList className="h-8">
-          <TabsTrigger value="rules" className="text-xs">
+      <Tabs defaultValue="rules" className="gap-4">
+        <TabsList>
+          <TabsTrigger value="rules" className="tabular-nums">
             Regeln ({data.rules.length})
           </TabsTrigger>
-          <TabsTrigger value="runs" className="text-xs">
+          <TabsTrigger value="runs">
             Verlauf
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="rules" className="mt-3 space-y-4">
+        <TabsContent value="rules" className="space-y-4 sm:space-y-5">
           {data.rules.length === 0 ? (
-            <Card className="flex flex-col items-center gap-2 p-8 text-center">
-              <Workflow className="h-8 w-8 text-neutral-300" />
-              <p className="text-sm font-medium">Keine Regel hinterlegt</p>
-              <p className="max-w-md text-xs text-neutral-500">
-                Eine Regel verbindet einen Auslöser mit Aktionen: „Bei Betriebsbeginn im Strandbad
-                das Licht anschalten“ oder „Bewegung nach Betriebsende meldet eine Push-Nachricht“.
-              </p>
+            <Card className="py-0 sm:py-0">
+              <EmptyState
+                icon={Workflow}
+                title="Keine Regel hinterlegt"
+                description="Eine Regel verbindet einen Auslöser mit Aktionen: „Bei Betriebsbeginn im Strandbad das Licht anschalten“ oder „Bewegung nach Betriebsende meldet eine Push-Nachricht“."
+              />
             </Card>
           ) : (
             grouped.map(([room, rules]) => (
               <section key={room} className="space-y-2">
-                <h2 className="text-xs font-semibold text-neutral-500">
-                  {room} ({rules.length})
-                </h2>
-                <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                <SectionHeading title={`${room} (${rules.length})`} />
+                <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
                   {rules.map((rule) => (
                     <RuleCard
                       key={rule.id}
@@ -308,7 +332,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
                       onRun={() => run(rule)}
                       onToggle={() => toggle(rule)}
                       onEdit={() => setEditing(rule)}
-                      onDelete={() => remove(rule)}
+                      onDelete={() => askRemove(rule)}
                     />
                   ))}
                 </div>
@@ -317,13 +341,16 @@ export function RegelnClient({ data }: { data: RegelnData }) {
           )}
         </TabsContent>
 
-        <TabsContent value="runs" className="mt-3">
+        <TabsContent value="runs">
           {data.runs.length === 0 ? (
-            <p className="text-xs text-neutral-500">Noch kein Lauf aufgezeichnet.</p>
+            <Card className="py-0 sm:py-0">
+              <EmptyState compact icon={Clock} title="Noch kein Lauf aufgezeichnet." />
+            </Card>
           ) : (
-            <Card className="divide-y divide-neutral-100 dark:divide-neutral-800">
+            // Zeilen mit Haarlinie in einer Karte (docs/design-regeln.md, Abschnitt 17).
+            <Card className="gap-0 py-0 sm:py-0 divide-y divide-border/60">
               {data.runs.map((run) => (
-                <div key={run.id} className="flex items-start gap-2 px-3 py-2 text-xs">
+                <div key={run.id} className="flex items-start gap-2 px-4 py-2.5 text-xs sm:px-[18px]">
                   {run.success ? (
                     <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
                   ) : (
@@ -332,7 +359,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-medium">{run.ruleName}</span>
-                      <span className="text-neutral-500">
+                      <span className="text-muted-foreground">
                         {TRIGGER_KIND_LABELS[run.triggerKind] ?? run.triggerKind}
                       </span>
                     </div>
@@ -340,13 +367,34 @@ export function RegelnClient({ data }: { data: RegelnData }) {
                       <p className="mt-0.5 text-destructive">{run.errorMessage}</p>
                     )}
                   </div>
-                  <span className="shrink-0 text-neutral-400">{fmtAgo(run.triggeredAt, nowMs)}</span>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">{fmtAgo(run.triggeredAt, nowMs)}</span>
                 </div>
               ))}
             </Card>
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Löschen immer mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18). */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regel „{toDelete?.name}“ löschen?</AlertDialogTitle>
+            <AlertDialogDescription>Der Verlauf bleibt erhalten.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (toDelete) void remove(toDelete);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {creating && (
         <RuleDialog rule={null} options={data.options} open onClose={() => setCreating(false)} />

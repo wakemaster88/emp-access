@@ -15,6 +15,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   Building2,
   CalendarClock,
   DoorClosed,
@@ -24,11 +25,23 @@ import {
   Trash2,
   Workflow,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ErrorLine, apiRequest, fmtAgo } from "@/components/raeume/shared";
+import { Notice } from "@/components/ui/notice";
+import { apiRequest, fmtAgo } from "@/components/raeume/shared";
 import { useNow } from "@/components/raeume/status";
 import { TRIGGER_LABELS, deviceActionLabel, offsetLabel } from "@/components/regeln/shared";
 import type { RuleTrigger } from "@/components/regeln/types";
@@ -140,6 +153,9 @@ export function OperatingCouplingCard({
   const [scheduleId, setScheduleId] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
+  // Rückfrage vor dem Löschen; die Regel bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<CouplingRule | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
 
   const open = room?.schedule ? isOperatingAt(room.schedule, now, timezone) : null;
@@ -196,8 +212,12 @@ export function OperatingCouplingCard({
     router.refresh();
   }
 
+  function askDeleteRule(rule: CouplingRule) {
+    setToDelete(rule);
+    setConfirmOpen(true);
+  }
+
   async function deleteRule(rule: CouplingRule) {
-    if (!confirm(`Regel „${rule.name}“ löschen?`)) return;
     setDeleting(rule.id);
     setError("");
     const res = await apiRequest(`/api/regeln/${rule.id}`, "DELETE");
@@ -210,9 +230,9 @@ export function OperatingCouplingCard({
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground/90">
-          <CalendarClock className="h-4 w-4 text-primary" />
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-muted-foreground" />
           Raum und Betriebszeit
         </CardTitle>
       </CardHeader>
@@ -235,19 +255,11 @@ export function OperatingCouplingCard({
           )}
         </div>
 
-        {/* Betriebszeit */}
+        {/* Betriebszeit: fehlt sie, ist das ein Hinweis; sonst ein ruhiger Zustand
+            (geöffnet in der Zustandsfarbe, geschlossen grau). */}
         {room && (
-          <div
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs",
-              open === true
-                ? "bg-success/10 text-success"
-                : open === false
-                  ? "bg-muted/50 text-muted-foreground"
-                  : "bg-warning/10 text-warning",
-            )}
-          >
-            {open === null ? (
+          open === null ? (
+            <Notice tone="warning" compact>
               <span>
                 Der Raum hat keine Betriebszeit. Unter{" "}
                 <Link href="/raeume" className="underline">
@@ -255,25 +267,25 @@ export function OperatingCouplingCard({
                 </Link>{" "}
                 zuordnen, damit „Betriebsbeginn“ und „Betriebsende“ greifen.
               </span>
-            ) : (
-              <>
-                {open ? <DoorOpen className="h-3.5 w-3.5 shrink-0" /> : <DoorClosed className="h-3.5 w-3.5 shrink-0" />}
-                <span>{open ? "geöffnet" : "geschlossen"}</span>
-                <span className="truncate opacity-70">
-                  · {room.schedule?.name} · heute {today ? describeDay(today) : "–"}
-                </span>
-              </>
-            )}
-          </div>
+            </Notice>
+          ) : (
+            <div className="glass-tile flex items-center gap-1.5 px-3 py-2 text-xs">
+              {open ? <DoorOpen className="h-3.5 w-3.5 shrink-0 text-success" /> : <DoorClosed className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+              <span className={open ? "font-medium text-success" : "text-muted-foreground"}>{open ? "geöffnet" : "geschlossen"}</span>
+              <span className="truncate text-muted-foreground tabular-nums">
+                · {room.schedule?.name} · heute {today ? describeDay(today) : "–"}
+              </span>
+            </div>
+          )
         )}
 
         {/* Regeln, die dieses Geraet schalten */}
         <div className="space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-label">
             Regeln für dieses Gerät
           </p>
           {rules.length === 0 ? (
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Noch keine Regel schaltet dieses Gerät.
             </p>
           ) : (
@@ -281,16 +293,16 @@ export function OperatingCouplingCard({
               <div
                 key={rule.id}
                 className={cn(
-                  "flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs",
+                  "glass-tile flex items-center gap-2 px-3 py-2 text-xs",
                   !rule.isActive && "opacity-60",
                 )}
               >
-                <Workflow className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                <Workflow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <Link href="/regeln" className="block truncate font-medium text-foreground hover:underline">
                     {rule.name}
                   </Link>
-                  <p className="truncate text-muted-foreground/70">
+                  <p className="truncate text-muted-foreground">
                     {describeRuleTrigger(rule)}
                     {(rule.trigger === "OPENING" || rule.trigger === "CLOSING") &&
                       ` (${rule.operatingScheduleName ?? "Betriebszeit des Raums"})`}
@@ -310,11 +322,12 @@ export function OperatingCouplingCard({
                 {!readonly && (
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 shrink-0 p-0 text-muted-foreground/70 hover:text-destructive"
+                    size="icon-sm"
+                    className="shrink-0 text-muted-foreground hover:text-destructive max-sm:size-11"
                     disabled={deleting !== null}
-                    onClick={() => deleteRule(rule)}
+                    onClick={() => askDeleteRule(rule)}
                     title="Regel löschen"
+                    aria-label="Regel löschen"
                   >
                     {deleting === rule.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -330,7 +343,7 @@ export function OperatingCouplingCard({
 
         {/* Kopplung anlegen */}
         {canCouple && (
-          <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="glass-tile space-y-3 p-3">
             <div>
               <p className="text-sm font-medium">Mit der Betriebszeit koppeln</p>
               <p className="text-xs text-muted-foreground">
@@ -358,12 +371,13 @@ export function OperatingCouplingCard({
               />
             )}
 
-            <div className="space-y-1">
-              <Label className="text-xs">Betriebszeit</Label>
+            <div className="space-y-1.5">
+              <Label>Betriebszeit</Label>
+              {/* Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16). */}
               <select
                 value={scheduleId}
                 onChange={(e) => setScheduleId(e.target.value)}
-                className="h-8 w-full rounded-md border border-border bg-transparent px-2 text-xs"
+                className="glass-field h-9 w-full px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm"
               >
                 <option value="">
                   {room?.schedule
@@ -377,23 +391,46 @@ export function OperatingCouplingCard({
                 ))}
               </select>
               {schedules.length === 0 && (
-                <p className="text-[11px] text-warning">
+                <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
                   Noch keine Betriebszeit angelegt – zuerst unter „Betriebszeiten“ anlegen.
                 </p>
               )}
             </div>
 
-            <ErrorLine message={error} />
+            {error && <Notice tone="danger" compact title={error} />}
 
             <div className="flex justify-end">
-              <Button size="sm" onClick={createRules} disabled={saving} className="h-8 gap-1.5">
+              <Button size="sm" onClick={createRules} disabled={saving} className="gap-1.5 max-sm:h-11">
                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                 Regeln anlegen
               </Button>
             </div>
           </div>
         )}
-        {!canCouple && error && <ErrorLine message={error} />}
+        {!canCouple && error && <Notice tone="danger" compact title={error} />}
+
+        {/* Löschen immer mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18).
+            Dieselbe Rückfrage wie unter „Regeln“: derselbe Löschweg, der Verlauf bleibt stehen. */}
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Regel „{toDelete?.name}“ löschen?</AlertDialogTitle>
+              <AlertDialogDescription>Der Verlauf bleibt erhalten.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  if (toDelete) void deleteRule(toDelete);
+                }}
+              >
+                Löschen
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );
@@ -414,14 +451,10 @@ function CouplingRow({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <label className="flex min-w-0 flex-1 items-center gap-2">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => onEnabled(e.target.checked)}
-          className="h-3.5 w-3.5"
-        />
-        <span className="truncate">{label}</span>
+      {/* Kästchen-Baustein; die ganze Zeile ist Beschriftung, der Text bricht auf dem Handy um statt abzuschneiden. */}
+      <label className="flex min-w-0 flex-1 items-center gap-2 max-sm:min-h-11">
+        <Checkbox checked={enabled} onCheckedChange={(v) => onEnabled(v === true)} />
+        <span className="min-w-0">{label}</span>
       </label>
       <div className="flex items-center gap-1.5">
         <Input
@@ -431,10 +464,10 @@ function CouplingRow({
           value={offset}
           disabled={!enabled}
           onChange={(e) => onOffset(Number(e.target.value) || 0)}
-          className="h-8 w-20 text-xs"
+          className="h-8 w-20 max-sm:h-11"
           aria-label="Verschiebung in Minuten"
         />
-        <span className="text-muted-foreground/70" title="Negativ = vorher, positiv = nachher">
+        <span className="text-muted-foreground" title="Negativ = vorher, positiv = nachher">
           Min.
         </span>
       </div>

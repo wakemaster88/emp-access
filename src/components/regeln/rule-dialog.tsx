@@ -4,11 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ErrorLine, apiRequest } from "@/components/raeume/shared";
+import { apiRequest } from "@/components/raeume/shared";
 import { ActionEditor, emptyAction, type ActionDraft } from "@/components/regeln/action-editor";
 import { TRIGGER_HINTS, TRIGGER_LABELS } from "@/components/regeln/shared";
 import { deviceControls } from "@/lib/device-controls";
@@ -16,8 +20,9 @@ import type { Rule, RuleOptions, RuleTrigger } from "@/components/regeln/types";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
+// Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16).
 const selectClass =
-  "h-8 w-full rounded-md border border-neutral-200 bg-transparent px-2 text-xs dark:border-neutral-800";
+  "glass-field h-9 w-full px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm";
 
 const TRIGGER_ORDER: RuleTrigger[] = [
   "TIME",
@@ -75,10 +80,11 @@ function WeekdayPicker({
             type="button"
             disabled={disabled}
             onClick={() => onChange(mask ^ (1 << index))}
+            aria-pressed={on}
             className={
               on
-                ? "h-7 w-9 rounded-md bg-primary text-[11px] font-medium text-white"
-                : "h-7 w-9 rounded-md border border-neutral-200 text-[11px] text-neutral-500 dark:border-neutral-800"
+                ? "press h-9 w-10 rounded-full bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50 max-sm:size-11"
+                : "press h-9 w-10 rounded-full border border-border text-xs text-muted-foreground hover:bg-glass-tile hover:text-foreground disabled:opacity-50 max-sm:size-11"
             }
           >
             {day}
@@ -213,9 +219,9 @@ export function RuleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-base">
+          <DialogTitle>
             {rule ? `Regel: ${rule.name}` : "Neue Regel"}
           </DialogTitle>
         </DialogHeader>
@@ -223,17 +229,17 @@ export function RuleDialog({
         <div className="space-y-3">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-40 flex-1 space-y-1">
-              <Label className="text-xs">Name</Label>
+              <Label>Name</Label>
               <Input
                 value={name}
                 disabled={disabled}
                 placeholder="z.B. Licht an bei Betriebsbeginn"
-                className="h-8 text-xs"
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
-            <div className="min-w-32 space-y-1">
-              <Label className="text-xs">Raum</Label>
+            {/* Handy: volle Breite wie die übrigen Felder. */}
+            <div className="min-w-32 space-y-1 max-sm:w-full">
+              <Label>Raum</Label>
               <select
                 className={selectClass}
                 disabled={disabled}
@@ -254,26 +260,25 @@ export function RuleDialog({
             value={description}
             disabled={disabled}
             placeholder="Beschreibung, optional"
-            className="h-8 text-xs"
             onChange={(e) => setDescription(e.target.value)}
           />
 
           <Tabs defaultValue="trigger">
-            <TabsList className="h-8">
-              <TabsTrigger value="trigger" className="text-xs">
+            <TabsList>
+              <TabsTrigger value="trigger">
                 Auslöser
               </TabsTrigger>
-              <TabsTrigger value="conditions" className="text-xs">
+              <TabsTrigger value="conditions">
                 Bedingungen
               </TabsTrigger>
-              <TabsTrigger value="actions" className="text-xs">
+              <TabsTrigger value="actions" className="tabular-nums">
                 Aktionen ({actions.length})
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="trigger" className="mt-2 space-y-3">
+            <TabsContent value="trigger" className="space-y-3">
               <div className="space-y-1">
-                <Label className="text-xs">Wann greift die Regel?</Label>
+                <Label>Wann greift die Regel?</Label>
                 <select
                   className={selectClass}
                   disabled={disabled}
@@ -286,15 +291,14 @@ export function RuleDialog({
                     </option>
                   ))}
                 </select>
-                <p className="text-[11px] text-neutral-500">{TRIGGER_HINTS[trigger]}</p>
+                <p className="text-[11px] text-muted-foreground">{TRIGGER_HINTS[trigger]}</p>
               </div>
 
               {trigger === "TIME" && (
                 <div className="w-32 space-y-1">
-                  <Label className="text-xs">Uhrzeit</Label>
+                  <Label>Uhrzeit</Label>
                   <Input
                     type="time"
-                    className="h-8 text-xs"
                     disabled={disabled}
                     value={timeOfDay}
                     onChange={(e) => setTimeOfDay(e.target.value)}
@@ -304,17 +308,16 @@ export function RuleDialog({
 
               {needsOffset && (
                 <div className="w-40 space-y-1">
-                  <Label className="text-xs">Verschiebung (Min.)</Label>
+                  <Label>Verschiebung (Min.)</Label>
                   <Input
                     type="number"
                     min={-720}
                     max={720}
-                    className="h-8 text-xs"
                     disabled={disabled}
                     value={offsetMinutes}
                     onChange={(e) => setOffsetMinutes(Number(e.target.value) || 0)}
                   />
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-[11px] text-muted-foreground">
                     Negativ = vorher, positiv = nachher.
                   </p>
                 </div>
@@ -323,7 +326,7 @@ export function RuleDialog({
               {trigger === "MOTION" && (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">Kamera</Label>
+                    <Label>Kamera</Label>
                     <select
                       className={selectClass}
                       disabled={disabled}
@@ -339,7 +342,7 @@ export function RuleDialog({
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Ereignisart</Label>
+                    <Label>Ereignisart</Label>
                     <select
                       className={selectClass}
                       disabled={disabled}
@@ -359,7 +362,7 @@ export function RuleDialog({
               {trigger === "DEVICE_SWITCHED" && (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">Auslösendes Gerät</Label>
+                    <Label>Auslösendes Gerät</Label>
                     <select
                       className={selectClass}
                       disabled={disabled}
@@ -377,7 +380,7 @@ export function RuleDialog({
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Nur bei Befehl</Label>
+                    <Label>Nur bei Befehl</Label>
                     <select
                       className={selectClass}
                       disabled={disabled || !triggerDevice}
@@ -398,7 +401,7 @@ export function RuleDialog({
               {trigger === "SCAN" && (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">Zutrittsbereich</Label>
+                    <Label>Zutrittsbereich</Label>
                     <select
                       className={selectClass}
                       disabled={disabled}
@@ -414,7 +417,7 @@ export function RuleDialog({
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Richtung</Label>
+                    <Label>Richtung</Label>
                     <select
                       className={selectClass}
                       disabled={disabled}
@@ -431,32 +434,31 @@ export function RuleDialog({
 
               {trigger === "IDLE" && (
                 <div className="w-40 space-y-1">
-                  <Label className="text-xs">Ruhe seit (Min.)</Label>
+                  <Label>Ruhe seit (Min.)</Label>
                   <Input
                     type="number"
                     min={1}
                     max={1440}
-                    className="h-8 text-xs"
                     disabled={disabled}
                     value={idleMinutes}
                     onChange={(e) => setIdleMinutes(Number(e.target.value) || 1)}
                   />
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-[11px] text-muted-foreground">
                     Wird alle fünf Minuten geprüft, gemessen an den Kameras des Raums.
                   </p>
                 </div>
               )}
             </TabsContent>
 
-            <TabsContent value="conditions" className="mt-2 space-y-3">
+            <TabsContent value="conditions" className="space-y-3">
               <div className="space-y-1">
-                <Label className="text-xs">Wochentage</Label>
+                <Label>Wochentage</Label>
                 <WeekdayPicker mask={daysOfWeek} disabled={disabled} onChange={setDaysOfWeek} />
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label className="text-xs">Betriebszeit</Label>
+                  <Label>Betriebszeit</Label>
                   <select
                     className={selectClass}
                     disabled={disabled}
@@ -469,7 +471,7 @@ export function RuleDialog({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Welche Betriebszeit</Label>
+                  <Label>Welche Betriebszeit</Label>
                   <select
                     className={selectClass}
                     disabled={disabled}
@@ -490,67 +492,61 @@ export function RuleDialog({
 
               <div className="grid gap-2 sm:grid-cols-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Nur ab</Label>
+                  <Label>Nur ab</Label>
                   <Input
                     type="time"
-                    className="h-8 text-xs"
                     disabled={disabled}
                     value={windowStart}
                     onChange={(e) => setWindowStart(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Nur bis</Label>
+                  <Label>Nur bis</Label>
                   <Input
                     type="time"
-                    className="h-8 text-xs"
                     disabled={disabled}
                     value={windowEnd}
                     onChange={(e) => setWindowEnd(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Sperrzeit (Sek.)</Label>
+                  <Label>Sperrzeit (Sek.)</Label>
                   <Input
                     type="number"
                     min={0}
                     max={86400}
-                    className="h-8 text-xs"
                     disabled={disabled}
                     value={cooldownSeconds}
                     onChange={(e) => setCooldownSeconds(Number(e.target.value) || 0)}
                   />
                 </div>
               </div>
-              <p className="text-[11px] text-neutral-500">
+              <p className="text-[11px] text-muted-foreground">
                 Ein Zeitfenster über Mitternacht ist erlaubt: 22:00 bis 06:00 gilt über Nacht. Die
                 Sperrzeit verhindert, dass dieselbe Regel kurz hintereinander mehrfach auslöst.
               </p>
 
-              <label className="flex items-center gap-1.5 text-xs">
-                <input
-                  type="checkbox"
+              {/* Kästchen-Baustein; die Beschriftung umschließt es, Antippen des Texts schaltet mit. */}
+              <label className="flex items-center gap-2 text-sm max-sm:min-h-11">
+                <Checkbox
                   checked={onlyWhenDark}
                   disabled={disabled}
-                  className="h-3.5 w-3.5"
-                  onChange={(e) => setOnlyWhenDark(e.target.checked)}
+                  onCheckedChange={(v) => setOnlyWhenDark(v === true)}
                 />
                 Nur bei Dunkelheit (zwischen Sonnenuntergang und Sonnenaufgang)
               </label>
 
-              <label className="flex items-center gap-1.5 text-xs">
-                <input
-                  type="checkbox"
+              <label className="flex items-center gap-2 text-sm max-sm:min-h-11">
+                <Checkbox
                   checked={isActive}
                   disabled={disabled}
-                  className="h-3.5 w-3.5"
-                  onChange={(e) => setIsActive(e.target.checked)}
+                  onCheckedChange={(v) => setIsActive(v === true)}
                 />
                 Regel ist aktiv
               </label>
             </TabsContent>
 
-            <TabsContent value="actions" className="mt-2">
+            <TabsContent value="actions">
               <ActionEditor
                 actions={actions}
                 options={options}
@@ -560,29 +556,29 @@ export function RuleDialog({
             </TabsContent>
           </Tabs>
 
-          <ErrorLine message={error} />
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving} className="h-8">
+        {/* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16). */}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Abbrechen
           </Button>
           <Button
-            size="sm"
             onClick={save}
             disabled={saving || disabled}
-            className="h-8 min-w-24"
+            className="min-w-28"
           >
             {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <>
-                <Save className="mr-1 h-3.5 w-3.5" />
+                <Save className="h-4 w-4" />
                 Speichern
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

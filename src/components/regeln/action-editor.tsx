@@ -3,10 +3,11 @@
 /** Aktionsliste einer Regel: Gerät schalten, benachrichtigen, Audio, Kamera. */
 
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Bell, Cctv, Plus, Trash2, Volume2, Zap } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Bell, Cctv, Loader2, Plus, Trash2, Volume2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { deviceControls } from "@/lib/device-controls";
 import { deviceMetaLabel } from "@/components/raeume/shared";
 import type { RuleActionKind, RuleOptions } from "@/components/regeln/types";
@@ -54,14 +55,17 @@ export function emptyAction(kind: RuleActionKind): ActionDraft {
   };
 }
 
-const selectClass =
-  "h-8 w-full rounded-md border border-neutral-200 bg-transparent px-2 text-xs dark:border-neutral-800";
+// Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16).
+const fieldClass =
+  "glass-field h-9 px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm";
+const selectClass = `w-full ${fieldClass}`;
 
+// Die Art der Aktion ist kein Zustand: Symbole gedämpft statt Zustandsfarben.
 const KIND_ICONS: Record<RuleActionKind, React.ReactNode> = {
-  DEVICE: <Zap className="h-3.5 w-3.5 text-warning" />,
-  NOTIFY: <Bell className="h-3.5 w-3.5 text-info" />,
-  AUDIO: <Volume2 className="h-3.5 w-3.5 text-violet-500" />,
-  CAMERA: <Cctv className="h-3.5 w-3.5 text-success" />,
+  DEVICE: <Zap className="h-3.5 w-3.5 text-muted-foreground" />,
+  NOTIFY: <Bell className="h-3.5 w-3.5 text-muted-foreground" />,
+  AUDIO: <Volume2 className="h-3.5 w-3.5 text-muted-foreground" />,
+  CAMERA: <Cctv className="h-3.5 w-3.5 text-muted-foreground" />,
 };
 
 /**
@@ -109,7 +113,7 @@ function CameraFields({
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Kamera</Label>
+        <Label>Kamera</Label>
         <select
           className={selectClass}
           disabled={disabled}
@@ -132,7 +136,7 @@ function CameraFields({
       </div>
 
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Position (Preset)</Label>
+        <Label>Position (Preset)</Label>
         {presets && presets.length > 0 ? (
           <select
             className={selectClass}
@@ -155,7 +159,6 @@ function CameraFields({
               type="number"
               min={0}
               placeholder="Nr., optional"
-              className="h-8 text-xs"
               disabled={disabled}
               value={action.ptzPresetId ?? ""}
               onChange={(e) =>
@@ -165,7 +168,7 @@ function CameraFields({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 shrink-0 px-2 text-xs"
+              className="h-9 shrink-0 px-3"
               disabled={disabled || loading || !action.targetCameraId}
               onClick={() => action.targetCameraId && void loadPresets(action.targetCameraId)}
             >
@@ -176,7 +179,7 @@ function CameraFields({
       </div>
 
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Automatisch folgen</Label>
+        <Label>Automatisch folgen</Label>
         <select
           className={selectClass}
           disabled={disabled}
@@ -195,13 +198,12 @@ function CameraFields({
       </div>
 
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Danach zurück</Label>
+        <Label>Danach zurück</Label>
         <Input
           type="number"
           min={5}
           max={3600}
           placeholder="Sek., optional"
-          className="h-8 text-xs"
           disabled={disabled}
           value={action.returnAfterSeconds ?? ""}
           onChange={(e) =>
@@ -213,18 +215,26 @@ function CameraFields({
         />
       </div>
 
-      <p className="text-[11px] text-neutral-500 sm:col-span-2 sm:self-end">
+      <p className="text-[11px] text-muted-foreground sm:col-span-2 sm:self-end">
         Die Kamera fährt die Position an und folgt danach Personen bzw. Fahrzeugen. Mit
         „Danach zurück“ geht sie nach der Zeit wieder auf die Position, Folgen wie vorher.
       </p>
-      {loading && <p className="text-[11px] text-neutral-500 sm:col-span-3">Presets werden vom Hub geladen …</p>}
+      {loading && (
+        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground sm:col-span-3">
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+          Presets werden vom Hub geladen …
+        </p>
+      )}
+      {/* Hinweise in ruhiger Schrift, die Warnfarbe trägt nur das Symbol (Kontrast). */}
       {error && (
-        <p className="text-[11px] text-warning sm:col-span-3">
+        <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground sm:col-span-3">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
           Presets nicht geladen ({error}). Nummer von Hand eintragen.
         </p>
       )}
       {presets && presets.length === 0 && (
-        <p className="text-[11px] text-warning sm:col-span-3">
+        <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground sm:col-span-3">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
           Diese Kamera hat keine Presets. Im Kamera-Kontrollzentrum eine Position speichern.
         </p>
       )}
@@ -249,7 +259,7 @@ function DeviceFields({
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1 sm:col-span-2">
-        <Label className="text-[11px] text-neutral-500">Gerät</Label>
+        <Label>Gerät</Label>
         <select
           className={selectClass}
           disabled={disabled}
@@ -276,7 +286,7 @@ function DeviceFields({
       </div>
 
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Befehl</Label>
+        <Label>Befehl</Label>
         <select
           className={selectClass}
           disabled={disabled || !device}
@@ -293,12 +303,11 @@ function DeviceFields({
       </div>
 
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Selbstabschaltung</Label>
+        <Label>Selbstabschaltung</Label>
         <Input
           type="number"
           min={1}
           placeholder="Sek., optional"
-          className="h-8 text-xs"
           disabled={disabled}
           value={action.timerSeconds ?? ""}
           onChange={(e) =>
@@ -308,7 +317,8 @@ function DeviceFields({
       </div>
 
       {device && controls.length === 0 && (
-        <p className="text-[11px] text-warning sm:col-span-3">
+        <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground sm:col-span-3">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
           Dieses Gerät lässt sich nicht schalten (Sensor).
         </p>
       )}
@@ -328,7 +338,7 @@ function NotifyFields({
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Kanal</Label>
+        <Label>Kanal</Label>
         <select
           className={selectClass}
           disabled={disabled}
@@ -341,9 +351,8 @@ function NotifyFields({
         </select>
       </div>
       <div className="space-y-1 sm:col-span-2">
-        <Label className="text-[11px] text-neutral-500">Text</Label>
+        <Label>Text</Label>
         <Input
-          className="h-8 text-xs"
           placeholder="leer = Name der Regel"
           disabled={disabled}
           value={action.message}
@@ -372,7 +381,7 @@ function AudioFields({
   return (
     <div className="grid gap-2 sm:grid-cols-3">
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Zone</Label>
+        <Label>Zone</Label>
         <select
           className={selectClass}
           disabled={disabled}
@@ -391,7 +400,7 @@ function AudioFields({
       </div>
 
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">Was</Label>
+        <Label>Was</Label>
         <select
           className={selectClass}
           disabled={disabled}
@@ -412,7 +421,7 @@ function AudioFields({
       </div>
 
       <div className="space-y-1">
-        <Label className="text-[11px] text-neutral-500">
+        <Label>
           {mode === "playlist" ? "Playlist" : "Durchsage"}
         </Label>
         <select
@@ -466,60 +475,61 @@ export function ActionEditor({
   return (
     <div className="space-y-2">
       {actions.length === 0 && (
-        <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
-          Ohne Aktion passiert beim Auslösen nichts.
-        </p>
+        <Notice tone="warning" compact title="Ohne Aktion passiert beim Auslösen nichts." />
       )}
 
       {actions.map((action, index) => (
+        // Gruppe im Dialog als Glas-Kachel (glass-tile, Radius 18 px); in der Ebene getönt (Abschnitt 18).
         <div
           key={index}
-          className="rounded-md border border-neutral-200 p-2 dark:border-neutral-800"
+          className="glass-tile p-3"
         >
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 text-xs font-medium">
-              {KIND_ICONS[action.kind]}
-              <span className="text-neutral-500">{index + 1}.</span>
-              <select
-                className="h-7 rounded-md border border-neutral-200 bg-transparent px-1.5 text-xs dark:border-neutral-800"
-                disabled={disabled}
-                value={action.kind}
-                onChange={(e) => update(index, emptyAction(e.target.value as RuleActionKind))}
-              >
-                <option value="DEVICE">Gerät schalten</option>
-                <option value="NOTIFY">Benachrichtigen</option>
-                <option value="AUDIO">Audio</option>
-                <option value="CAMERA">Kamera steuern</option>
-              </select>
-            </div>
-            <div className="flex gap-0.5">
+          {/* Handy: Nummer und Tasten in einer Zeile, die Art darunter in voller Breite wie die übrigen Felder. */}
+          <div className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-2 text-xs font-medium">
+            {KIND_ICONS[action.kind]}
+            <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
+            <select
+              className={`${fieldClass} max-sm:order-last max-sm:w-full`}
+              disabled={disabled}
+              value={action.kind}
+              onChange={(e) => update(index, emptyAction(e.target.value as RuleActionKind))}
+            >
+              <option value="DEVICE">Gerät schalten</option>
+              <option value="NOTIFY">Benachrichtigen</option>
+              <option value="AUDIO">Audio</option>
+              <option value="CAMERA">Kamera steuern</option>
+            </select>
+            <div className="ml-auto flex gap-0.5">
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-neutral-400"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-foreground max-sm:size-11"
                 disabled={disabled || index === 0}
                 onClick={() => move(index, -1)}
                 title="Nach oben"
+                aria-label="Nach oben"
               >
                 <ArrowUp className="h-3 w-3" />
               </Button>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-neutral-400"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-foreground max-sm:size-11"
                 disabled={disabled || index === actions.length - 1}
                 onClick={() => move(index, 1)}
                 title="Nach unten"
+                aria-label="Nach unten"
               >
                 <ArrowDown className="h-3 w-3" />
               </Button>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-neutral-400 hover:text-destructive"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-destructive max-sm:size-11"
                 disabled={disabled}
                 onClick={() => onChange(actions.filter((_, i) => i !== index))}
                 title="Entfernen"
+                aria-label="Entfernen"
               >
                 <Trash2 className="h-3 w-3" />
               </Button>
@@ -564,47 +574,43 @@ export function ActionEditor({
         <Button
           variant="outline"
           size="sm"
-          className="h-8 text-xs"
           disabled={disabled}
           onClick={() => onChange([...actions, emptyAction("DEVICE")])}
         >
-          <Plus className="mr-1 h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" />
           Gerät
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className="h-8 text-xs"
           disabled={disabled}
           onClick={() => onChange([...actions, emptyAction("NOTIFY")])}
         >
-          <Plus className="mr-1 h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" />
           Nachricht
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className="h-8 text-xs"
           disabled={disabled || options.audioZones.length === 0}
           onClick={() => onChange([...actions, emptyAction("AUDIO")])}
         >
-          <Plus className="mr-1 h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" />
           Audio
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className="h-8 text-xs"
           disabled={disabled || options.cameras.length === 0}
           onClick={() => onChange([...actions, emptyAction("CAMERA")])}
         >
-          <Plus className="mr-1 h-3.5 w-3.5" />
+          <Plus className="h-3.5 w-3.5" />
           Kamera
         </Button>
       </div>
 
       {actions.length > 1 && (
-        <p className="text-[11px] text-neutral-500">
+        <p className="text-[11px] text-muted-foreground">
           Die Aktionen laufen der Reihe nach. Schlägt eine fehl, laufen die übrigen trotzdem.
         </p>
       )}

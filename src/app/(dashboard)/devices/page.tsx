@@ -60,16 +60,17 @@ export default async function DevicesPage({ searchParams }: Props) {
   return (
     <>
       <Header title="Geräte" accountName={session.user.accountName} />
-      <div className="page-content">
-        <Card>
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 pb-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <CardTitle className="text-base sm:text-xl">Geräte ({devices.length})</CardTitle>
+      <div className="page-content space-y-4 sm:space-y-5">
+        {/* Tabelle läuft bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <CardTitle className="tabular-nums">Geräte ({devices.length})</CardTitle>
               <DeviceStatusFilter current={status} />
             </div>
             {!isSuperAdmin && <AddDeviceDialog areas={areas} rooms={rooms} />}
           </CardHeader>
-          <CardContent className="p-0 sm:px-6 sm:pb-6">
+          <CardContent className="px-0 sm:px-0">
             <DevicesTable devices={devices} areas={areas} />
           </CardContent>
         </Card>

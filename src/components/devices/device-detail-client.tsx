@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
 import {
   AlertTriangle, DoorOpen, ToggleRight, RotateCcw, Loader2, Pencil,
   Power, PowerOff, Activity, Wifi, WifiOff, Zap, RefreshCw, Lock, LockOpen,
-  Droplets, Square, Battery, BatteryLow, ArrowUpFromLine, ArrowDownToLine,
+  Droplets, Square, Battery, BatteryLow, BatteryWarning, ArrowUpFromLine, ArrowDownToLine,
   Settings2, CircleDot, Volume2,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -113,7 +115,7 @@ function CoverMotionBadge({
     );
   }
   return (
-    <Badge variant="secondary" className="gap-1.5 text-muted-foreground text-xs">
+    <Badge variant="neutral" className="gap-1.5 text-xs">
       <Square className="h-3 w-3" /> {label}
     </Badge>
   );
@@ -121,25 +123,35 @@ function CoverMotionBadge({
 
 // ─── Action definitions ───────────────────────────────────────────────────────
 
-const ACCESS_ACTIONS = [
-  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, base: "bg-destructive hover:bg-destructive/90 text-white",    activeTask: 2 },
-  { key: "open",       label: "Öffnen",       icon: DoorOpen,      base: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
-  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   base: "bg-warning hover:bg-warning/90 text-warning-foreground",   activeTask: 3 },
-  { key: "reset",      label: "Reset",        icon: RotateCcw,     base: "bg-slate-600 hover:bg-slate-700 text-white",   activeTask: 0 },
+// Tastenfarbe nach Rolle wie in `lib/device-controls`: Öffnen ist die
+// Primärhandlung, NOT-AUF die Gefahr, alles andere Glas.
+interface ActionDef {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  variant: "default" | "secondary" | "destructive";
+  activeTask: number;
+}
+
+const ACCESS_ACTIONS: ActionDef[] = [
+  { key: "emergency",  label: "NOT-AUF",     icon: AlertTriangle, variant: "destructive", activeTask: 2 },
+  { key: "open",       label: "Öffnen",       icon: DoorOpen,      variant: "default",     activeTask: 1 },
+  { key: "deactivate", label: "Deaktivieren", icon: ToggleRight,   variant: "secondary",   activeTask: 3 },
+  { key: "reset",      label: "Reset",        icon: RotateCcw,     variant: "secondary",   activeTask: 0 },
 ];
 const TUER_ACTIONS = ACCESS_ACTIONS.filter((a) => a.key !== "emergency");
 // Nuki Smart Lock: nur Öffnen/Abschließen – Web-API kennt kein "deaktivieren"
 // und kein "reset", LOCK ist gleich Abschließen.
-const NUKI_ACTIONS = [
-  { key: "open",       label: "Öffnen",      icon: DoorOpen, base: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
-  { key: "deactivate", label: "Abschließen", icon: Lock,     base: "bg-slate-700 hover:bg-slate-800 text-white",     activeTask: 3 },
+const NUKI_ACTIONS: ActionDef[] = [
+  { key: "open",       label: "Öffnen",      icon: DoorOpen, variant: "default",   activeTask: 1 },
+  { key: "deactivate", label: "Abschließen", icon: Lock,     variant: "secondary", activeTask: 3 },
 ];
 // LOQED: drei echte Riegelzustände. "Entriegeln" ist die Tagverriegelung –
 // Tür zu, aber von innen per Klinke zu öffnen.
-const LOQED_ACTIONS = [
-  { key: "open",       label: "Öffnen",      icon: DoorOpen,  base: "bg-success hover:bg-success/90 text-success-foreground", activeTask: 1 },
-  { key: "reset",      label: "Entriegeln",  icon: LockOpen,  base: "bg-warning hover:bg-warning/90 text-warning-foreground",     activeTask: 0 },
-  { key: "deactivate", label: "Abschließen", icon: Lock,      base: "bg-slate-700 hover:bg-slate-800 text-white",     activeTask: 3 },
+const LOQED_ACTIONS: ActionDef[] = [
+  { key: "open",       label: "Öffnen",      icon: DoorOpen,  variant: "default",   activeTask: 1 },
+  { key: "reset",      label: "Entriegeln",  icon: LockOpen,  variant: "secondary", activeTask: 0 },
+  { key: "deactivate", label: "Abschließen", icon: Lock,      variant: "secondary", activeTask: 3 },
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -266,7 +278,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
   const ShellyStatusBadges = isShelly ? (
     <div className="flex flex-wrap items-center gap-2 mb-3">
       {statusLoading && !shellyStatus ? (
-        <Badge variant="secondary" className="gap-1.5 animate-pulse text-xs">
+        <Badge variant="neutral" className="gap-1.5 text-xs">
           <Loader2 className="h-3 w-3 animate-spin" /> Status lädt…
         </Badge>
       ) : shellyStatus ? (
@@ -274,10 +286,11 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
           {shellyStatus.online ? (
             <Badge variant="success" className="gap-1.5 text-xs">
               <Wifi className="h-3 w-3" /> Online
-              <span className="opacity-50 text-[10px]">({shellyStatus.source})</span>
+              <span className="text-[10px] font-medium">({shellyStatus.source})</span>
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
+            // Außer Betrieb ist „Offline“ erwartet: ruhig statt Störungsrot.
+            <Badge variant={device.isActive ? "danger" : "neutral"} className="gap-1.5 text-xs">
               <WifiOff className="h-3 w-3" /> Offline
             </Badge>
           )}
@@ -289,12 +302,19 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             // ein Schaltkanal, waere dessen Zustand hier irrefuehrend.
             null
           ) : shellyStatus.output === true ? (
-            <Badge variant="warning" className="gap-1.5 text-xs">
+            // Zustandsfarbe: Licht an = amber, sonst eingeschaltet/läuft = grün.
+            <Badge
+              variant={device.category === "BELEUCHTUNG" ? "neutral" : "success"}
+              className={cn(
+                "gap-1.5 text-xs",
+                device.category === "BELEUCHTUNG" && "bg-amber-500/15 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+              )}
+            >
               <Power className="h-3 w-3" />
               {device.category === "BELEUCHTUNG" ? "Eingeschaltet" : isPulse ? "Läuft" : "Ein"}
             </Badge>
           ) : shellyStatus.output === false ? (
-            <Badge variant="secondary" className="gap-1.5 text-muted-foreground text-xs">
+            <Badge variant="neutral" className="gap-1.5 text-xs">
               <PowerOff className="h-3 w-3" />
               {device.category === "BELEUCHTUNG" ? "Ausgeschaltet" : "Aus"}
             </Badge>
@@ -307,23 +327,26 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
           )}
 
           {shellyStatus.power !== undefined && shellyStatus.power > 0.5 && (
-            <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
-              <Zap className="h-3 w-3 text-warning" />
+            <Badge variant="outline" className="gap-1 text-xs text-muted-foreground tabular-nums">
+              <Zap className="h-3 w-3" />
               {shellyStatus.power.toFixed(1)} W
             </Badge>
           )}
 
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={fetchShellyStatus}
             disabled={statusLoading}
-            className="text-slate-300 hover:text-slate-500 transition-colors"
+            className="text-muted-foreground hover:text-foreground max-sm:size-11"
             title="Status aktualisieren"
+            aria-label="Status aktualisieren"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", statusLoading && "animate-spin")} />
-          </button>
+          </Button>
         </>
       ) : (
-        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
+        <Badge variant="danger" className="gap-1.5 text-xs">
           <WifiOff className="h-3 w-3" /> Nicht erreichbar
         </Badge>
       )}
@@ -338,7 +361,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
   const GardenaStatusBadges = isGardena ? (
     <div className="flex flex-wrap items-center gap-2 mb-3">
       {statusLoading && !gardenaStatus ? (
-        <Badge variant="secondary" className="gap-1.5 animate-pulse text-xs">
+        <Badge variant="neutral" className="gap-1.5 text-xs">
           <Loader2 className="h-3 w-3 animate-spin" /> Status lädt…
         </Badge>
       ) : gardenaStatus && gardenaStatus.source !== "unavailable" ? (
@@ -348,7 +371,8 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
               <Wifi className="h-3 w-3" /> Online
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
+            // Außer Betrieb ist „Offline“ erwartet: ruhig statt Störungsrot.
+            <Badge variant={device.isActive ? "danger" : "neutral"} className="gap-1.5 text-xs">
               <WifiOff className="h-3 w-3" /> Offline
             </Badge>
           )}
@@ -358,32 +382,43 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
               <Droplets className="h-3 w-3" /> {gardenaActivityLabel(gardenaStatus.activity)}
             </Badge>
           ) : (
-            <Badge variant="secondary" className="gap-1.5 text-muted-foreground text-xs">
+            <Badge variant="neutral" className="gap-1.5 text-xs">
               <Square className="h-3 w-3" /> {gardenaActivityLabel(gardenaStatus.activity)}
             </Badge>
           )}
 
           {hasBattery && gardenaBattery != null && (
             <Badge variant="outline" className={cn(
-              "gap-1 text-xs",
-              gardenaBattery < 20 ? "text-destructive" : "text-muted-foreground",
+              "gap-1 text-xs tabular-nums",
+              gardenaBattery < 15
+                ? "text-destructive"
+                : gardenaBattery < 30
+                  ? "text-warning"
+                  : "text-muted-foreground",
             )}>
-              {gardenaBattery < 20 ? <BatteryLow className="h-3 w-3" /> : <Battery className="h-3 w-3" />}
+              {gardenaBattery < 15
+                ? <BatteryWarning className="h-3 w-3" />
+                : gardenaBattery < 30
+                  ? <BatteryLow className="h-3 w-3" />
+                  : <Battery className="h-3 w-3" />}
               {gardenaBattery}%
             </Badge>
           )}
 
-          <button
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={fetchGardenaStatus}
             disabled={statusLoading}
-            className="text-slate-300 hover:text-slate-500 transition-colors"
+            className="text-muted-foreground hover:text-foreground max-sm:size-11"
             title="Status aktualisieren"
+            aria-label="Status aktualisieren"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", statusLoading && "animate-spin")} />
-          </button>
+          </Button>
         </>
       ) : (
-        <Badge variant="secondary" className="gap-1.5 text-muted-foreground/70 text-xs">
+        <Badge variant="danger" className="gap-1.5 text-xs">
           <WifiOff className="h-3 w-3" /> Nicht erreichbar
         </Badge>
       )}
@@ -396,7 +431,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
     // Sensor: no controls
     if (isSensor) {
       return (
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground/70 px-1 italic">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground px-1 italic">
           <Activity className="h-3.5 w-3.5" /> Sensor – nur Anzeige
         </span>
       );
@@ -405,7 +440,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
     // Abspieler: bedient wird die Zone im Audio-Modul, nicht das Gerät selbst.
     if (isAudio) {
       return (
-        <Button asChild variant="outline" size="sm" className="gap-1.5">
+        <Button asChild variant="outline" size="sm" className="gap-1.5 max-sm:h-11">
           <Link href="/audio">
             <Volume2 className="h-4 w-4" />
             Zur Beschallung
@@ -424,9 +459,10 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             <Button
               key={min}
               size="sm"
+              variant="secondary"
               onClick={() => handleAction("open", min)}
               disabled={loading !== null}
-              className="bg-info hover:bg-info/90 text-info-foreground gap-1.5"
+              className="gap-1.5 max-sm:h-11"
             >
               {loading === `open:${min}`
                 ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -434,16 +470,13 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
               {min} Min
             </Button>
           ))}
+          {/* Während der Bewässerung ist Stopp die Primärhandlung. */}
           <Button
             size="sm"
+            variant={watering ? "default" : "secondary"}
             onClick={() => handleAction("reset")}
             disabled={loading !== null || (gardenaStatus != null && !watering)}
-            className={cn(
-              "gap-1.5",
-              watering
-                ? "bg-slate-700 hover:bg-slate-800 text-white"
-                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground border border-input",
-            )}
+            className="gap-1.5 max-sm:h-11"
           >
             {loading === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
             Stopp
@@ -460,10 +493,13 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
 
       if (cover && !cover.configured) {
         return (
-          <span className="flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning">
-            <Settings2 className="h-3.5 w-3.5 shrink-0" />
-            Kanäle für Auf und Zu fehlen – bitte unter „Bearbeiten“ zuordnen.
-          </span>
+          <Notice
+            tone="warning"
+            compact
+            icon={Settings2}
+            title="Kanäle für Auf und Zu fehlen – bitte unter „Bearbeiten“ zuordnen."
+            className="flex-1 basis-64"
+          />
         );
       }
 
@@ -471,9 +507,10 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
         <>
           <Button
             size="sm"
+            variant="secondary"
             onClick={() => handleAction("open")}
             disabled={loading !== null}
-            className="gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
+            className="gap-1.5 max-sm:h-11"
           >
             {loading === "open"
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -481,16 +518,13 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             {labels.open}
           </Button>
 
+          {/* Während einer Fahrt ist Stopp die Primärhandlung. */}
           <Button
             size="sm"
+            variant={moving ? "default" : "secondary"}
             onClick={() => handleAction("stop")}
             disabled={loading !== null}
-            className={cn(
-              "gap-1.5",
-              moving
-                ? "bg-slate-700 hover:bg-slate-800 text-white"
-                : "bg-muted text-muted-foreground border border-input hover:bg-accent",
-            )}
+            className="gap-1.5 max-sm:h-11"
           >
             {loading === "stop"
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -500,9 +534,10 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
 
           <Button
             size="sm"
+            variant="secondary"
             onClick={() => handleAction("close")}
             disabled={loading !== null}
-            className="gap-1.5 bg-info hover:bg-info/90 text-info-foreground"
+            className="gap-1.5 max-sm:h-11"
           >
             {loading === "close"
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -524,7 +559,7 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             size="sm"
             onClick={() => handleAction("open")}
             disabled={loading !== null}
-            className="gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
+            className="gap-1.5 max-sm:h-11"
           >
             {loading === "open"
               ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -534,20 +569,16 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
 
           <Button
             size="sm"
+            variant="secondary"
             onClick={() => handleAction("reset")}
             disabled={loading !== null || (shellyStatus != null && !running)}
-            className={cn(
-              "gap-1.5",
-              running
-                ? "bg-slate-700 hover:bg-slate-800 text-white"
-                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground border border-input",
-            )}
+            className="gap-1.5 max-sm:h-11"
           >
             {loading === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <PowerOff className="h-4 w-4" />}
             Ausschalten
           </Button>
 
-          <span className="flex items-center text-xs text-muted-foreground/70 px-1">
+          <span className="flex items-center text-xs text-muted-foreground px-1">
             schaltet für {formatPulseDuration(seconds)} ein
           </span>
         </>
@@ -565,14 +596,10 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
       return (
         <Button
           size="sm"
+          variant={isOn ? "secondary" : "default"}
           onClick={() => handleAction(action)}
           disabled={loading !== null}
-          className={cn(
-            "gap-1.5 transition-all",
-            isOn
-              ? "bg-slate-700 hover:bg-slate-800 text-white"
-              : "bg-success hover:bg-success/90 text-success-foreground",
-          )}
+          className="gap-1.5 transition-all max-sm:h-11"
         >
           {loading === action
             ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -603,11 +630,12 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
             <Button
               key={a.key}
               size="sm"
+              variant={a.variant}
               onClick={() => handleAction(a.key)}
               disabled={loading !== null}
-              className={cn(a.base, isActive && "ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-950 ring-current")}
+              className={cn("max-sm:h-11", isActive && "outline-solid outline-2 outline-offset-2 outline-primary")}
             >
-              {loading === a.key ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Icon className="h-4 w-4 mr-1.5" />}
+              {loading === a.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
               {a.label}
             </Button>
           );
@@ -623,20 +651,21 @@ export function DeviceDetailClient({ device, areas, cameras, rooms }: Props) {
       {ShellyStatusBadges}
       {GardenaStatusBadges}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="gap-1.5 max-sm:h-11">
           <Pencil className="h-4 w-4" />
           Bearbeiten
         </Button>
         {ActionButtons}
       </div>
       {actionError && (
-        <p
+        <Notice
+          tone="danger"
+          compact
           role="alert"
-          className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/30/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-        >
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          {actionError}
-        </p>
+          icon={AlertTriangle}
+          title={actionError}
+          className="mt-2"
+        />
       )}
       <EditDeviceDialog
         device={editing ? device : null}
