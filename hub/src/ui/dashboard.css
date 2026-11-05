@@ -1626,8 +1626,8 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
 .ctl-loading { display: grid; gap: 0.4rem; }
 .ctl-loading .skeleton { height: 2.4rem; border-radius: var(--radius-control); }
 .cam-stage { overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.cam-stage video, .cam-stage img { transition: transform 0.15s var(--ease); }
-.cam-stage.is-gesture video, .cam-stage.is-gesture img { transition: none; }
+.cam-stage video { transition: transform 0.15s var(--ease); }
+.cam-stage.is-gesture video { transition: none; }
 .cam-dlg.is-wide .cam-stage { aspect-ratio: 32 / 9; }
 @media (min-width: 980px) {
   .cam-dlg.is-wide { --dlg-w: min(1600px, calc(100vw - 1.5rem)); }
@@ -1661,8 +1661,7 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--emerald) 28%, transparent), 0 0 30px -6px var(--emerald);
 }
 .live-tile.is-offline { filter: saturate(0.3); }
-.live-tile video,
-.live-tile img {
+.live-tile video {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   object-fit: cover;
@@ -1670,7 +1669,6 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
 }
 .live-tile video { opacity: 0; transition: opacity 0.4s; }
 .live-tile.is-live video { opacity: 1; }
-.live-tile img:not([src]) { visibility: hidden; }
 
 .live-empty {
   position: absolute; inset: 0;
@@ -1678,7 +1676,7 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
   color: oklch(0.72 0.025 258); font-size: 0.8125rem; text-align: center; padding: 1rem;
 }
 .live-empty .ico { width: 2rem; height: 2rem; opacity: 0.7; }
-.live-tile.has-picture .live-empty { display: none; }
+.live-tile.is-live .live-empty { display: none; }
 
 /* Verlauf oben/unten, damit Schrift auf jedem Bild lesbar ist. */
 .live-tile::after {
@@ -1764,8 +1762,21 @@ table.data .dev .tile-ico .ico { width: 0.95rem; height: 0.95rem; }
   .cam-dlg .cam-side { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 }
 .cam-stage { position: relative; background: #000; aspect-ratio: 16 / 9; }
-.cam-stage video, .cam-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.cam-stage img:not([src]) { visibility: hidden; }
+.cam-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+/* Kein Standbild: bis das Livebild laeuft nur ein Hinweis. */
+.cam-wait {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.75rem; color: rgba(255, 255, 255, 0.8); font-size: 0.95rem; text-align: center; padding: 1rem; pointer-events: none;
+}
+.cam-dlg[data-rtc="live"] .cam-wait { display: none; }
+.cam-wait-spin {
+  width: 1.6rem; height: 1.6rem; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: rgba(255, 255, 255, 0.85);
+  animation: cam-wait-spin 0.9s linear infinite;
+}
+.cam-wait.is-static .cam-wait-spin { display: none; }
+@keyframes cam-wait-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cam-wait-spin { animation: none; } }
 .cam-badge { position: absolute; top: 0.75rem; left: 0.75rem; display: flex; gap: 0.375rem; z-index: 1; }
 .cam-side { padding: 1rem 1.125rem 1.125rem; display: grid; gap: 0.875rem; align-content: start; }
 .cam-side-head { display: flex; align-items: flex-start; gap: 0.75rem; }
