@@ -4,14 +4,22 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Separator } from "@/components/ui/separator";
 import { LockPicker } from "@/components/schliessanlage/lock-picker";
-import { ErrorLine, apiRequest } from "@/components/schliessanlage/shared";
+import { ErrorLine, apiRequest, selectFieldClass } from "@/components/schliessanlage/shared";
 import type { KeyRow, LockOption } from "@/components/schliessanlage/types";
 import { KEY_LEVEL_LABELS, KEY_STATUS_LABELS } from "@/lib/keying";
+import { cn } from "@/lib/utils";
 
 interface Props {
   keyItem: KeyRow | null;
@@ -31,6 +39,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
   const [lockIds, setLockIds] = useState<number[]>(keyItem?.lockIds ?? []);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
   const isIssued = keyItem?.status === "ISSUED";
@@ -63,13 +72,6 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
 
   async function remove() {
     if (!keyItem) return;
-    if (
-      !confirm(
-        `Schlüssel "${keyItem.keyNumber}" wirklich löschen? Mit vorhandener Protokoll-Historie wird er stattdessen als vernichtet markiert.`,
-      )
-    ) {
-      return;
-    }
     setDeleting(true);
     const res = await apiRequest(`/api/schliessanlage/keys/${keyItem.id}`, "DELETE");
     setDeleting(false);
@@ -83,9 +85,9 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-base">
+          <DialogTitle>
             {isNew ? "Neuen Schlüssel anlegen" : `Schlüssel ${keyItem.keyNumber}`}
           </DialogTitle>
         </DialogHeader>
@@ -93,7 +95,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="s-number" className="text-xs">
+              <Label htmlFor="s-number">
                 Schlüsselnummer <span className="text-destructive">*</span>
               </Label>
               <Input
@@ -102,11 +104,11 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 onChange={(e) => setKeyNumber(e.target.value)}
                 placeholder="z. B. GHS-01"
                 autoFocus
-                className="h-9 font-mono"
+                className="font-mono max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="s-label" className="text-xs">
+              <Label htmlFor="s-label">
                 Bezeichnung
               </Label>
               <Input
@@ -114,21 +116,22 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="z. B. Hausmeister"
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          {/* Handy eine Spalte, sonst schneiden die Auswahlfelder „Gruppenschlüssel“ und „Generalschlüssel“ ab. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
             <div className="space-y-1">
-              <Label htmlFor="s-level" className="text-xs">
+              <Label htmlFor="s-level">
                 Schlüsselart
               </Label>
               <select
                 id="s-level"
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+                className={cn(selectFieldClass, "w-full max-sm:h-11")}
               >
                 {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
@@ -138,7 +141,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
               </select>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="s-status" className="text-xs">
+              <Label htmlFor="s-status">
                 Status
               </Label>
               <select
@@ -146,7 +149,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 disabled={isIssued}
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm disabled:opacity-60 dark:border-border dark:bg-card"
+                className={cn(selectFieldClass, "w-full max-sm:h-11")}
               >
                 {Object.entries(KEY_STATUS_LABELS).map(([value, text]) => (
                   <option key={value} value={value}>
@@ -155,7 +158,7 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
                 ))}
               </select>
               {isIssued && (
-                <p className="text-[10px] text-muted-foreground/70">
+                <p className="text-[11px] text-muted-foreground">
                   Ausgegeben – Rücknahme läuft über das Protokoll.
                 </p>
               )}
@@ -163,72 +166,90 @@ export function KeyDialog({ keyItem, lockOptions, open, onClose }: Props) {
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Schließt folgende Schlösser</Label>
+            <Label>Schließt folgende Schlösser</Label>
             <LockPicker options={lockOptions} value={lockIds} onChange={setLockIds} />
             {level === "GRAND" && lockIds.length === 0 && (
-              <p className="text-[10px] text-warning">
+              <p className="text-[11px] text-warning">
                 Ein Generalschlüssel ohne zugeordnete Schlösser sperrt nichts.
               </p>
             )}
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="s-notes" className="text-xs">
+            <Label htmlFor="s-notes">
               Notiz
             </Label>
             <Input
               id="s-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="h-9"
+              className="max-sm:h-11"
             />
           </div>
 
           <ErrorLine message={error} />
+
+          {/* Löschen als Schritt im selben Dialog statt Browser-Rückfrage, keine zweite Ebene (docs/design-regeln.md, Abschnitt 18). */}
+          {confirmDelete && keyItem && (
+            <Notice tone="warning" compact title={`Schlüssel "${keyItem.keyNumber}" wirklich löschen?`}>
+              Mit vorhandener Protokoll-Historie wird er stattdessen als vernichtet markiert.
+            </Notice>
+          )}
         </div>
 
-        <Separator className="dark:bg-muted" />
+        <Separator />
 
-        <div className="flex items-center justify-between">
-          {!isNew ? (
+        {/* Löschen links, Abbrechen und Speichern rechts; auf dem Handy untereinander, Primärtaste oben. */}
+        <DialogFooter className="sm:items-center sm:justify-between">
+          {!isNew && !confirmDelete ? (
             <Button
               variant="ghost"
-              size="sm"
-              onClick={remove}
+              onClick={() => setConfirmDelete(true)}
               disabled={saving || deleting}
-              className="h-8 text-xs text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive"
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive max-sm:h-11"
             >
-              {deleting ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
-              )}
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
               Löschen
             </Button>
           ) : (
-            <div />
+            <div className="max-sm:hidden" />
           )}
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={onClose} disabled={saving} className="h-8">
-              Abbrechen
-            </Button>
-            <Button
-              size="sm"
-              onClick={save}
-              disabled={saving || deleting || !keyNumber.trim()}
-              className="h-8 min-w-24"
-            >
-              {saving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <>
-                  <Save className="mr-1 h-3.5 w-3.5" />
-                  {isNew ? "Erstellen" : "Speichern"}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
+          {confirmDelete ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button variant="outline" onClick={() => setConfirmDelete(false)} disabled={deleting} className="max-sm:h-11">
+                Abbrechen
+              </Button>
+              <Button variant="destructive" onClick={remove} disabled={deleting} className="min-w-24 max-sm:h-11">
+                {deleting ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                )}
+                Löschen
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button variant="outline" onClick={onClose} disabled={saving} className="max-sm:h-11">
+                Abbrechen
+              </Button>
+              <Button
+                onClick={save}
+                disabled={saving || deleting || !keyNumber.trim()}
+                className="min-w-24 max-sm:h-11"
+              >
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <Save className="mr-1 h-3.5 w-3.5" />
+                    {isNew ? "Erstellen" : "Speichern"}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

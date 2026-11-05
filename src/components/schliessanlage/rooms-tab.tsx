@@ -16,8 +16,20 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { IconChip } from "@/components/ui/icon-chip";
 import { DoorDialog } from "@/components/schliessanlage/door-dialog";
 import { LockDialog } from "@/components/schliessanlage/lock-dialog";
 import { RoomDialog } from "@/components/schliessanlage/room-dialog";
@@ -35,7 +47,6 @@ import type {
   LockRow,
   RoomRow,
 } from "@/components/schliessanlage/types";
-import { cn } from "@/lib/utils";
 
 interface Props {
   rooms: RoomRow[];
@@ -52,6 +63,9 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
   const [doorDialog, setDoorDialog] = useState<{ door: DoorRow | null; roomId: number | null } | null>(null);
   const [lockDialog, setLockDialog] = useState<{ lock: LockRow | null; doorId: number } | null>(null);
   const [error, setError] = useState("");
+  // Rückfrage vor dem Löschen (docs/design-regeln.md, Abschnitt 18); der Inhalt bleibt stehen, solange der Dialog ausblendet.
+  const [pendingDelete, setPendingDelete] = useState<{ url: string; title: string; description?: string } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const toggle = (id: number) => {
     setExpanded((prev) => {
@@ -62,8 +76,12 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
     });
   };
 
-  async function remove(url: string, question: string) {
-    if (!confirm(question)) return;
+  function askRemove(url: string, title: string, description?: string) {
+    setPendingDelete({ url, title, description });
+    setConfirmOpen(true);
+  }
+
+  async function remove(url: string) {
     setError("");
     const res = await apiRequest(url, "DELETE");
     if (!res.ok) setError(res.message);
@@ -74,109 +92,124 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
   const roomNames = new Map(rooms.map((r) => [r.id, r.name]));
   const deviceById = new Map(devices.map((d) => [d.id, d]));
 
+  // Tür als Zeile mit Haarlinie (die Liste trennt mit divide-y), Schlösser eingerückt an einer Haarlinie (keine eigene Fläche).
   const renderDoor = (door: DoorRow) => (
-    <div
-      key={door.id}
-      className="rounded-md border border-border bg-white p-2 dark:border-border dark:bg-card/40"
-    >
-      <div className="flex items-start gap-2">
-        <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground/90">
+    <div key={door.id} className="py-2">
+      {/* Handlungen rechts; reicht der Platz nicht (Handy), rutschen sie in eine zweite Zeile, statt den Namen abzuschneiden. */}
+      <div className="flex flex-wrap items-start gap-x-2">
+        <DoorOpen className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1 basis-[11rem]">
+          <p className="truncate text-sm font-medium text-foreground">
             {door.name}
             {door.doorNumber && (
-              <span className="ml-1.5 font-mono text-[11px] text-muted-foreground/70">{door.doorNumber}</span>
+              <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">{door.doorNumber}</span>
             )}
           </p>
-          {door.notes && <p className="truncate text-[11px] text-muted-foreground/70">{door.notes}</p>}
+          {door.notes && <p className="truncate text-[11px] text-muted-foreground">{door.notes}</p>}
         </div>
         {!readonly && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setLockDialog({ lock: null, doorId: door.id })}
-              className="p-1 text-muted-foreground/70 hover:text-primary"
+              className="text-muted-foreground hover:text-primary max-sm:size-11"
               title="Schloss hinzufügen"
+              aria-label="Schloss hinzufügen"
             >
               <Plus className="h-3.5 w-3.5" />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setDoorDialog({ door, roomId: door.roomId })}
-              className="p-1 text-muted-foreground/70 hover:text-primary"
+              className="text-muted-foreground hover:text-primary max-sm:size-11"
               title="Tür bearbeiten"
+              aria-label="Tür bearbeiten"
             >
               <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() =>
-                remove(
+                askRemove(
                   `/api/schliessanlage/doors/${door.id}`,
                   `Tür "${door.name}" inkl. ihrer Schlösser wirklich löschen?`,
                 )
               }
-              className="p-1 text-muted-foreground/70 hover:text-destructive"
+              className="text-muted-foreground hover:text-destructive max-sm:size-11"
               title="Tür löschen"
+              aria-label="Tür löschen"
             >
               <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </div>
         )}
       </div>
 
       {door.locks.length > 0 && (
-        <div className="mt-1.5 space-y-1 pl-6">
+        <div className="mt-1.5 ml-2 space-y-1 border-l border-border pl-4">
           {door.locks.map((lock) => (
             <div
               key={lock.id}
-              className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1 dark:bg-muted/50"
+              className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1"
             >
-              <Lock className="h-3 w-3 shrink-0 text-muted-foreground/70" />
-              <span className="font-mono text-[11px] text-foreground/80">
+              <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span className="font-mono text-[11px] text-foreground">
                 {lock.lockNumber || "ohne Nummer"}
               </span>
-              <span className="text-[10px] text-muted-foreground/70">{lockTypeLabel(lock.lockType)}</span>
-              {lock.system && <span className="truncate text-[10px] text-muted-foreground/70">· {lock.system}</span>}
+              <span className="text-[11px] text-muted-foreground">{lockTypeLabel(lock.lockType)}</span>
+              {lock.system && <span className="min-w-0 truncate text-[11px] text-muted-foreground">· {lock.system}</span>}
               {lock.deviceId != null && (
                 <span
-                  className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-primary"
+                  className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-muted-foreground"
                   title="Wird elektronisch geöffnet"
                 >
-                  <Zap className="h-2.5 w-2.5" />
+                  <Zap className="h-3 w-3" />
                   {deviceById.get(lock.deviceId)?.name ?? "Gerät"}
                 </span>
               )}
               <span
-                className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/70"
+                className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums"
                 title={`${lock.keyCount} Schlüssel zugeordnet`}
               >
-                <KeyRound className="h-2.5 w-2.5" />
+                <KeyRound className="h-3 w-3" />
                 {lock.keyCount}
               </span>
               {!readonly && (
                 <div className="flex shrink-0 items-center gap-0.5">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => setLockDialog({ lock, doorId: door.id })}
-                    className="p-0.5 text-muted-foreground/70 hover:text-primary"
+                    className="text-muted-foreground hover:text-primary max-sm:size-11"
                     title="Schloss bearbeiten"
+                    aria-label="Schloss bearbeiten"
                   >
                     <Pencil className="h-3 w-3" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() =>
-                      remove(
+                      askRemove(
                         `/api/schliessanlage/locks/${lock.id}`,
-                        `Schloss "${lock.lockNumber || lock.id}" wirklich löschen? Schlüssel bleiben erhalten, verlieren aber diese Zuordnung.`,
+                        `Schloss "${lock.lockNumber || lock.id}" wirklich löschen?`,
+                        "Schlüssel bleiben erhalten, verlieren aber diese Zuordnung.",
                       )
                     }
-                    className="p-0.5 text-muted-foreground/70 hover:text-destructive"
+                    className="text-muted-foreground hover:text-destructive max-sm:size-11"
                     title="Schloss löschen"
+                    aria-label="Schloss löschen"
                   >
                     <Trash2 className="h-3 w-3" />
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -188,10 +221,10 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
 
   return (
     <Card>
-      <CardHeader className="pb-4">
+      <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-base sm:text-xl">
+            <CardTitle className="tabular-nums">
               {rooms.length} Räume · {doorCount} Türen
             </CardTitle>
             <CardDescription>
@@ -205,7 +238,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                 size="sm"
                 variant="outline"
                 onClick={() => setDoorDialog({ door: null, roomId: null })}
-                className="h-8"
+                className="max-sm:h-11"
               >
                 <DoorOpen className="mr-1 h-3.5 w-3.5" />
                 Tür
@@ -213,7 +246,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
               <Button
                 size="sm"
                 onClick={() => setRoomDialog({ room: null })}
-                className="h-8 bg-primary hover:bg-primary/90"
+                className="max-sm:h-11"
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Raum
@@ -227,7 +260,7 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
         <ErrorLine message={error} />
 
         {rooms.length === 0 && looseDoors.length === 0 && (
-          <EmptyHint>Noch keine Räume angelegt. Beginne mit einem Raum oder einer Außentür.</EmptyHint>
+          <EmptyHint icon={DoorOpen}>Noch keine Räume angelegt. Beginne mit einem Raum oder einer Außentür.</EmptyHint>
         )}
 
         {rooms.map((room) => {
@@ -235,32 +268,40 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
           const roomDevices = devices.filter((d) => d.roomId === room.id);
           const roomCameras = cameras.filter((c) => c.roomId === room.id);
           return (
-            <div
-              key={room.id}
-              className="rounded-md border border-border"
-            >
-              <div className="flex items-center gap-2 p-2">
+            <div key={room.id} className="glass-tile">
+              {/* Kopfzeile des Raums: Aufklappen links, Handlungen rechts (brechen auf dem Handy um). */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2.5">
                 <button
                   type="button"
                   onClick={() => toggle(room.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  aria-expanded={isOpen}
+                  className="flex min-w-0 flex-1 basis-[13rem] items-center gap-2.5 rounded-xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:min-h-11"
                 >
                   {isOpen ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                   ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                   )}
-                  <Building2 className="h-4 w-4 shrink-0 text-primary" />
-                  <span className="truncate text-sm font-medium text-foreground/90">
-                    {room.name}
+                  <IconChip icon={Building2} tone="neutral" size="sm" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-baseline gap-1.5">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {room.name}
+                      </span>
+                      {room.number && (
+                        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{room.number}</span>
+                      )}
+                    </span>
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {[room.building, room.floor].filter(Boolean).join(" · ")}
+                    </span>
                   </span>
-                  {room.number && (
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{room.number}</span>
-                  )}
-                  <span className="shrink-0 text-[11px] text-muted-foreground/70">
-                    {[room.building, room.floor].filter(Boolean).join(" · ")}
-                  </span>
-                  <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground/70">
+                </button>
+                {/* Zahlen und Handlungen rechts; auf dem Handy gemeinsam in der zweiten Zeile (Zahlen unter dem Namen),
+                    damit der Raumname die erste Zeile ganz bekommt und nicht abgeschnitten wird. */}
+                <div className="ml-auto flex shrink-0 items-center gap-2 max-sm:basis-full max-sm:justify-between max-sm:pl-16">
+                  {/* Zähler brechen als Ganzes um ("0 Türen" bleibt zusammen), wenn neben den Aktionen kein Platz ist. */}
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
                     {roomDevices.length > 0 && (
                       <span
                         className="inline-flex items-center gap-0.5"
@@ -279,77 +320,89 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
                         {roomCameras.length}
                       </span>
                     )}
-                    <span>
+                    <span className="whitespace-nowrap">
                       {room.doors.length} {room.doors.length === 1 ? "Tür" : "Türen"}
                     </span>
                   </span>
-                </button>
-                {!readonly && (
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setDoorDialog({ door: null, roomId: room.id })}
-                      className="p-1 text-muted-foreground/70 hover:text-primary"
-                      title="Tür hinzufügen"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRoomDialog({ room })}
-                      className="p-1 text-muted-foreground/70 hover:text-primary"
-                      title="Raum bearbeiten"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        remove(
-                          `/api/schliessanlage/rooms/${room.id}`,
-                          `Raum "${room.name}" wirklich löschen? Die Türen bleiben erhalten und rutschen auf "ohne Raum".`,
-                        )
-                      }
-                      className="p-1 text-muted-foreground/70 hover:text-destructive"
-                      title="Raum löschen"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
+                  {!readonly && (
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDoorDialog({ door: null, roomId: room.id })}
+                        className="text-muted-foreground hover:text-primary max-sm:size-11"
+                        title="Tür hinzufügen"
+                        aria-label="Tür hinzufügen"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setRoomDialog({ room })}
+                        className="text-muted-foreground hover:text-primary max-sm:size-11"
+                        title="Raum bearbeiten"
+                        aria-label="Raum bearbeiten"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() =>
+                          askRemove(
+                            `/api/schliessanlage/rooms/${room.id}`,
+                            `Raum "${room.name}" wirklich löschen?`,
+                            `Die Türen bleiben erhalten und rutschen auf "ohne Raum".`,
+                          )
+                        }
+                        className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                        title="Raum löschen"
+                        aria-label="Raum löschen"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {isOpen && (
-                <div className={cn("space-y-1.5 border-t border-border/60 p-2 dark:border-border")}>
+                <div className="border-t border-border px-2.5 pb-2.5">
                   {room.doors.length === 0 ? (
-                    <p className="py-2 text-center text-[11px] text-muted-foreground/70">
+                    <p className="py-3 text-center text-[11px] text-muted-foreground">
                       Noch keine Tür in diesem Raum.
                     </p>
                   ) : (
-                    room.doors.map(renderDoor)
+                    <div className="divide-y divide-border">{room.doors.map(renderDoor)}</div>
                   )}
 
                   {(roomDevices.length > 0 || roomCameras.length > 0) && (
-                    <div className="flex flex-wrap gap-1 pt-1">
+                    <div className="flex flex-wrap gap-1 border-t border-border pt-2.5">
                       {roomDevices.map((d) => (
-                        <span
+                        <Badge
                           key={`d${d.id}`}
+                          variant="secondary"
                           title={deviceMetaLabel(d.type, d.category)}
-                          className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
+                          className="max-w-full font-medium"
                         >
-                          <Cpu className="h-2.5 w-2.5 text-muted-foreground/70" />
-                          {d.name}
-                        </span>
+                          <Cpu className="text-muted-foreground" />
+                          <span className="truncate">{d.name}</span>
+                        </Badge>
                       ))}
                       {roomCameras.map((c) => (
-                        <span
+                        <Badge
                           key={`c${c.id}`}
+                          variant="secondary"
                           title={c.kind}
-                          className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground dark:bg-muted dark:text-foreground/80"
+                          className="max-w-full font-medium"
                         >
-                          <Cctv className="h-2.5 w-2.5 text-muted-foreground/70" />
-                          {c.name}
-                        </span>
+                          <Cctv className="text-muted-foreground" />
+                          <span className="truncate">{c.name}</span>
+                        </Badge>
                       ))}
                     </div>
                   )}
@@ -360,11 +413,11 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
         })}
 
         {looseDoors.length > 0 && (
-          <div className="rounded-md border border-dashed border-input p-2 dark:border-border">
-            <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+          <div className="glass-tile px-2.5 pt-2.5 pb-0.5">
+            <p className="text-label">
               Türen ohne Raumzuordnung
             </p>
-            <div className="space-y-1.5">{looseDoors.map(renderDoor)}</div>
+            <div className="divide-y divide-border">{looseDoors.map(renderDoor)}</div>
           </div>
         )}
       </CardContent>
@@ -397,6 +450,30 @@ export function RoomsTab({ rooms, looseDoors, devices, cameras, readonly }: Prop
           onClose={() => setLockDialog(null)}
         />
       )}
+
+      {/* Löschen immer mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18); Fehler zeigt die ErrorLine oben. */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent {...(pendingDelete?.description ? {} : { "aria-describedby": undefined })}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingDelete?.title}</AlertDialogTitle>
+            {pendingDelete?.description && (
+              <AlertDialogDescription>{pendingDelete.description}</AlertDialogDescription>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="max-sm:h-11">Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              className="max-sm:h-11"
+              onClick={() => {
+                if (pendingDelete) void remove(pendingDelete.url);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

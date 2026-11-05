@@ -4,8 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { StatCard } from "@/components/ui/stat-card";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
@@ -265,49 +269,40 @@ export function SurveillanceClient({ initial, cameras }: Props) {
   };
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4 sm:space-y-5 max-w-4xl">
       <Card>
-        <CardContent className="pt-6">
+        <CardContent>
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
             <div className="flex items-start gap-3">
-              <div
-                className={cn(
-                  "rounded-xl p-3",
-                  armedNow
-                    ? "bg-warning/10 text-warning "
-                    : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground"
-                )}
-              >
-                {armedNow ? <Shield className="h-7 w-7" /> : <ShieldOff className="h-7 w-7" />}
-              </div>
+              {/* Zustand als Symbol-Chip: scharf füllt sich in der Hinweisfarbe. */}
+              <IconChip
+                icon={armedNow ? Shield : ShieldOff}
+                tone={armedNow ? "warning" : "neutral"}
+                active={armedNow}
+                size="lg"
+              />
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg font-semibold text-foreground">
+                  <h2 className="text-[15px] font-semibold tracking-tight text-foreground">
                     Überwachungsmodus
                   </h2>
-                  <Badge
-                    variant={armedNow ? "default" : "secondary"}
-                    className={armedNow ? "bg-warning hover:bg-warning/90" : ""}
-                  >
+                  <Badge variant={armedNow ? "warning" : "neutral"}>
                     {armedNow ? "Jetzt aktiv" : "Inaktiv"}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-[13px] text-muted-foreground mt-1">
                   Push bei Person oder Fahrzeug auf ausgewählten Kameras. Scharf per Knopf
                   und/oder Zeitplan.
                 </p>
               </div>
             </div>
+            {/* Glas-Taste in beiden Zuständen: die Beschriftung nennt den manuellen Zustand, die Farbe zeigen Chip, Badge und die Zeile darunter (keine deckende Zustandsfarbe, kein aria-pressed bei wechselnder Beschriftung). */}
             <Button
               size="lg"
+              variant="secondary"
               onClick={toggleArmed}
               disabled={saving}
-              className={cn(
-                "min-w-[140px]",
-                form.manualArmed
-                  ? "bg-warning hover:bg-warning/90"
-                  : "bg-slate-700 hover:bg-slate-800"
-              )}
+              className="min-w-[140px] max-sm:h-11"
             >
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -330,29 +325,32 @@ export function SurveillanceClient({ initial, cameras }: Props) {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <FileText className="h-4 w-4" />
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
               Nachtbericht
               {report?.period.inProgress && (
-                <Badge className="bg-warning hover:bg-warning/90">läuft</Badge>
+                <Badge variant="warning">läuft</Badge>
               )}
             </CardTitle>
             <div className="flex items-center gap-1">
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
-                className="h-8 w-8"
+                size="icon-sm"
+                className="max-sm:size-11"
                 disabled={reportLoading || periodIndex < 0 || periodIndex >= (report?.periods.length ?? 0) - 1}
                 onClick={() => goPeriod(1)}
                 title="Ältere Periode"
+                aria-label="Ältere Periode"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
+              {/* Natives Auswahlfeld in Glas-Optik (wie Input), Liste deckend auf der Popover-Fläche.
+                  Handy: Breite 0 plus flex-1, sonst gibt die längste Option die Breite vor und schiebt den Kopf über den Kartenrand. */}
               <select
-                className="h-8 max-w-[220px] rounded-md border border-border bg-white px-2 text-xs dark:border-border dark:bg-card"
+                className="glass-field h-8 min-w-0 max-w-[220px] px-2.5 text-base text-foreground outline-none transition-[color,box-shadow,border-color] hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 md:text-xs max-sm:h-11 max-sm:w-0 max-sm:max-w-none max-sm:flex-1 [&_option]:bg-popover [&_option]:text-popover-foreground"
                 value={reportKey ?? ""}
                 disabled={reportLoading || !report}
                 onChange={(e) => void loadReport(e.target.value)}
@@ -367,11 +365,12 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
-                className="h-8 w-8"
+                size="icon-sm"
+                className="max-sm:size-11"
                 disabled={reportLoading || periodIndex <= 0}
                 onClick={() => goPeriod(-1)}
                 title="Neuere Periode"
+                aria-label="Neuere Periode"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -392,49 +391,51 @@ export function SurveillanceClient({ initial, cameras }: Props) {
             </div>
           )}
           {reportError && !reportLoading && (
-            <p className="text-sm text-destructive">{reportError}</p>
+            <Notice tone="danger" compact title={reportError} />
           )}
           {!reportLoading && report && (
             <>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg border border-border px-3 py-2">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <UserRound className="h-3.5 w-3.5" />
-                    Personen
-                  </div>
-                  <p className="text-lg font-semibold tabular-nums">{report.summary.persons}</p>
-                  <p className="text-[11px] text-muted-foreground/70">mit Snapshot</p>
-                </div>
-                <div className="rounded-lg border border-border px-3 py-2">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Car className="h-3.5 w-3.5" />
-                    Fahrzeuge
-                  </div>
-                  <p className="text-lg font-semibold tabular-nums">{report.summary.vehicles}</p>
-                  <p className="text-[11px] text-muted-foreground/70">mit Snapshot</p>
-                </div>
-                <div className="rounded-lg border border-border px-3 py-2">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <ImageIcon className="h-3.5 w-3.5" />
-                    Auffälligkeiten
-                  </div>
-                  <p className="text-lg font-semibold tabular-nums">
-                    {report.summary.personSnapshots + report.summary.vehicleSnapshots}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground/70">im Zeitraum</p>
-                </div>
+              {/* Kennzahlen des Zeitraums; zwei Spalten, die dritte über die volle Breite, drei erst ab lg (schmaler kürzt die Versal-Beschriftung). */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                <StatCard
+                  size="sm"
+                  tone="neutral"
+                  icon={UserRound}
+                  label="Personen"
+                  value={report.summary.persons}
+                  hint="mit Snapshot"
+                />
+                <StatCard
+                  size="sm"
+                  tone="neutral"
+                  icon={Car}
+                  label="Fahrzeuge"
+                  value={report.summary.vehicles}
+                  hint="mit Snapshot"
+                />
+                <StatCard
+                  size="sm"
+                  tone="neutral"
+                  icon={ImageIcon}
+                  label="Auffälligkeiten"
+                  value={report.summary.personSnapshots + report.summary.vehicleSnapshots}
+                  hint="im Zeitraum"
+                  className="col-span-2 lg:col-span-1"
+                />
               </div>
 
               {report.timeline.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Keine klaren Personen-/Fahrzeug-Erkennungen in diesem Zeitraum.
-                </p>
+                <EmptyState
+                  compact
+                  icon={FileText}
+                  title="Keine klaren Personen-/Fahrzeug-Erkennungen in diesem Zeitraum."
+                />
               ) : (
-                <ul className="divide-y divide-border/60 rounded-lg border border-border">
+                <ul className="divide-y divide-border">
                   {report.timeline.map((item) => {
                     if (item.kind === "PERSON") {
                       return (
-                        <li key={`p-${item.id}`} className="flex gap-3 p-3 items-start">
+                        <li key={`p-${item.id}`} className="flex gap-3 py-3 items-start">
                           <button
                             type="button"
                             onClick={() =>
@@ -443,7 +444,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                                 title: item.listedPerson?.name ?? "Person",
                               })
                             }
-                            className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-muted dark:border-border dark:bg-card"
+                            className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-glass-border bg-muted"
                           >
                             <img
                               src={item.snapshotUrl!}
@@ -453,7 +454,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                           </button>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className="text-[10px]">
+                              <Badge variant="outline">
                                 Person
                               </Badge>
                               <span className="font-mono text-xs text-muted-foreground">
@@ -485,7 +486,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     }
                     if (item.kind !== "VEHICLE") return null;
                     return (
-                      <li key={`v-${item.id}`} className="flex gap-3 p-3 items-start">
+                      <li key={`v-${item.id}`} className="flex gap-3 py-3 items-start">
                         <button
                           type="button"
                           onClick={() =>
@@ -497,7 +498,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                                 "Fahrzeug",
                             })
                           }
-                          className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-muted dark:border-border dark:bg-card"
+                          className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-glass-border bg-muted"
                         >
                           <img
                             src={item.snapshotUrl!}
@@ -507,7 +508,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                         </button>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="outline" className="text-[10px]">
+                            <Badge variant="outline">
                               Fahrzeug
                             </Badge>
                             <span className="font-mono text-xs text-muted-foreground">
@@ -542,23 +543,25 @@ export function SurveillanceClient({ initial, cameras }: Props) {
       </Card>
 
       <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{preview?.title ?? "Snapshot"}</DialogTitle>
           </DialogHeader>
           {preview && (
+            // Kamerabild auf schwarzem Grund (Ausnahme laut Design-Regeln).
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={preview.url}
               alt={preview.title}
-              className="w-full max-h-[70vh] object-contain rounded-md bg-muted dark:bg-card"
+              className="w-full max-h-[70vh] object-contain rounded-xl bg-black"
             />
           )}
         </DialogContent>
       </Dialog>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Zeitplan</CardTitle>
+        <CardHeader>
+          <CardTitle>Zeitplan</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between gap-3">
@@ -581,6 +584,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     type="time"
                     value={form.windowStart}
                     onChange={(e) => setForm((f) => ({ ...f, windowStart: e.target.value }))}
+                    className="mt-1.5 tabular-nums max-sm:h-11"
                   />
                 </div>
                 <div>
@@ -590,6 +594,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                     type="time"
                     value={form.windowEnd}
                     onChange={(e) => setForm((f) => ({ ...f, windowEnd: e.target.value }))}
+                    className="mt-1.5 tabular-nums max-sm:h-11"
                   />
                 </div>
               </div>
@@ -598,7 +603,8 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               </p>
               <div>
                 <Label>Wochentage</Label>
-                <div className="flex flex-wrap gap-1 mt-1">
+                {/* Handy: sieben gleich breite Chips in einer Reihe, 44 px hoch (Tippfläche). */}
+                <div className="mt-1.5 grid grid-cols-7 gap-1 sm:flex sm:flex-wrap">
                   {DAYS.map((d) => {
                     const selected = ((form.daysOfWeek >> d.bit) & 1) === 1;
                     return (
@@ -606,11 +612,13 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                         type="button"
                         key={d.bit}
                         onClick={() => toggleDay(d.bit)}
+                        aria-pressed={selected}
                         className={cn(
-                          "h-8 min-w-[40px] px-2 rounded-lg text-xs font-semibold transition-colors",
+                          "press h-8 min-w-10 px-2.5 rounded-full text-xs font-semibold outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:h-11 max-sm:min-w-0 max-sm:px-0",
+                          // Auswahl als weiche Tönung (Abschnitt 17), nicht deckend; Text in Vordergrundfarbe für Kontrast in Hell und Dunkel.
                           selected
-                            ? "bg-primary text-white"
-                            : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground"
+                            ? "bg-primary/12 text-foreground ring-1 ring-inset ring-primary/40"
+                            : "bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border hover:text-foreground"
                         )}
                       >
                         {d.short}
@@ -625,8 +633,8 @@ export function SurveillanceClient({ initial, cameras }: Props) {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Alarme</CardTitle>
+        <CardHeader>
+          <CardTitle>Alarme</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between gap-3">
@@ -669,7 +677,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
                   cooldownMinutes: Math.max(1, Number(e.target.value) || 5),
                 }))
               }
-              className="mt-1 max-w-[160px]"
+              className="mt-1.5 max-w-[160px] tabular-nums max-sm:h-11"
             />
             <p className="mt-1 text-xs text-muted-foreground">
               Pro Kamera und Typ höchstens ein Push in diesem Abstand.
@@ -679,37 +687,40 @@ export function SurveillanceClient({ initial, cameras }: Props) {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Cctv className="h-4 w-4" />
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Cctv className="h-4 w-4 text-muted-foreground" />
             Kameras
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {cameras.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Keine Kameras konfiguriert.</p>
+            <EmptyState compact icon={Cctv} title="Keine Kameras konfiguriert." />
           ) : (
             cameras.map((c) => {
               const on = selectedSet.has(c.id);
               return (
+                // Kamera als Kippkachel: dabei = Auswahl-Tönung, aus = Glas mit gedämpftem Namen
+                // (keine Deckkraft auf der ganzen Kachel, sonst fallen Nebentext und Badge unter 4,5:1).
                 <button
                   type="button"
                   key={c.id}
                   onClick={() => toggleCamera(c.id)}
+                  aria-pressed={on}
                   className={cn(
-                    "w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                    "press w-full flex items-center justify-between gap-3 rounded-tile border px-3 py-2.5 text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:min-h-11",
                     on
-                      ? "border-primary/30 bg-primary/10 "
-                      : "border-border opacity-70"
+                      ? "border-primary/40 bg-primary/10"
+                      : "border-glass-border bg-glass-tile"
                   )}
                 >
-                  <span className="font-medium text-foreground">
+                  <span className={cn("min-w-0 font-medium", on ? "text-foreground" : "text-muted-foreground")}>
                     {c.name}
                     {!c.enabled && (
-                      <span className="ml-2 text-xs text-muted-foreground/70">deaktiviert</span>
+                      <span className="ml-2 text-[11px] font-normal text-muted-foreground">deaktiviert</span>
                     )}
                   </span>
-                  <Badge variant={on ? "default" : "secondary"}>{on ? "dabei" : "aus"}</Badge>
+                  <Badge variant={on ? "default" : "neutral"}>{on ? "dabei" : "aus"}</Badge>
                 </button>
               );
             })
@@ -719,6 +730,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               type="button"
               variant="outline"
               size="sm"
+              className="max-sm:h-11"
               onClick={() =>
                 setForm((f) => ({ ...f, cameraIds: cameras.map((c) => c.id) }))
               }
@@ -729,6 +741,7 @@ export function SurveillanceClient({ initial, cameras }: Props) {
               type="button"
               variant="outline"
               size="sm"
+              className="max-sm:h-11"
               onClick={() => setForm((f) => ({ ...f, cameraIds: [] }))}
             >
               Keine
@@ -737,15 +750,15 @@ export function SurveillanceClient({ initial, cameras }: Props) {
         </CardContent>
       </Card>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <Notice tone="danger" compact title={error} />}
 
-      <div className="flex items-center gap-3">
-        <Button onClick={() => save()} disabled={saving} className="gap-1.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => save()} disabled={saving} className="gap-1.5 max-sm:h-11">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Speichern
         </Button>
         {savedAt && (
-          <span className="text-xs text-muted-foreground/70">
+          <span className="text-xs text-muted-foreground tabular-nums">
             Zuletzt: {new Date(savedAt).toLocaleString("de-DE")}
           </span>
         )}

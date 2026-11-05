@@ -1,6 +1,9 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
 import {
   HANDOVER_STATUS_LABELS,
   KEY_LEVEL_LABELS,
@@ -10,9 +13,17 @@ import {
   type KeyLevel,
   type KeyStatus,
 } from "@/lib/keying";
-import { cn } from "@/lib/utils";
 
 /** Gemeinsame Anzeige- und Fetch-Helfer der Schliessanlage-Tabs. */
+
+/**
+ * Natives Auswahlfeld in der Optik von `Input` (glass-field, Radius 14 px,
+ * Fokus in Akzentfarbe). Für Listen mit leerem Wert und Gruppen, die der
+ * Select-Baustein nicht abbildet. Die Einträge der aufgeklappten Liste stehen
+ * deckend auf der Popover-Fläche, damit sie in Hell und Dunkel lesbar bleiben.
+ */
+export const selectFieldClass =
+  "glass-field h-9 min-w-0 px-3 text-base text-foreground outline-none transition-[color,box-shadow,border-color,background-color] hover:border-foreground/20 focus-visible:border-ring focus-visible:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm [&_optgroup]:bg-popover [&_option]:bg-popover [&_option]:text-popover-foreground";
 
 export function levelLabel(level: string): string {
   return KEY_LEVEL_LABELS[level as KeyLevel] ?? level;
@@ -72,31 +83,30 @@ export function canOpenLock(type: string, category: string | null): boolean {
   );
 }
 
-const LEVEL_CLASSES: Record<string, string> = {
-  SINGLE: "bg-muted text-muted-foreground",
-  GROUP: "bg-info/12 text-info",
-  MAIN: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-  GRAND: "bg-warning/14 text-warning",
+type BadgeVariant = React.ComponentProps<typeof Badge>["variant"];
+
+const KEY_STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  AVAILABLE: "success",
+  ISSUED: "warning",
+  LOST: "danger",
+  DESTROYED: "neutral",
 };
 
-const KEY_STATUS_CLASSES: Record<string, string> = {
-  AVAILABLE: "bg-success/12 text-success",
-  ISSUED: "bg-warning/10 text-warning ",
-  LOST: "bg-destructive/12 text-destructive",
-  DESTROYED: "bg-border text-muted-foreground dark:bg-accent dark:text-foreground/80",
+const HANDOVER_STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  DRAFT: "neutral",
+  ISSUED: "warning",
+  PARTIALLY_RETURNED: "info",
+  RETURNED: "success",
+  LOST: "danger",
 };
 
-const HANDOVER_STATUS_CLASSES: Record<string, string> = {
-  DRAFT: "bg-muted text-muted-foreground",
-  ISSUED: "bg-warning/10 text-warning ",
-  PARTIALLY_RETURNED: "bg-info/12 text-info",
-  RETURNED: "bg-success/12 text-success",
-  LOST: "bg-destructive/12 text-destructive",
-};
-
+/**
+ * Schlüsselart als neutrale Pille: die Art ist eine Kategorie, kein Zustand.
+ * Farbe bleibt Schlüssel- und Protokollstatus vorbehalten (docs/design-regeln.md, Abschnitt 3).
+ */
 export function LevelBadge({ level }: { level: string }) {
   return (
-    <Badge className={cn("text-[10px] py-0 font-medium", LEVEL_CLASSES[level] ?? LEVEL_CLASSES.SINGLE)}>
+    <Badge variant="neutral" className="font-medium">
       {levelLabel(level)}
     </Badge>
   );
@@ -104,7 +114,7 @@ export function LevelBadge({ level }: { level: string }) {
 
 export function KeyStatusBadge({ status }: { status: string }) {
   return (
-    <Badge className={cn("text-[10px] py-0", KEY_STATUS_CLASSES[status] ?? KEY_STATUS_CLASSES.AVAILABLE)}>
+    <Badge variant={KEY_STATUS_VARIANTS[status] ?? KEY_STATUS_VARIANTS.AVAILABLE}>
       {keyStatusLabel(status)}
     </Badge>
   );
@@ -112,7 +122,7 @@ export function KeyStatusBadge({ status }: { status: string }) {
 
 export function HandoverStatusBadge({ status }: { status: string }) {
   return (
-    <Badge className={cn("text-[10px] py-0", HANDOVER_STATUS_CLASSES[status] ?? HANDOVER_STATUS_CLASSES.DRAFT)}>
+    <Badge variant={HANDOVER_STATUS_VARIANTS[status] ?? HANDOVER_STATUS_VARIANTS.DRAFT}>
       {handoverStatusLabel(status)}
     </Badge>
   );
@@ -178,19 +188,13 @@ export async function apiRequest<T = unknown>(
   }
 }
 
+/** Fehler am Formular oder an der Liste: kompakter Hinweis in Störungsfarbe. */
 export function ErrorLine({ message }: { message: string }) {
   if (!message) return null;
-  return (
-    <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-      {message}
-    </p>
-  );
+  return <Notice tone="danger" compact title={message} />;
 }
 
-export function EmptyHint({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground/70 dark:border-border">
-      {children}
-    </p>
-  );
+/** Leere Liste: ein Satz mit kleinem Symbol (EmptyState, kompakt). */
+export function EmptyHint({ children, icon }: { children: string; icon?: LucideIcon }) {
+  return <EmptyState compact icon={icon} title={children} />;
 }

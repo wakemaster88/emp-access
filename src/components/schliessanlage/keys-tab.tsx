@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Crown, KeyRound, Layers, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -14,9 +15,15 @@ import {
 } from "@/components/ui/table";
 import { KeyBulkDialog } from "@/components/schliessanlage/key-bulk-dialog";
 import { KeyDialog } from "@/components/schliessanlage/key-dialog";
-import { EmptyHint, KeyStatusBadge, LevelBadge } from "@/components/schliessanlage/shared";
+import {
+  EmptyHint,
+  KeyStatusBadge,
+  LevelBadge,
+  selectFieldClass,
+} from "@/components/schliessanlage/shared";
 import type { KeyRow, LockOption } from "@/components/schliessanlage/types";
 import { KEY_LEVEL_LABELS, KEY_STATUS_LABELS } from "@/lib/keying";
+import { cn } from "@/lib/utils";
 
 interface Props {
   keys: KeyRow[];
@@ -46,10 +53,10 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
 
   return (
     <Card>
-      <CardHeader className="pb-4">
+      <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-base sm:text-xl">
+            <CardTitle className="tabular-nums">
               {keys.length} Schlüssel · {issuedCount} ausgegeben
             </CardTitle>
             <CardDescription>
@@ -59,14 +66,14 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
           </div>
           {!readonly && (
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)} className="h-8">
+              <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)} className="max-sm:h-11">
                 <Layers className="mr-1 h-3.5 w-3.5" />
                 Serie
               </Button>
               <Button
                 size="sm"
                 onClick={() => setDialog({ keyItem: null })}
-                className="h-8 bg-primary hover:bg-primary/90"
+                className="max-sm:h-11"
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Schlüssel
@@ -78,20 +85,21 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
 
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
-          <div className="relative min-w-48 flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
-            <input
+          <div className="relative min-w-48 flex-1 max-sm:basis-full">
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Nummer, Bezeichnung oder Schloss suchen…"
-              className="h-9 w-full rounded-md border border-border bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-card"
+              className="pl-8 max-sm:h-11"
             />
           </div>
           <select
+            aria-label="Schlüsselart"
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value)}
-            className="h-9 rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+            className={cn(selectFieldClass, "max-sm:h-11 max-sm:flex-1")}
           >
             <option value="">Alle Arten</option>
             {Object.entries(KEY_LEVEL_LABELS).map(([value, text]) => (
@@ -101,9 +109,10 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
             ))}
           </select>
           <select
+            aria-label="Status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-9 rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+            className={cn(selectFieldClass, "max-sm:h-11 max-sm:flex-1")}
           >
             <option value="">Alle Status</option>
             {Object.entries(KEY_STATUS_LABELS).map(([value, text]) => (
@@ -115,21 +124,22 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
         </div>
 
         {filtered.length === 0 ? (
-          <EmptyHint>
+          <EmptyHint icon={KeyRound}>
             {keys.length === 0
               ? "Noch keine Schlüssel angelegt."
               : "Keine Schlüssel passen zu den Filtern."}
           </EmptyHint>
         ) : (
-          <div className="overflow-x-auto">
+          // Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein.
+          <div className="-mx-4 sm:-mx-[18px]">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-32">Nummer</TableHead>
+                  <TableHead className="w-32 pl-4 sm:pl-[18px]">Nummer</TableHead>
                   <TableHead>Bezeichnung</TableHead>
                   <TableHead className="w-36">Art</TableHead>
                   <TableHead className="w-28">Status</TableHead>
-                  <TableHead>Schließt</TableHead>
+                  <TableHead className="pr-4 sm:pr-[18px]">Schließt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -137,12 +147,12 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                   <TableRow
                     key={k.id}
                     onClick={() => !readonly && setDialog({ keyItem: k })}
-                    className={readonly ? undefined : "cursor-pointer"}
+                    className={cn("max-sm:h-11", !readonly && "cursor-pointer")}
                   >
-                    <TableCell className="font-mono text-xs font-medium">
+                    <TableCell className="pl-4 font-mono text-xs font-medium sm:pl-[18px]">
                       <span className="inline-flex items-center gap-1.5">
                         {k.level === "GRAND" ? (
-                          <Crown className="h-3.5 w-3.5 text-warning" />
+                          <Crown className="h-3.5 w-3.5 text-muted-foreground" />
                         ) : (
                           <KeyRound className="h-3.5 w-3.5 text-muted-foreground/70" />
                         )}
@@ -150,9 +160,9 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                       </span>
                     </TableCell>
                     <TableCell className="text-xs">
-                      {k.label || <span className="text-muted-foreground/70">—</span>}
+                      {k.label || <span className="text-muted-foreground">—</span>}
                       {k.notes && (
-                        <span className="ml-1 text-[10px] text-muted-foreground/70">· {k.notes}</span>
+                        <span className="ml-1 text-[11px] text-muted-foreground">· {k.notes}</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -161,9 +171,9 @@ export function KeysTab({ keys, lockOptions, readonly }: Props) {
                     <TableCell>
                       <KeyStatusBadge status={k.status} />
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
+                    <TableCell className="pr-4 text-xs text-muted-foreground sm:pr-[18px]">
                       {k.lockLabels.length === 0 ? (
-                        <span className="text-muted-foreground/70">kein Schloss</span>
+                        <span className="text-muted-foreground">kein Schloss</span>
                       ) : k.lockLabels.length <= 2 ? (
                         k.lockLabels.join(" · ")
                       ) : (

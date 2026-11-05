@@ -2,14 +2,23 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, History, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, History, Pencil, Plus, ScrollText, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PolicyDialog } from "@/components/schliessanlage/policy-dialog";
 import { EmptyHint, ErrorLine, apiRequest, fmtDate } from "@/components/schliessanlage/shared";
 import type { PolicyRow } from "@/components/schliessanlage/types";
-import { cn } from "@/lib/utils";
 
 interface Props {
   policies: PolicyRow[];
@@ -21,6 +30,9 @@ export function PoliciesTab({ policies, readonly }: Props) {
   const [dialog, setDialog] = useState<{ policy: PolicyRow | null } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // Rückfrage vor dem Löschen (docs/design-regeln.md, Abschnitt 18); die Version bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<PolicyRow | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Gleicher Name = eine Vorlage mit Versionshistorie.
   const groups = useMemo(() => {
@@ -45,14 +57,12 @@ export function PoliciesTab({ policies, readonly }: Props) {
     else router.refresh();
   }
 
+  function askRemove(policy: PolicyRow) {
+    setToDelete(policy);
+    setConfirmOpen(true);
+  }
+
   async function remove(policy: PolicyRow) {
-    if (
-      !confirm(
-        `Version ${policy.version} von "${policy.name}" löschen? Bereits verwendete Versionen werden nur deaktiviert.`,
-      )
-    ) {
-      return;
-    }
     setError("");
     const res = await apiRequest(`/api/schliessanlage/policies/${policy.id}`, "DELETE");
     if (!res.ok) setError(res.message);
@@ -61,10 +71,10 @@ export function PoliciesTab({ policies, readonly }: Props) {
 
   return (
     <Card>
-      <CardHeader className="pb-4">
+      <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-base sm:text-xl">
+            <CardTitle className="tabular-nums">
               {groups.length} {groups.length === 1 ? "Vorlage" : "Vorlagen"}
             </CardTitle>
             <CardDescription>
@@ -76,7 +86,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
             <Button
               size="sm"
               onClick={() => setDialog({ policy: null })}
-              className="h-8 bg-primary hover:bg-primary/90"
+              className="max-sm:h-11"
             >
               <Plus className="mr-1 h-3.5 w-3.5" />
               Vorlage
@@ -89,7 +99,7 @@ export function PoliciesTab({ policies, readonly }: Props) {
         <ErrorLine message={error} />
 
         {groups.length === 0 && (
-          <EmptyHint>
+          <EmptyHint icon={ScrollText}>
             Noch keine Vorlage. Ohne aktive Belehrung lässt sich kein Signatur-Link erzeugen.
           </EmptyHint>
         )}
@@ -100,22 +110,12 @@ export function PoliciesTab({ policies, readonly }: Props) {
           const isOpen = expanded === group.name;
 
           return (
-            <div
-              key={group.name}
-              className="rounded-md border border-border p-3 dark:border-border"
-            >
+            <div key={group.name} className="glass-tile p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground/90">
+                <div className="min-w-0 flex-1 basis-56">
+                  <p className="inline-flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
                     {group.name}
-                    <Badge
-                      className={cn(
-                        "py-0 text-[10px]",
-                        current.isActive
-                          ? "bg-success/12 text-success"
-                          : "bg-muted text-muted-foreground dark:bg-muted",
-                      )}
-                    >
+                    <Badge variant={current.isActive ? "success" : "neutral"} className="tabular-nums">
                       {current.isActive ? `aktiv · v${current.version}` : `inaktiv · v${current.version}`}
                     </Badge>
                   </p>
@@ -123,71 +123,89 @@ export function PoliciesTab({ policies, readonly }: Props) {
                     {current.bodyText}
                   </p>
                   {current.liabilityText && (
-                    <p className="mt-1 text-[10px] text-muted-foreground/70">Mit Haftungserklärung</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">Mit Haftungserklärung</p>
                   )}
                 </div>
                 {!readonly && (
-                  <div className="flex shrink-0 items-center gap-0.5">
+                  // Rechtsbündig, auch wenn die Handlungen auf dem Handy in eine zweite Zeile rutschen (wie bei Räumen).
+                  <div className="ml-auto flex shrink-0 items-center gap-0.5">
                     {!current.isActive && (
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={() => activate(current)}
-                        className="p-1 text-muted-foreground/70 hover:text-success"
+                        className="text-muted-foreground hover:text-success max-sm:size-11"
                         title="Diese Version aktivieren"
+                        aria-label="Diese Version aktivieren"
                       >
                         <Check className="h-3.5 w-3.5" />
-                      </button>
+                      </Button>
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => setDialog({ policy: current })}
-                      className="p-1 text-muted-foreground/70 hover:text-primary"
+                      className="text-muted-foreground hover:text-primary max-sm:size-11"
                       title="Neue Version erstellen"
+                      aria-label="Neue Version erstellen"
                     >
                       <Pencil className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                     {older.length > 0 && (
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setExpanded(isOpen ? null : group.name)}
-                        className="inline-flex items-center gap-0.5 p-1 text-[11px] text-muted-foreground/70 hover:text-foreground"
+                        aria-expanded={isOpen}
+                        className="gap-1 text-[11px] text-muted-foreground tabular-nums hover:text-foreground max-sm:h-11"
                         title="Ältere Versionen"
+                        aria-label={`Ältere Versionen (${older.length})`}
                       >
                         <History className="h-3.5 w-3.5" />
                         {older.length}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )}
               </div>
 
               {isOpen && (
-                <div className="mt-2 space-y-1 border-t border-border/60 pt-2 dark:border-border">
+                // Ältere Versionen als Zeilen mit Haarlinie, keine eigene Fläche in der Kachel.
+                <div className="mt-2 divide-y divide-border border-t border-border">
                   {older.map((v) => (
                     <div
                       key={v.id}
-                      className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1 dark:bg-muted/50"
+                      className="flex items-center gap-2 py-1"
                     >
                       <span className="font-mono text-[11px] text-muted-foreground">v{v.version}</span>
-                      <span className="text-[11px] text-muted-foreground/70">{fmtDate(v.createdAt)}</span>
+                      <span className="text-[11px] text-muted-foreground tabular-nums">{fmtDate(v.createdAt)}</span>
                       {!readonly && (
                         <div className="ml-auto flex items-center gap-0.5">
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon-xs"
                             onClick={() => activate(v)}
-                            className="p-0.5 text-muted-foreground/70 hover:text-success"
+                            className="text-muted-foreground hover:text-success max-sm:size-11"
                             title="Diese Version wieder aktivieren"
+                            aria-label="Diese Version wieder aktivieren"
                           >
                             <Check className="h-3 w-3" />
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
-                            onClick={() => remove(v)}
-                            className="p-0.5 text-muted-foreground/70 hover:text-destructive"
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => askRemove(v)}
+                            className="text-muted-foreground hover:text-destructive max-sm:size-11"
                             title="Version löschen"
+                            aria-label="Version löschen"
                           >
                             <Trash2 className="h-3 w-3" />
-                          </button>
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -202,6 +220,28 @@ export function PoliciesTab({ policies, readonly }: Props) {
       {dialog && (
         <PolicyDialog policy={dialog.policy} open onClose={() => setDialog(null)} />
       )}
+
+      {/* Löschen immer mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18). */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Version ${toDelete?.version} von "${toDelete?.name}" löschen?`}</AlertDialogTitle>
+            <AlertDialogDescription>Bereits verwendete Versionen werden nur deaktiviert.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="max-sm:h-11">Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              className="max-sm:h-11"
+              onClick={() => {
+                if (toDelete) void remove(toDelete);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

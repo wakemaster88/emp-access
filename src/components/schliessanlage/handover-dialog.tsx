@@ -2,13 +2,27 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Save, Search, UserPlus, Users } from "lucide-react";
+import { KeyRound, Loader2, Save, Search, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Segmented } from "@/components/ui/segmented";
 import { Separator } from "@/components/ui/separator";
-import { ErrorLine, LevelBadge, apiRequest } from "@/components/schliessanlage/shared";
+import {
+  ErrorLine,
+  LevelBadge,
+  apiRequest,
+  selectFieldClass,
+} from "@/components/schliessanlage/shared";
 import type {
   EmployeeOption,
   HolderRow,
@@ -107,46 +121,44 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-base">Schlüssel ausgeben</DialogTitle>
+          <DialogTitle>Schlüssel ausgeben</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">
+            <Label>
               Empfänger <span className="text-destructive">*</span>
             </Label>
-            <div className="inline-flex gap-0.5 rounded-md border border-border bg-muted/50 p-0.5 dark:border-border dark:bg-card/40">
-              {(
+            {/* Art des Empfängers als Segmentwahl (Glas-Kapsel mit heller Pille). */}
+            <Segmented<HolderMode>
+              aria-label="Empfänger"
+              value={mode}
+              onValueChange={setMode}
+              stretch
+              options={(
                 [
                   ["existing", "Bekannt", Users],
                   ["employee", "Mitarbeiter", Users],
                   ["free", "Extern", UserPlus],
                 ] as const
-              ).map(([value, text, Icon]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setMode(value)}
-                  className={cn(
-                    "inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
-                    mode === value
-                      ? "bg-white text-primary shadow-sm dark:bg-muted "
-                      : "text-muted-foreground hover:text-foreground dark:text-muted-foreground",
-                  )}
-                >
-                  <Icon className="h-3 w-3" />
-                  {text}
-                </button>
-              ))}
-            </div>
+              ).map(([value, text, Icon]) => ({
+                value,
+                label: (
+                  <>
+                    <Icon className="h-3.5 w-3.5 max-sm:hidden" />
+                    {text}
+                  </>
+                ),
+              }))}
+            />
 
             {mode === "existing" && (
               <select
                 value={holderId ?? ""}
                 onChange={(e) => setHolderId(e.target.value ? Number(e.target.value) : null)}
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+                className={cn(selectFieldClass, "w-full max-sm:h-11")}
               >
                 <option value="">— Empfänger wählen —</option>
                 {holders.map((h) => (
@@ -161,7 +173,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               <select
                 value={ticketId ?? ""}
                 onChange={(e) => setTicketId(e.target.value ? Number(e.target.value) : null)}
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+                className={cn(selectFieldClass, "w-full max-sm:h-11")}
               >
                 <option value="">— Mitarbeiter wählen —</option>
                 {employees.map((e) => (
@@ -180,20 +192,20 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
                     placeholder="Vorname"
-                    className="h-9"
+                    className="max-sm:h-11"
                   />
                   <Input
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
                     placeholder="Nachname"
-                    className="h-9"
+                    className="max-sm:h-11"
                   />
                 </div>
                 <Input
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   placeholder="Firma (z. B. Elektro Meier)"
-                  className="h-9"
+                  className="max-sm:h-11"
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <Input
@@ -201,87 +213,81 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="E-Mail"
                     type="email"
-                    className="h-9"
+                    className="max-sm:h-11"
                   />
                   <Input
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="Telefon"
-                    className="h-9"
+                    className="max-sm:h-11"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          <Separator className="dark:bg-muted" />
+          <Separator />
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">
+              <Label>
                 Schlüssel <span className="text-destructive">*</span>
               </Label>
-              <span className="text-[11px] text-muted-foreground/70">{keyIds.length} gewählt</span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">{keyIds.length} gewählt</span>
             </div>
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
-              <input
+              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
                 type="text"
                 value={keyQuery}
                 onChange={(e) => setKeyQuery(e.target.value)}
                 placeholder="Verfügbare Schlüssel suchen…"
-                className="h-8 w-full rounded border border-border bg-white pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-muted"
+                className="pl-8 max-sm:h-11"
               />
             </div>
-            <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-md border border-border p-1 dark:border-border">
+            {/* Auswahlliste als Glas-Kachel (in Ebenen automatisch getönt). */}
+            <div className="glass-tile scrollbar-thin max-h-52 space-y-0.5 overflow-y-auto p-1">
               {availableKeys.length === 0 ? (
-                <p className="py-4 text-center text-[11px] text-muted-foreground/70">
-                  Keine verfügbaren Schlüssel.
-                </p>
+                <EmptyState compact icon={KeyRound} title="Keine verfügbaren Schlüssel." />
               ) : (
                 availableKeys.map((k) => {
                   const selected = keyIds.includes(k.id);
                   return (
-                    <button
+                    // Ganze Zeile ist Beschriftung des Kästchens und damit die Tippfläche; das Kästchen
+                    // selbst nimmt keine Zeiger an (kein doppeltes Umschalten).
+                    <label
                       key={k.id}
-                      type="button"
-                      onClick={() => toggleKey(k.id)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
+                        "flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
                         selected
-                          ? "bg-primary/8"
-                          : "hover:bg-muted/50",
+                          ? "bg-primary/10"
+                          : "hover:bg-glass-tile",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                          selected
-                            ? "border-primary bg-primary"
-                            : "border-input",
-                        )}
-                      >
-                        {selected && <Check className="h-2.5 w-2.5 text-white" />}
-                      </span>
-                      <span className="shrink-0 font-mono text-xs text-foreground/80">
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={() => toggleKey(k.id)}
+                        className="pointer-events-none"
+                      />
+                      <span className="shrink-0 font-mono text-xs text-foreground">
                         {k.keyNumber}
                       </span>
                       <LevelBadge level={k.level} />
-                      <span className="truncate text-[11px] text-muted-foreground/70">
+                      <span className="truncate text-[11px] text-muted-foreground">
                         {k.label || k.lockLabels[0] || ""}
                       </span>
-                    </button>
+                    </label>
                   );
                 })
               )}
             </div>
           </div>
 
-          <Separator className="dark:bg-muted" />
+          <Separator />
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="h-due" className="text-xs">
+              <Label htmlFor="h-due">
                 Rückgabe bis
               </Label>
               <Input
@@ -289,11 +295,11 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                 type="date"
                 value={dueAt}
                 onChange={(e) => setDueAt(e.target.value)}
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="h-deposit" className="text-xs">
+              <Label htmlFor="h-deposit">
                 Pfand (EUR)
               </Label>
               <Input
@@ -302,20 +308,20 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
                 onChange={(e) => setDeposit(e.target.value)}
                 placeholder="0,00"
                 inputMode="decimal"
-                className="h-9 tabular-nums"
+                className="tabular-nums max-sm:h-11"
               />
             </div>
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="h-policy" className="text-xs">
+            <Label htmlFor="h-policy">
               Belehrungsvorlage
             </Label>
             <select
               id="h-policy"
               value={policyId ?? ""}
               onChange={(e) => setPolicyId(e.target.value ? Number(e.target.value) : null)}
-              className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+              className={cn(selectFieldClass, "w-full max-sm:h-11")}
             >
               <option value="">— aktive Vorlage verwenden —</option>
               {activePolicies.map((p) => (
@@ -325,36 +331,35 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               ))}
             </select>
             {activePolicies.length === 0 && (
-              <p className="text-[10px] text-warning">
+              <p className="text-[11px] text-warning">
                 Noch keine aktive Vorlage – der Signatur-Link lässt sich erst danach erzeugen.
               </p>
             )}
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="h-notes" className="text-xs">
+            <Label htmlFor="h-notes">
               Notiz
             </Label>
             <Input
               id="h-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="h-9"
+              className="max-sm:h-11"
             />
           </div>
 
           <ErrorLine message={error} />
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving} className="h-8">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving} className="max-sm:h-11">
             Abbrechen
           </Button>
           <Button
-            size="sm"
             onClick={save}
             disabled={saving || !holderValid || keyIds.length === 0}
-            className="h-8 min-w-28"
+            className="min-w-28 max-sm:h-11"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -365,7 +370,7 @@ export function HandoverDialog({ keys, holders, employees, policies, open, onClo
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

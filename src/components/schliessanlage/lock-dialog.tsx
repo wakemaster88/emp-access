@@ -4,7 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,9 +19,11 @@ import {
   canOpenLock,
   deviceMetaLabel,
   isoToDateInput,
+  selectFieldClass,
 } from "@/components/schliessanlage/shared";
 import type { DeviceOption, LockRow } from "@/components/schliessanlage/types";
 import { LOCK_TYPE_LABELS } from "@/lib/keying";
+import { cn } from "@/lib/utils";
 
 interface Props {
   lock: LockRow | null;
@@ -77,15 +85,16 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-base">
+          <DialogTitle>
             {isNew ? "Schloss hinzufügen" : "Schloss bearbeiten"}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
+          {/* Handy eine Spalte, sonst schneidet das Bauart-Auswahlfeld lange Werte ab. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
             <div className="space-y-1">
-              <Label htmlFor="k-number" className="text-xs">
+              <Label htmlFor="k-number">
                 Schließungsnummer
               </Label>
               <Input
@@ -94,18 +103,18 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
                 onChange={(e) => setLockNumber(e.target.value)}
                 placeholder="z. B. 41.03"
                 autoFocus
-                className="h-9 font-mono"
+                className="font-mono max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="k-type" className="text-xs">
+              <Label htmlFor="k-type">
                 Bauart
               </Label>
               <select
                 id="k-type"
                 value={lockType}
                 onChange={(e) => setLockType(e.target.value)}
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+                className={cn(selectFieldClass, "w-full max-sm:h-11")}
               >
                 {Object.entries(LOCK_TYPE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
@@ -117,7 +126,7 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="k-system" className="text-xs">
+              <Label htmlFor="k-system">
                 Schließsystem
               </Label>
               <Input
@@ -125,24 +134,24 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
                 value={system}
                 onChange={(e) => setSystem(e.target.value)}
                 placeholder="Hauptanlage 2024"
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="k-manufacturer" className="text-xs">
+              <Label htmlFor="k-manufacturer">
                 Hersteller
               </Label>
               <Input
                 id="k-manufacturer"
                 value={manufacturer}
                 onChange={(e) => setManufacturer(e.target.value)}
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="k-installed" className="text-xs">
+              <Label htmlFor="k-installed">
                 Eingebaut am
               </Label>
               <Input
@@ -150,30 +159,30 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
                 type="date"
                 value={installedAt}
                 onChange={(e) => setInstalledAt(e.target.value)}
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="k-notes" className="text-xs">
+              <Label htmlFor="k-notes">
                 Notiz
               </Label>
               <Input
                 id="k-notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="k-device" className="text-xs">
+            <Label htmlFor="k-device">
               Elektronisches Gerät
             </Label>
             <select
               id="k-device"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
-              className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+              className={cn(selectFieldClass, "w-full max-sm:h-11")}
             >
               <option value="">Rein mechanisch</option>
               {preferred.length > 0 && (
@@ -195,22 +204,21 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
                 </optgroup>
               )}
             </select>
-            <p className="text-[10px] text-muted-foreground/70">
+            <p className="text-[11px] text-muted-foreground">
               Nuki, LOQED oder ein Shelly am Türöffner, der diesen Schließpunkt öffnet.
             </p>
           </div>
           <ErrorLine message={error} />
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving} className="h-8">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving} className="max-sm:h-11">
             Abbrechen
           </Button>
           <Button
-            size="sm"
             onClick={save}
             disabled={saving}
-            className="h-8 min-w-24"
+            className="min-w-24 max-sm:h-11"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -221,7 +229,7 @@ export function LockDialog({ lock, doorId, devices, open, onClose }: Props) {
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
