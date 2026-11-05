@@ -48,6 +48,11 @@ function barTone(pct: number): StatTone {
   return "primary";
 }
 
+/** Messwerte mit höchstens einer Nachkommastelle und deutschem Komma („51,9“). */
+function fmtNum(n: number): string {
+  return n.toLocaleString("de-DE", { maximumFractionDigits: 1 });
+}
+
 export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: SystemInfoCardProps) {
   const info = systemInfo;
 
@@ -132,7 +137,7 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
               variant="tile"
               icon={Thermometer}
               label="CPU Temp"
-              value={`${cpuTemp}°`}
+              value={`${fmtNum(cpuTemp)}°`}
               tone={tempTone(cpuTemp)}
               accentValue={tempTone(cpuTemp) !== "neutral"}
             />
@@ -142,13 +147,13 @@ export function SystemInfoCard({ systemInfo, lastUpdate, latestVersion }: System
               variant="tile"
               icon={Thermometer}
               label="GPU Temp"
-              value={`${gpuTemp}°`}
+              value={`${fmtNum(gpuTemp)}°`}
               tone={tempTone(gpuTemp)}
               accentValue={tempTone(gpuTemp) !== "neutral"}
             />
           )}
           {cpuUsage !== undefined && (
-            <StatCard variant="tile" icon={Cpu} label="CPU Last" value={`${cpuUsage}%`} tone="neutral" />
+            <StatCard variant="tile" icon={Cpu} label="CPU Last" value={`${fmtNum(cpuUsage)}%`} tone="neutral" />
           )}
           {cpuFreq !== undefined && (
             <StatCard variant="tile" icon={Zap} label="MHz" value={cpuFreq} tone="neutral" />

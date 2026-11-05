@@ -320,14 +320,14 @@ export function NetworkDevicesTab({ devices }: { devices: NetworkDeviceRow[] }) 
                             ? <Loader2 className="h-4 w-4 animate-spin" />
                             : <Trash2 className="h-4 w-4" />}
                         </Button>
-                        {/* Pfeil erst ab sm: auf dem Handy führt der Name zur Detailseite. */}
-                        <Link
-                          href={`/network/${d.id}`}
-                          aria-label={d.name}
-                          className="inline-flex size-8 items-center justify-center rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 max-sm:hidden"
-                        >
-                          <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary" />
-                        </Link>
+                        {/* Pfeil erst ab sm: auf dem Handy führt der Name zur Detailseite.
+                            Als Taste bekommt er bei Touch eine eigene Tippfläche, und „Löschen“
+                            davor reicht nicht mehr in ihn hinein. */}
+                        <Button asChild variant="ghost" size="icon-sm" className="max-sm:hidden">
+                          <Link href={`/network/${d.id}`} aria-label={d.name}>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-primary" />
+                          </Link>
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>

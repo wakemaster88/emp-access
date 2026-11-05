@@ -428,6 +428,18 @@ const PTZ_PAD: Array<{ op: PtzOp | null; icon: React.ElementType | null }> = [
   { op: "RightDown", icon: ArrowDownRight },
 ];
 
+/** Namen der Richtungstasten (Tooltip und Screenreader) statt der englischen Befehle. */
+const PTZ_LABEL: Partial<Record<PtzOp, string>> = {
+  LeftUp: "Nach links oben",
+  Up: "Nach oben",
+  RightUp: "Nach rechts oben",
+  Left: "Nach links",
+  Right: "Nach rechts",
+  LeftDown: "Nach links unten",
+  Down: "Nach unten",
+  RightDown: "Nach rechts unten",
+};
+
 function CameraPanel({
   cam,
   hubOnline,
@@ -710,7 +722,8 @@ function CameraPanel({
                   variant="outline"
                   size="icon"
                   className="size-11 sm:size-9"
-                  title={cell.op}
+                  title={PTZ_LABEL[cell.op] ?? cell.op}
+                  aria-label={PTZ_LABEL[cell.op] ?? cell.op}
                   disabled={disabled}
                   onClick={() => run(`ptz-${cell.op}`, "ptz", { op: cell.op, speed })}
                 >
