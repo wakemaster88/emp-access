@@ -317,23 +317,42 @@ function renderAi() {
   const sig = `${ai.filter}|${list.length}|${list.length ? list[list.length - 1].id : 0}|${list.length ? list[0].id : 0}`;
   if (sig !== ai.sig) {
     const nearBottom = ai.stick || !ai.sig;
-    let html = "";
-    let day = "";
-    for (const e of list) {
-      const d = aiDay(e.at);
-      if (d !== day) {
-        day = d;
-        html += `<div class="ai-day"><span>${esc(d === aiDay(new Date().toISOString()) ? "Heute" : d)}</span></div>`;
-      }
-      html += aiEntryHtml(e);
-    }
-    const prevFilter = ai.sig.split("|")[0];
+    const [prevFilter, , prevLast, prevFirst] = ai.sig.split("|");
+    const today = aiDay(new Date().toISOString());
+    const dayHtml = (d) => `<div class="ai-day"><span>${esc(d === today ? "Heute" : d)}</span></div>`;
+    // Nur neue Eintraege dazu: anhaengen statt alles neu zeichnen (Bilder flackern sonst).
+    const appendFrom =
+      prevFilter === ai.filter && list.length && String(list[0].id) === prevFirst ? list.findIndex((e) => String(e.id) === prevLast) : -1;
     ai.sig = sig;
-    box.innerHTML =
-      html ||
-      `<div class="ai-empty">${icon("sparkle")}<p>${
-        ai.error ? "Der Hub antwortet nicht." : ai.entries.length ? "Nur Routine – „Alles“ zeigt sie." : "Noch nichts passiert. Hier erscheint, was die KI prüft, erkennt, meldet und schaltet."
-      }</p></div>`;
+    if (appendFrom >= 0 && box.querySelector(".ai-row")) {
+      let day = aiDay(list[appendFrom].at);
+      let html = "";
+      for (const e of list.slice(appendFrom + 1)) {
+        const d = aiDay(e.at);
+        if (d !== day) {
+          day = d;
+          html += dayHtml(d);
+        }
+        html += aiEntryHtml(e);
+      }
+      box.insertAdjacentHTML("beforeend", html);
+    } else {
+      let html = "";
+      let day = "";
+      for (const e of list) {
+        const d = aiDay(e.at);
+        if (d !== day) {
+          day = d;
+          html += dayHtml(d);
+        }
+        html += aiEntryHtml(e);
+      }
+      box.innerHTML =
+        html ||
+        `<div class="ai-empty">${icon("sparkle")}<p>${
+          ai.error ? "Der Hub antwortet nicht." : ai.entries.length ? "Nur Routine – „Alles“ zeigt sie." : "Noch nichts passiert. Hier erscheint, was die KI prüft, erkennt, meldet und schaltet."
+        }</p></div>`;
+    }
     if (nearBottom || prevFilter !== ai.filter) {
       box.scrollTop = box.scrollHeight;
       $("aiJump").hidden = true;
