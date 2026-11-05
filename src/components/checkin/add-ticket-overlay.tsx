@@ -7,7 +7,11 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { Clock, ScanLine, Loader2, X, CalendarDays, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
 import type { ServiceData } from "./checkin-types";
+import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 import { annyReasonLabel } from "./checkin-utils";
 
 export const ADD_EMPTY = {
@@ -641,46 +645,51 @@ export function AddTicketOverlay({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)} onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)] monitor-scrollbar"
+        className={cn(overlaySheetClass, "w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)] monitor-scrollbar")}
       >
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <Plus className="h-5 w-5 text-emerald-400" />
+        <OverlayGrip />
+        <div className="p-5 border-b border-border flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <Plus className="h-5 w-5 text-primary" />
             {voucher ? "Gutschein einlösen" : "Ticket erstellen"}
           </h2>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
-            <X className="h-5 w-5" />
-          </button>
+          <Button
+            variant="secondary"
+            size="icon-lg"
+            onClick={onClose}
+            className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
+            aria-label="Schließen"
+          >
+            <X className="size-5" />
+          </Button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {voucher && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-amber-100 text-xs space-y-1">
-              <p className="font-semibold flex items-center gap-1.5">
-                <ScanLine className="h-3.5 w-3.5" />
-                Gutschein {voucher.code}
-              </p>
-              <p className="text-amber-200/90">
+            <Notice tone="info" icon={ScanLine} compact title={<>Gutschein {voucher.code}</>}>
+              <p className="text-foreground">
                 {voucher.ticketTypeName ?? voucher.serviceName ?? "Gutschein-Ticket"}
                 {voucher.accessAreaName ? ` · ${voucher.accessAreaName}` : ""}
               </p>
-              <p className="text-amber-300/70">
+              <p className="mt-1">
                 Wird beim Erstellen automatisch eingelöst und mit dem neuen Ticket verknüpft.
               </p>
-            </div>
+            </Notice>
           )}
           {/* Ticket-Typ steht ganz oben, ueber volle Breite und groesser
               gerendert: die Auswahl bestimmt, welche Datums-/Slot-Eingabe
               darunter erscheint und ist der haeufigste Klick im Workflow. */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+            {/* Feldbeschriftung wie die übrigen Felder (13 px, Abschnitt 16), ans Feld gebunden. */}
+            <label htmlFor="add-service" className="text-[13px] font-medium text-muted-foreground">
               Ticket-Typ
             </label>
             {services.length > 0 ? (
               <select
+                id="add-service"
                 value={serviceId}
                 onChange={(e) => {
                   const newId = e.target.value;
@@ -732,7 +741,7 @@ export function AddTicketOverlay({
                     if (svc.defaultEndDate) setEndDate(toDateInput(svc.defaultEndDate));
                   }
                 }}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-2xl px-4 py-4 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50"
+                className="glass-field w-full h-14 px-4 text-base font-semibold text-foreground outline-none transition-[color,box-shadow,border-color,background-color] hover:border-foreground/20 focus-visible:border-ring focus-visible:bg-glass-strong focus-visible:ring-[3px] focus-visible:ring-ring/30"
               >
                 <option value="none">Kein Service</option>
                 {services.map((s) => (
@@ -740,10 +749,11 @@ export function AddTicketOverlay({
                 ))}
               </select>
             ) : (
-              <input
+              <Input
+                id="add-service"
                 type="text"
                 placeholder="z.B. Tageskarte"
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-2xl px-4 py-4 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                className="h-14 px-4 text-base md:text-base font-semibold"
               />
             )}
           </div>
@@ -754,11 +764,11 @@ export function AddTicketOverlay({
           {dateMode === "datetime" ? (
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <label className="text-[13px] font-medium text-muted-foreground flex items-center gap-1.5">
                   <CalendarDays className="h-3.5 w-3.5" />
                   Datum
                 </label>
-                <input
+                <Input
                   type="date"
                   value={slotDate}
                   onChange={(e) => {
@@ -769,7 +779,7 @@ export function AddTicketOverlay({
                     setStartDate("");
                     setEndDate("");
                   }}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                  className="h-11"
                 />
               </div>
 
@@ -778,13 +788,13 @@ export function AddTicketOverlay({
                   - ANNY hat Slots: Button-Grid (Klick setzt startDate/endDate)
                   - kein ANNY-Link / keine Slots: datetime-local-Fallback */}
               {slotsLoading ? (
-                <div className="flex items-center gap-2 text-xs text-slate-400 py-3">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground py-3">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Slots werden geladen…
                 </div>
               ) : hasAnnyLink && slots.length > 0 ? (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                  <label className="text-[13px] font-medium text-muted-foreground flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5" />
                     Slot wählen
                   </label>
@@ -833,12 +843,13 @@ export function AddTicketOverlay({
                           : capacity != null && capacity > 0 && remaining != null
                             ? Math.max(0, Math.min(100, ((capacity - remaining) / capacity) * 100))
                             : null;
+                      // Auslastung in Zustandsfarben: voll rot, fast voll Hinweis, sonst grün.
                       const fillColor =
                         isDisabled
-                          ? "bg-rose-500/70"
+                          ? "bg-destructive/70"
                           : fillPct != null && fillPct >= 80
-                            ? "bg-amber-500/80"
-                            : "bg-emerald-500/70";
+                            ? "bg-warning/80"
+                            : "bg-success/70";
                       return (
                         <button
                           key={`${s.startTime}-${s.endTime}`}
@@ -855,12 +866,12 @@ export function AddTicketOverlay({
                             setEndDate(`${slotDate}T${s.endTime}`);
                           }}
                           className={cn(
-                            "px-3 py-2 rounded-xl border text-sm font-mono font-semibold tabular-nums transition-colors flex flex-col items-center justify-center gap-1",
+                            "min-h-11 px-3 py-2 rounded-control border text-sm font-mono font-semibold tabular-nums transition-colors flex flex-col items-center justify-center gap-1",
                             isDisabled
-                              ? "bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed"
+                              ? "bg-transparent border-border text-muted-foreground cursor-not-allowed"
                               : isSelected
-                                ? "bg-emerald-600 border-emerald-500 text-white active:scale-95"
-                                : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:border-slate-600 active:scale-95",
+                                ? "bg-primary border-primary text-primary-foreground active:scale-95"
+                                : "bg-glass-tile border-glass-border text-foreground hover:bg-glass-strong hover:border-foreground/20 active:scale-95",
                           )}
                         >
                           <span>{s.startTime}–{s.endTime}</span>
@@ -868,7 +879,7 @@ export function AddTicketOverlay({
                             <span
                               className={cn(
                                 "block w-full h-1 rounded-full overflow-hidden",
-                                isSelected ? "bg-emerald-700/60" : "bg-slate-700/60",
+                                isSelected ? "bg-primary-foreground/25" : "bg-foreground/10",
                               )}
                               aria-hidden
                             >
@@ -881,14 +892,14 @@ export function AddTicketOverlay({
                           {statusLabel && (
                             <span
                               className={cn(
-                                "text-[10px] font-normal leading-tight",
+                                "text-[11px] font-normal leading-tight",
                                 isDisabled
-                                  ? "text-rose-400/80"
+                                  ? "text-destructive"
                                   : isSelected
-                                    ? "text-emerald-50"
+                                    ? "text-primary-foreground/90"
                                     : remaining != null && capacity != null && remaining <= Math.max(1, Math.floor(capacity * 0.2))
-                                      ? "text-amber-400"
-                                      : "text-emerald-400",
+                                      ? "text-warning"
+                                      : "text-success",
                               )}
                             >
                               {statusLabel}
@@ -902,33 +913,33 @@ export function AddTicketOverlay({
               ) : (
                 <>
                   {hasAnnyLink && slotsLoaded && (
-                    <div className="text-xs text-amber-400 px-1">
+                    <div className="text-xs text-warning px-1">
                       {slotsNote || "Keine ANNY-Slots an diesem Tag – manuelle Zeit eintragen."}
                     </div>
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                      <label className="text-[13px] font-medium text-muted-foreground flex items-center gap-1.5">
                         <Clock className="h-3.5 w-3.5" />
-                        Start <span className="text-slate-600 font-normal">(optional)</span>
+                        Start <span className="text-muted-foreground/80 font-normal">(optional)</span>
                       </label>
-                      <input
+                      <Input
                         type="datetime-local"
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                        className="h-11"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                      <label className="text-[13px] font-medium text-muted-foreground flex items-center gap-1.5">
                         <Clock className="h-3.5 w-3.5" />
-                        Ende <span className="text-slate-600 font-normal">(optional)</span>
+                        Ende <span className="text-muted-foreground/80 font-normal">(optional)</span>
                       </label>
-                      <input
+                      <Input
                         type="datetime-local"
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                        className="h-11"
                       />
                     </div>
                   </div>
@@ -937,123 +948,121 @@ export function AddTicketOverlay({
             </div>
           ) : (
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+              <label className="text-[13px] font-medium text-muted-foreground flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
-                Datum <span className="text-slate-600 font-normal">(optional)</span>
+                Datum <span className="text-muted-foreground/80 font-normal">(optional)</span>
               </label>
-              <input
+              <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+                className="h-11"
               />
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">
-                Vorname <span className="text-slate-600 font-normal">(optional)</span>
+              <label className="text-[13px] font-medium text-muted-foreground">
+                Vorname <span className="text-muted-foreground/80 font-normal">(optional)</span>
               </label>
-              <input
+              <Input
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 placeholder="Max"
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
+                className="h-11"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400">
-                Nachname <span className="text-slate-600 font-normal">(optional)</span>
+              <label className="text-[13px] font-medium text-muted-foreground">
+                Nachname <span className="text-muted-foreground/80 font-normal">(optional)</span>
               </label>
-              <input
+              <Input
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 placeholder="Mustermann"
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 placeholder:text-slate-600"
+                className="h-11"
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+            <label className="text-[13px] font-medium text-muted-foreground flex items-center gap-1.5">
               <ScanLine className="h-3.5 w-3.5" />
-              Code <span className="text-slate-600 font-normal">(optional)</span>
+              Code <span className="text-muted-foreground/80 font-normal">(optional)</span>
             </label>
-            <input
+            <Input
               ref={codeInputRef}
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="RFID / Barcode / QR"
               autoComplete="off"
-              className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50 placeholder:text-slate-600"
+              className="h-11 font-mono"
             />
           </div>
 
           {pendingConflict && (
-            <div className="bg-amber-950/80 border border-amber-600/60 rounded-xl p-4 text-sm text-amber-100 space-y-3">
-              <div className="font-semibold text-amber-200">
-                Bändchen bereits vergeben
-              </div>
-              <div className="text-amber-100/90">
+            <Notice tone="warning" title="Bändchen bereits vergeben">
+              <p>
                 Der Code ist aktuell Ticket{" "}
-                <span className="font-semibold">{pendingConflict.label}</span>
+                <span className="font-semibold text-foreground">{pendingConflict.label}</span>
                 {pendingConflict.type ? (
-                  <span className="text-amber-200/80"> ({pendingConflict.type})</span>
+                  <span> ({pendingConflict.type})</span>
                 ) : null}{" "}
                 zugeordnet. Bändchen auf das neue Ticket umhängen? Das alte Ticket
                 verliert dann seinen Code.
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
+              </p>
+              <div className="flex gap-2 mt-3">
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={cancelTransfer}
                   disabled={loading}
-                  className="flex-1 py-2.5 rounded-lg border border-amber-500/50 text-amber-100 text-xs font-semibold hover:bg-amber-900/50 transition-colors disabled:opacity-50"
+                  className="flex-1 h-11 font-semibold sm:h-14"
                 >
                   Abbrechen
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={confirmTransfer}
                   disabled={loading}
-                  className="flex-1 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 h-11 font-semibold sm:h-14"
                 >
                   {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="animate-spin" />
                   ) : (
                     "Bändchen umhängen"
                   )}
-                </button>
+                </Button>
               </div>
-            </div>
+            </Notice>
           )}
 
           {error && (
-            <div className="bg-rose-950 border border-rose-700/50 rounded-xl p-3 text-sm text-rose-200 whitespace-pre-line">
-              {error}
-            </div>
+            <Notice tone="danger" compact title={error} className="whitespace-pre-line" />
           )}
 
-          <div className="flex gap-3 pt-1">
-            <button
+          {/* Primärhandlung rechts, auf dem Handy volle Breite und oben (Abschnitt 16). */}
+          <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:gap-3">
+            <Button
               type="button"
+              variant="outline"
               onClick={onClose}
               disabled={loading}
-              className="flex-1 py-3 rounded-xl border border-slate-700 text-slate-300 font-semibold text-sm hover:bg-slate-800 transition-colors disabled:opacity-50"
+              className="h-12 font-semibold sm:h-14 sm:flex-1"
             >
               Abbrechen
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={loading || pendingConflict !== null}
-              className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
+              className="h-12 font-semibold sm:h-14 sm:flex-1"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}
-            </button>
+              {loading ? <Loader2 className="animate-spin" /> : "Erstellen"}
+            </Button>
           </div>
         </form>
       </div>

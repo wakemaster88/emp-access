@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 
 /**
  * Popup auf dem Kassen-Monitor, wenn am Drehkreuz jemand ohne gueltigen Scan
@@ -86,22 +89,26 @@ export function TailgateAlertPopup({ token }: { token: string }) {
   const bilder = current.images ?? [];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6">
+    // Deckende Ebene mit rotem Rand (Störung = destructive); das Symbol pulsiert
+    // als Alarm, bei reduzierter Bewegung nicht.
+    <div className={cn("fixed inset-0 z-[100] flex items-center justify-center p-6", overlayScrimClass)}>
       <div
-        className={`w-full rounded-2xl border-2 border-red-500/70 bg-slate-900 p-6 shadow-2xl shadow-red-950/50 ${
-          bilder.length > 1 ? "max-w-3xl" : "max-w-lg"
-        }`}
+        className={cn(
+          overlaySheetClass,
+          "rounded-card border-2 border-destructive/70 w-full max-h-[calc(100dvh-3rem)] overflow-y-auto p-6",
+          bilder.length > 1 ? "max-w-3xl" : "max-w-lg",
+        )}
       >
         <div className="flex items-start gap-4">
-          <div className="rounded-xl bg-red-500/15 p-3">
-            <AlertTriangle className="h-8 w-8 animate-pulse text-red-400" />
+          <div className="rounded-tile bg-destructive/15 p-3">
+            <AlertTriangle className="h-8 w-8 animate-pulse motion-reduce:animate-none text-destructive" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-xl font-bold text-red-100">
+            <h2 className="text-xl font-bold text-foreground">
               Durchgang ohne gültigen Scan
             </h2>
-            <p className="mt-2 text-slate-200">{current.message}</p>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-foreground">{current.message}</p>
+            <p className="mt-2 text-sm text-muted-foreground tabular-nums">
               {zeit}
               {current.source ? ` · ${current.source}` : ""}
               {weitere > 0
@@ -119,7 +126,7 @@ export function TailgateAlertPopup({ token }: { token: string }) {
             {bilder.map((bild) => (
               <figure
                 key={bild.position}
-                className="overflow-hidden rounded-xl border border-slate-700 bg-black"
+                className="overflow-hidden rounded-tile border border-border bg-black"
               >
                 {/* object-contain statt cover: lieber Rand als ein
                     abgeschnittener Kopf — genau darauf schaut man hier. */}
@@ -129,7 +136,7 @@ export function TailgateAlertPopup({ token }: { token: string }) {
                   className="max-h-64 w-full object-contain"
                 />
                 {bild.label && (
-                  <figcaption className="border-t border-slate-800 px-3 py-1.5 text-xs text-slate-400">
+                  <figcaption className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
                     {bild.label}
                   </figcaption>
                 )}
@@ -137,15 +144,16 @@ export function TailgateAlertPopup({ token }: { token: string }) {
             ))}
           </div>
         )}
-        <button
+        <Button
           type="button"
+          variant="destructive"
           onClick={() => void acknowledge()}
           disabled={busy}
-          className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 font-semibold text-white transition-colors hover:bg-red-500 active:scale-[0.99] disabled:opacity-50"
+          className="mt-6 h-14 w-full text-base font-semibold"
         >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          {busy && <Loader2 className="animate-spin" />}
           Verstanden
-        </button>
+        </Button>
       </div>
     </div>
   );

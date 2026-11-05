@@ -19,7 +19,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  Check,
   CheckCircle2,
   Download,
   Eraser,
@@ -37,6 +36,12 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 import {
   printTicketsBulk,
   type PrintableTicket,
@@ -330,26 +335,29 @@ export function BulkOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center"
+      className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-2xl max-h-[92dvh] flex flex-col pb-[env(safe-area-inset-bottom)] monitor-scrollbar overflow-hidden"
+        className={cn(overlaySheetClass, "w-full sm:max-w-2xl max-h-[92dvh] flex flex-col pb-[env(safe-area-inset-bottom)] monitor-scrollbar overflow-hidden")}
       >
+        <OverlayGrip />
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
-          <h2 className="text-lg font-bold flex items-center gap-2 truncate text-white">
-            <Layers className="h-5 w-5 text-indigo-400 shrink-0" />
+        <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between gap-3 shrink-0">
+          <h2 className="text-lg font-semibold flex items-center gap-2 truncate text-foreground">
+            <Layers className="h-5 w-5 text-primary shrink-0" />
             Serie erstellen
           </h2>
-          <button
+          <Button
+            variant="secondary"
+            size="icon-lg"
             onClick={onClose}
-            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white active:scale-95"
+            className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
             title="Schließen"
           >
-            <X className="h-5 w-5" />
-          </button>
+            <X className="size-5" />
+          </Button>
         </div>
 
         <div
@@ -394,17 +402,19 @@ export function BulkOverlay({
 
           {mode === "print" ? (
             <div className="space-y-3">
-              <label className="text-sm font-semibold text-slate-300">Anzahl</label>
+              <label className="text-sm font-semibold text-foreground">Anzahl</label>
               <div className="flex items-center gap-3">
-                <button
+                <Button
+                  variant="secondary"
+                  size="icon-lg"
                   onClick={() => setCount((c) => clampCount(c - 1))}
                   disabled={busy || count <= 1}
-                  className="h-14 w-14 shrink-0 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center disabled:opacity-40 active:scale-95"
+                  className="size-14 rounded-tile"
                   aria-label="Anzahl verringern"
                 >
-                  <Minus className="h-6 w-6" />
-                </button>
-                <input
+                  <Minus className="size-6" />
+                </Button>
+                <Input
                   type="number"
                   inputMode="numeric"
                   min={1}
@@ -412,43 +422,45 @@ export function BulkOverlay({
                   value={count}
                   onChange={(e) => setCount(clampCount(Number(e.target.value)))}
                   disabled={busy}
-                  className="flex-1 h-14 rounded-2xl bg-slate-800 border border-slate-700 text-center text-2xl font-bold tabular-nums text-white focus:outline-none focus:border-indigo-500"
+                  className="flex-1 h-14 text-center text-2xl md:text-2xl font-bold tabular-nums"
                 />
-                <button
+                <Button
+                  variant="secondary"
+                  size="icon-lg"
                   onClick={() => setCount((c) => clampCount(c + 1))}
                   disabled={busy || count >= MAX_COUNT}
-                  className="h-14 w-14 shrink-0 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center disabled:opacity-40 active:scale-95"
+                  className="size-14 rounded-tile"
                   aria-label="Anzahl erhöhen"
                 >
-                  <Plus className="h-6 w-6" />
-                </button>
+                  <Plus className="size-6" />
+                </Button>
               </div>
-              <div className="flex flex-wrap gap-2">
+              {/* Schnellwahl als einzelne Tasten (44 px), nicht als Segmentwahl: die
+                  Anzahl ist oft kein Vorgabewert, und jede Taste bleibt per Tab erreichbar. */}
+              <div className="flex flex-wrap items-center gap-2">
                 {QUICK_COUNTS.map((n) => (
-                  <button
+                  <Button
                     key={n}
+                    type="button"
+                    variant={count === n ? "default" : "outline"}
+                    aria-pressed={count === n}
                     onClick={() => setCount(n)}
                     disabled={busy}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-sm font-semibold border transition-colors active:scale-95",
-                      count === n
-                        ? "bg-indigo-600 text-white border-indigo-500"
-                        : "bg-slate-800 text-slate-300 border-slate-700 hover:border-indigo-500",
-                    )}
+                    className="h-11 min-w-14 px-5 font-semibold tabular-nums"
                   >
                     {n}
-                  </button>
+                  </Button>
                 ))}
-                <span className="self-center text-xs text-slate-500">max. {MAX_COUNT}</span>
+                <span className="self-center text-xs text-muted-foreground">max. {MAX_COUNT}</span>
               </div>
             </div>
           ) : (
             <div className="space-y-3">
-              <label htmlFor="bulk-scan" className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                <ScanLine className="h-4 w-4 text-slate-500" />
+              <label htmlFor="bulk-scan" className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <ScanLine className="h-4 w-4 text-muted-foreground" />
                 Bändchen nacheinander scannen
               </label>
-              <input
+              <Input
                 ref={scanInputRef}
                 id="bulk-scan"
                 value={scanInput}
@@ -458,47 +470,47 @@ export function BulkOverlay({
                 autoComplete="off"
                 disabled={busy}
                 className={cn(
-                  "w-full h-14 rounded-2xl bg-slate-800 border px-4 font-mono text-lg text-white placeholder:text-slate-600 focus:outline-none",
-                  duplicateFlash
-                    ? "border-amber-500 focus:border-amber-400"
-                    : "border-slate-700 focus:border-indigo-500",
+                  "h-14 px-4 font-mono text-lg md:text-lg",
+                  duplicateFlash && "border-warning focus-visible:border-warning",
                 )}
               />
               {duplicateFlash ? (
-                <p className="text-xs text-amber-400 flex items-center gap-1.5">
+                <p className="text-xs text-warning flex items-center gap-1.5">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   <span className="font-mono">{duplicateFlash}</span> wurde bereits gescannt.
                 </p>
               ) : (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Der Reader schließt jeden Scan selbst ab. Max. {MAX_COUNT} Bändchen.
                 </p>
               )}
 
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-300">
+                <span className="text-sm font-semibold text-foreground">
                   Gescannt
-                  <span className="ml-2 px-2 py-0.5 rounded-lg bg-indigo-950/60 text-indigo-300 text-xs font-bold tabular-nums">
+                  <Badge variant="secondary" className="ml-2 font-bold tabular-nums">
                     {scannedCodes.length}
-                  </span>
+                  </Badge>
                 </span>
                 {scannedCodes.length > 0 && !busy && (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setScannedCodes([])}
-                    className="text-xs text-slate-400 hover:text-rose-400 inline-flex items-center gap-1"
+                    className="h-10 text-xs text-muted-foreground hover:text-destructive"
                   >
-                    <Eraser className="h-3.5 w-3.5" />
+                    <Eraser className="size-3.5" />
                     Liste leeren
-                  </button>
+                  </Button>
                 )}
               </div>
 
               <div
                 ref={codesListRef}
-                className="rounded-2xl border border-slate-800 bg-slate-950/60 p-2 max-h-52 overflow-y-auto monitor-scrollbar"
+                className="glass-tile p-2 max-h-52 overflow-y-auto monitor-scrollbar"
               >
                 {scannedCodes.length === 0 ? (
-                  <p className="text-sm text-slate-600 italic px-2 py-3">Noch nichts gescannt.</p>
+                  <p className="text-sm text-muted-foreground px-2 py-3">Noch nichts gescannt.</p>
                 ) : (
                   <ul className="space-y-1">
                     {scannedCodes.map((c, i) => {
@@ -507,25 +519,27 @@ export function BulkOverlay({
                         <li
                           key={c}
                           className={cn(
-                            "flex items-center gap-3 px-3 py-2 rounded-xl",
-                            conflict ? "bg-rose-950/50 text-rose-300" : "bg-slate-900 text-slate-200",
+                            "flex items-center gap-3 px-3 py-1 rounded-control",
+                            conflict ? "bg-destructive/15 text-destructive" : "bg-glass-tile text-foreground",
                           )}
                         >
-                          <span className="text-xs tabular-nums text-slate-600 w-6 text-right shrink-0">
+                          <span className="text-xs tabular-nums text-muted-foreground w-6 text-right shrink-0">
                             {i + 1}.
                           </span>
                           <span className="font-mono text-sm flex-1 truncate">{c}</span>
                           {conflict && (
                             <span className="text-[10px] uppercase tracking-wide font-bold">vergeben</span>
                           )}
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => setScannedCodes((cur) => cur.filter((x) => x !== c))}
                             disabled={busy}
-                            className="text-slate-500 hover:text-rose-400 shrink-0 p-1"
+                            className="size-11 text-muted-foreground hover:text-destructive"
                             aria-label={`${c} entfernen`}
                           >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                            <Trash2 />
+                          </Button>
                         </li>
                       );
                     })}
@@ -538,8 +552,8 @@ export function BulkOverlay({
           {/* Ticket-Typ */}
           {options.length > 0 && (
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-300">
-                Ticket-Typ <span className="text-slate-500 font-normal">(optional)</span>
+              <label className="text-sm font-semibold text-foreground">
+                Ticket-Typ <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <div className="flex flex-wrap gap-2">
                 {options.map((opt) => {
@@ -555,10 +569,10 @@ export function BulkOverlay({
                         setAreaId(null);
                       }}
                       className={cn(
-                        "px-4 py-2.5 rounded-xl text-sm font-semibold border transition-colors active:scale-95",
+                        "min-h-11 px-4 py-2.5 rounded-control text-sm font-semibold border transition-colors active:scale-95",
                         active
-                          ? "bg-indigo-600 text-white border-indigo-500"
-                          : "bg-slate-800 text-slate-300 border-slate-700 hover:border-indigo-500",
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-glass-tile text-foreground border-glass-border hover:border-primary/50",
                       )}
                     >
                       {opt.name}
@@ -567,7 +581,7 @@ export function BulkOverlay({
                 })}
               </div>
               {selectedOpt && (
-                <p className="text-xs text-slate-500">Gültigkeits-Vorgaben werden übernommen.</p>
+                <p className="text-xs text-muted-foreground">Gültigkeits-Vorgaben werden übernommen.</p>
               )}
             </div>
           )}
@@ -575,9 +589,9 @@ export function BulkOverlay({
           {/* Bereich / Hauptressource */}
           {visibleAreas.length > 0 && (
             <div className="space-y-2">
-              <label htmlFor="bulk-area" className="text-sm font-semibold text-slate-300">
+              <label htmlFor="bulk-area" className="text-sm font-semibold text-foreground">
                 {isService ? "Hauptressource" : "Bereich"}{" "}
-                <span className="text-slate-500 font-normal">
+                <span className="text-muted-foreground font-normal">
                   {needsExplicitMainArea ? "(bitte wählen)" : "(optional)"}
                 </span>
               </label>
@@ -587,8 +601,8 @@ export function BulkOverlay({
                 onChange={(e) => setAreaId(e.target.value === "none" ? null : Number(e.target.value))}
                 disabled={busy}
                 className={cn(
-                  "w-full h-12 rounded-xl bg-slate-800 border px-3 text-white focus:outline-none",
-                  needsExplicitMainArea ? "border-amber-600" : "border-slate-700 focus:border-indigo-500",
+                  "glass-field w-full h-12 px-3 text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                  needsExplicitMainArea && "border-warning",
                 )}
               >
                 <option value="none">{isService ? "Keine Hauptressource" : "Kein Bereich"}</option>
@@ -599,7 +613,7 @@ export function BulkOverlay({
                 ))}
               </select>
               {needsExplicitMainArea && (
-                <p className="text-xs text-amber-400">
+                <p className="text-xs text-warning">
                   Ohne Auswahl startet die Zeitgültigkeit an jedem Gate.
                 </p>
               )}
@@ -608,19 +622,19 @@ export function BulkOverlay({
 
           {/* Namens-Praefix */}
           <div className="space-y-2">
-            <label htmlFor="bulk-prefix" className="text-sm font-semibold text-slate-300">
+            <label htmlFor="bulk-prefix" className="text-sm font-semibold text-foreground">
               Namens-Präfix
             </label>
-            <input
+            <Input
               id="bulk-prefix"
               value={namePrefix}
               onChange={(e) => setNamePrefix(e.target.value)}
               disabled={busy}
-              className="w-full h-12 rounded-xl bg-slate-800 border border-slate-700 px-3 text-white focus:outline-none focus:border-indigo-500"
+              className="h-12 px-3"
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Ergibt{" "}
-              <span className="font-mono text-slate-400">
+              <span className="font-mono text-foreground">
                 {namePrefix.trim() || "Ticket"}{" "}
                 {mode === "rfid" ? (scannedCodes[0] ?? "RFID-CODE") : "1"}
               </span>
@@ -629,135 +643,146 @@ export function BulkOverlay({
           </div>
 
           {mode === "print" && (
-            <button
-              onClick={() => toggleCut(!cutPerTicket)}
-              disabled={busy}
+            // Ganze Kachel ist die Beschriftung des Kästchens (große Tippfläche).
+            <label
               className={cn(
-                "w-full flex items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
-                cutPerTicket
-                  ? "border-indigo-600 bg-indigo-950/40"
-                  : "border-slate-700 bg-slate-800/60",
+                "glass-tile w-full flex items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer",
+                cutPerTicket ? "border-primary/50 bg-primary/10" : "hover:bg-glass-strong",
               )}
             >
-              <div
-                className={cn(
-                  "mt-0.5 h-6 w-6 rounded-lg flex items-center justify-center shrink-0",
-                  cutPerTicket ? "bg-indigo-600 text-white" : "bg-slate-700 text-transparent",
-                )}
-              >
-                <Check className="h-4 w-4" />
-              </div>
+              <Checkbox
+                checked={cutPerTicket}
+                onCheckedChange={(v) => toggleCut(v === true)}
+                disabled={busy}
+                className="mt-0.5 size-6 rounded-lg [&_svg]:size-4"
+              />
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-white flex items-center gap-1.5">
-                  <Scissors className="h-3.5 w-3.5 text-indigo-400" />
+                <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  <Scissors className="h-3.5 w-3.5 text-muted-foreground" />
                   Nach jedem Bon schneiden
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Jeder Bon geht als eigener Druckjob raus – der Drucker schneidet
                   sicher dazwischen, dafür kann der Druckdialog mehrfach kommen.
                 </p>
               </div>
-            </button>
+            </label>
           )}
 
           {error && (
-            <p className="text-sm text-rose-300 bg-rose-950/50 border border-rose-900 px-4 py-3 rounded-2xl flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              {error}
-            </p>
+            <Notice tone="danger" icon={AlertTriangle} compact title={error} />
           )}
 
           {created && !error && (
             <div className="space-y-2">
-              <p className="text-sm text-emerald-300 bg-emerald-950/50 border border-emerald-900 px-4 py-3 rounded-2xl flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                {created.length} {mode === "rfid" ? "Bändchen-Tickets" : "Tickets"} erstellt
-                {printResult?.ok && printResult.transport === "iframe" ? " · Druck gestartet." : "."}
-              </p>
+              <Notice
+                tone="success"
+                icon={CheckCircle2}
+                compact
+                title={
+                  <>
+                    {created.length} {mode === "rfid" ? "Bändchen-Tickets" : "Tickets"} erstellt
+                    {printResult?.ok && printResult.transport === "iframe" ? " · Druck gestartet." : "."}
+                  </>
+                }
+              />
 
               {printResult?.ok && printResult.transport === "newTab" && (
-                <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900 px-4 py-3 rounded-2xl flex items-start gap-2">
-                  <ExternalLink className="h-4 w-4 shrink-0 mt-0.5" />
-                  Das PDF wurde in einem neuen Tab geöffnet – dort mit Strg/⌘+P drucken.
-                </p>
+                <Notice
+                  tone="warning"
+                  icon={ExternalLink}
+                  compact
+                  title="Das PDF wurde in einem neuen Tab geöffnet – dort mit Strg/⌘+P drucken."
+                />
               )}
 
               {printResult && !printResult.ok && (
-                <div className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900 px-4 py-3 rounded-2xl space-y-2">
-                  <p className="flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                    Druck ließ sich nicht starten
-                    {printResult.error ? `: ${printResult.error}` : ""}. Die Tickets sind
-                    trotzdem angelegt.
-                  </p>
+                <Notice
+                  tone="warning"
+                  icon={AlertTriangle}
+                  compact
+                  title={
+                    <>
+                      Druck ließ sich nicht starten
+                      {printResult.error ? `: ${printResult.error}` : ""}. Die Tickets sind
+                      trotzdem angelegt.
+                    </>
+                  }
+                >
                   {printResult.fallbackUrl && printResult.fallbackFilename && (
                     <a
                       href={printResult.fallbackUrl}
                       download={printResult.fallbackFilename}
-                      className="inline-flex items-center gap-1.5 font-semibold underline underline-offset-2"
+                      className="mt-1 inline-flex items-center gap-1.5 font-semibold text-foreground underline underline-offset-2"
                     >
                       <Download className="h-3.5 w-3.5" />
                       PDF herunterladen
                     </a>
                   )}
-                </div>
+                </Notice>
               )}
 
               {mode === "print" && (
-                <button
+                <Button
+                  variant="secondary"
                   onClick={handleReprint}
                   disabled={busy}
-                  className="w-full h-12 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+                  className="w-full h-12 font-semibold"
                 >
                   {reprinting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="animate-spin" />
                   ) : (
-                    <Printer className="h-4 w-4" />
+                    <Printer />
                   )}
                   Dieselben Bons erneut drucken
-                </button>
+                </Button>
               )}
             </div>
           )}
         </div>
 
         {/* Aktionen */}
-        <div className="p-4 sm:p-5 border-t border-slate-800 shrink-0 flex flex-col sm:flex-row gap-2">
-          <button
+        {/* Auf dem Handy steht die Primärtaste oben (docs/design-regeln.md, Abschnitt 16).
+            `flex-1` erst ab sm: In der Spalte setzte es die Grundhöhe auf 0, und die
+            Primärtaste schrumpfte auf 40 px. */}
+        <div className="p-4 sm:p-5 border-t border-border shrink-0 flex flex-col-reverse sm:flex-row gap-2">
+          <Button
+            variant="outline"
             onClick={onClose}
             disabled={busy}
-            className="sm:w-40 h-14 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold disabled:opacity-50 active:scale-95"
+            className="sm:w-40 h-14 font-semibold"
           >
             Schließen
-          </button>
+          </Button>
           {mode === "print" && (
-            <button
+            <Button
+              variant="secondary"
               onClick={() => handleSubmit(false)}
               disabled={submitDisabled}
-              className="sm:w-44 h-14 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+              className="sm:w-44 h-14 font-semibold"
             >
-              <ListPlus className="h-5 w-5" />
+              <ListPlus className="size-5" />
               Nur erstellen
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             onClick={() => handleSubmit(mode === "print")}
             disabled={submitDisabled}
-            className="flex-1 h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-base flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+            className="h-14 font-bold text-base sm:flex-1"
           >
             {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <Loader2 className="size-5 animate-spin" />
             ) : mode === "print" ? (
-              <Printer className="h-5 w-5" />
+              <Printer className="size-5" />
             ) : (
-              <ListPlus className="h-5 w-5" />
+              <ListPlus className="size-5" />
             )}
             {loading
               ? "Erstelle …"
               : mode === "print"
                 ? `${count} erstellen & drucken`
                 : `${scannedCodes.length} Bändchen erstellen`}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -784,17 +809,18 @@ function ModeButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "rounded-2xl border px-4 py-3 text-left transition-colors disabled:opacity-50 active:scale-95",
+        // Kachel; die gewählte Betriebsart ist in Akzentfarbe getönt (Auswahl).
+        "glass-tile px-4 py-3 text-left text-foreground transition-colors disabled:opacity-50 active:scale-95",
         active
-          ? "bg-indigo-600 border-indigo-500 text-white"
-          : "bg-slate-800 border-slate-700 text-slate-300 hover:border-indigo-500",
+          ? "border-primary/50 bg-primary/15"
+          : "hover:bg-glass-strong",
       )}
     >
       <div className="flex items-center gap-2 font-bold">
         {icon}
         {title}
       </div>
-      <p className={cn("text-xs mt-0.5", active ? "text-indigo-100" : "text-slate-500")}>
+      <p className="text-xs mt-0.5 text-muted-foreground">
         {subtitle}
       </p>
     </button>

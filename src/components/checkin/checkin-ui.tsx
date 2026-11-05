@@ -5,27 +5,50 @@
  * Ausgelagert aus src/app/checkin/[token]/page.tsx.
  */
 import { useEffect, useState, useRef, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Loader2, CalendarDays, Printer, ClipboardList } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, CalendarDays, Printer, ClipboardList, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PackageSearch } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Input } from "@/components/ui/input";
+import { SectionHeading } from "@/components/ui/section-heading";
+import { Segmented } from "@/components/ui/segmented";
 import { exportCourseDayPdf } from "./checkin-print";
 import type { CheckinTicket, GuestInfoSummary } from "./checkin-types";
 import { aggregateRentalAddOns, formatSetup, isRentalAddOn, sortSummaryValues, toDateStr } from "./checkin-utils";
 
-export function Section({ title, icon: Icon, count, color, children }: { title: string; icon: React.ComponentType<{ className?: string }>; count: number; color: string; children: React.ReactNode }) {
-  const colors: Record<string, string> = {
-    emerald: "text-emerald-400",
-    amber: "text-amber-400",
-    violet: "text-violet-400",
-    indigo: "text-indigo-400",
-  };
+/*
+ * Vollbild-Ebenen des Kiosks (Ticket, Scan, Serie, Schließfächer, Fundsachen,
+ * Kalender) liegen im Baum unter dem `dark`-Rahmen statt in einem Radix-Portal
+ * und sehen aus wie `DialogContent` (docs/design-regeln.md, Abschnitt 18):
+ * Abdunklung dahinter, deckende Fläche mit Lichtkante, Radius 24 px, auf dem
+ * Handy als Blatt von unten mit Griff.
+ */
+export const overlayScrimClass = "bg-background/70 backdrop-blur-sm";
+
+/** Tage im Tagesstreifen: 44 px auf dem Handy, 56 px am Kiosk (Abschnitt 20). */
+const daySegmentClass = "[&>button]:h-11 sm:[&>button]:h-14";
+export const overlaySheetClass =
+  "animate-slide-up border border-glass-border bg-popover text-popover-foreground shadow-[inset_0_1px_0_var(--glass-highlight),0_30px_80px_-24px_oklch(0_0_0/55%)] rounded-t-card sm:rounded-card";
+
+/** Griff oben am Blatt – nur auf dem Handy, wie im Dialog-Baustein. */
+export function OverlayGrip({ className }: { className?: string }) {
+  return <div aria-hidden className={cn("mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-foreground/15 sm:hidden", className)} />;
+}
+
+export function Section({ title, icon: Icon, count, children }: { title: string; icon: React.ComponentType<{ className?: string }>; count: number; color: string; children: React.ReactNode }) {
+  // Abschnittsüberschrift zwischen Karten (docs/design-regeln.md, Abschnitt 13):
+  // gesperrte Kleinschrift ohne Dekorfarbe, Anzahl als Pille. `color` bleibt Teil
+  // der Schnittstelle, trägt aber keine Bedeutung mehr.
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className={cn("h-4 w-4", colors[color])} />
-        <h2 className={cn("text-sm font-bold uppercase tracking-wider", colors[color])}>{title}</h2>
-        <span className="text-xs font-mono font-bold text-slate-500 border border-slate-700 rounded-lg px-2 py-0.5 ml-auto">{count}</span>
-      </div>
+    <div className="space-y-2">
+      <SectionHeading
+        title={title}
+        icon={Icon as LucideIcon}
+        aside={<Badge variant="secondary" className="tabular-nums">{count}</Badge>}
+      />
       {children}
     </div>
   );
@@ -42,26 +65,32 @@ export function RentalOverviewPanel({ tickets }: { tickets: CheckinTicket[] }) {
     tickets.filter((t) => Array.isArray(t.addOns) && t.addOns.some((a) => isRentalAddOn(a.name)))
       .map((t) => t.annyOrderId ?? `ticket:${t.id}`),
   ).size;
+  // Verleihmaterial ist bewusst auffällig (Akzentfarbe), weil das Personal es
+  // herausgeben muss – gleiche Tönung wie die Verleih-Chips auf den Ticketkarten.
   return (
-    <div className="rounded-2xl border border-fuchsia-500/25 bg-fuchsia-950/20 px-4 py-3">
-      <div className="flex items-center gap-2 mb-2">
-        <PackageSearch className="h-4 w-4 text-fuchsia-400 shrink-0" />
-        <span className="text-xs font-bold uppercase tracking-wider text-fuchsia-300">Verleihmaterial heute</span>
-        <span className="text-[11px] text-slate-500">
-          {bookings} {bookings === 1 ? "Buchung" : "Buchungen"}
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <Card className="gap-3">
+      <CardHeader>
+        <div className="flex items-center gap-2.5">
+          <IconChip icon={PackageSearch} tone="primary" size="sm" />
+          <div className="min-w-0">
+            <CardTitle>Verleihmaterial heute</CardTitle>
+            <CardDescription className="tabular-nums">
+              {bookings} {bookings === 1 ? "Buchung" : "Buchungen"}
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-2">
         {totals.map((t) => (
           <span
             key={t.name}
-            className="text-sm bg-fuchsia-500/15 text-fuchsia-100 border border-fuchsia-500/35 px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap"
+            className="rounded-full border border-primary/35 bg-primary/12 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-foreground"
           >
-            {t.name} <span className="text-fuchsia-300">×{t.quantity}</span>
+            {t.name} <span className="font-bold tabular-nums">×{t.quantity}</span>
           </span>
         ))}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -84,16 +113,20 @@ export function GuestInfoSummaryPanel({
   const [exporting, setExporting] = useState(false);
   const hasContent = summary.setups.length > 0 || summary.neopren.size > 0 || summary.labels.size > 0;
   if (!hasContent) return null;
+  // Kachel in der Gruppenkarte (glass-tile); Gäste-Infos sind Information,
+  // daher die Info-Tönung für Symbol und Werte.
   return (
-    <div className="mb-2 rounded-xl border border-cyan-500/20 bg-cyan-950/20 px-3 py-2">
-      <div className="flex items-center gap-2 mb-1.5">
-        <ClipboardList className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-        <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-300">Tagesübersicht</span>
-        <span className="text-[10px] text-slate-500">
+    <div className="mb-2 glass-tile px-3 py-2.5">
+      <div className="flex items-center gap-2 mb-2">
+        <ClipboardList className="h-3.5 w-3.5 text-info shrink-0" />
+        <span className="text-label">Tagesübersicht</span>
+        <span className="text-[11px] text-muted-foreground tabular-nums">
           {summary.answered}/{summary.total} beantwortet
         </span>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           disabled={exporting}
           onClick={async (e) => {
             e.stopPropagation();
@@ -104,43 +137,44 @@ export function GuestInfoSummaryPanel({
               setExporting(false);
             }
           }}
-          className="ml-auto flex items-center gap-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/20 transition-colors disabled:opacity-50"
+          className="ml-auto font-semibold"
         >
-          {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Printer className="h-3 w-3" />}
+          {exporting ? <Loader2 className="animate-spin" /> : <Printer />}
           PDF
-        </button>
+        </Button>
       </div>
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {summary.setups.length > 0 && (
           <div className="flex flex-wrap items-baseline gap-1">
-            <span className="text-[11px] text-slate-400 mr-1">Material:</span>
+            <span className="text-[11px] text-muted-foreground mr-1">Material:</span>
             {summary.setups.map((s) => (
-              <span
+              <Badge
                 key={`${s.sport}|${s.level}|${s.shoe}`}
-                className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-md font-medium whitespace-nowrap"
+                variant="info"
+                className="font-medium"
               >
-                {formatSetup(s)} <span className="text-cyan-400/80">×{s.count}</span>
-              </span>
+                {formatSetup(s)} <span className="font-bold tabular-nums">×{s.count}</span>
+              </Badge>
             ))}
           </div>
         )}
         {summary.neopren.size > 0 && (
           <div className="flex flex-wrap items-baseline gap-1">
-            <span className="text-[11px] text-slate-400 mr-1">Neopren:</span>
+            <span className="text-[11px] text-muted-foreground mr-1">Neopren:</span>
             {sortSummaryValues(summary.neopren).map(([size, count]) => (
-              <span key={size} className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-md font-medium whitespace-nowrap">
-                {size} <span className="text-cyan-400/80">×{count}</span>
-              </span>
+              <Badge key={size} variant="info" className="font-medium">
+                {size} <span className="font-bold tabular-nums">×{count}</span>
+              </Badge>
             ))}
           </div>
         )}
         {[...summary.labels.entries()].map(([label, values]) => (
           <div key={label} className="flex flex-wrap items-baseline gap-1">
-            <span className="text-[11px] text-slate-400 mr-1">{label}:</span>
+            <span className="text-[11px] text-muted-foreground mr-1">{label}:</span>
             {sortSummaryValues(values).map(([value, count]) => (
-              <span key={value} className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded-md font-medium whitespace-nowrap">
-                {value} <span className="text-cyan-400/80">×{count}</span>
-              </span>
+              <Badge key={value} variant="info" className="font-medium">
+                {value} <span className="font-bold tabular-nums">×{count}</span>
+              </Badge>
             ))}
           </div>
         ))}
@@ -153,9 +187,9 @@ export function GuestInfoSummaryPanel({
 export function InfoRow({ label, value, icon: Icon }: { label: string; value: string; icon: React.ComponentType<{ className?: string }> }) {
   return (
     <div className="flex items-center gap-3">
-      <Icon className="h-4 w-4 text-slate-500 shrink-0" />
-      <span className="text-xs text-slate-500 w-16">{label}</span>
-      <span className="text-sm text-slate-200 font-mono truncate">{value}</span>
+      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+      <span className="text-xs text-muted-foreground w-16">{label}</span>
+      <span className="text-sm text-foreground font-mono truncate">{value}</span>
     </div>
   );
 }
@@ -200,7 +234,7 @@ export function RfidInput({ value, onChange, onSubmit, disabled }: {
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   return (
-    <input
+    <Input
       ref={inputRef}
       type="text"
       value={value}
@@ -208,7 +242,7 @@ export function RfidInput({ value, onChange, onSubmit, disabled }: {
       onKeyDown={handleKeyDown}
       disabled={disabled}
       placeholder="RFID scannen oder eingeben"
-      className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      className="h-12 flex-1 px-4 sm:h-14"
       autoFocus
     />
   );
@@ -222,7 +256,11 @@ export function LiveClock() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
-  return <span className="text-sm font-mono font-bold text-slate-300 tabular-nums bg-slate-800 px-3 py-2 rounded-xl">{time}</span>;
+  return (
+    <span className="inline-flex h-11 items-center rounded-control bg-glass-tile px-3 text-sm font-semibold tabular-nums text-foreground ring-1 ring-inset ring-glass-border">
+      {time}
+    </span>
+  );
 }
 
 export function DaySelector({ date, onChange }: { date: string; onChange: (d: string) => void }) {
@@ -272,56 +310,108 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
   const selectedDate = new Date(date);
   const monthLabel = new Date(calMonth.year, calMonth.month).toLocaleDateString("de-DE", { month: "long", year: "numeric" });
 
+  // Tage als Segmentwahl (docs/design-regeln.md, Abschnitt 6). Heute trägt einen
+  // Punkt in Akzentfarbe, der gewählte Tag die helle Pille.
+  const dayOptions = days.map((d) => ({
+    value: d.date,
+    label: d.isToday ? (
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+        {d.label}
+      </span>
+    ) : (
+      d.label
+    ),
+  }));
+
   return (
     <>
-      <div className="px-4 py-2 flex items-center gap-2 border-b border-slate-800 overflow-x-auto">
-        <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() - 1); onChange(toDateStr(d)); }} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0">
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <div className="flex gap-1.5 flex-1 justify-center">
-          {days.map((d) => (
-            <button
-              key={d.date}
-              onClick={() => onChange(d.date)}
-              className={cn(
-                "px-3 py-2 rounded-xl text-xs font-semibold transition-all min-w-[4.5rem] active:scale-95",
-                d.date === date
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25"
-                  : d.isToday
-                  ? "bg-slate-800 text-indigo-400 ring-1 ring-indigo-500/30"
-                  : "bg-slate-800/50 text-slate-400 hover:bg-slate-800"
-              )}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={() => { setCalMonth({ year: selectedDate.getFullYear(), month: selectedDate.getMonth() }); setCalOpen(true); }}
-          className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0"
+      {/* Bis md nur Vortag, gewählter Tag und Folgetag (auf dem Handy ersetzen die
+          Nachbartage die Pfeile), bis lg fünf Tage, ab lg alle sieben – sonst lief
+          der siebte Tag im Hochformat-Tablet aus dem Streifen. Tasten und Tage
+          sind 44 px, am Kiosk ab sm 56 px hoch (docs/design-regeln.md, Abschnitt 20). */}
+      <div className="px-4 sm:px-6 pt-3 flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          onClick={() => { const d = new Date(date); d.setDate(d.getDate() - 1); onChange(toDateStr(d)); }}
+          className="hidden text-muted-foreground sm:inline-flex sm:size-14"
+          aria-label="Vorheriger Tag"
         >
-          <CalendarDays className="h-4 w-4" />
-        </button>
-        <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); onChange(toDateStr(d)); }} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0">
-          <ChevronRight className="h-4 w-4" />
-        </button>
+          <ChevronLeft />
+        </Button>
+        <div className="flex min-w-0 flex-1 justify-center">
+          <Segmented
+            aria-label="Tag"
+            value={date}
+            onValueChange={onChange}
+            options={dayOptions.slice(2, 5)}
+            stretch
+            className={cn(daySegmentClass, "md:hidden")}
+          />
+          <Segmented
+            aria-label="Tag"
+            value={date}
+            onValueChange={onChange}
+            options={dayOptions.slice(1, 6)}
+            className={cn(daySegmentClass, "hidden md:inline-flex lg:hidden")}
+          />
+          <Segmented
+            aria-label="Tag"
+            value={date}
+            onValueChange={onChange}
+            options={dayOptions}
+            className={cn(daySegmentClass, "hidden lg:inline-flex")}
+          />
+        </div>
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          onClick={() => { setCalMonth({ year: selectedDate.getFullYear(), month: selectedDate.getMonth() }); setCalOpen(true); }}
+          className="size-11 text-muted-foreground sm:size-14"
+          aria-label="Kalender öffnen"
+        >
+          <CalendarDays />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); onChange(toDateStr(d)); }}
+          className="hidden text-muted-foreground sm:inline-flex sm:size-14"
+          aria-label="Nächster Tag"
+        >
+          <ChevronRight />
+        </Button>
       </div>
 
       {calOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={() => setCalOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] w-full sm:w-[340px] shadow-2xl">
+        <div className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)} onClick={() => setCalOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className={cn(overlaySheetClass, "p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] w-full sm:w-[456px]")}>
+            <OverlayGrip className="-mt-2 mb-3" />
             <div className="flex items-center justify-between mb-4">
-              <button onClick={() => setCalMonth((p) => { const m = p.month - 1; return m < 0 ? { year: p.year - 1, month: 11 } : { ...p, month: m }; })} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <span className="text-sm font-bold text-white capitalize">{monthLabel}</span>
-              <button onClick={() => setCalMonth((p) => { const m = p.month + 1; return m > 11 ? { year: p.year + 1, month: 0 } : { ...p, month: m }; })} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
-                <ChevronRight className="h-5 w-5" />
-              </button>
+              <Button
+                variant="ghost"
+                size="icon-lg"
+                onClick={() => setCalMonth((p) => { const m = p.month - 1; return m < 0 ? { year: p.year - 1, month: 11 } : { ...p, month: m }; })}
+                className="size-11 text-muted-foreground sm:size-14"
+                aria-label="Vorheriger Monat"
+              >
+                <ChevronLeft className="size-5" />
+              </Button>
+              <span className="text-sm font-semibold text-foreground capitalize">{monthLabel}</span>
+              <Button
+                variant="ghost"
+                size="icon-lg"
+                onClick={() => setCalMonth((p) => { const m = p.month + 1; return m > 11 ? { year: p.year + 1, month: 0 } : { ...p, month: m }; })}
+                className="size-11 text-muted-foreground sm:size-14"
+                aria-label="Nächster Monat"
+              >
+                <ChevronRight className="size-5" />
+              </Button>
             </div>
             <div className="grid grid-cols-7 gap-1 mb-1">
               {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((wd) => (
-                <div key={wd} className="text-center text-[11px] font-bold text-slate-500 py-1">{wd}</div>
+                <div key={wd} className="text-center text-[11px] font-semibold text-muted-foreground py-1">{wd}</div>
               ))}
             </div>
             <div className="grid grid-cols-7 gap-1">
@@ -335,12 +425,12 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
                     key={ds}
                     onClick={() => { onChange(ds); setCalOpen(false); }}
                     className={cn(
-                      "w-10 h-10 rounded-xl text-sm font-semibold transition-all active:scale-90",
+                      "press h-11 w-full rounded-xl text-sm font-semibold tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-14",
                       isSelected
-                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25"
+                        ? "bg-primary text-primary-foreground"
                         : isToday
-                        ? "bg-slate-800 text-indigo-400 ring-1 ring-indigo-500/30"
-                        : "text-slate-300 hover:bg-slate-800"
+                        ? "bg-primary/15 text-foreground ring-1 ring-inset ring-primary/50"
+                        : "text-foreground hover:bg-glass-tile"
                     )}
                   >
                     {d.getDate()}
@@ -348,19 +438,22 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
                 );
               })}
             </div>
+            {/* Tasten in Touch-Größe (44 px, am Kiosk ab sm 56 px) statt der kleinen Stufe. */}
             <div className="mt-3 flex justify-between">
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => { onChange(todayStrGlobal); setCalOpen(false); }}
-                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
+                className="h-11 px-4 sm:h-14"
               >
                 Heute
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 onClick={() => setCalOpen(false)}
-                className="text-xs font-semibold text-slate-400 hover:text-slate-300 px-3 py-2 rounded-xl hover:bg-slate-800 transition-colors"
+                className="h-11 px-4 text-muted-foreground sm:h-14"
               >
                 Schließen
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -370,17 +463,18 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
 }
 
 export function StatPill({ icon: Icon, label, value, color }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number; color?: string }) {
+  // Farbe nur als Token: Erfolg, Hinweis, Violett der Kennzahlen, Akzent.
   const colors: Record<string, string> = {
-    emerald: "text-emerald-400",
-    amber: "text-amber-400",
-    violet: "text-violet-400",
-    indigo: "text-indigo-400",
+    emerald: "text-success",
+    amber: "text-warning",
+    violet: "text-chart-5",
+    indigo: "text-primary",
   };
   return (
-    <div className="flex items-center gap-2 bg-slate-800/50 rounded-xl px-3 py-1.5">
-      <Icon className={cn("h-4 w-4", colors[color ?? "indigo"] ?? "text-slate-400")} />
-      <span className="text-xs text-slate-400">{label}</span>
-      <span className={cn("text-sm font-bold tabular-nums", colors[color ?? "indigo"] ?? "text-white")}>{value}</span>
+    <div className="flex items-center gap-2 glass-tile px-3 py-1.5">
+      <Icon className={cn("h-4 w-4", colors[color ?? "indigo"] ?? "text-muted-foreground")} />
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={cn("text-sm font-bold tabular-nums", colors[color ?? "indigo"] ?? "text-foreground")}>{value}</span>
     </div>
   );
 }

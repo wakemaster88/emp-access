@@ -20,6 +20,20 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
+import { Textarea } from "@/components/ui/textarea";
+import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
+
+/**
+ * Segmente am Kiosk 44 px hoch (Segmented kennt keine große Stufe); auf dem Handy
+ * schmaler, damit die Segmente samt Zählern auf 390 px passen.
+ */
+const kioskSegmentClass = "[&>button]:h-11 [&>button]:px-2 sm:[&>button]:px-4";
 
 interface LostItemApi {
   id: number;
@@ -129,8 +143,8 @@ export function LostItemsOverlay({ token, onClose }: LostItemsOverlayProps) {
     }
   }
 
+  // Die Rückfrage („Fundsache wirklich löschen?“) steht inline in der Liste.
   async function deleteItem(item: LostItemApi) {
-    if (!confirm("Fundsache wirklich löschen?")) return;
     setBusyId(item.id);
     setError("");
     try {
@@ -148,50 +162,57 @@ export function LostItemsOverlay({ token, onClose }: LostItemsOverlayProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center"
+      className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-2xl max-h-[92dvh] flex flex-col pb-[env(safe-area-inset-bottom)] monitor-scrollbar overflow-hidden"
+        className={cn(overlaySheetClass, "w-full sm:max-w-2xl max-h-[92dvh] flex flex-col pb-[env(safe-area-inset-bottom)] monitor-scrollbar overflow-hidden")}
       >
+        <OverlayGrip />
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             {adding && (
-              <button
+              <Button
+                variant="secondary"
+                size="icon-lg"
                 onClick={() => setAdding(false)}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 active:scale-95"
+                className="size-11 rounded-full sm:size-14"
                 title="Zurück"
               >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
+                <ChevronLeft className="size-5" />
+              </Button>
             )}
-            <h2 className="text-lg font-bold flex items-center gap-2 truncate text-white">
-              <PackageSearch className="h-5 w-5 text-amber-400 shrink-0" />
+            <h2 className="text-lg font-semibold flex items-center gap-2 truncate text-foreground">
+              <PackageSearch className="h-5 w-5 text-primary shrink-0" />
               {adding ? "Neuer Eintrag" : (
-                <>Fundsachen <span className="text-slate-500 text-sm font-normal">· {openCount} offen</span></>
+                <>Fundsachen <span className="text-muted-foreground text-sm font-normal tabular-nums">· {openCount} offen</span></>
               )}
             </h2>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {!adding && (
-              <button
+              <Button
+                variant="secondary"
+                size="icon-lg"
                 onClick={() => load(true)}
                 disabled={refreshing}
-                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white active:scale-95"
+                className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
                 title="Aktualisieren"
               >
-                <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-              </button>
+                <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+              </Button>
             )}
-            <button
+            <Button
+              variant="secondary"
+              size="icon-lg"
               onClick={onClose}
-              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white active:scale-95"
+              className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
               title="Schließen"
             >
-              <X className="h-5 w-5" />
-            </button>
+              <X className="size-5" />
+            </Button>
           </div>
         </div>
 
@@ -199,14 +220,14 @@ export function LostItemsOverlay({ token, onClose }: LostItemsOverlayProps) {
         <div className="flex-1 overflow-y-auto monitor-scrollbar">
           {loading && (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+              <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                Lädt …
+              </p>
             </div>
           )}
           {error && (
-            <div className="m-4 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-sm px-4 py-3 inline-flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              {error}
-            </div>
+            <Notice tone="danger" icon={AlertTriangle} compact title={error} className="m-4" />
           )}
 
           {!loading && !adding && (
@@ -259,56 +280,46 @@ function ListView({
   onDelete: (item: LostItemApi) => void;
   onAdd: () => void;
 }) {
-  const filters: { id: Filter; label: string }[] = [
-    { id: "open", label: `Offen (${openCount})` },
-    { id: "pickedUp", label: `Erledigt (${total - openCount})` },
-    { id: "all", label: `Alle (${total})` },
+  // Eintrag, dessen Löschen gerade bestätigt wird (destruktive Rückfrage im
+  // selben Sheet statt Browser-Dialog, docs/design-regeln.md, Abschnitt 18).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  // Filter als Segmentwahl; die Anzahl steht als kleine Zahl im Segment.
+  const filters: SegmentedOption<Filter>[] = [
+    { value: "open", label: "Offen", count: openCount },
+    { value: "pickedUp", label: "Erledigt", count: total - openCount },
+    { value: "all", label: "Alle", count: total },
   ];
 
   return (
     <div className="p-4 space-y-3">
-      <button
-        onClick={onAdd}
-        className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-4 py-3 rounded-xl font-semibold transition-colors active:scale-[0.99]"
-      >
-        <Plus className="h-5 w-5" />
+      <Button onClick={onAdd} className="w-full h-12 font-semibold sm:h-14">
+        <Plus className="size-5" />
         Eintrag erfassen
-      </button>
+      </Button>
 
       <div className="flex flex-col sm:flex-row gap-2">
-        <div className="flex gap-1.5">
-          {filters.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={cn(
-                "px-3 py-2 rounded-xl text-sm font-medium transition-colors active:scale-95",
-                filter === f.id
-                  ? "bg-amber-600 text-white"
-                  : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <div className="relative sm:ml-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <input
+        <Segmented
+          aria-label="Filter"
+          value={filter}
+          onValueChange={setFilter}
+          options={filters}
+          stretch
+          className={cn(kioskSegmentClass, "sm:w-auto sm:flex-1")}
+        />
+        <div className="relative sm:w-56 sm:shrink-0">
+          <Search className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
             type="text"
             placeholder="Suchen…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full sm:w-52 pl-9 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="h-11 pl-10"
           />
         </div>
       </div>
 
       {items.length === 0 && (
-        <div className="flex flex-col items-center gap-3 py-16 text-slate-500">
-          <PackageSearch className="h-12 w-12 text-slate-700" />
-          <p className="text-sm">Keine Einträge in dieser Ansicht</p>
-        </div>
+        <EmptyState icon={PackageSearch} title="Keine Einträge in dieser Ansicht" compact />
       )}
 
       <div className="space-y-2">
@@ -317,11 +328,14 @@ function ListView({
           const contactLine = isLostReport
             ? [item.reporterName, item.callbackPhone].filter(Boolean).join(" · ")
             : item.contact;
+          const confirmingDelete = confirmDeleteId === item.id;
           return (
           <div
             key={item.id}
             className={cn(
-              "flex gap-3 rounded-2xl border border-slate-800 bg-slate-800/40 p-3",
+              "glass-tile flex gap-3 p-3",
+              // Rückfrage als eigene Zeile über die volle Kachelbreite.
+              confirmingDelete && "flex-wrap",
               item.pickedUp && "opacity-60"
             )}
           >
@@ -330,28 +344,26 @@ function ListView({
               <img
                 src={item.image}
                 alt={item.description}
-                className="h-20 w-20 rounded-xl object-cover border border-slate-700 shrink-0"
+                className="h-20 w-20 rounded-xl object-cover border border-border shrink-0"
               />
             ) : (
-              <div className="h-20 w-20 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+              <div className="h-20 w-20 rounded-xl bg-glass-tile border border-glass-border flex items-center justify-center shrink-0">
                 {isLostReport ? (
-                  <User className="h-7 w-7 text-slate-600" />
+                  <User className="h-7 w-7 text-muted-foreground" />
                 ) : (
-                  <PackageSearch className="h-7 w-7 text-slate-600" />
+                  <PackageSearch className="h-7 w-7 text-muted-foreground" />
                 )}
               </div>
             )}
             <div className="flex-1 min-w-0">
               <div className="flex items-start gap-2">
-                <span className={cn(
-                  "shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded",
-                  isLostReport ? "bg-violet-950/60 text-violet-300" : "bg-amber-950/60 text-amber-300"
-                )}>
+                {/* Art als Pille: Verlustmeldung in Info-Farbe, Fund als Glas. */}
+                <Badge variant={isLostReport ? "info" : "secondary"} className="mt-px">
                   {isLostReport ? "Verlust" : "Fund"}
-                </span>
-                <p className="font-medium text-white leading-snug line-clamp-2">{item.description}</p>
+                </Badge>
+                <p className="font-medium text-foreground leading-snug line-clamp-2">{item.description}</p>
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1 tabular-nums">
                   <CalendarDays className="h-3 w-3" />
                   {formatDate(item.foundDate)}
@@ -363,42 +375,76 @@ function ListView({
                   </span>
                 )}
                 {item.pickedUp && item.pickedUpAt && (
-                  <span className="inline-flex items-center gap-1 text-emerald-400">
+                  <span className="inline-flex items-center gap-1 text-success">
                     <Check className="h-3 w-3" />
                     Erledigt am {formatDate(item.pickedUpAt)}
                   </span>
                 )}
               </div>
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  onClick={() => onTogglePickedUp(item)}
-                  disabled={busyId === item.id}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors active:scale-95",
-                    item.pickedUp
-                      ? "bg-slate-700 hover:bg-slate-600 text-slate-300"
-                      : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                  )}
-                >
-                  {busyId === item.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : item.pickedUp ? (
-                    <Undo2 className="h-3.5 w-3.5" />
-                  ) : (
-                    <Check className="h-3.5 w-3.5" />
-                  )}
-                  {item.pickedUp ? "Zurücksetzen" : (isLostReport ? "Erledigt" : "Abgeholt")}
-                </button>
-                <button
-                  onClick={() => onDelete(item)}
-                  disabled={busyId === item.id}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 transition-colors active:scale-95"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Löschen
-                </button>
-              </div>
+              {!confirmingDelete && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {/* Abschließen mit Erfolgs-Symbol, Zurücksetzen ruhig, Löschen erst beim Zeigen rot. */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onTogglePickedUp(item)}
+                    disabled={busyId === item.id}
+                    className="h-11 font-semibold"
+                  >
+                    {busyId === item.id ? (
+                      <Loader2 className="animate-spin" />
+                    ) : item.pickedUp ? (
+                      <Undo2 className="text-muted-foreground" />
+                    ) : (
+                      <Check className="text-success" />
+                    )}
+                    {item.pickedUp ? "Zurücksetzen" : (isLostReport ? "Erledigt" : "Abgeholt")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmDeleteId(item.id)}
+                    disabled={busyId === item.id}
+                    className="h-11 font-semibold text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 />
+                    Löschen
+                  </Button>
+                </div>
+              )}
             </div>
+            {confirmingDelete && (
+              <Notice
+                tone="danger"
+                compact
+                title="Fundsache wirklich löschen?"
+                className="basis-full"
+                action={
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="h-11 font-semibold sm:h-14"
+                      autoFocus
+                    >
+                      Abbrechen
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        setConfirmDeleteId(null);
+                        onDelete(item);
+                      }}
+                      disabled={busyId === item.id}
+                      className="h-11 font-semibold sm:h-14"
+                    >
+                      <Trash2 />
+                      Löschen
+                    </Button>
+                  </>
+                }
+              />
+            )}
           </div>
           );
         })}
@@ -471,28 +517,17 @@ function AddForm({
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex gap-1.5 p-1 rounded-xl bg-slate-800">
-        <button
-          type="button"
-          onClick={() => setKind("FOUND")}
-          className={cn(
-            "flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-            kind === "FOUND" ? "bg-amber-600 text-white" : "text-slate-400 hover:text-white"
-          )}
-        >
-          Fundsache
-        </button>
-        <button
-          type="button"
-          onClick={() => setKind("LOST_REPORT")}
-          className={cn(
-            "flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-            kind === "LOST_REPORT" ? "bg-violet-600 text-white" : "text-slate-400 hover:text-white"
-          )}
-        >
-          Verlustmeldung
-        </button>
-      </div>
+      <Segmented
+        aria-label="Art"
+        value={kind}
+        onValueChange={setKind}
+        stretch
+        className={kioskSegmentClass}
+        options={[
+          { value: "FOUND", label: "Fundsache" },
+          { value: "LOST_REPORT", label: "Verlustmeldung" },
+        ]}
+      />
 
       {!isLostReport && (
         image ? (
@@ -501,15 +536,17 @@ function AddForm({
             <img
               src={image}
               alt="Fundsache"
-              className="h-40 w-40 rounded-2xl object-cover border border-slate-700"
+              className="h-40 w-40 rounded-tile object-cover border border-border"
             />
-            <button
+            <Button
+              variant="secondary"
+              size="icon-lg"
               onClick={() => setImage(null)}
-              className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-slate-800 border border-slate-600 text-white flex items-center justify-center hover:bg-rose-600 active:scale-95"
+              className="absolute -top-3 -right-3 size-11 rounded-full hover:bg-destructive/20 hover:text-destructive"
               title="Bild entfernen"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X className="size-4" />
+            </Button>
           </div>
         ) : cameraOpen ? (
           <PhotoCamera
@@ -522,7 +559,7 @@ function AddForm({
         ) : (
           <button
             onClick={() => setCameraOpen(true)}
-            className="flex flex-col items-center justify-center gap-2 h-40 w-40 rounded-2xl border-2 border-dashed border-slate-700 text-slate-500 hover:border-amber-500 hover:text-amber-400 transition-colors active:scale-[0.98]"
+            className="flex flex-col items-center justify-center gap-2 h-40 w-40 rounded-tile border-2 border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-foreground transition-colors active:scale-[0.98] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <Camera className="h-8 w-8" />
             <span className="text-sm font-medium">Foto aufnehmen</span>
@@ -531,10 +568,10 @@ function AddForm({
       )}
 
       <div className="space-y-1.5">
-        <label className="text-sm font-medium text-slate-300">
+        <label className="text-sm font-medium text-foreground">
           {isLostReport ? "Was wurde verloren? *" : "Beschreibung *"}
         </label>
-        <textarea
+        <Textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
@@ -544,7 +581,7 @@ function AddForm({
               ? "z. B. Schwarze Lederjacke, Größe M, mit Schlüsselbund"
               : "z. B. Schwarze Jacke, Größe M, am Eingang gefunden"
           }
-          className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+          className="resize-none"
         />
       </div>
 
@@ -552,81 +589,75 @@ function AddForm({
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300">Name *</label>
-              <input
+              <label className="text-sm font-medium text-foreground">Name *</label>
+              <Input
                 type="text"
                 value={reporterName}
                 onChange={(e) => setReporterName(e.target.value)}
                 maxLength={120}
                 placeholder="Max Mustermann"
-                className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                className="h-11"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300">Rückrufnummer</label>
-              <input
+              <label className="text-sm font-medium text-foreground">Rückrufnummer</label>
+              <Input
                 type="tel"
                 value={callbackPhone}
                 onChange={(e) => setCallbackPhone(e.target.value)}
                 maxLength={40}
                 placeholder="0170 1234567"
-                className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                className="h-11"
               />
             </div>
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-300">Verlustdatum</label>
-            <input
+            <label className="text-sm font-medium text-foreground">Verlustdatum</label>
+            <Input
               type="date"
               value={foundDate}
               onChange={(e) => setFoundDate(e.target.value)}
-              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-violet-500 [color-scheme:dark]"
+              className="h-11 [color-scheme:dark]"
             />
           </div>
         </>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-300">Funddatum *</label>
-            <input
+            <label className="text-sm font-medium text-foreground">Funddatum *</label>
+            <Input
               type="date"
               value={foundDate}
               onChange={(e) => setFoundDate(e.target.value)}
-              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
+              className="h-11 [color-scheme:dark]"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-300">Kontakt</label>
-            <input
+            <label className="text-sm font-medium text-foreground">Kontakt</label>
+            <Input
               type="text"
               value={contact}
               onChange={(e) => setContact(e.target.value)}
               maxLength={300}
               placeholder="Name / Telefon"
-              className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className="h-11"
             />
           </div>
         </div>
       )}
 
       {localError && (
-        <p className="text-sm text-rose-400 inline-flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {localError}
-        </p>
+        <Notice tone="danger" icon={AlertTriangle} compact title={localError} />
       )}
 
-      <button
+      <Button
         onClick={handleSave}
         disabled={saving}
-        className={cn(
-          "w-full flex items-center justify-center gap-2 disabled:opacity-60 text-white px-4 py-3 rounded-xl font-semibold transition-colors active:scale-[0.99]",
-          isLostReport ? "bg-violet-600 hover:bg-violet-500" : "bg-amber-600 hover:bg-amber-500"
-        )}
+        className="w-full h-12 font-semibold sm:h-14"
       >
-        {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
+        {saving ? <Loader2 className="size-5 animate-spin" /> : <Check className="size-5" />}
         {isLostReport ? "Verlustmeldung speichern" : "Fundsache speichern"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -687,10 +718,11 @@ function PhotoCamera({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-700 overflow-hidden bg-black max-w-md">
+    // Kamerabild bleibt auf schwarzem Grund (docs/design-regeln.md, Abschnitt 15).
+    <div className="rounded-tile border border-border overflow-hidden bg-black max-w-md">
       <div className="relative aspect-[4/3] bg-black flex items-center justify-center">
         {error ? (
-          <p className="text-sm text-slate-400 px-4 text-center">{error}</p>
+          <p className="text-sm text-muted-foreground px-4 text-center">{error}</p>
         ) : (
           <video
             ref={videoRef}
@@ -700,16 +732,18 @@ function PhotoCamera({
             className="w-full h-full object-cover"
           />
         )}
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="icon-lg"
           onClick={onClose}
-          className="absolute top-2 right-2 p-2 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/70 active:scale-95"
+          className="absolute top-2 right-2 size-11 rounded-full sm:size-14"
           title="Abbrechen"
         >
-          <X className="h-4 w-4" />
-        </button>
+          <X className="size-4" />
+        </Button>
       </div>
-      <div className="flex items-center justify-between p-2.5 bg-slate-900">
+      <div className="flex items-center justify-between p-2.5 border-t border-border bg-popover">
         <div className="w-16" />
         <button
           type="button"
@@ -720,19 +754,20 @@ function PhotoCamera({
         >
           <Camera className="h-5 w-5 text-white" />
         </button>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => {
             setReady(false);
             setError("");
             setFacingMode((m) => (m === "environment" ? "user" : "environment"));
           }}
           disabled={!!error}
-          className="w-16 inline-flex items-center justify-center gap-1 text-xs text-slate-400 hover:text-white disabled:opacity-30 py-2"
+          className="h-11 w-16 gap-1 px-0 has-[>svg]:px-0 text-xs text-muted-foreground hover:text-foreground"
         >
-          <RotateCcw className="h-4 w-4" />
+          <RotateCcw className="size-4" />
           Drehen
-        </button>
+        </Button>
       </div>
     </div>
   );

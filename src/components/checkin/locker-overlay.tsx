@@ -19,6 +19,18 @@ import {
   Trash2, Check, AlertTriangle, RefreshCw, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
+import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
+
+/**
+ * Segmente am Kiosk 44 px hoch (Segmented kennt keine große Stufe); auf dem Handy
+ * schmaler, damit vier Segmente samt Zählern auf 390 px passen.
+ */
+const kioskSegmentClass = "[&>button]:h-11 [&>button]:px-2 sm:[&>button]:px-4";
 
 type LockerType = "KEY" | "PADLOCK";
 
@@ -174,53 +186,60 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center"
+      className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-2xl max-h-[92dvh] flex flex-col pb-[env(safe-area-inset-bottom)] monitor-scrollbar overflow-hidden"
+        className={cn(overlaySheetClass, "w-full sm:max-w-2xl max-h-[92dvh] flex flex-col pb-[env(safe-area-inset-bottom)] monitor-scrollbar overflow-hidden")}
       >
+        <OverlayGrip />
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             {active && (
-              <button
+              <Button
+                variant="secondary"
+                size="icon-lg"
                 onClick={() => setActiveId(null)}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 active:scale-95"
+                className="size-11 rounded-full sm:size-14"
                 title="Zurück"
               >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
+                <ChevronLeft className="size-5" />
+              </Button>
             )}
-            <h2 className="text-lg font-bold flex items-center gap-2 truncate">
-              <Lock className="h-5 w-5 text-indigo-400 shrink-0" />
+            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 truncate">
+              <Lock className="h-5 w-5 text-primary shrink-0" />
               {active ? (
                 <>
                   <span className="font-mono">#{active.number}</span>
-                  <span className="text-slate-400 truncate">· {active.name}</span>
+                  <span className="text-muted-foreground truncate">· {active.name}</span>
                 </>
               ) : (
-                <>Schließfächer <span className="text-slate-500 text-sm font-normal">· {year}</span></>
+                <>Schließfächer <span className="text-muted-foreground text-sm font-normal tabular-nums">· {year}</span></>
               )}
             </h2>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button
+            <Button
+              variant="secondary"
+              size="icon-lg"
               onClick={() => load(true)}
               disabled={refreshing}
-              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white active:scale-95"
+              className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
               title="Aktualisieren"
             >
-              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-            </button>
-            <button
+              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon-lg"
               onClick={onClose}
-              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white active:scale-95"
+              className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
               title="Schließen"
             >
-              <X className="h-5 w-5" />
-            </button>
+              <X className="size-5" />
+            </Button>
           </div>
         </div>
 
@@ -228,14 +247,14 @@ export function LockerOverlay({ token, onClose }: LockerOverlayProps) {
         <div className="flex-1 overflow-y-auto monitor-scrollbar">
           {loading && !data && (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
+              <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                Lädt …
+              </p>
             </div>
           )}
           {error && (
-            <div className="m-4 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-sm px-4 py-3 inline-flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              {error}
-            </div>
+            <Notice tone="danger" icon={AlertTriangle} compact title={error} className="m-4" />
           )}
 
           {!loading && data && !active && (
@@ -305,63 +324,73 @@ function ListView({
 }) {
   return (
     <div className="p-4 space-y-3">
+      {/* Hinweis als Notice (Abschnitt 23.4); die Taste setzt den Filter „Offen“. */}
       {openKeyLockers.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setFilter("openKeys")}
-          className="w-full text-left rounded-xl border border-amber-700/50 bg-amber-950/30 hover:bg-amber-950/40 p-3 transition-colors active:scale-[0.99]"
+        <Notice
+          tone="warning"
+          title={`${openKeyCount} ${openKeyCount === 1 ? "Schlüssel" : "Schlüssel/Schlösser"} aus früheren Jahren offen`}
+          action={
+            <Button
+              variant="outline"
+              onClick={() => setFilter("openKeys")}
+              className="h-11 font-semibold"
+            >
+              Anzeigen
+            </Button>
+          }
         >
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0 text-amber-200">
-              <p className="text-sm font-semibold">
-                {openKeyCount} {openKeyCount === 1 ? "Schlüssel" : "Schlüssel/Schlösser"} aus früheren Jahren offen
-              </p>
-              <p className="text-[11px] text-amber-200/80 truncate">
-                {openKeyLockers.slice(0, 4).map((l) => {
-                  const r = l.openPast[0];
-                  return `#${l.number} ${rentalDisplayName(r)} (${r.year})`;
-                }).join(" · ")}
-                {openKeyLockers.length > 4 && ` · +${openKeyLockers.length - 4}`}
-              </p>
-            </div>
-          </div>
-        </button>
+          <p className="truncate">
+            {openKeyLockers.slice(0, 4).map((l) => {
+              const r = l.openPast[0];
+              return `#${l.number} ${rentalDisplayName(r)} (${r.year})`;
+            }).join(" · ")}
+            {openKeyLockers.length > 4 && ` · +${openKeyLockers.length - 4}`}
+          </p>
+        </Notice>
       )}
 
-      <div className={cn("grid gap-1.5", openKeyLockers.length > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
-        <FilterChip label={`Alle ${total}`} active={filter === "all"} color="indigo" onClick={() => setFilter("all")} />
-        <FilterChip label={`Belegt ${assignedCount}`} active={filter === "assigned"} color="emerald" onClick={() => setFilter("assigned")} />
-        <FilterChip label={`Frei ${freeCount}`} active={filter === "free"} color="slate" onClick={() => setFilter("free")} />
-        {openKeyLockers.length > 0 && (
-          <FilterChip
-            label={`Offen ${openKeyLockers.length}`}
-            active={filter === "openKeys"}
-            color="amber"
-            onClick={() => setFilter("openKeys")}
-          />
-        )}
-      </div>
+      {/* Filter als Segmentwahl (docs/design-regeln.md, Abschnitt 6). */}
+      <Segmented
+        aria-label="Filter"
+        value={filter}
+        onValueChange={setFilter}
+        stretch
+        className={kioskSegmentClass}
+        options={[
+          { value: "all", label: "Alle", count: total },
+          { value: "assigned", label: "Belegt", count: assignedCount },
+          { value: "free", label: "Frei", count: freeCount },
+          ...(openKeyLockers.length > 0
+            ? [{ value: "openKeys" as const, label: "Offen", count: openKeyLockers.length }]
+            : []),
+        ]}
+      />
 
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-        <input
+        <Search className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Nr., Standort, Mieter, Abo…"
-          className="w-full bg-slate-800/60 border border-slate-700/50 text-white rounded-xl pl-9 pr-9 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          className="h-11 pl-10 pr-12"
         />
         {search && (
-          <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-            <X className="h-4 w-4" />
-          </button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSearch("")}
+            className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            aria-label="Suche leeren"
+          >
+            <X />
+          </Button>
         )}
       </div>
 
       <div className="space-y-1.5">
         {lockers.length === 0 && (
-          <p className="text-sm text-slate-500 text-center py-12">Keine Treffer.</p>
+          <EmptyState icon={Search} title="Keine Treffer." compact />
         )}
         {lockers.map((l) => {
           const t = l.current?.ticket ?? null;
@@ -372,22 +401,23 @@ function ListView({
             <button
               key={l.id}
               onClick={() => onPick(l.id)}
-              className="w-full text-left rounded-xl bg-slate-800/40 hover:bg-slate-800 border border-slate-800 p-3 active:scale-[0.99] transition-all flex items-center gap-3"
+              className="glass-tile w-full text-left hover:bg-glass-strong p-3 active:scale-[0.99] transition-all flex items-center gap-3"
             >
+              {/* Belegt in der Erfolgsfarbe, frei als ruhiges Glas. */}
               <div className={cn(
                 "h-12 w-14 rounded-lg flex flex-col items-center justify-center shrink-0 font-mono text-sm font-bold tabular-nums",
                 l.current
-                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                  : "bg-slate-700/40 text-slate-400 border border-slate-700"
+                  ? "bg-success/15 text-success border border-success/30"
+                  : "bg-glass-tile text-muted-foreground border border-glass-border"
               )}>
                 <span className="text-xs leading-none opacity-70">Nr.</span>
                 <span className="leading-tight">{l.number}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate flex items-center gap-1.5">
+                <p className="text-sm font-semibold text-foreground truncate flex items-center gap-1.5">
                   {l.name}
                   <span
-                    className="text-[10px] inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-700/60 text-slate-400 tabular-nums"
+                    className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-foreground/10 text-muted-foreground tabular-nums"
                     title={l.lockType === "KEY"
                       ? `Schlüsselschloss · ${l.keyCount} Schlüssel`
                       : `Vorhängeschloss · ${l.keyCount} Stück`}
@@ -396,7 +426,7 @@ function ListView({
                     {l.keyCount}×
                   </span>
                 </p>
-                <div className="flex items-center gap-2 text-[11px] text-slate-400 truncate">
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground truncate">
                   {l.location && (
                     <span className="inline-flex items-center gap-0.5">
                       <MapPin className="h-3 w-3" />
@@ -409,10 +439,10 @@ function ListView({
                 </div>
                 {t ? (
                   <div className="mt-1 flex items-center gap-1.5 min-w-0">
-                    <TicketIcon className="h-3 w-3 text-violet-400 shrink-0" />
-                    <span className="text-xs text-slate-200 truncate">{ticketDisplayName(t)}</span>
+                    <TicketIcon className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="text-xs text-foreground truncate">{ticketDisplayName(t)}</span>
                     {t.subscription && (
-                      <span className="text-[10px] text-emerald-300 inline-flex items-center gap-0.5 shrink-0">
+                      <span className="text-[10px] text-muted-foreground inline-flex items-center gap-0.5 shrink-0">
                         <CreditCard className="h-2.5 w-2.5" />
                         {t.subscription.name}
                       </span>
@@ -420,18 +450,18 @@ function ListView({
                   </div>
                 ) : manualName ? (
                   <div className="mt-1 flex items-center gap-1.5 min-w-0">
-                    <User className="h-3 w-3 text-amber-400 shrink-0" />
-                    <span className="text-xs text-slate-200 truncate">{manualName}</span>
-                    <span className="text-[10px] text-amber-300/80 inline-flex items-center gap-0.5 shrink-0">
+                    <User className="h-3 w-3 text-warning shrink-0" />
+                    <span className="text-xs text-foreground truncate">{manualName}</span>
+                    <span className="text-[10px] text-warning inline-flex items-center gap-0.5 shrink-0">
                       <User className="h-2.5 w-2.5" />
                       Manuell
                     </span>
                   </div>
                 ) : (
-                  <p className="mt-1 text-xs text-slate-500 italic">Frei</p>
+                  <p className="mt-1 text-xs text-muted-foreground italic">Frei</p>
                 )}
                 {l.openPast.length > 0 && (
-                  <div className="mt-1 flex items-start gap-1 text-[10px] text-amber-300 leading-tight">
+                  <div className="mt-1 flex items-start gap-1 text-[10px] text-warning leading-tight">
                     <AlertTriangle className="h-3 w-3 shrink-0 mt-px" />
                     <span className="min-w-0">
                       <span className="font-semibold">Offen:</span>{" "}
@@ -453,10 +483,10 @@ function ListView({
               {l.current && l.current.keysIssued > 0 && (
                 <span
                   className={cn(
-                    "shrink-0 text-[11px] tabular-nums px-2 py-1 rounded-lg font-mono inline-flex items-center gap-1",
+                    "shrink-0 text-[11px] tabular-nums px-2 py-1 rounded-full font-mono inline-flex items-center gap-1",
                     allBack
-                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                      : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                      ? "bg-success/15 text-success border border-success/30"
+                      : "bg-warning/15 text-warning border border-warning/30"
                   )}
                 >
                   {l.lockType === "KEY" ? <Key className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
@@ -468,36 +498,6 @@ function ListView({
         })}
       </div>
     </div>
-  );
-}
-
-function FilterChip({
-  label, active, color, onClick,
-}: {
-  label: string;
-  active: boolean;
-  color: "indigo" | "emerald" | "slate" | "amber";
-  onClick: () => void;
-}) {
-  const cls = active
-    ? color === "emerald"
-      ? "bg-emerald-600 text-white"
-      : color === "slate"
-        ? "bg-slate-600 text-white"
-        : color === "amber"
-          ? "bg-amber-600 text-white"
-          : "bg-indigo-600 text-white"
-    : color === "amber"
-      ? "bg-amber-950/40 text-amber-300 hover:bg-amber-950/60 border border-amber-800/60"
-      : "bg-slate-800/60 text-slate-400 hover:bg-slate-800";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn("h-10 rounded-xl text-sm font-semibold transition-colors active:scale-95", cls)}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -519,6 +519,8 @@ function DetailView({
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(!current);
   const [search, setSearch] = useState("");
+  // Rückfrage vor dem Aufheben der Vermietung, inline statt Browser-Dialog.
+  const [confirmRelease, setConfirmRelease] = useState(false);
 
   // Lokale Werkbank für Ausgabe/Rücknahme – sync mit Server bei Speichern.
   const [keysIssued, setKeysIssued] = useState(current?.keysIssued ?? 0);
@@ -540,6 +542,7 @@ function DetailView({
     setPickerOpen(!current);
     setPickerMode(current?.renterName && !current.ticket ? "manual" : "ticket");
     setManualName(current?.renterName ?? "");
+    setConfirmRelease(false);
   }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = !!current && (
@@ -670,7 +673,7 @@ function DetailView({
   }
 
   async function release() {
-    if (!confirm(`Vermietung ${year} für Schließfach #${locker.number} wirklich aufheben?`)) return;
+    setConfirmRelease(false);
     await persist(null);
     setPickerOpen(true);
   }
@@ -709,20 +712,20 @@ function DetailView({
   return (
     <div className="p-4 space-y-3">
       {/* Locker-Header */}
-      <div className="rounded-2xl bg-slate-800/40 border border-slate-800 p-4">
+      <div className="glass-tile p-4">
         <div className="flex items-start gap-3">
           <div className={cn(
             "h-16 w-16 rounded-xl flex flex-col items-center justify-center shrink-0 font-mono text-base font-bold tabular-nums",
             current
-              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-              : "bg-slate-700/40 text-slate-400 border border-slate-700"
+              ? "bg-success/15 text-success border border-success/30"
+              : "bg-glass-tile text-muted-foreground border border-glass-border"
           )}>
             <span className="text-[10px] leading-none opacity-70">Nr.</span>
             <span>{locker.number}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-base font-bold text-white">{locker.name}</p>
-            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-400">
+            <p className="text-base font-bold text-foreground">{locker.name}</p>
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 {locker.lockType === "KEY" ? <Key className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
                 {locker.lockType === "KEY" ? "Schlüsselschloss" : "Vorhängeschloss"}
@@ -742,7 +745,7 @@ function DetailView({
               )}
             </div>
             {locker.notes && (
-              <p className="mt-1 text-[11px] text-slate-500 truncate">{locker.notes}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground truncate">{locker.notes}</p>
             )}
           </div>
         </div>
@@ -750,64 +753,62 @@ function DetailView({
 
       {/* Warnung: Alt-Vermietungen mit offenen Schlüsseln */}
       {openPast.length > 0 && (
-        <div className="rounded-2xl border border-amber-700/60 bg-amber-950/20 p-4 space-y-2">
-          <p className="text-sm font-semibold text-amber-200 inline-flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" />
-            Schlüssel aus früheren Jahren noch offen
-          </p>
-          <ul className="space-y-1.5">
+        <Notice tone="warning" title="Schlüssel aus früheren Jahren noch offen">
+          <ul className="mt-2 space-y-1.5">
             {openPast.map((r) => {
               const open = r.keysIssued - r.keysReturned;
               return (
                 <li
                   key={r.id}
-                  className="flex items-center justify-between gap-2 rounded-xl bg-amber-950/30 border border-amber-800/40 px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-control bg-glass-tile border border-glass-border px-3 py-2"
                 >
-                  <div className="min-w-0 text-amber-100">
+                  <div className="min-w-0 text-foreground">
                     <p className="text-sm font-medium truncate">
-                      <span className="font-mono tabular-nums text-amber-300">{r.year}</span>
-                      <span className="mx-1.5 text-amber-400/60">·</span>
+                      <span className="font-mono tabular-nums text-warning">{r.year}</span>
+                      <span className="mx-1.5 text-muted-foreground">·</span>
                       {rentalDisplayName(r)}
                     </p>
-                    <p className="text-[11px] text-amber-200/80 inline-flex items-center gap-1">
+                    <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
                       {locker.lockType === "KEY"
                         ? <Key className="h-2.5 w-2.5" />
                         : <Lock className="h-2.5 w-2.5" />}
                       <span className="font-mono tabular-nums">{r.keysReturned}/{r.keysIssued}</span>
                       <span>· {open} offen</span>
                       {r.ticket?.subscription && (
-                        <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-300">
+                        <span className="ml-1 inline-flex items-center gap-0.5">
                           <CreditCard className="h-2.5 w-2.5" />
                           {r.ticket.subscription.name}
                         </span>
                       )}
                       {!r.ticket && r.renterName && (
-                        <span className="ml-1 inline-flex items-center gap-0.5 text-amber-200/80">
+                        <span className="ml-1 inline-flex items-center gap-0.5 text-warning">
                           <User className="h-2.5 w-2.5" />
                           Manuell
                         </span>
                       )}
                     </p>
                   </div>
-                  <button
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => markPastReturned(r)}
                     disabled={busy}
-                    className="shrink-0 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1 active:scale-95 disabled:opacity-50"
+                    className="shrink-0 h-11 font-semibold"
                     title="Alle als zurückgegeben markieren"
                   >
-                    <ArrowLeftCircle className="h-3.5 w-3.5" />
+                    <ArrowLeftCircle className="size-4 text-success" />
                     Zurück
-                  </button>
+                  </Button>
                 </li>
               );
             })}
           </ul>
-        </div>
+        </Notice>
       )}
 
       {/* Aktueller Mieter ODER Picker */}
       {current && !pickerOpen ? (
-        <div className="rounded-2xl bg-slate-800/40 border border-slate-800 p-4 space-y-3">
+        <div className="glass-tile p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               {current.ticket?.profileImage ? (
@@ -815,24 +816,24 @@ function DetailView({
                 <img
                   src={current.ticket.profileImage}
                   alt=""
-                  className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-500/30 shrink-0"
+                  className="h-12 w-12 rounded-full object-cover ring-2 ring-success/30 shrink-0"
                 />
               ) : current.ticket ? (
-                <div className="h-12 w-12 rounded-full bg-violet-500/20 text-violet-300 flex items-center justify-center shrink-0">
+                <div className="h-12 w-12 rounded-full bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border flex items-center justify-center shrink-0">
                   <TicketIcon className="h-5 w-5" />
                 </div>
               ) : (
-                <div className="h-12 w-12 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0">
+                <div className="h-12 w-12 rounded-full bg-warning/15 text-warning flex items-center justify-center shrink-0">
                   <User className="h-5 w-5" />
                 </div>
               )}
               <div className="min-w-0">
-                <p className="text-base font-semibold text-white truncate">
+                <p className="text-base font-semibold text-foreground truncate">
                   {rentalDisplayName(current)}
                 </p>
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
                   {current.ticket?.subscription && (
-                    <span className="inline-flex items-center gap-0.5 text-emerald-300">
+                    <span className="inline-flex items-center gap-0.5">
                       <CreditCard className="h-2.5 w-2.5" />
                       {current.ticket.subscription.name}
                     </span>
@@ -841,7 +842,7 @@ function DetailView({
                     <span>· {current.ticket.ticketTypeName}</span>
                   )}
                   {!current.ticket && current.renterName && (
-                    <span className="inline-flex items-center gap-0.5 text-amber-300">
+                    <span className="inline-flex items-center gap-0.5 text-warning">
                       <User className="h-2.5 w-2.5" />
                       Manuell
                     </span>
@@ -850,34 +851,36 @@ function DetailView({
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setPickerOpen(true)}
-              className="text-[11px] text-indigo-300 hover:text-indigo-200 underline shrink-0"
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setConfirmRelease(false); setPickerOpen(true); }}
+              className="shrink-0 h-11 font-semibold"
               disabled={busy}
             >
               Wechseln
-            </button>
+            </Button>
           </div>
 
           {/* Schlüssel-Tracking */}
           {locker.keyCount > 0 && (
-            <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-3 space-y-3">
+            <div className="glass-tile p-3 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-300 inline-flex items-center gap-1.5">
+                <p className="text-xs font-semibold text-foreground inline-flex items-center gap-1.5">
                   {locker.lockType === "KEY"
-                    ? <Key className="h-3.5 w-3.5 text-amber-400" />
-                    : <Lock className="h-3.5 w-3.5 text-amber-400" />}
-                  {itemLabel(locker.lockType, true)} <span className="text-slate-500 font-normal">(Soll: {locker.keyCount})</span>
+                    ? <Key className="h-3.5 w-3.5 text-muted-foreground" />
+                    : <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+                  {itemLabel(locker.lockType, true)} <span className="text-muted-foreground font-normal">(Soll: {locker.keyCount})</span>
                 </p>
                 {(() => {
                   const open = keysIssued - keysReturned;
-                  if (keysIssued === 0) return <span className="text-[10px] text-slate-500">Nicht ausgegeben</span>;
+                  if (keysIssued === 0) return <span className="text-[11px] text-muted-foreground">Nicht ausgegeben</span>;
                   return (
                     <span className={cn(
-                      "text-[11px] font-mono px-2 py-0.5 rounded inline-flex items-center gap-1",
+                      "text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-full inline-flex items-center gap-1",
                       open <= 0
-                        ? "bg-emerald-500/15 text-emerald-300"
-                        : "bg-amber-500/15 text-amber-300"
+                        ? "bg-success/15 text-success"
+                        : "bg-warning/15 text-warning"
                     )}>
                       {keysReturned}/{keysIssued}
                       {open <= 0 && <Check className="h-3 w-3" />}
@@ -887,25 +890,28 @@ function DetailView({
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <button
+                {/* Glas-Tasten; die Richtung zeigt das Symbol in Erfolgs- bzw. Info-Farbe. */}
+                <Button
+                  variant="outline"
                   onClick={quickIssue}
                   disabled={busy}
-                  className="rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 px-3 py-3 text-sm font-semibold flex flex-col items-center gap-1 active:scale-95 disabled:opacity-50"
+                  className="h-auto min-h-16 flex-col gap-1 py-3 font-semibold"
                 >
-                  <ArrowRightCircle className="h-5 w-5" />
+                  <ArrowRightCircle className="size-5 text-success" />
                   Ausgeben
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={quickReturn}
                   disabled={busy || keysIssued === 0 || keysReturned >= keysIssued}
-                  className="rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 px-3 py-3 text-sm font-semibold flex flex-col items-center gap-1 active:scale-95 disabled:opacity-40"
+                  className="h-auto min-h-16 flex-col gap-1 py-3 font-semibold"
                 >
-                  <ArrowLeftCircle className="h-5 w-5" />
+                  <ArrowLeftCircle className="size-5 text-info" />
                   Zurücknehmen
-                </button>
+                </Button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-[11px] text-muted-foreground">
                 <KeyField
                   label="Ausgegeben"
                   count={keysIssued}
@@ -930,85 +936,117 @@ function DetailView({
               </div>
 
               {dirty && (
-                <button
+                <Button
                   onClick={saveKeyChanges}
                   disabled={busy}
-                  className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-semibold inline-flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                  className="w-full h-11 font-semibold sm:h-14"
                 >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {busy ? <Loader2 className="animate-spin" /> : <Check />}
                   Manuelle Änderungen speichern
-                </button>
+                </Button>
               )}
             </div>
           )}
 
-          <button
-            onClick={release}
-            disabled={busy}
-            className="w-full rounded-xl bg-rose-600/15 hover:bg-rose-600/25 border border-rose-500/30 text-rose-300 py-2.5 text-sm font-semibold inline-flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
-          >
-            <Trash2 className="h-4 w-4" />
-            Vermietung {year} aufheben
-          </button>
+          {/* Aufheben braucht eine destruktive Rückfrage (Abschnitt 18), im selben
+              Sheet statt einer zweiten Ebene. */}
+          {confirmRelease ? (
+            <Notice
+              tone="danger"
+              compact
+              title={`Vermietung ${year} für Schließfach #${locker.number} wirklich aufheben?`}
+              action={
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => setConfirmRelease(false)}
+                    disabled={busy}
+                    className="h-11 font-semibold sm:h-14"
+                    autoFocus
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={release}
+                    disabled={busy}
+                    className="h-11 font-semibold sm:h-14"
+                  >
+                    <Trash2 />
+                    Aufheben
+                  </Button>
+                </>
+              }
+            />
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => setConfirmRelease(true)}
+              disabled={busy}
+              className="w-full h-11 font-semibold border-destructive/40 text-destructive hover:bg-destructive/10 sm:h-14"
+            >
+              <Trash2 />
+              Vermietung {year} aufheben
+            </Button>
+          )}
         </div>
       ) : (
-        <div className="rounded-2xl bg-slate-800/40 border border-slate-800 p-4 space-y-3">
-          <p className="text-xs text-slate-400">
+        <div className="glass-tile p-4 space-y-3">
+          <p className="text-xs text-muted-foreground">
             {current
-              ? <>Aktueller Mieter: <strong className="text-slate-200">{rentalDisplayName(current)}</strong>. Wähle einen anderen Mieter oder brich ab.</>
+              ? <>Aktueller Mieter: <strong className="text-foreground">{rentalDisplayName(current)}</strong>. Wähle einen anderen Mieter oder brich ab.</>
               : <>Wähle einen Mieter für <strong>{year}</strong> – per Abo-Ticket oder als manuell eingegebener Name.</>}
           </p>
 
           {/* Modus-Switch zwischen Abo-Ticket und manuellem Namen. */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => setPickerMode("ticket")}
-              className={cn(
-                "rounded-xl py-2 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors active:scale-95",
-                pickerMode === "ticket"
-                  ? "bg-violet-600 text-white"
-                  : "bg-slate-900/60 text-slate-400 hover:bg-slate-900 border border-slate-700/50",
-              )}
-            >
-              <TicketIcon className="h-3.5 w-3.5" />
-              Abo-Ticket
-            </button>
-            <button
-              type="button"
-              onClick={() => setPickerMode("manual")}
-              className={cn(
-                "rounded-xl py-2 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors active:scale-95",
-                pickerMode === "manual"
-                  ? "bg-amber-600 text-white"
-                  : "bg-slate-900/60 text-slate-400 hover:bg-slate-900 border border-slate-700/50",
-              )}
-            >
-              <User className="h-3.5 w-3.5" />
-              Manueller Name
-            </button>
-          </div>
+          <Segmented
+            aria-label="Mieter"
+            value={pickerMode}
+            onValueChange={setPickerMode}
+            stretch
+            className={kioskSegmentClass}
+            options={[
+              {
+                value: "ticket",
+                label: (
+                  <>
+                    <TicketIcon className="h-3.5 w-3.5" />
+                    Abo-Ticket
+                  </>
+                ),
+              },
+              {
+                value: "manual",
+                label: (
+                  <>
+                    <User className="h-3.5 w-3.5" />
+                    Manueller Name
+                  </>
+                ),
+              },
+            ]}
+          />
 
           {pickerMode === "manual" ? (
             <div className="space-y-2">
-              <input
+              <Input
                 type="text"
                 value={manualName}
                 onChange={(e) => setManualName(e.target.value)}
                 placeholder="z. B. Familie Mustermann"
                 autoFocus
-                className="w-full bg-slate-900/60 border border-slate-700/50 text-white rounded-xl px-3 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                className="h-11"
               />
-              <button
+              <Button
                 type="button"
                 onClick={() => assignManual(manualName)}
                 disabled={busy || !manualName.trim()}
-                className="w-full rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700/60 disabled:text-slate-500 text-white py-2.5 text-sm font-semibold inline-flex items-center justify-center gap-2 active:scale-95"
+                className="w-full h-11 font-semibold sm:h-14"
               >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {busy ? <Loader2 className="animate-spin" /> : <Check />}
                 Mieter speichern
-              </button>
-              <p className="text-[10px] text-slate-500 leading-snug">
+              </Button>
+              <p className="text-[11px] text-muted-foreground leading-snug">
                 Manuelle Mieter sind nicht mit einem Abo-Ticket verknüpft – Schlüssel-Tracking
                 und Historie bleiben aber erhalten.
               </p>
@@ -1016,24 +1054,30 @@ function DetailView({
           ) : (
           <>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <input
+            <Search className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
               type="text"
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Mieter, Abo, Tickettyp suchen…"
-              className="w-full bg-slate-900/60 border border-slate-700/50 text-white rounded-xl pl-9 pr-9 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              className="h-11 pl-10 pr-12"
             />
             {search && (
-              <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-                <X className="h-4 w-4" />
-              </button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSearch("")}
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Suche leeren"
+              >
+                <X />
+              </Button>
             )}
           </div>
           <div className="space-y-1 max-h-[40vh] overflow-y-auto monitor-scrollbar -mx-1 px-1">
             {filteredTickets.length === 0 && (
-              <p className="text-xs text-slate-500 text-center py-6">Keine passenden Tickets.</p>
+              <EmptyState icon={Search} title="Keine passenden Tickets." compact />
             )}
             {filteredTickets.map((t) => {
               const isCur = current?.ticketId === t.id;
@@ -1043,25 +1087,25 @@ function DetailView({
                   onClick={() => assignTicket(t)}
                   disabled={busy || isCur}
                   className={cn(
-                    "w-full text-left rounded-xl border p-2.5 flex items-center gap-2.5 transition-colors",
+                    "w-full min-h-11 text-left rounded-control border p-2.5 flex items-center gap-2.5 transition-colors",
                     isCur
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 cursor-default"
-                      : "bg-slate-900/40 border-slate-800 hover:bg-slate-800 active:scale-[0.99] text-white"
+                      ? "bg-success/10 border-success/30 text-success cursor-default"
+                      : "bg-glass-tile border-glass-border hover:bg-glass-strong active:scale-[0.99] text-foreground"
                   )}
                 >
                   {t.profileImage ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={t.profileImage} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-700 shrink-0" />
+                    <img src={t.profileImage} alt="" className="h-8 w-8 rounded-full object-cover ring-1 ring-glass-border shrink-0" />
                   ) : (
-                    <div className="h-8 w-8 rounded-full bg-violet-500/20 text-violet-300 flex items-center justify-center shrink-0">
+                    <div className="h-8 w-8 rounded-full bg-glass-tile text-muted-foreground ring-1 ring-inset ring-glass-border flex items-center justify-center shrink-0">
                       <TicketIcon className="h-4 w-4" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{ticketDisplayName(t)}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 truncate">
+                    <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground truncate">
                       {t.subscription && (
-                        <span className="inline-flex items-center gap-0.5 text-emerald-300">
+                        <span className="inline-flex items-center gap-0.5">
                           <CreditCard className="h-2.5 w-2.5" />
                           {t.subscription.name}
                         </span>
@@ -1077,19 +1121,20 @@ function DetailView({
           </>
           )}
           {current && (
-            <button
+            <Button
+              variant="outline"
               onClick={() => setPickerOpen(false)}
               disabled={busy}
-              className="w-full rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 text-sm active:scale-95"
+              className="w-full h-11 sm:h-14"
             >
               Abbrechen
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       {busy && (
-        <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Speichere…
         </div>
@@ -1145,7 +1190,7 @@ function KeyField({
     <div className="space-y-1">
       <span className="block">{label}</span>
       <div className="flex gap-1">
-        <input
+        <Input
           ref={numberRef}
           key={`${instanceKey ?? "x"}-num`}
           type="number"
@@ -1153,9 +1198,9 @@ function KeyField({
           max={max}
           defaultValue={count}
           onChange={(e) => setCount(Math.max(0, Math.min(max, Number(e.target.value) || 0)))}
-          className="w-12 bg-slate-900 border border-slate-700 text-white rounded-lg px-1.5 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="h-11 w-16 px-2 tabular-nums"
         />
-        <input
+        <Input
           ref={dateRef}
           key={`${instanceKey ?? "x"}-date`}
           type="date"
@@ -1163,7 +1208,7 @@ function KeyField({
           onChange={(e) =>
             setDate(e.target.value ? new Date(e.target.value).toISOString() : null)
           }
-          className="flex-1 min-w-0 bg-slate-900 border border-slate-700 text-white rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="h-11 flex-1 min-w-0 px-2"
         />
       </div>
     </div>
