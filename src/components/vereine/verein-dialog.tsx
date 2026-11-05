@@ -133,8 +133,9 @@ function TicketChecklist({
             description={item.sublabel}
           />
         ))}
+        {/* Leer innerhalb der Liste: kleine Stufe, wie es der Baustein Checklist vorsieht. */}
         {filtered.length === 0 && (
-          <EmptyState compact icon={Search} title="Keine Treffer" />
+          <EmptyState size="sm" icon={Search} title="Keine Treffer" />
         )}
       </Checklist>
     </div>

@@ -159,16 +159,14 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
             ...(lockersWithOpenPast.length > 0
               ? [{
                   value: "openKeys" as const,
-                  // Segmented kennt kein title je Option, daher sitzt der Tooltip am Label.
                   label: (
-                    <span
-                      className="inline-flex items-center gap-1.5"
-                      title="Schließfächer mit ausstehenden Schlüsseln aus früheren Jahren"
-                    >
+                    <span className="inline-flex items-center gap-1.5">
                       <AlertTriangle className="h-3.5 w-3.5 text-warning" />
                       Offene Schlüssel
                     </span>
                   ),
+                  // Tooltip am ganzen Segment (`title` je Option), nicht nur am Label.
+                  title: "Schließfächer mit ausstehenden Schlüsseln aus früheren Jahren",
                   count: lockersWithOpenPast.length,
                 }]
               : []),

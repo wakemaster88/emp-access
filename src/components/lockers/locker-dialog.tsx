@@ -287,7 +287,8 @@ function TicketPicker({
                 >
                   <div className={cn(
                     "size-[18px] rounded-full border flex items-center justify-center shrink-0",
-                    isSel ? "bg-primary-fill border-primary text-primary-foreground" : "border-input bg-field"
+                    // Farben wie das Kästchen (Checkbox): gewählt deckend ohne hellen Ring, leer mit Rand ab 3:1.
+                    isSel ? "border-primary-fill bg-primary-fill text-primary-foreground" : "border-foreground/50 bg-field dark:border-white/40"
                   )}>
                     {isSel && <Check className="size-3" strokeWidth={3} />}
                   </div>
@@ -341,7 +342,7 @@ function RenterModeToggle({
   required?: boolean;
 }) {
   // Segmentwahl ohne eigene Klassen; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
-  // Segmented kennt kein title je Option, daher sitzen die Tooltips an den Labels.
+  // Tooltips am ganzen Segment (`title` je Option), nicht nur am Label.
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-xs text-muted-foreground">
@@ -355,20 +356,22 @@ function RenterModeToggle({
           {
             value: "ticket",
             label: (
-              <span className="inline-flex items-center gap-1" title="Mieter aus den Abo-Tickets auswählen">
+              <span className="inline-flex items-center gap-1">
                 <TicketIcon className="h-3 w-3" />
                 Abo-Ticket
               </span>
             ),
+            title: "Mieter aus den Abo-Tickets auswählen",
           },
           {
             value: "manual",
             label: (
-              <span className="inline-flex items-center gap-1" title="Mietername frei eingeben (ohne Abo-Verknüpfung)">
+              <span className="inline-flex items-center gap-1">
                 <User className="h-3 w-3" />
                 Manuell
               </span>
             ),
+            title: "Mietername frei eingeben (ohne Abo-Verknüpfung)",
           },
         ]}
       />
