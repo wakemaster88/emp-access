@@ -168,6 +168,7 @@ Sitzung ohne Fenster-Server geprüft werden.
 - **Werkzeuge** (`tools.ts`): Lesen läuft sofort (Lage, Kameras, Standbild, Ereignisse, Log, Räume mit Live-Zustand, Klima, Netzwerk-Inventar, Ping, Mäher, Verbesserungslog, Notizen). Alles, was schaltet (Gerät, Kamera-Licht/Sirene/Preset, Tor, Mäher, Dienst-Neustart), kommt als Rückfrage mit Knopf „Ausführen“. Netzwerk-Änderungen (Router, Switches, VLANs, DHCP, WLAN) und freie Shell-Befehle gibt es bewusst nicht.
 - **Wächter** (`watch.ts`, alle 5 min): Cloud-Verbindung, Kameras und DoorBird aus Hub-Sicht, RAM und Platte, Tracker, Soundweb, Face-Sidecar. Warnungen erst nach zwei Prüfungen, Alarme sofort, Entwarnung wenn erledigt. In der Ruhezeit (`HUB_AGENT_QUIET`, Vorgabe 22–7 Uhr) gesammelt am Morgen. Was die Cloud schon meldet (Hub offline, Gerät offline, Switch-Befunde), meldet der Wächter nicht doppelt.
 - **Tagesbericht** um `HUB_AGENT_REPORT_TIME` (Vorgabe 07:30): Lage, Auffälligkeiten, höchstens drei Vorschläge. Vorschläge, keine eigenmächtigen Änderungen.
+- **Sprachnachrichten** (`voice.ts`): werden lokal mit whisper.cpp in Text umgewandelt (Homebrew `whisper-cpp`, Modell `HUB_AGENT_WHISPER_MODEL`, Vorgabe `large-v3-turbo`, ~1,6 GB in `.cache/whisper`, OGG → WAV per ffmpeg). Der Bot zeigt kurz, was er verstanden hat, und antwortet dann wie auf eine Textnachricht. Audio verlässt den Hub nicht.
 - **Speicher:** Das Modell bleibt `HUB_AGENT_KEEP_ALIVE` (30 min) nach der letzten Anfrage geladen und wird dann entladen.
 
 ## Installation auf einer Hub-Maschine
