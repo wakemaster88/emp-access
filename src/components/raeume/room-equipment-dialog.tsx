@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { EquipmentPicker, type EquipmentItem } from "@/components/schliessanlage/equipment-picker";
 import { ErrorLine, apiRequest, deviceMetaLabel } from "@/components/raeume/shared";
 import type { NetworkItem, RoomCamera, RoomDevice, RoomZone, ScheduleOption } from "@/components/raeume/types";
@@ -136,12 +138,7 @@ export function RoomEquipmentDialog({
         <div className="space-y-3">
           <div className="space-y-1">
             <Label className="text-xs">Name</Label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={120}
-              className="h-9 w-full rounded-md border border-neutral-200 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            />
+            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-label="Name des Raums" />
           </div>
 
           <div className="space-y-1">
@@ -170,10 +167,10 @@ export function RoomEquipmentDialog({
 
           <div className="space-y-1">
             <Label className="text-xs">Betriebszeit</Label>
-            <select
+            <NativeSelect
               value={scheduleId ?? ""}
               onChange={(e) => setScheduleId(e.target.value ? Number(e.target.value) : null)}
-              className="h-9 w-full rounded-md border border-neutral-200 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              aria-label="Betriebszeit"
             >
               <option value="">keine – Raum gilt als dauerhaft verfügbar</option>
               {scheduleOptions.map((option) => (
@@ -182,9 +179,9 @@ export function RoomEquipmentDialog({
                   {option.isDefault ? " (Vorbelegung)" : ""}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             {scheduleOptions.length === 0 && (
-              <p className="text-[11px] text-neutral-500">
+              <p className="text-[11px] text-muted-foreground">
                 Noch keine Betriebszeit angelegt – unter „Betriebszeiten“ anlegen.
               </p>
             )}
@@ -221,7 +218,7 @@ export function RoomEquipmentDialog({
               placeholder="Zone suchen…"
               emptyText="Noch keine Beschallungszone angelegt – unter „Audio“ anlegen."
             />
-            <p className="text-[11px] text-neutral-500">
+            <p className="text-[11px] text-muted-foreground">
               Zonen im Raum richten sich mit „Betriebsbeginn“ und „Betriebsende“ nach der
               Betriebszeit dieses Raums.
             </p>

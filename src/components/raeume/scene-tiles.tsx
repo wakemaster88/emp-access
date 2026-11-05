@@ -13,6 +13,8 @@ import { useRouter } from "next/navigation";
 import { Loader2, Play, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { apiRequest, ErrorLine, shortDeviceName } from "@/components/raeume/shared";
 import type { RoomDevice, RoomPanel, RoomRuleSummary, RoomZone } from "@/components/raeume/types";
 import { deviceControls } from "@/lib/device-controls";
@@ -94,7 +96,7 @@ export function SceneTiles({
               <span
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                  s?.kind === "ok" ? "bg-emerald-500 text-white" : "bg-primary/10 text-primary group-enabled:group-hover:bg-primary group-enabled:group-hover:text-primary-foreground",
+                  s?.kind === "ok" ? "bg-emerald-500 text-white" : "bg-primary/10 text-primary group-enabled:group-hover:bg-primary-fill group-enabled:group-hover:text-primary-foreground",
                 )}
               >
                 {s?.kind === "busy" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
@@ -227,7 +229,7 @@ function SceneDialog({ room, scene, onClose }: { room: RoomPanel; scene: RoomRul
           onClick={() => setPicks((p) => ({ ...p, [key]: c.action }))}
           className={cn(
             "px-2.5 py-1 font-medium transition-colors",
-            (picks[key] ?? null) === c.action ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+            (picks[key] ?? null) === c.action ? "bg-primary-fill text-primary-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {c.label}
@@ -271,13 +273,7 @@ function SceneDialog({ room, scene, onClose }: { room: RoomPanel; scene: RoomRul
         ) : (
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name der Szene"
-                maxLength={120}
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring dark:bg-card"
-              />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name der Szene" maxLength={120} aria-label="Name der Szene" />
               <div className="flex flex-wrap gap-1">
                 {SUGGESTED_NAMES.map((n) => (
                   <button
@@ -321,17 +317,17 @@ function SceneDialog({ room, scene, onClose }: { room: RoomPanel; scene: RoomRul
                       ])}
                     </div>
                     {picks[`z${z.id}`] === "PLAY" && (
-                      <select
+                      <NativeSelect
                         value={playlistByZone[z.id] ?? playlists[0]?.id ?? ""}
                         onChange={(e) => setPlaylistByZone((p) => ({ ...p, [z.id]: Number(e.target.value) }))}
-                        className="h-8 w-full rounded-md border border-border bg-transparent px-2 text-xs"
+                        aria-label={`Playlist für ${z.name}`}
                       >
                         {playlists.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name}
                           </option>
                         ))}
-                      </select>
+                      </NativeSelect>
                     )}
                   </div>
                 ))}

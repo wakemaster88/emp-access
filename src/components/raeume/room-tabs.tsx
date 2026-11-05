@@ -10,6 +10,7 @@
  */
 
 import { ChevronDown, ChevronUp, LayoutGrid, PackageOpen } from "lucide-react";
+import { segmentedCountClass } from "@/components/ui/segmented-styles";
 import { cn } from "@/lib/utils";
 
 export type TabDot = "alert" | "present" | "open" | "closed" | "none";
@@ -135,7 +136,7 @@ export function RoomTabs({
           <PackageOpen className="h-3.5 w-3.5" />
           <span>Ohne Raum</span>
           {looseCount > 0 && (
-            <span className="rounded-full bg-warning/15 px-1.5 text-[10px] font-semibold tabular-nums text-warning">{looseCount}</span>
+            <span className={segmentedCountClass(view.kind === "assign")}>{looseCount}</span>
           )}
         </TabButton>
       )}

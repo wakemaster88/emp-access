@@ -138,7 +138,7 @@ export function ClimateOverride({
               type="button"
               onClick={() => apply(c.body)}
               disabled={busy}
-              className="h-7 rounded-full bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-60"
+              className="h-7 rounded-full bg-primary-fill px-3 font-semibold text-primary-foreground disabled:opacity-60"
             >
               {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : c.label}
             </button>

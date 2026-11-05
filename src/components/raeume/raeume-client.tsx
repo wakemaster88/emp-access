@@ -440,7 +440,7 @@ function NewRoomButton() {
         type="button"
         onClick={() => void create()}
         disabled={busy || !name.trim()}
-        className="h-9 rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground disabled:opacity-50"
+        className="h-9 rounded-control bg-primary-fill px-3 text-[12px] font-semibold text-primary-foreground disabled:opacity-50"
       >
         {busy ? "…" : "Anlegen"}
       </button>

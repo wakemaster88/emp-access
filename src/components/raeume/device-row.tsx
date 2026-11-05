@@ -183,7 +183,7 @@ export function DeviceRow({
                     control.role === "danger"
                       ? "bg-destructive/10 text-destructive hover:bg-destructive/10 "
                       : control.role === "primary"
-                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                        ? "bg-primary-fill text-primary-foreground hover:bg-primary-fill/90"
                         : "bg-foreground/8 text-foreground/80 hover:bg-foreground/12",
                   )}
                 >
