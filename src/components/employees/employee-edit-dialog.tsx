@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Notice } from "@/components/ui/notice";
 import {
@@ -19,7 +20,6 @@ import {
   Save, Loader2, Trash2, Check, MapPin, Cpu, Clock, IdCard, KeyRound,
   Smartphone, Copy, RefreshCw, ExternalLink, History,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { WeekScheduleEditor } from "@/components/devices/week-schedule-editor";
 import { parseSchedule, emptySchedule, hasAnySchedule } from "@/lib/schedule";
 import type { WeekSchedule } from "@/lib/schedule";
@@ -358,30 +358,21 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
               <p className="text-xs text-muted-foreground">
                 Klassischer Bereich-Zugang. Mitarbeiter darf an Geräten der zugewiesenen Bereiche scannen.
               </p>
-              {/* Auswahlliste als Glas-Kachel: Auswahl bg-primary/10, Darüberfahren bg-glass-tile,
-                  Zeile mit dem Baustein Checkbox (docs/design-regeln.md, Abschnitte 12, 14 und 17). */}
-              <div className="glass-tile grid grid-cols-1 sm:grid-cols-2 gap-0.5 max-h-48 overflow-y-auto scrollbar-thin p-1">
+              {/* Auswahlliste aus dem Baustein Checklist: die ganze Zeile schaltet das Kästchen
+                  (docs/design-regeln.md, Abschnitt 16). */}
+              <Checklist aria-label="Bereiche" maxHeight="12rem">
                 {areas.length === 0 && (
-                  <EmptyState compact icon={MapPin} title="Keine Bereiche angelegt" className="col-span-full" />
+                  <EmptyState size="sm" icon={MapPin} title="Keine Bereiche angelegt" />
                 )}
-                {areas.map((a) => {
-                  const checked = form.areaIds.includes(a.id);
-                  return (
-                    <label
-                      key={a.id}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-sm text-left transition-colors max-sm:min-h-11",
-                        checked
-                          ? "bg-primary/10 text-foreground"
-                          : "text-muted-foreground hover:bg-glass-tile hover:text-foreground"
-                      )}
-                    >
-                      <Checkbox checked={checked} onCheckedChange={() => toggleArea(a.id)} />
-                      <span className="truncate">{a.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
+                {areas.map((a) => (
+                  <ChecklistItem
+                    key={a.id}
+                    checked={form.areaIds.includes(a.id)}
+                    onCheckedChange={() => toggleArea(a.id)}
+                    title={a.name}
+                  />
+                ))}
+              </Checklist>
             </section>
 
             <Separator />
@@ -398,31 +389,20 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
                 Zusätzlicher Zugang zu einzelnen Geräten – auch ohne Bereich-Zugehörigkeit (z.B. nur Nebeneingang).
               </p>
               {/* Gleiche Auswahl wie bei den Bereichen; keine eigene Farbe für Geräte (Abschnitt 3). */}
-              <div className="glass-tile grid grid-cols-1 sm:grid-cols-2 gap-0.5 max-h-48 overflow-y-auto scrollbar-thin p-1">
+              <Checklist aria-label="Direkt-Geräte" maxHeight="12rem">
                 {devices.length === 0 && (
-                  <EmptyState compact icon={Cpu} title="Keine Geräte angelegt" className="col-span-full" />
+                  <EmptyState size="sm" icon={Cpu} title="Keine Geräte angelegt" />
                 )}
-                {devices.map((d) => {
-                  const checked = form.deviceIds.includes(d.id);
-                  return (
-                    <label
-                      key={d.id}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-sm text-left transition-colors max-sm:min-h-11",
-                        checked
-                          ? "bg-primary/10 text-foreground"
-                          : "text-muted-foreground hover:bg-glass-tile hover:text-foreground"
-                      )}
-                    >
-                      <Checkbox checked={checked} onCheckedChange={() => toggleDevice(d.id)} />
-                      <span className="min-w-0">
-                        <span className="block truncate">{d.name}</span>
-                        <span className="block text-[11px] text-muted-foreground">{d.type}{d.category ? ` · ${d.category}` : ""}</span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+                {devices.map((d) => (
+                  <ChecklistItem
+                    key={d.id}
+                    checked={form.deviceIds.includes(d.id)}
+                    onCheckedChange={() => toggleDevice(d.id)}
+                    title={d.name}
+                    description={`${d.type}${d.category ? ` · ${d.category}` : ""}`}
+                  />
+                ))}
+              </Checklist>
             </section>
 
             <Separator />
@@ -624,18 +604,20 @@ export function EmployeeEditDialog({ target, areas, devices, onClose, onSaved, o
             </DialogFooter>
           </div>
         ) : (
-          <DialogFooter className="gap-2 sm:gap-2">
-            {!isNew && form.id && (
+          <DialogFooter
+            className="gap-2 sm:gap-2"
+            start={!isNew && form.id && (
               <Button
                 variant="ghost"
                 onClick={() => setConfirmAction("delete")}
                 disabled={deleting || saving}
-                className="sm:mr-auto text-muted-foreground hover:text-destructive"
+                className="text-muted-foreground hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" />
                 Löschen
               </Button>
             )}
+          >
             {!isNew && form.id && onShowHistory && (
               <Button
                 variant="outline"

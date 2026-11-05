@@ -580,7 +580,7 @@ export function TicketOverlay({
                     );
                     // Aktueller Slot als Auswahl (Akzent), voller Slot rot, freie als Glas.
                     const baseColor = isCurrent
-                      ? "bg-primary border-primary text-primary-foreground"
+                      ? "bg-primary-fill border-primary text-primary-foreground"
                       : blocked
                         ? "bg-destructive/10 border-destructive/40 text-destructive cursor-not-allowed opacity-60"
                         : "bg-glass-tile hover:bg-glass-strong border-glass-border text-foreground";

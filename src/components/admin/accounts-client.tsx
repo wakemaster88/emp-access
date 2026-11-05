@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
@@ -23,6 +22,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -365,7 +365,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
   return (
     <>
       {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-      <Card className="overflow-hidden pb-0 sm:pb-0">
+      <Card flush>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2 tabular-nums">
             <Building2 className="h-4 w-4 text-primary" />
@@ -377,10 +377,10 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
           </Button>
         </CardHeader>
         {/* Erste und letzte Spalte rücken auf den Innenabstand der Karte ein; breite Tabellen scrollen im Container. */}
-        <Table>
+        <Table edge>
           <TableHeader>
             <TableRow>
-              <TableHead className="pl-4 sm:pl-[18px]">Name</TableHead>
+              <TableHead>Name</TableHead>
               <TableHead>Subdomain</TableHead>
               <TableHead>API Token</TableHead>
               <TableHead>Status</TableHead>
@@ -389,20 +389,16 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
               <TableHead className="text-right">Tickets</TableHead>
               <TableHead className="text-right">Scans</TableHead>
               <TableHead>Erstellt</TableHead>
-              <TableHead className="w-[100px] pr-4 sm:pr-[18px]"></TableHead>
+              <TableHead className="w-[100px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {accounts.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={10} className="p-0 whitespace-normal">
-                  <EmptyState icon={Building2} title="Keine Mandanten vorhanden" />
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={10} className="p-0" compact={false} icon={Building2} title="Keine Mandanten vorhanden" />
             )}
             {accounts.map((acc) => (
               <TableRow key={acc.id} className="group">
-                <TableCell className="font-medium pl-4 sm:pl-[18px]">{acc.name}</TableCell>
+                <TableCell className="font-medium">{acc.name}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{acc.subdomain}</TableCell>
                 <TableCell>
                   <button
@@ -428,7 +424,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                 <TableCell className="text-right tabular-nums">{acc._count.tickets}</TableCell>
                 <TableCell className="text-right tabular-nums">{acc._count.scans}</TableCell>
                 <TableCell className="text-sm text-muted-foreground tabular-nums">{fmtDate(acc.createdAt)}</TableCell>
-                <TableCell className="pr-4 sm:pr-[18px]">
+                <TableCell>
                   {/* Mit Maus erst beim Darüberfahren oder Fokus, auf Touch-Geräten immer sichtbar. */}
                   <div className="flex items-center gap-1 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-within:opacity-100">
                     <Button variant="ghost" size="icon-sm" className="max-sm:size-11" onClick={() => openUsers(acc)} title="Benutzer verwalten" aria-label="Benutzer verwalten">
@@ -593,22 +589,15 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                 </TableHeader>
                 <TableBody>
                   {users.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="p-0 whitespace-normal">
-                        <EmptyState compact icon={Users} title="Keine Benutzer vorhanden" />
-                      </TableCell>
-                    </TableRow>
+                    <TableEmpty colSpan={6} className="p-0" icon={Users} title="Keine Benutzer vorhanden" />
                   )}
                   {users.map((u) => (
                     <TableRow key={u.id} className="group">
                       <TableCell className="font-medium">{u.name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
                       <TableCell>
-                        {/* Rolle Admin weich in Akzentfarbe: die Pille hat dafür keine eigene Variante. */}
-                        <Badge
-                          variant={u.role === "ADMIN" ? "default" : "neutral"}
-                          className={u.role === "ADMIN" ? "bg-primary/10 text-primary" : undefined}
-                        >
+                        {/* Rolle Admin weich in Akzentfarbe (Variante accent). */}
+                        <Badge variant={u.role === "ADMIN" ? "accent" : "neutral"}>
                           {u.role === "ADMIN" ? "Admin" : "Benutzer"}
                         </Badge>
                       </TableCell>

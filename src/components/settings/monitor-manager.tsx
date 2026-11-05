@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checklist, ChecklistItem } from "@/components/ui/checklist";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
 import { Notice } from "@/components/ui/notice";
@@ -70,18 +70,6 @@ function typeTileClass(active: boolean) {
   return cn(
     "glass-tile press flex items-center gap-2.5 p-3 text-left",
     active ? "border-primary/60 bg-primary/10" : "hover:bg-glass-strong",
-  );
-}
-
-// Auswahlliste als Glas-Kachel; Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile
-// (docs/design-regeln.md, Abschnitt 17). Jede Zeile ist ein label mit dem Baustein Checkbox
-// (Abschnitt 14): die ganze Zeile schaltet das Kästchen.
-const PICK_LIST = "glass-tile max-h-48 overflow-y-auto scrollbar-thin space-y-0.5 p-1";
-
-function pickRowClass(selected: boolean) {
-  return cn(
-    "w-full flex cursor-pointer items-center gap-3 rounded-control px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
-    selected ? "bg-primary/10" : "hover:bg-glass-tile",
   );
 }
 
@@ -248,32 +236,29 @@ function MonitorDialog({
           <p className="text-xs text-muted-foreground">
             Ausgewählte Türen erscheinen als direkter Button im Header des Check-in Monitors. Alle übrigen Türen / Drehkreuze sind weiterhin über das &bdquo;Mehr Türen&ldquo;-Menü erreichbar.
           </p>
-          <div className={PICK_LIST}>
+          <Checklist aria-label="Tür-Schnellzugriff" maxHeight="12rem">
             {devices.filter((d) => d.category === "TUER" || d.category === "DREHKREUZ").length === 0 && (
               <EmptyState
-                compact
+                size="sm"
                 title="Keine Türen / Drehkreuze vorhanden."
                 description="Setze die Kategorie eines Gerätes auf Tür oder Drehkreuz."
               />
             )}
             {devices
               .filter((d) => d.category === "TUER" || d.category === "DREHKREUZ")
-              .map((device) => {
-                const selected = selectedDevices.includes(device.id);
-                return (
-                  <label key={device.id} className={pickRowClass(selected)}>
-                    <Checkbox checked={selected} onCheckedChange={() => toggleDevice(device.id)} />
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium text-foreground truncate">{device.name}</span>
-                      <span className="block text-xs text-muted-foreground">{device.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}</span>
-                    </span>
-                    {device.isActive
-                      ? <Wifi className="h-4 w-4 text-success shrink-0" />
-                      : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
-                  </label>
-                );
-              })}
-          </div>
+              .map((device) => (
+                <ChecklistItem
+                  key={device.id}
+                  checked={selectedDevices.includes(device.id)}
+                  onCheckedChange={() => toggleDevice(device.id)}
+                  title={device.name}
+                  description={device.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}
+                  trailing={device.isActive
+                    ? <Wifi className="h-4 w-4 text-success shrink-0" />
+                    : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
+                />
+              ))}
+          </Checklist>
           {selectedDevices.length > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums">{selectedDevices.length} Tür(en) als Schnellzugriff</p>
           )}
@@ -286,26 +271,23 @@ function MonitorDialog({
               Optional: Das erste ausgewählte Gerät wird als Scan-Quelle in der Historie hinterlegt.
             </p>
           )}
-          <div className={PICK_LIST}>
+          <Checklist aria-label="Geräte auswählen" maxHeight="12rem">
             {devices.length === 0 && (
-              <EmptyState compact title="Keine Geräte vorhanden" />
+              <EmptyState size="sm" title="Keine Geräte vorhanden" />
             )}
-            {devices.map((device) => {
-              const selected = selectedDevices.includes(device.id);
-              return (
-                <label key={device.id} className={pickRowClass(selected)}>
-                  <Checkbox checked={selected} onCheckedChange={() => toggleDevice(device.id)} />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-foreground truncate">{device.name}</span>
-                    <span className="block text-xs text-muted-foreground">{device.type === "RASPBERRY_PI" ? "Raspberry Pi" : "Shelly"}</span>
-                  </span>
-                  {device.isActive
-                    ? <Wifi className="h-4 w-4 text-success shrink-0" />
-                    : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
-                </label>
-              );
-            })}
-          </div>
+            {devices.map((device) => (
+              <ChecklistItem
+                key={device.id}
+                checked={selectedDevices.includes(device.id)}
+                onCheckedChange={() => toggleDevice(device.id)}
+                title={device.name}
+                description={device.type === "RASPBERRY_PI" ? "Raspberry Pi" : "Shelly"}
+                trailing={device.isActive
+                  ? <Wifi className="h-4 w-4 text-success shrink-0" />
+                  : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
+              />
+            ))}
+          </Checklist>
           {selectedDevices.length > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums">{selectedDevices.length} Gerät(e) ausgewählt</p>
           )}
@@ -316,9 +298,9 @@ function MonitorDialog({
           <p className="text-xs text-muted-foreground">
             Ausgewählte Geräte erscheinen als Schalter auf dem Scan-Monitor – z.&nbsp;B. ein Shelly, der das Drehkreuz aus- und einschaltet.
           </p>
-          <div className={PICK_LIST}>
+          <Checklist aria-label="Geräte steuern" maxHeight="12rem">
             {devices.filter((d) => deviceControls(d).length > 0).length === 0 && (
-              <EmptyState compact title="Keine schaltbaren Geräte vorhanden." />
+              <EmptyState size="sm" title="Keine schaltbaren Geräte vorhanden." />
             )}
             {devices
               .filter((d) => deviceControls(d).length > 0)
@@ -326,20 +308,25 @@ function MonitorDialog({
                 const selected = selectedControlDevices.includes(device.id);
                 const actions = deviceControls(device).map((c) => c.label).join(" · ");
                 return (
-                  <label key={device.id} className={pickRowClass(selected)}>
-                    <Checkbox checked={selected} onCheckedChange={() => toggleControlDevice(device.id)} />
-                    <Power className={cn("h-3.5 w-3.5 shrink-0", selected ? "text-primary" : "text-muted-foreground")} />
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium text-foreground truncate">{device.name}</span>
-                      <span className="block text-xs text-muted-foreground truncate">{actions}</span>
-                    </span>
-                    {device.isActive
+                  <ChecklistItem
+                    key={device.id}
+                    checked={selected}
+                    onCheckedChange={() => toggleControlDevice(device.id)}
+                    // ChecklistItem hat keinen Platz für ein Symbol vorn: das Power-Symbol steht im Titel vor dem Namen.
+                    title={
+                      <span className="inline-flex items-center gap-1.5">
+                        <Power className={cn("h-3.5 w-3.5 shrink-0", selected ? "text-primary" : "text-muted-foreground")} />
+                        {device.name}
+                      </span>
+                    }
+                    description={actions}
+                    trailing={device.isActive
                       ? <Wifi className="h-4 w-4 text-success shrink-0" />
                       : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
-                  </label>
+                  />
                 );
               })}
-          </div>
+          </Checklist>
           {selectedControlDevices.length > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums">{selectedControlDevices.length} Steuergerät(e)</p>
           )}
@@ -350,22 +337,19 @@ function MonitorDialog({
           <p className="text-xs text-muted-foreground">
             Grenzt die Personen-/Ticketliste auf diese Bereiche ein – nützlich für Bereiche <span className="font-medium">ohne eigenes Scan-Gerät</span> (z.B. Seilbahn B, Übungslift). Ohne Auswahl gelten die Bereiche der ausgewählten Geräte.
           </p>
-          <div className={PICK_LIST}>
+          <Checklist aria-label="Bereiche (optional)" maxHeight="12rem">
             {accessAreas.length === 0 && (
-              <EmptyState compact title="Keine Bereiche vorhanden" />
+              <EmptyState size="sm" title="Keine Bereiche vorhanden" />
             )}
-            {accessAreas.map((area) => {
-              const selected = selectedAreas.includes(area.id);
-              return (
-                <label key={area.id} className={pickRowClass(selected)}>
-                  <Checkbox checked={selected} onCheckedChange={() => toggleArea(area.id)} />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-foreground truncate">{area.name}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+            {accessAreas.map((area) => (
+              <ChecklistItem
+                key={area.id}
+                checked={selectedAreas.includes(area.id)}
+                onCheckedChange={() => toggleArea(area.id)}
+                title={area.name}
+              />
+            ))}
+          </Checklist>
           {selectedAreas.length > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums">{selectedAreas.length} Bereich(e) als Filter</p>
           )}
@@ -374,22 +358,19 @@ function MonitorDialog({
         {type === "RESOURCE_MONITOR" && <div className="space-y-2">
           <Label>Bereiche auswählen</Label>
           <p className="text-xs text-muted-foreground">Wähle die Bereiche, die im Ressourcen-Monitor angezeigt werden. Ohne Auswahl werden alle Dashboard-Bereiche verwendet.</p>
-          <div className={PICK_LIST}>
+          <Checklist aria-label="Bereiche auswählen" maxHeight="12rem">
             {accessAreas.length === 0 && (
-              <EmptyState compact title="Keine Bereiche vorhanden" />
+              <EmptyState size="sm" title="Keine Bereiche vorhanden" />
             )}
-            {accessAreas.map((area) => {
-              const selected = selectedDevices.includes(area.id);
-              return (
-                <label key={area.id} className={pickRowClass(selected)}>
-                  <Checkbox checked={selected} onCheckedChange={() => toggleDevice(area.id)} />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-foreground truncate">{area.name}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+            {accessAreas.map((area) => (
+              <ChecklistItem
+                key={area.id}
+                checked={selectedDevices.includes(area.id)}
+                onCheckedChange={() => toggleDevice(area.id)}
+                title={area.name}
+              />
+            ))}
+          </Checklist>
           {selectedDevices.length > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums">{selectedDevices.length} Bereich(e) ausgewählt</p>
           )}

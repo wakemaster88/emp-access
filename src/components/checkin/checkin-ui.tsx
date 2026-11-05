@@ -427,7 +427,7 @@ export function DaySelector({ date, onChange }: { date: string; onChange: (d: st
                     className={cn(
                       "press h-11 w-full rounded-xl text-sm font-semibold tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-14",
                       isSelected
-                        ? "bg-primary text-primary-foreground"
+                        ? "bg-primary-fill text-primary-foreground"
                         : isToday
                         ? "bg-primary/15 text-foreground ring-1 ring-inset ring-primary/50"
                         : "text-foreground hover:bg-glass-tile"

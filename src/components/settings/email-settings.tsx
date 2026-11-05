@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IconChip } from "@/components/ui/icon-chip";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -56,7 +57,6 @@ import {
   AlertTriangle,
   FlaskConical,
   RefreshCw,
-  Search,
   Stethoscope,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -496,25 +496,14 @@ function EmailHistoryCard({ rules }: { rules: EmailRuleDTO[] }) {
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Handy: Suche in voller Breite, darunter beide Filter nebeneinander. */}
-          <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="E-Mail, Name oder Betreff…"
-              className={cn("pl-8", search && "pr-10", FIELD)}
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                className="absolute right-1 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground sm:size-7"
-                aria-label="Suche leeren"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          <SearchInput
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="E-Mail, Name oder Betreff…"
+            onClear={() => setSearch("")}
+            containerClassName="w-full sm:w-auto sm:min-w-[200px] sm:flex-1"
+            className={FIELD}
+          />
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
             <SelectTrigger className="min-w-0 flex-1 data-[size=default]:h-11 sm:w-[140px] sm:flex-none sm:data-[size=default]:h-9">
               <SelectValue />
@@ -1220,18 +1209,15 @@ function RuleRow({
   }
 
   return (
-    <li
-      className={cn(
-        "glass-tile overflow-hidden transition-opacity",
-        !rule.isActive && "opacity-60",
-      )}
-    >
+    // Inaktive Regel: Text bleibt lesbar, das Badge sagt den Zustand, gedimmt wird nur der IconChip (Abschnitt 17).
+    <li className="glass-tile overflow-hidden">
       <div className="flex items-center gap-3 p-3 flex-wrap">
-        <IconChip icon={Icon} tone="neutral" />
+        <IconChip icon={Icon} tone="neutral" className={cn(!rule.isActive && "opacity-60")} />
         {/* Mindestbreite für den Text: auf dem Handy rutschen die Tasten in eine eigene Zeile. */}
         <div className="min-w-0 flex-1 basis-48">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-medium text-foreground truncate">{rule.name}</p>
+            {!rule.isActive && <Badge variant="neutral">Inaktiv</Badge>}
             {rule.createVoucher && (
               <Badge variant="secondary" className="tabular-nums">
                 <GiftIcon className="h-3 w-3" />

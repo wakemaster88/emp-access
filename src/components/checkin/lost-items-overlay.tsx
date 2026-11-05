@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
-  Loader2, Search, X, PackageSearch, Camera, Check, AlertTriangle,
+  Loader2, X, PackageSearch, Camera, Check, AlertTriangle,
   RefreshCw, Plus, ChevronLeft, Phone, CalendarDays, Trash2, Undo2, User,
   RotateCcw,
 } from "lucide-react";
@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { SearchInput } from "@/components/ui/search-input";
 import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
@@ -306,16 +307,13 @@ function ListView({
           stretch
           className={cn(kioskSegmentClass, "sm:w-auto sm:flex-1")}
         />
-        <div className="relative sm:w-56 sm:shrink-0">
-          <Search className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Suchen…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-11 pl-10"
-          />
-        </div>
+        <SearchInput
+          placeholder="Suchen…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          containerClassName="sm:w-56 sm:shrink-0"
+          className="h-11"
+        />
       </div>
 
       {items.length === 0 && (

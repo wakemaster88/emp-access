@@ -1391,10 +1391,11 @@ export default function PublicMonitorPage({ params }: Props) {
 
                 // Zustand als Tönung der Kachel (docs/design-regeln.md, Abschnitt 3):
                 // Pause und „läuft ab“ = warning, abgelaufen = destructive, eingecheckt = success.
+                // Pausiert: Text bleibt lesbar, gedimmt werden nur Bild und IconChip (Abschnitt 17).
                 const cardBg = isScanning
                   ? "border-success/60 bg-linear-to-br from-success/28 to-success/[0.08]"
                   : isPaused
-                    ? cn(ROW_TINT.warning, "opacity-70")
+                    ? ROW_TINT.warning
                     : isExpired || durationExpired
                       ? ROW_TINT.danger
                       : isWarning || durationWarning
@@ -1456,7 +1457,7 @@ export default function PublicMonitorPage({ params }: Props) {
                     )}
                   >
                     {ticket.hasPhoto ? (
-                      <div className="h-10 w-10 rounded-control shrink-0 overflow-hidden bg-glass-tile ring-1 ring-inset ring-glass-border">
+                      <div className={cn("h-10 w-10 rounded-control shrink-0 overflow-hidden bg-glass-tile ring-1 ring-inset ring-glass-border", isPaused && "opacity-60")}>
                         {/* Bild wird beim Scroll per native lazy-loading über den
                             /photo-Endpoint nachgeladen (statt Base64 im Poll).
                             Der Endpoint antwortet mit JSON, nicht mit Image – deshalb
@@ -1464,7 +1465,7 @@ export default function PublicMonitorPage({ params }: Props) {
                         <TicketAvatarLazy token={token} ticketId={ticket.id} className="h-full w-full object-cover" />
                       </div>
                     ) : (
-                      <IconChip icon={Users} size="lg" />
+                      <IconChip icon={Users} size="lg" className={cn(isPaused && "opacity-60")} />
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold truncate">

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -347,14 +348,14 @@ export function TelegramCard({ initialConfig }: TelegramCardProps) {
               {dailyReport && (
                 <div className="space-y-1.5">
                   <Label htmlFor="tg-report-time">Uhrzeit (Berlin)</Label>
-                  <select
+                  <NativeSelect
                     id="tg-report-time"
                     value={reportTime}
                     onChange={(e) => setReportTime(e.target.value)}
-                    className="glass-field h-9 w-full px-3 text-base tabular-nums outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 md:text-sm max-sm:h-11"
+                    className="tabular-nums max-sm:h-11"
                   >
                     {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t} Uhr</option>)}
-                  </select>
+                  </NativeSelect>
                 </div>
               )}
             </div>
