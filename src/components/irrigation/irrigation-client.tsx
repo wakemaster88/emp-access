@@ -1949,9 +1949,12 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                     const pos = form.valveOrder.indexOf(z.id);
                     const selected = pos >= 0;
                     return (
-                      <div key={z.id} className={cn("flex items-center gap-2 px-3 py-2", !selected && "opacity-50")}>
+                      // Nicht in der Sequenz: Name gedämpft statt Deckkraft auf der ganzen Zeile – Text und
+                      // Kästchenrand bleiben lesbar (docs/design-regeln.md, Abschnitt 17).
+                      <div key={z.id} className="flex items-center gap-2 px-3 py-2">
                         {/* Wie das Kästchen (Checkbox), zeigt aber die Position in der Sequenz; die
-                            unsichtbare Fläche (after:) vergrößert das Tippziel auf 44 px. */}
+                            unsichtbare Fläche (after:) vergrößert das Tippziel auf 44 px. Farben wie das
+                            Kästchen: gewählt deckend ohne hellen Ring, leer mit Rand ab 3:1. */}
                         <button
                           type="button"
                           onClick={() => toggleValve(z.id)}
@@ -1959,14 +1962,14 @@ function ScheduleDialog({ onOpenChange, zones, pumps, sensors, editing, onSave }
                           className={cn(
                             "relative size-5 rounded-[6px] border flex items-center justify-center shrink-0 text-[10px] font-bold tabular-nums outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:-inset-3 after:content-['']",
                             selected
-                              ? "border-primary bg-primary-fill text-primary-foreground"
-                              : "border-foreground/35 bg-field text-transparent hover:border-foreground/55 dark:border-white/30",
+                              ? "border-primary-fill bg-primary-fill text-primary-foreground"
+                              : "border-foreground/50 bg-field text-transparent hover:border-foreground/70 dark:border-white/40 dark:hover:border-white/55",
                           )}
                           title={selected ? "Aus Sequenz entfernen" : "Zur Sequenz hinzufügen"}
                         >
                           {selected ? pos + 1 : "+"}
                         </button>
-                        <span className="text-sm text-foreground truncate flex-1">{z.name}</span>
+                        <span className={cn("text-sm truncate flex-1", selected ? "text-foreground" : "text-muted-foreground")}>{z.name}</span>
                         {selected && (
                           <div className="flex items-center gap-0.5 shrink-0">
                             <Button

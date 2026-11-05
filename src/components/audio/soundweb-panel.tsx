@@ -329,7 +329,8 @@ function DeviceCard({
 
   let stateLabel: React.ReactNode;
   if (!device.isActive) {
-    stateLabel = <Badge variant="secondary">Deaktiviert</Badge>;
+    // Zustand als neutrales Badge wie bei den Zonen (docs/design-regeln.md, Abschnitt 17).
+    stateLabel = <Badge variant="neutral">Deaktiviert</Badge>;
   } else if (!hubOnline) {
     stateLabel = (
       <span className="flex items-center gap-1.5 text-xs text-warning">
