@@ -261,7 +261,8 @@ function loginPage(failed: boolean): string {
   return /* html */ `<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b1020">
+<meta name="theme-color" content="#f6f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#050a15" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -271,18 +272,53 @@ function loginPage(failed: boolean): string {
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <title>EMP-Access Hub</title>
 <style>
-  :root { color-scheme: light dark; }
+  /* Liquid Glass wie hub/src/ui/dashboard.css: Glaskarte über weichen Farbflecken. */
+  :root { color-scheme: light dark;
+    --bg: oklch(0.978 0.004 255); --text: oklch(0.2 0.03 262); --muted: oklch(0.5 0.03 258);
+    --glass: oklch(1 0 0 / 58%); --glass-border: oklch(1 0 0 / 85%); --glass-highlight: oklch(1 0 0 / 95%);
+    --glass-shadow: 0 20px 50px -28px oklch(0.25 0.04 262 / 45%);
+    --field: oklch(0.2 0.03 262 / 4.5%); --field-border: oklch(0.2 0.03 262 / 14%);
+    --accent: oklch(0.53 0.24 276); --accent-solid: oklch(0.53 0.24 276); --ring: oklch(0.585 0.229 277);
+    --err: oklch(0.5 0.2 18); --card: oklch(1 0 0);
+    --amb-1: oklch(0.6 0.2 276 / 22%); --amb-2: oklch(0.72 0.14 232 / 18%);
+    --amb-3: oklch(0.75 0.14 300 / 16%); --amb-4: oklch(0.78 0.15 163 / 14%); }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg: oklch(0.145 0.025 262); --text: oklch(0.955 0.008 255); --muted: oklch(0.72 0.025 258);
+    --glass: oklch(1 0 0 / 5.5%); --glass-border: oklch(1 0 0 / 16%); --glass-highlight: oklch(1 0 0 / 22%);
+    --glass-shadow: 0 24px 60px -30px oklch(0 0 0 / 75%);
+    --field: oklch(1 0 0 / 5.5%); --field-border: oklch(1 0 0 / 16%);
+    --accent: oklch(0.6 0.219 277); --accent-solid: oklch(0.56 0.22 277); --ring: oklch(0.68 0.17 276);
+    --err: oklch(0.76 0.145 14); --card: oklch(0.19 0.028 262);
+    --amb-1: oklch(0.55 0.22 276 / 42%); --amb-2: oklch(0.7 0.142 232 / 26%);
+    --amb-3: oklch(0.8 0.118 300 / 22%); --amb-4: oklch(0.75 0.16 163 / 16%); } }
   body { margin:0; min-height:100dvh; display:grid; place-items:center;
     padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom); box-sizing:border-box;
-    font:15px/1.5 -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-    background:#0b1020; color:#e6e9f5; }
-  form { display:grid; gap:12px; width:min(320px, 88vw); }
-  h1 { font-size:17px; margin:0 0 4px; }
-  p { margin:0; color:#8b93b5; font-size:13px; }
-  input, button { font:inherit; border-radius:10px; padding:12px 14px; min-height:44px; }
-  input { background:#141a30; border:1px solid #232b4a; color:inherit; font-size:16px; }
-  button { border:0; background:#6d5cf7; color:#fff; font-weight:600; }
-  .err { color:#fb7185; }
+    font:15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; color:var(--text);
+    background:
+      radial-gradient(55% 45% at 12% 8%, var(--amb-1), transparent 65%),
+      radial-gradient(45% 40% at 88% 18%, var(--amb-2), transparent 65%),
+      radial-gradient(50% 45% at 72% 92%, var(--amb-3), transparent 65%),
+      radial-gradient(45% 40% at 18% 85%, var(--amb-4), transparent 65%),
+      var(--bg);
+    background-attachment: fixed; }
+  form { display:grid; gap:12px; width:min(320px, 88vw); box-sizing:border-box; padding:24px;
+    border:1px solid var(--glass-border); border-radius:24px; background:var(--glass);
+    box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+    -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
+  h1 { font-size:17px; font-weight:600; letter-spacing:-0.01em; margin:0 0 4px; }
+  p { margin:0; color:var(--muted); font-size:13px; }
+  input, button { font:inherit; border-radius:14px; padding:12px 14px; min-height:44px; box-sizing:border-box; }
+  input { background:var(--field); border:1px solid var(--field-border); color:inherit; font-size:16px;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 5%); }
+  input::placeholder { color:var(--muted); opacity:1; }
+  input:focus { outline:none; border-color:var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 30%, transparent); }
+  button { border:0; background:var(--accent-solid); color:#fff; font-weight:600; cursor:pointer;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 28%), 0 8px 20px -10px var(--accent); }
+  button:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+  .err { color:var(--err); }
+  @media (prefers-reduced-transparency: reduce) {
+    form { -webkit-backdrop-filter:none; backdrop-filter:none; background:var(--card); } }
 </style></head>
 <body><form method="GET" action="/">
   <h1>EMP-Access Hub</h1>

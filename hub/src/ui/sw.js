@@ -75,10 +75,22 @@ async function networkFirst(req, cacheKey) {
 
 const OFFLINE_HTML = `<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#060912"><title>Hub nicht erreichbar</title>
-<style>body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:env(safe-area-inset-top) 1.5rem env(safe-area-inset-bottom);
-font:15px/1.5 -apple-system,system-ui,sans-serif;background:#060912;color:#e9edf7;text-align:center}
-p{color:#94a0ba;margin:.4rem 0 1.2rem}button{font:inherit;font-weight:600;border:0;border-radius:12px;padding:12px 20px;background:#22d3ee;color:#04121a}</style>
+<meta name="theme-color" content="#f6f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#050a15" media="(prefers-color-scheme: dark)"><title>Hub nicht erreichbar</title>
+<style>:root{color-scheme:light dark;--bg:oklch(0.978 0.004 255);--text:oklch(0.2 0.03 262);--muted:oklch(0.5 0.03 258);
+--glass:oklch(1 0 0/58%);--border:oklch(1 0 0/85%);--hl:oklch(1 0 0/95%);--shadow:0 20px 50px -28px oklch(0.25 0.04 262/45%);
+--accent:oklch(0.53 0.24 276);--a1:oklch(0.6 0.2 276/22%);--a2:oklch(0.72 0.14 232/18%);--a3:oklch(0.75 0.14 300/16%)}
+@media (prefers-color-scheme:dark){:root{--bg:oklch(0.145 0.025 262);--text:oklch(0.955 0.008 255);--muted:oklch(0.72 0.025 258);
+--glass:oklch(1 0 0/5.5%);--border:oklch(1 0 0/16%);--hl:oklch(1 0 0/22%);--shadow:0 24px 60px -30px oklch(0 0 0/75%);
+--accent:oklch(0.56 0.22 277);--a1:oklch(0.55 0.22 276/42%);--a2:oklch(0.7 0.142 232/26%);--a3:oklch(0.8 0.118 300/22%)}}
+body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:env(safe-area-inset-top) 1.5rem env(safe-area-inset-bottom);
+font:15px/1.5 -apple-system,system-ui,sans-serif;color:var(--text);text-align:center;
+background:radial-gradient(55% 45% at 12% 8%,var(--a1),transparent 65%),radial-gradient(45% 40% at 88% 18%,var(--a2),transparent 65%),
+radial-gradient(50% 45% at 72% 92%,var(--a3),transparent 65%),var(--bg)}
+body>div{padding:24px;border:1px solid var(--border);border-radius:24px;background:var(--glass);
+box-shadow:inset 0 1px 0 var(--hl),var(--shadow);-webkit-backdrop-filter:blur(28px) saturate(170%);backdrop-filter:blur(28px) saturate(170%)}
+p{color:var(--muted);margin:.4rem 0 1.2rem}button{font:inherit;font-weight:600;border:0;border-radius:14px;min-height:44px;padding:12px 20px;
+background:var(--accent);color:#fff;box-shadow:inset 0 1px 0 oklch(1 0 0/28%),0 8px 20px -10px var(--accent)}</style>
 </head><body><div><h1 style="font-size:1.2rem;margin:0">Hub nicht erreichbar</h1>
 <p>Bist du im Netz des Standorts (WLAN oder VPN)?</p><button onclick="location.reload()">Erneut versuchen</button></div></body></html>`;
 
