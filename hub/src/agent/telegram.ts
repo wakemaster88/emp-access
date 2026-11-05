@@ -82,10 +82,11 @@ export async function sendText(chatId: string, text: string, buttons?: TgButton[
   return last;
 }
 
-export async function sendPhoto(chatId: string, jpeg: Buffer, caption?: string): Promise<void> {
+export async function sendPhoto(chatId: string, jpeg: Buffer, caption?: string, buttons?: TgButton[][]): Promise<void> {
   const form = new FormData();
   form.set("chat_id", chatId);
   if (caption) form.set("caption", caption.slice(0, 1000));
+  if (buttons) form.set("reply_markup", JSON.stringify({ inline_keyboard: buttons }));
   form.set("photo", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "bild.jpg");
   await call("sendPhoto", form, 60_000);
 }

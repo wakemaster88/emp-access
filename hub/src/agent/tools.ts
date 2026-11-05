@@ -28,7 +28,7 @@ import { lastScanResult } from "../scanner.js";
 import { vlanCheckSummary } from "../vlan-check.js";
 import { recentImproveEvents } from "../improve-log.js";
 import { readHubLog } from "../hublog.js";
-import { LLM } from "./ollama.js";
+import { LLM, askVision } from "./ollama.js";
 import type { ToolSpec } from "./ollama.js";
 
 export type ToolRisk = "read" | "act";
@@ -172,6 +172,21 @@ export const TOOLS: AgentTool[] = [
       const jpeg = isDoorbird(cam.id) ? await captureDoorbirdSnapshot(cam.id) : await captureSnapshot(cam.id);
       await ctx.sendPhoto(jpeg, `${cam.name} · ${new Date().toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin" })}`);
       return { sent: true, camera: cam.name };
+    },
+  },
+  {
+    name: "look_at_camera",
+    description:
+      "Aktuelles Bild einer Kamera selbst ansehen und eine Frage dazu beantworten (Bildmodell), z. B. ‚Ist jemand am Tor?‘ oder ‚Wie voll ist der Strand?‘. Schickt Aaron das Bild mit.",
+    parameters: obj({ camera: str("Kamera-ID oder exakter Name"), question: str("Was soll ich auf dem Bild prüfen?") }, ["camera"]),
+    risk: "read",
+    run: async (args, ctx) => {
+      const cam = cameraRef(args);
+      const jpeg = isDoorbird(cam.id) ? await captureDoorbirdSnapshot(cam.id) : await captureSnapshot(cam.id);
+      const q = String(args.question ?? "").trim() || "Was ist zu sehen? Fällt etwas auf?";
+      await ctx.sendPhoto(jpeg, cam.name);
+      const answer = await askVision(jpeg, `Bild der Kamera „${cam.name}“ einer Wasserski- und Freizeitanlage. ${q}\nAntworte kurz und sachlich auf Deutsch.`);
+      return { camera: cam.name, answer };
     },
   },
   {
