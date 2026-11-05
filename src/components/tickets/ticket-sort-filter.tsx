@@ -8,12 +8,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FilterGroup } from "@/components/ui/filter-bar";
 import { ArrowUpDown, Filter, CreditCard, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Wert direkt hinter dem Symbol: Der Auswahl-Baustein verteilt Symbol, Wert und
 // Pfeil mit justify-between, kurze Werte („Alle“) stünden sonst mittig.
-const TRIGGER = "h-9 text-sm *:data-[slot=select-value]:flex-1";
+// Feste Breiten erst ab sm; auf dem Handy stehen die Felder im Filter-Sheet in voller Breite.
+const TRIGGER = "h-9 w-full text-sm *:data-[slot=select-value]:flex-1";
 
 const SORT_OPTIONS = [
   { value: "date_desc", label: "Neueste zuerst", sort: "date", order: "desc" as const },
@@ -99,9 +101,11 @@ export function TicketSortFilter({
   }
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    // FilterGroup: im Filter-Sheet (Handy) untereinander im selben Abstand wie die übrigen
+    // Filter; ab sm lösen sich die Felder in die Filterzeile auf und brechen mit ihr um.
+    <FilterGroup className="max-sm:gap-3 sm:contents">
       <Select value={sortValue} onValueChange={handleSortChange}>
-        <SelectTrigger className={cn("w-[180px]", TRIGGER)}>
+        <SelectTrigger className={cn("sm:w-[180px]", TRIGGER)}>
           <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <SelectValue placeholder="Sortieren" />
         </SelectTrigger>
@@ -114,7 +118,7 @@ export function TicketSortFilter({
         </SelectContent>
       </Select>
       <Select value={currentSource || "all"} onValueChange={handleSourceChange}>
-        <SelectTrigger className={cn("w-[160px]", TRIGGER)}>
+        <SelectTrigger className={cn("sm:w-[160px]", TRIGGER)}>
           <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <SelectValue placeholder="Quelle" />
         </SelectTrigger>
@@ -128,7 +132,7 @@ export function TicketSortFilter({
       </Select>
       {subscriptions.length > 0 && (
         <Select value={currentSub || "none"} onValueChange={(v) => updateParams({ sub: v })}>
-          <SelectTrigger className={cn("w-[170px]", TRIGGER, currentSub && "border-primary/30")}>
+          <SelectTrigger className={cn("sm:w-[170px]", TRIGGER, currentSub && "border-primary/30")}>
             <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Alle Abos" />
           </SelectTrigger>
@@ -143,7 +147,7 @@ export function TicketSortFilter({
       )}
       {services.length > 0 && (
         <Select value={currentSvc || "none"} onValueChange={(v) => updateParams({ svc: v })}>
-          <SelectTrigger className={cn("w-[170px]", TRIGGER, currentSvc && "border-primary/30")}>
+          <SelectTrigger className={cn("sm:w-[170px]", TRIGGER, currentSvc && "border-primary/30")}>
             <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <SelectValue placeholder="Alle Services" />
           </SelectTrigger>
@@ -156,6 +160,6 @@ export function TicketSortFilter({
           </SelectContent>
         </Select>
       )}
-    </div>
+    </FilterGroup>
   );
 }

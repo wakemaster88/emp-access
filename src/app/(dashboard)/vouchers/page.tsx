@@ -148,11 +148,13 @@ export default async function VouchersPage({ searchParams }: Props) {
       <Header title="Gutscheine" accountName={session.user.accountName} />
       <div className="page-content space-y-4 sm:space-y-5">
         {/*
-          Statusfilter als `SegmentedLinks`: Links, weil der Filter in der URL steht;
-          auf dem Handy wischbar statt umbrechend.
+          Statusfilter als `SegmentedLinks`: Links, weil der Filter in der URL steht.
+          Auf dem Handy bricht die Kapsel um; ohne die Symbole (nur Zierde, aria-hidden) bleiben
+          es auch bei 360 px zwei Zeilen statt drei.
         */}
         <SegmentedLinks
           aria-label="Status"
+          className="max-sm:[&_svg]:hidden"
           value={status ?? "all"}
           options={tabs.map((tab) => {
             const params = new URLSearchParams();

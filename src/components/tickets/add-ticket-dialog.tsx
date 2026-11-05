@@ -240,7 +240,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
       <DialogTrigger asChild>
         <Button className="gap-2">
           <Plus className="h-4 w-4" />
-          Ticket erstellen
+          {/* Kopf der Karte (Abschnitt 13): auf dem Handy kürzer („+ erstellen“), damit der Titel
+              daneben Platz hat; „Ticket“ bleibt für Screenreader im Namen. */}
+          <span>
+            <span className="max-sm:sr-only">Ticket </span>erstellen
+          </span>
         </Button>
       </DialogTrigger>
 

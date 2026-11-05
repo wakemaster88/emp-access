@@ -2,9 +2,8 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import type { PrismaClient } from "@prisma/client";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { SubscriptionsTable } from "@/components/subscriptions/subscriptions-table";
 import { ExpiringAbosCard } from "@/components/subscriptions/expiring-abos-card";
 import { SubscriptionStats } from "@/components/subscriptions/subscription-stats";
@@ -103,14 +102,9 @@ export default async function SubscriptionsPage() {
       <div className="page-content space-y-4 sm:space-y-5">
         {stats && <SubscriptionStats stats={stats} />}
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
-        {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand. */}
+        {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand.
+            Den Kopf der Karte (Titel, Beschreibung, „Abo anlegen“) rendert SubscriptionsTable. */}
         <Card flush>
-          <CardHeader>
-            <CardTitle>Alle Abos ({subscriptions.length})</CardTitle>
-            <CardDescription>
-              Abos verknüpfen <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> und definieren Standard-Gültigkeiten.
-            </CardDescription>
-          </CardHeader>
           <SubscriptionsTable
             subscriptions={subscriptions}
             areas={areas}

@@ -246,7 +246,8 @@ export function EaboAnalytics() {
               <TableBody>
                 {overview.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.name}</TableCell>
+                    {/* Handy: lange Abo-Namen brechen um, statt die Tabelle seitlich scrollen zu lassen. */}
+                    <TableCell className="font-medium max-sm:whitespace-normal">{row.name}</TableCell>
                     <TableCell className="text-right tabular-nums">{row.ticketCount}</TableCell>
                     <TableCell className="text-right tabular-nums hidden sm:table-cell">{row.activeTickets}</TableCell>
                     {/* Zustandsfarbe nur, wenn es etwas zu melden gibt; 0 bleibt ruhig. */}
@@ -492,7 +493,8 @@ export function EaboAnalytics() {
                         <TableBody>
                           {data.tickets.map((t) => (
                             <TableRow key={t.id}>
-                              <TableCell className="font-medium">{t.displayName}</TableCell>
+                              {/* Handy: lange Namen brechen um, statt die Tabelle seitlich scrollen zu lassen. */}
+                              <TableCell className="font-medium max-sm:whitespace-normal">{t.displayName}</TableCell>
                               <TableCell className="hidden sm:table-cell text-xs">{fmtDate(t.validFrom)}</TableCell>
                               <TableCell className="hidden sm:table-cell text-xs">{fmtDate(t.validTo)}</TableCell>
                               <TableCell>{statusBadge(t.status)}</TableCell>

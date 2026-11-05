@@ -258,9 +258,10 @@ export function TurnstileCard({ date }: { date: string }) {
           aside={<Badge variant="secondary">echte Fahrten</Badge>}
           className="min-w-0"
         />
-        <div className="ml-auto shrink-0">
+        {/* Handy: die Auswahl steht unter der Überschrift in voller Breite; feste Breite erst ab sm. */}
+        <div className="ml-auto shrink-0 max-sm:w-full">
           <Select value={String(area.id)} onValueChange={selectArea}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-full sm:w-[150px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

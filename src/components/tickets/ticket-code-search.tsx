@@ -68,7 +68,9 @@ export function TicketCodeSearch({
         onKeyDown={handleKeyDown}
         // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss.
         className="font-mono text-ellipsis"
-        containerClassName="flex-1 basis-56 max-w-md"
+        // basis-40 auf dem Handy: Feld und „Suchen“ bleiben in einer Zeile (auch bei 360 px),
+        // „Filter zurücksetzen“ rückt darunter.
+        containerClassName="flex-1 basis-40 sm:basis-56 max-w-md"
         autoComplete="off"
         autoFocus
       />

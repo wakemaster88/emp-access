@@ -321,7 +321,8 @@ export function VouchersTable({
                       className="inline-flex items-center gap-1 hover:text-primary group"
                       title="Kopieren"
                     >
-                      <span>{v.code}</span>
+                      {/* Handy: lange Codes brechen um, statt die Tabelle seitlich scrollen zu lassen. */}
+                      <span className="text-left max-sm:whitespace-normal max-sm:break-all">{v.code}</span>
                       {copiedId === v.id ? (
                         <Check className="h-3 w-3 text-success" />
                       ) : (

@@ -1,8 +1,10 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchInput } from "@/components/ui/search-input";
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
@@ -166,17 +168,30 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
 
   return (
     <>
-      {!readonly && (
-        <div className="flex justify-end px-4 sm:px-[18px]">
-          <Button
-            onClick={() => { setSelected(null); setSelectedAreas([]); setAddOpen(true); }}
-            className="h-11 sm:h-9"
-          >
-            <Plus className="h-4 w-4" />
-            Abo anlegen
-          </Button>
-        </div>
-      )}
+      {/* Kopf der Karte (docs/design-regeln.md, Abschnitt 13): Titel mit Anzahl links, „Abo anlegen“
+          oben rechts statt als eigene Zeile. Steht hier und nicht in der Seite, weil der Anlegen-Dialog
+          zum Zustand dieser Tabelle gehört. */}
+      <CardHeader>
+        <CardTitle>Alle Abos ({subscriptions.length})</CardTitle>
+        <CardDescription>
+          Abos verknüpfen <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> und definieren Standard-Gültigkeiten.
+        </CardDescription>
+        {!readonly && (
+          <CardAction>
+            <Button
+              onClick={() => { setSelected(null); setSelectedAreas([]); setAddOpen(true); }}
+              className="h-11 sm:h-9"
+            >
+              <Plus className="h-4 w-4" />
+              {/* Auf dem Handy „+ anlegen“, damit Titel und Beschreibung daneben Platz haben;
+                  „Abo“ bleibt für Screenreader im Namen. */}
+              <span>
+                <span className="max-sm:sr-only">Abo </span>anlegen
+              </span>
+            </Button>
+          </CardAction>
+        )}
+      </CardHeader>
 
       <div className="border-t border-border">
         <Table edge>
@@ -348,7 +363,8 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                                     className={cn("group max-sm:h-11", !readonly && "cursor-pointer")}
                                     onClick={() => openTicketEdit(t.id)}
                                   >
-                                    <TableCell>
+                                    {/* Handy: lange Namen brechen um, statt die Ticketliste seitlich scrollen zu lassen. */}
+                                    <TableCell className="max-sm:whitespace-normal">
                                       <span className="font-medium text-foreground/90">
                                         {t.firstName ?? ""} {t.lastName ?? ""}
                                       </span>
