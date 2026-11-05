@@ -1592,8 +1592,8 @@ function ScheduleRow({ schedule, sequenceNames, sensor, running, busy, onToggle,
           )}
           {schedule.smartRain && (
             <Badge
-              variant="outline"
-              className="text-[10px] gap-1 text-primary border-primary/30 dark:border-primary/30"
+              variant="accent"
+              className="text-[10px] gap-1"
               title="Dauer wird aus der Wasserbilanz berechnet (Verdunstung ET₀ − Regen seit letztem Lauf)"
             >
               <Sparkles className="h-3 w-3" /> Wasserbilanz

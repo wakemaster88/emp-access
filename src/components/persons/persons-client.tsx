@@ -500,7 +500,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                           aria-label="Löschen"
                           onClick={() =>
                             askDelete(
-                              `„${p.name}" von der ${p.listType === "BLACKLIST" ? "Blacklist" : "Whitelist"} löschen?`,
+                              `„${p.name}“ von der ${p.listType === "BLACKLIST" ? "Blacklist" : "Whitelist"} löschen?`,
                               () => remove(p),
                             )
                           }

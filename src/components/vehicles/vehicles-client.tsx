@@ -428,7 +428,7 @@ export function VehiclesClient({
                           <Button variant="outline" size="icon-sm" className="max-sm:size-11" title="Bearbeiten" aria-label="Bearbeiten" onClick={() => openEdit(v)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="outline" size="icon-sm" className="text-destructive max-sm:size-11" title="Löschen" aria-label="Löschen" onClick={() => askDelete(`Fahrzeug „${v.name}" (${v.plate}) löschen?`, () => remove(v))}>
+                          <Button variant="outline" size="icon-sm" className="text-destructive max-sm:size-11" title="Löschen" aria-label="Löschen" onClick={() => askDelete(`Fahrzeug „${v.name}“ (${v.plate}) löschen?`, () => remove(v))}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>

@@ -419,7 +419,7 @@ export function LockersTable({ lockers, aboTickets, currentYear, readonly }: Loc
                   {l.openPast.length > 0 && (
                     // Warnfarbe nur am Symbol; der Text in Vordergrundfarbe bleibt auf der Tönung lesbar.
                     <div
-                      className="mt-1 inline-flex items-start gap-1 text-[11px] leading-tight px-2 py-1 rounded-lg bg-warning/14 text-foreground max-w-full"
+                      className="mt-1 flex w-fit items-start gap-1 text-[11px] leading-tight px-2 py-1 rounded-lg bg-warning/14 text-foreground max-w-full"
                       title={l.openPast
                         .map((r) => `${r.year}: ${rentalDisplayName(r)} – ${r.keysIssued - r.keysReturned} offen`)
                         .join("\n")}

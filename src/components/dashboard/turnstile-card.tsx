@@ -373,7 +373,7 @@ export function TurnstileCard({ date }: { date: string }) {
                 key: t.name,
                 label: t.name,
                 value: t.rides,
-                sub: `${fmtNum(t.guests)} Gäste`,
+                sub: `${fmtNum(t.guests)} ${t.guests === 1 ? "Gast" : "Gäste"}`,
               }))}
               emptyText="Keine Fahrten an diesem Tag."
               barClass="bg-primary"

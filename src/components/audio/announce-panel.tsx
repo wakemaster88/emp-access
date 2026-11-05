@@ -118,7 +118,7 @@ export function AnnouncePanel({
         setError(typeof data.error === "string" ? data.error : "Durchsage fehlgeschlagen");
         return;
       }
-      setNotice(`„${template.name}" läuft in ${data.queued} Zone${data.queued === 1 ? "" : "n"}`);
+      setNotice(`„${template.name}“ läuft in ${data.queued} Zone${data.queued === 1 ? "" : "n"}`);
       onDone();
     } finally {
       setSending(false);
@@ -284,9 +284,7 @@ export function AnnouncePanel({
                   <Megaphone className="h-3.5 w-3.5" />
                   {template.name}
                   {template.priority >= 100 && (
-                    <Badge variant="danger" className="text-[10px]">
-                      Notfall
-                    </Badge>
+                    <Badge variant="destructive">Notfall</Badge>
                   )}
                 </Button>
               ))}
