@@ -861,11 +861,13 @@ export function IrrigationClient({
                   </p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5">
+              {/* Handy: eigene Zeile in zwei gleichen Spalten – Basis-Auswahl links, „Starten“
+                  rechts, beide 44 px; die feste Breite der Auswahl gilt erst ab sm (Abschnitt 13). */}
+              <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <Label className="text-xs text-muted-foreground">Basis</Label>
                   <Select value={String(baseMinutes)} onValueChange={(v) => setBaseMinutes(Number(v))}>
-                    <SelectTrigger size="sm" className="w-[92px] max-sm:data-[size=sm]:h-11"><SelectValue /></SelectTrigger>
+                    <SelectTrigger size="sm" className="min-w-0 flex-1 max-sm:data-[size=sm]:h-11 sm:w-[92px] sm:flex-none"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {DURATION_PRESETS.map((d) => <SelectItem key={d} value={String(d)}>{d} Min</SelectItem>)}
                     </SelectContent>
@@ -966,7 +968,9 @@ export function IrrigationClient({
                 </CardTitle>
                 <span className="text-xs text-muted-foreground tabular-nums">{unassignedValves.length} Ventil{unassignedValves.length === 1 ? "" : "e"}</span>
               </div>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* `grid-cols-1` (minmax(0, 1fr)) wie bei den zugeordneten Ventilen: ohne feste Spalte
+                  wuchs die Kachel bei 360 px auf ihre Inhaltsbreite (332 px) und die Seite scrollte seitlich. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {unassignedValves.map((zone) => (
                   <ZoneCard
                     key={zone.id}
@@ -1275,7 +1279,10 @@ function PumpGroup({
       {/* Zugeordnete Ventile */}
       <div className="p-4 sm:p-[18px]">
         <p className="text-label mb-2">Zugeordnete Ventile</p>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte nimmt die Spalte die Inhaltsbreite
+            der Kachel (Name `truncate` plus Zustand und Online-Badge) – auf dem Handy breiter als
+            die Karte, die den rechten Rand dann abschneidet. Mit fester Spalte kürzt der Name. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {children}
         </div>
       </div>
@@ -1500,7 +1507,8 @@ function ZoneCard({ zone, status, duration, recommended, busy, disabled, isPump,
               onValueChange={(v) => onAssignPump(v === "none" ? null : Number(v))}
               disabled={disabled}
             >
-              <SelectTrigger size="sm" className="flex-1 text-xs max-sm:data-[size=sm]:h-11">
+              {/* `min-w-0`: ein langer Pumpenname kürzt im Feld, statt die Kachel zu verbreitern. */}
+              <SelectTrigger size="sm" className="min-w-0 flex-1 text-xs max-sm:data-[size=sm]:h-11">
                 <SelectValue placeholder="Pumpe zuordnen" />
               </SelectTrigger>
               <SelectContent>
@@ -1678,16 +1686,20 @@ function IrrigationStatsPanel({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SectionHeading title="Statistik" icon={BarChart3} />
-        {/* Zeitraum als Segmentwahl (docs/design-regeln.md, Abschnitt 6). */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Zeitraum als Segmentwahl (docs/design-regeln.md, Abschnitt 6). Handy: eine Zeile unter
+            der Überschrift – die Segmente füllen die Breite, „Aktualisieren“ steht nur als Symbol
+            (44 px); mit Text (370 px) brach die Taste in eine dritte Zeile um. */}
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-wrap">
           <Segmented
             aria-label="Zeitraum"
             value={String(days)}
             onValueChange={(v) => onDaysChange(Number(v))}
             options={dayOptions.map((d) => ({ value: String(d), label: `${d} Tage` }))}
+            className="max-sm:flex-1"
           />
-          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} className="text-muted-foreground max-sm:h-11">
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} /> Aktualisieren
+          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading} aria-label="Aktualisieren" className="text-muted-foreground max-sm:size-11">
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            <span className="max-sm:hidden">Aktualisieren</span>
           </Button>
         </div>
       </div>

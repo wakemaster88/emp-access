@@ -1,6 +1,42 @@
 "use client";
 
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/**
+ * Kopfzeile eines Tabs: Erklärung links, Anlegen-Taste oben rechts – auf dem
+ * Handy wie am Desktop (docs/design-regeln.md, Abschnitt 13 „Kopf der Karte“).
+ *
+ * Früher stand die Taste am Telefon als eigene Zeile in voller Breite unter
+ * dem Text. Jetzt bleibt sie rechts oben und wird nicht gequetscht
+ * (`shrink-0`); auf dem Handy zeigt sie nur Symbol plus ein Wort
+ * (`actionShort`), ab `sm` den vollen Text. Der Name der Taste ist immer der
+ * volle Text, 44 px hoch bleibt sie für den Daumen.
+ */
+export function SectionHeader({
+  text,
+  actionLabel,
+  actionShort,
+  onAction,
+}: {
+  text: string;
+  actionLabel: string;
+  /** Kurzform auf dem Handy, ein Wort aus `actionLabel` (z. B. „Zone“ für „Neue Zone“). */
+  actionShort: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 sm:items-center">
+      <p className="min-w-0 flex-1 text-sm text-muted-foreground">{text}</p>
+      <Button onClick={onAction} aria-label={actionLabel} className="shrink-0 gap-1.5 max-sm:h-11">
+        <Plus className="h-4 w-4" />
+        <span className="sm:hidden">{actionShort}</span>
+        <span className="max-sm:hidden">{actionLabel}</span>
+      </Button>
+    </div>
+  );
+}
 
 /**
  * Auswahlknopf für Zonen, Filter und Arten.

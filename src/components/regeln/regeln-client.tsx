@@ -278,8 +278,9 @@ export function RegelnClient({ data }: { data: RegelnData }) {
 
   return (
     <div className="page-content space-y-4 sm:space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground tabular-nums">
+      {/* Primärhandlung oben rechts, wie bei den Betriebszeiten (docs/design-regeln.md, Abschnitt 13). */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground tabular-nums">
           {data.rules.length === 0
             ? "Noch keine Regel angelegt."
             : `${activeCount} von ${data.rules.length} ${data.rules.length === 1 ? "Regel" : "Regeln"} aktiv.`}
@@ -287,7 +288,7 @@ export function RegelnClient({ data }: { data: RegelnData }) {
         {!data.readonly && (
           <Button
             size="sm"
-            className="h-8 text-xs max-sm:h-11"
+            className="h-8 shrink-0 text-xs max-sm:h-11"
             onClick={() => setCreating(true)}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -322,7 +323,9 @@ export function RegelnClient({ data }: { data: RegelnData }) {
             grouped.map(([room, rules]) => (
               <section key={room} className="space-y-2">
                 <SectionHeading title={`${room} (${rules.length})`} />
-                <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
+                {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte machen ein langer Name oder eine
+                    lange Beschreibung (`truncate`) die Spalte breiter als das Handy. */}
+                <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
                   {rules.map((rule) => (
                     <RuleCard
                       key={rule.id}

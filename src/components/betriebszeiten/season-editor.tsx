@@ -123,30 +123,34 @@ function DayRow({
       ) : (
         <div className="flex flex-1 flex-col gap-1.5">
           {periods.map((period, index) => (
-            <div key={index} className="flex items-center gap-1.5">
-              <Input
-                type="time"
-                value={period.opensAt}
-                disabled={disabled}
-                className="w-[6.5rem] max-sm:h-11"
-                onChange={(e) =>
-                  onChange(
-                    periods.map((p, i) => (i === index ? { ...p, opensAt: e.target.value } : p)),
-                  )
-                }
-              />
-              <span className="text-xs text-muted-foreground">bis</span>
-              <Input
-                type="time"
-                value={period.closesAt}
-                disabled={disabled}
-                className="w-[6.5rem] max-sm:h-11"
-                onChange={(e) =>
-                  onChange(
-                    periods.map((p, i) => (i === index ? { ...p, closesAt: e.target.value } : p)),
-                  )
-                }
-              />
+            // Die beiden Zeiten bleiben zusammen, „über Nacht“ und Entfernen dürfen umbrechen:
+            // alles in einer Zeile braucht 340 px, im Dialog auf dem Handy sind es 294 px.
+            <div key={index} className="flex flex-wrap items-center gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="time"
+                  value={period.opensAt}
+                  disabled={disabled}
+                  className="w-[6.5rem] max-sm:h-11"
+                  onChange={(e) =>
+                    onChange(
+                      periods.map((p, i) => (i === index ? { ...p, opensAt: e.target.value } : p)),
+                    )
+                  }
+                />
+                <span className="text-xs text-muted-foreground">bis</span>
+                <Input
+                  type="time"
+                  value={period.closesAt}
+                  disabled={disabled}
+                  className="w-[6.5rem] max-sm:h-11"
+                  onChange={(e) =>
+                    onChange(
+                      periods.map((p, i) => (i === index ? { ...p, closesAt: e.target.value } : p)),
+                    )
+                  }
+                />
+              </div>
               {period.closesAt < period.opensAt && (
                 <span className="text-[11px] text-warning" title="Endet am Folgetag">
                   über Nacht

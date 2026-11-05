@@ -37,7 +37,7 @@ import {
   gainRawToDb,
   rawToPercent,
 } from "@/lib/soundweb";
-import { Chip, sliderFill } from "./ui";
+import { Chip, SectionHeader, sliderFill } from "./ui";
 import { formatRelativeTime } from "./labels";
 import { SoundwebControlDialog } from "./soundweb-control-dialog";
 import { SoundwebDeviceDialog } from "./soundweb-device-dialog";
@@ -170,18 +170,13 @@ export function SoundwebPanel({ devices, hubOnline: hubOnlineInitial, active, on
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          BSS Soundweb London: Pegel, Stummschaltungen und Presets aus dem Audio-Architect-Design
-          – der lokale Hub hält die Verbindung.
-        </p>
-        <Button
-          onClick={() => setDeviceDialog({ open: true, device: null })}
-          className="h-11 w-full gap-1.5 sm:h-9 sm:w-auto sm:shrink-0"
-        >
-          <Plus className="h-4 w-4" /> Soundweb hinzufügen
-        </Button>
-      </div>
+      {/* Gleicher Kopf wie die übrigen Tabs: Anlegen oben rechts (docs/design-regeln.md, Abschnitt 13). */}
+      <SectionHeader
+        text="BSS Soundweb London: Pegel, Stummschaltungen und Presets aus dem Audio-Architect-Design – der lokale Hub hält die Verbindung."
+        actionLabel="Soundweb hinzufügen"
+        actionShort="Soundweb"
+        onAction={() => setDeviceDialog({ open: true, device: null })}
+      />
 
       {!hubOnline && devices.length > 0 && (
         <Notice tone="warning" role="alert" icon={AlertTriangle} title="Der lokale Hub meldet sich nicht.">
@@ -199,7 +194,9 @@ export function SoundwebPanel({ devices, hubOnline: hubOnlineInitial, active, on
           />
         </Card>
       ) : (
-        <div className="grid gap-4">
+        // `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte machen lange Regler-Namen
+        // (`truncate`) die Spalte breiter als das Handy.
+        <div className="grid grid-cols-1 gap-4">
           {devices.map((device) => (
             <DeviceCard
               key={device.id}
@@ -416,7 +413,7 @@ function DeviceCard({
                     {group}
                   </h4>
                 )}
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {controls.map((control) => (
                     <ControlTile
                       key={control.id}

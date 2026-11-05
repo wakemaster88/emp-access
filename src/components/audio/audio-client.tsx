@@ -35,7 +35,6 @@ import {
   Music,
   Pencil,
   Play,
-  Plus,
   Radio,
   RefreshCw,
   SlidersHorizontal,
@@ -62,7 +61,7 @@ import { scheduleOperatingSpecs, scheduleWarnings } from "./schedule-warnings";
 import { AnnouncePanel } from "./announce-panel";
 import { LiveBroadcastBanner } from "./live-broadcast";
 import { useLiveBroadcast } from "./use-live-broadcast";
-import { sliderFill } from "./ui";
+import { SectionHeader, sliderFill } from "./ui";
 import { AnnouncementDialog } from "./announcement-dialog";
 import { LibraryPanel } from "./library-panel";
 import {
@@ -343,41 +342,48 @@ export function AudioClient({
           Keine Anzahl in den Reitern (Abschnitt 6: höchstens Zustand und
           Störungen): mit Zählern brauchte die Leiste 1250 px und schnitt
           „Zeitpläne“ und „Verlauf“ auch am breiten Bildschirm ab.
+          Die Leiste bricht um. Auf dem Handy füllen die Reiter jede Zeile, mit
+          10 px Innenabstand drei Zeilen zu je drei bei 360 bis 430 px statt vier
+          ungleicher bei 360 px. Ab `sm` behalten sie ihre Breite (`sm:flex-none`),
+          sonst zöge sich ein einzelner Reiter in der letzten Zeile über die ganze
+          Breite (Tablet hochkant: 4 + 4 + 1). Innenabstand 12 px statt 14 px: so
+          passen die neun Reiter bei 1280 px mit offener Seitenleiste (976 px
+          Inhalt) noch in eine Zeile, statt „Verlauf“ allein in eine zweite zu schieben.
         */}
         <TabsList className="w-full sm:w-fit">
-          <TabsTrigger value="announce" className="flex-none gap-1.5">
+          <TabsTrigger value="announce" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <Megaphone className="h-4 w-4" />
             Durchsage
           </TabsTrigger>
-          <TabsTrigger value="zones" className="flex-none gap-1.5">
+          <TabsTrigger value="zones" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <Speaker className="h-4 w-4" />
             Zonen
           </TabsTrigger>
-          <TabsTrigger value="soundweb" className="flex-none gap-1.5">
+          <TabsTrigger value="soundweb" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <SlidersHorizontal className="h-4 w-4" />
             Soundweb
           </TabsTrigger>
-          <TabsTrigger value="library" className="flex-none gap-1.5">
+          <TabsTrigger value="library" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <Music className="h-4 w-4" />
             Mediathek
           </TabsTrigger>
-          <TabsTrigger value="playlists" className="flex-none gap-1.5">
+          <TabsTrigger value="playlists" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <ListMusic className="h-4 w-4" />
             Playlists
           </TabsTrigger>
-          <TabsTrigger value="streams" className="flex-none gap-1.5">
+          <TabsTrigger value="streams" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <Radio className="h-4 w-4" />
             Webradio
           </TabsTrigger>
-          <TabsTrigger value="templates" className="flex-none gap-1.5">
+          <TabsTrigger value="templates" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <Megaphone className="h-4 w-4" />
             Vorlagen
           </TabsTrigger>
-          <TabsTrigger value="schedules" className="flex-none gap-1.5">
+          <TabsTrigger value="schedules" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <CalendarClock className="h-4 w-4" />
             Zeitpläne
           </TabsTrigger>
-          <TabsTrigger value="history" className="flex-none gap-1.5">
+          <TabsTrigger value="history" className="gap-1.5 px-3 max-sm:px-2.5 sm:flex-none">
             <History className="h-4 w-4" />
             Verlauf
           </TabsTrigger>
@@ -399,6 +405,7 @@ export function AudioClient({
           <SectionHeader
             text="Jede Zone ist ein Abspieler mit eigenem Verstärker."
             actionLabel="Neue Zone"
+            actionShort="Zone"
             onAction={() => setZoneDialog({ open: true, zone: null })}
           />
 
@@ -409,7 +416,9 @@ export function AudioClient({
               text="Lege eine Beschallungszone an und ordne ihr einen Abspieler zu."
             />
           ) : (
-            <div className="grid gap-4">
+            // `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte macht ein langer
+            // Titel beim Mithören (`truncate`) die Spalte und damit die Seite breiter.
+            <div className="grid grid-cols-1 gap-4">
               {zones.map((zone) => (
                 <ZoneCard
                   key={zone.id}
@@ -474,6 +483,7 @@ export function AudioClient({
           <SectionHeader
             text="Playlists laufen als Hintergrundmusik in den Zonen."
             actionLabel="Neue Playlist"
+            actionShort="Playlist"
             onAction={() => setPlaylistDialog({ open: true, playlist: null })}
           />
 
@@ -541,6 +551,7 @@ export function AudioClient({
           <SectionHeader
             text="Sender einmal anlegen und in den Zonen auswählen."
             actionLabel="Neuer Sender"
+            actionShort="Sender"
             onAction={() => setStreamDialog({ open: true, stream: null })}
           />
 
@@ -592,6 +603,7 @@ export function AudioClient({
           <SectionHeader
             text="Gespeicherte Durchsagen stehen als Schnellwahl und in Zeitplänen zur Verfügung."
             actionLabel="Neue Durchsage"
+            actionShort="Durchsage"
             onAction={() => setAnnouncementDialog({ open: true, announcement: null })}
           />
 
@@ -672,6 +684,7 @@ export function AudioClient({
           <SectionHeader
             text="Zeitpläne werden jede Minute geprüft."
             actionLabel="Neuer Zeitplan"
+            actionShort="Zeitplan"
             onAction={() => setScheduleDialog({ open: true, schedule: null })}
           />
 
@@ -896,31 +909,6 @@ export function AudioClient({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  );
-}
-
-/**
- * Kopfzeile eines Tabs: Erklärung links, Anlegen-Knopf rechts.
- *
- * Nebeneinander wurde der Knopf am Telefon vom Erklärtext zusammengequetscht.
- * Untereinander nimmt er die ganze Breite und ist mit dem Daumen zu treffen.
- */
-function SectionHeader({
-  text,
-  actionLabel,
-  onAction,
-}: {
-  text: string;
-  actionLabel: string;
-  onAction: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-muted-foreground">{text}</p>
-      <Button onClick={onAction} className="h-11 w-full gap-1.5 sm:h-9 sm:w-auto sm:shrink-0">
-        <Plus className="h-4 w-4" /> {actionLabel}
-      </Button>
     </div>
   );
 }
@@ -1399,10 +1387,13 @@ function HistoryPanel({ jobs }: { jobs: JobRow[] }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
+        {/* Handy: volle Breite, 10 px Innenabstand – so bleiben die drei Filter
+            samt Zahl bei 360 px in einer Zeile (mit 14 px bräche „Nur Probleme“ allein um). */}
         <Segmented
           value={filter}
           onValueChange={setFilter}
           aria-label="Verlauf filtern"
+          className="max-sm:w-full max-sm:[&>[role=radio]]:px-2.5"
           options={HISTORY_FILTERS.map((option) => ({
             value: option.value,
             label: option.label,

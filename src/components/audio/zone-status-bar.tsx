@@ -44,7 +44,9 @@ export function ZoneStatusBar({ zones, status, onSelect }: Props) {
           )}
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {/* `grid-cols-1` (minmax(0, 1fr)): ohne feste Spalte kann ein langer Titel
+            (`truncate`) die Spalte breiter als das Handy machen, dann scrollt die Seite seitlich. */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {zones.map((zone) => (
             <ZoneTile
               key={zone.id}
