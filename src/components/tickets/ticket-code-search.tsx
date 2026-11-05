@@ -2,9 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, useCallback, useEffect } from "react";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
-import { Search } from "lucide-react";
 
 interface TicketCodeSearchProps {
   currentCode?: string;
@@ -61,21 +60,19 @@ export function TicketCodeSearch({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-0 flex-1 basis-56 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 z-10 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <Input
-          ref={inputRef}
-          type="text"
-          placeholder="Code scannen oder eingeben …"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss.
-          className="pl-9 font-mono text-ellipsis"
-          autoComplete="off"
-          autoFocus
-        />
-      </div>
+      <SearchInput
+        ref={inputRef}
+        type="text"
+        placeholder="Code scannen oder eingeben …"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss.
+        className="font-mono text-ellipsis"
+        containerClassName="flex-1 basis-56 max-w-md"
+        autoComplete="off"
+        autoFocus
+      />
       <Button type="button" variant="outline" onClick={handleSearch} className="shrink-0">
         Suchen
       </Button>

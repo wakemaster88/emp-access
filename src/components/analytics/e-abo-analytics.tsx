@@ -224,7 +224,7 @@ export function EaboAnalytics() {
       )}
 
       {data && !selectedId && overview && overview.length > 0 && (
-        <Card className="gap-0 py-0 sm:py-0 overflow-hidden">
+        <Card flush="y">
           <CardHeader className="border-b pt-4 sm:pt-[18px]">
             <CardTitle className="flex items-center gap-1.5">
               <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -475,7 +475,7 @@ export function EaboAnalytics() {
                   </div>
                 </TabsContent>
                 <TabsContent value="besucher" className="mt-3">
-                  <Card className="gap-0 py-0 sm:py-0 overflow-hidden">
+                  <Card flush="y">
                     <div className="px-2 sm:px-2.5 py-1">
                       <Table className={TABLE_ROWS}>
                         <TableHeader>

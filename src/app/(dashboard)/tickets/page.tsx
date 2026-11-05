@@ -173,7 +173,7 @@ export default async function TicketsPage({ searchParams }: Props) {
       <Header title="Tickets" accountName={session.user.accountName} />
       <div className="page-content">
         {/* Tabelle läuft bis an den unteren Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
-        <Card className="pb-0 sm:pb-0 overflow-hidden">
+        <Card flush>
           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 flex-wrap">
             <div className="flex items-center gap-3">
               <CardTitle>

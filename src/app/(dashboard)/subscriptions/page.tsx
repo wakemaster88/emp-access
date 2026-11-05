@@ -104,7 +104,7 @@ export default async function SubscriptionsPage() {
         {stats && <SubscriptionStats stats={stats} />}
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
         {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand. */}
-        <Card className="overflow-hidden pb-0 sm:pb-0">
+        <Card flush>
           <CardHeader>
             <CardTitle>Alle Abos ({subscriptions.length})</CardTitle>
             <CardDescription>

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,7 +43,6 @@ import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Search,
   Copy,
   Check,
   ArrowUpDown,
@@ -53,13 +53,6 @@ import {
   Gift,
 } from "lucide-react";
 import { fmtDateTimeShort } from "@/lib/utils";
-
-/**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
- */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 // Felder und Tasten im Dialog: auf dem Handy 44 px hoch, ab sm 36 px (docs/design-regeln.md, Abschnitt 16).
 const DIALOG_FIELD = "h-11 sm:h-9";
@@ -234,15 +227,14 @@ export function VouchersTable({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 px-4 sm:px-[18px]">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Code, Ticket-Typ oder Notiz suchen…"
-            className="h-11 pl-9 sm:h-9"
-          />
-        </div>
+        <SearchInput
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Code, Ticket-Typ oder Notiz suchen…"
+          className="h-11 sm:h-9"
+          containerClassName="flex-1 max-w-md"
+        />
       </div>
 
       {error ? (
@@ -267,7 +259,7 @@ export function VouchersTable({
         />
       ) : (
         <div className="border-t border-border">
-          <Table className={TABLE_EDGE}>
+          <Table edge>
             <TableHeader>
               <TableRow>
                 <TableHead>
@@ -320,10 +312,8 @@ export function VouchersTable({
             </TableHeader>
             <TableBody>
               {vouchers.map((v) => (
-                <TableRow
-                  key={v.id}
-                  className={v.disabledAt ? "opacity-60" : ""}
-                >
+                <TableRow key={v.id}>
+                  {/* Deaktiviert bleibt lesbar (keine Deckkraft auf Text); den Zustand sagt das Status-Badge. */}
                   {/* Handy: die Zelle nimmt die freie Breite (w-full + max-w-0), der Ticket-Typ darunter kürzt. */}
                   <TableCell className="font-mono text-xs max-sm:w-full max-sm:max-w-0">
                     <button

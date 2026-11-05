@@ -141,7 +141,7 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
         href="/audio"
         label="Audio"
         icon={playing > 0 ? Volume2 : VolumeX}
-        tone={audioOffline > 0 ? "warning" : playing > 0 ? "violet" : "neutral"}
+        tone={audioOffline > 0 ? "warning" : playing > 0 ? "music" : "neutral"}
         value={`${playing}/${ops.audio.zones.length || 0}`}
         suffix="spielen"
         hint={audioHint}
@@ -152,7 +152,7 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
         href="/bewaesserung"
         label="Bewässerung"
         icon={Droplets}
-        tone={watering ? "info" : "neutral"}
+        tone={watering ? "water" : "neutral"}
         value={watering ? ops.irrigation.watering.length : ops.irrigation.next ? ops.irrigation.next.startTime : "—"}
         suffix={watering ? "aktiv" : undefined}
         hint={wateringHint}
@@ -188,18 +188,18 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
         }
       />
 
-      <div className="min-w-0 col-span-2 lg:col-span-1">
-        <StatCard
-          href="/network"
-          label="Hub"
-          icon={hubsMissing ? ServerOff : Server}
-          tone={hubsMissing ? "danger" : hubsOutdated ? "warning" : "success"}
-          value={`${ops.hubs.online}/${ops.hubs.total}`}
-          suffix="verbunden"
-          hint={hubSubline(ops.hubs)}
-          progress={ops.hubs.total > 0 ? ops.hubs.online / ops.hubs.total : undefined}
-        />
-      </div>
+      {/* Rasterspalte direkt am Link der Kachel (StatCard mit href). */}
+      <StatCard
+        href="/network"
+        label="Hub"
+        icon={hubsMissing ? ServerOff : Server}
+        tone={hubsMissing ? "danger" : hubsOutdated ? "warning" : "success"}
+        value={`${ops.hubs.online}/${ops.hubs.total}`}
+        suffix="verbunden"
+        hint={hubSubline(ops.hubs)}
+        progress={ops.hubs.total > 0 ? ops.hubs.online / ops.hubs.total : undefined}
+        className="col-span-2 lg:col-span-1"
+      />
 
       {ops.devices.offline.length > 0 && (
         <Link

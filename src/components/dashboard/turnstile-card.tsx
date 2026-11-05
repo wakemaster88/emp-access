@@ -238,14 +238,15 @@ export function TurnstileCard({ date }: { date: string }) {
       ? `Ø ${totals.ridesPerGuest.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Fahrten/Gast`
       : null;
   // Abweichung zum Durchschnitt als Trendzeile (grün/rot mit Vorzeichen).
-  // StatCard blendet dann den Hinweis aus, darum steht dessen Text mit darin.
+  // Bei den Fahrten trägt sie den Vergleich selbst (der Hinweis wäre derselbe);
+  // bei den Gästen steht der Hinweis (Fahrten je Gast) per hintWithTrend darunter.
   const ridesTrend =
     ridesDelta != null && average
       ? { value: ridesDelta, label: `zum Ø ${fmtNum(average.rides)} an ${average.days} Vergleichstagen` }
       : undefined;
   const guestsTrend =
     guestsDelta != null && average
-      ? { value: guestsDelta, label: `zum Ø ${fmtNum(average.guests)}${perGuest ? ` · ${perGuest}` : ""}` }
+      ? { value: guestsDelta, label: `zum Ø ${fmtNum(average.guests)}` }
       : undefined;
 
   return (
@@ -295,6 +296,7 @@ export function TurnstileCard({ date }: { date: string }) {
           tone="primary"
           trend={guestsTrend}
           hint={perGuest ?? "eindeutige Tickets am Drehkreuz"}
+          hintWithTrend
         />
         <StatCard
           label="Tickets"

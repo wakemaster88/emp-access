@@ -3,10 +3,9 @@
 import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { EmptyState } from "@/components/ui/empty-state";
+import { SearchInput } from "@/components/ui/search-input";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { SubscriptionDialog, type SubscriptionData } from "./subscription-dialog";
 import { EditTicketDialog, type TicketData } from "@/components/tickets/edit-ticket-dialog";
@@ -60,13 +59,6 @@ function ticketValidity(t: TicketRow): "valid" | "expired" | "invalid" | "paused
   }
   return "valid";
 }
-
-/**
- * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
- * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
- */
-const TABLE_EDGE =
-  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
 
 function formatDate(d: string | Date | null): string {
   if (!d) return "–";
@@ -187,7 +179,7 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
       )}
 
       <div className="border-t border-border">
-        <Table className={TABLE_EDGE}>
+        <Table edge>
           <TableHeader>
             <TableRow>
               <TableHead className="hidden sm:table-cell w-10">#</TableHead>
@@ -220,15 +212,13 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
           </TableHeader>
           <TableBody>
             {subscriptions.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5} className="whitespace-normal">
-                  <EmptyState
-                    icon={CreditCard}
-                    title="Noch keine Abos angelegt"
-                    description="Lege ein Abo an, um Abonnements aus anny.co zu verknüpfen."
-                  />
-                </TableCell>
-              </TableRow>
+              <TableEmpty
+                colSpan={5}
+                compact={false}
+                icon={CreditCard}
+                title="Noch keine Abos angelegt"
+                description="Lege ein Abo an, um Abonnements aus anny.co zu verknüpfen."
+              />
             )}
             {subscriptions.map((sub, i) => {
               const annyNames: string[] = sub.annyNames ? (() => {
@@ -326,16 +316,13 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                               </Badge>
                             </div>
                             {tickets.length > 5 && (
-                              <div className="relative sm:ml-auto">
-                                <Search className="absolute left-2.5 top-1/2 z-10 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
-                                <Input
-                                  type="text"
-                                  placeholder="Suchen..."
-                                  value={searchMap[sub.id] ?? ""}
-                                  onChange={(e) => setSearchMap(prev => ({ ...prev, [sub.id]: e.target.value }))}
-                                  className="w-full pl-8 sm:w-48"
-                                />
-                              </div>
+                              <SearchInput
+                                type="text"
+                                placeholder="Suchen..."
+                                value={searchMap[sub.id] ?? ""}
+                                onChange={(e) => setSearchMap(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                                containerClassName="sm:ml-auto sm:w-48"
+                              />
                             )}
                           </div>
 
@@ -432,11 +419,7 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                                 );
                               })}
                               {sortedTickets.length === 0 && (
-                                <TableRow className="hover:bg-transparent">
-                                  <TableCell colSpan={readonly ? 5 : 6}>
-                                    <EmptyState compact icon={Search} title="Keine Treffer" />
-                                  </TableCell>
-                                </TableRow>
+                                <TableEmpty colSpan={readonly ? 5 : 6} icon={Search} title="Keine Treffer" />
                               )}
                             </TableBody>
                           </Table>
