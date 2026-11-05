@@ -4,11 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ErrorLine, apiRequest } from "@/components/schliessanlage/shared";
+import { ErrorLine, apiRequest, selectFieldClass } from "@/components/schliessanlage/shared";
 import type { DoorRow, RoomRow } from "@/components/schliessanlage/types";
+import { cn } from "@/lib/utils";
 
 interface Props {
   door: DoorRow | null;
@@ -54,14 +61,14 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-base">
+          <DialogTitle>
             {isNew ? "Neue Tür anlegen" : "Tür bearbeiten"}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label htmlFor="d-name" className="text-xs">
+            <Label htmlFor="d-name">
               Bezeichnung <span className="text-destructive">*</span>
             </Label>
             <Input
@@ -70,12 +77,13 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
               onChange={(e) => setName(e.target.value)}
               placeholder="z. B. Eingangstür"
               autoFocus
-              className="h-9"
+              className="max-sm:h-11"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          {/* Handy eine Spalte, sonst schneidet das Raum-Auswahlfeld den Raumnamen ab. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
             <div className="space-y-1">
-              <Label htmlFor="d-number" className="text-xs">
+              <Label htmlFor="d-number">
                 Türnummer
               </Label>
               <Input
@@ -83,18 +91,18 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
                 value={doorNumber}
                 onChange={(e) => setDoorNumber(e.target.value)}
                 placeholder="T-14"
-                className="h-9 font-mono"
+                className="font-mono max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="d-room" className="text-xs">
+              <Label htmlFor="d-room">
                 Raum
               </Label>
               <select
                 id="d-room"
                 value={roomId ?? ""}
                 onChange={(e) => setRoomId(e.target.value ? Number(e.target.value) : null)}
-                className="h-9 w-full rounded-md border border-border bg-white px-2 text-sm dark:border-border dark:bg-card"
+                className={cn(selectFieldClass, "w-full max-sm:h-11")}
               >
                 <option value="">— ohne Raum —</option>
                 {rooms.map((r) => (
@@ -106,28 +114,27 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
             </div>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="d-notes" className="text-xs">
+            <Label htmlFor="d-notes">
               Notiz
             </Label>
             <Input
               id="d-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="h-9"
+              className="max-sm:h-11"
             />
           </div>
           <ErrorLine message={error} />
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving} className="h-8">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving} className="max-sm:h-11">
             Abbrechen
           </Button>
           <Button
-            size="sm"
             onClick={save}
             disabled={saving || !name.trim()}
-            className="h-8 min-w-24"
+            className="min-w-24 max-sm:h-11"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -138,7 +145,7 @@ export function DoorDialog({ door, defaultRoomId, rooms, open, onClose }: Props)
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

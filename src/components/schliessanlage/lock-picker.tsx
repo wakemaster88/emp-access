@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Search } from "lucide-react";
+import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
 import type { LockOption } from "@/components/schliessanlage/types";
 import { cn } from "@/lib/utils";
 
@@ -28,62 +32,63 @@ export function LockPicker({
   };
 
   return (
-    <div className="space-y-1.5 rounded-md border border-border p-1.5 dark:border-border">
+    // Auswahlliste im Dialog: Glas-Kachel (in Ebenen automatisch getönt), gewählte Zeilen in Akzent-Tönung.
+    <div className="glass-tile space-y-1.5 p-1.5">
       <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
-          <input
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Raum, Tür oder Schließung suchen…"
-            className="w-full rounded border border-border bg-white py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring dark:border-border dark:bg-muted"
+            className="pl-8 max-sm:h-11"
           />
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground/70">{value.length} gewählt</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{value.length} gewählt</span>
         {value.length > 0 && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             onClick={() => onChange([])}
-            className="shrink-0 text-[11px] text-muted-foreground/70 hover:text-destructive"
+            className="shrink-0 text-[11px] text-muted-foreground hover:text-destructive max-sm:h-11"
           >
             Leeren
-          </button>
+          </Button>
         )}
       </div>
 
-      <div className="max-h-56 space-y-0.5 overflow-y-auto">
+      <div className="scrollbar-thin max-h-56 space-y-0.5 overflow-y-auto">
         {filtered.length === 0 ? (
-          <p className="py-4 text-center text-[11px] text-muted-foreground/70">
-            {options.length === 0 ? "Noch keine Schlösser angelegt." : "Keine Treffer."}
-          </p>
+          <EmptyState
+            compact
+            title={options.length === 0 ? "Noch keine Schlösser angelegt." : "Keine Treffer."}
+            className="py-4"
+          />
         ) : (
           filtered.map((o) => {
             const selected = value.includes(o.id);
             return (
-              <button
+              // Ganze Zeile ist Beschriftung des Kästchens und damit die Tippfläche; das Kästchen
+              // selbst nimmt keine Zeiger an (kein doppeltes Umschalten, keine überlappende Tippfläche).
+              <label
                 key={o.id}
-                type="button"
-                onClick={() => toggle(o.id)}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
+                  "flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
                   selected
-                    ? "bg-primary/8"
-                    : "hover:bg-muted/50",
+                    ? "bg-primary/10"
+                    : "hover:bg-glass-tile",
                 )}
               >
-                <span
-                  className={cn(
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                    selected
-                      ? "border-primary bg-primary"
-                      : "border-input",
-                  )}
-                >
-                  {selected && <Check className="h-2.5 w-2.5 text-white" />}
-                </span>
-                <span className="truncate text-xs text-foreground/80">{o.label}</span>
-              </button>
+                <Checkbox
+                  checked={selected}
+                  onCheckedChange={() => toggle(o.id)}
+                  className="pointer-events-none"
+                />
+                {/* Umbrechen statt kürzen: Tür- und Schließungsnummer stehen am Ende und unterscheiden sonst gleich beginnende Zeilen. */}
+                <span className="min-w-0 break-words text-xs text-foreground">{o.label}</span>
+              </label>
             );
           })
         )}

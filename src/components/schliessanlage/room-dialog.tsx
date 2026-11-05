@@ -4,7 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EquipmentPicker, type EquipmentItem } from "@/components/schliessanlage/equipment-picker";
@@ -81,16 +87,16 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-base">
+          <DialogTitle>
             {isNew ? "Neuen Raum anlegen" : "Raum bearbeiten"}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label htmlFor="r-name" className="text-xs">
+            <Label htmlFor="r-name">
               Name <span className="text-destructive">*</span>
             </Label>
             <Input
@@ -99,12 +105,12 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
               onChange={(e) => setName(e.target.value)}
               placeholder="z. B. Technikraum"
               autoFocus
-              className="h-9"
+              className="max-sm:h-11"
             />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="r-number" className="text-xs">
+              <Label htmlFor="r-number">
                 Raumnummer
               </Label>
               <Input
@@ -112,11 +118,11 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
                 value={number}
                 onChange={(e) => setNumber(e.target.value)}
                 placeholder="1.03"
-                className="h-9 font-mono"
+                className="font-mono max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="r-building" className="text-xs">
+              <Label htmlFor="r-building">
                 Gebäude
               </Label>
               <Input
@@ -124,11 +130,11 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
                 value={building}
                 onChange={(e) => setBuilding(e.target.value)}
                 placeholder="Haupthaus"
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="r-floor" className="text-xs">
+              <Label htmlFor="r-floor">
                 Etage
               </Label>
               <Input
@@ -136,24 +142,24 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
                 value={floor}
                 onChange={(e) => setFloor(e.target.value)}
                 placeholder="EG"
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="r-notes" className="text-xs">
+            <Label htmlFor="r-notes">
               Notiz
             </Label>
             <Input
               id="r-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="h-9"
+              className="max-sm:h-11"
             />
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Geräte in diesem Raum</Label>
+            <Label>Geräte in diesem Raum</Label>
             <EquipmentPicker
               items={deviceItems}
               value={deviceIds}
@@ -164,7 +170,7 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Kameras für diesen Raum</Label>
+            <Label>Kameras für diesen Raum</Label>
             <EquipmentPicker
               items={cameraItems}
               value={cameraIds}
@@ -177,15 +183,14 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
           <ErrorLine message={error} />
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving} className="h-8">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving} className="max-sm:h-11">
             Abbrechen
           </Button>
           <Button
-            size="sm"
             onClick={save}
             disabled={saving || !name.trim()}
-            className="h-8 min-w-24"
+            className="min-w-24 max-sm:h-11"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -196,7 +201,7 @@ export function RoomDialog({ room, devices, cameras, roomNames, open, onClose }:
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

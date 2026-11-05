@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Check, Loader2, ScanSearch } from "lucide-react";
+import { Notice } from "@/components/ui/notice";
+import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Match {
@@ -101,11 +102,9 @@ export function PersonSearchDialog({
 
   return (
     <Dialog open={!!person} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ScanSearch className="h-5 w-5" /> {person?.name} in Unbekannten suchen
-          </DialogTitle>
+          <DialogTitle>{person?.name} in Unbekannten suchen</DialogTitle>
         </DialogHeader>
 
         {!data && !error && (
@@ -113,21 +112,37 @@ export function PersonSearchDialog({
             <Loader2 className="h-4 w-4 animate-spin" /> Gesichter werden verglichen …
           </div>
         )}
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <Notice tone="danger" compact title={error} />}
 
         {data && (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              {data.samples === 0
-                ? "Diese Person hat noch keine Gesichts-Samples. Erst eine Sichtung zuordnen, dann kann gesucht werden."
-                : <>
-                    {data.scanned} unbekannte Gesichter verglichen, {data.matches.length} ähnlich.
-                    Ab {Math.round(data.preselect * 100)} % vorausgewählt; antippen zum Ändern.
-                  </>}
-              {data.pending > 0 && (
-                <> {data.pending} Sichtungen sind noch nicht analysiert und fehlen in der Suche.</>
+            {/* Auswahlhilfen neben der Trefferzahl, nicht in der Fußleiste (dort nur Schließen und Zuordnen, Abschnitt 16). */}
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+                {data.samples === 0
+                  ? "Diese Person hat noch keine Gesichts-Samples. Erst eine Sichtung zuordnen, dann kann gesucht werden."
+                  : <>
+                      {data.scanned} unbekannte Gesichter verglichen, {data.matches.length} ähnlich.
+                      Ab {Math.round(data.preselect * 100)} % vorausgewählt; antippen zum Ändern.
+                    </>}
+                {data.pending > 0 && (
+                  <> {data.pending} Sichtungen sind noch nicht analysiert und fehlen in der Suche.</>
+                )}
+              </p>
+              {data.matches.length > 0 && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())} className="max-sm:h-11">Keine</Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelected(new Set(data.matches.map((m) => m.id)))}
+                    className="max-sm:h-11"
+                  >
+                    Alle
+                  </Button>
+                </div>
               )}
-            </p>
+            </div>
 
             {data.matches.length > 0 && (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
@@ -138,9 +153,10 @@ export function PersonSearchDialog({
                       key={m.id}
                       type="button"
                       onClick={() => toggle(m.id)}
+                      aria-pressed={on}
                       className={cn(
-                        "relative rounded-md border overflow-hidden text-left bg-muted",
-                        on ? "border-primary ring-2 ring-primary" : "border-border opacity-60"
+                        "press relative rounded-xl border overflow-hidden text-left bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        on ? "border-primary ring-2 ring-primary" : "border-glass-border opacity-60 hover:opacity-90"
                       )}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -156,10 +172,10 @@ export function PersonSearchDialog({
                           <Check className="h-3.5 w-3.5" />
                         </span>
                       )}
-                      <span className="absolute top-1 left-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">
+                      <span className="absolute top-1 left-1 rounded bg-black/60 px-1 text-[11px] font-medium tabular-nums text-white">
                         {Math.round(m.score * 100)}%
                       </span>
-                      <span className="block px-1.5 py-1 text-[10px] text-muted-foreground truncate">
+                      <span className="block px-1.5 py-1 text-[11px] text-muted-foreground truncate">
                         {new Date(m.seenAt).toLocaleString("de-DE", {
                           day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
                         })}
@@ -174,20 +190,8 @@ export function PersonSearchDialog({
         )}
 
         <DialogFooter className="gap-2">
-          {data && data.matches.length > 0 && (
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Keine</Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelected(new Set(data.matches.map((m) => m.id)))}
-              >
-                Alle
-              </Button>
-            </>
-          )}
-          <Button variant="outline" onClick={onClose}>Schließen</Button>
-          <Button onClick={assign} disabled={busy || selected.size === 0} className="gap-1.5">
+          <Button variant="outline" onClick={onClose} className="max-sm:h-11">Schließen</Button>
+          <Button onClick={assign} disabled={busy || selected.size === 0} className="gap-1.5 tabular-nums max-sm:h-11">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {selected.size} zuordnen
           </Button>

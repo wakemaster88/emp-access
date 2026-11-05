@@ -2,10 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Copy, FileDown, Loader2, QrCode } from "lucide-react";
+import { Copy, FileDown, Loader2, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Separator } from "@/components/ui/separator";
 import { ErrorLine, apiRequest, fmtDateTime } from "@/components/schliessanlage/shared";
 import type { HandoverRow, SignatureRow } from "@/components/schliessanlage/types";
@@ -83,10 +91,7 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="inline-flex items-center gap-1.5 text-base">
-            <QrCode className="h-4 w-4 text-primary" />
-            Belehrung &amp; Haftung signieren
-          </DialogTitle>
+          <DialogTitle>Belehrung &amp; Haftung signieren</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -96,15 +101,11 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
           </p>
 
           {signed && signature ? (
-            <div className="space-y-2 rounded-md border border-success/30 bg-success/10 p-3">
-              <p className="inline-flex items-center gap-1.5 text-sm font-medium text-success">
-                <CheckCircle2 className="h-4 w-4" />
-                Unterschrieben
-              </p>
-              <p className="text-xs text-muted-foreground">
+            <Notice tone="success" title="Unterschrieben">
+              <p className="tabular-nums">
                 {signature.signedName} · {fmtDateTime(signature.signedAt)}
               </p>
-              <Button asChild size="sm" variant="outline" className="h-8">
+              <Button asChild size="sm" variant="outline" className="mt-2 max-sm:h-11">
                 <a
                   href={`/api/schliessanlage/signatures/${signature.id}/pdf`}
                   target="_blank"
@@ -114,48 +115,48 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
                   Protokoll als PDF
                 </a>
               </Button>
-            </div>
+            </Notice>
           ) : signature && !expired ? (
             <div className="space-y-2">
               <div className="flex justify-center">
                 <TokenQr url={signatureUrl(signature.token)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Link</Label>
+                <Label>Link</Label>
                 <div className="flex gap-1.5">
-                  <input
+                  <Input
                     readOnly
                     value={signatureUrl(signature.token)}
                     onFocus={(e) => e.currentTarget.select()}
-                    className="h-8 flex-1 rounded border border-border bg-muted/50 px-2 font-mono text-[11px] dark:border-border dark:bg-muted"
+                    className="flex-1 font-mono md:text-xs max-sm:h-11"
                   />
                   <Button
-                    size="sm"
                     variant="outline"
                     onClick={() => copy(signatureUrl(signature.token))}
-                    className="h-8 shrink-0"
+                    className="shrink-0 max-sm:h-11"
                   >
                     <Copy className="h-3.5 w-3.5" />
                     {copied ? "Kopiert" : "Kopieren"}
                   </Button>
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground/70">
+              <p className="text-[11px] text-muted-foreground tabular-nums">
                 Gültig bis {fmtDateTime(signature.expiresAt)}
               </p>
             </div>
           ) : (
             <div className="space-y-2">
               {expired && (
-                <p className="rounded bg-warning/10 px-2 py-1.5 text-xs text-warning">
-                  Der bisherige Link ist abgelaufen. Erzeuge einen neuen.
-                </p>
+                <Notice
+                  tone="warning"
+                  compact
+                  title="Der bisherige Link ist abgelaufen. Erzeuge einen neuen."
+                />
               )}
               <Button
-                size="sm"
                 onClick={createLink}
                 disabled={creating}
-                className="h-9 w-full"
+                className="w-full max-sm:h-11"
               >
                 {creating ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -172,13 +173,13 @@ export function SignatureDialog({ handover, open, onClose }: Props) {
           <ErrorLine message={error} />
         </div>
 
-        <Separator className="dark:bg-muted" />
+        <Separator />
 
-        <div className="flex justify-end">
-          <Button variant="outline" size="sm" onClick={onClose} className="h-8">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} className="max-sm:h-11">
             Schließen
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -2,11 +2,17 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -106,6 +112,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
   const [sightPersonId, setSightPersonId] = useState("");
   const [sightNotes, setSightNotes] = useState("");
   const [sightBusy, setSightBusy] = useState(false);
+  // Fehler im Dialog „Person melden“ und beim Löschen einer Sichtung als Notice statt Browser-Alert (docs/design-regeln.md, Abschnitt 16).
+  const [sightError, setSightError] = useState("");
+  const [sightingError, setSightingError] = useState("");
+  // Rückfrage vor dem Löschen (Abschnitt 18); der Inhalt bleibt stehen, solange der Dialog ausblendet.
+  const [pendingDelete, setPendingDelete] = useState<{ title: string; run: () => Promise<void> } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [triggeringId, setTriggeringId] = useState<number | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignSighting, setAssignSighting] = useState<PersonSightingRow | null>(null);
@@ -212,8 +224,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
     }
   }
 
+  function askDelete(title: string, run: () => Promise<void>) {
+    setPendingDelete({ title, run });
+    setConfirmOpen(true);
+  }
+
   async function remove(p: PersonRow) {
-    if (!confirm(`„${p.name}" von der ${p.listType === "BLACKLIST" ? "Blacklist" : "Whitelist"} löschen?`)) return;
     await fetch(`/api/persons/${p.id}`, { method: "DELETE" });
     refresh();
   }
@@ -222,6 +238,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
     e.preventDefault();
     if (!sightPersonId) return;
     setSightBusy(true);
+    setSightError("");
     try {
       const res = await fetch("/api/person-sightings", {
         method: "POST",
@@ -234,7 +251,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(typeof data.error === "string" ? data.error : "Fehler");
+        setSightError(typeof data.error === "string" ? data.error : "Fehler");
         return;
       }
       setSightOpen(false);
@@ -325,13 +342,13 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
   }
 
   async function deleteSighting(s: PersonSightingRow) {
-    if (!confirm("Diese Sichtung wirklich löschen?")) return;
     setDeletingId(s.id);
+    setSightingError("");
     try {
       const res = await fetch(`/api/person-sightings/${s.id}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(typeof data.error === "string" ? data.error : "Löschen fehlgeschlagen");
+        setSightingError(typeof data.error === "string" ? data.error : "Löschen fehlgeschlagen");
         return;
       }
       refresh();
@@ -343,7 +360,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
   function PersonList({ items, kind }: { items: PersonRow[]; kind: ListFilter }) {
     const isBlack = kind === "BLACKLIST";
     return (
-      <div className="space-y-3">
+      <div className="space-y-4 sm:space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
             {isBlack
@@ -352,39 +369,35 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
           </p>
           <Button
             onClick={() => openAdd(kind)}
-            className={cn("gap-1.5 shrink-0", isBlack ? "bg-destructive hover:bg-destructive/90" : "bg-primary hover:bg-primary/90")}
+            variant={isBlack ? "destructive" : "default"}
+            className="gap-1.5 shrink-0 max-sm:h-11"
           >
             <Plus className="h-4 w-4" /> Person hinzufügen
           </Button>
         </div>
 
         {items.length === 0 ? (
-          <Card className="border-dashed border-input">
-            <CardContent className="py-12 text-center text-muted-foreground">
-              {isBlack ? <ShieldAlert className="h-10 w-10 mx-auto mb-3 text-slate-300" /> : <ShieldCheck className="h-10 w-10 mx-auto mb-3 text-slate-300" />}
-              <p className="font-medium">Noch keine Einträge</p>
-            </CardContent>
+          <Card className="py-0 sm:py-0">
+            <EmptyState icon={isBlack ? ShieldAlert : ShieldCheck} title="Noch keine Einträge" />
           </Card>
         ) : (
-          <div className="grid gap-3">
+          // Eine Spalte mit fester Breite (minmax 0): sonst wächst die Spalte auf die Breite der
+          // Sichtungsleiste und schiebt alle Karten auf dem Handy über den Rand.
+          <div className="grid grid-cols-1 gap-4 sm:gap-5">
             {items.map((p) => {
               const personSightings = p.recentSightings ?? [];
               return (
-                <Card key={p.id} className={cn("border-border", !p.isActive && "opacity-60")}>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                <Card key={p.id} className={cn(!p.isActive && "opacity-60")}>
+                  <CardContent className="space-y-3">
+                    {/* Kopf: Name und Merkmale links, Handlungen rechts (auf dem Handy darunter). */}
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1 basis-64">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-semibold">{p.name}</h3>
-                          <Badge className={cn(
-                            "text-xs",
-                            isBlack
-                              ? "bg-destructive/12 text-destructive"
-                              : "bg-success/12 text-success"
-                          )}>
+                          <h3 className="text-[15px] font-semibold tracking-tight">{p.name}</h3>
+                          <Badge variant={isBlack ? "danger" : "success"}>
                             {isBlack ? "Blacklist" : "Whitelist"}
                           </Badge>
-                          {!p.isActive && <Badge variant="secondary">Pausiert</Badge>}
+                          {!p.isActive && <Badge variant="neutral">Pausiert</Badge>}
                           <Badge variant="outline" className="text-xs gap-1">
                             <Cctv className="h-3 w-3" />
                             {p.camera ? p.camera.name : "Alle Kameras"}
@@ -428,12 +441,13 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="ml-auto flex items-center gap-1 shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-8 gap-1"
+                          className="gap-1 max-sm:size-11"
                           title="Diese Person in den unbekannten Sichtungen suchen"
+                          aria-label="Suchen"
                           disabled={p._count.faceEmbeddings === 0}
                           onClick={() => setSearchPerson({ id: p.id, name: p.name })}
                         >
@@ -442,9 +456,10 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                         </Button>
                         <Button
                           variant="outline"
-                          size="sm"
-                          className="h-8 gap-1"
+                          size="icon-sm"
+                          className="max-sm:size-11"
                           title="Manuell melden / Shelly testen"
+                          aria-label="Manuell melden / Shelly testen"
                           onClick={() => quickTrigger(p)}
                           disabled={triggeringId === p.id}
                         >
@@ -452,32 +467,51 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             : <Play className="h-3.5 w-3.5" />}
                         </Button>
-                        <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => openEdit(p)}>
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          className="max-sm:size-11"
+                          title="Bearbeiten"
+                          aria-label="Bearbeiten"
+                          onClick={() => openEdit(p)}
+                        >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="outline" size="sm" className="h-8 px-2 text-destructive" onClick={() => remove(p)}>
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          className="text-destructive max-sm:size-11"
+                          title="Löschen"
+                          aria-label="Löschen"
+                          onClick={() =>
+                            askDelete(
+                              `„${p.name}" von der ${p.listType === "BLACKLIST" ? "Blacklist" : "Whitelist"} löschen?`,
+                              () => remove(p),
+                            )
+                          }
+                        >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
 
                     {personSightings.length > 0 ? (
-                      <div className="border-t border-border/60 pt-3">
-                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <div className="border-t border-border pt-3">
+                        <p className="text-label mb-2 flex items-center gap-1.5">
                           <History className="h-3.5 w-3.5" /> Letzte Sichtungen
                         </p>
-                        <div className="flex gap-2 overflow-x-auto pb-1">
+                        <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1">
                           {personSightings.map((s) => (
                             <div
                               key={s.id}
-                              className="shrink-0 w-28 rounded-md border border-border overflow-hidden bg-muted/50"
+                              className="glass-tile shrink-0 w-28 overflow-hidden"
                             >
                               {s.hasSnapshot ? (
                                 <a
                                   href={`/api/person-sightings/${s.id}/snapshot`}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="block aspect-square bg-muted dark:bg-background"
+                                  className="block aspect-square bg-muted"
                                 >
                                   <img
                                     src={`/api/person-sightings/${s.id}/snapshot`}
@@ -488,12 +522,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                                   />
                                 </a>
                               ) : (
-                                <div className="aspect-square flex items-center justify-center text-slate-300">
+                                <div className="aspect-square flex items-center justify-center text-muted-foreground/50">
                                   <UserRound className="h-5 w-5" />
                                 </div>
                               )}
-                              <div className="px-1.5 py-1 space-y-0.5">
-                                <p className="text-[10px] font-mono text-muted-foreground leading-tight">
+                              <div className="px-2 py-1.5 space-y-0.5">
+                                <p className="text-[11px] font-mono text-muted-foreground leading-tight">
                                   {new Date(s.seenAt).toLocaleString("de-DE", {
                                     day: "2-digit",
                                     month: "2-digit",
@@ -501,7 +535,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                                     minute: "2-digit",
                                   })}
                                 </p>
-                                <p className="text-[10px] text-muted-foreground/70 truncate">
+                                <p className="text-[11px] text-muted-foreground truncate">
                                   {s.camera?.name ?? (s.source === "MANUAL" ? "Manuell" : "–")}
                                 </p>
                               </div>
@@ -519,8 +553,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                         )}
                       </div>
                     ) : (
-                      <div className="border-t border-border/60 pt-3">
-                        <p className="text-xs text-muted-foreground/70">Noch keine zugeordneten Sichtungen.</p>
+                      <div className="border-t border-border pt-3">
+                        <p className="text-xs text-muted-foreground">Noch keine zugeordneten Sichtungen.</p>
                       </div>
                     )}
                   </CardContent>
@@ -534,14 +568,25 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 max-w-6xl">
+    <div className="space-y-4 sm:space-y-5 max-w-6xl">
       {flash && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-          <span>{flash}</span>
-          <button type="button" onClick={() => setFlash("")} className="opacity-70 hover:opacity-100">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <Notice
+          tone="success"
+          compact
+          title={flash}
+          action={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setFlash("")}
+              className="text-muted-foreground max-sm:size-11"
+              aria-label="Schließen"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          }
+        />
       )}
       <PersonSearchDialog
         person={searchPerson}
@@ -552,8 +597,8 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
           refresh();
         }}
       />
-      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList className="max-w-full overflow-x-auto justify-start">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="gap-4 sm:gap-5">
+        <TabsList>
           <TabsTrigger value="whitelist" className="gap-1.5">
             <ShieldCheck className="h-4 w-4" /> Whitelist
             <Badge variant="secondary" className="ml-1 text-xs">{whitelist.length}</Badge>
@@ -573,64 +618,68 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="whitelist" className="mt-4">
+        <TabsContent value="whitelist">
           <PersonList items={whitelist} kind="WHITELIST" />
         </TabsContent>
-        <TabsContent value="blacklist" className="mt-4">
+        <TabsContent value="blacklist">
           <PersonList items={blacklist} kind="BLACKLIST" />
         </TabsContent>
-        <TabsContent value="unknown" className="mt-4">
+        <TabsContent value="unknown">
           <UnknownPersonsPanel
             people={people.map((p) => ({ id: p.id, name: p.name, listType: p.listType }))}
             onChanged={refresh}
           />
         </TabsContent>
-        <TabsContent value="history" className="space-y-4 mt-4">
+        <TabsContent value="history" className="space-y-4 sm:space-y-5">
           <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
-              <CardTitle className="text-base">Sichtung manuell erfassen</CardTitle>
-              <Button size="sm" variant="outline" onClick={() => { setSightPersonId(""); setSightNotes(""); setSightOpen(true); }}>
-                <UserRound className="h-4 w-4 mr-1.5" /> Person melden
-              </Button>
+            <CardHeader>
+              <CardTitle>Sichtung manuell erfassen</CardTitle>
+              <CardAction>
+                <Button size="sm" variant="outline" className="max-sm:h-11" onClick={() => { setSightPersonId(""); setSightNotes(""); setSightError(""); setSightOpen(true); }}>
+                  <UserRound className="h-4 w-4 mr-1.5" /> Person melden
+                </Button>
+              </CardAction>
             </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
+            <CardContent className="text-[13px] text-muted-foreground">
               Der Hub erkennt Gesichter lokal und matcht gegen die Gallery.
               Unbekannte Sichtungen zuordnen → Face-Sample fürs Wiedererkennen.
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-0 sm:p-6">
-              <div className="rounded-lg border border-border overflow-x-auto">
+          {sightingError && <Notice tone="danger" compact title={sightingError} />}
+
+          {/* Tabelle bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand ein. */}
+          <Card className="py-0 sm:py-0 overflow-hidden">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="w-16">Bild</TableHead>
+                    <TableRow>
+                      <TableHead className="w-16 pl-4 sm:pl-[18px]">Bild</TableHead>
                       <TableHead>Zeit</TableHead>
                       <TableHead>Person</TableHead>
                       <TableHead>Liste</TableHead>
                       <TableHead className="hidden sm:table-cell">Kamera</TableHead>
                       <TableHead>Quelle</TableHead>
                       <TableHead className="hidden md:table-cell">Shelly</TableHead>
-                      <TableHead className="w-[1%] text-right">Aktion</TableHead>
+                      <TableHead className="w-[1%] text-right pr-4 sm:pr-[18px]">Aktion</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sightings.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-10 text-sm text-muted-foreground/70">
-                          Noch keine Sichtungen.
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={8} className="p-0 whitespace-normal">
+                          <EmptyState compact icon={History} title="Noch keine Sichtungen." />
                         </TableCell>
                       </TableRow>
                     )}
                     {sightings.map((s) => (
                       <TableRow key={s.id}>
-                        <TableCell>
+                        <TableCell className="pl-4 sm:pl-[18px]">
                           {s.hasSnapshot ? (
                             <button
                               type="button"
                               onClick={() => openAssign(s)}
-                              className="block h-12 w-12 overflow-hidden rounded-md border border-border bg-muted dark:border-border dark:bg-card"
+                              aria-label="Person zuordnen"
+                              className="block h-12 w-12 overflow-hidden rounded-[10px] border border-glass-border bg-muted"
                             >
                               <img
                                 src={`/api/person-sightings/${s.id}/snapshot`}
@@ -641,7 +690,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                               />
                             </button>
                           ) : (
-                            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-border text-slate-300 dark:border-border">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-[10px] border border-dashed border-border text-muted-foreground/50">
                               <UserRound className="h-4 w-4" />
                             </div>
                           )}
@@ -650,7 +699,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                           {new Date(s.seenAt).toLocaleString("de-DE")}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {s.listedPerson?.name ?? <span className="text-muted-foreground/70">unbekannt</span>}
+                          {s.listedPerson?.name ?? <span className="text-muted-foreground">unbekannt</span>}
                         </TableCell>
                         <TableCell>
                           {s.listType === "BLACKLIST" ? (
@@ -658,7 +707,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                           ) : s.listType === "WHITELIST" ? (
                             <Badge variant="success" className="text-xs">White</Badge>
                           ) : (
-                            <span className="text-muted-foreground/70 text-xs">–</span>
+                            <span className="text-muted-foreground text-xs">–</span>
                           )}
                         </TableCell>
                         <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
@@ -667,11 +716,11 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                         <TableCell className="text-xs text-muted-foreground">
                           {s.matchMethod === "FACE_EMBEDDING" ? (
                             <span className="inline-flex items-center gap-1">
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">Auto</Badge>
+                              <Badge variant="outline" className="text-[11px] px-1.5 py-0">Auto</Badge>
                               {s.matchScore != null ? `${Math.round(s.matchScore * 100)}%` : ""}
                             </span>
                           ) : s.matchMethod === "MANUAL" || s.source === "MANUAL" ? (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Manuell</Badge>
+                            <Badge variant="secondary" className="text-[11px] px-1.5 py-0">Manuell</Badge>
                           ) : (
                             "Kamera"
                           )}
@@ -683,13 +732,13 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                             <span className="inline-flex items-center gap-1 text-destructive"><XCircle className="h-3 w-3" /> Fehler</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right pr-4 sm:pr-[18px]">
                           <div className="inline-flex items-center gap-1">
                             {!s.listedPerson && (
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-8 gap-1 text-xs"
+                                className="gap-1 max-sm:h-11"
                                 onClick={() => openAssign(s)}
                               >
                                 <Link2 className="h-3.5 w-3.5" />
@@ -697,12 +746,13 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                               </Button>
                             )}
                             <Button
-                              size="icon"
+                              size="icon-sm"
                               variant="ghost"
-                              className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
+                              className="text-muted-foreground hover:text-destructive max-sm:size-11"
                               disabled={deletingId === s.id}
-                              onClick={() => deleteSighting(s)}
+                              onClick={() => askDelete("Diese Sichtung wirklich löschen?", () => deleteSighting(s))}
                               title="Löschen"
+                              aria-label="Löschen"
                             >
                               {deletingId === s.id
                                 ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -714,26 +764,24 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editing ? "Person bearbeiten" : "Person hinzufügen"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Name <span className="text-destructive">*</span></Label>
-              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="z.B. Max Mustermann" />
+              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="z.B. Max Mustermann" className="max-sm:h-11" />
             </div>
             <div className="space-y-1.5">
               <Label>Liste</Label>
               <Select value={form.listType} onValueChange={(v) => setForm((f) => ({ ...f, listType: v as ListFilter }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full max-sm:data-[size=default]:h-11"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="WHITELIST">Whitelist</SelectItem>
                   <SelectItem value="BLACKLIST">Blacklist (z. B. Hausverbot)</SelectItem>
@@ -743,7 +791,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
             <div className="space-y-1.5">
               <Label>Bevorzugte Kamera</Label>
               <Select value={form.cameraId || "none"} onValueChange={(v) => setForm((f) => ({ ...f, cameraId: v === "none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="Alle Kameras" /></SelectTrigger>
+                <SelectTrigger className="w-full max-sm:data-[size=default]:h-11"><SelectValue placeholder="Alle Kameras" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Alle Kameras</SelectItem>
                   {cameras.map((c) => (
@@ -755,21 +803,21 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                 Face-Wiedererkennen läuft immer auf allen Kameras. Optional eine Heim-/Referenzkamera markieren.
               </p>
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Historie führen</p>
                 <p className="text-xs text-muted-foreground">Sichtungen dieser Person protokollieren</p>
               </div>
               <Switch checked={form.trackHistory} onCheckedChange={(v) => setForm((f) => ({ ...f, trackHistory: v }))} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Push bei Erkennung</p>
                 <p className="text-xs text-muted-foreground">Web-Push an registrierte Geräte bei Face-Match</p>
               </div>
               <Switch checked={form.notifyOnDetection} onCheckedChange={(v) => setForm((f) => ({ ...f, notifyOnDetection: v }))} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="glass-tile flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="text-sm font-medium">Bei Face-Match Shelly schalten</p>
                 <p className="text-xs text-muted-foreground">Nur wenn diese Person lokal wiedererkannt wird</p>
@@ -781,7 +829,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                 <div className="space-y-1.5">
                   <Label>Shelly</Label>
                   <Select value={form.shellyDeviceId || "none"} onValueChange={(v) => setForm((f) => ({ ...f, shellyDeviceId: v === "none" ? "" : v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full max-sm:data-[size=default]:h-11"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Kein Shelly</SelectItem>
                       {shellyDevices.map((d) => (
@@ -794,7 +842,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                   <div className="space-y-1.5">
                     <Label>Aktion</Label>
                     <Select value={form.shellyAction} onValueChange={(v) => setForm((f) => ({ ...f, shellyAction: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-full max-sm:data-[size=default]:h-11"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ON">EIN</SelectItem>
                         <SelectItem value="OFF">AUS</SelectItem>
@@ -804,28 +852,28 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                   </div>
                   <div className="space-y-1.5">
                     <Label>Timer (Sek.)</Label>
-                    <Input type="number" min={1} value={form.timerSeconds} onChange={(e) => setForm((f) => ({ ...f, timerSeconds: e.target.value }))} placeholder="optional" />
+                    <Input type="number" min={1} value={form.timerSeconds} onChange={(e) => setForm((f) => ({ ...f, timerSeconds: e.target.value }))} placeholder="optional" className="max-sm:h-11" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Cooldown (Min.)</Label>
-                  <Input type="number" min={1} value={form.cooldownMinutes} onChange={(e) => setForm((f) => ({ ...f, cooldownMinutes: e.target.value }))} />
+                  <Input type="number" min={1} value={form.cooldownMinutes} onChange={(e) => setForm((f) => ({ ...f, cooldownMinutes: e.target.value }))} className="max-sm:h-11" />
                 </div>
               </>
             )}
             <div className="space-y-1.5">
               <Label>Notizen</Label>
-              <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="z.B. Hausverbot seit 2024" />
+              <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="z.B. Hausverbot seit 2024" className="max-sm:h-11" />
             </div>
             <div className="flex items-center justify-between pt-1">
               <Label>Aktiv</Label>
               <Switch checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
             </div>
-            {error && <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>}
+            {error && <Notice tone="danger" compact title={error} />}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Abbrechen</Button>
-            <Button onClick={save} disabled={saving || !form.name.trim()} className="gap-1.5">
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving} className="max-sm:h-11">Abbrechen</Button>
+            <Button onClick={save} disabled={saving || !form.name.trim()} className="gap-1.5 max-sm:h-11">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editing ? "Speichern" : "Anlegen"}
             </Button>
@@ -842,7 +890,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
             <div className="space-y-1.5">
               <Label>Person</Label>
               <Select value={sightPersonId} onValueChange={setSightPersonId}>
-                <SelectTrigger><SelectValue placeholder="Person wählen" /></SelectTrigger>
+                <SelectTrigger className="w-full max-sm:data-[size=default]:h-11"><SelectValue placeholder="Person wählen" /></SelectTrigger>
                 <SelectContent>
                   {people.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
@@ -854,11 +902,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
             </div>
             <div className="space-y-1.5">
               <Label>Notiz</Label>
-              <Input value={sightNotes} onChange={(e) => setSightNotes(e.target.value)} placeholder="optional" />
+              <Input value={sightNotes} onChange={(e) => setSightNotes(e.target.value)} placeholder="optional" className="max-sm:h-11" />
             </div>
+            {sightError && <Notice tone="danger" compact title={sightError} />}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSightOpen(false)}>Abbrechen</Button>
-              <Button type="submit" disabled={sightBusy || !sightPersonId} className="gap-1.5">
+              <Button type="button" variant="outline" onClick={() => setSightOpen(false)} className="max-sm:h-11">Abbrechen</Button>
+              <Button type="submit" disabled={sightBusy || !sightPersonId} className="gap-1.5 max-sm:h-11">
                 {sightBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                 Melden
               </Button>
@@ -868,19 +917,20 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
       </Dialog>
 
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Person zuordnen</DialogTitle>
           </DialogHeader>
           {assignSighting && (
             <div className="space-y-4">
               {assignSighting.hasSnapshot && (
-                <div className="overflow-hidden rounded-lg border border-border bg-muted dark:border-border dark:bg-card">
+                // Kamerabild auf schwarzem Grund (Ausnahme laut Farbregeln), auch an den Rändern von object-contain.
+                <div className="overflow-hidden rounded-xl border border-border bg-black">
                   <img
                     src={`/api/person-sightings/${assignSighting.id}/snapshot`}
                     alt="Sichtung"
                     decoding="async"
-                    className="max-h-64 w-full object-contain bg-black/5"
+                    className="max-h-64 w-full object-contain"
                   />
                 </div>
               )}
@@ -889,33 +939,29 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                 {assignSighting.camera ? ` · ${assignSighting.camera.name}` : ""}
               </p>
 
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={assignMode === "existing" ? "default" : "outline"}
-                  className="gap-1.5"
-                  disabled={people.length === 0}
-                  onClick={() => setAssignMode("existing")}
-                >
-                  <Link2 className="h-3.5 w-3.5" /> Bestehende
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={assignMode === "new" ? "default" : "outline"}
-                  className="gap-1.5"
-                  onClick={() => setAssignMode("new")}
-                >
-                  <UserPlus className="h-3.5 w-3.5" /> Neu anlegen
-                </Button>
-              </div>
+              {/* Bestehende Person oder neu anlegen: Segmentwahl statt zweier Tasten. */}
+              <Segmented
+                aria-label="Person zuordnen"
+                value={assignMode}
+                onValueChange={setAssignMode}
+                options={[
+                  {
+                    value: "existing",
+                    label: <><Link2 className="h-3.5 w-3.5" /> Bestehende</>,
+                    disabled: people.length === 0,
+                  },
+                  {
+                    value: "new",
+                    label: <><UserPlus className="h-3.5 w-3.5" /> Neu anlegen</>,
+                  },
+                ]}
+              />
 
               {assignMode === "existing" ? (
                 <div className="space-y-1.5">
                   <Label>Person</Label>
                   <Select value={assignPersonId} onValueChange={setAssignPersonId}>
-                    <SelectTrigger><SelectValue placeholder="Person wählen" /></SelectTrigger>
+                    <SelectTrigger className="w-full max-sm:data-[size=default]:h-11"><SelectValue placeholder="Person wählen" /></SelectTrigger>
                     <SelectContent>
                       {people.map((p) => (
                         <SelectItem key={p.id} value={String(p.id)}>
@@ -933,12 +979,13 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                       value={assignName}
                       onChange={(e) => setAssignName(e.target.value)}
                       placeholder="z.B. Max Mustermann"
+                      className="max-sm:h-11"
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Liste</Label>
                     <Select value={assignListType} onValueChange={(v) => setAssignListType(v as ListFilter)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-full max-sm:data-[size=default]:h-11"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="WHITELIST">Whitelist</SelectItem>
                         <SelectItem value="BLACKLIST">Blacklist</SelectItem>
@@ -957,14 +1004,12 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
               )}
 
               {assignError && (
-                <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                  {assignError}
-                </p>
+                <Notice tone="danger" compact title={assignError} />
               )}
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignOpen(false)} disabled={assignBusy}>
+            <Button variant="outline" onClick={() => setAssignOpen(false)} disabled={assignBusy} className="max-sm:h-11">
               Abbrechen
             </Button>
             <Button
@@ -973,7 +1018,7 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
                 assignBusy ||
                 (assignMode === "existing" ? !assignPersonId : !assignName.trim())
               }
-              className="gap-1.5"
+              className="gap-1.5 max-sm:h-11"
             >
               {assignBusy && <Loader2 className="h-4 w-4 animate-spin" />}
               {assignMode === "new" ? "Anlegen & zuordnen" : "Zuordnen"}
@@ -981,6 +1026,27 @@ export function PersonsClient({ people, sightings, cameras, shellyDevices, unkno
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Löschen immer mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18). */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingDelete?.title}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="max-sm:h-11">Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              className="max-sm:h-11"
+              onClick={() => {
+                if (pendingDelete) void pendingDelete.run();
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -23,8 +23,8 @@ export function SchliessanlageClient({ data, readonly }: Props) {
   ).length;
 
   return (
-    <Tabs value={tab} onValueChange={setTab} className="gap-4">
-      <TabsList className="h-auto flex-wrap">
+    <Tabs value={tab} onValueChange={setTab} className="gap-4 sm:gap-5">
+      <TabsList>
         <TabsTrigger value="struktur" className="gap-1.5">
           <DoorOpen className="h-3.5 w-3.5" />
           Räume &amp; Türen

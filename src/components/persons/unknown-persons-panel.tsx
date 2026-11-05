@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -153,8 +159,8 @@ export function UnknownPersonsPanel({ people, onChanged }: Props) {
     return null;
   }
 
+  // Rückfrage kommt aus der Gruppenkarte (AlertDialog, docs/design-regeln.md, Abschnitt 18).
   async function dismiss(ids: number[]): Promise<string | null> {
-    if (!confirm(`${ids.length} Sichtung${ids.length === 1 ? "" : "en"} verwerfen (löschen)?`)) return null;
     const res = await fetch("/api/person-sightings/dismiss", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -176,17 +182,17 @@ export function UnknownPersonsPanel({ people, onChanged }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4 sm:space-y-5">
       <Card>
-        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-          <div className="text-sm text-muted-foreground space-y-0.5">
+        <CardContent className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+          <div className="text-[13px] text-muted-foreground space-y-0.5">
             <p>
               Ähnliche Gesichter sind gruppiert. Ein Klick ordnet die ganze Gruppe zu oder legt
               eine neue Person an – die Gesichts-Samples werden automatisch gelernt.
               Bilder, die nicht dazugehören, vorher antippen.
             </p>
             {data && (
-              <p className="text-xs">
+              <p className="text-xs tabular-nums">
                 {data.total} unbekannt · {data.groups.length} Gruppe{data.groups.length === 1 ? "" : "n"}
                 {data.pending > 0 && <> · {data.pending} noch nicht analysiert</>}
                 {data.noFace > 0 && <> · {data.noFace} ohne erkennbares Gesicht</>}
@@ -200,7 +206,7 @@ export function UnknownPersonsPanel({ people, onChanged }: Props) {
                 size="sm"
                 onClick={analyze}
                 disabled={analyzing || data.analyzeQueued}
-                className="gap-1.5"
+                className="gap-1.5 max-sm:h-11"
               >
                 {analyzing || data.analyzeQueued
                   ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -208,7 +214,14 @@ export function UnknownPersonsPanel({ people, onChanged }: Props) {
                 {data.analyzeQueued ? "Hub analysiert …" : "Bilder analysieren"}
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={() => void load()} title="Neu laden">
+            <Button
+              size="icon-sm"
+              variant="outline"
+              onClick={() => void load()}
+              title="Neu laden"
+              aria-label="Neu laden"
+              className="max-sm:size-11"
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
@@ -216,29 +229,55 @@ export function UnknownPersonsPanel({ people, onChanged }: Props) {
       </Card>
 
       {notice && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-          <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> {notice}</span>
-          <button type="button" onClick={() => setNotice("")} className="opacity-70 hover:opacity-100">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <Notice
+          tone="success"
+          compact
+          title={notice}
+          action={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setNotice("")}
+              className="text-muted-foreground max-sm:size-11"
+              aria-label="Schließen"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          }
+        />
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {/* Fehler mit Ursache und Handlung; technische Angabe (Statuscode) klein darunter (docs/design-regeln.md, Abschnitt 19). */}
+      {error && (
+        <Notice
+          tone="danger"
+          compact
+          title="Laden fehlgeschlagen"
+          action={
+            <Button size="sm" variant="outline" onClick={() => void load()} className="max-sm:h-11">
+              Neu laden
+            </Button>
+          }
+        >
+          {error !== "Laden fehlgeschlagen" ? error : null}
+        </Notice>
+      )}
 
       {data && data.groups.length === 0 ? (
-        <Card className="border-dashed border-input">
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Users className="h-10 w-10 mx-auto mb-3 text-slate-300" />
-            <p className="font-medium">Keine unbekannten Gesichter offen</p>
-            {data.pending > 0 && (
-              <p className="text-xs mt-1">
-                {data.pending} ältere Sichtungen sind noch nicht analysiert – „Bilder analysieren“ startet das am Hub.
-              </p>
-            )}
-          </CardContent>
+        <Card className="py-0 sm:py-0">
+          <EmptyState
+            icon={Users}
+            title="Keine unbekannten Gesichter offen"
+            description={
+              data.pending > 0
+                ? `${data.pending} ältere Sichtungen sind noch nicht analysiert – „Bilder analysieren“ startet das am Hub.`
+                : undefined
+            }
+          />
         </Card>
       ) : (
-        <div className="grid gap-3">
+        // Eine Spalte mit fester Breite (minmax 0), damit lange Vorschläge die Karten auf dem Handy nicht verbreitern.
+        <div className="grid grid-cols-1 gap-4 sm:gap-5">
           {data?.groups.map((g, i) => (
             <GroupCard
               key={g.key}
@@ -279,6 +318,7 @@ function GroupCard({
   const [personId, setPersonId] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [confirmDismiss, setConfirmDismiss] = useState(false);
 
   const selected = group.sightingIds.filter((id) => !excluded.has(id));
   const visible = showAll ? group.sightingIds : group.sightingIds.slice(0, THUMBS);
@@ -308,10 +348,10 @@ function GroupCard({
   }
 
   return (
-    <Card className="border-border">
-      <CardContent className="p-4 space-y-3">
+    <Card>
+      <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold">Unbekannt {index + 1}</h3>
+          <h3 className="text-[15px] font-semibold tracking-tight">Unbekannt {index + 1}</h3>
           <Badge variant="neutral">
             {group.count} Sichtung{group.count === 1 ? "" : "en"}
           </Badge>
@@ -320,7 +360,7 @@ function GroupCard({
               gemischt?
             </Badge>
           )}
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {group.cameras.join(", ") || "–"} · {fmtRange(group.firstSeen, group.lastSeen)}
           </span>
         </div>
@@ -334,9 +374,10 @@ function GroupCard({
                 type="button"
                 onClick={() => toggle(id)}
                 title={off ? "Wieder einbeziehen" : "Gehört nicht dazu – abwählen"}
+                aria-label={off ? "Wieder einbeziehen" : "Gehört nicht dazu – abwählen"}
                 className={cn(
-                  "relative h-20 w-20 overflow-hidden rounded-md border bg-muted",
-                  off ? "border-dashed border-border opacity-35" : "border-border"
+                  "press relative h-20 w-20 overflow-hidden rounded-xl border bg-muted",
+                  off ? "border-dashed border-border opacity-35" : "border-glass-border"
                 )}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -359,7 +400,7 @@ function GroupCard({
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className="h-20 w-20 rounded-md border border-dashed border-border text-xs text-muted-foreground hover:bg-muted"
+              className="press h-20 w-20 rounded-xl border border-dashed border-border text-xs text-muted-foreground tabular-nums hover:bg-glass-tile hover:text-foreground"
             >
               {showAll ? "weniger" : `+${group.count - THUMBS} weitere`}
             </button>
@@ -372,17 +413,18 @@ function GroupCard({
               <Sparkles className="h-3.5 w-3.5" /> Vorschlag:
             </span>
             {group.suggestions.map((s, i) => (
+              // Lange Namen brechen um statt die Karte zu verbreitern (Handy 390 px).
               <Button
                 key={s.listedPersonId}
                 size="sm"
                 variant={i === 0 ? "default" : "outline"}
                 disabled={busy}
-                className="gap-1.5"
+                className="h-auto min-h-8 max-w-full gap-1.5 whitespace-normal py-1.5 text-left max-sm:min-h-11"
                 onClick={() => run(() => onAssign(selected, { listedPersonId: s.listedPersonId }))}
               >
                 <Check className="h-3.5 w-3.5" />
                 Das ist {s.name}
-                <span className="opacity-70 text-xs">{Math.round(s.score * 100)}%</span>
+                <span className="opacity-70 text-xs tabular-nums">{Math.round(s.score * 100)}%</span>
               </Button>
             ))}
           </div>
@@ -405,33 +447,25 @@ function GroupCard({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Name der neuen Person"
-              className="sm:max-w-xs"
+              className="sm:max-w-xs max-sm:h-11"
             />
-            <div className="flex rounded-md border border-border overflow-hidden text-sm shrink-0">
-              {(["WHITELIST", "BLACKLIST"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setListType(t)}
-                  className={cn(
-                    "px-3 py-1.5",
-                    listType === t
-                      ? t === "BLACKLIST"
-                        ? "bg-destructive text-white"
-                        : "bg-success text-white"
-                      : "text-muted-foreground hover:bg-muted"
-                  )}
-                >
-                  {t === "WHITELIST" ? "Whitelist" : "Blacklist"}
-                </button>
-              ))}
-            </div>
+            {/* Liste als Segmentwahl (Glas-Kapsel mit heller Pille). */}
+            <Segmented
+              aria-label="Liste"
+              value={listType}
+              onValueChange={setListType}
+              options={(["WHITELIST", "BLACKLIST"] as const).map((t) => ({
+                value: t,
+                label: t === "WHITELIST" ? "Whitelist" : "Blacklist",
+              }))}
+              className="shrink-0 self-start sm:self-center"
+            />
             <div className="flex gap-2">
-              <Button type="submit" size="sm" disabled={busy} className="gap-1.5">
+              <Button type="submit" size="sm" disabled={busy} className="gap-1.5 max-sm:h-11">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
                 Anlegen
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setMode("idle")}>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setMode("idle")} className="max-sm:h-11">
                 Abbrechen
               </Button>
             </div>
@@ -441,7 +475,7 @@ function GroupCard({
             {people.length > 0 && (
               <div className="flex gap-2">
                 <Select value={personId} onValueChange={setPersonId}>
-                  <SelectTrigger className="h-9 w-full sm:w-56">
+                  <SelectTrigger className="w-full sm:w-56 max-sm:data-[size=default]:h-11">
                     <SelectValue placeholder="Bestehende Person …" />
                   </SelectTrigger>
                   <SelectContent>
@@ -455,6 +489,7 @@ function GroupCard({
                 <Button
                   size="sm"
                   variant="outline"
+                  className="max-sm:h-11"
                   disabled={!personId || busy}
                   onClick={() => run(() => onAssign(selected, { listedPersonId: Number(personId) }))}
                 >
@@ -465,7 +500,7 @@ function GroupCard({
             <Button
               size="sm"
               variant={group.suggestions.length > 0 ? "outline" : "default"}
-              className="gap-1.5"
+              className="gap-1.5 max-sm:h-11"
               disabled={busy}
               onClick={() => {
                 setErr("");
@@ -477,21 +512,48 @@ function GroupCard({
             <Button
               size="sm"
               variant="ghost"
-              className="gap-1.5 text-muted-foreground hover:text-destructive sm:ml-auto"
+              className="gap-1.5 text-muted-foreground hover:text-destructive sm:ml-auto max-sm:h-11"
               disabled={busy}
-              onClick={() => run(() => onDismiss(selected))}
+              onClick={() => {
+                if (selected.length === 0) {
+                  setErr("Alle Bilder abgewählt");
+                  return;
+                }
+                setConfirmDismiss(true);
+              }}
             >
               <Trash2 className="h-4 w-4" /> Verwerfen
             </Button>
           </div>
         )}
 
+        {/* Verwerfen löscht: Rückfrage mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18). */}
+        <AlertDialog open={confirmDismiss} onOpenChange={setConfirmDismiss}>
+          <AlertDialogContent aria-describedby={undefined}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {`${selected.length} Sichtung${selected.length === 1 ? "" : "en"} verwerfen (löschen)?`}
+              </AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="max-sm:h-11">Abbrechen</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                className="max-sm:h-11"
+                onClick={() => void run(() => onDismiss(selected))}
+              >
+                Verwerfen
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {excluded.size > 0 && (
           <p className="text-xs text-muted-foreground">
             {excluded.size} Bild{excluded.size === 1 ? "" : "er"} abgewählt – bleib{excluded.size === 1 ? "t" : "en"} unbekannt.
           </p>
         )}
-        {err && <p className="text-xs text-destructive">{err}</p>}
+        {err && <Notice tone="danger" compact title={err} />}
       </CardContent>
     </Card>
   );
