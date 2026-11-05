@@ -740,7 +740,7 @@ Snapshot nicht verfügbar: `/api/improve` ließ sich nicht lesen, in dieser Umge
 ### Offen
 
 - Live auf dem iPhone (App vom Home-Bildschirm) nach dem Hub-Update ansehen. Der Service Worker braucht eventuell einmal Neuladen, bis die neue CSS greift.
-- Noch im alten Stil: die Icons (`icons/icon.svg`, PNGs Cyan→Violett). Login-Seite (`hub/src/dashboard.ts`) und Offline-Seite (`sw.js`) sind seit dem Nachtrag unten Glaskarten im Cloud-Stil.
+- Login-Seite (`hub/src/dashboard.ts`) und Offline-Seite (`sw.js`) sind seit dem Nachtrag unten Glaskarten im Cloud-Stil, die App-Icons seit dem zweiten Nachtrag im Akzent der Cloud.
 - Raum-Tönung (`:has()`) und VLAN-Töne (relative Farben) brauchen Safari 16.4+ bzw. Chrome 119+. Ältere Browser zeigen ungetönte Räume und die HSL-Farben von vorher.
 - In Headless-Chromium wird der Inhalt unter dem Dock bei Scroll-Position 0 nicht weichgezeichnet. Das Dock ist deshalb zu 72 % deckend (Cloud-Balken 65 %). Auf dem Gerät prüfen, ob weniger reicht.
 
@@ -763,3 +763,8 @@ Nicht übernommen:
 - Inter: Dafür bräuchte es eine Font-Datei und eine eigene Route in `hub/src/dashboard.ts`. Es bleibt bei der Systemschrift.
 - `.live-tag.live` auf `--emerald-solid`: Weiße Schrift fiele von 5,5:1 auf 3,8:1. Eine feste Farbe auf dem Kamerabild erlaubt §15.
 - Login- und Offline-Seite: Glaskarte über der Aurora mit denselben Tokens wie `dashboard.css`, hell und dunkel nach Systemeinstellung, `theme-color` `#f6f8fa`/`#050a15`, Tasten 44 px. Texte und Formular (GET mit `token`) unverändert.
+
+### Nachtrag: App-Icons
+
+- `icons/icon.svg` und die PNGs (192, 512, maskierbar 512, Apple 180) im Akzent-Indigo der Cloud statt Cyan→Violett: Verlauf `#5b86ff` → `#514bf2` → `#7c42ee`, weicher Lichtfleck oben links, bei den abgerundeten Varianten (SVG, 192, 512) eine helle Glaskante wie bei den Glaskacheln. Blitz, Form und Radius unverändert. Maskierbar und Apple sind vollflächig (das System rundet selbst), der Blitz liegt dort in der sicheren Zone (80 %).
+- Der Service Worker lädt `/icons/` zuerst aus dem Netz, Browser-Tab und Manifest zeigen das neue Icon nach dem nächsten Laden. Auf dem iPhone behält der Home-Bildschirm das alte Icon, bis man die App dort einmal entfernt und neu hinzufügt.
