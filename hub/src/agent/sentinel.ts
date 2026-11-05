@@ -21,6 +21,7 @@ import { sendPhoto } from "./telegram.js";
 import type { TgButton } from "./telegram.js";
 import { berlinHour } from "./watch.js";
 import { parseVerdict, shouldInspect, type Verdict } from "./sentinel-rules.js";
+import { cameraSawKnownPlate, vehicleTick } from "./vehicles.js";
 
 const MODE = (process.env.HUB_AGENT_SENTINEL || "on").trim().toLowerCase();
 const NIGHT = (process.env.HUB_AGENT_SENTINEL_NIGHT || "22-6").trim();
@@ -64,7 +65,7 @@ async function snap(cameraId: number): Promise<Buffer> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function inspect(where: string, title: string): Promise<void> {
+async function inspect(where: string, title: string, at: number): Promise<void> {
   const cam = findCameraByRef(where);
   if (!cam) return;
   const first = await snap(cam.id);
@@ -82,6 +83,19 @@ async function inspect(where: string, title: string): Promise<void> {
   if (!verdict.auffaellig) {
     log(`Wächter: ${cam.name} (${title}) unauffällig: ${verdict.was}`);
     return;
+  }
+  // Fahrzeug: kurz auf die Kennzeichen-Erkennung warten. Genehmigt → kein Alarm.
+  if (/^VEHICLE\b/.test(title)) {
+    let known: boolean | null = null;
+    for (let i = 0; i < 6 && known === null; i++) {
+      known = cameraSawKnownPlate(cam.name, at);
+      if (known === null) await sleep(2_000);
+    }
+    if (known) {
+      log(`Wächter: ${cam.name}: genehmigtes Fahrzeug – kein Alarm`);
+      SENTINEL.lastVerdict = `${cam.name}: genehmigtes Fahrzeug`;
+      return;
+    }
   }
   SENTINEL.alerts++;
   log(`Wächter: ${cam.name} AUFFÄLLIG (${verdict.dringlichkeit}): ${verdict.was}`);
@@ -129,6 +143,7 @@ async function inspect(where: string, title: string): Promise<void> {
 async function tick(): Promise<void> {
   const events = hubEventsSince(seq);
   seq = currentEventSeq();
+  if (deps) await vehicleTick(events, deps.chatIds()).catch((e) => log(`Assistent: Kennzeichen: ${e instanceof Error ? e.message : e}`));
   if (!SENTINEL.enabled || !VISION.ready) return;
   const now = Date.now();
   while (recent.length && now - recent[0] > 3_600_000) recent.shift();
@@ -151,7 +166,7 @@ async function tick(): Promise<void> {
     lastInspect.set(ev.where, now);
     recent.push(now);
     busy++;
-    void inspect(ev.where, ev.title)
+    void inspect(ev.where, ev.title, now)
       .catch((e) => log(`Wächter: ${ev.where}: ${e instanceof Error ? e.message : e}`))
       .finally(() => busy--);
   }
@@ -160,9 +175,13 @@ async function tick(): Promise<void> {
 export function startSentinel(d: { chatIds: () => string[]; offer: Offer }): void {
   deps = d;
   seq = currentEventSeq();
-  if (!SENTINEL.enabled) {
-    log("Wächter mit Bildern: aus (HUB_AGENT_SENTINEL=off)");
-    return;
-  }
-  setInterval(() => void tick().catch((e) => log(`Wächter: ${e instanceof Error ? e.message : e}`)), 3_000);
+  if (!SENTINEL.enabled) log("Wächter mit Bildern: aus (HUB_AGENT_SENTINEL=off)");
+  let running = false;
+  setInterval(() => {
+    if (running) return;
+    running = true;
+    void tick()
+      .catch((e) => log(`Wächter: ${e instanceof Error ? e.message : e}`))
+      .finally(() => (running = false));
+  }, 3_000);
 }
