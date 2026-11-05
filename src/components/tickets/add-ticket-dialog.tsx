@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -12,11 +13,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Plus, Loader2, ScanLine, Users, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Dialog auf dem Handy: Felder und Tasten 44 px hoch (docs/design-regeln.md, Abschnitt 16).
+const FIELD = "h-11 sm:h-9";
+const SELECT_FIELD = "w-full data-[size=default]:h-11 sm:data-[size=default]:h-9";
 
 interface Area {
   id: number;
@@ -244,7 +250,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="t-first">Vorname <span className="text-destructive">*</span></Label>
               <Input
@@ -254,6 +260,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                 onChange={(e) => setFirstName(e.target.value)}
                 required
                 autoFocus
+                className={FIELD}
               />
             </div>
             <div className="space-y-1.5">
@@ -264,13 +271,14 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 required
+                className={FIELD}
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="t-email">
-              Email <span className="text-muted-foreground/70 font-normal">(für automatische Mails)</span>
+              Email <span className="text-muted-foreground font-normal">(für automatische Mails)</span>
             </Label>
             <Input
               id="t-email"
@@ -279,31 +287,31 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
+              className={FIELD}
             />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="t-code" className="flex items-center gap-1.5">
-              <ScanLine className="h-3.5 w-3.5 text-muted-foreground/70" />
+              <ScanLine className="h-3.5 w-3.5 text-muted-foreground" />
               Code
             </Label>
             <Input
               id="t-code"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              className="font-mono text-sm"
+              className={cn("font-mono", FIELD)}
               placeholder="RFID / Barcode / QR"
               autoComplete="off"
             />
             {missingCard && (
-              <p className="flex items-start gap-1.5 text-xs text-warning">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <Notice tone="warning" compact icon={AlertTriangle}>
                 <span>
                   „{selectedOption?.name}“ verlangt eine Karte. Ohne Code ist das
                   Ticket nicht scanbar – hat die Person schon eine Karte, hier
                   einscannen und beim Hinweis „Bändchen umhängen“ bestätigen.
                 </span>
-              </p>
+              </Notice>
             )}
           </div>
 
@@ -312,9 +320,12 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
               <Label>Ticket-Typ</Label>
               <div className="flex flex-wrap gap-2">
                 {allOptions.map((opt) => (
-                  <button
+                  <Button
                     key={`${opt.type}-${opt.id}`}
                     type="button"
+                    size="sm"
+                    variant={selectedId === opt.id && selectedType === opt.type ? "default" : "outline"}
+                    aria-pressed={selectedId === opt.id && selectedType === opt.type}
                     onClick={() => {
                       if (selectedId === opt.id && selectedType === opt.type) {
                         setSelectedId(null);
@@ -324,15 +335,10 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                         setSelectedType(opt.type);
                       }
                     }}
-                    className={cn(
-                      "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors",
-                      selectedId === opt.id && selectedType === opt.type
-                        ? "bg-primary text-white border-primary"
-                        : "bg-muted/50 text-foreground/80 border-border hover:border-primary/60 hover:text-primary",
-                    )}
+                    className="rounded-full max-sm:h-9"
                   >
                     {opt.name}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -341,11 +347,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
           {vereine.length > 0 && (
             <div className="space-y-1.5">
               <Label htmlFor="t-verein" className="flex items-center gap-1.5">
-                <Users className="h-3.5 w-3.5 text-muted-foreground/70" />
-                Verein <span className="text-muted-foreground/70 font-normal">(optional)</span>
+                <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                Verein <span className="text-muted-foreground font-normal">(optional)</span>
               </Label>
               <Select value={vereinId} onValueChange={setVereinId}>
-                <SelectTrigger id="t-verein" className="h-9 text-sm"><SelectValue placeholder="Kein Verein" /></SelectTrigger>
+                <SelectTrigger id="t-verein" className={SELECT_FIELD}><SelectValue placeholder="Kein Verein" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Kein Verein</SelectItem>
                   {vereine.map((v) => (
@@ -357,26 +363,24 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
           )}
 
           {pendingConflict && (
-            <div className="bg-warning/10 border border-warning/40/60 rounded-lg p-3 text-sm space-y-2">
-              <p className="font-semibold text-warning">
-                Bändchen bereits vergeben
-              </p>
-              <p className="text-warning">
+            <Notice tone="warning" title="Bändchen bereits vergeben">
+              <p>
                 Der Code ist aktuell Ticket{" "}
-                <span className="font-semibold">{pendingConflict.label}</span>
+                <span className="font-semibold text-foreground">{pendingConflict.label}</span>
                 {pendingConflict.type ? (
                   <span className="opacity-80"> ({pendingConflict.type})</span>
                 ) : null}{" "}
                 zugeordnet. Bändchen auf das neue Ticket umhängen? Das alte
                 Ticket verliert dann seinen Code.
               </p>
-              <div className="flex gap-2 pt-1">
+              {/* Auf dem Handy gestapelt, Bestätigen oben; der Hinweis trägt schon die Warnfarbe. */}
+              <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={cancelTransfer}
                   disabled={loading}
-                  className="flex-1"
+                  className={cn("sm:flex-1", FIELD)}
                 >
                   Abbrechen
                 </Button>
@@ -384,7 +388,7 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                   type="button"
                   onClick={confirmTransfer}
                   disabled={loading}
-                  className="flex-1 bg-warning hover:bg-warning/90 text-warning-foreground"
+                  className={cn("sm:flex-1", FIELD)}
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -393,17 +397,15 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                   )}
                 </Button>
               </div>
-            </div>
+            </Notice>
           )}
 
           {error && (
-            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-              {error}
-            </p>
+            <Notice tone="danger" compact title={error} />
           )}
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading} className={FIELD}>
               Abbrechen
             </Button>
             <Button
@@ -413,11 +415,11 @@ export function AddTicketDialog({ areas, subscriptions = [], services = [], vere
                 || pendingConflict !== null
                 || (!firstName.trim() && !lastName.trim())
               }
-              className="min-w-28"
+              className={cn("min-w-28", FIELD)}
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

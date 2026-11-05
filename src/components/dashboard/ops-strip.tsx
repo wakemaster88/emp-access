@@ -11,8 +11,8 @@ import {
   VolumeX,
   WifiOff,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { Notice } from "@/components/ui/notice";
+import { StatCard } from "@/components/ui/stat-card";
 
 export interface DashboardOps {
   audio: {
@@ -116,166 +116,112 @@ export function OpsStrip({ ops }: { ops: DashboardOps | null }) {
   const hubsMissing = ops.hubs.total === 0 || ops.hubs.online < ops.hubs.total;
   const hubsOutdated = ops.hubs.agents.some((h) => h.outdated);
 
+  // Zweite Zeile der Audio-Kachel: erst Störungen, dann was gerade läuft.
+  const audioHint =
+    audioOffline > 0
+      ? `${audioOffline} Zone${audioOffline === 1 ? "" : "n"} offline`
+      : ops.audio.zones.length > 0
+        ? ops.audio.zones
+            .slice(0, 3)
+            .map((z) => `${z.name}: ${zoneSubline(z)}`)
+            .join(" · ")
+        : "Keine Zonen";
+
+  // Kennzahl ist eine Zahl (laufende Zonen) oder die nächste Startzeit; der
+  // Zonenname steht im Hinweis.
+  const wateringHint = watering
+    ? `${watering.name} läuft noch ${watering.remainingMin} Min.`
+    : ops.irrigation.next
+      ? `als nächstes ${ops.irrigation.next.name}`
+      : "Kein Lauf heute";
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-      <Link href="/audio" className="block min-w-0">
-        <Card className="py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground">Audio</span>
-            {playing > 0 ? (
-              <Volume2 className="h-3.5 w-3.5 text-success shrink-0" />
-            ) : (
-              <VolumeX className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
-            )}
-          </div>
-          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
-            {playing}/{ops.audio.zones.length || 0}
-            <span className="text-xs font-medium text-muted-foreground ml-1">spielen</span>
-          </p>
-          {audioOffline > 0 ? (
-            <p className="text-[10px] text-warning mt-0.5 truncate">
-              {audioOffline} Zone{audioOffline === 1 ? "" : "n"} offline
-            </p>
-          ) : ops.audio.zones.length > 0 ? (
-            <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
-              {ops.audio.zones
-                .slice(0, 3)
-                .map((z) => `${z.name}: ${zoneSubline(z)}`)
-                .join(" · ")}
-            </p>
-          ) : (
-            <p className="text-[10px] text-muted-foreground/70 mt-0.5">Keine Zonen</p>
-          )}
-        </Card>
-      </Link>
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      <StatCard
+        href="/audio"
+        label="Audio"
+        icon={playing > 0 ? Volume2 : VolumeX}
+        tone={audioOffline > 0 ? "warning" : playing > 0 ? "violet" : "neutral"}
+        value={`${playing}/${ops.audio.zones.length || 0}`}
+        suffix="spielen"
+        hint={audioHint}
+        progress={ops.audio.zones.length > 0 ? playing / ops.audio.zones.length : undefined}
+      />
 
-      <Link href="/bewaesserung" className="block min-w-0">
-        <Card className="py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground">Bewässerung</span>
-            <Droplets className={cn(
-              "h-3.5 w-3.5 shrink-0",
-              watering ? "text-info" : "text-muted-foreground/70",
-            )} />
-          </div>
-          {watering ? (
-            <>
-              <p className="text-lg font-bold text-foreground mt-1 truncate">
-                {watering.name}
-              </p>
-              <p className="text-[10px] text-info mt-0.5">
-                läuft noch {watering.remainingMin} Min.
-              </p>
-            </>
-          ) : ops.irrigation.next ? (
-            <>
-              <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
-                {ops.irrigation.next.startTime}
-              </p>
-              <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
-                als nächstes {ops.irrigation.next.name}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-lg font-bold text-foreground mt-1">—</p>
-              <p className="text-[10px] text-muted-foreground/70 mt-0.5">Kein Lauf heute</p>
-            </>
-          )}
-        </Card>
-      </Link>
+      <StatCard
+        href="/bewaesserung"
+        label="Bewässerung"
+        icon={Droplets}
+        tone={watering ? "info" : "neutral"}
+        value={watering ? ops.irrigation.watering.length : ops.irrigation.next ? ops.irrigation.next.startTime : "—"}
+        suffix={watering ? "aktiv" : undefined}
+        hint={wateringHint}
+      />
 
-      <Link href="/webcams" className="block min-w-0">
-        <Card className={cn(
-          "py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow",
-          ops.alerts.open> 0 && "border-destructive/30",
-        )}>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground">Drehkreuz</span>
-            <AlertTriangle className={cn(
-              "h-3.5 w-3.5 shrink-0",
-              ops.alerts.open > 0 ? "text-destructive" : "text-muted-foreground/70",
-            )} />
-          </div>
-          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
-            {ops.alerts.open}
-            <span className="text-xs font-medium text-muted-foreground ml-1">offen</span>
-          </p>
-          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
-            {latestAlert
-              ? latestAlert.source
-                ? `${latestAlert.source}: ${latestAlert.message}`
-                : latestAlert.message
-              : "Keine Warnung"}
-          </p>
-        </Card>
-      </Link>
+      <StatCard
+        href="/webcams"
+        label="Drehkreuz"
+        icon={AlertTriangle}
+        tone={ops.alerts.open > 0 ? "danger" : "neutral"}
+        value={ops.alerts.open}
+        suffix="offen"
+        hint={
+          latestAlert
+            ? latestAlert.source
+              ? `${latestAlert.source}: ${latestAlert.message}`
+              : latestAlert.message
+            : "Keine Warnung"
+        }
+      />
 
-      <Link href="/fahrzeuge" className="block min-w-0">
-        <Card className={cn(
-          "py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow",
-          ops.vehicles.unmatchedToday> 0 && "border-warning/30",
-        )}>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground">Fahrzeuge</span>
-            <Car className={cn(
-              "h-3.5 w-3.5 shrink-0",
-              ops.vehicles.unmatchedToday > 0 ? "text-warning" : "text-muted-foreground/70",
-            )} />
-          </div>
-          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
-            {ops.vehicles.unmatchedToday}
-            <span className="text-xs font-medium text-muted-foreground ml-1">offen</span>
-          </p>
-          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">
-            {ops.vehicles.latest[0]?.plate
-              ? `zuletzt ${ops.vehicles.latest[0].plate}`
-              : "Alle zugeordnet"}
-          </p>
-        </Card>
-      </Link>
+      <StatCard
+        href="/fahrzeuge"
+        label="Fahrzeuge"
+        icon={Car}
+        tone={ops.vehicles.unmatchedToday > 0 ? "warning" : "neutral"}
+        value={ops.vehicles.unmatchedToday}
+        suffix="offen"
+        hint={
+          ops.vehicles.latest[0]?.plate
+            ? `zuletzt ${ops.vehicles.latest[0].plate}`
+            : "Alle zugeordnet"
+        }
+      />
 
-      <Link href="/network" className="block min-w-0 col-span-2 lg:col-span-1">
-        <Card className={cn(
-          "py-3 px-4 gap-0 h-full hover:shadow-md transition-shadow",
-          hubsMissing && "border-destructive/30",
-          !hubsMissing && hubsOutdated && "border-warning/30",
-        )}>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground">Hub</span>
-            {hubsMissing ? (
-              <ServerOff className="h-3.5 w-3.5 text-destructive shrink-0" />
-            ) : (
-              <Server className={cn(
-                "h-3.5 w-3.5 shrink-0",
-                hubsOutdated ? "text-warning" : "text-success",
-              )} />
-            )}
-          </div>
-          <p className="text-lg font-bold text-foreground mt-1 tabular-nums">
-            {ops.hubs.online}/{ops.hubs.total}
-            <span className="text-xs font-medium text-muted-foreground ml-1">verbunden</span>
-          </p>
-          <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">{hubSubline(ops.hubs)}</p>
-        </Card>
-      </Link>
+      <div className="min-w-0 col-span-2 lg:col-span-1">
+        <StatCard
+          href="/network"
+          label="Hub"
+          icon={hubsMissing ? ServerOff : Server}
+          tone={hubsMissing ? "danger" : hubsOutdated ? "warning" : "success"}
+          value={`${ops.hubs.online}/${ops.hubs.total}`}
+          suffix="verbunden"
+          hint={hubSubline(ops.hubs)}
+          progress={ops.hubs.total > 0 ? ops.hubs.online / ops.hubs.total : undefined}
+        />
+      </div>
 
       {ops.devices.offline.length > 0 && (
-        <Link href="/devices" className="block min-w-0 col-span-2 lg:col-span-5">
-          <Card className="py-2.5 px-4 gap-0 border-warning/30 hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-2 min-w-0">
-              <WifiOff className="h-3.5 w-3.5 text-warning shrink-0" />
-              <span className="text-xs font-semibold text-warning">
-                {ops.devices.offline.length} Abspieler/Pi offline
-              </span>
-              <span className="text-[11px] text-muted-foreground truncate">
-                {ops.devices.offline.map((d) => d.name).join(" · ")}
-              </span>
-              <span className="ml-auto text-[10px] text-muted-foreground/70 tabular-nums shrink-0">
+        <Link
+          href="/devices"
+          className="block min-w-0 col-span-2 lg:col-span-5 rounded-tile outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Notice
+            tone="warning"
+            compact
+            icon={WifiOff}
+            title={`${ops.devices.offline.length} Abspieler/Pi offline`}
+            action={
+              <span className="text-xs text-muted-foreground tabular-nums">
                 {ops.devices.heartbeatOnline}/{ops.devices.heartbeatTotal} online
               </span>
-            </div>
-          </Card>
+            }
+            className="transition-colors hover:border-warning/70"
+          >
+            <span className="block truncate">
+              {ops.devices.offline.map((d) => d.name).join(" · ")}
+            </span>
+          </Notice>
         </Link>
       )}
     </div>

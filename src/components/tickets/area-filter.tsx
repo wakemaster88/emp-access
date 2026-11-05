@@ -31,8 +31,9 @@ export function AreaFilter({ areas, current }: { areas: Area[]; current?: string
 
   return (
     <Select value={current ?? "all"} onValueChange={handleChange}>
-      <SelectTrigger className="w-[180px] h-9 text-sm">
-        <MapPin className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70" />
+      {/* flex-1 am Wert: steht direkt hinter dem Symbol statt mittig (justify-between im Baustein). */}
+      <SelectTrigger className="w-[180px] h-9 text-sm *:data-[slot=select-value]:flex-1">
+        <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
         <SelectValue placeholder="Alle Resourcen" />
       </SelectTrigger>
       <SelectContent>

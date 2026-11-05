@@ -62,7 +62,7 @@ export function TicketCodeSearch({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-0 flex-1 basis-56 max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 z-10 h-4 w-4 text-muted-foreground pointer-events-none" />
         <Input
           ref={inputRef}
           type="text"
@@ -70,17 +70,20 @@ export function TicketCodeSearch({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="pl-9 font-mono text-sm"
+          // text-ellipsis: auf dem Handy (16 px) passt der Platzhalter nicht ganz; Auslassung statt Abriss.
+          className="pl-9 font-mono text-ellipsis"
           autoComplete="off"
           autoFocus
         />
       </div>
-      <Button type="button" variant="outline" size="sm" onClick={handleSearch} className="shrink-0">
+      <Button type="button" variant="outline" onClick={handleSearch} className="shrink-0">
         Suchen
       </Button>
       {currentCode && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => {
             setValue("");
             const params = new URLSearchParams(searchParams.toString());
@@ -88,10 +91,10 @@ export function TicketCodeSearch({
             const q = params.toString();
             router.push(`/tickets${q ? `?${q}` : ""}`);
           }}
-          className="text-xs text-muted-foreground/70 hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
         >
           Filter zurücksetzen
-        </button>
+        </Button>
       )}
     </div>
   );

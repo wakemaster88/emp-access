@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { EditTicketDialog, type TicketData } from "./edit-ticket-dialog";
+import { EditTicketDialog, statusBadge, type TicketData } from "./edit-ticket-dialog";
 import { fmtDateShort, fmtDateTimeShort, isDateOnly } from "@/lib/utils";
 import { UserCheck, MapPin, CreditCard, Package, SearchX, Ticket } from "lucide-react";
 
@@ -64,6 +64,11 @@ function calcAge(birthDate: Date | string | null | undefined): number | null {
   return age;
 }
 
+// Tabelle bis an den Kartenrand: erste und letzte Spalte bekommen den
+// Innenabstand der Karte (16/18 px), Zeilen auf dem Handy 44 px.
+const TABLE_EDGE =
+  "[&_tr>*:first-child]:pl-4 sm:[&_tr>*:first-child]:pl-[18px] [&_tr>*:last-child]:pr-4 sm:[&_tr>*:last-child]:pr-[18px]";
+
 function sourceBadge(source: string | null | undefined) {
   const label = !source
     ? "Eigenes"
@@ -76,33 +81,16 @@ function sourceBadge(source: string | null | undefined) {
         if (s === "SHELLY") return "shelly";
         return source;
       })();
+  // Quelle ist keine Zustandsfarbe: eigene Tickets als Umriss, angebundene
+  // Systeme als Glas-Pille, unterschieden am Namen.
   if (!source) {
     return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-input text-muted-foreground dark:border-input dark:text-muted-foreground font-normal">
+      <Badge variant="outline" className="text-muted-foreground">
         {label}
       </Badge>
     );
   }
-  const s = source.toUpperCase();
-  if (s === "ANNY") {
-    return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 font-normal">
-        {label}
-      </Badge>
-    );
-  }
-  if (s === "WAKESYS" || s === "EMP_CONTROL" || s === "BINARYTEC" || s === "SHELLY") {
-    return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/40 text-primary font-normal">
-        {label}
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-normal">
-      {label}
-    </Badge>
-  );
+  return <Badge variant="secondary">{label}</Badge>;
 }
 
 /** Zeigt Code nur an, wenn es ein echter Scan-Code ist (kein anny-Buchungs-JSON). */
@@ -113,37 +101,6 @@ function displayCode(ticket: TicketData): string {
   if (t.startsWith("[") || t.startsWith("{")) return "–";
   if (t.length > 80) return `${t.slice(0, 40)}…`;
   return t;
-}
-
-function isExpired(ticket: { endDate?: string | Date | null }): boolean {
-  if (!ticket.endDate) return false;
-  return new Date(ticket.endDate) < new Date();
-}
-
-function statusBadge(status: string, ticket?: { endDate?: string | Date | null; extras?: Record<string, unknown> | null }) {
-  if (ticket && (status === "VALID" || status === "REDEEMED") && isExpired(ticket)) {
-    return <Badge variant="danger">Abgelaufen</Badge>;
-  }
-  switch (status) {
-    case "VALID":
-      return <Badge variant="success">Gültig</Badge>;
-    case "REDEEMED":
-      return <Badge variant="info">Eingelöst</Badge>;
-    case "INVALID":
-      return <Badge variant="destructive">Ungültig</Badge>;
-    case "PAUSED":
-      // Zahlungs-Pause (Auto-Pause bei offener Rechnung) deutlich kennzeichnen.
-      if (ticket?.extras && (ticket.extras as Record<string, unknown>).paymentPause) {
-        return <Badge variant="danger">Zahlung offen</Badge>;
-      }
-      return <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">Pausiert</Badge>;
-    case "CANCELED":
-      return <Badge variant="danger">Gekündigt</Badge>;
-    case "PROTECTED":
-      return <Badge variant="warning">Geschützt</Badge>;
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
 }
 
 function formatDuration(minutes: number) {
@@ -186,9 +143,9 @@ function ValidityInfo({ ticket }: { ticket: TicketData }) {
       <span className="text-xs text-muted-foreground">
         {dateRangeStr && <span className="whitespace-nowrap">{dateRangeStr}</span>}
         {dateRangeStr && " · "}
-        <span className="text-violet-600 dark:text-violet-400">{dur}</span>
+        <span className="text-primary">{dur}</span>
         {ticket.firstScanAt && (
-          <span className="block text-[10px] text-muted-foreground/70 mt-0.5">Start: {fmtDateTimeShort(ticket.firstScanAt)}</span>
+          <span className="block text-[11px] text-muted-foreground mt-0.5">Start: {fmtDateTimeShort(ticket.firstScanAt)}</span>
         )}
       </span>
     );
@@ -342,8 +299,8 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
 
   return (
     <>
-      <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
-        <Table>
+      <div className="-mx-4 sm:-mx-[18px]">
+        <Table className={TABLE_EDGE}>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
@@ -358,7 +315,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
           <TableBody>
             {tickets.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="p-0">
+                <TableCell colSpan={7} className="p-0 whitespace-normal">
                   <EmptyState
                     icon={searchCode ? SearchX : Ticket}
                     title={searchCode ? "Kein Ticket mit diesem Code gefunden" : "Keine Tickets vorhanden"}
@@ -374,15 +331,20 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
               const hasPairs = ticketCount > personCount;
               return (
               <React.Fragment key={`${groupType}:${groupName}`}>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      {groupType === "subscription" && <CreditCard className="h-3 w-3 text-primary" />}
-                      {groupType === "service" && <Package className="h-3 w-3 text-violet-500" />}
-                      {groupName}
-                      {groupType === "subscription" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-primary/30 text-primary font-normal ml-1">Abo</Badge>}
-                      {groupType === "service" && <Badge variant="outline" className="text-[9px] px-1 py-0 border-violet-200 text-violet-500 dark:border-violet-800 dark:text-violet-400 font-normal ml-1">Service</Badge>}
-                      <span className="font-normal text-muted-foreground/70">
+                <TableRow className="bg-glass-tile hover:bg-glass-tile">
+                  {/* whitespace-normal + flex-wrap: lange Gruppennamen umbrechen, statt die
+                      Tabelle auf dem Handy über den Kartenrand zu schieben. */}
+                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs text-muted-foreground whitespace-normal">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {/* Symbol und Name bleiben beim Umbrechen zusammen. */}
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        {groupType === "subscription" && <CreditCard className="h-3 w-3 shrink-0" />}
+                        {groupType === "service" && <Package className="h-3 w-3 shrink-0" />}
+                        <span className="text-label">{groupName}</span>
+                      </span>
+                      {groupType === "subscription" && <Badge variant="secondary">Abo</Badge>}
+                      {groupType === "service" && <Badge variant="secondary">Service</Badge>}
+                      <span className="tabular-nums">
                         ({personCount} {personCount === 1 ? "Person" : "Personen"}
                         {hasPairs ? ` / ${ticketCount} Tickets` : ""})
                       </span>
@@ -409,12 +371,13 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                     key={isPair ? `pair:${allMembers.map((m) => m.id).join(",")}` : ticket.id}
                     className={
                       readonly
-                        ? "hover:bg-muted/40"
-                        : "hover:bg-muted/40 cursor-pointer"
+                        ? "max-sm:h-11"
+                        : "max-sm:h-11 cursor-pointer"
                     }
                     onClick={() => !readonly && setSelected(ticket)}
                   >
-                    <TableCell>
+                    {/* w-full + max-w-0: Namensspalte nimmt den Rest, lange Zeilen kürzen statt die Tabelle zu verbreitern. */}
+                    <TableCell className="w-full max-w-0">
                       <div className="flex items-center gap-2.5 min-w-0">
                         {ticket.profileImage ? (
                           <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
@@ -422,10 +385,10 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                         <div className="min-w-0">
                           <p className="font-medium text-foreground truncate">
                             {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                            {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground/70">({a})</span> : null; })()}
+                            {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
                           </p>
                           {(ticket.ticketTypeName || ticket.subscription?.name) && (
-                            <p className="text-xs text-muted-foreground/70 truncate">
+                            <p className="text-xs text-muted-foreground truncate">
                               {ticket.ticketTypeName}
                               {ticket.ticketTypeName && ticket.subscription?.name && " · "}
                               {ticket.subscription?.name && (
@@ -434,9 +397,9 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                             </p>
                           )}
                           {isPair && pairAreaNames.length > 0 && (
-                            <p className="text-[10px] text-violet-500 dark:text-violet-400 mt-0.5 truncate">
+                            <p className="text-[11px] text-primary mt-0.5 truncate">
                               {pairAreaNames.join(" + ")}
-                              <span className="text-muted-foreground/70"> · {allMembers.length} Tickets</span>
+                              <span className="text-muted-foreground"> · {allMembers.length} Tickets</span>
                             </p>
                           )}
                         </div>
@@ -448,7 +411,8 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                     <TableCell className="hidden sm:table-cell text-sm">
                       {sourceBadge(ticket.source)}
                     </TableCell>
-                    <TableCell className="hidden xl:table-cell text-sm text-muted-foreground">
+                    {/* Lange Tickettypen umbrechen; sonst bleibt der Namensspalte bei 1280 px kaum Platz. */}
+                    <TableCell className="hidden xl:table-cell text-sm text-muted-foreground whitespace-normal min-w-44">
                       {ticket.ticketTypeName || "–"}
                     </TableCell>
                     <TableCell>{statusBadge(ticket.status, ticket)}</TableCell>
@@ -465,7 +429,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           {totalScans}
                         </Link>
                       ) : (
-                        <span className="text-muted-foreground/70">0</span>
+                        <span className="text-muted-foreground">0</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -477,12 +441,12 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
 
             {employeeTickets.length > 0 && (
               <>
-                <TableRow className="bg-success/10 hover:bg-success/10">
-                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs font-semibold text-success">
-                    <span className="flex items-center gap-1.5">
+                <TableRow className="bg-glass-tile hover:bg-glass-tile">
+                  <TableCell colSpan={7} className="py-1.5 px-2 text-xs text-muted-foreground whitespace-normal">
+                    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                       <UserCheck className="h-3.5 w-3.5" />
-                      Mitarbeiter
-                      <span className="font-normal text-success">
+                      <span className="text-label">Mitarbeiter</span>
+                      <span className="tabular-nums">
                         ({employeeTickets.length})
                       </span>
                     </span>
@@ -493,16 +457,16 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                   return (
                     <TableRow
                       key={ticket.id}
-                      className={readonly ? "" : "cursor-pointer hover:bg-muted/40"}
+                      className={readonly ? "max-sm:h-11" : "max-sm:h-11 cursor-pointer"}
                       onClick={() => !readonly && setSelected(ticket)}
                     >
-                      <TableCell>
+                      <TableCell className="w-full max-w-0">
                         <div className="flex items-center gap-2.5 min-w-0">
                           {ticket.profileImage ? (
                             <img src={ticket.profileImage} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" />
                           ) : (
-                            <div className="h-8 w-8 rounded-full bg-success/10 flex items-center justify-center shrink-0">
-                              <span className="text-xs font-bold text-success">
+                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                              <span className="text-xs font-bold text-muted-foreground">
                                 {(ticket.firstName?.[0] || ticket.name[0] || "?").toUpperCase()}
                               </span>
                             </div>
@@ -510,13 +474,13 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                           <div className="min-w-0">
                             <p className="font-medium text-foreground truncate">
                               {[ticket.firstName, ticket.lastName].filter(Boolean).join(" ") || ticket.name}
-                              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground/70">({a})</span> : null; })()}
+                              {(() => { const a = calcAge(ticket.birthDate); return a != null ? <span className="ml-1 text-xs font-normal text-muted-foreground">({a})</span> : null; })()}
                             </p>
                             {empAreas.length > 0 && (
                               <div className="flex items-center gap-1 flex-wrap mt-0.5">
                                 {empAreas.map((a) => (
-                                  <Badge key={a.id} variant="outline" className="text-[9px] px-1 py-0 border-success/30 text-success font-normal gap-0.5">
-                                    <MapPin className="h-2 w-2" />
+                                  <Badge key={a.id} variant="secondary" className="gap-0.5">
+                                    <MapPin />
                                     {a.name}
                                   </Badge>
                                 ))}
@@ -544,7 +508,7 @@ export function TicketsTable({ tickets, areas, subscriptions = [], services = []
                             {ticket._count.scans}
                           </Link>
                         ) : (
-                          <span className="text-muted-foreground/70">0</span>
+                          <span className="text-muted-foreground">0</span>
                         )}
                       </TableCell>
                     </TableRow>
