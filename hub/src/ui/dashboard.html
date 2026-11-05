@@ -159,11 +159,30 @@
             <button type="button" data-cols="4" aria-pressed="false">4</button>
             <button type="button" data-cols="5" aria-pressed="false">5</button>
           </div>
+          <button type="button" class="btn head-icon" id="aiToggle" aria-pressed="true" aria-controls="aiTile" title="KI-Verlauf ein-/ausblenden"><svg class="ico" aria-hidden="true"><use href="#i-sparkle"/></svg><span class="btn-label">KI</span></button>
           <button type="button" class="btn head-icon" id="liveFull"><svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg><span class="btn-label">Vollbild</span></button>
         </div>
       </header>
       <div class="seen-strip" id="liveSeen" hidden aria-label="Gerade erkannte Personen"></div>
-      <div class="live-grid" id="liveGrid"></div>
+      <div class="live-wrap" id="liveWrap">
+        <div class="live-grid" id="liveGrid"></div>
+        <aside class="ai-tile" id="aiTile" aria-label="KI-Verlauf">
+          <header class="ai-head">
+            <span class="ai-avatar" aria-hidden="true"><svg class="ico"><use href="#i-sparkle"/></svg></span>
+            <div class="ai-head-text">
+              <h2 class="ai-title">KI</h2>
+              <p class="ai-sub" id="aiSub">Lädt …</p>
+            </div>
+            <div class="segment compact ai-filter" id="aiFilter" role="group" aria-label="Anzeigen">
+              <button type="button" data-ai="all" aria-pressed="false" title="Alles, auch Routine-Prüfungen und Werkzeuge">Alles</button>
+              <button type="button" data-ai="main" aria-pressed="true" title="Nur Meldungen, Erkennungen, Vorschläge und Aktionen">Wichtig</button>
+            </div>
+          </header>
+          <div class="ai-log" id="aiLog" role="log" aria-live="polite" aria-relevant="additions"></div>
+          <div class="ai-working" id="aiWorking" hidden></div>
+          <button type="button" class="ai-jump" id="aiJump" hidden>Neue Einträge <svg class="ico" aria-hidden="true"><use href="#i-chev"/></svg></button>
+        </aside>
+      </div>
     </section>
 
     <!-- Lage -->
@@ -475,6 +494,11 @@
   </div>
 </dialog>
 
+<dialog class="ai-img-dlg" id="aiImgDlg" aria-label="Bild der KI">
+  <img id="aiImgDlgImg" alt="">
+  <p id="aiImgDlgCap"></p>
+  <button type="button" class="icon-btn" id="aiImgDlgClose" aria-label="Schließen"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+</dialog>
 <dialog class="dialog" id="confirmDlg" aria-labelledby="confirmTitle">
   <form method="dialog" class="dialog-body">
     <span class="dialog-ico" aria-hidden="true"><svg class="ico"><use href="#i-power"/></svg></span>

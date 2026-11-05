@@ -224,6 +224,193 @@ function renderSeen() {
   box.hidden = !rows.length;
 }
 
+/* ------------------------------------------------ Kachel „KI“ (Zentrale) */
+
+/*
+ * Was der Hub-Assistent tut und getan hat, wie ein Chat: neueste Eintraege
+ * unten, mit Uhrzeit und ggf. kleinem Bild. Quelle /api/agent/activity.
+ */
+const ai = {
+  entries: [],
+  working: [],
+  last: 0,
+  at: 0,
+  busy: false,
+  error: false,
+  /** "main" = ohne Routine (Waechter unauffaellig, Werkzeuge), "all" = alles. */
+  filter: storeGet("hub-ai-filter") === "all" ? "all" : "main",
+  shown: storeGet("hub-ai-shown") !== "0",
+  sig: "",
+  /** Unten festhalten, solange niemand nach oben gescrollt hat. */
+  stick: true,
+};
+
+const AI_KIND = {
+  watch: { icon: "target", label: "Wächter", tone: "muted" },
+  detect: { icon: "user", label: "Erkannt", tone: "sky" },
+  alert: { icon: "alert", label: "Alarm", tone: "alert" },
+  warn: { icon: "alert", label: "Warnung", tone: "warn" },
+  ok: { icon: "check", label: "In Ordnung", tone: "ok" },
+  suggest: { icon: "bulb", label: "Vorschlag", tone: "violet" },
+  action: { icon: "zap", label: "Ausgeführt", tone: "ok" },
+  tool: { icon: "search", label: "Sieht nach", tone: "muted" },
+  message: { icon: "sparkle", label: "Nachricht", tone: "accent" },
+  error: { icon: "alert", label: "Fehler", tone: "alert" },
+  user: { icon: "user", label: "Aaron", tone: "user" },
+};
+const AI_ROUTINE = new Set(["watch", "tool"]);
+
+async function loadAi(force = false) {
+  if (!ai.shown || ai.busy || (!force && Date.now() - ai.at < 3000)) return;
+  ai.busy = true;
+  ai.at = Date.now();
+  try {
+    const r = await getJson(`/api/agent/activity${ai.last ? `?since=${ai.last}` : ""}`);
+    const list = Array.isArray(r.entries) ? r.entries : [];
+    // Hub neu gestartet und Zaehler kleiner: komplett neu laden.
+    if (ai.last && r.last < ai.last) {
+      ai.last = 0;
+      ai.entries = [];
+      ai.busy = false;
+      return loadAi(true);
+    }
+    const known = new Set(ai.entries.map((e) => e.id));
+    for (const e of list) if (!known.has(e.id)) ai.entries.push(e);
+    if (ai.entries.length > 200) ai.entries = ai.entries.slice(-200);
+    ai.last = Math.max(ai.last, r.last || 0);
+    ai.working = Array.isArray(r.working) ? r.working : [];
+    ai.error = false;
+  } catch {
+    ai.error = true;
+  } finally {
+    ai.busy = false;
+  }
+  renderAi();
+}
+
+function aiDay(iso) {
+  return new Date(iso).toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "numeric" });
+}
+
+function aiEntryHtml(e) {
+  const k = AI_KIND[e.kind] || AI_KIND.message;
+  // Das Symbol links zeigt die Art schon: Telegram-Emoji am Anfang weglassen.
+  const text = e.kind === "user" ? e.text : String(e.text).replace(/^(‼️|⚠️|✅|💡)\s*/u, "");
+  const time = clock(e.at).slice(0, 5);
+  const img = e.img
+    ? `<button type="button" class="ai-img" data-ai-img="${e.img}" aria-label="Bild groß anzeigen"><img src="/api/agent/activity/img/${e.img}" alt="" loading="lazy" decoding="async"></button>`
+    : "";
+  const meta = `<span class="ai-meta">${e.telegram ? `<span class="ai-tg" title="Telegram">TG</span>` : ""}${esc(e.kind === "user" ? e.where || k.label : k.label)} · ${esc(time)}</span>`;
+  if (e.kind === "user") {
+    return `<div class="ai-row is-user" data-id="${e.id}"><div class="ai-bubble">${img}<p>${esc(e.text)}</p>${meta}</div></div>`;
+  }
+  return `<div class="ai-row t-${k.tone}${AI_ROUTINE.has(e.kind) ? " is-routine" : ""}" data-id="${e.id}">
+    <span class="ai-dot" aria-hidden="true">${icon(k.icon)}</span>
+    <div class="ai-bubble">${img}<p>${esc(text)}</p>${meta}</div>
+  </div>`;
+}
+
+function renderAi() {
+  const box = $("aiLog");
+  if (!box) return;
+  const list = ai.filter === "all" ? ai.entries : ai.entries.filter((e) => !AI_ROUTINE.has(e.kind));
+  const sig = `${ai.filter}|${list.length}|${list.length ? list[list.length - 1].id : 0}|${list.length ? list[0].id : 0}`;
+  if (sig !== ai.sig) {
+    const nearBottom = ai.stick || !ai.sig;
+    let html = "";
+    let day = "";
+    for (const e of list) {
+      const d = aiDay(e.at);
+      if (d !== day) {
+        day = d;
+        html += `<div class="ai-day"><span>${esc(d === aiDay(new Date().toISOString()) ? "Heute" : d)}</span></div>`;
+      }
+      html += aiEntryHtml(e);
+    }
+    const prevFilter = ai.sig.split("|")[0];
+    ai.sig = sig;
+    box.innerHTML =
+      html ||
+      `<div class="ai-empty">${icon("sparkle")}<p>${
+        ai.error ? "Der Hub antwortet nicht." : ai.entries.length ? "Nur Routine – „Alles“ zeigt sie." : "Noch nichts passiert. Hier erscheint, was die KI prüft, erkennt, meldet und schaltet."
+      }</p></div>`;
+    if (nearBottom || prevFilter !== ai.filter) {
+      box.scrollTop = box.scrollHeight;
+      $("aiJump").hidden = true;
+    } else $("aiJump").hidden = false;
+  }
+  const w = $("aiWorking");
+  const wHtml = ai.working.length
+    ? ai.working
+        .map((x) => `<div class="ai-typing"><span class="ai-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>${esc(x.text)}</span></div>`)
+        .join("")
+    : "";
+  if (w.dataset.h !== wHtml) {
+    w.innerHTML = wHtml;
+    w.dataset.h = wHtml;
+  }
+  w.hidden = !ai.working.length;
+  const lastE = ai.entries[ai.entries.length - 1];
+  $("aiSub").textContent = ai.error
+    ? "Hub nicht erreichbar"
+    : ai.working.length
+      ? "arbeitet gerade …"
+      : lastE
+        ? `zuletzt ${ago(lastE.at)}`
+        : "wartet";
+  for (const b of document.querySelectorAll("#aiFilter button")) b.setAttribute("aria-pressed", String(b.dataset.ai === ai.filter));
+}
+
+function setAiShown(on) {
+  ai.shown = on;
+  storeSet("hub-ai-shown", on ? "1" : "0");
+  $("aiTile").hidden = !on;
+  $("liveWrap").classList.toggle("has-ai", on);
+  $("aiToggle").setAttribute("aria-pressed", String(on));
+  if (on) {
+    ai.sig = "";
+    loadAi(true);
+  }
+  setTimeout(layoutGrid, 30);
+}
+
+$("aiToggle").addEventListener("click", () => setAiShown(!ai.shown));
+$("aiFilter").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-ai]");
+  if (!b) return;
+  ai.filter = b.dataset.ai;
+  storeSet("hub-ai-filter", ai.filter);
+  renderAi();
+});
+$("aiLog").addEventListener("scroll", () => {
+  const box = $("aiLog");
+  ai.stick = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  if (ai.stick) $("aiJump").hidden = true;
+});
+// Nachladende Bilder machen den Verlauf hoeher: unten bleiben.
+$("aiLog").addEventListener("load", () => {
+  if (ai.stick) $("aiLog").scrollTop = $("aiLog").scrollHeight;
+}, true);
+$("aiJump").addEventListener("click", () => {
+  const box = $("aiLog");
+  box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
+  ai.stick = true;
+  $("aiJump").hidden = true;
+});
+$("aiLog").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-ai-img]");
+  if (!b) return;
+  const row = b.closest(".ai-row");
+  $("aiImgDlgImg").src = `/api/agent/activity/img/${b.dataset.aiImg}`;
+  $("aiImgDlgCap").textContent = row ? row.querySelector("p")?.textContent || "" : "";
+  $("aiImgDlg").showModal();
+});
+$("aiImgDlgClose").addEventListener("click", () => $("aiImgDlg").close());
+$("aiImgDlg").addEventListener("click", (ev) => {
+  if (ev.target === $("aiImgDlg")) $("aiImgDlg").close();
+});
+setAiShown(ai.shown);
+
 /* Grossansicht: Personen-Boxen ueber dem Livebild, etwa jede Sekunde. */
 function startBoxes() {
   stopBoxes();
@@ -460,7 +647,10 @@ async function refresh() {
     else if (state.view === "geraete" || state.view === "raeume") await loadMowerStatus();
     // Die Zentrale braucht sie fuer die Maeher-Kameras; sie pollt alle 2 s, also seltener.
     else if (state.view === "zentrale") await loadMowerStatus(10_000);
-    if (state.view === "zentrale") loadSeen();
+    if (state.view === "zentrale") {
+      loadSeen();
+      loadAi();
+    }
     if (state.view === "regeln" && (!state.rules || Date.now() - (state.rulesAt || 0) > 30000)) await loadRules();
     state.overview = overview;
     state.eventSeq = events.seq ?? state.eventSeq;

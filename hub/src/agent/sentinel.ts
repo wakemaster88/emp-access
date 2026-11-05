@@ -22,6 +22,7 @@ import { roomsPayload } from "../rooms.js";
 import { improve } from "../improve-log.js";
 import { VISION, askVision } from "./ollama.js";
 import { sendPhoto } from "./telegram.js";
+import { beginWork, endWork, recordActivity } from "./activity.js";
 import type { TgButton } from "./telegram.js";
 import { berlinHour } from "./watch.js";
 import { decidePerson, parsePersonLook, parseVerdict, shouldInspect, type PersonLook, type Verdict } from "./sentinel-rules.js";
@@ -103,6 +104,16 @@ async function closeUp(cameraId: number, caps: CameraCaps | null): Promise<Buffe
 async function inspect(where: string, title: string, at: number): Promise<void> {
   const cam = findCameraByRef(where);
   if (!cam) return;
+  const work = `sentinel:${cam.id}`;
+  beginWork(work, `Wächter sieht sich ${cam.name} an (${title.split(/\s+/)[0].toLowerCase()})`);
+  try {
+    await inspectCam(cam, title, at);
+  } finally {
+    endWork(work);
+  }
+}
+
+async function inspectCam(cam: NonNullable<ReturnType<typeof findCameraByRef>>, title: string, at: number): Promise<void> {
   let first = await snap(cam.id);
   SENTINEL.inspections++;
   let verdict: Verdict;
@@ -110,6 +121,7 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
     verdict = parseVerdict(await askVision(first, PROMPT, true));
   } catch (e) {
     log(`Wächter: ${cam.name}: Bildmodell: ${e instanceof Error ? e.message : e}`);
+    recordActivity({ kind: "error", where: cam.name, text: `${cam.name}: Bild konnte nicht bewertet werden (${e instanceof Error ? e.message : e})` });
     return;
   }
   SENTINEL.lastAt = new Date().toISOString();
@@ -117,6 +129,7 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
   improve("camera", verdict.auffaellig ? "sentinel_alert" : "sentinel_calm", { camera: cam.name, trigger: title });
   if (!verdict.auffaellig) {
     log(`Wächter: ${cam.name} (${title}) unauffällig: ${verdict.was}`);
+    recordActivity({ kind: "watch", where: cam.name, text: `${cam.name}: unauffällig – ${verdict.was}`, jpeg: first });
     return;
   }
   // Fahrzeug: kurz auf die Kennzeichen-Erkennung warten. Genehmigt → kein Alarm.
@@ -129,6 +142,7 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
     if (known) {
       log(`Wächter: ${cam.name}: genehmigtes Fahrzeug – kein Alarm`);
       SENTINEL.lastVerdict = `${cam.name}: genehmigtes Fahrzeug`;
+      recordActivity({ kind: "detect", where: cam.name, text: `${cam.name}: genehmigtes Fahrzeug – kein Alarm`, jpeg: first });
       return;
     }
   }
@@ -165,6 +179,7 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
       } else if (b2 && b2.length === 0) {
         log(`Wächter: ${cam.name}: Tracker sieht keine Person (2 Bilder) – kein Alarm`);
         SENTINEL.lastVerdict = `${cam.name}: keine Person im Bild`;
+        recordActivity({ kind: "watch", where: cam.name, text: `${cam.name}: Personen-Signal, aber niemand im Bild – kein Alarm` });
         improve("camera", "sentinel_person_empty", { camera: cam.name });
         return;
       }
@@ -207,6 +222,7 @@ async function inspect(where: string, title: string, at: number): Promise<void> 
       const label = face?.name ?? (staff?.length ? "Mitarbeiter" : matched[0]?.label ?? "unbedenklich");
       await rememberPeople({ camera: cam.name, kleidung: look && look.unbekannt > 0 ? look.kleidung : [], label, matched });
       SENTINEL.lastVerdict = `${cam.name}: vermutlich Mitarbeiter – ${decision.reason}`;
+      recordActivity({ kind: "detect", where: cam.name, text: `${cam.name}: ${label} – ${decision.reason}, kein Alarm`, jpeg: close ?? first });
       recordHubEvent({ kind: "camera", severity: "info", where: cam.name, title: "Assistent: vermutlich Mitarbeiter", detail: decision.reason });
       return;
     }
