@@ -613,6 +613,10 @@ const live = {
   peers: new Map(),
   focusId: null,
   focusStop: null,
+  /** Timer, der prueft, ob der Hauptstream der Grossansicht wirklich Bild liefert. */
+  focusCheck: null,
+  /** Kameras, deren Hauptstream der Browser nicht abspielt (z. B. H.265): Grossansicht nimmt den Substream. */
+  mainBroken: new Set(),
   presets: {},
   /** Gerade erkannte Personen je Kamera (/api/live/people). */
   seen: [],
@@ -802,17 +806,18 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   let prevStats = null;
 
   /*
-   * Gleiche, niedrige Verzoegerung fuer alle Kacheln: Der Browser puffert
+   * Gleiche, kleine Verzoegerung fuer alle Kacheln: Der Browser puffert
    * jede Verbindung fuer sich und laesst den Puffer bei Netzschwankungen
-   * wachsen, dann laufen die Bilder auseinander. Ziel 0 ms Puffer; waechst
-   * die Verzoegerung trotzdem ueber 1 s, wird neu verbunden.
+   * wachsen, dann laufen die Bilder auseinander. Ziel 150 ms Puffer (0 ms
+   * ruckelt bei kleinen WLAN-Schwankungen); waechst die Verzoegerung
+   * trotzdem ueber 1 s, wird neu verbunden.
    */
   const lowLatency = () => {
     if (!pc) return;
     for (const r of pc.getReceivers()) {
       try {
-        if ("jitterBufferTarget" in r) r.jitterBufferTarget = 0;
-        if ("playoutDelayHint" in r) r.playoutDelayHint = 0;
+        if ("jitterBufferTarget" in r) r.jitterBufferTarget = 150;
+        if ("playoutDelayHint" in r) r.playoutDelayHint = 0.15;
       } catch {
         // nicht unterstuetzt
       }
@@ -1261,6 +1266,29 @@ function setZoom(scale, x = live.zoom.x, y = live.zoom.y) {
   if (lbl) lbl.textContent = `${live.zoom.scale.toFixed(1)}×`;
 }
 
+function stopFocusStream() {
+  clearTimeout(live.focusCheck);
+  live.focusCheck = null;
+  if (live.focusStop) live.focusStop();
+  live.focusStop = null;
+}
+
+/*
+ * Grossansicht: klarer Hauptstream. Manche Kameras (RLC-811A in 4K) senden
+ * ihn als H.265, das viele Browser ueber WebRTC nicht abspielen. Kommt nach
+ * 8 s kein Bild, nimmt die Grossansicht fuer diese Kamera den Substream.
+ */
+function watchMainStream(c, video) {
+  clearTimeout(live.focusCheck);
+  live.focusCheck = setTimeout(() => {
+    live.focusCheck = null;
+    if (live.focusId !== c.id || !$("camDlg").open || document.hidden) return;
+    if (video.videoWidth > 0 && video.readyState >= 2) return;
+    live.mainBroken.add(c.id);
+    openFocus(c.id);
+  }, 8000);
+}
+
 function openFocus(id) {
   live.focusId = id;
   const c = focusCam();
@@ -1287,11 +1315,10 @@ function openFocus(id) {
   if (pic) img.src = pic.url;
   else img.removeAttribute("src");
   video.style.opacity = "0";
-  if (live.focusStop) live.focusStop();
-  live.focusStop = null;
+  stopFocusStream();
   delete dlg.dataset.rtc;
-  const src = streamFor(c, "main");
   const isMower = c.kind === "MOWER";
+  const src = isMower || !live.mainBroken.has(c.id) ? streamFor(c, "main") : streamFor(c, "sub");
   if (src) {
     const want = c.id;
     // Erst das gemerkte Hauptbild (sofort), dann ein frisches. Maeher haben keins.
@@ -1311,6 +1338,7 @@ function openFocus(id) {
       },
       { maxAttempts: isMower ? 3 : 0 }
     );
+    if (!isMower && src.endsWith("_main")) watchMainStream(c, video);
   }
   if (!dlg.open) {
     dlg.showModal();
@@ -1359,7 +1387,11 @@ function renderFocusState(d) {
     c.clock && Math.abs(c.clock.offsetS) >= CLOCK_WARN_S
       ? `<span class="badge warn" title="${esc(c.clock.ntp === false ? "NTP an der Kamera aus" : c.clock.ntpServer ? `NTP: ${c.clock.ntpServer}` : "Uhr der Kamera")}">Uhr ${clockText(c.clock.offsetS)}</span>`
       : "";
-  const html = `${tag}${why}${who}${clk}${c.states
+  const sub =
+    !mower && live.mainBroken.has(c.id)
+      ? '<span class="badge warn" title="Der Hauptstream (vermutlich H.265) laeuft in diesem Browser nicht, gezeigt wird der Substream.">Nur Vorschau-Qualität</span>'
+      : "";
+  const html = `${tag}${sub}${why}${who}${clk}${c.states
     .filter((s) => !(n && s === "PERSON"))
     .map((s) => stateBadge(c, s))
     .join("")}`;
@@ -1777,8 +1809,7 @@ $("camDlgNext").addEventListener("click", () => stepFocus(1));
 $("camDlgClose").addEventListener("click", () => $("camDlg").close());
 $("camDlg").addEventListener("close", () => {
   stopBoxes();
-  if (live.focusStop) live.focusStop();
-  live.focusStop = null;
+  stopFocusStream();
   live.focusId = null;
   delete $("camDlg").dataset.rtc;
   $("camDlgVideo").style.opacity = "0";
