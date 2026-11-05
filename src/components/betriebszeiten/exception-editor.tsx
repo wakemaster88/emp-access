@@ -1,7 +1,9 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { CalendarX, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ExceptionSpec } from "@/components/betriebszeiten/types";
@@ -37,38 +39,41 @@ export function ExceptionEditor({
   return (
     <div className="space-y-2">
       {exceptions.length === 0 && (
-        <p className="text-xs text-neutral-500">
-          Noch keine Ausnahmen. Ohne Ausnahmetag gilt immer der Wochenplan der Saison.
-        </p>
+        <EmptyState
+          compact
+          icon={CalendarX}
+          title="Noch keine Ausnahmen."
+          description="Ohne Ausnahmetag gilt immer der Wochenplan der Saison."
+        />
       )}
 
       {exceptions.map((exception, index) => (
+        // Gruppe im Dialog als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
         <div
           key={index}
-          className="flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 p-2 dark:border-neutral-700"
+          className="glass-tile flex flex-wrap items-end gap-2 p-3"
         >
           <div className="space-y-1">
-            <Label className="text-xs">Datum</Label>
+            <Label>Datum</Label>
             <Input
               type="date"
               value={exception.date}
               disabled={disabled}
-              className="h-8 w-36 text-xs"
+              className="w-36 max-sm:h-11"
               onChange={(e) => update(index, { date: e.target.value })}
             />
           </div>
 
-          <label className="flex h-8 items-center gap-1.5 text-xs">
-            <input
-              type="checkbox"
+          {/* Kästchen aus dem Baustein (Glasfeld, angehakt in Akzentfarbe); die ganze Zeile ist Tippfläche (docs/design-regeln.md, Abschnitt 14). */}
+          <label className="flex h-9 items-center gap-2 text-xs max-sm:h-11">
+            <Checkbox
               checked={exception.closed}
               disabled={disabled}
-              className="h-3.5 w-3.5"
-              onChange={(e) =>
+              onCheckedChange={(checked) =>
                 update(index, {
-                  closed: e.target.checked,
-                  opensAt: e.target.checked ? null : exception.opensAt ?? "10:00",
-                  closesAt: e.target.checked ? null : exception.closesAt ?? "18:00",
+                  closed: checked === true,
+                  opensAt: checked === true ? null : exception.opensAt ?? "10:00",
+                  closesAt: checked === true ? null : exception.closesAt ?? "18:00",
                 })
               }
             />
@@ -81,36 +86,36 @@ export function ExceptionEditor({
                 type="time"
                 value={exception.opensAt ?? "10:00"}
                 disabled={disabled}
-                className="h-8 w-[6.5rem] text-xs"
+                className="w-[6.5rem] max-sm:h-11"
                 onChange={(e) => update(index, { opensAt: e.target.value })}
               />
-              <span className="text-xs text-neutral-400">bis</span>
+              <span className="text-xs text-muted-foreground">bis</span>
               <Input
                 type="time"
                 value={exception.closesAt ?? "18:00"}
                 disabled={disabled}
-                className="h-8 w-[6.5rem] text-xs"
+                className="w-[6.5rem] max-sm:h-11"
                 onChange={(e) => update(index, { closesAt: e.target.value })}
               />
             </div>
           )}
 
           <div className="min-w-32 flex-1 space-y-1">
-            <Label className="text-xs">Notiz</Label>
+            <Label>Notiz</Label>
             <Input
               value={exception.note ?? ""}
               disabled={disabled}
               placeholder="z.B. Feiertag, Seefest"
-              className="h-8 text-xs"
+              className="max-sm:h-11"
               onChange={(e) => update(index, { note: e.target.value })}
             />
           </div>
 
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
             disabled={disabled}
-            className="h-8 w-8 p-0 text-neutral-400 hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive max-sm:size-11"
             onClick={() => onChange(exceptions.filter((_, i) => i !== index))}
             title="Ausnahme entfernen"
           >
@@ -129,7 +134,7 @@ export function ExceptionEditor({
         variant="outline"
         size="sm"
         disabled={disabled}
-        className="h-8 text-xs"
+        className="h-8 text-xs max-sm:h-11"
         onClick={() =>
           onChange([
             ...exceptions,

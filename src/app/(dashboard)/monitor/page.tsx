@@ -14,7 +14,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Check, ChevronDown, DoorOpen, Loader2, MapPin, Maximize, Minimize, Pause, Play, Ticket, Volume2, VolumeX, Wifi } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { StatCard } from "@/components/ui/stat-card";
+import { StatusDot } from "@/components/ui/status-dot";
+import { Check, ChevronDown, DoorOpen, Loader2, MapPin, Maximize, Minimize, Pause, Play, ScanLine, ShieldAlert, Ticket, Users, Volume2, VolumeX, Wifi, X } from "lucide-react";
 import { fmtTime } from "@/lib/utils";
 import { berlinYmd, isSameBerlinDay } from "@/lib/berlin-day";
 import { parseScanDisplayNote, scanDenyReasonLabel } from "@/lib/scan-deny-reason";
@@ -230,29 +234,33 @@ export default function MonitorPage() {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
   return (
-    <div ref={containerRef} className="bg-background min-h-[100dvh]">
+    // Kein eigener Hintergrund; nur im Vollbild trägt der Container den Seitengrund selbst.
+    <div ref={containerRef} className="min-h-[100dvh] [&:fullscreen]:page-ambient">
 
       <Header title="Live-Monitor" />
 
-      <div className="page-content space-y-4">
+      <div className="page-content space-y-4 sm:space-y-5">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded-full bg-success animate-pulse" />
-            <span className="text-sm font-medium text-muted-foreground">
+            {/* Pulsieren nur, solange der Feed lebt; Pause in der Hinweisfarbe (docs/design-regeln.md, Abschnitte 3 und 9). */}
+            <StatusDot tone={isPaused ? "warning" : "success"} pulse={!isPaused} size="md" />
+            <span className="text-sm font-medium text-muted-foreground tabular-nums">
               Live — {scans.length} Scans geladen
             </span>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Handy: vier Tasten als 2×2-Raster statt einer einzelnen umbrechenden Taste; ab sm eine Zeile. */}
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="font-normal">
+                <Button variant="outline" size="sm" className="font-normal max-sm:h-11">
                   {selectedDeviceIds.length === 0
                     ? "Alle Geräte"
                     : `${selectedDeviceIds.length} Gerät${selectedDeviceIds.length !== 1 ? "e" : ""}`}
                   <ChevronDown className="h-4 w-4 opacity-50 ml-1" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 max-h-72 overflow-y-auto">
+              {/* Breit genug für ganze Gerätenamen („Drehkreuz Strandbad Eingang“/„… Ausgang“ wären sonst gleich gekürzt). */}
+              <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-2rem)] max-h-72 overflow-y-auto">
                 <DropdownMenuLabel className="text-xs text-muted-foreground">Feed nach Gerät filtern</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuCheckboxItem
@@ -283,7 +291,7 @@ export default function MonitorPage() {
                       }}
                     >
                       <span className="flex items-center gap-2 truncate">
-                        <span className={`h-2 w-2 rounded-full shrink-0 ${d.lastUpdate && d.lastUpdate > fiveMinAgo ? "bg-success" : "bg-slate-400"}`} />
+                        <StatusDot tone={d.lastUpdate && d.lastUpdate > fiveMinAgo ? "success" : "neutral"} />
                         {d.name}
                       </span>
                       <span className="ml-auto text-xs text-muted-foreground/70">{d.type === "SHELLY" ? "Shelly" : "Pi"}</span>
@@ -292,34 +300,32 @@ export default function MonitorPage() {
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" size="sm" onClick={() => setIsPaused(!isPaused)}>
+            <Button variant="outline" size="sm" className="max-sm:h-11" onClick={() => setIsPaused(!isPaused)}>
               {isPaused ? <Play className="h-4 w-4 mr-1" /> : <Pause className="h-4 w-4 mr-1" />}
               {isPaused ? "Fortsetzen" : "Pause"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setSoundEnabled(!soundEnabled)}>
+            <Button variant="outline" size="sm" className="max-sm:h-11" onClick={() => setSoundEnabled(!soundEnabled)}>
               {soundEnabled ? <Volume2 className="h-4 w-4 mr-1" /> : <VolumeX className="h-4 w-4 mr-1" />}
               Sound
             </Button>
-            <Button variant="outline" size="sm" onClick={toggleFullscreen}>
+            <Button variant="outline" size="sm" className="max-sm:h-11" onClick={toggleFullscreen}>
               {isFullscreen ? <Minimize className="h-4 w-4 mr-1" /> : <Maximize className="h-4 w-4 mr-1" />}
               {isFullscreen ? "Beenden" : "Vollbild"}
             </Button>
           </div>
         </div>
 
+        {/* Belegung je Resource als Kennzahl-Kacheln (docs/design-regeln.md, Abschnitt 8). Eine Spalte auf dem Handy und vier erst ab xl, damit „rein · raus“ ungekürzt in die Kachel passt. */}
         {counts.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
             {counts.map((c) => (
-              <Card key={c.areaId}>
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Resource {c.areaId}</p>
-                  <p className="text-4xl font-bold text-foreground mt-1">{c.current}</p>
-                  <div className="flex gap-4 mt-2 text-xs text-muted-foreground/70">
-                    <span className="text-success">↑ {c.entries} rein</span>
-                    <span className="text-destructive">↓ {c.exits} raus</span>
-                  </div>
-                </CardContent>
-              </Card>
+              <StatCard
+                key={c.areaId}
+                label={`Resource ${c.areaId}`}
+                value={c.current}
+                icon={Users}
+                hint={`↑ ${c.entries} rein · ↓ ${c.exits} raus`}
+              />
             ))}
           </div>
         )}
@@ -329,8 +335,8 @@ export default function MonitorPage() {
           if (openable.length === 0) return null;
           return (
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Schnell-Öffnen</CardTitle>
+              <CardHeader>
+                <CardTitle>Schnell-Öffnen</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
@@ -345,7 +351,7 @@ export default function MonitorPage() {
                         variant="outline"
                         disabled={openingId !== null}
                         onClick={() => handleQuickOpen(d.id)}
-                        className={`gap-1.5 ${
+                        className={`gap-1.5 max-sm:h-11 ${
                           wasOpened
                             ? "bg-success hover:bg-success/90 text-success-foreground border-success"
                             : "hover:bg-success/10 "
@@ -359,11 +365,7 @@ export default function MonitorPage() {
                           <DoorOpen className="h-4 w-4" />
                         )}
                         <span className="flex items-center gap-1.5">
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              online ? "bg-success" : "bg-slate-400"
-                            }`}
-                          />
+                          <StatusDot size="xs" tone={online ? "success" : "neutral"} />
                           {d.name}
                         </span>
                       </Button>
@@ -376,13 +378,13 @@ export default function MonitorPage() {
         })()}
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scan-Feed</CardTitle>
+          <CardHeader>
+            <CardTitle>Scan-Feed</CardTitle>
           </CardHeader>
           <CardContent>
-            <div ref={feedRef} className="space-y-2 max-h-[60vh] overflow-y-auto">
+            <div ref={feedRef} className="space-y-2 max-h-[60vh] overflow-y-auto scrollbar-thin">
               {scans.length === 0 && (
-                <p className="text-center text-muted-foreground py-12">Warte auf Scans...</p>
+                <EmptyState compact icon={ScanLine} title="Warte auf Scans..." />
               )}
               {scans.map((scan) => {
                 const isNew = newIds.has(scan.id);
@@ -400,13 +402,13 @@ export default function MonitorPage() {
                 return (
                 <div
                   key={scan.id}
-                  className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                  className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 p-3 rounded-tile border transition-all ${
                     scan.result === "GRANTED"
                       ? "bg-success/10 border-success/30 "
                       : scan.result === "DENIED"
                         ? "bg-destructive/10 border-destructive/30 "
                         : "bg-warning/10 border-warning/30 "
-                  } ${isNew ? "animate-scan-flash ring-2 ring-offset-1" : ""} ${
+                  } ${isNew ? "animate-scan-flash ring-2 ring-offset-1 ring-offset-background" : ""} ${
                     isNew && scan.result === "GRANTED" ? "ring-success" :
                     isNew && scan.result === "DENIED" ? "ring-destructive" :
                     isNew ? "ring-warning" : ""
@@ -414,25 +416,24 @@ export default function MonitorPage() {
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {displayImage ? (
-                      <img src={displayImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-border dark:ring-slate-700" />
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={displayImage} alt="" className="h-14 w-14 rounded-full object-cover shrink-0 ring-2 ring-glass-border" />
                     ) : (
-                      <Badge
-                        className={
-                          scan.result === "GRANTED"
-                            ? "bg-success text-success-foreground"
-                            : scan.result === "DENIED"
-                              ? "bg-destructive text-white"
-                              : "bg-warning text-warning-foreground"
-                        }
-                      >
-                        {scan.result === "GRANTED" ? "✓" : scan.result === "DENIED" ? "✕" : "⚠"}
-                      </Badge>
+                      // Ergebnis als Symbol-Chip in der Zustandsfarbe, so groß wie ein Foto, damit die Zeilen fluchten.
+                      <IconChip
+                        icon={scan.result === "GRANTED" ? Check : scan.result === "DENIED" ? X : ShieldAlert}
+                        tone={scan.result === "GRANTED" ? "success" : scan.result === "DENIED" ? "danger" : "warning"}
+                        active
+                        size="lg"
+                        label={scan.result === "GRANTED" ? "Erlaubt" : scan.result === "DENIED" ? "Abgelehnt" : "Geschützt"}
+                        className="size-14 rounded-full"
+                      />
                     )}
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">
                         {displayName}
                         {noteData.age != null && (
-                          <span className="ml-1.5 text-xs font-normal text-muted-foreground/70">({noteData.age})</span>
+                          <span className="ml-1.5 text-xs font-normal text-muted-foreground">({noteData.age})</span>
                         )}
                       </p>
                       {denyReason && (
@@ -468,7 +469,7 @@ export default function MonitorPage() {
                         {isWakesys && (
                           <>
                             {scan.device?.name && <span className="text-muted-foreground/70 shrink-0">·</span>}
-                            <span className="inline-flex items-center gap-1 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                            <span className="inline-flex items-center gap-1 shrink-0 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                               {scan.code}
                             </span>
                           </>
@@ -476,11 +477,11 @@ export default function MonitorPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="ml-auto flex items-center gap-2 shrink-0">
                     {isWakesys && (
                       <Badge
-                        variant="outline"
-                        className="text-[10px] font-bold uppercase tracking-wider border-warning/30 bg-warning/10 text-warning"
+                        variant="warning"
+                        className="text-[11px] uppercase tracking-wider border-warning/30"
                       >
                         Wakesys
                       </Badge>
@@ -491,7 +492,7 @@ export default function MonitorPage() {
                         durationMinutes={scan.ticket.validityDurationMinutes}
                       />
                     )}
-                    <span className="text-xs text-muted-foreground/70 font-mono">
+                    <span className="text-xs text-muted-foreground font-mono">
                       {fmtTime(scan.scanTime)}
                     </span>
                   </div>
@@ -546,13 +547,10 @@ function InternalCountdown({ firstScanAt, durationMinutes }: { firstScanAt: stri
     return () => clearInterval(id);
   }, [firstScanAt, durationMinutes]);
 
+  // Restzeit als Status-Pille: laufend Info, abgelaufen Störung (docs/design-regeln.md, Abschnitt 3).
   return (
-    <span className={`text-xs font-mono px-1.5 py-0.5 rounded tabular-nums ${
-      expired
-        ? "bg-destructive/10 text-destructive "
-        : "bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
-    }`}>
+    <Badge variant={expired ? "danger" : "info"} className="font-mono font-medium tabular-nums">
       {remaining}
-    </span>
+    </Badge>
   );
 }

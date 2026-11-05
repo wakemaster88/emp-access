@@ -3,17 +3,20 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Trash2, Save, Settings2, Link2, Package, Check } from "lucide-react";
 import { ScanLockField } from "@/components/devices/edit-device-dialog";
 import { cn } from "@/lib/utils";
@@ -58,7 +61,8 @@ function CheckList({
   mappings,
   areaId,
   allAreas,
-  emptyText,
+  emptyTitle,
+  emptyDescription,
 }: {
   items: string[];
   selected: Set<string>;
@@ -66,14 +70,17 @@ function CheckList({
   mappings: Record<string, number>;
   areaId: number | null;
   allAreas: AreaData[];
-  emptyText: string;
+  emptyTitle: string;
+  emptyDescription?: string;
 }) {
   if (items.length === 0) {
-    return <p className="text-[11px] text-muted-foreground/70 py-4 text-center">{emptyText}</p>;
+    return <EmptyState compact title={emptyTitle} description={emptyDescription} />;
   }
 
   return (
-    <div className="max-h-[320px] overflow-y-auto space-y-0.5 rounded-lg border border-border p-1">
+    // Auswahlliste als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
+    // Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile (Abschnitt 17); Kästchen wie der Baustein Checkbox.
+    <div className="glass-tile max-h-[320px] overflow-y-auto scrollbar-thin space-y-0.5 p-1">
       {items.map((name) => {
         const isSelected = selected.has(name);
         const usedBy = mappings[name];
@@ -88,24 +95,24 @@ function CheckList({
             onClick={() => !isUsedElsewhere && onToggle(name)}
             disabled={isUsedElsewhere}
             className={cn(
-              "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+              "w-full flex items-center gap-2 rounded-control px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
               isSelected
-                ? "bg-violet-50 dark:bg-violet-900/20"
-                : "hover:bg-muted/50",
+                ? "bg-primary/10"
+                : "hover:bg-glass-tile",
               isUsedElsewhere && "opacity-40 cursor-not-allowed"
             )}
           >
             <div className={cn(
-              "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+              "size-[18px] rounded-[6px] border flex items-center justify-center shrink-0 transition-colors",
               isSelected
-                ? "bg-violet-500 border-violet-500"
-                : "border-input"
+                ? "bg-primary border-primary text-primary-foreground"
+                : "border-input bg-field"
             )}>
-              {isSelected && <Check className="h-3 w-3 text-white" />}
+              {isSelected && <Check className="size-3.5" strokeWidth={3} />}
             </div>
             <span className="text-xs text-foreground/80 truncate flex-1">{name}</span>
             {isUsedElsewhere && usedAreaName && (
-              <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">→ {usedAreaName}</Badge>
+              <Badge variant="secondary" className="text-[11px] px-1.5 py-0 shrink-0">→ {usedAreaName}</Badge>
             )}
           </button>
         );
@@ -126,9 +133,11 @@ export function AreaDialog({
   const [selectedAnny, setSelectedAnny] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
   const hasAnny = annyResources.length > 0 || annyServices.length > 0;
+  const showTabs = hasAnny && !isNew;
   const allAnnyItems = [...annyResources, ...annyServices];
 
   const selectedResCount = annyResources.filter((r) => selectedAnny.has(r)).length;
@@ -138,6 +147,7 @@ export function AreaDialog({
     if (open) {
       setError("");
       setTab("settings");
+      setConfirmDelete(false);
       if (area) {
         setForm({
           name: area.name,
@@ -224,7 +234,7 @@ export function AreaDialog({
   }
 
   async function handleDelete() {
-    if (!area || !confirm(`Resource "${area.name}" wirklich löschen?`)) return;
+    if (!area) return;
     setDeleting(true);
     try {
       await fetch(`/api/areas/${area.id}`, { method: "DELETE" });
@@ -239,41 +249,40 @@ export function AreaDialog({
 
   const parentOptions = allAreas.filter((a) => !area || a.id !== area.id);
 
-  const tabClass = (active: boolean) =>
-    `flex-1 flex items-center justify-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
-      active
-        ? "bg-card text-foreground shadow-sm"
-        : "text-muted-foreground hover:text-foreground"
-    }`;
-
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader className="pb-0">
           <DialogTitle className="text-base">{isNew ? "Neue Resource anlegen" : "Resource bearbeiten"}</DialogTitle>
         </DialogHeader>
 
-        {hasAnny && !isNew && (
-          <div className="flex gap-0.5 bg-muted rounded-lg p-0.5">
-            <button type="button" onClick={() => setTab("settings")} className={tabClass(tab === "settings")}>
-              <Settings2 className="h-3 w-3" />
-              Einstellungen
-            </button>
-            <button type="button" onClick={() => setTab("resources")} className={tabClass(tab === "resources")}>
-              <Link2 className="h-3 w-3" />
-              Ressourcen{selectedResCount > 0 && ` (${selectedResCount})`}
-            </button>
-            <button type="button" onClick={() => setTab("services")} className={tabClass(tab === "services")}>
-              <Package className="h-3 w-3" />
-              Services{selectedSvcCount > 0 && ` (${selectedSvcCount})`}
-            </button>
-          </div>
-        )}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="gap-4">
+          {/* Glas-Kapsel, in der Ebene automatisch getönt (docs/design-regeln.md, Abschnitt 18); schmale Reiter, Symbole erst ab sm, damit alle drei auf das Handy passen. */}
+          {showTabs && (
+            <TabsList className="w-full">
+              <TabsTrigger value="settings" className="px-2.5">
+                <Settings2 className="size-3.5 max-sm:hidden" />
+                Einstellungen
+              </TabsTrigger>
+              <TabsTrigger value="resources" className="px-2.5">
+                <Link2 className="size-3.5 max-sm:hidden" />
+                Ressourcen{selectedResCount > 0 && ` (${selectedResCount})`}
+              </TabsTrigger>
+              <TabsTrigger value="services" className="px-2.5">
+                <Package className="size-3.5 max-sm:hidden" />
+                Services{selectedSvcCount > 0 && ` (${selectedSvcCount})`}
+              </TabsTrigger>
+            </TabsList>
+          )}
 
-        {tab === "settings" && (
-          <div className="space-y-3">
+          {/* Ohne Tab-Leiste kein Tab-Panel: keine Panel-Rolle, kein Verweis auf einen fehlenden Reiter, kein zusätzlicher Tab-Halt. */}
+          <TabsContent
+            value="settings"
+            className="space-y-3"
+            {...(showTabs ? {} : { role: undefined, tabIndex: undefined, "aria-labelledby": undefined })}
+          >
             <div className="space-y-1">
-              <Label htmlFor="a-name" className="text-xs">Name <span className="text-destructive">*</span></Label>
+              <Label htmlFor="a-name">Name <span className="text-destructive">*</span></Label>
               <Input
                 id="a-name"
                 value={form.name}
@@ -281,15 +290,15 @@ export function AreaDialog({
                 placeholder="z.B. Haupteingang, Aquapark, VIP"
                 required
                 autoFocus
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">Übergeordnete Resource</Label>
+                <Label>Übergeordnete Resource</Label>
                 <Select value={form.parentId} onValueChange={(v) => set("parentId", v)}>
-                  <SelectTrigger className="h-9 text-xs">
+                  <SelectTrigger className="w-full max-sm:data-[size=default]:h-11">
                     <SelectValue placeholder="Keine" />
                   </SelectTrigger>
                   <SelectContent>
@@ -301,7 +310,7 @@ export function AreaDialog({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="a-limit" className="text-xs">Personenlimit</Label>
+                <Label htmlFor="a-limit">Personenlimit</Label>
                 <Input
                   id="a-limit"
                   type="number"
@@ -309,12 +318,13 @@ export function AreaDialog({
                   value={form.personLimit}
                   onChange={(e) => set("personLimit", e.target.value)}
                   placeholder="∞"
-                  className="h-9"
+                  className="max-sm:h-11"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
+            {/* Schalterzeilen als Glas-Kachel (glass-tile, Radius 18 px); in der Ebene getönt (docs/design-regeln.md, Abschnitt 18). */}
+            <div className="glass-tile flex items-center justify-between gap-3 p-2.5">
               <div>
                 <p className="text-xs font-medium">Wiedereinlass</p>
                 <p className="text-[11px] text-muted-foreground">Mehrfach scannen</p>
@@ -329,7 +339,7 @@ export function AreaDialog({
               description="Dasselbe Ticket kommt erst nach dieser Zeit wieder herein – an allen Eingängen der Resource und auch dann, wenn zwischendurch am Ausgang gescannt wurde. Mitarbeiter sind ausgenommen."
             />
 
-            <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
+            <div className="glass-tile flex items-center justify-between gap-3 p-2.5">
               <div>
                 <p className="text-xs font-medium">Im Dashboard anzeigen</p>
                 <p className="text-[11px] text-muted-foreground">Auf der Übersicht zeigen</p>
@@ -338,20 +348,18 @@ export function AreaDialog({
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="a-hours" className="text-xs">Öffnungszeiten</Label>
+              <Label htmlFor="a-hours">Öffnungszeiten</Label>
               <Input
                 id="a-hours"
                 value={form.openingHours}
                 onChange={(e) => set("openingHours", e.target.value)}
                 placeholder="z.B. Mo-Fr 09:00-18:00"
-                className="h-9"
+                className="max-sm:h-11"
               />
             </div>
-          </div>
-        )}
+          </TabsContent>
 
-        {tab === "resources" && (
-          <div className="space-y-2">
+          <TabsContent value="resources" className="space-y-2">
             <p className="text-[11px] text-muted-foreground">
               Verknüpfe anny Ressourcen mit dieser Resource. Die Verfügbarkeiten werden im Dashboard angezeigt.
             </p>
@@ -362,13 +370,12 @@ export function AreaDialog({
               mappings={annyMappings}
               areaId={area?.id ?? null}
               allAreas={allAreas}
-              emptyText="Keine anny Ressourcen gefunden. Bitte erst synchronisieren."
+              emptyTitle="Keine anny Ressourcen gefunden."
+              emptyDescription="Bitte erst synchronisieren."
             />
-          </div>
-        )}
+          </TabsContent>
 
-        {tab === "services" && (
-          <div className="space-y-2">
+          <TabsContent value="services" className="space-y-2">
             <p className="text-[11px] text-muted-foreground">
               Verknüpfe anny Services mit dieser Resource. Tickets werden beim Sync automatisch zugewiesen.
             </p>
@@ -379,46 +386,70 @@ export function AreaDialog({
               mappings={annyMappings}
               areaId={area?.id ?? null}
               allAreas={allAreas}
-              emptyText="Keine anny Services gefunden. Bitte erst synchronisieren."
+              emptyTitle="Keine anny Services gefunden."
+              emptyDescription="Bitte erst synchronisieren."
             />
-          </div>
-        )}
+          </TabsContent>
+        </Tabs>
 
         {error && (
-          <p className="text-sm text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{error}</p>
+          <Notice tone="danger" compact title={error} />
         )}
 
-        <Separator className="dark:bg-muted" />
+        {/* Löschen als Schritt im selben Dialog statt Browser-Rückfrage, keine zweite Ebene (docs/design-regeln.md, Abschnitt 18). */}
+        {confirmDelete && area && (
+          <Notice
+            tone="danger"
+            compact
+            title={`Resource "${area.name}" wirklich löschen?`}
+            action={
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleting || saving}
+                className="max-sm:h-11"
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Endgültig löschen
+              </Button>
+            }
+          />
+        )}
 
-        <div className="flex items-center justify-between">
+        <Separator />
+
+        {/* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16).
+            Tasten 36 px wie in der Lösch-Rückfrage (Abschnitt 5: 34 bis 44 px); „Löschen“ in voller Nebentextfarbe (Kontrast 4,5:1). */}
+        <DialogFooter className="sm:items-center sm:justify-between">
           {!isNew ? (
             <Button
-              type="button" variant="ghost" size="sm"
-              onClick={handleDelete}
+              type="button" variant="ghost"
+              onClick={() => setConfirmDelete(true)}
               disabled={deleting || saving}
-              className="text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 h-8 text-xs"
+              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 max-sm:h-11"
             >
-              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               Löschen
             </Button>
-          ) : <div />}
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving || deleting} className="h-8">
+          ) : <div className="hidden sm:block" />}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving || deleting} className="max-sm:h-11">
               Abbrechen
             </Button>
             <Button
               type="button"
-              size="sm"
               onClick={handleSave}
               disabled={saving || deleting || !form.name.trim()}
-              className="min-w-24 h-8"
+              className="min-w-24 max-sm:h-11"
             >
               {saving
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <><Save className="h-3.5 w-3.5 mr-1" />{isNew ? "Erstellen" : "Speichern"}</>}
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <><Save className="h-4 w-4" />{isNew ? "Erstellen" : "Speichern"}</>}
             </Button>
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

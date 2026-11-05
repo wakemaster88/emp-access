@@ -57,9 +57,10 @@ export default async function ServicesPage() {
     <>
       <Header title="Services" accountName={session.user.accountName} />
       <div className="page-content">
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-xl">Alle Services ({services.length})</CardTitle>
+        {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader>
+            <CardTitle>Alle Services ({services.length})</CardTitle>
             <CardDescription>
               Services gruppieren <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> und verknüpfen sie mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> (Zugangsbereichen).
             </CardDescription>

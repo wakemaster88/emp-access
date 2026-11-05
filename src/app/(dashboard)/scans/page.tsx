@@ -2,8 +2,10 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { ScanLine } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ScanGroupCard } from "@/components/scans/scan-group-card";
 
 interface Props {
@@ -57,29 +59,30 @@ export default async function ScansPage({ searchParams }: Props) {
       <Header title="Scan-Historie" accountName={session.user.accountName} />
       <div className="page-content">
         <Card>
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-wrap">
+          <CardHeader>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <CardTitle className="text-base sm:text-lg">Letzte Scans ({scans.length})</CardTitle>
+              <CardTitle className="tabular-nums">Letzte Scans ({scans.length})</CardTitle>
               {(filterDevice || resultFilter) && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {filterDevice && (
-                    <Badge variant="secondary" className="text-xs">{filterDevice.name}</Badge>
+                    <Badge variant="secondary">{filterDevice.name}</Badge>
                   )}
+                  {/* Ergebnis-Filter in der Farbe des Ergebnisses wie in der Liste (docs/design-regeln.md, Abschnitt 3); eine Glas-Umrandung wäre im Hellen nicht zu sehen. */}
                   {resultFilter && (
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant={resultFilter === "GRANTED" ? "success" : resultFilter === "DENIED" ? "danger" : "warning"}>
                       {resultFilter === "GRANTED" ? "Erlaubt" : resultFilter === "DENIED" ? "Abgelehnt" : "Geschützt"}
                     </Badge>
                   )}
-                  <a href="/scans" className="text-xs text-primary hover:underline">Filter entfernen</a>
+                  <a href="/scans" className="inline-flex items-center text-xs text-primary hover:underline max-sm:min-h-11">Filter entfernen</a>
                 </div>
               )}
             </div>
           </CardHeader>
-          <CardContent className="p-3 sm:p-6">
+          <CardContent>
             {scans.length === 0 ? (
-              <p className="text-center text-muted-foreground py-12">Keine Scans vorhanden</p>
+              <EmptyState icon={ScanLine} title="Keine Scans vorhanden" />
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {sortedCodes.map((code) => {
                   const group = groupedByCode.get(code)!;
                   const ticketName = group[0].ticket?.name || "–";

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { StatusDot } from "@/components/ui/status-dot";
 import { Hash, Ticket, Wifi, Cctv } from "lucide-react";
 import { scanDenyReasonLabel } from "@/lib/scan-deny-reason";
 
@@ -24,7 +25,7 @@ function ResultBadge({ result }: { result: string }) {
     case "GRANTED":
       return <Badge variant="success">Erlaubt</Badge>;
     case "DENIED":
-      return <Badge variant="destructive">Abgelehnt</Badge>;
+      return <Badge variant="danger">Abgelehnt</Badge>;
     case "PROTECTED":
       return <Badge variant="warning">Geschützt</Badge>;
     default:
@@ -63,16 +64,18 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
   const hiddenCount = scans.length - VISIBLE_INITIAL;
 
   return (
-    <div className="rounded-xl border border-border bg-card/30 overflow-hidden shadow-sm hover:shadow transition-shadow">
-      <div className="px-3 py-2.5 sm:px-5 sm:py-3.5 flex flex-wrap items-center justify-between gap-2 bg-muted/40 border-b border-border">
+    // Gruppe als Glas-Kachel in der Karte; kein eigener Schatten (docs/design-regeln.md, Abschnitt 23).
+    <div className="glass-tile overflow-hidden">
+      {/* Gruppenkopf auf bg-glass-tile mit Haarlinie wie die Zeilen darunter (docs/design-regeln.md, Abschnitt 17). */}
+      <div className="px-3 py-2.5 sm:px-5 sm:py-3.5 flex flex-wrap items-center justify-between gap-2 bg-glass-tile border-b border-border/60">
         <div className="flex items-baseline gap-2 sm:gap-3 min-w-0">
           <span className="font-semibold text-sm sm:text-base text-foreground truncate">{ticketName}</span>
-          <span className="inline-flex items-center gap-1 sm:gap-1.5 font-mono text-[10px] sm:text-xs text-muted-foreground/70 shrink-0 max-w-[120px] sm:max-w-none truncate">
+          <span className="inline-flex items-center gap-1 sm:gap-1.5 font-mono text-[11px] sm:text-xs text-muted-foreground shrink-0 max-w-[120px] sm:max-w-none truncate">
             <Hash className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" aria-hidden />
             {code}
           </span>
         </div>
-        <Badge variant="secondary" className="text-xs font-normal shrink-0">
+        <Badge variant="secondary" className="font-normal shrink-0 tabular-nums">
           {scans.length} Scan{scans.length !== 1 ? "s" : ""}
         </Badge>
       </div>
@@ -82,18 +85,17 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
           return (
             <li
               key={scan.id}
-              className="px-4 py-2.5 sm:px-5 sm:py-3 hover:bg-muted/50/80 dark:hover:bg-muted/30 transition-colors"
+              className="px-4 py-2.5 sm:px-5 sm:py-3 hover:bg-glass-tile transition-colors"
             >
               <div className="flex items-center gap-2 sm:gap-3">
-                <span
-                  className={`shrink-0 w-2 h-2 rounded-full ${
+                <StatusDot
+                  tone={
                     scan.result === "GRANTED"
-                      ? "bg-success"
+                      ? "success"
                       : scan.result === "DENIED"
-                        ? "bg-destructive"
-                        : "bg-warning"
-                  }`}
-                  aria-hidden
+                        ? "danger"
+                        : "warning"
+                  }
                 />
                 <span className="text-xs sm:text-sm text-muted-foreground tabular-nums shrink-0">
                   {fmtDateTime(scan.scanTime)}
@@ -132,20 +134,22 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
                   <ResultBadge result={scan.result} />
                 </span>
               </div>
-              <div className="sm:hidden flex items-center gap-2 mt-1 ml-4 text-xs text-muted-foreground/70">
+              {/* Handy: einzige Stelle für das Gerät – umbrechen statt quetschen, lange Namen kürzen. */}
+              <div className="sm:hidden mt-1 ml-4 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                 <Wifi className="h-3 w-3 shrink-0" aria-hidden />
-                {scan.deviceName}
+                <span className="min-w-0 truncate">{scan.deviceName}</span>
                 {scan.ticketTypeName && (
                   <>
-                    <span className="text-slate-300 dark:text-slate-600">·</span>
-                    {scan.ticketTypeName}
+                    <span className="text-muted-foreground/50">·</span>
+                    <span className="min-w-0 truncate">{scan.ticketTypeName}</span>
                   </>
                 )}
                 {scan.cameraId != null && (
+                  // Tippfläche 44 px über eine unsichtbare Fläche (wie beim Baustein Checkbox), damit die Nebentextzeile nicht aufgeht.
                   <button
                     type="button"
                     onClick={() => setOpenCameraScanId(openCameraScanId === scan.id ? null : scan.id)}
-                    className="inline-flex items-center gap-1 text-primary"
+                    className="relative inline-flex items-center gap-1 text-primary after:absolute after:-inset-x-1 after:-inset-y-3.5 after:content-['']"
                   >
                     <Cctv className="h-3 w-3" aria-hidden />
                     {scan.cameraName}
@@ -167,7 +171,7 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
                     alt={`Schnappschuss ${scan.cameraName ?? "Kamera"}`}
                     className="max-w-xs w-full rounded-lg border border-border"
                   />
-                  <p className="text-[10px] text-muted-foreground/70">
+                  <p className="text-[11px] text-muted-foreground/70">
                     {scan.snapshotCapturedAt
                       ? `${scan.cameraName} – Aufnahme vom Scan (${fmtDateTime(scan.snapshotCapturedAt)})`
                       : `${scan.cameraName} – aktueller Schnappschuss (nicht der Scan-Zeitpunkt)`}
@@ -183,7 +187,7 @@ export function ScanGroupCard({ ticketName, code, scans }: ScanGroupCardProps) {
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="text-xs font-medium text-primary hover:underline"
+            className="inline-flex items-center text-xs font-medium text-primary hover:underline max-sm:min-h-11"
           >
             {expanded ? "Weniger anzeigen" : `${hiddenCount} weitere anzeigen`}
           </button>
