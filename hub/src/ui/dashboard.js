@@ -646,7 +646,7 @@ const PHONE_MAX = 560;
  * Nur sichtbare Kacheln halten eine WebRTC-Verbindung. Auf dem Telefon
  * passen zwei, drei Reihen auf den Schirm – alle 13 Kameras gleichzeitig zu
  * dekodieren kostet Akku, Daten und bringt iOS ins Stocken. Unsichtbare
- * Kacheln zeigen weiter ihr (seltener aufgefrischtes) Standbild.
+ * Kacheln trennen ihre Verbindung und bauen sie beim Hineinscrollen neu auf.
  */
 const tileObserver =
   typeof IntersectionObserver === "function"
