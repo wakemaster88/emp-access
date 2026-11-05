@@ -62,7 +62,6 @@ export function TicketCodeSearch({
     <div className="flex flex-wrap items-center gap-2">
       <SearchInput
         ref={inputRef}
-        type="text"
         placeholder="Code scannen oder eingeben …"
         value={value}
         onChange={(e) => setValue(e.target.value)}

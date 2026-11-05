@@ -527,7 +527,7 @@ export function ServiceDialog({
             />
             {selectedAnny.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="neutral" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
                 <Button
                   type="button"
                   variant="ghost"

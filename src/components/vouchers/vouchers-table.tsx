@@ -228,7 +228,6 @@ export function VouchersTable({
     <div className="space-y-4">
       <div className="flex items-center gap-2 px-4 sm:px-[18px]">
         <SearchInput
-          type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Code, Ticket-Typ oder Notiz suchen…"

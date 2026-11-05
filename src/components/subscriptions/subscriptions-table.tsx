@@ -317,7 +317,6 @@ export function SubscriptionsTable({ subscriptions, areas, annyServices, annyRes
                             </div>
                             {tickets.length > 5 && (
                               <SearchInput
-                                type="text"
                                 placeholder="Suchen..."
                                 value={searchMap[sub.id] ?? ""}
                                 onChange={(e) => setSearchMap(prev => ({ ...prev, [sub.id]: e.target.value }))}

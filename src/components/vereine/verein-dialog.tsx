@@ -525,7 +525,7 @@ export function VereinDialog({
             />
             {selectedMembers.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="tabular-nums">{selectedMembers.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedMembers.size} ausgewählt</Badge>
                 <button type="button" onClick={() => setSelectedMembers(new Set())}
                         className="min-h-11 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors sm:min-h-0">
                   Alle abwählen

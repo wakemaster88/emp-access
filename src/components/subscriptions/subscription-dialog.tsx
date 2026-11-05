@@ -391,7 +391,7 @@ export function SubscriptionDialog({
             />
             {selectedAnny.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedAnny.size} ausgewählt</Badge>
                 <button
                   type="button"
                   onClick={() => setSelectedAnny(new Set())}
@@ -416,7 +416,7 @@ export function SubscriptionDialog({
             />
             {selectedAreas.size > 0 && (
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="tabular-nums">{selectedAreas.size} ausgewählt</Badge>
+                <Badge variant="accent" className="tabular-nums">{selectedAreas.size} ausgewählt</Badge>
                 <button
                   type="button"
                   onClick={() => setSelectedAreas(new Set())}
