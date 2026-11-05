@@ -8,8 +8,23 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Notice } from "@/components/ui/notice";
+import { StatusDot } from "@/components/ui/status-dot";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -28,6 +43,9 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Auswahlfelder: auf dem Handy 44 px hoch, ab sm 36 px (docs/design-regeln.md, Abschnitt 16).
+const SELECT_FIELD = "w-full data-[size=default]:h-11 sm:data-[size=default]:h-9";
 
 interface ServiceRef {
   id: number;
@@ -97,6 +115,8 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [sending, setSending] = useState(false);
+  // Rückfrage vor dem Massenversand als AlertDialog statt window.confirm (Abschnitt 16).
+  const [confirmSend, setConfirmSend] = useState(false);
   const [resend, setResend] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -190,12 +210,9 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
     }
   };
 
+  // Massenversand nur nach Bestätigung im AlertDialog (siehe unten); Test-Sends gehen direkt.
   const handleSend = async (emailFilter?: string) => {
     if (!templateId || !serviceId) return;
-    if (!emailFilter) {
-      const n = stats?.recipients ?? 0;
-      if (!window.confirm(`Info-Anfrage jetzt an bis zu ${n} Empfänger senden?`)) return;
-    }
     setSending(true);
     setResult(null);
     try {
@@ -231,35 +248,41 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
 
   return (
     <Card>
-      <CardContent className="p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-teal-600" />
-              Info-Anfragen
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Fragt Zusatzinfos per Mail-Formular ab (z. B. Ferienkurs: Wasserski/Wakeboard,
-              Schuhgröße, Level, Neopren). Antworten erscheinen im Check-in-Monitor am Ticket.
-            </p>
-          </div>
-          <button
+      <CardHeader>
+        <CardTitle>
+          <h3 className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            Info-Anfragen
+          </h3>
+        </CardTitle>
+        <CardDescription>
+          Fragt Zusatzinfos per Mail-Formular ab (z. B. Ferienkurs: Wasserski/Wakeboard,
+          Schuhgröße, Level, Neopren). Antworten erscheinen im Check-in-Monitor am Ticket.
+        </CardDescription>
+        <CardAction>
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={load}
-            className="p-2 rounded-lg hover:bg-muted text-muted-foreground/70 shrink-0"
+            className="text-muted-foreground max-sm:size-11"
             title="Aktualisieren"
+            aria-label="Aktualisieren"
           >
             <RefreshCw className="h-4 w-4" />
-          </button>
-        </div>
+          </Button>
+        </CardAction>
+      </CardHeader>
 
+      <CardContent className="space-y-4">
         {/* Vorlage */}
         {templates.length === 0 ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={createFerienkursTemplate}
             disabled={creatingTemplate}
-            className="w-full flex items-center justify-center gap-2 border border-dashed border-teal-300 dark:border-teal-800 text-teal-700 dark:text-teal-300 rounded-xl py-3 text-sm font-semibold hover:bg-teal-50 dark:hover:bg-teal-950/30 transition-colors disabled:opacity-50"
+            className="h-auto min-h-11 w-full whitespace-normal border-dashed border-primary/40 py-3 font-semibold text-primary hover:bg-primary/10 hover:text-primary"
           >
             {creatingTemplate ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -267,13 +290,13 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
               <Sparkles className="h-4 w-4" />
             )}
             Ferienkurs-Vorlage erstellen (Sport, Schuhgröße, Level, Neopren)
-          </button>
+          </Button>
         ) : (
           <div className="grid sm:grid-cols-3 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Vorlage</label>
+            <div className="space-y-1.5">
+              <Label className="text-[13px]">Vorlage</Label>
               <Select value={templateId} onValueChange={setTemplateId}>
-                <SelectTrigger className="h-9">
+                <SelectTrigger className={SELECT_FIELD}>
                   <SelectValue placeholder="Vorlage wählen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -285,10 +308,10 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Service</label>
+            <div className="space-y-1.5">
+              <Label className="text-[13px]">Service</Label>
               <Select value={serviceId} onValueChange={(v) => { setServiceId(v); setWeekStart("all"); }}>
-                <SelectTrigger className="h-9">
+                <SelectTrigger className={SELECT_FIELD}>
                   <SelectValue placeholder="Service wählen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -300,10 +323,10 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Woche</label>
+            <div className="space-y-1.5">
+              <Label className="text-[13px]">Woche</Label>
               <Select value={weekStart} onValueChange={setWeekStart} disabled={!serviceId}>
-                <SelectTrigger className="h-9">
+                <SelectTrigger className={cn(SELECT_FIELD, "tabular-nums")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -323,10 +346,10 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
         {selectedTemplate && (
           <div className="flex flex-wrap gap-1.5">
             {selectedTemplate.askParticipantName && (
-              <Badge variant="outline" className="text-[11px] font-normal">Teilnehmername</Badge>
+              <Badge variant="neutral" className="text-[11px] font-normal">Teilnehmername</Badge>
             )}
             {selectedTemplate.fields.map((f) => (
-              <Badge key={f.key} variant="outline" className="text-[11px] font-normal">
+              <Badge key={f.key} variant="neutral" className="text-[11px] font-normal">
                 {f.label}
                 {f.options ? ` (${f.options.slice(0, 3).join("/")}${f.options.length > 3 ? "/…" : ""})` : ""}
               </Badge>
@@ -336,13 +359,13 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
 
         {/* Empfaenger-Statistik */}
         {serviceId && (
-          <div className="rounded-xl border border-border p-3">
+          <div className="glass-tile p-3">
             {loadingPreview ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" /> Lade Empfänger…
               </div>
             ) : stats ? (
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm tabular-nums">
                 <span>
                   <strong className="text-foreground">{stats.recipients}</strong>{" "}
                   <span className="text-muted-foreground">Empfänger</span>
@@ -365,98 +388,119 @@ export function InfoRequestsCard({ services }: { services: ServiceRef[] }) {
         {/* Versand */}
         {serviceId && templateId && (
           <div className="space-y-3">
-            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
+            {/* Kästchen (Abschnitt 16): Option für diesen Versand, wirkt erst mit „Senden“.
+                Die Beschriftung füllt die Zeile, so ist die ganze Zeile Tippfläche. */}
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="ir-resend"
                 checked={resend}
-                onChange={(e) => setResend(e.target.checked)}
-                className="rounded border-input"
+                onCheckedChange={(checked) => setResend(checked === true)}
               />
-              Bereits angeschriebene Adressen erneut anschreiben
-            </label>
+              <Label
+                htmlFor="ir-resend"
+                className="min-h-11 flex-1 cursor-pointer text-[13px] font-normal leading-snug text-muted-foreground sm:min-h-0"
+              >
+                Bereits angeschriebene Adressen erneut anschreiben
+              </Label>
+            </div>
             <div className="flex flex-col sm:flex-row gap-2">
-              <button
+              <Button
                 type="button"
-                onClick={() => handleSend()}
+                onClick={() => setConfirmSend(true)}
                 disabled={sending || !stats || stats.recipients === 0}
-                className="flex-1 flex items-center justify-center gap-2 bg-teal-700 hover:bg-teal-600 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-50"
+                className="h-11 flex-1 gap-2 font-semibold tabular-nums sm:h-9"
               >
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 An {stats?.recipients ?? 0} Empfänger senden
-              </button>
+              </Button>
               <div className="flex gap-2">
-                <input
+                <Input
                   type="email"
                   value={testEmail}
                   onChange={(e) => setTestEmail(e.target.value)}
                   placeholder="test@adresse.de"
-                  className="flex-1 sm:w-48 rounded-xl border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40"
+                  className="h-11 min-w-0 flex-1 sm:h-9 sm:w-48 sm:flex-none"
                 />
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => testEmail && handleSend(testEmail)}
                   disabled={sending || !testEmail.includes("@")}
-                  className="px-3 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+                  className="h-11 font-semibold sm:h-9"
                   title="Nur an diese Adresse senden (muss Empfänger des Service sein)"
                 >
                   Test
-                </button>
+                </Button>
               </div>
             </div>
             {result && (
-              <div
-                className={cn(
-                  "flex items-center gap-2 text-sm rounded-xl px-3 py-2",
-                  result.ok
-                    ? "bg-success/10 text-success"
-                    : "bg-destructive/10 text-destructive",
-                )}
-              >
-                {result.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
-                {result.text}
-              </div>
+              <Notice
+                tone={result.ok ? "success" : "danger"}
+                icon={result.ok ? CheckCircle2 : XCircle}
+                compact
+                title={result.text}
+              />
             )}
+            <AlertDialog open={confirmSend} onOpenChange={setConfirmSend}>
+              <AlertDialogContent aria-describedby={undefined}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Info-Anfrage jetzt an bis zu {stats?.recipients ?? 0} Empfänger senden?
+                  </AlertDialogTitle>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="h-11 sm:h-9">Abbrechen</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleSend()} className="h-11 gap-2 sm:h-9">
+                    <Send className="h-4 w-4" />
+                    Senden
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         )}
 
         {/* Historie */}
         {recent.length > 0 && (
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <p className="text-label flex items-center gap-1.5">
               <Mail className="h-3.5 w-3.5" /> Zuletzt versendet
             </p>
-            <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+            <div className="glass-tile max-h-48 divide-y divide-border overflow-y-auto overscroll-contain scrollbar-thin">
               {recent.map((r) => (
+                // Handy: E-Mail füllt die erste Zeile, Vorlage, Status und Datum stehen darunter.
                 <div
                   key={r.id}
-                  className="flex items-center gap-2 text-xs border border-border/60 rounded-lg px-2.5 py-1.5"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs px-3 py-2"
                 >
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 rounded-full shrink-0",
+                  <StatusDot
+                    size="xs"
+                    tone={
                       r.status === "COMPLETED"
-                        ? "bg-success"
+                        ? "success"
                         : r.status === "FAILED"
-                          ? "bg-destructive"
-                          : "bg-amber-400",
-                    )}
+                          ? "danger"
+                          : "warning"
+                    }
                   />
                   <span className="truncate flex-1">{r.email}</span>
-                  <span className="text-muted-foreground/70 shrink-0">{r.template.name}</span>
-                  <span
-                    className={cn(
-                      "shrink-0 font-semibold",
-                      r.status === "COMPLETED"
-                        ? "text-success"
-                        : r.status === "FAILED"
-                          ? "text-destructive"
-                          : "text-warning",
-                    )}
-                  >
-                    {r.status === "COMPLETED" ? "beantwortet" : r.status === "FAILED" ? "fehlgeschlagen" : "offen"}
-                  </span>
-                  <span className="text-muted-foreground/70 shrink-0">
-                    {new Date(r.sentAt).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                  <span className="flex min-w-0 items-center gap-2 max-sm:basis-full max-sm:pl-3.5">
+                    <span className="min-w-0 truncate text-muted-foreground" title={r.template.name}>{r.template.name}</span>
+                    <span
+                      className={cn(
+                        "shrink-0 font-semibold",
+                        r.status === "COMPLETED"
+                          ? "text-success"
+                          : r.status === "FAILED"
+                            ? "text-destructive"
+                            : "text-warning",
+                      )}
+                    >
+                      {r.status === "COMPLETED" ? "beantwortet" : r.status === "FAILED" ? "fehlgeschlagen" : "offen"}
+                    </span>
+                    <span className="text-muted-foreground shrink-0 tabular-nums">
+                      {new Date(r.sentAt).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                    </span>
                   </span>
                 </div>
               ))}

@@ -22,6 +22,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -29,6 +39,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Search,
   Copy,
@@ -38,8 +50,20 @@ import {
   Ban,
   RotateCcw,
   Loader2,
+  Gift,
 } from "lucide-react";
 import { fmtDateTimeShort } from "@/lib/utils";
+
+/**
+ * Die Tabelle läuft bis an den Kartenrand; erste und letzte Spalte bekommen
+ * den Innenabstand der Karte (16 px, ab sm 18 px), damit Text und Karte fluchten.
+ */
+const TABLE_EDGE =
+  "[&>*>tr>*:first-child]:pl-4 sm:[&>*>tr>*:first-child]:pl-[18px] [&>*>tr>*:last-child]:pr-4 sm:[&>*>tr>*:last-child]:pr-[18px]";
+
+// Felder und Tasten im Dialog: auf dem Handy 44 px hoch, ab sm 36 px (docs/design-regeln.md, Abschnitt 16).
+const DIALOG_FIELD = "h-11 sm:h-9";
+const DIALOG_SELECT = "w-full data-[size=default]:h-11 sm:data-[size=default]:h-9";
 
 export interface VoucherRow {
   id: number;
@@ -79,27 +103,27 @@ interface Props {
 function statusBadge(v: VoucherRow) {
   if (v.disabledAt) {
     return (
-      <Badge className="bg-border dark:bg-muted text-muted-foreground border-input font-normal">
+      <Badge variant="neutral">
         Deaktiviert
       </Badge>
     );
   }
   if (v.redeemedAt) {
     return (
-      <Badge className="bg-success/10 text-success border-success/30 font-normal">
+      <Badge variant="success">
         Eingelöst
       </Badge>
     );
   }
   if (v.expiresAt && new Date(v.expiresAt) < new Date()) {
     return (
-      <Badge className="bg-destructive/10 text-destructive border-destructive/30 font-normal">
+      <Badge variant="danger">
         Abgelaufen
       </Badge>
     );
   }
   return (
-    <Badge className="bg-warning/10 text-warning border-warning/30 font-normal">
+    <Badge variant="warning">
       Offen
     </Badge>
   );
@@ -209,27 +233,27 @@ export function VouchersTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 px-4 sm:px-[18px]">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
+          <Search className="absolute left-3 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Code, Ticket-Typ oder Notiz suchen…"
-            className="pl-9"
+            className="h-11 pl-9 sm:h-9"
           />
         </div>
       </div>
 
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
+        <Notice tone="danger" compact title={error} className="mx-4 sm:mx-[18px]" />
       ) : null}
 
       {vouchers.length === 0 ? (
-        <div className="text-center py-12 text-sm text-muted-foreground">
-          {currentQuery
+        <EmptyState
+          icon={Gift}
+          className="border-t border-border"
+          title={currentQuery
             ? `Keine Gutscheine für "${currentQuery}" gefunden.`
             : currentStatus === "redeemed"
               ? "Noch kein Gutschein wurde eingelöst."
@@ -240,57 +264,58 @@ export function VouchersTable({
                   : currentStatus === "disabled"
                     ? "Keine deaktivierten Gutscheine."
                     : "Es wurden noch keine Gutscheine erstellt."}
-        </div>
+        />
       ) : (
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <Table className="min-w-full">
+        <div className="border-t border-border">
+          <Table className={TABLE_EDGE}>
             <TableHeader>
-              <TableRow className="bg-muted/40">
+              <TableRow>
                 <TableHead>
                   <button
                     onClick={() => toggleSort("code")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
+                    className="flex items-center gap-1 uppercase hover:text-primary"
                   >
                     Code {sortIcon("code")}
                   </button>
                 </TableHead>
-                <TableHead>
+                {/* Handy: Code mit Status und Ticket-Typ darunter, dazu Aktionen. Weitere Spalten erst, wenn Platz
+                    ist (sm, md, xl, 2xl), damit „Aktionen“ ohne waagerechtes Wischen sichtbar bleibt. */}
+                <TableHead className="hidden sm:table-cell">
                   <button
                     onClick={() => toggleSort("ticketType")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
+                    className="flex items-center gap-1 uppercase hover:text-primary"
                   >
                     Ticket-Typ {sortIcon("ticketType")}
                   </button>
                 </TableHead>
-                <TableHead className="text-xs font-medium">Bereich</TableHead>
-                <TableHead className="text-xs font-medium">Gültigkeit</TableHead>
-                <TableHead className="text-xs font-medium">Status</TableHead>
-                <TableHead>
+                <TableHead className="hidden 2xl:table-cell">Bereich</TableHead>
+                <TableHead className="hidden xl:table-cell">Gültigkeit</TableHead>
+                <TableHead className="hidden sm:table-cell">Status</TableHead>
+                <TableHead className="hidden 2xl:table-cell">
                   <button
                     onClick={() => toggleSort("createdAt")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
+                    className="flex items-center gap-1 uppercase hover:text-primary"
                   >
                     Erstellt {sortIcon("createdAt")}
                   </button>
                 </TableHead>
-                <TableHead>
+                <TableHead className="hidden xl:table-cell">
                   <button
                     onClick={() => toggleSort("redeemedAt")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
+                    className="flex items-center gap-1 uppercase hover:text-primary"
                   >
                     Eingelöst {sortIcon("redeemedAt")}
                   </button>
                 </TableHead>
-                <TableHead>
+                <TableHead className="hidden md:table-cell">
                   <button
                     onClick={() => toggleSort("expiresAt")}
-                    className="flex items-center gap-1 text-xs font-medium hover:text-primary"
+                    className="flex items-center gap-1 uppercase hover:text-primary"
                   >
                     Verfällt {sortIcon("expiresAt")}
                   </button>
                 </TableHead>
-                <TableHead className="text-xs font-medium">Notiz</TableHead>
-                <TableHead className="text-xs font-medium text-right">Aktionen</TableHead>
+                <TableHead className="text-right">Aktionen</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -299,7 +324,8 @@ export function VouchersTable({
                   key={v.id}
                   className={v.disabledAt ? "opacity-60" : ""}
                 >
-                  <TableCell className="font-mono text-xs">
+                  {/* Handy: die Zelle nimmt die freie Breite (w-full + max-w-0), der Ticket-Typ darunter kürzt. */}
+                  <TableCell className="font-mono text-xs max-sm:w-full max-sm:max-w-0">
                     <button
                       type="button"
                       onClick={() => copy(v.id, v.code)}
@@ -313,32 +339,45 @@ export function VouchersTable({
                         <Copy className="h-3 w-3 opacity-0 group-hover:opacity-60" />
                       )}
                     </button>
+                    <div className="mt-1 flex min-w-0 items-center gap-1.5 font-sans sm:hidden">
+                      {statusBadge(v)}
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {v.ticketTypeName ?? v.serviceName ?? "—"}
+                        {v.discountPercent ? ` · −${v.discountPercent}%` : ""}
+                      </span>
+                    </div>
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="hidden sm:table-cell text-sm">
                     {v.ticketTypeName ?? v.serviceName ?? (
                       <span className="text-muted-foreground/70">—</span>
                     )}
                     {v.discountPercent ? (
-                      <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
+                      <Badge variant="outline" className="ml-2 tabular-nums">
                         −{v.discountPercent}%
                       </Badge>
                     ) : null}
+                    {/* Notiz als zweite Zeile statt eigener Spalte; gekürzt, voller Text im Tooltip. */}
+                    {v.notes ? (
+                      <p className="hidden max-w-[220px] truncate text-xs text-muted-foreground lg:block" title={v.notes}>
+                        {v.notes}
+                      </p>
+                    ) : null}
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="hidden 2xl:table-cell text-sm">
                     {v.accessAreaName ?? (
                       <span className="text-muted-foreground/70">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="hidden xl:table-cell text-sm">
                     <span className="text-muted-foreground">
                       {validityLabel(v)}
                     </span>
                   </TableCell>
-                  <TableCell>{statusBadge(v)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                  <TableCell className="hidden sm:table-cell">{statusBadge(v)}</TableCell>
+                  <TableCell className="hidden 2xl:table-cell text-xs text-muted-foreground whitespace-nowrap tabular-nums">
                     {fmtDateTimeShort(v.createdAt)}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                  <TableCell className="hidden xl:table-cell text-xs text-muted-foreground whitespace-nowrap tabular-nums">
                     {v.redeemedAt ? (
                       <span className="text-success font-medium">
                         {fmtDateTimeShort(v.redeemedAt)}
@@ -347,7 +386,7 @@ export function VouchersTable({
                       <span className="text-muted-foreground/70">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                  <TableCell className="hidden md:table-cell text-xs text-muted-foreground whitespace-nowrap tabular-nums">
                     {v.expiresAt ? (
                       new Date(v.expiresAt) < new Date() && !v.redeemedAt ? (
                         <span className="text-destructive">
@@ -360,15 +399,13 @@ export function VouchersTable({
                       <span className="text-muted-foreground/70">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                    {v.notes ?? <span className="text-muted-foreground/70">—</span>}
-                  </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
+                    {/* Auf dem Handy 44 px Tippfläche, ab sm kompakt. */}
                     <div className="flex items-center justify-end gap-1">
                       <Button
-                        size="sm"
+                        size="icon-sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0"
+                        className="max-sm:size-11"
                         title="Bearbeiten"
                         onClick={() => {
                           setError(null);
@@ -379,9 +416,9 @@ export function VouchersTable({
                       </Button>
                       {v.disabledAt ? (
                         <Button
-                          size="sm"
+                          size="icon-sm"
                           variant="ghost"
-                          className="h-7 w-7 p-0 text-success hover:text-success"
+                          className="max-sm:size-11 text-success hover:text-success"
                           title="Reaktivieren"
                           disabled={busyId === v.id}
                           onClick={() => toggleDisabled(v, false)}
@@ -394,9 +431,9 @@ export function VouchersTable({
                         </Button>
                       ) : (
                         <Button
-                          size="sm"
+                          size="icon-sm"
                           variant="ghost"
-                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                          className="max-sm:size-11 text-destructive hover:text-destructive"
                           title={v.redeemedAt ? "Bereits eingelöst – Deaktivieren möglich" : "Deaktivieren"}
                           disabled={busyId === v.id}
                           onClick={() => setConfirmDisable(v)}
@@ -428,34 +465,39 @@ export function VouchersTable({
         }}
       />
 
-      <Dialog
+      {/* Sperren immer als AlertDialog mit destruktiver Taste (Abschnitt 18). */}
+      <AlertDialog
         open={confirmDisable !== null}
         onOpenChange={(open) => {
           if (!open) setConfirmDisable(null);
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Gutschein deaktivieren?</DialogTitle>
-            <DialogDescription>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Gutschein deaktivieren?</AlertDialogTitle>
+            <AlertDialogDescription>
               Der Gutschein{" "}
               <span className="font-mono font-medium">{confirmDisable?.code}</span>{" "}
               kann anschließend nicht mehr eingelöst werden. Du kannst ihn
               jederzeit wieder reaktivieren.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmDisable(null)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
               disabled={busyId !== null}
+              className={DIALOG_FIELD}
             >
               Abbrechen
-            </Button>
-            <Button
+            </AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
-              onClick={() => confirmDisable && toggleDisabled(confirmDisable, true)}
+              onClick={(e) => {
+                // Offen lassen, bis die Anfrage durch ist; toggleDisabled schließt bei Erfolg.
+                e.preventDefault();
+                if (confirmDisable) toggleDisabled(confirmDisable, true);
+              }}
               disabled={busyId !== null}
+              className={DIALOG_FIELD}
             >
               {busyId !== null ? (
                 <>
@@ -465,10 +507,10 @@ export function VouchersTable({
               ) : (
                 "Deaktivieren"
               )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -579,21 +621,20 @@ function EditVoucherDialog({
         if (!o) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Gutschein bearbeiten</DialogTitle>
           <DialogDescription>
             Code{" "}
             <span className="font-mono font-medium">{voucher?.code}</span>
-            {isReadOnlyCore ? (
-              <span className="block text-xs text-warning mt-1">
-                Bereits eingelöst – nur Notiz und Verfallsdatum änderbar.
-              </span>
-            ) : null}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {isReadOnlyCore ? (
+            // Hinweis als Kachel statt Warnfarbe im Beschreibungstext.
+            <Notice tone="warning" compact title="Bereits eingelöst – nur Notiz und Verfallsdatum änderbar." />
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="v-name">Anzeigename / Ticket-Typ</Label>
             <Input
@@ -602,6 +643,7 @@ function EditVoucherDialog({
               onChange={(e) => setTicketTypeName(e.target.value)}
               placeholder="z. B. 2 Stunden Strandbad"
               disabled={isReadOnlyCore}
+              className={DIALOG_FIELD}
             />
           </div>
 
@@ -613,7 +655,7 @@ function EditVoucherDialog({
                 onValueChange={setServiceId}
                 disabled={isReadOnlyCore}
               >
-                <SelectTrigger>
+                <SelectTrigger className={DIALOG_SELECT}>
                   <SelectValue placeholder="Service" />
                 </SelectTrigger>
                 <SelectContent>
@@ -633,7 +675,7 @@ function EditVoucherDialog({
                 onValueChange={setAccessAreaId}
                 disabled={isReadOnlyCore}
               >
-                <SelectTrigger>
+                <SelectTrigger className={DIALOG_SELECT}>
                   <SelectValue placeholder="Bereich" />
                 </SelectTrigger>
                 <SelectContent>
@@ -656,7 +698,7 @@ function EditVoucherDialog({
                 onValueChange={setValidityType}
                 disabled={isReadOnlyCore}
               >
-                <SelectTrigger>
+                <SelectTrigger className={DIALOG_SELECT}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -678,6 +720,7 @@ function EditVoucherDialog({
                 onChange={(e) => setDurationMinutes(e.target.value)}
                 placeholder="z. B. 120"
                 disabled={isReadOnlyCore || validityType !== "DURATION"}
+                className={DIALOG_FIELD}
               />
             </div>
           </div>
@@ -694,6 +737,7 @@ function EditVoucherDialog({
                 onChange={(e) => setDiscountPercent(e.target.value)}
                 placeholder="z. B. 10"
                 disabled={isReadOnlyCore}
+                className={DIALOG_FIELD}
               />
             </div>
             <div className="space-y-1.5">
@@ -703,6 +747,7 @@ function EditVoucherDialog({
                 type="datetime-local"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
+                className={DIALOG_FIELD}
               />
             </div>
           </div>
@@ -714,21 +759,20 @@ function EditVoucherDialog({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="interne Notiz"
+              className={DIALOG_FIELD}
             />
           </div>
 
           {error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {error}
-            </div>
+            <Notice tone="danger" compact title={error} />
           ) : null}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
+          <Button variant="outline" onClick={onClose} disabled={saving} className={DIALOG_FIELD}>
             Abbrechen
           </Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving} className={DIALOG_FIELD}>
             {saving ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />

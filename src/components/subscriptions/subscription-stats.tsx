@@ -10,7 +10,8 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard, type StatTone } from "@/components/ui/stat-card";
 import {
   Activity,
@@ -24,12 +25,13 @@ import {
 import type { SubscriptionStats as Stats, SubscriptionTopRow } from "@/lib/subscription-stats";
 import { cn } from "@/lib/utils";
 
+// Tooltip und Achsen über Design-Tokens, damit Hell und Dunkel gleich gut lesbar sind.
 const CHART_TOOLTIP_STYLE = {
-  backgroundColor: "#1e293b",
-  border: "none",
-  borderRadius: "8px",
+  backgroundColor: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: "14px",
   fontSize: "12px",
-  color: "#e2e8f0",
+  color: "var(--popover-foreground)",
   padding: "6px 10px",
 };
 
@@ -52,18 +54,18 @@ function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDa
   const tickInterval = Math.max(1, Math.floor(data.length / 6));
 
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-border/60">
-        <div className="flex items-center gap-2">
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-primary shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-foreground">Abo-Verlauf</p>
-            <p className="text-[11px] text-muted-foreground">
-              Bestand der letzten {windowDays} Tage
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          Abo-Verlauf
+        </CardTitle>
+        <CardDescription>
+          Bestand der letzten {windowDays} Tage
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full bg-primary" />
             Bestand
@@ -79,46 +81,45 @@ function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDa
             </span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-destructive" />
+            <span className="h-2 w-2 rounded-full bg-warning" />
             Auslauf
             <span className="text-foreground/80 font-semibold ml-0.5 tabular-nums">
               {totalExpired}
             </span>
           </span>
         </div>
-      </div>
-      <div className="px-3 pt-3 pb-3">
         {data.length === 0 ? (
-          <p className="py-10 text-center text-xs text-muted-foreground/70">Keine Daten im Zeitraum.</p>
+          <EmptyState compact icon={Activity} title="Keine Daten im Zeitraum." />
         ) : (
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data} margin={{ top: 5, right: 12, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="aboActiveGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity={0.45} />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.05} />
                   </linearGradient>
                   <linearGradient id="aboNewGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0.02} />
+                    <stop offset="0%" stopColor="var(--success)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--success)" stopOpacity={0.02} />
                   </linearGradient>
+                  {/* Auslauf ist ein Hinweis, keine Störung: Warnfarbe wie „Auslaufend (30T)“. */}
                   <linearGradient id="aboExpiredGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.02} />
+                    <stop offset="0%" stopColor="var(--warning)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--warning)" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="date"
                   interval={tickInterval}
                   tickFormatter={(value: string) => fmtMonth(value)}
-                  tick={{ fontSize: 10, fill: "#94a3b8" }}
+                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 9, fill: "#94a3b8" }}
+                  tick={{ fontSize: 9, fill: "var(--muted-foreground)" }}
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}
@@ -138,21 +139,21 @@ function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDa
                 <Area
                   type="monotone"
                   dataKey="active"
-                  stroke="#6366f1"
+                  stroke="var(--primary)"
                   strokeWidth={2}
                   fill="url(#aboActiveGradient)"
                 />
                 <Area
                   type="monotone"
                   dataKey="newCount"
-                  stroke="#10b981"
+                  stroke="var(--success)"
                   strokeWidth={1.5}
                   fill="url(#aboNewGradient)"
                 />
                 <Area
                   type="monotone"
                   dataKey="expiredCount"
-                  stroke="#f43f5e"
+                  stroke="var(--warning)"
                   strokeWidth={1.5}
                   fill="url(#aboExpiredGradient)"
                 />
@@ -160,7 +161,7 @@ function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDa
             </ResponsiveContainer>
           </div>
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -168,19 +169,17 @@ function TimelineChart({ data, windowDays }: { data: Stats["timeline"]; windowDa
 function TopAbosCard({ rows }: { rows: SubscriptionTopRow[] }) {
   const max = useMemo(() => rows.reduce((m, r) => Math.max(m, r.active), 0), [rows]);
   return (
-    <Card className="py-0 gap-0 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/60">
-        <div className="flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-warning shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-foreground">Top-Abos</p>
-            <p className="text-[11px] text-muted-foreground">Aktiver Bestand</p>
-          </div>
-        </div>
-      </div>
-      <div className="px-4 py-3">
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CreditCard className="h-4 w-4 text-primary shrink-0" />
+          Top-Abos
+        </CardTitle>
+        <CardDescription>Aktiver Bestand</CardDescription>
+      </CardHeader>
+      <CardContent>
         {rows.length === 0 ? (
-          <p className="py-6 text-center text-xs text-muted-foreground/70">Keine aktiven Abos.</p>
+          <EmptyState compact icon={CreditCard} title="Keine aktiven Abos." />
         ) : (
           <ul className="space-y-2.5">
             {rows.map((r) => {
@@ -191,9 +190,9 @@ function TopAbosCard({ rows }: { rows: SubscriptionTopRow[] }) {
                     <span className="font-medium text-foreground/80 truncate">{r.name}</span>
                     <span className="tabular-nums text-muted-foreground">{r.active}</span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-1.5 rounded-full bg-foreground/[0.08] dark:bg-white/[0.08] overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-600"
+                      className="h-full rounded-full bg-primary"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -202,7 +201,7 @@ function TopAbosCard({ rows }: { rows: SubscriptionTopRow[] }) {
             })}
           </ul>
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -215,8 +214,8 @@ export function SubscriptionStats({ stats }: { stats: Stats }) {
     : `vor ${stats.windowDays} Tagen: ${stats.activePast}`;
 
   return (
-    <div className="space-y-4 mb-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           icon={CreditCard}
           label="Aktiv jetzt"
@@ -244,11 +243,11 @@ export function SubscriptionStats({ stats }: { stats: Stats }) {
           label="Auslaufend (30T)"
           value={stats.expiringNext30}
           hint="Enden in den nächsten 30 Tagen"
-          tone="danger"
+          tone="warning"
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
         <div className="lg:col-span-2">
           <TimelineChart data={stats.timeline} windowDays={stats.windowDays} />
         </div>

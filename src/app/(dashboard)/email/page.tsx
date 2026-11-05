@@ -2,6 +2,7 @@ import { safeAuth } from "@/lib/auth";
 import { tenantClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/layout/header";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { EmailSettings } from "@/components/settings/email-settings";
 import { InfoRequestsCard } from "@/components/settings/info-requests-card";
 
@@ -51,15 +52,11 @@ export default async function EmailPage() {
   return (
     <>
       <Header title="E-Mail" accountName={session.user.accountName} />
-      <div className="page-content space-y-6 max-w-3xl">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">
-            E-Mail-Versand & Automationen
-          </h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            SMTP-Verbindung, regelbasierte Mails und vollständige Versand-Historie.
-          </p>
-        </div>
+      <div className="page-content max-w-3xl space-y-4 sm:space-y-5">
+        <SectionHeading
+          title="E-Mail-Versand & Automationen"
+          description="SMTP-Verbindung, regelbasierte Mails und vollständige Versand-Historie."
+        />
         <EmailSettings
           initialConfig={emailConfigDto}
           subscriptions={subscriptionRefs}

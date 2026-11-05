@@ -106,10 +106,11 @@ export default async function LockersPage() {
   return (
     <>
       <Header title="Schließfächer" accountName={session.user.accountName} />
-      <div className="page-content">
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-xl">Alle Schließfächer ({lockers.length})</CardTitle>
+      <div className="page-content space-y-4 sm:space-y-5">
+        {/* Tabelle läuft bis an den Kartenrand: Karte unten und Inhalt seitlich ohne Innenabstand. */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader>
+            <CardTitle>Alle Schließfächer ({lockers.length})</CardTitle>
             <CardDescription>
               Vermietung läuft jahresweise: pro Jahr wird ein{" "}
               <Link href="/tickets" className="text-primary hover:underline">
@@ -118,7 +119,7 @@ export default async function LockersPage() {
               hinterlegt – die Historie bleibt erhalten.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-0 sm:px-0">
             <LockersTable
               lockers={lockerRows}
               aboTickets={aboTickets.map((t) => ({

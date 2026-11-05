@@ -8,8 +8,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
 import { Loader2, Trash2, Save, ImagePlus, X } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export type LostItemKind = "FOUND" | "LOST_REPORT";
 
@@ -76,11 +79,14 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
   const [pickedUp, setPickedUp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Rückfrage zum Löschen als Schritt im selben Dialog (Abschnitt 18), kein Browser-Dialog.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (open) {
       setError("");
+      setConfirmDelete(false);
       setKind(item?.kind ?? "FOUND");
       setDescription(item?.description ?? "");
       setFoundDate(toDateInputValue(item?.foundDate ?? null));
@@ -151,7 +157,6 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
 
   async function handleDelete() {
     if (!item) return;
-    if (!confirm("Eintrag wirklich löschen?")) return;
     setDeleting(true);
     setError("");
     try {
@@ -182,39 +187,24 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
 
         <div className="space-y-4">
           {isNew && (
-            <div className="flex gap-1.5 p-1 rounded-lg bg-muted">
-              <button
-                type="button"
-                onClick={() => setKind("FOUND")}
-                className={cn(
-                  "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  kind === "FOUND"
-                    ? "bg-card text-primary shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Fundsache
-              </button>
-              <button
-                type="button"
-                onClick={() => setKind("LOST_REPORT")}
-                className={cn(
-                  "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  kind === "LOST_REPORT"
-                    ? "bg-card text-primary shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Verlustmeldung
-              </button>
-            </div>
+            // Art des Eintrags als Segmentwahl; die Kapsel ist in der Ebene getönt (Abschnitt 18).
+            <Segmented
+              aria-label="Art des Eintrags"
+              stretch
+              value={kind}
+              onValueChange={setKind}
+              options={[
+                { value: "FOUND", label: "Fundsache" },
+                { value: "LOST_REPORT", label: "Verlustmeldung" },
+              ]}
+            />
           )}
 
           <div className="space-y-1.5">
             <Label htmlFor="li-description">
               {isLostReport ? "Was wurde verloren? *" : "Beschreibung *"}
             </Label>
-            <textarea
+            <Textarea
               id="li-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -225,7 +215,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   ? "z. B. Schwarze Lederjacke, Größe M, mit Schlüsselbund"
                   : "z. B. Schwarze Jacke, Größe M, am Eingang gefunden"
               }
-              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              className="resize-none"
             />
           </div>
 
@@ -239,6 +229,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   onChange={(e) => setReporterName(e.target.value)}
                   maxLength={120}
                   placeholder="Max Mustermann"
+                  className="h-11 sm:h-9"
                 />
               </div>
               <div className="space-y-1.5">
@@ -250,11 +241,12 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   onChange={(e) => setCallbackPhone(e.target.value)}
                   maxLength={40}
                   placeholder="0170 1234567"
+                  className="h-11 sm:h-9"
                 />
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="li-foundDate">Funddatum *</Label>
                 <Input
@@ -262,6 +254,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   type="date"
                   value={foundDate}
                   onChange={(e) => setFoundDate(e.target.value)}
+                  className="h-11 sm:h-9"
                 />
               </div>
               <div className="space-y-1.5">
@@ -272,6 +265,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   onChange={(e) => setContact(e.target.value)}
                   maxLength={300}
                   placeholder="Name / Telefon"
+                  className="h-11 sm:h-9"
                 />
               </div>
             </div>
@@ -285,6 +279,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                 type="date"
                 value={foundDate}
                 onChange={(e) => setFoundDate(e.target.value)}
+                className="h-11 sm:h-9"
               />
             </div>
           )}
@@ -305,12 +300,13 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                   <img
                     src={image}
                     alt="Fundsache"
-                    className="h-32 w-32 rounded-lg object-cover border border-border"
+                    className="h-32 w-32 rounded-tile object-cover border border-border"
                   />
                   <button
                     type="button"
                     onClick={() => setImage(null)}
-                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-slate-900 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                    // Unsichtbare Trefferfläche (after:-inset-1.5) bringt die 32-px-Taste auf 44 px.
+                    className="absolute -top-2.5 -right-2.5 size-8 rounded-full bg-foreground text-background flex items-center justify-center hover:bg-destructive hover:text-white transition-colors after:absolute after:-inset-1.5 after:rounded-full"
                     aria-label="Bild entfernen"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -320,7 +316,7 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-1.5 h-32 w-32 rounded-lg border-2 border-dashed border-input text-muted-foreground/70 hover:border-primary/60 hover:text-primary transition-colors"
+                  className="flex flex-col items-center justify-center gap-1.5 h-32 w-32 rounded-tile border-2 border-dashed border-border bg-glass-tile text-muted-foreground hover:border-primary/60 hover:text-primary transition-colors"
                 >
                   <ImagePlus className="h-6 w-6" />
                   <span className="text-xs">Bild wählen</span>
@@ -330,49 +326,82 @@ export function LostItemDialog({ item, open, onClose }: LostItemDialogProps) {
           )}
 
           {!isNew && (
-            <label className="flex items-center gap-2 text-sm text-foreground/80 cursor-pointer">
-              <input
-                type="checkbox"
+            // Kästchen (Abschnitt 16): der Zustand wird erst mit „Speichern“ übernommen.
+            // Die Beschriftung füllt die Zeile, so ist die ganze Zeile Tippfläche.
+            <div className="glass-tile flex items-center gap-3 pl-3">
+              <Checkbox
+                id="li-pickedUp"
                 checked={pickedUp}
-                onChange={(e) => setPickedUp(e.target.checked)}
-                className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+                onCheckedChange={(checked) => setPickedUp(checked === true)}
               />
-              {isLostReport ? "Erledigt" : "Abgeholt"}
-            </label>
+              <Label htmlFor="li-pickedUp" className="min-h-11 flex-1 cursor-pointer pr-3 text-sm font-medium text-foreground">
+                {isLostReport ? "Erledigt" : "Abgeholt"}
+              </Label>
+            </div>
           )}
 
           {error && (
-            <p className="text-sm text-destructive">{error}</p>
+            <Notice tone="danger" compact title={error} />
           )}
 
-          <div className="flex items-center justify-between pt-2">
-            {!isNew ? (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleDelete}
-                disabled={deleting || saving}
-                className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
-              >
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                Löschen
-              </Button>
-            ) : <span />}
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-                Abbrechen
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSave}
-                disabled={saving || deleting}
-                className="gap-1.5"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Speichern
-              </Button>
+          {confirmDelete ? (
+            // Rückfrage statt Fußzeile: Abbrechen oder endgültig löschen.
+            <div className="space-y-3 pt-2">
+              <Notice tone="danger" compact title="Eintrag wirklich löschen?" />
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deleting}
+                  autoFocus
+                  className="h-11 sm:h-9"
+                >
+                  Abbrechen
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="gap-1.5 h-11 sm:h-9"
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Löschen
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Handy: volle Breite, Primärtaste oben. Ab sm: Löschen links, Handlungen rechts. */
+            <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:items-center sm:justify-between">
+              {!isNew ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={deleting || saving}
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5 h-11 sm:h-9"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Löschen
+                </Button>
+              ) : <span className="hidden sm:block" />}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button type="button" variant="outline" onClick={onClose} disabled={saving} className="h-11 sm:h-9">
+                  Abbrechen
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving || deleting}
+                  className="gap-1.5 h-11 sm:h-9"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Speichern
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

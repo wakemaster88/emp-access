@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SubscriptionsTable } from "@/components/subscriptions/subscriptions-table";
 import { ExpiringAbosCard } from "@/components/subscriptions/expiring-abos-card";
 import { SubscriptionStats } from "@/components/subscriptions/subscription-stats";
@@ -100,26 +100,25 @@ export default async function SubscriptionsPage() {
   return (
     <>
       <Header title="Abos" accountName={session.user.accountName} />
-      <div className="page-content">
+      <div className="page-content space-y-4 sm:space-y-5">
         {stats && <SubscriptionStats stats={stats} />}
         <ExpiringAbosCard tickets={expiringAboTickets} readonly={isSuperAdmin} />
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-xl">Alle Abos ({subscriptions.length})</CardTitle>
+        {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand. */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader>
+            <CardTitle>Alle Abos ({subscriptions.length})</CardTitle>
             <CardDescription>
               Abos verknüpfen <Link href="/tickets" className="text-primary hover:underline">Tickets</Link> mit <Link href="/areas" className="text-primary hover:underline">Resourcen</Link> und definieren Standard-Gültigkeiten.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <SubscriptionsTable
-              subscriptions={subscriptions}
-              areas={areas}
-              annyServices={isSuperAdmin ? [] : annyServices}
-              annyResources={isSuperAdmin ? [] : annyResources}
-              annySubscriptions={isSuperAdmin ? [] : annySubscriptions}
-              readonly={isSuperAdmin}
-            />
-          </CardContent>
+          <SubscriptionsTable
+            subscriptions={subscriptions}
+            areas={areas}
+            annyServices={isSuperAdmin ? [] : annyServices}
+            annyResources={isSuperAdmin ? [] : annyResources}
+            annySubscriptions={isSuperAdmin ? [] : annySubscriptions}
+            readonly={isSuperAdmin}
+          />
         </Card>
       </div>
     </>

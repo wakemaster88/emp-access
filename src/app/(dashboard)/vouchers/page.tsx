@@ -3,11 +3,10 @@ import { tenantClient, superAdminClient } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { VouchersTable } from "@/components/vouchers/vouchers-table";
 import { Gift, Check, Clock, Ban } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Props {
   searchParams: Promise<{
@@ -148,61 +147,65 @@ export default async function VouchersPage({ searchParams }: Props) {
   return (
     <>
       <Header title="Gutscheine" accountName={session.user.accountName} />
-      <div className="page-content space-y-4">
-        <Card>
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 flex-wrap">
-            <div className="flex items-center gap-3">
-              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <Gift className="h-5 w-5 text-primary" />
-                Gutscheine ({enrichedVouchers.length})
-              </CardTitle>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {tabs.map((tab) => {
-                const isActive = (status ?? "all") === tab.id;
-                const Icon = tab.icon;
-                const params = new URLSearchParams();
-                if (tab.id !== "all") params.set("status", tab.id);
-                if (queryTrim) params.set("q", queryTrim);
-                if (sort !== "createdAt") params.set("sort", sort);
-                if (order !== "desc") params.set("order", order);
-                const href = params.toString()
-                  ? `/vouchers?${params.toString()}`
-                  : "/vouchers";
-                return (
-                  <Button
-                    key={tab.id}
-                    asChild
-                    variant={isActive ? "default" : "outline"}
-                    size="sm"
-                    className={isActive ? "bg-primary hover:bg-primary/90" : ""}
-                  >
-                    <Link href={href}>
-                      <Icon className="h-3.5 w-3.5 mr-1.5" />
-                      {tab.label}
-                      <Badge
-                        variant="secondary"
-                        className="ml-1.5 h-5 px-1.5 text-[10px] font-normal"
-                      >
-                        {tab.count}
-                      </Badge>
-                    </Link>
-                  </Button>
-                );
-              })}
-            </div>
+      <div className="page-content space-y-4 sm:space-y-5">
+        {/*
+          Statusfilter als Glas-Kapsel wie `Segmented`. Die Einträge bleiben Links,
+          weil der Filter in der URL steht; auf dem Handy wischbar statt umbrechend.
+        */}
+        <div className="glass-strip flex w-fit max-w-full items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {tabs.map((tab) => {
+            const isActive = (status ?? "all") === tab.id;
+            const Icon = tab.icon;
+            const params = new URLSearchParams();
+            if (tab.id !== "all") params.set("status", tab.id);
+            if (queryTrim) params.set("q", queryTrim);
+            if (sort !== "createdAt") params.set("sort", sort);
+            if (order !== "desc") params.set("order", order);
+            const href = params.toString()
+              ? `/vouchers?${params.toString()}`
+              : "/vouchers";
+            return (
+              <Link
+                key={tab.id}
+                href={href}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
+                  "press inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-[13px] font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  isActive && "glass-pill-active font-semibold text-foreground",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 text-[10px] font-semibold leading-4 tabular-nums",
+                    isActive ? "bg-primary/15 text-primary" : "bg-foreground/[0.07] text-muted-foreground dark:bg-white/10",
+                  )}
+                >
+                  {tab.count}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Tabelle läuft bis an den Kartenrand, daher unten kein Innenabstand. */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Gift className="h-4 w-4 text-primary shrink-0" />
+              Gutscheine ({enrichedVouchers.length})
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <VouchersTable
-              vouchers={enrichedVouchers}
-              services={services}
-              accessAreas={accessAreas}
-              currentQuery={queryTrim}
-              currentStatus={status}
-              currentSort={sort}
-              currentOrder={order}
-            />
-          </CardContent>
+          <VouchersTable
+            vouchers={enrichedVouchers}
+            services={services}
+            accessAreas={accessAreas}
+            currentQuery={queryTrim}
+            currentStatus={status}
+            currentSort={sort}
+            currentOrder={order}
+          />
         </Card>
       </div>
     </>
