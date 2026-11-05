@@ -36,7 +36,8 @@ async function getSession(req: NextRequest) {
  * Speichern nicht verloren gehen duerfen.
  */
 const WEBHOOK_PROVIDERS: Record<string, readonly string[]> = {
-  EMP_CONTROL: [],
+  // Live-Monitor-Link fuer „Wer arbeitet gerade?“ (Hub, src/lib/emp-control-live.ts).
+  EMP_CONTROL: ["monitorUrl"],
   ANNY: [],
   // Kennzeichen der bei Nuki registrierten Benachrichtigung – sonst legt der
   // naechste Abgleich dort eine zweite an.
