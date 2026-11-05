@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +23,7 @@ interface StatCardProps {
   /** Bezug direkt hinter der Zahl, klein und gedämpft: „von 10“, „Räume“, „%“. */
   suffix?: string;
   /** Kleine Zeile unter dem Wert: Kontext, Vergleich, Einheit. */
-  hint?: string;
+  hint?: ReactNode;
   /** Prozentuale Veränderung; färbt sich nach Vorzeichen. */
   trend?: { value: number; label: string };
   /** Anteil 0…1 als dünner Balken unter der Zahl (z. B. 6 von 10 geöffnet). */
