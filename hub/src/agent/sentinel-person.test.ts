@@ -54,3 +54,10 @@ test("Wiedererkennung über Kameras: alle bekannt → kein Alarm, ein Neuer → 
   // Nummer ausserhalb der Liste zählt nicht.
   assert.equal(decidePerson({ face: null, staff: null, look: { ...l, bekannt: [5] }, hour: 23, known }).alarm, true);
 });
+
+test("Keine Person auf der Nahaufnahme oder ohne Stempeldaten tagsüber bei der Arbeit: kein Alarm", () => {
+  assert.equal(decidePerson({ face: null, staff: null, look: look({ personen: 0 }), hour: 14 }).alarm, false);
+  assert.equal(decidePerson({ face: null, staff: null, look: look({ mitarbeiter: true }), hour: 14 }).alarm, false);
+  assert.equal(decidePerson({ face: null, staff: null, look: look({ mitarbeiter: true }), hour: 23 }).alarm, true);
+  assert.equal(decidePerson({ face: null, staff: [], look: look({ mitarbeiter: true }), hour: 14 }).alarm, true);
+});

@@ -133,7 +133,7 @@ export function clearedTitle(c: ClearedPerson): string {
 export function knownPrompt(list: ClearedPerson[]): string {
   if (!list.length) return "";
   return (
-    " Heute schon als unbedenklich eingestuft (an anderen Kameras gesehen):" +
+    " Heute schon gesehen und bewertet (an dieser oder anderen Kameras):" +
     list.map((c, i) => ` ${i + 1}) ${c.label}: ${c.kleidung}`).join(";") +
     '. Prüfe für jede Person im Bild, ob Kleidung und Aussehen eindeutig zu einer dieser Beschreibungen passen. ' +
     'Gib dafür zusätzlich "bekannt": [Nummern der passenden Einträge] und "unbekannt": Anzahl Personen ohne passenden Eintrag an. Im Zweifel gilt eine Person als unbekannt.'
@@ -149,19 +149,22 @@ export async function rememberPeople(opts: {
   kleidung: string[];
   label: string;
   matched?: ClearedPerson[];
+  /** Gueltigkeit, Standard 8 h. */
+  forMs?: number;
 }): Promise<void> {
   await loadCleared();
   const now = Date.now();
+  const ms = opts.forMs ?? CLEAR_MS;
   for (const m of opts.matched ?? []) {
     const c = cleared.find((x) => x.id === m.id);
     if (c) {
-      c.until = now + CLEAR_MS;
+      c.until = Math.max(c.until, now + ms);
       c.at = now;
       c.camera = opts.camera;
     }
   }
   for (const k of opts.kleidung) {
-    cleared.push({ id: randomBytes(4).toString("hex"), label: opts.label, kleidung: k, camera: opts.camera, at: now, until: now + CLEAR_MS });
+    cleared.push({ id: randomBytes(4).toString("hex"), label: opts.label, kleidung: k, camera: opts.camera, at: now, until: now + ms });
   }
   await saveCleared().catch(() => undefined);
 }

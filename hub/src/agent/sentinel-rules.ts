@@ -160,6 +160,12 @@ export function decidePerson(ctx: PersonContext): PersonDecision {
   if (ctx.look && seen.length > 0 && ctx.look.unbekannt === 0) {
     return { alarm: false, reason: `Schon gesehen: ${seen.map((b) => known[b - 1]).join(", ")}` };
   }
+  // Nahaufnahme ohne Person (Fehlausloesung, Person schon weg): kein Alarm.
+  if (ctx.look && ctx.look.personen === 0) return { alarm: false, reason: "Auf der Nahaufnahme keine Person" };
+  // Ohne Stempeldaten: tagsueber genuegt das Bild (Arbeitskleidung/Taetigkeit).
+  if (ctx.staff === null && ctx.look && (ctx.look.mitarbeiter || ctx.look.arbeitskleidung) && WORK_HOURS(ctx.hour)) {
+    return { alarm: false, reason: "Wirkt wie Mitarbeiter bei der Arbeit (keine Stempeldaten)" };
+  }
   const staff = ctx.staff ?? [];
   if (staff.length > 0) {
     const count = ctx.look?.personen ?? 1;
