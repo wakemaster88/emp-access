@@ -156,17 +156,21 @@ export function PersonSearchDialog({
                       onClick={() => toggle(m.id)}
                       aria-pressed={on}
                       className={cn(
-                        "press relative rounded-xl border overflow-hidden text-left bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        on ? "border-primary ring-2 ring-primary" : "border-glass-border opacity-60 hover:opacity-90"
+                        "group press relative rounded-xl border overflow-hidden text-left bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        on ? "border-primary ring-2 ring-primary" : "border-glass-border"
                       )}
                     >
+                      {/* Nicht gewählt: nur das Bild gedimmt, Zeit und Kamera bleiben lesbar (docs/design-regeln.md, Abschnitt 17). */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={`/api/person-sightings/${m.id}/snapshot`}
                         alt=""
                         loading="lazy"
                         decoding="async"
-                        className="aspect-square w-full object-cover"
+                        className={cn(
+                          "aspect-square w-full object-cover transition-opacity duration-200",
+                          !on && "opacity-60 group-hover:opacity-90"
+                        )}
                       />
                       {on && (
                         <span className="absolute top-1 right-1 rounded-full bg-primary-fill p-0.5 text-primary-foreground">
