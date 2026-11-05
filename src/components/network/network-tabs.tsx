@@ -15,6 +15,7 @@ import type {
   IotDeviceOption,
   PortOption,
   DiscoveredRow,
+  BlockedRow,
 } from "@/components/network/network-types";
 
 interface NetworkTabsProps {
@@ -26,6 +27,7 @@ interface NetworkTabsProps {
   iotDevices: IotDeviceOption[];
   allPorts: PortOption[];
   discoveredDevices: DiscoveredRow[];
+  blockedDevices: BlockedRow[];
 }
 
 export function NetworkTabs({
@@ -37,6 +39,7 @@ export function NetworkTabs({
   iotDevices,
   allPorts,
   discoveredDevices,
+  blockedDevices,
 }: NetworkTabsProps) {
   const unknownScanCount = discoveredDevices.filter((d) => !d.match).length;
 
@@ -89,6 +92,7 @@ export function NetworkTabs({
           areas={areas}
           ports={allPorts}
           discovered={discoveredDevices}
+          blocked={blockedDevices}
         />
       </TabsContent>
     </Tabs>

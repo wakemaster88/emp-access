@@ -25,7 +25,8 @@ export function isRandomizedMac(mac: string): boolean {
 function describe(
   mac: string,
   d: SeenDevice,
-  vlans: Array<{ id: number; vlanId: number; name: string; subnet: string | null }>
+  vlans: Array<{ id: number; vlanId: number; name: string; subnet: string | null }>,
+  blockedCount = 0
 ): string {
   const name = d.hostname || d.vendor || (isRandomizedMac(mac) ? "Private MAC (Handy/Tablet?)" : "Unbekannter Hersteller");
   const vlan = d.ip ? findVlanForIp(d.ip, vlans) : null;
@@ -35,7 +36,12 @@ function describe(
     d.deviceType ? d.deviceType : null,
     `MAC ${mac}`,
   ].filter(Boolean);
-  return `<b>${escapeHtml(name)}</b>\n${escapeHtml(parts.join(" · "))}`;
+  // Eine private MAC kann ein gesperrtes Handy mit neuer Adresse sein.
+  const hint =
+    blockedCount > 0 && isRandomizedMac(mac)
+      ? "\nPrivate MAC: kann auch ein gesperrtes Handy mit neuer Adresse sein."
+      : "";
+  return `<b>${escapeHtml(name)}</b>\n${escapeHtml(parts.join(" · "))}${escapeHtml(hint)}`;
 }
 
 /**
@@ -84,7 +90,7 @@ export async function alertNewDevices(
   const added = created.map((c) => c.macAddress);
   if (added.length === 0) return { baseline: 0, added: 0, notified: false };
 
-  const [configs, vlans] = await Promise.all([
+  const [configs, vlans, blockedCount] = await Promise.all([
     prisma.telegramConfig.findMany({
       where: { accountId, isActive: true, notifyNewDevices: true },
       select: { botToken: true, chatId: true },
@@ -93,18 +99,19 @@ export async function alertNewDevices(
       where: { accountId, subnet: { not: null } },
       select: { id: true, vlanId: true, name: true, subnet: true },
     }),
+    db.blockedNetworkDevice.count({ where: { accountId } }),
   ]);
   if (configs.length === 0) return { baseline: 0, added: added.length, notified: false };
 
   let text: string;
   if (added.length < SUMMARY_THRESHOLD) {
     text = added
-      .map((mac) => `🆕 Neues Gerät im Netz\n${describe(mac, seen.get(mac)!, vlans)}`)
+      .map((mac) => `🆕 Neues Gerät im Netz\n${describe(mac, seen.get(mac)!, vlans, blockedCount)}`)
       .join("\n\n");
   } else {
     const lines = added
       .slice(0, SUMMARY_MAX_LINES)
-      .map((mac) => describe(mac, seen.get(mac)!, vlans));
+      .map((mac) => describe(mac, seen.get(mac)!, vlans, blockedCount));
     const more = added.length - lines.length;
     text =
       `🆕 ${added.length} neue Geräte im Netz\n\n` +

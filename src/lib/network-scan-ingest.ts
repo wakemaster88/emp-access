@@ -3,6 +3,7 @@ import { macSpellings, normalizeMac, sameDeviceMac } from "@/lib/mac";
 import { findVlanForIp } from "@/lib/ip";
 import type { tenantClient } from "@/lib/prisma";
 import { alertNewDevices } from "@/lib/new-device-alert";
+import { alertBlockedDevices } from "@/lib/blocked-devices";
 
 type Db = ReturnType<typeof tenantClient>;
 
@@ -149,6 +150,13 @@ export async function ingestHubScanDevices(
     await alertNewDevices(db, accountId, byMac);
   } catch (err) {
     console.error("[scan-ingest] Neu-Geraete-Meldung fehlgeschlagen:", err);
+  }
+
+  // Gesperrte MACs, die trotzdem im Netz sind, melden (Sperrliste im Hub).
+  try {
+    await alertBlockedDevices(db, accountId, byMac);
+  } catch (err) {
+    console.error("[scan-ingest] Sperrlisten-Meldung fehlgeschlagen:", err);
   }
 
   const claimedIps = [...byMac.values()].map((i) => i.ip).filter((ip): ip is string => !!ip);

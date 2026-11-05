@@ -163,6 +163,7 @@ model Account {
   hubTasks             HubTask[]
   discoveredDevices    DiscoveredDevice[]
   knownNetworkDevices  KnownNetworkDevice[]
+  blockedNetworkDevices BlockedNetworkDevice[]
   cameras              Camera[]
   cameraEvents         CameraEvent[]
   allowedVehicles      AllowedVehicle[]
@@ -1918,6 +1919,31 @@ model KnownNetworkDevice {
   /// Zeitpunkt der Telegram-Meldung; null = still uebernommen (Bestand).
   notifiedAt  DateTime?
   firstSeenAt DateTime  @default(now())
+  accountId   Int
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, macAddress])
+}
+
+/// Gesperrtes Geraet (Sperrliste im Hub). Die Sperre selbst setzt NETGEAR
+/// Insight (WLAN > SSID > MAC ACL, Richtlinie "Verbieten"), weil Insight keine
+/// offizielle Schnittstelle hat. Der Hub-Scan meldet per Telegram, wenn eine
+/// gesperrte MAC trotzdem wieder im Netz auftaucht. Freigeben = Eintrag loeschen.
+model BlockedNetworkDevice {
+  id          Int       @id @default(autoincrement())
+  /// Normalisiert (AA:BB:CC:DD:EE:FF).
+  macAddress  String
+  name        String
+  reason      String?
+  /// Wann die Sperre in Insight eingetragen wurde (null = nur in der Liste).
+  enforcedAt  DateTime?
+  /// Zuletzt trotz Sperre vom Hub-Scan gesehen.
+  lastSeenAt  DateTime?
+  lastSeenIp  String?
+  /// Letzte Telegram-Meldung "gesperrtes Geraet wieder im Netz" (Drossel).
+  notifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   accountId   Int
   account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
