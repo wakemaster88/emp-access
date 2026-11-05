@@ -13,7 +13,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CONFIG, api, log } from "./config.js";
-import { parseStaffResponse, type StaffShift, type StaffSnapshot as Snapshot } from "./staff-parse.js";
+import { parseStaffResponse, type StaffMember, type StaffShift, type StaffSnapshot as Snapshot } from "./staff-parse.js";
 
 export type { StaffMember, StaffShift } from "./staff-parse.js";
 
@@ -147,4 +147,14 @@ export function staffPreviewInput(now = Date.now()) {
     })),
     shifts: staffOnShiftToday(),
   };
+}
+
+/** Eingestempelte mit allen Feldern (Mitarbeiter-Ansicht im Dashboard). */
+export function staffWorking(): StaffMember[] {
+  return snapshot?.working ?? [];
+}
+
+/** Zustand des Abrufs fuer die Anzeige. */
+export function staffState(now = Date.now()) {
+  return { configured, error: lastError, dataAgeMs: staffDataAge(now), fetchedAt: snapshot?.fetchedAt ?? null };
 }
