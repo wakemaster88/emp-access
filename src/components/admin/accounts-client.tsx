@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, Building2, Copy, Check, Users, Loader2, Eye, EyeOff, ShieldCheck, ShieldOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Notice } from "@/components/ui/notice";
 import {
   Dialog,
   DialogContent,
@@ -362,97 +364,95 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
+      {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+      <Card className="overflow-hidden pb-0 sm:pb-0">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 tabular-nums">
+            <Building2 className="h-4 w-4 text-primary" />
             Alle Mandanten ({accounts.length})
           </CardTitle>
-          <Button onClick={openCreate} size="sm">
-            <Plus className="h-4 w-4 mr-1" />
+          <Button onClick={openCreate} size="sm" className="max-sm:h-11">
+            <Plus className="h-4 w-4" />
             Neuer Mandant
           </Button>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
+        {/* Erste und letzte Spalte rücken auf den Innenabstand der Karte ein; breite Tabellen scrollen im Container. */}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="pl-4 sm:pl-[18px]">Name</TableHead>
+              <TableHead>Subdomain</TableHead>
+              <TableHead>API Token</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Admins</TableHead>
+              <TableHead className="text-right">Geräte</TableHead>
+              <TableHead className="text-right">Tickets</TableHead>
+              <TableHead className="text-right">Scans</TableHead>
+              <TableHead>Erstellt</TableHead>
+              <TableHead className="w-[100px] pr-4 sm:pr-[18px]"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {accounts.length === 0 && (
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Subdomain</TableHead>
-                <TableHead>API Token</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Admins</TableHead>
-                <TableHead className="text-right">Geräte</TableHead>
-                <TableHead className="text-right">Tickets</TableHead>
-                <TableHead className="text-right">Scans</TableHead>
-                <TableHead>Erstellt</TableHead>
-                <TableHead className="w-[100px]"></TableHead>
+                <TableCell colSpan={10} className="p-0 whitespace-normal">
+                  <EmptyState icon={Building2} title="Keine Mandanten vorhanden" />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {accounts.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
-                    Keine Mandanten vorhanden
-                  </TableCell>
-                </TableRow>
-              )}
-              {accounts.map((acc) => (
-                <TableRow key={acc.id} className="group">
-                  <TableCell className="font-medium">{acc.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{acc.subdomain}</TableCell>
-                  <TableCell>
-                    <button
-                      onClick={() => copyToken(acc)}
-                      className="flex items-center gap-1 font-mono text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
+            )}
+            {accounts.map((acc) => (
+              <TableRow key={acc.id} className="group">
+                <TableCell className="font-medium pl-4 sm:pl-[18px]">{acc.name}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{acc.subdomain}</TableCell>
+                <TableCell>
+                  <button
+                    onClick={() => copyToken(acc)}
+                    className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors max-sm:min-h-11"
+                  >
+                    {acc.apiToken.slice(0, 12)}...
+                    {copiedToken === acc.id ? (
+                      <Check className="h-3 w-3 text-success" />
+                    ) : (
+                      // Mit Maus erst beim Darüberfahren, auf Touch-Geräten immer sichtbar.
+                      <Copy className="h-3 w-3 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100" />
+                    )}
+                  </button>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={acc.isActive ? "success" : "neutral"}>
+                    {acc.isActive ? "Aktiv" : "Inaktiv"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{acc._count.admins}</TableCell>
+                <TableCell className="text-right tabular-nums">{acc._count.devices}</TableCell>
+                <TableCell className="text-right tabular-nums">{acc._count.tickets}</TableCell>
+                <TableCell className="text-right tabular-nums">{acc._count.scans}</TableCell>
+                <TableCell className="text-sm text-muted-foreground tabular-nums">{fmtDate(acc.createdAt)}</TableCell>
+                <TableCell className="pr-4 sm:pr-[18px]">
+                  {/* Mit Maus erst beim Darüberfahren oder Fokus, auf Touch-Geräten immer sichtbar. */}
+                  <div className="flex items-center gap-1 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-within:opacity-100">
+                    <Button variant="ghost" size="icon-sm" className="max-sm:size-11" onClick={() => openUsers(acc)} title="Benutzer verwalten" aria-label="Benutzer verwalten">
+                      <Users className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" className="max-sm:size-11" onClick={() => openEdit(acc)} title="Mandant bearbeiten" aria-label="Mandant bearbeiten">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 max-sm:size-11"
+                      onClick={() => setDeleteAccount(acc)}
+                      title="Mandant löschen"
+                      aria-label="Mandant löschen"
                     >
-                      {acc.apiToken.slice(0, 12)}...
-                      {copiedToken === acc.id ? (
-                        <Check className="h-3 w-3 text-success" />
-                      ) : (
-                        <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-                      )}
-                    </button>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={
-                        acc.isActive
-                          ? "bg-success/12 text-success"
-                          : "bg-destructive/12 text-destructive"
-                      }
-                    >
-                      {acc.isActive ? "Aktiv" : "Inaktiv"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">{acc._count.admins}</TableCell>
-                  <TableCell className="text-right">{acc._count.devices}</TableCell>
-                  <TableCell className="text-right">{acc._count.tickets}</TableCell>
-                  <TableCell className="text-right">{acc._count.scans}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{fmtDate(acc.createdAt)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openUsers(acc)} title="Benutzer verwalten">
-                        <Users className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(acc)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => setDeleteAccount(acc)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </Card>
 
       {/* Create / Edit Dialog */}
@@ -489,13 +489,14 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
               <p className="text-xs text-muted-foreground">Nur Kleinbuchstaben, Zahlen und Bindestriche</p>
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="isActive">Aktiv</Label>
-              <Switch
+            {/* Option im Formular, wirkt erst beim Speichern: Kästchen statt Schalter (Abschnitt 14). */}
+            <div className="flex items-center gap-2 max-sm:min-h-11">
+              <Checkbox
                 id="isActive"
                 checked={form.isActive}
-                onCheckedChange={(checked) => setForm({ ...form, isActive: checked })}
+                onCheckedChange={(checked) => setForm({ ...form, isActive: checked === true })}
               />
+              <Label htmlFor="isActive" className="cursor-pointer">Aktiv</Label>
             </div>
 
             {editAccount && (
@@ -508,7 +509,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                   placeholder="Leer lassen = unverändert; min. 16 Zeichen zum Setzen"
                   value={form.apiToken}
                   onChange={(e) => setForm({ ...form, apiToken: e.target.value })}
-                  className="font-mono text-xs"
+                  className="font-mono"
                 />
                 <p className="text-[11px] text-muted-foreground">
                   Mandanten-Token für Raspberry Pi, Shelly und eigene API. Nach Änderung Geräte aktualisieren.
@@ -516,11 +517,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
               </div>
             )}
 
-            {error && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                {error}
-              </p>
-            )}
+            {error && <Notice tone="danger" compact title={error} />}
           </div>
 
           <DialogFooter>
@@ -551,7 +548,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              variant="destructive"
             >
               {saving ? "Löschen..." : "Endgültig löschen"}
             </AlertDialogAction>
@@ -559,11 +556,15 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Users Management Dialog */}
-      <Dialog open={!!usersAccount && !showUserForm} onOpenChange={(open) => { if (!open) setUsersAccount(null); }}>
+      {/* Users Management Dialog – tritt zurück, solange Formular oder Rückfrage offen ist (höchstens eine Ebene, Abschnitt 18). */}
+      <Dialog
+        open={!!usersAccount && !showUserForm && !deleteUser && !resetTwoFactorUser}
+        onOpenChange={(open) => { if (!open) setUsersAccount(null); }}
+      >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            {/* Auf dem Handy mittig wie die Beschreibung darunter (DialogHeader), ab sm linksbündig. */}
+            <DialogTitle className="flex items-center justify-center gap-2 sm:justify-start">
               <Users className="h-5 w-5" />
               Benutzer — {usersAccount?.name}
             </DialogTitle>
@@ -573,8 +574,9 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
           </DialogHeader>
 
           {usersLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/70" />
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Lädt …
             </div>
           ) : (
             <div className="space-y-4">
@@ -592,8 +594,8 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                 <TableBody>
                   {users.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        Keine Benutzer vorhanden
+                      <TableCell colSpan={6} className="p-0 whitespace-normal">
+                        <EmptyState compact icon={Users} title="Keine Benutzer vorhanden" />
                       </TableCell>
                     </TableRow>
                   )}
@@ -602,11 +604,11 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                       <TableCell className="font-medium">{u.name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
                       <TableCell>
-                        <Badge className={
-                          u.role === "ADMIN"
-                            ? "bg-primary/10 text-primary "
-                            : "bg-muted text-muted-foreground"
-                        }>
+                        {/* Rolle Admin weich in Akzentfarbe: die Pille hat dafür keine eigene Variante. */}
+                        <Badge
+                          variant={u.role === "ADMIN" ? "default" : "neutral"}
+                          className={u.role === "ADMIN" ? "bg-primary/10 text-primary" : undefined}
+                        >
                           {u.role === "ADMIN" ? "Admin" : "Benutzer"}
                         </Badge>
                       </TableCell>
@@ -617,10 +619,10 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                             Aktiv
                           </span>
                         ) : (
-                          <span className="text-sm text-muted-foreground/70">—</span>
+                          <span className="text-sm text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-sm text-muted-foreground tabular-nums">
                         {u.lastLogin
                           ? new Date(u.lastLogin).toLocaleString("de-DE", {
                               day: "2-digit", month: "2-digit", year: "numeric",
@@ -629,16 +631,18 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                           : "—"}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditUser(u)}>
+                        {/* Mit Maus erst beim Darüberfahren oder Fokus, auf Touch-Geräten immer sichtbar. */}
+                        <div className="flex items-center gap-1 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-within:opacity-100">
+                          <Button variant="ghost" size="icon-sm" className="max-sm:size-11" onClick={() => openEditUser(u)} title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten">
                             <Pencil className="h-4 w-4" />
                           </Button>
                           {u.twoFactorEnabledAt && (
                             <Button
                               variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-warning hover:text-warning hover:bg-warning/10"
+                              size="icon-sm"
+                              className="text-warning hover:text-warning hover:bg-warning/10 max-sm:size-11"
                               title="Zwei-Faktor zurücksetzen"
+                              aria-label="Zwei-Faktor zurücksetzen"
                               onClick={() => setResetTwoFactorUser(u)}
                             >
                               <ShieldOff className="h-4 w-4" />
@@ -646,9 +650,11 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                           )}
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10 max-sm:size-11"
                             onClick={() => setDeleteUser(u)}
+                            title="Benutzer löschen"
+                            aria-label="Benutzer löschen"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -660,7 +666,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
               </Table>
 
               <Button onClick={openCreateUser} size="sm" className="w-full">
-                <Plus className="h-4 w-4 mr-1" />
+                <Plus className="h-4 w-4" />
                 Neuer Benutzer
               </Button>
             </div>
@@ -713,13 +719,16 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
                   placeholder={editUser ? "••••••••" : "Mindestens 6 Zeichen"}
                   value={userForm.password}
                   onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                  className="pr-10"
                 />
+                {/* Taste über dem Glasfeld (z-10), sonst liegt sie unter dessen Fläche. */}
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-0 top-0 h-full w-10"
+                  className="absolute right-0 top-0 z-10 h-full w-10"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Passwort verbergen" : "Passwort anzeigen"}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
@@ -729,7 +738,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <div className="space-y-2">
               <Label htmlFor="userRole">Rolle</Label>
               <Select value={userForm.role} onValueChange={(v) => setUserForm({ ...userForm, role: v })}>
-                <SelectTrigger>
+                <SelectTrigger id="userRole" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -739,11 +748,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
               </Select>
             </div>
 
-            {userError && (
-              <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                {userError}
-              </p>
-            )}
+            {userError && <Notice tone="danger" compact title={userError} />}
           </div>
 
           <DialogFooter>
@@ -771,7 +776,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleUserDelete}
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              variant="destructive"
             >
               {userSaving ? "Löschen..." : "Endgültig löschen"}
             </AlertDialogAction>
@@ -797,7 +802,7 @@ export function AccountsClient({ accounts: initial }: { accounts: Account[] }) {
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleTwoFactorReset}
-              className="bg-warning hover:bg-warning/90 text-warning-foreground"
+              variant="destructive"
             >
               {userSaving ? "Zurücksetzen..." : "Zurücksetzen"}
             </AlertDialogAction>

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { safeAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Header } from "@/components/layout/header";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { TwoFactorCard } from "@/components/account/two-factor-card";
 import { isTwoFactorActive } from "@/lib/two-factor";
 
@@ -28,13 +29,12 @@ export default async function SecurityPage() {
   return (
     <>
       <Header title="Sicherheit" accountName={session.user.accountName} />
-      <div className="p-4 md:p-6 space-y-6 max-w-3xl">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Mein Konto</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Anmeldung von {admin.email} absichern.
-          </p>
-        </div>
+      <div className="page-content space-y-4 sm:space-y-5 max-w-3xl">
+        {/* Abschnittsüberschrift statt eigener Titelzeile; der Seitentitel steht im Kopfbalken. */}
+        <SectionHeading
+          title="Mein Konto"
+          description={`Anmeldung von ${admin.email} absichern.`}
+        />
 
         <TwoFactorCard
           email={admin.email}

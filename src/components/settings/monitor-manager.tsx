@@ -2,15 +2,28 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Notice } from "@/components/ui/notice";
 import { Separator } from "@/components/ui/separator";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Plus, Trash2, Copy, Check, ExternalLink, Monitor,
   Loader2, Pencil, Wifi, WifiOff, QrCode, ClipboardCheck, LayoutGrid, ScanLine, Power,
@@ -51,6 +64,27 @@ interface MonitorManagerProps {
   baseUrl: string;
 }
 
+// Typ-Kachel im Dialog: Glas, gewählt in Akzentfarbe statt einer eigenen Farbe je Typ
+// (docs/design-regeln.md, Abschnitte 3 und 17).
+function typeTileClass(active: boolean) {
+  return cn(
+    "glass-tile press flex items-center gap-2.5 p-3 text-left",
+    active ? "border-primary/60 bg-primary/10" : "hover:bg-glass-strong",
+  );
+}
+
+// Auswahlliste als Glas-Kachel; Zeilen: Auswahl bg-primary/10, Darüberfahren bg-glass-tile
+// (docs/design-regeln.md, Abschnitt 17). Jede Zeile ist ein label mit dem Baustein Checkbox
+// (Abschnitt 14): die ganze Zeile schaltet das Kästchen.
+const PICK_LIST = "glass-tile max-h-48 overflow-y-auto scrollbar-thin space-y-0.5 p-1";
+
+function pickRowClass(selected: boolean) {
+  return cn(
+    "w-full flex cursor-pointer items-center gap-3 rounded-control px-2 py-1.5 text-left transition-colors max-sm:min-h-11",
+    selected ? "bg-primary/10" : "hover:bg-glass-tile",
+  );
+}
+
 function MonitorDialog({
   monitor,
   devices,
@@ -73,6 +107,8 @@ function MonitorDialog({
   const [selectedControlDevices, setSelectedControlDevices] = useState<number[]>(monitor?.controlDeviceIds ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // QR-Code klappt im selben Dialog auf, statt einen zweiten Dialog zu öffnen (docs/design-regeln.md, Abschnitt 18).
+  const [showQr, setShowQr] = useState(false);
 
   function toggleDevice(id: number) {
     setSelectedDevices((prev) =>
@@ -159,65 +195,49 @@ function MonitorDialog({
             <button
               type="button"
               onClick={() => setType("MONITOR")}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
-                type === "MONITOR"
-                  ? "border-primary bg-primary/8"
-                  : "border-border hover:border-input dark:hover:border-slate-600"
-              )}
+              aria-pressed={type === "MONITOR"}
+              className={typeTileClass(type === "MONITOR")}
             >
-              <Monitor className={cn("h-4 w-4 shrink-0", type === "MONITOR" ? "text-primary" : "text-muted-foreground/70")} />
+              <Monitor className={cn("h-4 w-4 shrink-0", type === "MONITOR" ? "text-primary" : "text-muted-foreground")} />
               <div>
-                <p className="text-sm font-medium text-foreground/90">Scan-Monitor</p>
-                <p className="text-xs text-muted-foreground/70">Live-Scans</p>
+                <p className="text-sm font-medium text-foreground">Scan-Monitor</p>
+                <p className="text-xs text-muted-foreground">Live-Scans</p>
               </div>
             </button>
             <button
               type="button"
               onClick={() => setType("CHECKIN")}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
-                type === "CHECKIN"
-                  ? "border-success bg-success/10"
-                  : "border-border hover:border-input dark:hover:border-slate-600"
-              )}
+              aria-pressed={type === "CHECKIN"}
+              className={typeTileClass(type === "CHECKIN")}
             >
-              <ClipboardCheck className={cn("h-4 w-4 shrink-0", type === "CHECKIN" ? "text-success" : "text-muted-foreground/70")} />
+              <ClipboardCheck className={cn("h-4 w-4 shrink-0", type === "CHECKIN" ? "text-primary" : "text-muted-foreground")} />
               <div>
-                <p className="text-sm font-medium text-foreground/90">Check-in</p>
-                <p className="text-xs text-muted-foreground/70">Gäste einchecken</p>
+                <p className="text-sm font-medium text-foreground">Check-in</p>
+                <p className="text-xs text-muted-foreground">Gäste einchecken</p>
               </div>
             </button>
             <button
               type="button"
               onClick={() => setType("RESOURCE_MONITOR")}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
-                type === "RESOURCE_MONITOR"
-                  ? "border-info bg-info/10"
-                  : "border-border hover:border-input dark:hover:border-slate-600"
-              )}
+              aria-pressed={type === "RESOURCE_MONITOR"}
+              className={typeTileClass(type === "RESOURCE_MONITOR")}
             >
-              <LayoutGrid className={cn("h-4 w-4 shrink-0", type === "RESOURCE_MONITOR" ? "text-info" : "text-muted-foreground/70")} />
+              <LayoutGrid className={cn("h-4 w-4 shrink-0", type === "RESOURCE_MONITOR" ? "text-primary" : "text-muted-foreground")} />
               <div>
-                <p className="text-sm font-medium text-foreground/90">Ressourcen</p>
-                <p className="text-xs text-muted-foreground/70">Tagesübersicht</p>
+                <p className="text-sm font-medium text-foreground">Ressourcen</p>
+                <p className="text-xs text-muted-foreground">Tagesübersicht</p>
               </div>
             </button>
             <button
               type="button"
               onClick={() => setType("SCANNER")}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg border p-3 text-left transition-all",
-                type === "SCANNER"
-                  ? "border-warning bg-warning/10"
-                  : "border-border hover:border-input dark:hover:border-slate-600"
-              )}
+              aria-pressed={type === "SCANNER"}
+              className={typeTileClass(type === "SCANNER")}
             >
-              <ScanLine className={cn("h-4 w-4 shrink-0", type === "SCANNER" ? "text-warning" : "text-muted-foreground/70")} />
+              <ScanLine className={cn("h-4 w-4 shrink-0", type === "SCANNER" ? "text-primary" : "text-muted-foreground")} />
               <div>
-                <p className="text-sm font-medium text-foreground/90">Scanner</p>
-                <p className="text-xs text-muted-foreground/70">QR-Kamera, Token</p>
+                <p className="text-sm font-medium text-foreground">Scanner</p>
+                <p className="text-xs text-muted-foreground">QR-Kamera, Token</p>
               </div>
             </button>
           </div>
@@ -225,106 +245,80 @@ function MonitorDialog({
 
         {type === "CHECKIN" && <div className="space-y-2">
           <Label>Tür-Schnellzugriff</Label>
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-muted-foreground">
             Ausgewählte Türen erscheinen als direkter Button im Header des Check-in Monitors. Alle übrigen Türen / Drehkreuze sind weiterhin über das &bdquo;Mehr Türen&ldquo;-Menü erreichbar.
           </p>
-          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+          <div className={PICK_LIST}>
             {devices.filter((d) => d.category === "TUER" || d.category === "DREHKREUZ").length === 0 && (
-              <p className="text-sm text-muted-foreground">Keine Türen / Drehkreuze vorhanden. Setze die Kategorie eines Gerätes auf Tür oder Drehkreuz.</p>
+              <EmptyState
+                compact
+                title="Keine Türen / Drehkreuze vorhanden."
+                description="Setze die Kategorie eines Gerätes auf Tür oder Drehkreuz."
+              />
             )}
             {devices
               .filter((d) => d.category === "TUER" || d.category === "DREHKREUZ")
               .map((device) => {
                 const selected = selectedDevices.includes(device.id);
                 return (
-                  <button
-                    key={device.id}
-                    type="button"
-                    onClick={() => toggleDevice(device.id)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
-                      selected
-                        ? "border-success bg-success/10"
-                        : "border-border hover:border-input dark:hover:border-slate-600"
-                    )}
-                  >
-                    <div className={cn(
-                      "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
-                      selected ? "bg-success border-success" : "border-input"
-                    )}>
-                      {selected && <Check className="h-3 w-3 text-white" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground/90 truncate">{device.name}</p>
-                      <p className="text-xs text-muted-foreground/70">{device.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}</p>
-                    </div>
+                  <label key={device.id} className={pickRowClass(selected)}>
+                    <Checkbox checked={selected} onCheckedChange={() => toggleDevice(device.id)} />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium text-foreground truncate">{device.name}</span>
+                      <span className="block text-xs text-muted-foreground">{device.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}</span>
+                    </span>
                     {device.isActive
                       ? <Wifi className="h-4 w-4 text-success shrink-0" />
-                      : <WifiOff className="h-4 w-4 text-muted-foreground/70 shrink-0" />}
-                  </button>
+                      : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  </label>
                 );
               })}
           </div>
           {selectedDevices.length > 0 && (
-            <p className="text-xs text-muted-foreground">{selectedDevices.length} Tür(en) als Schnellzugriff</p>
+            <p className="text-xs text-muted-foreground tabular-nums">{selectedDevices.length} Tür(en) als Schnellzugriff</p>
           )}
         </div>}
 
         {(type === "MONITOR" || type === "SCANNER") && <div className="space-y-2">
           <Label>Geräte auswählen</Label>
           {type === "SCANNER" && (
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Optional: Das erste ausgewählte Gerät wird als Scan-Quelle in der Historie hinterlegt.
             </p>
           )}
-          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+          <div className={PICK_LIST}>
             {devices.length === 0 && (
-              <p className="text-sm text-muted-foreground">Keine Geräte vorhanden</p>
+              <EmptyState compact title="Keine Geräte vorhanden" />
             )}
             {devices.map((device) => {
               const selected = selectedDevices.includes(device.id);
               return (
-                <button
-                  key={device.id}
-                  type="button"
-                  onClick={() => toggleDevice(device.id)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
-                    selected
-                      ? "border-primary bg-primary/8"
-                      : "border-border hover:border-input dark:hover:border-slate-600"
-                  )}
-                >
-                  <div className={cn(
-                    "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
-                    selected ? "bg-primary border-primary" : "border-input"
-                  )}>
-                    {selected && <Check className="h-3 w-3 text-white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground/90 truncate">{device.name}</p>
-                    <p className="text-xs text-muted-foreground/70">{device.type === "RASPBERRY_PI" ? "Raspberry Pi" : "Shelly"}</p>
-                  </div>
+                <label key={device.id} className={pickRowClass(selected)}>
+                  <Checkbox checked={selected} onCheckedChange={() => toggleDevice(device.id)} />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-foreground truncate">{device.name}</span>
+                    <span className="block text-xs text-muted-foreground">{device.type === "RASPBERRY_PI" ? "Raspberry Pi" : "Shelly"}</span>
+                  </span>
                   {device.isActive
                     ? <Wifi className="h-4 w-4 text-success shrink-0" />
-                    : <WifiOff className="h-4 w-4 text-muted-foreground/70 shrink-0" />}
-                </button>
+                    : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
+                </label>
               );
             })}
           </div>
           {selectedDevices.length > 0 && (
-            <p className="text-xs text-muted-foreground">{selectedDevices.length} Gerät(e) ausgewählt</p>
+            <p className="text-xs text-muted-foreground tabular-nums">{selectedDevices.length} Gerät(e) ausgewählt</p>
           )}
         </div>}
 
         {type === "MONITOR" && <div className="space-y-2">
           <Label>Geräte steuern</Label>
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-muted-foreground">
             Ausgewählte Geräte erscheinen als Schalter auf dem Scan-Monitor – z.&nbsp;B. ein Shelly, der das Drehkreuz aus- und einschaltet.
           </p>
-          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+          <div className={PICK_LIST}>
             {devices.filter((d) => deviceControls(d).length > 0).length === 0 && (
-              <p className="text-sm text-muted-foreground">Keine schaltbaren Geräte vorhanden.</p>
+              <EmptyState compact title="Keine schaltbaren Geräte vorhanden." />
             )}
             {devices
               .filter((d) => deviceControls(d).length > 0)
@@ -332,117 +326,72 @@ function MonitorDialog({
                 const selected = selectedControlDevices.includes(device.id);
                 const actions = deviceControls(device).map((c) => c.label).join(" · ");
                 return (
-                  <button
-                    key={device.id}
-                    type="button"
-                    onClick={() => toggleControlDevice(device.id)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
-                      selected
-                        ? "border-primary bg-primary/8"
-                        : "border-border hover:border-input dark:hover:border-slate-600"
-                    )}
-                  >
-                    <div className={cn(
-                      "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
-                      selected ? "bg-primary border-primary" : "border-input"
-                    )}>
-                      {selected && <Check className="h-3 w-3 text-white" />}
-                    </div>
-                    <Power className={cn("h-3.5 w-3.5 shrink-0", selected ? "text-primary" : "text-muted-foreground/70")} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground/90 truncate">{device.name}</p>
-                      <p className="text-xs text-muted-foreground/70 truncate">{actions}</p>
-                    </div>
+                  <label key={device.id} className={pickRowClass(selected)}>
+                    <Checkbox checked={selected} onCheckedChange={() => toggleControlDevice(device.id)} />
+                    <Power className={cn("h-3.5 w-3.5 shrink-0", selected ? "text-primary" : "text-muted-foreground")} />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-medium text-foreground truncate">{device.name}</span>
+                      <span className="block text-xs text-muted-foreground truncate">{actions}</span>
+                    </span>
                     {device.isActive
                       ? <Wifi className="h-4 w-4 text-success shrink-0" />
-                      : <WifiOff className="h-4 w-4 text-muted-foreground/70 shrink-0" />}
-                  </button>
+                      : <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  </label>
                 );
               })}
           </div>
           {selectedControlDevices.length > 0 && (
-            <p className="text-xs text-muted-foreground">{selectedControlDevices.length} Steuergerät(e)</p>
+            <p className="text-xs text-muted-foreground tabular-nums">{selectedControlDevices.length} Steuergerät(e)</p>
           )}
         </div>}
 
         {type === "MONITOR" && <div className="space-y-2">
           <Label>Bereiche (optional)</Label>
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-muted-foreground">
             Grenzt die Personen-/Ticketliste auf diese Bereiche ein – nützlich für Bereiche <span className="font-medium">ohne eigenes Scan-Gerät</span> (z.B. Seilbahn B, Übungslift). Ohne Auswahl gelten die Bereiche der ausgewählten Geräte.
           </p>
-          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+          <div className={PICK_LIST}>
             {accessAreas.length === 0 && (
-              <p className="text-sm text-muted-foreground">Keine Bereiche vorhanden</p>
+              <EmptyState compact title="Keine Bereiche vorhanden" />
             )}
             {accessAreas.map((area) => {
               const selected = selectedAreas.includes(area.id);
               return (
-                <button
-                  key={area.id}
-                  type="button"
-                  onClick={() => toggleArea(area.id)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
-                    selected
-                      ? "border-primary bg-primary/8"
-                      : "border-border hover:border-input dark:hover:border-slate-600"
-                  )}
-                >
-                  <div className={cn(
-                    "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
-                    selected ? "bg-primary border-primary" : "border-input"
-                  )}>
-                    {selected && <Check className="h-3 w-3 text-white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground/90 truncate">{area.name}</p>
-                  </div>
-                </button>
+                <label key={area.id} className={pickRowClass(selected)}>
+                  <Checkbox checked={selected} onCheckedChange={() => toggleArea(area.id)} />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-foreground truncate">{area.name}</span>
+                  </span>
+                </label>
               );
             })}
           </div>
           {selectedAreas.length > 0 && (
-            <p className="text-xs text-muted-foreground">{selectedAreas.length} Bereich(e) als Filter</p>
+            <p className="text-xs text-muted-foreground tabular-nums">{selectedAreas.length} Bereich(e) als Filter</p>
           )}
         </div>}
 
         {type === "RESOURCE_MONITOR" && <div className="space-y-2">
           <Label>Bereiche auswählen</Label>
-          <p className="text-xs text-muted-foreground/70">Wähle die Bereiche, die im Ressourcen-Monitor angezeigt werden. Ohne Auswahl werden alle Dashboard-Bereiche verwendet.</p>
-          <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+          <p className="text-xs text-muted-foreground">Wähle die Bereiche, die im Ressourcen-Monitor angezeigt werden. Ohne Auswahl werden alle Dashboard-Bereiche verwendet.</p>
+          <div className={PICK_LIST}>
             {accessAreas.length === 0 && (
-              <p className="text-sm text-muted-foreground">Keine Bereiche vorhanden</p>
+              <EmptyState compact title="Keine Bereiche vorhanden" />
             )}
             {accessAreas.map((area) => {
               const selected = selectedDevices.includes(area.id);
               return (
-                <button
-                  key={area.id}
-                  type="button"
-                  onClick={() => toggleDevice(area.id)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
-                    selected
-                      ? "border-info bg-info/10"
-                      : "border-border hover:border-input dark:hover:border-slate-600"
-                  )}
-                >
-                  <div className={cn(
-                    "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
-                    selected ? "bg-info border-info" : "border-input"
-                  )}>
-                    {selected && <Check className="h-3 w-3 text-white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground/90 truncate">{area.name}</p>
-                  </div>
-                </button>
+                <label key={area.id} className={pickRowClass(selected)}>
+                  <Checkbox checked={selected} onCheckedChange={() => toggleDevice(area.id)} />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-foreground truncate">{area.name}</span>
+                  </span>
+                </label>
               );
             })}
           </div>
           {selectedDevices.length > 0 && (
-            <p className="text-xs text-muted-foreground">{selectedDevices.length} Bereich(e) ausgewählt</p>
+            <p className="text-xs text-muted-foreground tabular-nums">{selectedDevices.length} Bereich(e) ausgewählt</p>
           )}
         </div>}
 
@@ -450,27 +399,41 @@ function MonitorDialog({
           <div className="space-y-1.5">
             <Label>Monitor-URL</Label>
             <div className="flex items-start gap-2 flex-wrap">
-              <MonitorQrButton url={monitorUrl} />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className={cn("shrink-0 text-muted-foreground hover:text-primary max-sm:size-11", showQr && "text-primary")}
+                onClick={() => setShowQr((v) => !v)}
+                aria-expanded={showQr}
+                title="QR-Code anzeigen"
+                aria-label="QR-Code anzeigen"
+              >
+                <QrCode className="h-4 w-4" />
+              </Button>
               <div className="flex-1 min-w-0 space-y-1">
                 <CopyUrl url={monitorUrl} />
-                <p className="text-xs text-muted-foreground/70">Diese URL ist öffentlich zugänglich — kein Login erforderlich. QR-Code (Icon) zum Scannen anzeigen.</p>
+                <p className="text-xs text-muted-foreground">Diese URL ist öffentlich zugänglich — kein Login erforderlich. QR-Code (Icon) zum Scannen anzeigen.</p>
               </div>
             </div>
+            {showQr && (
+              <div className="flex justify-center pt-2">
+                <MonitorUrlQr url={monitorUrl} size={QR_SIZE_DIALOG} />
+              </div>
+            )}
           </div>
         )}
 
-        {error && (
-          <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{error}</p>
-        )}
+        {error && <Notice tone="danger" compact title={error} />}
 
-        <Separator className="dark:bg-muted" />
+        <Separator />
 
-        <div className="flex justify-end gap-2">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>Abbrechen</Button>
           <Button type="submit" disabled={saving || !name.trim()} className="min-w-28">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : isNew ? "Erstellen" : "Speichern"}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
     </DialogContent>
   );
@@ -496,7 +459,11 @@ function MonitorUrlQr({ url, size = QR_SIZE_DEFAULT }: { url: string; size?: num
 
   return (
     <div className="flex flex-col items-center gap-1.5">
-      <canvas ref={canvasRef} width={size} height={size} className="rounded border border-border bg-white" aria-hidden />
+      {/* QR-Code bleibt auf Weiß: Ruhezone und Kontrast zum Scannen, auch im Dunkeln. Weißer Rand (p-2) wie bei den
+          anderen QR-Codes (Mitarbeiter-Link, Zwei-Faktor), sonst grenzt der Code im Dunkeln fast direkt an die Fläche. */}
+      <div className="rounded-xl border border-border bg-white p-2">
+        <canvas ref={canvasRef} width={size} height={size} className="block" aria-hidden />
+      </div>
       <span className="text-xs text-muted-foreground">Link zum Scannen</span>
     </div>
   );
@@ -505,32 +472,13 @@ function MonitorUrlQr({ url, size = QR_SIZE_DEFAULT }: { url: string; size?: num
 function QrCodeDialog({ url, open, onOpenChange }: { url: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[280px] flex flex-col items-center py-6">
+      <DialogContent className="sm:max-w-[300px] flex flex-col items-center">
         <DialogHeader>
           <DialogTitle className="text-center">Monitor-Link scannen</DialogTitle>
         </DialogHeader>
         <MonitorUrlQr url={url} size={QR_SIZE_DIALOG} />
       </DialogContent>
     </Dialog>
-  );
-}
-
-function MonitorQrButton({ url }: { url: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        className="h-9 w-9 shrink-0 text-muted-foreground hover:text-primary"
-        onClick={() => setOpen(true)}
-        title="QR-Code anzeigen"
-      >
-        <QrCode className="h-4 w-4" />
-      </Button>
-      <QrCodeDialog url={url} open={open} onOpenChange={setOpen} />
-    </>
   );
 }
 
@@ -545,11 +493,27 @@ function CopyUrl({ url }: { url: string }) {
 
   return (
     <div className="flex gap-2">
-      <Input value={url} readOnly className="font-mono text-xs bg-muted/50" />
-      <Button type="button" variant="outline" size="icon" onClick={copy} className="shrink-0">
+      <Input value={url} readOnly className="font-mono max-sm:h-11" />
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        onClick={copy}
+        className="shrink-0 max-sm:size-11"
+        title="Kopieren"
+        aria-label="Kopieren"
+      >
         {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
       </Button>
-      <Button type="button" variant="outline" size="icon" asChild className="shrink-0">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        asChild
+        className="shrink-0 max-sm:size-11"
+        title="Im neuen Tab öffnen"
+        aria-label="Im neuen Tab öffnen"
+      >
         <a href={url} target="_blank" rel="noopener noreferrer">
           <ExternalLink className="h-4 w-4" />
         </a>
@@ -564,9 +528,17 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
   const [deleting, setDeleting] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [qrDialogUrl, setQrDialogUrl] = useState<string | null>(null);
+  // Rückfrage vor dem Löschen (docs/design-regeln.md, Abschnitt 18); der Monitor bleibt gesetzt,
+  // solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<MonitorConfigData | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  function askDelete(monitor: MonitorConfigData) {
+    setToDelete(monitor);
+    setConfirmOpen(true);
+  }
 
   async function handleDelete(monitor: MonitorConfigData) {
-    if (!confirm(`Monitor "${monitor.name}" wirklich löschen?`)) return;
     setDeleting(monitor.id);
     try {
       await fetch(`/api/monitors/${monitor.id}`, { method: "DELETE" });
@@ -577,14 +549,15 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4 sm:space-y-5">
       {monitors.length === 0 && (
-        <Card className="border-dashed">
-          <CardContent className="py-8 text-center">
-            <Monitor className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Noch kein Monitor erstellt.</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">Erstelle einen öffentlichen Monitor für ausgewählte Geräte.</p>
-          </CardContent>
+        <Card>
+          <EmptyState
+            compact
+            icon={Monitor}
+            title="Noch kein Monitor erstellt."
+            description="Erstelle einen öffentlichen Monitor für ausgewählte Geräte."
+          />
         </Card>
       )}
 
@@ -624,20 +597,6 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
             : isScanner
               ? ScanLine
               : Monitor;
-        const typeIconColor = isCheckin
-          ? "text-success"
-          : isResource
-            ? "text-info"
-            : isScanner
-              ? "text-warning"
-              : "text-primary";
-        const typeBadgeClass = isCheckin
-          ? "bg-success/12 text-success"
-          : isResource
-            ? "bg-info/12 text-info"
-            : isScanner
-              ? "bg-warning/14 text-warning"
-              : "bg-primary/10 text-primary ";
         const typeLabel = isCheckin
           ? "Check-in"
           : isResource
@@ -648,84 +607,91 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
 
         return (
           <Card key={monitor.id}>
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <TypeIcon className={cn("h-4 w-4 shrink-0", typeIconColor)} />
-                    <span className="font-medium text-foreground">{monitor.name}</span>
-                    <Badge className={cn("text-xs", typeBadgeClass)}>
-                      {typeLabel}
-                    </Badge>
-                    <Badge className={monitor.isActive
-                      ? "bg-success/12 text-success text-xs"
-                      : "bg-muted text-muted-foreground text-xs"}>
-                      {monitor.isActive ? "Aktiv" : "Inaktiv"}
-                    </Badge>
-                  </div>
+            {/* Typ als Symbol und Text, keine eigene Farbe je Typ; Zustand Aktiv/Inaktiv als Pille. */}
+            <CardHeader>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <IconChip icon={TypeIcon} tone="primary" size="sm" />
+                <CardTitle className="min-w-0 break-words">{monitor.name}</CardTitle>
+                <Badge variant="secondary">
+                  {typeLabel}
+                </Badge>
+                <Badge variant={monitor.isActive ? "success" : "neutral"}>
+                  {monitor.isActive ? "Aktiv" : "Inaktiv"}
+                </Badge>
+              </div>
 
-                  {deviceNames.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {deviceNames.map((n) => (
-                        <Badge key={n} variant="secondary" className="text-xs font-normal">{n}</Badge>
-                      ))}
-                    </div>
-                  )}
-                  {controlNames.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {controlNames.map((n) => (
-                        <Badge key={`ctrl-${n}`} className="text-xs font-normal bg-warning/10 text-warning">
-                          Steuert {n}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex items-start gap-2 flex-wrap">
+              <CardAction className="flex gap-1">
+                <Dialog open={editing?.id === monitor.id} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+                  <DialogTrigger asChild>
                     <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 text-muted-foreground hover:text-primary"
-                      onClick={() => setQrDialogUrl(url)}
-                      title="QR-Code anzeigen"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-foreground max-sm:size-11"
+                      onClick={() => setEditing(monitor)}
+                      title="Bearbeiten"
+                      aria-label="Bearbeiten"
                     >
-                      <QrCode className="h-4 w-4" />
+                      <Pencil className="h-4 w-4" />
                     </Button>
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <CopyUrl url={url} />
-                    </div>
-                  </div>
+                  </DialogTrigger>
+                  {editing?.id === monitor.id && (
+                    <MonitorDialog
+                      monitor={editing}
+                      devices={devices}
+                      accessAreas={accessAreas}
+                      baseUrl={baseUrl}
+                      onClose={() => setEditing(null)}
+                    />
+                  )}
+                </Dialog>
+
+                <Button
+                  variant="ghost" size="icon-sm"
+                  className="text-muted-foreground hover:text-destructive max-sm:size-11"
+                  onClick={() => askDelete(monitor)}
+                  disabled={deleting === monitor.id}
+                  title="Löschen"
+                  aria-label="Löschen"
+                >
+                  {deleting === monitor.id
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Trash2 className="h-4 w-4" />}
+                </Button>
+              </CardAction>
+            </CardHeader>
+
+            <CardContent className="space-y-2">
+              {deviceNames.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {deviceNames.map((n) => (
+                    <Badge key={n} variant="secondary" className="font-normal">{n}</Badge>
+                  ))}
                 </div>
+              )}
+              {controlNames.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {controlNames.map((n) => (
+                    <Badge key={`ctrl-${n}`} variant="outline" className="font-normal">
+                      Steuert {n}
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
-                <div className="flex gap-1 shrink-0">
-                  <Dialog open={editing?.id === monitor.id} onOpenChange={(o) => { if (!o) setEditing(null); }}>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground/70 hover:text-foreground" onClick={() => setEditing(monitor)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </DialogTrigger>
-                    {editing?.id === monitor.id && (
-                      <MonitorDialog
-                        monitor={editing}
-                        devices={devices}
-                        accessAreas={accessAreas}
-                        baseUrl={baseUrl}
-                        onClose={() => setEditing(null)}
-                      />
-                    )}
-                  </Dialog>
-
-                  <Button
-                    variant="ghost" size="icon"
-                    className="h-8 w-8 text-muted-foreground/70 hover:text-destructive"
-                    onClick={() => handleDelete(monitor)}
-                    disabled={deleting === monitor.id}
-                  >
-                    {deleting === monitor.id
-                      ? <Loader2 className="h-4 w-4 animate-spin" />
-                      : <Trash2 className="h-4 w-4" />}
-                  </Button>
+              <div className="flex items-start gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 text-muted-foreground hover:text-primary max-sm:size-11"
+                  onClick={() => setQrDialogUrl(url)}
+                  title="QR-Code anzeigen"
+                  aria-label="QR-Code anzeigen"
+                >
+                  <QrCode className="h-4 w-4" />
+                </Button>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <CopyUrl url={url} />
                 </div>
               </div>
             </CardContent>
@@ -735,7 +701,7 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogTrigger asChild>
-          <Button variant="outline" className="w-full gap-2 border-dashed">
+          <Button variant="outline" className="w-full gap-2 max-sm:h-11">
             <Plus className="h-4 w-4" />
             Monitor erstellen
           </Button>
@@ -748,6 +714,26 @@ export function MonitorManager({ monitors, devices, accessAreas, baseUrl }: Moni
           onClose={() => setAddOpen(false)}
         />
       </Dialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent aria-describedby={undefined}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Monitor "${toDelete?.name ?? ""}" wirklich löschen?`}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (toDelete) void handleDelete(toDelete);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <QrCodeDialog url={qrDialogUrl ?? ""} open={!!qrDialogUrl} onOpenChange={(o) => !o && setQrDialogUrl(null)} />
     </div>

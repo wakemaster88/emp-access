@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Notice } from "@/components/ui/notice";
 import { Loader2, Bell, BellOff, Send, CheckCircle2, XCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -138,7 +138,7 @@ export function PushCard() {
 
   return (
     <Card>
-      <CardContent className="pt-5 space-y-3">
+      <CardContent className="space-y-3">
         {support === "checking" && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Prüfe Browser-Unterstützung …
@@ -176,56 +176,53 @@ export function PushCard() {
 
         {support === "supported" && (
           <>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">Dieses Gerät</span>
               {subscribed ? (
-                <Badge variant="success" className="text-xs">Aktiv</Badge>
+                <Badge variant="success">Aktiv</Badge>
               ) : (
-                <Badge variant="secondary" className="text-xs">Nicht aktiviert</Badge>
+                <Badge variant="neutral">Nicht aktiviert</Badge>
               )}
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">Registrierte Geräte (Account)</span>
-              <span className="text-sm font-medium text-foreground">{deviceCount}</span>
+              <span className="text-sm font-medium text-foreground tabular-nums">{deviceCount}</span>
             </div>
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-muted-foreground">
               Du erhältst eine Push-Benachrichtigung, sobald ein Gerät offline geht
               und wenn es wieder online ist. Geprüft wird alle 5 Minuten. Welche
               Geräte überwacht werden, stellst du pro Gerät unter „Bearbeiten“ →
               „Offline-Benachrichtigung“ ein (Standard: aus).
             </p>
 
-            <div className="flex gap-2 pt-1">
+            <div className="flex flex-wrap gap-2 pt-1">
               {subscribed ? (
                 <>
-                  <Button variant="outline" size="sm" onClick={handleTest} disabled={loading} className="flex-1">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
+                  <Button variant="outline" size="sm" onClick={handleTest} disabled={loading} className="flex-1 max-sm:h-11">
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     Test senden
                   </Button>
-                  <Button variant="outline" size="sm" onClick={handleUnsubscribe} disabled={loading} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60">
-                    <BellOff className="h-4 w-4 mr-1.5" />
+                  <Button variant="outline" size="sm" onClick={handleUnsubscribe} disabled={loading} className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 max-sm:h-11">
+                    <BellOff className="h-4 w-4" />
                     Deaktivieren
                   </Button>
                 </>
               ) : (
-                <Button size="sm" onClick={handleSubscribe} disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Bell className="h-4 w-4 mr-1.5" />}
+                <Button size="sm" onClick={handleSubscribe} disabled={loading} className="max-sm:h-11">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
                   Auf diesem Gerät aktivieren
                 </Button>
               )}
             </div>
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <Notice tone="danger" compact title={error} />}
             {testResult && (
-              <div className={cn(
-                "flex items-center gap-2 p-2.5 rounded-lg text-xs font-medium",
-                testResult === "ok"
-                  ? "bg-success/10 text-success"
-                  : "bg-destructive/10 text-destructive",
-              )}>
-                {testResult === "ok" ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                {testResult === "ok" ? "Testbenachrichtigung gesendet!" : "Senden fehlgeschlagen"}
-              </div>
+              <Notice
+                tone={testResult === "ok" ? "success" : "danger"}
+                icon={testResult === "ok" ? CheckCircle2 : XCircle}
+                compact
+                title={testResult === "ok" ? "Testbenachrichtigung gesendet!" : "Senden fehlgeschlagen"}
+              />
             )}
           </>
         )}

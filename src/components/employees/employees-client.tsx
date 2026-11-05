@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -13,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
   IdCard, Plus, Search, RefreshCw, Pencil, Clock, MapPin, Cpu, AlertTriangle,
-  CheckCircle2, XCircle, ShieldOff, KeyRound, History,
+  CheckCircle2, XCircle, ShieldOff, KeyRound, History, Loader2,
 } from "lucide-react";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { EmployeeEditDialog } from "./employee-edit-dialog";
@@ -118,29 +120,31 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
     const end = e.endDate ? new Date(e.endDate) : null;
     const isExpired = end ? end < now : false;
 
+    // Status als weiche Pille in der Zustandsfarbe (docs/design-regeln.md, Abschnitte 3 und 14):
+    // Inaktiv ist „aus“ (grau), Gesperrt und abgelaufener Vertrag brauchen Aufmerksamkeit (gelb).
     if (e.status === "INVALID") {
       return (
-        <Badge variant="destructive" className="gap-1 text-xs">
+        <Badge variant="neutral">
           <XCircle className="h-3 w-3" /> Inaktiv
         </Badge>
       );
     }
     if (e.status === "PROTECTED") {
       return (
-        <Badge variant="warning" className="gap-1 text-xs">
+        <Badge variant="warning">
           <ShieldOff className="h-3 w-3" /> Gesperrt
         </Badge>
       );
     }
     if (isExpired) {
       return (
-        <Badge variant="danger" className="gap-1 text-xs">
+        <Badge variant="warning">
           <AlertTriangle className="h-3 w-3" /> Vertrag abgelaufen
         </Badge>
       );
     }
     return (
-      <Badge variant="success" className="gap-1 text-xs">
+      <Badge variant="success">
         <CheckCircle2 className="h-3 w-3" /> Aktiv
       </Badge>
     );
@@ -148,24 +152,26 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
 
   return (
     <>
-      <Card>
+      {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+      <Card className="overflow-hidden pb-0 sm:pb-0">
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-              <IdCard className="h-5 w-5 text-primary" />
+          {/* Zähler auch auf dem Handy sichtbar: sie rutschen dort unter den Titel. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <CardTitle className="flex items-center gap-2 tabular-nums">
+              <IdCard className="h-4 w-4 text-primary" />
               Mitarbeiter ({filteredCounts.total})
             </CardTitle>
-            <div className="hidden sm:flex items-center gap-2">
-              <Badge variant="success" className="text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="success" className="tabular-nums">
                 {filteredCounts.active} aktiv
               </Badge>
               {filteredCounts.expired > 0 && (
-                <Badge variant="danger" className="text-xs">
+                <Badge variant="warning" className="tabular-nums">
                   {filteredCounts.expired} abgelaufen
                 </Badge>
               )}
               {filteredCounts.blocked > 0 && (
-                <Badge variant="warning" className="text-xs">
+                <Badge variant="warning" className="tabular-nums">
                   {filteredCounts.blocked} blockiert
                 </Badge>
               )}
@@ -173,7 +179,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {empControlLastSync && (
-              <span className="text-xs text-muted-foreground/70 hidden md:flex items-center gap-1">
+              <span className="text-xs text-muted-foreground tabular-nums hidden md:flex items-center gap-1">
                 <RefreshCw className="h-3 w-3" />
                 EMP-Control: {fmtDateTime(empControlLastSync)}
               </span>
@@ -183,12 +189,12 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
               size="sm"
               onClick={() => load()}
               disabled={loading}
-              className="gap-1.5"
+              className="gap-1.5 max-sm:h-11"
             >
               <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
               Neu laden
             </Button>
-            <Button size="sm" onClick={() => setEditingId("new")} className="bg-primary hover:bg-primary/90 gap-1.5">
+            <Button size="sm" onClick={() => setEditingId("new")} className="gap-1.5 max-sm:h-11">
               <Plus className="h-4 w-4" /> Mitarbeiter
             </Button>
           </div>
@@ -197,7 +203,7 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
         <CardContent className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Name, RFID oder Email suchen…"
                 value={search}
@@ -232,181 +238,185 @@ export function EmployeesClient({ areas, devices, empControlLastSync }: Employee
             </Select>
           </div>
 
-          {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
-          )}
-
-          <div className="rounded-lg border border-border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border hover:bg-transparent bg-muted/40">
-                  <TableHead className="min-w-[220px] text-muted-foreground font-medium">Mitarbeiter</TableHead>
-                  <TableHead className="hidden sm:table-cell w-[160px] text-muted-foreground font-medium">RFID / Email</TableHead>
-                  <TableHead className="hidden md:table-cell w-[200px] text-muted-foreground font-medium">Vertrag</TableHead>
-                  <TableHead className="hidden md:table-cell min-w-[200px] text-muted-foreground font-medium">Zugang</TableHead>
-                  <TableHead className="w-[140px] text-muted-foreground font-medium">Status</TableHead>
-                  <TableHead className="hidden lg:table-cell w-[160px] text-muted-foreground font-medium">Letzte Aktivität</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading && employees.length === 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground/70 text-sm">
-                      Lade Mitarbeiter…
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!loading && employees.length === 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="text-center py-16">
-                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                        <IdCard className="h-10 w-10 text-slate-300 dark:text-slate-600" />
-                        <p className="font-medium text-muted-foreground">Keine Mitarbeiter gefunden</p>
-                        <p className="text-sm">Per EMP-Control-Webhook oder manuell über &bdquo;+ Mitarbeiter&ldquo; anlegen.</p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-
-                {employees.map((e) => {
-                  const fullName =
-                    [e.firstName, e.lastName].filter(Boolean).join(" ") || e.name;
-                  const initials = (e.firstName?.[0] ?? e.name[0] ?? "?") + (e.lastName?.[0] ?? "");
-                  return (
-                    <TableRow
-                      key={e.id}
-                      className="group cursor-pointer border-border hover:bg-primary/10 transition-colors"
-                      onClick={() => setEditingId(e.id)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
-                            {e.profileImage ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={e.profileImage} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                              initials.toUpperCase()
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {fullName}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {e.ticketTypeName ?? "Mitarbeiter"}
-                              {e.hasSchedule && (
-                                <span className="ml-1.5 inline-flex items-center gap-0.5 text-warning">
-                                  <Clock className="h-3 w-3" /> Plan
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="hidden sm:table-cell">
-                        <div className="space-y-0.5">
-                          {e.rfidCode ? (
-                            <p className="text-xs font-mono text-foreground/80 inline-flex items-center gap-1">
-                              <KeyRound className="h-3 w-3 text-muted-foreground/70" />
-                              {e.rfidCode}
-                            </p>
-                          ) : (
-                            <p className="text-xs text-muted-foreground/70">—</p>
-                          )}
-                          {e.email && (
-                            <p className="text-[11px] text-muted-foreground/70 truncate max-w-[160px]">{e.email}</p>
-                          )}
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="hidden md:table-cell">
-                        <div className="text-xs text-muted-foreground">
-                          {e.startDate || e.endDate ? (
-                            <>
-                              <p>{e.startDate ? fmtDate(e.startDate) : "—"} <span className="text-muted-foreground/70">bis</span></p>
-                              <p>{e.endDate ? fmtDate(e.endDate) : "unbefristet"}</p>
-                            </>
-                          ) : (
-                            <p className="text-muted-foreground/70">unbefristet</p>
-                          )}
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="hidden md:table-cell">
-                        <div className="flex flex-wrap gap-1">
-                          {e.areas.length === 0 && e.directDevices.length === 0 && (
-                            <span className="text-xs text-muted-foreground/70">Kein Zugang</span>
-                          )}
-                          {e.areas.slice(0, 3).map((a) => (
-                            <Badge key={a.id} variant="secondary" className="text-[10px] gap-1">
-                              <MapPin className="h-2.5 w-2.5" /> {a.name}
-                            </Badge>
-                          ))}
-                          {e.areas.length > 3 && (
-                            <Badge variant="secondary" className="text-[10px]">+{e.areas.length - 3}</Badge>
-                          )}
-                          {e.directDevices.slice(0, 2).map((d) => (
-                            <Badge key={d.id} className="bg-destructive/12 text-destructive text-[10px] gap-1">
-                              <Cpu className="h-2.5 w-2.5" /> {d.name}
-                            </Badge>
-                          ))}
-                          {e.directDevices.length > 2 && (
-                            <Badge variant="danger" className="text-[10px]">+{e.directDevices.length - 2}</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-
-                      <TableCell>{statusBadge(e)}</TableCell>
-
-                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
-                        {e.lastScan ? (
-                          <>
-                            <p>{fmtDateTime(e.lastScan.scanTime)}</p>
-                            <p className={e.lastScan.result === "GRANTED" ? "text-success" : "text-destructive"}>
-                              {e.lastScan.result}
-                            </p>
-                          </>
-                        ) : (
-                          <span className="text-slate-300">noch nie</span>
-                        )}
-                      </TableCell>
-
-                      <TableCell>
-                        <div className="flex items-center gap-0.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            title="Verlauf"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              setHistoryTarget({ id: e.id, name: fullName });
-                            }}
-                          >
-                            <History className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            title="Bearbeiten"
-                            onClick={(ev) => { ev.stopPropagation(); setEditingId(e.id); }}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          {error && <Notice tone="danger" compact title={error} />}
         </CardContent>
+
+        {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein.
+            Der Tabellen-Container scrollt auf dem Handy waagerecht, nicht die Seite. */}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[220px] pl-4 sm:pl-[18px]">Mitarbeiter</TableHead>
+              <TableHead className="hidden sm:table-cell w-[160px]">RFID / Email</TableHead>
+              <TableHead className="hidden md:table-cell w-[200px]">Vertrag</TableHead>
+              <TableHead className="hidden md:table-cell min-w-[200px]">Zugang</TableHead>
+              {/* Auf dem Handy steht der Status in der Namensspalte, damit beide Tasten (44 px) ohne Wischen sichtbar sind. */}
+              <TableHead className="hidden sm:table-cell w-[140px]">Status</TableHead>
+              <TableHead className="hidden lg:table-cell w-[160px]">Letzte Aktivität</TableHead>
+              <TableHead className="w-12 pr-4 sm:pr-[18px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && employees.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={7} className="py-10">
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Lade Mitarbeiter…
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && employees.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={7} className="p-0 whitespace-normal">
+                  <EmptyState
+                    icon={IdCard}
+                    title="Keine Mitarbeiter gefunden"
+                    description="Per EMP-Control-Webhook oder manuell über „+ Mitarbeiter“ anlegen."
+                  />
+                </TableCell>
+              </TableRow>
+            )}
+
+            {employees.map((e) => {
+              const fullName =
+                [e.firstName, e.lastName].filter(Boolean).join(" ") || e.name;
+              const initials = (e.firstName?.[0] ?? e.name[0] ?? "?") + (e.lastName?.[0] ?? "");
+              return (
+                <TableRow
+                  key={e.id}
+                  className="group cursor-pointer"
+                  onClick={() => setEditingId(e.id)}
+                >
+                  <TableCell className="pl-4 sm:pl-[18px]">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-full bg-primary/10 text-primary dark:text-foreground flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
+                        {e.profileImage ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={e.profileImage} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          initials.toUpperCase()
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {fullName}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {e.ticketTypeName ?? "Mitarbeiter"}
+                          {e.hasSchedule && (
+                            <span className="ml-1.5 inline-flex items-center gap-0.5 text-warning">
+                              <Clock className="h-3 w-3" /> Plan
+                            </span>
+                          )}
+                        </p>
+                        <div className="mt-1 sm:hidden">{statusBadge(e)}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="hidden sm:table-cell">
+                    <div className="space-y-0.5">
+                      {e.rfidCode ? (
+                        <p className="text-xs font-mono text-foreground/80 inline-flex items-center gap-1">
+                          <KeyRound className="h-3 w-3 text-muted-foreground" />
+                          {e.rfidCode}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">—</p>
+                      )}
+                      {e.email && (
+                        <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{e.email}</p>
+                      )}
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="hidden md:table-cell">
+                    <div className="text-xs text-muted-foreground tabular-nums">
+                      {e.startDate || e.endDate ? (
+                        <>
+                          <p>{e.startDate ? fmtDate(e.startDate) : "—"} <span>bis</span></p>
+                          <p>{e.endDate ? fmtDate(e.endDate) : "unbefristet"}</p>
+                        </>
+                      ) : (
+                        <p>unbefristet</p>
+                      )}
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="hidden md:table-cell">
+                    <div className="flex flex-wrap gap-1">
+                      {e.areas.length === 0 && e.directDevices.length === 0 && (
+                        <span className="text-xs text-muted-foreground">Kein Zugang</span>
+                      )}
+                      {e.areas.slice(0, 3).map((a) => (
+                        <Badge key={a.id} variant="secondary">
+                          <MapPin className="h-2.5 w-2.5" /> {a.name}
+                        </Badge>
+                      ))}
+                      {e.areas.length > 3 && (
+                        <Badge variant="neutral" className="tabular-nums">+{e.areas.length - 3}</Badge>
+                      )}
+                      {/* Direkt zugewiesene Geräte neutral; das Chip-Symbol unterscheidet sie von Bereichen. */}
+                      {e.directDevices.slice(0, 2).map((d) => (
+                        <Badge key={d.id} variant="secondary">
+                          <Cpu className="h-2.5 w-2.5" /> {d.name}
+                        </Badge>
+                      ))}
+                      {e.directDevices.length > 2 && (
+                        <Badge variant="neutral" className="tabular-nums">+{e.directDevices.length - 2}</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="hidden sm:table-cell">{statusBadge(e)}</TableCell>
+
+                  <TableCell className="hidden lg:table-cell text-xs text-muted-foreground tabular-nums">
+                    {e.lastScan ? (
+                      <>
+                        <p>{fmtDateTime(e.lastScan.scanTime)}</p>
+                        <p className={e.lastScan.result === "GRANTED" ? "text-success" : "text-destructive"}>
+                          {e.lastScan.result}
+                        </p>
+                      </>
+                    ) : (
+                      <span>noch nie</span>
+                    )}
+                  </TableCell>
+
+                  <TableCell className="pr-4 sm:pr-[18px]">
+                    <div className="flex items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="max-sm:size-11"
+                        title="Verlauf"
+                        aria-label="Verlauf"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setHistoryTarget({ id: e.id, name: fullName });
+                        }}
+                      >
+                        <History className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="max-sm:size-11"
+                        title="Bearbeiten"
+                        aria-label="Bearbeiten"
+                        onClick={(ev) => { ev.stopPropagation(); setEditingId(e.id); }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </Card>
 
       <EmployeeEditDialog

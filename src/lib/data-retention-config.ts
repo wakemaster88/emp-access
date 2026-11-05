@@ -97,6 +97,8 @@ export const RETENTION_DAY_OPTIONS = [
   { value: 7, label: "7 Tage" },
   { value: 14, label: "14 Tage" },
   { value: 30, label: "30 Tage" },
+  // Standard der Netzwerk-Discovery (discoveredDevices); ohne diese Option bliebe ihre Auswahl leer.
+  { value: 60, label: "60 Tage" },
   { value: 90, label: "90 Tage" },
   { value: 180, label: "180 Tage" },
   { value: 365, label: "365 Tage" },

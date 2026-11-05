@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { IconChip } from "@/components/ui/icon-chip";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
   Select,
   SelectContent,
@@ -70,20 +72,20 @@ export function DataRetentionCard({ initial }: Props) {
 
   return (
     <Card>
-      <CardContent className="pt-6 space-y-5">
+      <CardHeader>
         <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-            <Trash2 className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-foreground">Löschfristen</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
+          <IconChip icon={Trash2} size="lg" />
+          <div className="min-w-0 space-y-1">
+            <CardTitle><h3>Löschfristen</h3></CardTitle>
+            <CardDescription>
               Historien und Logs werden nächtlich automatisch gelöscht. Stammdaten (Fahrzeuge,
               Personen, Kameras, Tickets) bleiben erhalten.
-            </p>
+            </CardDescription>
           </div>
         </div>
+      </CardHeader>
 
+      <CardContent className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
           {RETENTION_KEYS.map((key) => {
             const meta = RETENTION_LABELS[key];
@@ -94,7 +96,7 @@ export function DataRetentionCard({ initial }: Props) {
                   value={optionValue(form[key])}
                   onValueChange={(v) => setKey(key, parseOption(v))}
                 >
-                  <SelectTrigger id={`ret-${key}`}>
+                  <SelectTrigger id={`ret-${key}`} className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -111,10 +113,10 @@ export function DataRetentionCard({ initial }: Props) {
           })}
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        {saved && <p className="text-sm text-success">Gespeichert – gilt ab dem nächsten Nacht-Lauf.</p>}
+        {error && <Notice tone="danger" compact title={error} />}
+        {saved && <Notice tone="success" compact title="Gespeichert – gilt ab dem nächsten Nacht-Lauf." />}
 
-        <Button onClick={save} disabled={saving} className="gap-1.5">
+        <Button onClick={save} disabled={saving} className="gap-1.5 max-sm:h-11 max-sm:w-full">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Speichern
         </Button>

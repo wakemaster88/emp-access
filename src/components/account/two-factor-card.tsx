@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IconChip } from "@/components/ui/icon-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import {
-  AlertTriangle,
   Check,
   Copy,
   Download,
@@ -165,53 +166,34 @@ export function TwoFactorCard({
 
   return (
     <Card>
-      <CardContent className="p-5 md:p-6 space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div
-              className={
-                enabled
-                  ? "h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center shrink-0"
-                  : "h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0"
-              }
-            >
-              {enabled ? (
-                <ShieldCheck className="h-5 w-5 text-success" />
-              ) : (
-                <ShieldOff className="h-5 w-5 text-muted-foreground" />
-              )}
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Zwei-Faktor-Authentifizierung
-              </h2>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Zusätzlich zum Passwort ein Einmalcode aus einer Authenticator-App.
-              </p>
-            </div>
+      <CardHeader>
+        <div className="flex items-start gap-3 min-w-0">
+          {/* Zustand im Symbol-Chip: grün eingerichtet, grau aus. */}
+          <IconChip icon={enabled ? ShieldCheck : ShieldOff} tone={enabled ? "success" : "neutral"} size="lg" />
+          <div className="min-w-0 space-y-1">
+            <CardTitle>
+              <h3>Zwei-Faktor-Authentifizierung</h3>
+            </CardTitle>
+            <CardDescription>
+              Zusätzlich zum Passwort ein Einmalcode aus einer Authenticator-App.
+            </CardDescription>
           </div>
-          <Badge
-            className={
-              enabled
-                ? "bg-success/12 text-success shrink-0"
-                : "bg-muted text-muted-foreground shrink-0"
-            }
-          >
+        </div>
+        <CardAction>
+          <Badge variant={enabled ? "success" : "neutral"}>
             {enabled ? "Aktiv" : "Inaktiv"}
           </Badge>
-        </div>
+        </CardAction>
+      </CardHeader>
 
-        {error && (
-          <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-            {error}
-          </p>
-        )}
+      <CardContent className="space-y-5">
+        {error && <Notice tone="danger" compact title={error} />}
 
         {stage === "overview" && (
           <div className="space-y-4">
             {enabled ? (
               <>
-                <div className="rounded-lg bg-muted/50 px-4 py-3 text-sm text-muted-foreground space-y-1">
+                <div className="glass-tile px-4 py-3 text-sm text-muted-foreground space-y-1 tabular-nums">
                   {enabledAt && (
                     <p>
                       Eingerichtet am{" "}
@@ -228,32 +210,30 @@ export function TwoFactorCard({
                     {codesLeft} Wiederherstellungscode{codesLeft === 1 ? "" : "s"} übrig
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => { resetInputs(); setStage("regenerate"); }}>
-                    <KeyRound className="h-4 w-4 mr-1.5" />
+                {/* Auf dem Handy untereinander in voller Breite (docs/design-regeln.md, Abschnitt 16). */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <Button variant="outline" onClick={() => { resetInputs(); setStage("regenerate"); }} className="max-sm:h-11">
+                    <KeyRound className="h-4 w-4" />
                     Neue Wiederherstellungscodes
                   </Button>
                   <Button
                     variant="outline"
-                    className="text-destructive hover:text-destructive border-destructive/30"
+                    className="text-destructive hover:text-destructive border-destructive/30 max-sm:h-11"
                     onClick={() => { resetInputs(); setStage("disable"); }}
                   >
-                    <ShieldOff className="h-4 w-4 mr-1.5" />
+                    <ShieldOff className="h-4 w-4" />
                     Deaktivieren
                   </Button>
                 </div>
               </>
             ) : (
               <>
-                <div className="flex items-start gap-3 rounded-lg bg-warning/10 px-4 py-3">
-                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-                  <p className="text-sm text-muted-foreground">
-                    Ohne zweiten Faktor genügt ein erratenes oder abgegriffenes Passwort, um an alle Tickets,
-                    Geräte und Kameras zu kommen.
-                  </p>
-                </div>
-                <Button onClick={() => { resetInputs(); setStage("start"); }}>
-                  <Smartphone className="h-4 w-4 mr-1.5" />
+                <Notice tone="warning" compact>
+                  Ohne zweiten Faktor genügt ein erratenes oder abgegriffenes Passwort, um an alle Tickets,
+                  Geräte und Kameras zu kommen.
+                </Notice>
+                <Button onClick={() => { resetInputs(); setStage("start"); }} className="max-sm:h-11 max-sm:w-full">
+                  <Smartphone className="h-4 w-4" />
                   Einrichten
                 </Button>
               </>
@@ -281,13 +261,15 @@ export function TwoFactorCard({
                 autoFocus
               />
             </div>
-            <div className="flex gap-2">
-              <Button type="submit" disabled={busy}>
-                {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-                Weiter
-              </Button>
-              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy}>
+            {/* Primärtaste rechts, Abbrechen links davon; auf dem Handy volle Breite, Primärtaste oben
+                (docs/design-regeln.md, Abschnitt 16). */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy} className="max-sm:h-11">
                 Abbrechen
+              </Button>
+              <Button type="submit" disabled={busy} className="max-sm:h-11">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Weiter
               </Button>
             </div>
           </form>
@@ -306,17 +288,18 @@ export function TwoFactorCard({
               Aegis …) und anschließend den angezeigten Code eintragen.
             </p>
             <div className="flex flex-col sm:flex-row gap-5 items-start">
-              <div className="bg-white p-3 rounded-xl border border-border shrink-0">
+              {/* QR-Code bleibt auf Weiß: Ruhezone und Kontrast zum Scannen, auch im Dunkeln. */}
+              <div className="bg-white p-3 rounded-xl border border-border shrink-0 max-sm:self-center">
                 <canvas ref={canvasRef} className="rounded" />
               </div>
               <div className="space-y-2 min-w-0">
-                <p className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold">
+                <p className="text-label">
                   Oder manuell eintragen
                 </p>
-                <code className="block font-mono text-sm bg-muted px-3 py-2 rounded-lg break-all select-all">
+                <code className="block font-mono text-sm bg-glass-tile px-3 py-2 rounded-control break-all select-all">
                   {setup.secretFormatted}
                 </code>
-                <p className="text-xs text-muted-foreground/70">
+                <p className="text-xs text-muted-foreground">
                   Zeitbasiert, 6 Stellen, 30 Sekunden. Konto: {email}
                 </p>
               </div>
@@ -330,17 +313,17 @@ export function TwoFactorCard({
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 placeholder="123456"
-                className="text-center text-lg tracking-[0.3em] font-mono"
+                className="text-center text-lg md:text-lg tracking-[0.3em] font-mono max-sm:h-11"
                 required
               />
             </div>
-            <div className="flex gap-2">
-              <Button type="submit" disabled={busy}>
-                {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-                Aktivieren
-              </Button>
-              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy}>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy} className="max-sm:h-11">
                 Abbrechen
+              </Button>
+              <Button type="submit" disabled={busy} className="max-sm:h-11">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Aktivieren
               </Button>
             </div>
           </form>
@@ -348,33 +331,31 @@ export function TwoFactorCard({
 
         {stage === "codes" && recoveryCodes && (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 rounded-lg bg-warning/10 px-4 py-3">
-              <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-              <p className="text-sm text-muted-foreground">
-                Diese Codes werden nur jetzt angezeigt. Jeder funktioniert genau einmal und ersetzt bei
-                verlorenem Handy den Code aus der App. Bitte ausdrucken oder in den Passwortmanager legen.
-              </p>
-            </div>
+            <Notice tone="warning" compact>
+              Diese Codes werden nur jetzt angezeigt. Jeder funktioniert genau einmal und ersetzt bei
+              verlorenem Handy den Code aus der App. Bitte ausdrucken oder in den Passwortmanager legen.
+            </Notice>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {recoveryCodes.map((c) => (
                 <code
                   key={c}
-                  className="font-mono text-sm text-center bg-muted px-2 py-1.5 rounded select-all"
+                  className="font-mono text-sm text-center bg-glass-tile px-2 py-1.5 rounded-control select-all"
                 >
                   {c}
                 </code>
               ))}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={copyCodes}>
-                {copied ? <Check className="h-4 w-4 mr-1.5 text-success" /> : <Copy className="h-4 w-4 mr-1.5" />}
+            {/* Primärtaste rechts; auf dem Handy volle Breite, „Fertig“ oben (docs/design-regeln.md, Abschnitt 16). */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <Button variant="outline" onClick={copyCodes} className="max-sm:h-11">
+                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
                 {copied ? "Kopiert" : "Kopieren"}
               </Button>
-              <Button variant="outline" onClick={downloadCodes}>
-                <Download className="h-4 w-4 mr-1.5" />
+              <Button variant="outline" onClick={downloadCodes} className="max-sm:h-11">
+                <Download className="h-4 w-4" />
                 Herunterladen
               </Button>
-              <Button onClick={backToOverview}>
+              <Button onClick={backToOverview} className="max-sm:h-11">
                 Fertig
               </Button>
             </div>
@@ -417,13 +398,13 @@ export function TwoFactorCard({
                 />
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button type="submit" variant="destructive" disabled={busy}>
-                {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-                Zwei-Faktor deaktivieren
-              </Button>
-              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy}>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy} className="max-sm:h-11">
                 Abbrechen
+              </Button>
+              <Button type="submit" variant="destructive" disabled={busy} className="max-sm:h-11">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Zwei-Faktor deaktivieren
               </Button>
             </div>
           </form>
@@ -452,13 +433,13 @@ export function TwoFactorCard({
                 autoFocus
               />
             </div>
-            <div className="flex gap-2">
-              <Button type="submit" disabled={busy}>
-                {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-                Codes erzeugen
-              </Button>
-              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy}>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" onClick={backToOverview} disabled={busy} className="max-sm:h-11">
                 Abbrechen
+              </Button>
+              <Button type="submit" disabled={busy} className="max-sm:h-11">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Codes erzeugen
               </Button>
             </div>
           </form>
