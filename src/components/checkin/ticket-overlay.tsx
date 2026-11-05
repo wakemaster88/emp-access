@@ -6,12 +6,17 @@
  */
 import { useEffect, useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, XCircle, Clock, ScanLine, Users, Camera, Loader2, X, Package, Fingerprint, Pencil, Printer, TicketX, Plus, StickyNote, Pause, Play, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PackageSearch, Layers } from "lucide-react";
 import { printTicket } from "./checkin-print";
 import type { BundlePart, CheckinTicket, ScanEntry, SlotOverviewSlot, TicketAddOn, TicketExtra } from "./checkin-types";
-import { InfoRow, RfidInput } from "./checkin-ui";
+import { InfoRow, OverlayGrip, RfidInput, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 import { calcAge, formatTicketTimeLabel, isRentalAddOn, personName } from "./checkin-utils";
 
 export function TicketOverlay({
@@ -149,110 +154,129 @@ export function TicketOverlay({
   }, [editBirthDate]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)} onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)] monitor-scrollbar"
+        className={cn(overlaySheetClass, "w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)] monitor-scrollbar")}
       >
+        <OverlayGrip />
         {/* Header */}
-        <div className="p-5 border-b border-slate-800 flex items-start gap-4">
+        <div className="p-5 border-b border-border flex items-start gap-4">
           {ticket.profileImage ? (
-            <img src={ticket.profileImage} alt="" className="h-16 w-16 rounded-2xl object-cover ring-2 ring-slate-700" />
+            <img src={ticket.profileImage} alt="" className="h-16 w-16 rounded-tile object-cover ring-2 ring-glass-border" />
           ) : (
-            <div className="h-16 w-16 rounded-2xl bg-slate-800 flex items-center justify-center">
-              <Users className="h-7 w-7 text-slate-500" />
+            <div className="h-16 w-16 rounded-tile bg-glass-tile ring-1 ring-inset ring-glass-border flex items-center justify-center">
+              <Users className="h-7 w-7 text-muted-foreground" />
             </div>
           )}
           <div className="flex-1 min-w-0">
             <button
               type="button"
               onClick={() => setEditMode(editMode === "person" ? null : "person")}
-              className="group flex items-center gap-1.5 text-left max-w-full"
+              className="group relative flex items-center gap-1.5 text-left max-w-full after:absolute after:inset-x-0 after:-inset-y-2 sm:after:-inset-y-3.5"
               title="Name & Geburtstag bearbeiten"
             >
-              <h2 className="text-xl font-bold truncate">{personName(ticket)}</h2>
-              <Pencil className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" />
+              <h2 className="text-xl font-semibold text-foreground truncate">{personName(ticket)}</h2>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
             </button>
-            <p className="text-sm text-slate-400 mt-0.5">
+            <p className="text-sm text-muted-foreground mt-0.5">
               {ticket.ticketTypeName ?? ticket.service?.name ?? ticket.subscription?.name ?? ""}
               {(() => {
                 const a = calcAge(ticket.birthDate);
-                return a != null ? <span className="ml-1 text-slate-500">· {a} J.</span> : null;
+                return a != null ? <span className="ml-1 text-muted-foreground tabular-nums">· {a} J.</span> : null;
               })()}
             </p>
             {(() => {
               const label = formatTicketTimeLabel(ticket);
               return label ? (
-                <p className="text-sm text-slate-500 mt-0.5">{label} Uhr</p>
+                <p className="text-sm text-muted-foreground tabular-nums mt-0.5">{label} Uhr</p>
               ) : null;
             })()}
-            <div className="flex gap-1.5 mt-2">
-              <Badge className={cn(
-                "text-xs px-2 py-0.5 font-bold",
-                isPaused
-                  ? "bg-orange-500/25 text-orange-200"
-                  : isChecked
-                    ? "bg-emerald-500/25 text-emerald-200"
-                    : "bg-sky-500/25 text-sky-200"
-              )}>
+            {/* Zustand in seiner festen Farbe: Pause = Hinweis, eingecheckt = Erfolg. */}
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              <Badge
+                variant={isPaused ? "warning" : isChecked ? "success" : "info"}
+                className="text-xs px-2 py-0.5 font-bold"
+              >
                 {isPaused ? "Pausiert" : isChecked ? "Eingecheckt" : "Ausstehend"}
               </Badge>
-              {isSub && <Badge className="bg-violet-500/25 text-violet-200 text-xs px-2 py-0.5 font-bold">Abo</Badge>}
-              {ticket.source && <Badge className="bg-slate-700 text-slate-300 text-xs px-2 py-0.5">{ticket.source}</Badge>}
+              {isSub && <Badge variant="secondary" className="text-xs px-2 py-0.5 font-bold">Abo</Badge>}
+              {ticket.source && <Badge variant="neutral" className="text-xs px-2 py-0.5">{ticket.source}</Badge>}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
-            <X className="h-5 w-5" />
-          </button>
+          <Button
+            variant="secondary"
+            size="icon-lg"
+            onClick={onClose}
+            className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
+            aria-label="Schließen"
+          >
+            <X className="size-5" />
+          </Button>
         </div>
 
         {/* Person-Edit */}
         {editMode === "person" && (
-          <div className="px-5 py-4 border-b border-slate-800 space-y-3 bg-slate-900/60">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+          <div className="px-5 py-4 border-b border-border space-y-3 bg-glass-tile">
+            <p className="text-label">
               <Users className="h-3.5 w-3.5 inline mr-1.5" />
               Person
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <label className="text-xs text-slate-400">Vorname</label>
-                <input
+                <label className="text-[13px] font-medium text-muted-foreground">Vorname</label>
+                <Input
                   type="text"
                   value={editFirstName}
                   onChange={(e) => setEditFirstName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="h-11"
                   placeholder="Max"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-slate-400">Nachname</label>
-                <input
+                <label className="text-[13px] font-medium text-muted-foreground">Nachname</label>
+                <Input
                   type="text"
                   value={editLastName}
                   onChange={(e) => setEditLastName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="h-11"
                   placeholder="Mustermann"
                 />
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-slate-400">Geburtsdatum</label>
-              <input
+              <label className="text-[13px] font-medium text-muted-foreground">Geburtsdatum</label>
+              <Input
                 ref={birthDateRef}
                 type="date"
                 defaultValue={editBirthDate}
                 onChange={(e) => setEditBirthDate(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                className="h-11"
               />
               {(() => {
                 const a = calcAge(editBirthDate || null);
                 return a != null ? (
-                  <p className="text-xs text-slate-500">Alter: {a} Jahre</p>
+                  <p className="text-xs text-muted-foreground tabular-nums">Alter: {a} Jahre</p>
                 ) : null;
               })()}
             </div>
-            <div className="flex gap-2">
-              <button
+            {/* Tasten wie in allen Formularen (Abschnitt 16): Primärhandlung rechts,
+                auf dem Handy volle Breite und oben. */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditFirstName(ticket.firstName ?? "");
+                  setEditLastName(ticket.lastName ?? "");
+                  setEditBirthDate(toDateValue(ticket.birthDate));
+                  setEditMode(null);
+                }}
+                className="h-11 px-4 font-semibold sm:h-14"
+              >
+                Abbrechen
+              </Button>
+              <Button
                 type="button"
                 onClick={() => {
                   onSavePerson({
@@ -264,39 +288,27 @@ export function TicketOverlay({
                   });
                 }}
                 disabled={updatingTicket}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
+                className="h-11 font-semibold sm:h-14 sm:flex-1"
               >
                 {updatingTicket && editMode === "person" ? (
-                  <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                  <Loader2 className="animate-spin" />
                 ) : (
                   "Speichern"
                 )}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditFirstName(ticket.firstName ?? "");
-                  setEditLastName(ticket.lastName ?? "");
-                  setEditBirthDate(toDateValue(ticket.birthDate));
-                  setEditMode(null);
-                }}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
-              >
-                Abbrechen
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
         {/* Extras */}
         {extras.length > 0 && (
-          <div className="px-5 py-3 border-b border-slate-800">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+          <div className="px-5 py-3 border-b border-border">
+            <p className="text-label mb-2">
               <Package className="h-3.5 w-3.5 inline mr-1.5" />Zusatzbuchungen
             </p>
             <div className="flex flex-wrap gap-2">
               {extras.map((ex, i) => (
-                <span key={i} className="text-sm bg-amber-500/15 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-xl font-medium">
+                <span key={i} className="text-sm bg-glass-tile text-foreground border border-glass-border px-3 py-1.5 rounded-full font-medium">
                   {ex.quantity > 1 ? `${ex.quantity}× ` : ""}{ex.name}
                 </span>
               ))}
@@ -307,8 +319,8 @@ export function TicketOverlay({
         {/* In ANNY zugebuchtes Verleihmaterial - das gibt das Personal beim
             Check-in heraus. */}
         {addOns.length > 0 && (
-          <div className="px-5 py-3 border-b border-slate-800">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+          <div className="px-5 py-3 border-b border-border">
+            <p className="text-label mb-2">
               <PackageSearch className="h-3.5 w-3.5 inline mr-1.5" />Verleihmaterial
             </p>
             <div className="flex flex-wrap gap-2">
@@ -316,10 +328,11 @@ export function TicketOverlay({
                 <span
                   key={i}
                   className={cn(
-                    "text-sm px-3 py-1.5 rounded-xl font-semibold border",
+                    "text-sm px-3 py-1.5 rounded-full font-semibold border",
+                    // Verleihmaterial in Akzentfarbe wie auf der Ticketkarte.
                     isRentalAddOn(a.name)
-                      ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-500/40"
-                      : "bg-slate-800/60 text-slate-300 border-slate-700",
+                      ? "bg-primary/15 text-foreground border-primary/45"
+                      : "bg-glass-tile text-muted-foreground border-glass-border",
                   )}
                 >
                   {a.quantity > 1 ? `${a.quantity}× ` : ""}{a.name}
@@ -335,14 +348,14 @@ export function TicketOverlay({
             Label/Wert-Editor - das Personal kann vor Ort korrigieren oder
             fehlende Infos direkt erfassen. */}
         {editMode === "guestInfo" ? (
-          <div className="px-5 py-3 border-b border-slate-800 space-y-2">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+          <div className="px-5 py-3 border-b border-border space-y-2">
+            <p className="text-label">
               <ClipboardList className="h-3.5 w-3.5 inline mr-1.5" />Gäste-Infos
             </p>
             <div className="space-y-1.5">
               {guestInfoDraft.map((row, i) => (
                 <div key={i} className="flex gap-1.5">
-                  <input
+                  <Input
                     type="text"
                     value={row.label}
                     onChange={(e) => {
@@ -353,9 +366,9 @@ export function TicketOverlay({
                       setGuestInfoDraft(next);
                     }}
                     placeholder="Feld (z. B. Schuhgröße)"
-                    className="w-2/5 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    className="h-11 w-2/5"
                   />
-                  <input
+                  <Input
                     type="text"
                     value={row.value}
                     onChange={(e) => {
@@ -364,48 +377,49 @@ export function TicketOverlay({
                       setGuestInfoDraft(next);
                     }}
                     placeholder="Wert"
-                    className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    className="h-11 flex-1"
                   />
                 </div>
               ))}
             </div>
-            <div className="flex gap-2">
-              <button
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditMode(null)}
+                className="h-11 px-4 font-semibold sm:h-14"
+              >
+                Abbrechen
+              </Button>
+              <Button
                 type="button"
                 onClick={saveGuestInfo}
                 disabled={updatingTicket}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
+                className="h-11 font-semibold sm:h-14 sm:flex-1"
               >
                 {updatingTicket && editMode === "guestInfo" ? (
-                  <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                  <Loader2 className="animate-spin" />
                 ) : (
                   "Speichern"
                 )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditMode(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
-              >
-                Abbrechen
-              </button>
+              </Button>
             </div>
           </div>
         ) : ticket.guestInfo && Object.keys(ticket.guestInfo).length > 0 ? (
-          <div className="px-5 py-3 border-b border-slate-800">
+          <div className="px-5 py-3 border-b border-border">
             <button
               type="button"
               onClick={openGuestInfoEditor}
               className="w-full text-left group"
             >
-              <p className="text-xs font-bold text-cyan-300 uppercase tracking-wider mb-2 flex items-center">
+              <p className="text-label text-info mb-2 flex items-center">
                 <ClipboardList className="h-3.5 w-3.5 inline mr-1.5" />Gäste-Infos
-                <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto" />
+                <Pencil className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors ml-auto" />
               </p>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(ticket.guestInfo).map(([label, value]) => (
-                  <span key={label} className="text-sm bg-cyan-500/15 text-cyan-200 border border-cyan-500/30 px-3 py-1.5 rounded-xl font-medium">
-                    <span className="text-cyan-400/80 text-xs mr-1">{label}</span>
+                  <span key={label} className="text-sm bg-info/15 text-foreground border border-info/35 px-3 py-1.5 rounded-full font-medium">
+                    <span className="text-info text-xs mr-1">{label}</span>
                     {value}
                   </span>
                 ))}
@@ -413,11 +427,11 @@ export function TicketOverlay({
             </button>
           </div>
         ) : (
-          <div className="px-5 py-3 border-b border-slate-800">
+          <div className="px-5 py-1.5 border-b border-border">
             <button
               type="button"
               onClick={openGuestInfoEditor}
-              className="w-full flex items-center gap-2 text-xs text-slate-400 hover:text-slate-300 transition-colors group"
+              className="w-full min-h-11 flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors group"
             >
               <ClipboardList className="h-3.5 w-3.5 shrink-0" />
               <span className="font-medium">
@@ -425,13 +439,13 @@ export function TicketOverlay({
                   ? "Infos angefragt, noch keine Antwort – manuell erfassen"
                   : "Gäste-Infos erfassen"}
               </span>
-              <Plus className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+              <Plus className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors ml-auto shrink-0" />
             </button>
           </div>
         )}
 
         {/* Info */}
-        <div className="px-5 py-3 border-b border-slate-800 space-y-2">
+        <div className="px-5 py-3 border-b border-border space-y-2">
           <InfoRow label="RFID" value={ticket.rfidCode ?? "–"} icon={Fingerprint} />
           {ticket.accessArea && bundleParts.length === 0 && (
             <InfoRow label="Bereich" value={ticket.accessArea.name} icon={Users} />
@@ -441,10 +455,11 @@ export function TicketOverlay({
               Bereiche der Gast abgedeckt hat und ob wirklich alle
               Teilbuchungen eingecheckt sind. */}
           {bundleParts.length > 0 && (
-            <div className="rounded-xl border border-sky-800/50 bg-sky-950/30 p-2.5 space-y-2">
+            // Glaskachel; die Info-Farbe trägt der Symbol-Chip, nicht die Fläche.
+            <div className="glass-tile p-3 space-y-2">
               <div className="flex items-center gap-2 text-xs">
-                <Layers className="h-3.5 w-3.5 text-sky-400 shrink-0" />
-                <span className="font-semibold text-sky-300">
+                <IconChip icon={Layers} tone="info" size="sm" />
+                <span className="font-semibold text-foreground">
                   Kombi-Ticket · {bundleParts.length} Bereiche
                 </span>
               </div>
@@ -453,20 +468,20 @@ export function TicketOverlay({
                 return (
                   <div key={part.id} className="flex items-center gap-2 text-xs">
                     {partChecked ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
                     ) : (
-                      <Clock className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     )}
-                    <span className="font-medium text-slate-200 shrink-0">{areaName}</span>
+                    <span className="font-medium text-foreground shrink-0">{areaName}</span>
                     {part.barcode && (
-                      <span className="font-mono text-[10px] text-slate-500 truncate">
+                      <span className="font-mono text-[11px] text-muted-foreground truncate">
                         {part.barcode}
                       </span>
                     )}
                     <span
                       className={cn(
-                        "ml-auto shrink-0 text-[10px] font-semibold",
-                        partChecked ? "text-emerald-400" : "text-slate-500",
+                        "ml-auto shrink-0 text-[11px] font-semibold",
+                        partChecked ? "text-success" : "text-muted-foreground",
                       )}
                     >
                       {partChecked ? "eingecheckt" : "offen"}
@@ -481,27 +496,38 @@ export function TicketOverlay({
           )}
           {editMode === "dates" ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Clock className="h-3.5 w-3.5 shrink-0" />
                 <span className="font-medium w-16 shrink-0">Gültig</span>
               </div>
               <div className="flex gap-2">
-                <input
+                <Input
                   type="date"
                   value={dateStart}
                   onChange={(e) => setDateStart(e.target.value)}
-                  className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="h-11 flex-1 min-w-0"
                 />
-                <span className="text-slate-500 self-center">–</span>
-                <input
+                <span className="text-muted-foreground self-center">–</span>
+                <Input
                   type="date"
                   value={dateEnd}
                   onChange={(e) => setDateEnd(e.target.value)}
-                  className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  className="h-11 flex-1 min-w-0"
                 />
               </div>
-              <div className="flex gap-2">
-                <button
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDateStart(toDateValue(ticket.startDate));
+                    setDateEnd(toDateValue(ticket.endDate));
+                    setEditMode(null);
+                  }}
+                  className="h-11 px-4 font-semibold sm:h-14"
+                >
+                  Abbrechen
+                </Button>
+                <Button
                   onClick={() => {
                     onSaveDates(
                       dateStart ? new Date(dateStart).toISOString() : null,
@@ -509,37 +535,27 @@ export function TicketOverlay({
                     );
                   }}
                   disabled={updatingTicket}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
+                  className="h-11 font-semibold sm:h-14 sm:flex-1"
                 >
-                  {updatingTicket && editMode === "dates" ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Speichern"}
-                </button>
-                <button
-                  onClick={() => {
-                    setDateStart(toDateValue(ticket.startDate));
-                    setDateEnd(toDateValue(ticket.endDate));
-                    setEditMode(null);
-                  }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
-                >
-                  Abbrechen
-                </button>
+                  {updatingTicket && editMode === "dates" ? <Loader2 className="animate-spin" /> : "Speichern"}
+                </Button>
               </div>
             </div>
           ) : (
             <button
               onClick={() => setEditMode("dates")}
-              className="flex items-center gap-2 text-xs w-full text-left group"
+              className="flex items-center gap-2 text-xs w-full min-h-11 text-left group"
             >
-              <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span className="text-slate-400 font-medium w-16 shrink-0">Gültig</span>
-              <span className="text-slate-200 truncate">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground font-medium w-16 shrink-0">Gültig</span>
+              <span className="text-foreground tabular-nums truncate">
                 {ticket.startDate && ticket.endDate
                   ? `${new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })} – ${new Date(ticket.endDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}${new Date(ticket.endDate) < new Date() ? " (abgelaufen)" : ""}`
                   : ticket.startDate
                     ? `ab ${new Date(ticket.startDate).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}`
                     : "Nicht gesetzt"}
               </span>
-              <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+              <Pencil className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors ml-auto shrink-0" />
             </button>
           )}
 
@@ -549,7 +565,7 @@ export function TicketOverlay({
           {availableSlots.length > 0 && (
             editMode === "slot" ? (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Clock className="h-3.5 w-3.5 shrink-0" />
                   <span className="font-medium w-16 shrink-0">Slot</span>
                 </div>
@@ -562,11 +578,12 @@ export function TicketOverlay({
                       !slot.available
                       || (slot.remaining != null && slot.remaining <= 0)
                     );
+                    // Aktueller Slot als Auswahl (Akzent), voller Slot rot, freie als Glas.
                     const baseColor = isCurrent
-                      ? "bg-indigo-600 border-indigo-400 text-white"
+                      ? "bg-primary border-primary text-primary-foreground"
                       : blocked
-                        ? "bg-rose-950/40 border-rose-800/60 text-rose-400 cursor-not-allowed opacity-60"
-                        : "bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200";
+                        ? "bg-destructive/10 border-destructive/40 text-destructive cursor-not-allowed opacity-60"
+                        : "bg-glass-tile hover:bg-glass-strong border-glass-border text-foreground";
                     return (
                       <button
                         key={`${slot.startTime}-${slot.endTime}`}
@@ -578,7 +595,7 @@ export function TicketOverlay({
                           onSaveSlot(slot.startTime, slot.endTime);
                         }}
                         className={cn(
-                          "rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed",
+                          "press min-h-11 rounded-control border px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed",
                           baseColor,
                         )}
                       >
@@ -596,28 +613,30 @@ export function TicketOverlay({
                     );
                   })}
                 </div>
-                <div className="flex justify-end">
-                  <button
+                {/* Wie die übrigen Editoren: auf dem Handy volle Breite. */}
+                <div className="flex flex-col sm:flex-row sm:justify-end">
+                  <Button
+                    variant="outline"
                     onClick={() => setEditMode(null)}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                    className="h-11 font-semibold sm:h-14"
                   >
                     Abbrechen
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
               <button
                 onClick={() => setEditMode("slot")}
-                className="flex items-center gap-2 text-xs w-full text-left group"
+                className="flex items-center gap-2 text-xs w-full min-h-11 text-left group"
               >
-                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                <span className="text-slate-400 font-medium w-16 shrink-0">Slot</span>
-                <span className="text-slate-200 truncate">
+                <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground font-medium w-16 shrink-0">Slot</span>
+                <span className="text-foreground tabular-nums truncate">
                   {ticket.slotStart && ticket.slotEnd
                     ? `${ticket.slotStart}–${ticket.slotEnd}`
                     : "Slot wählen"}
                 </span>
-                <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+                <Pencil className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors ml-auto shrink-0" />
               </button>
             )
           )}
@@ -628,68 +647,63 @@ export function TicketOverlay({
             Pause an. Das Aufheben der Pause passiert ueber den "Fortsetzen"-
             Button im Actions-Block weiter unten. */}
         {isPaused && (
-          <div className="px-5 py-3 border-b border-slate-800 bg-orange-500/5">
-            <div className="flex items-start gap-3">
-              <div className="h-8 w-8 rounded-xl bg-orange-500/20 flex items-center justify-center shrink-0">
-                <Pause className="h-4 w-4 text-orange-300" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-orange-200">Pausiert</p>
-                <p className="text-xs text-orange-200/70 mt-0.5">
-                  {pauseInfo?.pausedUntil
-                    ? `bis ${new Date(pauseInfo.pausedUntil).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} Uhr`
-                    : "unbegrenzt"}
+          <div className="px-5 py-3 border-b border-border">
+            <Notice tone="warning" icon={Pause} title="Pausiert" compact>
+              <p className="tabular-nums">
+                {pauseInfo?.pausedUntil
+                  ? `bis ${new Date(pauseInfo.pausedUntil).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} Uhr`
+                  : "unbegrenzt"}
+              </p>
+              {pauseInfo?.reason && (
+                <p className="text-foreground mt-1 italic">
+                  „{pauseInfo.reason}&ldquo;
                 </p>
-                {pauseInfo?.reason && (
-                  <p className="text-xs text-orange-100/80 mt-1 italic">
-                    „{pauseInfo.reason}&ldquo;
-                  </p>
-                )}
-              </div>
-            </div>
+              )}
+            </Notice>
           </div>
         )}
 
         {/* Notizen - Freitext, das Personal schreibt z. B.
             "kommt morgen mit Kind", "Schluessel nicht zurueckgegeben".
             Klick auf den Block oeffnet einen Inline-Editor (textarea). */}
-        <div className="px-5 py-3 border-b border-slate-800">
+        <div className="px-5 py-3 border-b border-border">
           {editMode === "notes" ? (
             <div className="space-y-2">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <p className="text-label">
                 <StickyNote className="h-3.5 w-3.5 inline mr-1.5" />Notiz
               </p>
-              <textarea
+              <Textarea
                 value={noteInput}
                 onChange={(e) => setNoteInput(e.target.value)}
                 placeholder="Notiz hinzufügen…"
                 rows={3}
-                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none"
+                className="resize-none"
                 autoFocus
               />
-              <div className="flex gap-2">
-                <button
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button
                   type="button"
-                  onClick={() => onSaveNotes(noteInput.trim() || null)}
-                  disabled={updatingTicket}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 active:scale-95"
-                >
-                  {updatingTicket && editMode === "notes" ? (
-                    <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                  ) : (
-                    "Speichern"
-                  )}
-                </button>
-                <button
-                  type="button"
+                  variant="outline"
                   onClick={() => {
                     setNoteInput(ticket.notes ?? "");
                     setEditMode(null);
                   }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                  className="h-11 px-4 font-semibold sm:h-14"
                 >
                   Abbrechen
-                </button>
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => onSaveNotes(noteInput.trim() || null)}
+                  disabled={updatingTicket}
+                  className="h-11 font-semibold sm:h-14 sm:flex-1"
+                >
+                  {updatingTicket && editMode === "notes" ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    "Speichern"
+                  )}
+                </Button>
               </div>
             </div>
           ) : ticket.notes ? (
@@ -698,53 +712,52 @@ export function TicketOverlay({
               onClick={() => { setNoteInput(ticket.notes ?? ""); setEditMode("notes"); }}
               className="w-full flex items-start gap-3 text-left group"
             >
-              <div className="h-8 w-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
-                <StickyNote className="h-4 w-4 text-amber-300" />
-              </div>
+              {/* Notiz ist ein Hinweis fürs Personal: Hinweisfarbe (warning). */}
+              <IconChip icon={StickyNote} tone="warning" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-amber-300 uppercase tracking-wider">Notiz</p>
-                <p className="text-sm text-amber-100 mt-0.5 whitespace-pre-wrap break-words">
+                <p className="text-label text-warning">Notiz</p>
+                <p className="text-sm text-foreground mt-0.5 whitespace-pre-wrap break-words">
                   {ticket.notes}
                 </p>
               </div>
-              <Pencil className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors shrink-0 mt-1" />
+              <Pencil className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 mt-1" />
             </button>
           ) : (
             <button
               type="button"
               onClick={() => { setNoteInput(""); setEditMode("notes"); }}
-              className="w-full flex items-center gap-2 text-xs text-slate-400 hover:text-slate-300 transition-colors group"
+              className="w-full min-h-11 flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors group"
             >
               <StickyNote className="h-3.5 w-3.5 shrink-0" />
               <span className="font-medium">Notiz hinzufügen</span>
-              <Plus className="h-3 w-3 text-slate-600 group-hover:text-slate-400 transition-colors ml-auto shrink-0" />
+              <Plus className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors ml-auto shrink-0" />
             </button>
           )}
         </div>
 
         {/* Scan history */}
         {ticketScans.length > 0 && (
-          <div className="px-5 py-3 border-b border-slate-800">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+          <div className="px-5 py-3 border-b border-border">
+            <p className="text-label mb-2">
               <ScanLine className="h-3.5 w-3.5 inline mr-1.5" />Scanverlauf
             </p>
             <div className="space-y-1.5 max-h-32 overflow-y-auto monitor-scrollbar">
               {ticketScans.map((s) => (
                 <div key={s.id} className="flex items-center gap-2 text-xs">
                   {s.result === "GRANTED" ? (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
                   ) : (
-                    <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                    <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
                   )}
-                  <span className={s.result === "GRANTED" ? "text-emerald-300 font-semibold" : "text-rose-300 font-semibold"}>
+                  <span className={s.result === "GRANTED" ? "text-success font-semibold" : "text-destructive font-semibold"}>
                     {s.result === "GRANTED" ? "Zugang" : "Abgelehnt"}
                   </span>
-                  <span className="text-slate-500">·</span>
-                  <span className="text-slate-400">
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-muted-foreground tabular-nums">
                     {new Date(s.scanTime).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                   </span>
-                  <span className="text-slate-500">·</span>
-                  <span className="text-slate-500 truncate">{s.device?.name ?? "Manuell"}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-muted-foreground truncate">{s.device?.name ?? "Manuell"}</span>
                 </div>
               ))}
             </div>
@@ -756,39 +769,41 @@ export function TicketOverlay({
           {/* Check-in button - bei PAUSED ausgeblendet (Scan wuerde 'status_paused'
               ablehnen). Stattdessen erscheint der "Pause aufheben"-Button. */}
           {!isPaused && !isChecked && !isSub && ticket.service?.allowManualCheckin !== false && (
-            <button
+            <Button
               onClick={onCheckin}
               disabled={checkingIn}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-lg font-bold py-4 rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+              className="w-full h-16 rounded-tile text-lg font-bold gap-3"
             >
               {checkingIn ? (
-                <Loader2 className="h-6 w-6 animate-spin" />
+                <Loader2 className="size-6 animate-spin" />
               ) : (
                 <>
-                  <CheckCircle2 className="h-6 w-6" />
+                  <CheckCircle2 className="size-6" />
                   Einchecken
                 </>
               )}
-            </button>
+            </Button>
           )}
 
           {/* Photo / RFID buttons */}
           <div className="grid grid-cols-2 gap-3">
-            <button
+            <Button
+              variant="secondary"
               onClick={onOpenCamera}
               disabled={updatingTicket}
-              className="bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+              className="h-12 font-semibold sm:h-14"
             >
-              {updatingTicket && editMode === "photo" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              {updatingTicket && editMode === "photo" ? <Loader2 className="animate-spin" /> : <Camera />}
               Foto {ticket.profileImage ? "ändern" : "aufnehmen"}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() => { setEditMode(editMode === "rfid" ? null : "rfid"); setRfidInput(ticket.rfidCode ?? ""); }}
-              className="bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+              className="h-12 font-semibold sm:h-14"
             >
-              <Fingerprint className="h-4 w-4" />
+              <Fingerprint />
               RFID {ticket.rfidCode ? "ändern" : "setzen"}
-            </button>
+            </Button>
           </div>
 
           {/* RFID input */}
@@ -801,37 +816,42 @@ export function TicketOverlay({
                   onSubmit={(code) => onSaveRfid(code)}
                   disabled={updatingTicket}
                 />
-                <button
+                <Button
                   onClick={() => onSaveRfid()}
                   disabled={!rfidInput.trim() || updatingTicket}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50 active:scale-95"
+                  className="h-12 px-5 font-semibold sm:h-14"
                 >
-                  {updatingTicket ? <Loader2 className="h-4 w-4 animate-spin" /> : "Speichern"}
-                </button>
+                  {updatingTicket ? <Loader2 className="animate-spin" /> : "Speichern"}
+                </Button>
               </div>
               {rfidConflict && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3">
-                  <p className="text-sm text-amber-200">
-                    <span className="font-bold">RFID bereits vergeben</span> an{" "}
-                    <span className="font-semibold">{rfidConflict.existingOwner}</span>
-                    {rfidConflict.existingType && <span className="text-amber-300/70"> ({rfidConflict.existingType})</span>}
-                  </p>
-                  <p className="text-xs text-amber-300/60">RFID vom bisherigen Besitzer entfernen und diesem Ticket zuweisen?</p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={onForceRfid}
-                      className="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors active:scale-95"
-                    >
-                      Überschreiben
-                    </button>
-                    <button
+                <Notice
+                  tone="warning"
+                  title={
+                    <>
+                      <span className="font-bold">RFID bereits vergeben</span> an{" "}
+                      <span className="font-semibold">{rfidConflict.existingOwner}</span>
+                      {rfidConflict.existingType && <span className="font-normal text-muted-foreground"> ({rfidConflict.existingType})</span>}
+                    </>
+                  }
+                >
+                  <p>RFID vom bisherigen Besitzer entfernen und diesem Ticket zuweisen?</p>
+                  <div className="flex flex-col-reverse gap-2 mt-3 sm:flex-row">
+                    <Button
+                      variant="outline"
                       onClick={onCancelRfid}
-                      className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                      className="h-11 font-semibold sm:h-14 sm:flex-1"
                     >
                       Abbrechen
-                    </button>
+                    </Button>
+                    <Button
+                      onClick={onForceRfid}
+                      className="h-11 font-semibold sm:h-14 sm:flex-1"
+                    >
+                      Überschreiben
+                    </Button>
                   </div>
-                </div>
+                </Notice>
               )}
             </div>
           )}
@@ -840,10 +860,11 @@ export function TicketOverlay({
               Picker (Dauer + Begruendung), bei PAUSED ein "Fortsetzen"-Button. */}
           {!isPaused ? (
             editMode === "pause" ? (
-              <div className="rounded-2xl border border-orange-500/30 bg-orange-950/20 p-4 space-y-3">
+              // Pause = Hinweis (warning): Glaskachel, die Hinweisfarbe trägt der Symbol-Chip.
+              <div className="glass-tile p-4 space-y-3">
                 <div className="flex items-center gap-2">
-                  <Pause className="h-4 w-4 text-orange-400" />
-                  <p className="text-sm font-bold text-orange-300">Ticket pausieren</p>
+                  <IconChip icon={Pause} tone="warning" size="sm" />
+                  <p className="text-sm font-semibold text-foreground">Ticket pausieren</p>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
@@ -859,10 +880,10 @@ export function TicketOverlay({
                       type="button"
                       onClick={() => setPauseDurationChoice(opt.value)}
                       className={cn(
-                        "py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95",
+                        "press min-h-11 py-2.5 rounded-control text-xs font-semibold outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                         pauseDurationChoice === opt.value
-                          ? "bg-orange-600 text-white"
-                          : "bg-slate-800 text-slate-300 hover:bg-slate-700",
+                          ? "bg-warning text-warning-foreground"
+                          : "bg-glass-tile text-foreground ring-1 ring-inset ring-glass-border hover:bg-glass-strong",
                       )}
                     >
                       {opt.label}
@@ -870,90 +891,97 @@ export function TicketOverlay({
                   ))}
                 </div>
 
-                <input
+                <Input
                   type="text"
                   value={pauseReasonInput}
                   onChange={(e) => setPauseReasonInput(e.target.value)}
                   placeholder="Begründung (optional)"
-                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                  className="h-12 px-4"
                 />
 
-                <div className="flex gap-2">
-                  <button
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEditMode(null)}
+                    className="h-12 px-5 font-semibold sm:h-14"
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() => {
                       onPause(pauseDurationChoice, pauseReasonInput.trim());
                       setEditMode(null);
                     }}
                     disabled={updatingTicket}
-                    className="flex-1 bg-orange-600 hover:bg-orange-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 active:scale-95"
+                    className="h-12 font-bold sm:h-14 sm:flex-1"
                   >
-                    {updatingTicket ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                    {updatingTicket ? <Loader2 className="animate-spin" /> : <Pause />}
                     Pausieren
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditMode(null)}
-                    className="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-colors active:scale-95"
-                  >
-                    Abbrechen
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => {
                   setPauseDurationChoice("1d");
                   setPauseReasonInput("");
                   setEditMode("pause");
                 }}
                 disabled={updatingTicket}
-                className="w-full bg-orange-600/15 hover:bg-orange-600/25 text-orange-300 border border-orange-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-50"
+                className="w-full h-12 font-semibold sm:h-14"
               >
-                <Pause className="h-4 w-4" />
+                <Pause className="text-warning" />
                 Pausieren
-              </button>
+              </Button>
             )
           ) : (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={onResume}
               disabled={updatingTicket}
-              className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-50"
+              className="w-full h-12 font-semibold sm:h-14"
             >
-              {updatingTicket ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {updatingTicket ? <Loader2 className="animate-spin" /> : <Play className="text-success" />}
               Pause aufheben
-            </button>
+            </Button>
           )}
 
           {/* Print button */}
-          <button
+          <Button
+            variant="secondary"
             onClick={() => printTicket(ticket, accountName)}
-            className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+            className="w-full h-12 font-semibold sm:h-14"
           >
-            <Printer className="h-4 w-4" />
+            <Printer />
             Ticket drucken
-          </button>
+          </Button>
 
           {/* New ticket for same person */}
-          <button
+          <Button
+            variant="outline"
             onClick={onAddTicket}
-            className="w-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+            className="w-full h-12 font-semibold sm:h-14"
           >
-            <Plus className="h-4 w-4" />
+            <Plus />
             Neues Ticket hinzufügen
-          </button>
+          </Button>
 
           {ticket.status !== "CANCELED" && (
-            <button
+            // Stornieren: Glas-Taste mit roter Schrift (kein deckendes Rot in der Liste).
+            <Button
+              variant="outline"
               onClick={onCancelVoucher}
               disabled={cancellingVoucher}
-              className="w-full bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-50"
+              className="w-full h-12 font-semibold border-destructive/40 text-destructive hover:bg-destructive/10 sm:h-14"
             >
-              <TicketX className="h-4 w-4" />
+              <TicketX />
               {cancellingVoucher ? "Wird storniert..." : "Stornieren & Gutschein"}
-            </button>
+            </Button>
           )}
         </div>
       </div>

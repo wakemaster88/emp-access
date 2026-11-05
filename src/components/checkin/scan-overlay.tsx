@@ -6,7 +6,11 @@
  */
 import { useEffect, useState, useRef } from "react";
 import { CheckCircle2, XCircle, ScanLine, Camera, Loader2, Search, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { CheckinTicket } from "./checkin-types";
+import { OverlayGrip, overlayScrimClass, overlaySheetClass } from "./checkin-ui";
 import { personName } from "./checkin-utils";
 
 export function ScanOverlay({
@@ -31,57 +35,67 @@ export function ScanOverlay({
   }, [inputRef]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="animate-slide-up bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-3xl w-full sm:max-w-md p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-4">
+    <div className={cn("fixed inset-0 z-50 flex items-end sm:items-center justify-center", overlayScrimClass)} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className={cn(overlaySheetClass, "w-full sm:max-w-md p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-4")}>
+        <OverlayGrip className="-mt-3" />
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <ScanLine className="h-5 w-5 text-indigo-400" />
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <ScanLine className="h-5 w-5 text-primary" />
             Code scannen
           </h2>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-800 text-slate-400">
-            <X className="h-5 w-5" />
-          </button>
+          <Button
+            variant="secondary"
+            size="icon-lg"
+            onClick={onClose}
+            className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
+            aria-label="Schließen"
+          >
+            <X className="size-5" />
+          </Button>
         </div>
 
+        {/* Kiosk: Feld und Taste 56 px hoch (docs/design-regeln.md, Abschnitt 20). */}
         <div className="flex gap-2">
-          <input
+          <Input
             ref={inputRef}
             type="text"
             value={scanInput}
             onChange={(e) => setScanInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && onScan(scanInput)}
             placeholder="Barcode scannen oder Code eingeben"
-            className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3.5 text-base focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-14 flex-1 px-4 md:text-base"
             autoFocus
             autoComplete="off"
           />
-          <button
+          <Button
             onClick={() => onScan(scanInput)}
             disabled={scanLoading || !scanInput.trim()}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3.5 rounded-xl font-semibold transition-colors disabled:opacity-50 active:scale-95"
+            className="h-14 px-5 font-semibold"
+            aria-label="Suchen"
           >
-            {scanLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
-          </button>
+            {scanLoading ? <Loader2 className="size-5 animate-spin" /> : <Search className="size-5" />}
+          </Button>
         </div>
 
+        {/* Ergebnis als Fläche in der Zustandsfarbe: grün gefunden, rot abgelehnt. */}
         {scanResult && !scanResult.found && (
-          <div className="bg-rose-950 border border-rose-700/50 rounded-2xl p-4 flex items-center gap-3">
-            <XCircle className="h-6 w-6 text-rose-400 shrink-0" />
-            <p className="text-sm text-rose-200">{scanResult.message ?? "Nicht gefunden"}</p>
+          <div role="alert" className="rounded-tile border border-destructive/60 bg-destructive/20 p-4 flex items-center gap-3">
+            <XCircle className="h-6 w-6 text-destructive shrink-0" />
+            <p className="text-sm font-medium text-foreground">{scanResult.message ?? "Nicht gefunden"}</p>
           </div>
         )}
 
         {scanResult?.found && scanResult.ticket && (
-          <div className="bg-emerald-950 border border-emerald-700/50 rounded-2xl p-4 flex items-center gap-3">
-            <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
+          <div role="status" className="rounded-tile border border-success/60 bg-success/20 p-4 flex items-center gap-3">
+            <CheckCircle2 className="h-6 w-6 text-success shrink-0" />
             <div>
-              <p className="text-sm font-bold text-emerald-200">{personName(scanResult.ticket)}</p>
-              <p className="text-xs text-emerald-300/70">{scanResult.ticket.ticketTypeName ?? ""}</p>
+              <p className="text-sm font-bold text-foreground">{personName(scanResult.ticket)}</p>
+              <p className="text-xs text-muted-foreground">{scanResult.ticket.ticketTypeName ?? ""}</p>
             </div>
           </div>
         )}
 
-        <p className="text-xs text-slate-500 text-center">Barcode-Scanner-Eingabe wird automatisch erkannt</p>
+        <p className="text-xs text-muted-foreground text-center">Barcode-Scanner-Eingabe wird automatisch erkannt</p>
       </div>
     </div>
   );
@@ -141,17 +155,24 @@ export function CameraOverlay({ onCapture, onClose }: { onCapture: (dataUrl: str
   };
 
   return (
+    // Kamerabild bleibt auf schwarzem Grund (docs/design-regeln.md, Abschnitt 15).
     <div className="fixed inset-0 z-[60] bg-black flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       <div className="flex items-center justify-between p-4">
-        <h2 className="text-white text-lg font-bold">Foto aufnehmen</h2>
-        <button onClick={handleClose} className="p-2 rounded-xl bg-slate-800 text-white">
-          <X className="h-5 w-5" />
-        </button>
+        <h2 className="text-white text-lg font-semibold">Foto aufnehmen</h2>
+        <Button
+          variant="secondary"
+          size="icon-lg"
+          onClick={handleClose}
+          className="size-11 rounded-full sm:size-14"
+          aria-label="Schließen"
+        >
+          <X className="size-5" />
+        </Button>
       </div>
 
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
         {error ? (
-          <p className="text-red-400 text-center px-8">{error}</p>
+          <p role="alert" className="text-destructive text-center px-8">{error}</p>
         ) : (
           <>
             <video
@@ -177,9 +198,10 @@ export function CameraOverlay({ onCapture, onClose }: { onCapture: (dataUrl: str
         <div className="p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex justify-center">
           <button
             onClick={capture}
-            className="w-20 h-20 rounded-full bg-white border-4 border-slate-300 active:scale-90 transition-transform flex items-center justify-center"
+            aria-label="Foto aufnehmen"
+            className="w-20 h-20 rounded-full bg-white border-4 border-white/50 bg-clip-padding active:scale-90 transition-transform flex items-center justify-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            <Camera className="h-8 w-8 text-slate-900" />
+            <Camera className="h-8 w-8 text-black" />
           </button>
         </div>
       )}

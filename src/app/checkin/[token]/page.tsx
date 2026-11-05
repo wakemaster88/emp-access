@@ -6,7 +6,24 @@ const CHECKIN_POLL_MS = 12_000;
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useWakeLock } from "@/hooks/use-wake-lock";
 import { use } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconChip } from "@/components/ui/icon-chip";
+import { Input } from "@/components/ui/input";
+import { Notice } from "@/components/ui/notice";
+import { Textarea } from "@/components/ui/textarea";
 import { TailgateAlertPopup } from "@/components/checkin/tailgate-alert-popup";
 import { CheckCircle2, Clock, ScanLine, Users, Ticket, CreditCard, Loader2, Search, X, RefreshCw, Plus, DoorOpen, Check, ChevronDown, Megaphone, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,12 +35,27 @@ import { bundleAnnyTickets, type TicketBundle } from "@/lib/anny-ticket-bundle";
 import { AddTicketOverlay } from "@/components/checkin/add-ticket-overlay";
 import { printVoucher } from "@/components/checkin/checkin-print";
 import type { BundlePart, CheckinData, CheckinTicket, EquipmentSetup, GuestInfoSummary, OpenableDevice, SlotOverviewData, SlotOverviewSlot } from "@/components/checkin/checkin-types";
-import { DaySelector, GuestInfoSummaryPanel, LiveClock, RentalOverviewPanel, Section } from "@/components/checkin/checkin-ui";
+import { DaySelector, GuestInfoSummaryPanel, LiveClock, OverlayGrip, RentalOverviewPanel, Section, overlayScrimClass, overlaySheetClass } from "@/components/checkin/checkin-ui";
 import { classifyInfoLabel, compareSetups, isYes, toDateStr } from "@/components/checkin/checkin-utils";
 import { CameraOverlay, ScanOverlay } from "@/components/checkin/scan-overlay";
 import { SlotOverviewSection } from "@/components/checkin/slot-overview";
 import { TicketCard } from "@/components/checkin/ticket-card";
 import { TicketOverlay } from "@/components/checkin/ticket-overlay";
+
+/** Kopfbalken-Tasten: 44 px auf dem Handy, 56 px am Kiosk-Tablet (docs/design-regeln.md, Abschnitt 20). */
+const headerButtonClass = "h-11 min-w-11 font-semibold sm:h-14 sm:min-w-14";
+/** Zustand „geöffnet“ bzw. „gesendet“: die Taste füllt sich kurz in der Erfolgsfarbe. */
+const headerButtonDoneClass = "border-transparent bg-success text-success-foreground hover:bg-success/90";
+/** Kopfzeile einer aufklappbaren Gruppenkarte (Service, Verein, Abo) mit Pfeil; Fokus als Ring (Abschnitt 12). */
+const groupToggleClass =
+  "w-full min-h-12 sm:min-h-14 flex items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-glass-tile outline-none focus-visible:bg-glass-tile focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50";
+/** Kiosk-Hülle füllt den Schirm ohne die Safe-Area, die der Rahmen (layout.tsx) schon auffüllt. */
+const kioskMinHeightClass = "min-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))]";
+
+/** Slot sperren oder Sperre aufheben – wartet im AlertDialog auf Bestätigung. */
+type SlotBlockRequest =
+  | { kind: "block"; serviceId: number; slot: SlotOverviewSlot }
+  | { kind: "unblock"; blockId: number; busyKey: string };
 
 export default function CheckinPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
@@ -112,6 +144,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
   const [slotOverview, setSlotOverview] = useState<SlotOverviewData | null>(null);
   // Slot der gerade gesperrt/entsperrt wird ("serviceId|HH:mm"), fuer Spinner.
   const [blockBusyKey, setBlockBusyKey] = useState<string | null>(null);
+  // Rueckfrage vor dem Sperren/Aufheben als AlertDialog statt window.confirm,
+  // Fehler im selben Dialog statt als Browser-Alert (docs/design-regeln.md,
+  // Abschnitte 18 und 19). Der Auftrag bleibt beim Schliessen stehen, damit
+  // der Dialog nicht mit leerem Text ausblendet.
+  const [slotBlockOpen, setSlotBlockOpen] = useState(false);
+  const [slotBlockRequest, setSlotBlockRequest] = useState<SlotBlockRequest | null>(null);
+  const [slotBlockError, setSlotBlockError] = useState<string | null>(null);
 
   const refreshOverview = useCallback(async () => {
     try {
@@ -125,18 +164,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     } catch { /* swallow */ }
   }, [token, date]);
 
-  const handleBlockSlot = useCallback(
-    async (serviceId: number, slot: SlotOverviewSlot) => {
+  /** Sperrt den Slot (nach der Rueckfrage im Dialog); true bei Erfolg. */
+  const blockSlot = useCallback(
+    async (serviceId: number, slot: SlotOverviewSlot): Promise<boolean> => {
       const key = `${serviceId}|${slot.startTime.slice(0, 5)}`;
-      if (blockBusyKey) return;
-      if (
-        !window.confirm(
-          `Slot ${slot.startTime}–${slot.endTime} sperren?\n\nDie freie Kapazität wird auch in ANNY belegt, sodass dort niemand mehr buchen kann.`,
-        )
-      ) {
-        return;
-      }
+      if (blockBusyKey) return false;
       setBlockBusyKey(key);
+      setSlotBlockError(null);
       try {
         const res = await fetch(`/api/checkin/public/${token}/slot-block`, {
           method: "POST",
@@ -150,10 +184,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          window.alert(typeof data?.error === "string" ? data.error : "Sperren fehlgeschlagen.");
+          setSlotBlockError(typeof data?.error === "string" ? data.error : "Sperren fehlgeschlagen.");
+          return false;
         }
+        return true;
       } catch {
-        window.alert("Netzwerkfehler beim Sperren.");
+        setSlotBlockError("Netzwerkfehler beim Sperren.");
+        return false;
       } finally {
         setBlockBusyKey(null);
         await refreshOverview();
@@ -162,11 +199,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     [token, date, blockBusyKey, refreshOverview],
   );
 
-  const handleUnblockSlot = useCallback(
-    async (blockId: number, busyKey: string) => {
-      if (blockBusyKey) return;
-      if (!window.confirm("Sperre aufheben und ANNY-Buchung stornieren?")) return;
+  /** Hebt die Sperre auf (nach der Rueckfrage im Dialog); true bei Erfolg. */
+  const unblockSlot = useCallback(
+    async (blockId: number, busyKey: string): Promise<boolean> => {
+      if (blockBusyKey) return false;
       setBlockBusyKey(busyKey);
+      setSlotBlockError(null);
       try {
         const res = await fetch(`/api/checkin/public/${token}/slot-block`, {
           method: "DELETE",
@@ -175,10 +213,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          window.alert(typeof data?.error === "string" ? data.error : "Aufheben fehlgeschlagen.");
+          setSlotBlockError(typeof data?.error === "string" ? data.error : "Aufheben fehlgeschlagen.");
+          return false;
         }
+        return true;
       } catch {
-        window.alert("Netzwerkfehler beim Aufheben.");
+        setSlotBlockError("Netzwerkfehler beim Aufheben.");
+        return false;
       } finally {
         setBlockBusyKey(null);
         await refreshOverview();
@@ -186,6 +227,36 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
     },
     [token, blockBusyKey, refreshOverview],
   );
+
+  // Tipp auf das Schloss im Slot: erst nachfragen (AlertDialog am Ende der Seite).
+  const handleBlockSlot = useCallback(
+    (serviceId: number, slot: SlotOverviewSlot) => {
+      if (blockBusyKey) return;
+      setSlotBlockError(null);
+      setSlotBlockRequest({ kind: "block", serviceId, slot });
+      setSlotBlockOpen(true);
+    },
+    [blockBusyKey],
+  );
+
+  const handleUnblockSlot = useCallback(
+    (blockId: number, busyKey: string) => {
+      if (blockBusyKey) return;
+      setSlotBlockError(null);
+      setSlotBlockRequest({ kind: "unblock", blockId, busyKey });
+      setSlotBlockOpen(true);
+    },
+    [blockBusyKey],
+  );
+
+  const confirmSlotBlock = useCallback(async () => {
+    if (!slotBlockRequest) return;
+    const ok =
+      slotBlockRequest.kind === "block"
+        ? await blockSlot(slotBlockRequest.serviceId, slotBlockRequest.slot)
+        : await unblockSlot(slotBlockRequest.blockId, slotBlockRequest.busyKey);
+    if (ok) setSlotBlockOpen(false);
+  }, [slotBlockRequest, blockSlot, unblockSlot]);
 
   const handleSendAnnouncement = useCallback(async () => {
     const message = announcementText.trim();
@@ -940,39 +1011,45 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
 
   if (error) {
     return (
-      <div className="min-h-[100dvh] bg-slate-950 text-white flex items-center justify-center">
-        <p className="text-rose-400 text-lg">{error}</p>
+      <div className={cn("dark page-ambient text-foreground [color-scheme:dark] flex items-center justify-center p-4", kioskMinHeightClass)}>
+        <Notice tone="danger" title={error} className="w-full max-w-md" />
       </div>
     );
   }
 
   if (loading && !data) {
     return (
-      <div className="min-h-[100dvh] bg-slate-950 text-white flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
+      <div className={cn("dark page-ambient text-foreground [color-scheme:dark] flex items-center justify-center", kioskMinHeightClass)}>
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          Lädt …
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] bg-slate-950 text-white flex flex-col kiosk-surface">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900 px-4 py-2.5 flex items-center justify-between gap-3 safe-top">
-        <div className="flex items-center gap-3 min-w-0 shrink-0">
+    <div className={cn("dark page-ambient text-foreground [color-scheme:dark] flex flex-col kiosk-surface", kioskMinHeightClass)}>
+      {/* Kopfbalken als Glasleiste; `relative z-30`, damit das Türen-Menü über
+          den Glaskarten des Inhalts liegt. Auf schmalen Schirmen bricht die
+          Tastengruppe unter den Titel um, statt waagerecht überzulaufen. Die
+          Safe-Area oben paddet der Rahmen (layout.tsx). */}
+      <header className="relative z-30 glass-bar border-b border-border px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex items-center gap-3 min-w-0 max-w-full">
           <img src="/logo-dark.png" alt="EMP Access" className="h-9 w-9 shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-lg font-bold tracking-tight leading-tight truncate">
+            <h1 className="text-lg font-semibold sm:text-xl tracking-tight leading-tight truncate">
               {data?.monitorName ?? "Check-in"}
             </h1>
-            <p className="text-[11px] text-slate-400 whitespace-nowrap leading-tight">
+            <p className="text-[11px] text-muted-foreground whitespace-nowrap leading-tight">
               EMP Access · Check-in Monitor
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
           {scanBubble && (
-            <div className="bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-xl text-xs font-mono animate-pulse flex items-center gap-1.5">
-              <ScanLine className="h-3.5 w-3.5" />
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/15 px-3 py-1.5 font-mono text-xs text-foreground">
+              <ScanLine className="h-3.5 w-3.5 text-primary" />
               {scanBubble}
             </div>
           )}
@@ -991,27 +1068,23 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
               const isLoading = openingDeviceId === d.id;
               const wasOpened = openedDeviceIds.has(d.id);
               return (
-                <button
+                <Button
                   key={d.id}
+                  variant="outline"
                   onClick={() => handleQuickOpen(d.id)}
                   disabled={openingDeviceId !== null}
                   title={`${d.name} öffnen`}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95 disabled:opacity-60 whitespace-nowrap",
-                    wasOpened
-                      ? "bg-emerald-600 text-white"
-                      : "bg-sky-600 hover:bg-sky-500 text-white",
-                  )}
+                  className={cn(headerButtonClass, wasOpened && headerButtonDoneClass)}
                 >
                   {isLoading ? (
-                    <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                    <Loader2 className="size-5 shrink-0 animate-spin" />
                   ) : wasOpened ? (
-                    <Check className="h-5 w-5 shrink-0" />
+                    <Check className="size-5 shrink-0" />
                   ) : (
-                    <DoorOpen className="h-5 w-5 shrink-0" />
+                    <DoorOpen className="size-5 shrink-0" />
                   )}
                   <span className="hidden 2xl:inline max-w-[12rem] truncate">{d.name}</span>
-                </button>
+                </Button>
               );
             };
 
@@ -1020,32 +1093,33 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
               const anyLoading = openingDeviceId !== null && items.some((d) => d.id === openingDeviceId);
               const anyJustOpened = items.some((d) => openedDeviceIds.has(d.id));
               return (
-                <div ref={openMenuRef} className="relative">
-                  <button
+                // Auf dem Handy richtet sich das Menü am Kopfbalken aus (volle
+                // Breite), ab sm an der Taste selbst.
+                <div ref={openMenuRef} className="sm:relative">
+                  <Button
+                    variant="outline"
                     onClick={() => setOpenMenuOpen((v) => !v)}
                     title={`${items.length} weitere Türen öffnen`}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95 whitespace-nowrap",
-                      anyJustOpened
-                        ? "bg-emerald-600 text-white"
-                        : "bg-slate-700 hover:bg-slate-600 text-white",
-                    )}
+                    className={cn(headerButtonClass, "gap-1.5", anyJustOpened && headerButtonDoneClass)}
                   >
                     {anyLoading ? (
-                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                      <Loader2 className="size-5 shrink-0 animate-spin" />
                     ) : anyJustOpened ? (
-                      <Check className="h-5 w-5 shrink-0" />
+                      <Check className="size-5 shrink-0" />
                     ) : (
-                      <DoorOpen className="h-5 w-5 shrink-0" />
+                      <DoorOpen className="size-5 shrink-0" />
                     )}
                     <span>{label}</span>
                     <ChevronDown
-                      className={cn("h-4 w-4 shrink-0 transition-transform", openMenuOpen && "rotate-180")}
+                      className={cn("size-4 shrink-0 transition-transform", openMenuOpen && "rotate-180")}
                     />
-                  </button>
+                  </Button>
+                  {/* Deckend statt `glass-surface`: Das Menü liegt im Kopfbalken, und dessen
+                      `backdrop-filter` begrenzt die Unschärfe auf den Balken selbst – unter dem
+                      Menü schien die Seite ungefiltert durch. */}
                   {openMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-72 max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-xl ring-1 ring-black/20 p-2 z-50">
-                      <div className="px-2 pt-1 pb-2 text-[11px] uppercase tracking-wider text-slate-500">
+                    <div className="absolute inset-x-4 top-full z-50 mt-2 max-h-[70vh] overflow-y-auto rounded-tile border border-glass-border bg-popover p-2 text-popover-foreground shadow-[inset_0_1px_0_var(--glass-highlight),0_24px_60px_-24px_oklch(0_0_0/50%)] sm:inset-x-auto sm:left-0 sm:w-80">
+                      <div className="px-2 pt-1 pb-2 text-label">
                         Tür öffnen
                       </div>
                       {items.map((d) => {
@@ -1060,16 +1134,18 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                             }}
                             disabled={openingDeviceId !== null}
                             className={cn(
-                              "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-colors active:scale-[0.98] disabled:opacity-60",
+                              "press w-full flex items-center gap-3 px-3 py-2.5 rounded-control text-left text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60",
                               wasOpened
-                                ? "bg-emerald-600/20 text-emerald-300"
-                                : "text-slate-100 hover:bg-slate-800",
+                                ? "bg-success/15 text-success"
+                                : "text-foreground hover:bg-glass-tile",
                             )}
                           >
                             <span
                               className={cn(
-                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                                wasOpened ? "bg-emerald-600 text-white" : "bg-sky-600/20 text-sky-300",
+                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                                wasOpened
+                                  ? "bg-success text-success-foreground"
+                                  : "bg-glass-tile text-foreground ring-1 ring-inset ring-glass-border",
                               )}
                             >
                               {isLoading ? (
@@ -1080,9 +1156,13 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                                 <DoorOpen className="h-4 w-4" />
                               )}
                             </span>
-                            <span className="truncate">{d.name}</span>
-                            <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-500 shrink-0">
-                              {d.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}
+                            {/* Name in voller Breite, Art darunter: Neben der Art wurden
+                                gleich beginnende Namen zu „Drehkreuz Sei…“ gekürzt. */}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate">{d.name}</span>
+                              <span className="block text-label">
+                                {d.category === "DREHKREUZ" ? "Drehkreuz" : "Tür"}
+                              </span>
                             </span>
                           </button>
                         );
@@ -1111,71 +1191,74 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           })()}
           {/* Vertikaler Divider zwischen Tueren-Cluster und Aktions-Cluster,
               damit der User die Funktion auf einen Blick trennt. */}
-          <span className="hidden md:block h-7 w-px bg-slate-700/60 mx-0.5" aria-hidden />
-          <button
+          <span className="hidden md:block h-7 w-px bg-border mx-0.5" aria-hidden />
+          {/* Eine Primärtaste im Kopf (Neues Ticket); alle weiteren als Glas-Tasten. */}
+          <Button
             onClick={() => { setAddTicketPrefill(undefined); setAddTicketOpen(true); }}
             title="Neues Ticket anlegen"
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            className={headerButtonClass}
           >
-            <Plus className="h-5 w-5 shrink-0" />
+            <Plus className="size-5 shrink-0" />
             <span className="hidden xl:inline">Ticket</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setBulkOverlayOpen(true)}
             title="Mehrere Tickets oder Bändchen auf einmal anlegen"
-            className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            className={headerButtonClass}
           >
-            <Layers className="h-5 w-5 shrink-0" />
+            <Layers className="size-5 shrink-0" />
             <span className="hidden xl:inline">Serie</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => { setAnnouncementError(null); setAnnouncementOpen(true); }}
             title="Hinweis an die Live-Monitore schicken"
-            className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95",
-              announcementSentAt
-                ? "bg-emerald-600 text-white"
-                : "bg-amber-600 hover:bg-amber-500 text-white",
-            )}
+            className={cn(headerButtonClass, announcementSentAt && headerButtonDoneClass)}
           >
-            {announcementSentAt ? <Check className="h-5 w-5 shrink-0" /> : <Megaphone className="h-5 w-5 shrink-0" />}
+            {announcementSentAt ? <Check className="size-5 shrink-0" /> : <Megaphone className="size-5 shrink-0" />}
             <span className="hidden xl:inline">
               {announcementSentAt ? "Gesendet" : "Hinweis"}
             </span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setLockerOverlayOpen(true)}
             title="Schließfächer verwalten"
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            className={headerButtonClass}
           >
-            <Lock className="h-5 w-5 shrink-0" />
+            <Lock className="size-5 shrink-0" />
             <span className="hidden xl:inline">Schließfächer</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setLostItemsOverlayOpen(true)}
             title="Fundsachen verwalten"
-            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            className={headerButtonClass}
           >
-            <PackageSearch className="h-5 w-5 shrink-0" />
+            <PackageSearch className="size-5 shrink-0" />
             <span className="hidden xl:inline">Fundsachen</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setScanMode(true)}
             title="Scan-Modus aktivieren"
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-semibold text-sm transition-colors active:scale-95"
+            className={headerButtonClass}
           >
-            <ScanLine className="h-5 w-5 shrink-0" />
+            <ScanLine className="size-5 shrink-0" />
             <span className="hidden xl:inline">Scannen</span>
-          </button>
-          <span className="hidden md:block h-7 w-px bg-slate-700/60 mx-0.5" aria-hidden />
+          </Button>
+          <span className="hidden md:block h-7 w-px bg-border mx-0.5" aria-hidden />
           <LiveClock />
-          <button
+          <Button
+            variant="ghost"
+            size="icon-lg"
             onClick={() => { setRefreshing(true); refreshRef.current?.(); setTimeout(() => setRefreshing(false), 800); }}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors active:scale-95"
+            className="size-11 sm:size-14 text-muted-foreground hover:text-foreground"
             title="Aktualisieren"
           >
-            <RefreshCw className={cn("h-4.5 w-4.5", refreshing && "animate-spin")} />
-          </button>
+            <RefreshCw className={cn("size-5", refreshing && "animate-spin")} />
+          </Button>
         </div>
       </header>
 
@@ -1205,46 +1288,84 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
           } catch { /* ignore */ }
           setSyncing(false);
         };
-        return (
-          <div className={cn(
-            "border-b text-xs",
-            hasErrors
-              ? "border-rose-900/50 bg-rose-950/20 text-rose-400"
-              : isStale
-                ? "border-amber-900/50 bg-amber-950/20 text-amber-400"
-                : "border-slate-800 bg-slate-900/50 text-slate-400",
-          )}>
-            <div className="flex items-center gap-2 px-4 py-1.5">
-              <div
-                className={cn("flex items-center gap-2 flex-1 min-w-0", hasErrors && details.length > 0 && "cursor-pointer")}
-                onClick={() => { if (hasErrors && details.length > 0) setSyncErrorsOpen((v) => !v); }}
-              >
-                <RefreshCw className={cn("h-3 w-3 shrink-0", syncing && "animate-spin")} />
-                <span className="truncate">ANNY Sync: {fmtAgo(syncSt.lastSync)}</span>
-                {(syncSt.created ?? 0) > 0 && <span className="text-emerald-400 shrink-0">+{syncSt.created} neu</span>}
-                {hasErrors && <span className="text-rose-400 shrink-0">{syncSt.errors} Fehler</span>}
-                {hasErrors && details.length > 0 && <span className="text-rose-500">{syncErrorsOpen ? "▲" : "▼"}</span>}
-              </div>
-              <button
+        // Ruhe bei Normalbetrieb: eine gedämpfte Zeile. Fehler (rot) und ein
+        // veralteter Stand (Hinweisfarbe) stehen als Notice mit der Handlung
+        // daneben (docs/design-regeln.md, Abschnitte 3, 19 und 23.4). Die
+        // Sync-Taste ist 44 px, am Kiosk 56 px hoch; in der ruhigen Zeile auf
+        // dem Handy nur ein Symbol, damit der Stand lesbar bleibt.
+        const syncLabel = syncing ? "Sync..." : "Jetzt synchronisieren";
+        const status = (
+          <>
+            <span className="truncate">ANNY Sync: {fmtAgo(syncSt.lastSync)}</span>
+            {(syncSt.created ?? 0) > 0 && <span className="text-success font-medium tabular-nums shrink-0">+{syncSt.created} neu</span>}
+            {hasErrors && <span className="text-destructive font-semibold tabular-nums shrink-0">{syncSt.errors} Fehler</span>}
+          </>
+        );
+        if (!hasErrors && !isStale) {
+          return (
+            <div className="px-4 sm:px-6 pt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="flex min-w-0 flex-1 items-center gap-2">{status}</span>
+              <Button
+                variant="ghost"
                 onClick={triggerSync}
                 disabled={syncing}
-                className={cn(
-                  "shrink-0 px-2.5 py-0.5 rounded-lg font-semibold transition-colors active:scale-95",
-                  syncing
-                    ? "bg-slate-700 text-slate-500 cursor-wait"
-                    : "bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 border border-indigo-500/30",
-                )}
+                aria-label={syncLabel}
+                className="h-11 min-w-11 shrink-0 font-semibold text-muted-foreground hover:text-foreground sm:h-14"
               >
-                {syncing ? "Sync..." : "Jetzt synchronisieren"}
-              </button>
+                <RefreshCw className={cn(syncing && "animate-spin")} />
+                <span className="hidden sm:inline">{syncLabel}</span>
+              </Button>
             </div>
-            {syncErrorsOpen && details.length > 0 && (
-              <div className="px-4 pb-2 space-y-0.5">
-                {details.map((d, i) => (
-                  <p key={i} className="text-[10px] text-rose-300/80 font-mono truncate">{d}</p>
-                ))}
-              </div>
-            )}
+          );
+        }
+        // Fehlerliste klappt über eine echte Taste auf (Tastatur, aria-expanded).
+        // Die Zeile ist nur 20 px hoch; die Trefffläche reicht per `::after` auf
+        // 44 px, am Kiosk auf 56 px (Abschnitt 20), ohne die Notice zu vergrößern.
+        const canExpand = hasErrors && details.length > 0;
+        return (
+          <div className="px-4 sm:px-6 pt-3">
+            <Notice
+              tone={hasErrors ? "danger" : "warning"}
+              icon={RefreshCw}
+              compact
+              role="status"
+              title={
+                canExpand ? (
+                  <button
+                    type="button"
+                    aria-expanded={syncErrorsOpen}
+                    onClick={() => setSyncErrorsOpen((v) => !v)}
+                    className="relative flex w-full min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 after:absolute after:inset-x-0 after:-inset-y-3 sm:after:-inset-y-[18px]"
+                  >
+                    {status}
+                    <ChevronDown
+                      className={cn("size-4 shrink-0 text-muted-foreground transition-transform", syncErrorsOpen && "rotate-180")}
+                    />
+                  </button>
+                ) : (
+                  <span className="flex min-w-0 items-center gap-2">{status}</span>
+                )
+              }
+              action={
+                <Button
+                  variant="outline"
+                  onClick={triggerSync}
+                  disabled={syncing}
+                  className="h-11 shrink-0 font-semibold sm:h-14"
+                >
+                  <RefreshCw className={cn(syncing && "animate-spin")} />
+                  {syncLabel}
+                </Button>
+              }
+            >
+              {canExpand && syncErrorsOpen && (
+                <div className="space-y-0.5 pt-1">
+                  {details.map((d, i) => (
+                    <p key={i} className="text-[11px] text-destructive font-mono truncate">{d}</p>
+                  ))}
+                </div>
+              )}
+            </Notice>
           </div>
         );
       })()}
@@ -1253,26 +1374,32 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       <DaySelector date={date} onChange={setDate} />
 
       {/* Search */}
-      <div className="px-4 py-2 border-b border-slate-800/50">
+      <div className="px-4 sm:px-6 pt-3">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <input
+          <Search className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Ticket suchen…"
-            className="w-full bg-slate-800/60 border border-slate-700/50 text-white rounded-xl pl-9 pr-9 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50"
+            className="h-12 pl-10 pr-12 md:text-base sm:h-14 sm:pr-14"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-              <X className="h-4 w-4" />
-            </button>
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-1 top-1/2 size-11 -translate-y-1/2 text-muted-foreground hover:text-foreground sm:size-12"
+              aria-label="Suche leeren"
+            >
+              <X />
+            </Button>
           )}
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe monitor-scrollbar">
+      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 space-y-4 sm:space-y-5 monitor-scrollbar">
 
         {/* Zugebuchtes Verleihmaterial des Tages (aus ANNY). */}
         <RentalOverviewPanel tickets={dayTickets} />
@@ -1306,26 +1433,30 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         {/* Upcoming */}
         {filteredUpcoming.length > 0 && (
           <Section title="Nächste Gäste" icon={Clock} count={filteredUpcoming.length} color="amber">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filteredUpcoming.map(({ primary: t, members }) => (
-                <TicketCard
-                  key={t.id}
-                  ticket={t}
-                  bundleSize={members.length}
-                  onTap={() => setSelectedTicket(t)}
-                  onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
-                  checkingIn={checkingIn === t.id}
-                  highlight={scanHighlights.get(t.id)}
-                />
-              ))}
-            </div>
+            <Card>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {filteredUpcoming.map(({ primary: t, members }) => (
+                  <TicketCard
+                    key={t.id}
+                    ticket={t}
+                    bundleSize={members.length}
+                    onTap={() => setSelectedTicket(t)}
+                    onCheckin={t.service?.allowManualCheckin !== false ? () => handleCheckin(t.id) : undefined}
+                    checkingIn={checkingIn === t.id}
+                    highlight={scanHighlights.get(t.id)}
+                  />
+                ))}
+              </CardContent>
+            </Card>
           </Section>
         )}
 
         {/* Tickets by service */}
         <Section title="Tickets" icon={Ticket} count={filteredPending.length} color="indigo">
           {filteredPending.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-6">Keine ausstehenden Tickets</p>
+            <Card className="py-0 sm:py-0">
+              <EmptyState icon={Ticket} title="Keine ausstehenden Tickets" compact />
+            </Card>
           ) : (
             <div className="space-y-3">
               {[...serviceGroups.entries()].map(([groupName, bundles]) => {
@@ -1336,7 +1467,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 const isSearching = searchQuery.trim().length > 0;
                 const isExpanded = isSearching || expandedServiceGroups.has(groupName);
                 return (
-                  <div key={groupName} className="rounded-xl border border-slate-800/70 bg-slate-900/40 overflow-hidden">
+                  <Card key={groupName} className="gap-0 py-0 sm:py-0 overflow-hidden">
                     <button
                       type="button"
                       onClick={() => {
@@ -1348,24 +1479,24 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                           return next;
                         });
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left"
+                      className={groupToggleClass}
                     >
-                      <Ticket className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate">
+                      <IconChip icon={Ticket} size="sm" />
+                      <span className="text-sm font-semibold text-foreground truncate">
                         {groupName}
                       </span>
-                      <Badge className="ml-1 bg-indigo-500/20 text-indigo-300 border-indigo-500/30 font-normal">
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
                         {bundles.length}
                       </Badge>
                       <ChevronDown
                         className={cn(
-                          "ml-auto h-4 w-4 text-slate-500 shrink-0 transition-transform",
+                          "ml-auto h-4 w-4 text-muted-foreground shrink-0 transition-transform",
                           isExpanded && "rotate-180",
                         )}
                       />
                     </button>
                     {isExpanded && (
-                      <div className="border-t border-slate-800/70 p-2">
+                      <div className="border-t border-border p-3 sm:p-4">
                         {(() => {
                           const summary = guestInfoSummaries.get(groupName);
                           return summary ? (
@@ -1392,7 +1523,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         </div>
                       </div>
                     )}
-                  </div>
+                  </Card>
                 );
               })}
 
@@ -1402,7 +1533,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 const isSearching = searchQuery.trim().length > 0;
                 const isExpanded = isSearching || expandedVereine.has(g.id);
                 return (
-                  <div key={`verein-${g.id}`} className="rounded-xl border border-slate-800/70 bg-slate-900/40 overflow-hidden">
+                  <Card key={`verein-${g.id}`} className="gap-0 py-0 sm:py-0 overflow-hidden">
                     <button
                       type="button"
                       onClick={() => {
@@ -1414,27 +1545,27 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                           return next;
                         });
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left"
+                      className={groupToggleClass}
                     >
-                      <Users className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate">
+                      <IconChip icon={Users} size="sm" />
+                      <span className="text-sm font-semibold text-foreground truncate">
                         {g.name}
                       </span>
-                      <Badge className="ml-1 bg-indigo-500/20 text-indigo-300 border-indigo-500/30 font-normal">
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
                         {g.tickets.length}
                       </Badge>
-                      <span className="ml-auto text-[10px] text-slate-500 uppercase tracking-wider">
+                      <span className="ml-auto text-label">
                         Verein
                       </span>
                       <ChevronDown
                         className={cn(
-                          "h-4 w-4 text-slate-500 shrink-0 transition-transform",
+                          "h-4 w-4 text-muted-foreground shrink-0 transition-transform",
                           isExpanded && "rotate-180",
                         )}
                       />
                     </button>
                     {isExpanded && (
-                      <div className="border-t border-slate-800/70 p-2">
+                      <div className="border-t border-border p-3 sm:p-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                           {g.tickets.map((t) => (
                             <TicketCard
@@ -1449,7 +1580,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         </div>
                       </div>
                     )}
-                  </div>
+                  </Card>
                 );
               })}
             </div>
@@ -1459,19 +1590,21 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
         {/* Checked in */}
         {filteredCheckedIn.length > 0 && (
           <Section title="Eingecheckt" icon={CheckCircle2} count={filteredCheckedIn.length} color="emerald">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filteredCheckedIn.map(({ primary: t, members }) => (
-                <TicketCard
-                  key={t.id}
-                  ticket={t}
-                  bundleSize={members.length}
-                  onTap={() => setSelectedTicket(t)}
-                  checked
-                  isSub={!!t.subscriptionId}
-                  highlight={scanHighlights.get(t.id)}
-                />
-              ))}
-            </div>
+            <Card>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {filteredCheckedIn.map(({ primary: t, members }) => (
+                  <TicketCard
+                    key={t.id}
+                    ticket={t}
+                    bundleSize={members.length}
+                    onTap={() => setSelectedTicket(t)}
+                    checked
+                    isSub={!!t.subscriptionId}
+                    highlight={scanHighlights.get(t.id)}
+                  />
+                ))}
+              </CardContent>
+            </Card>
           </Section>
         )}
 
@@ -1479,12 +1612,12 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
             Bei Suche automatisch aufgeklappt. */}
         {filteredSubscriptions.length > 0 && (
           <Section title="Abonnements" icon={CreditCard} count={filteredSubscriptions.reduce((a, s) => a + s.tickets.length, 0)} color="violet">
-            <div className="space-y-2">
+            <div className="space-y-3">
               {filteredSubscriptions.map((sub) => {
                 const isSearching = searchQuery.trim().length > 0;
                 const isExpanded = isSearching || expandedAbos.has(sub.id);
                 return (
-                  <div key={sub.id} className="rounded-xl border border-slate-800/70 bg-slate-900/40 overflow-hidden">
+                  <Card key={sub.id} className="gap-0 py-0 sm:py-0 overflow-hidden">
                     <button
                       type="button"
                       onClick={() => {
@@ -1496,27 +1629,27 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                           return next;
                         });
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800/40 transition-colors text-left"
+                      className={groupToggleClass}
                     >
-                      <CreditCard className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider truncate">
+                      <IconChip icon={CreditCard} size="sm" />
+                      <span className="text-sm font-semibold text-foreground truncate">
                         {sub.name}
                       </span>
-                      <Badge className="ml-1 bg-violet-500/20 text-violet-300 border-violet-500/30 font-normal">
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
                         {sub.tickets.length}
                       </Badge>
-                      <span className="ml-auto text-[10px] text-slate-500 uppercase tracking-wider">
+                      <span className="ml-auto text-label">
                         Abo
                       </span>
                       <ChevronDown
                         className={cn(
-                          "h-4 w-4 text-slate-500 shrink-0 transition-transform",
+                          "h-4 w-4 text-muted-foreground shrink-0 transition-transform",
                           isExpanded && "rotate-180",
                         )}
                       />
                     </button>
                     {isExpanded && (
-                      <div className="border-t border-slate-800/70 p-2">
+                      <div className="border-t border-border p-3 sm:p-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                           {sub.tickets.map((t) => (
                             <TicketCard
@@ -1533,7 +1666,7 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                         </div>
                       </div>
                     )}
-                  </div>
+                  </Card>
                 );
               })}
             </div>
@@ -1676,29 +1809,31 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
       {/* Hinweis-an-Monitore Dialog */}
       {announcementOpen && (
         <div
-          className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className={cn("fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4", overlayScrimClass)}
           onClick={(e) => { if (e.target === e.currentTarget) setAnnouncementOpen(false); }}
         >
-          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
-            <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
-                <Megaphone className="h-5 w-5" />
-              </div>
+          <div className={cn(overlaySheetClass, "w-full max-w-lg pb-[env(safe-area-inset-bottom)] sm:pb-0")}>
+            <OverlayGrip />
+            <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+              <IconChip icon={Megaphone} tone="warning" size="lg" />
               <div className="flex-1 min-w-0">
-                <h2 className="text-base font-bold text-white">Hinweis an Monitore</h2>
-                <p className="text-xs text-slate-400">
+                <h2 className="text-base font-semibold text-foreground">Hinweis an Monitore</h2>
+                <p className="text-xs text-muted-foreground">
                   Erscheint als Banner oben in allen Live-Monitoren, bis dort manuell geschlossen.
                 </p>
               </div>
-              <button
+              <Button
+                variant="secondary"
+                size="icon-lg"
                 onClick={() => setAnnouncementOpen(false)}
-                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                className="size-11 rounded-full text-muted-foreground hover:text-foreground sm:size-14"
+                aria-label="Schließen"
               >
-                <X className="h-4 w-4" />
-              </button>
+                <X />
+              </Button>
             </div>
             <div className="p-5 space-y-3">
-              <textarea
+              <Textarea
                 autoFocus
                 value={announcementText}
                 onChange={(e) => setAnnouncementText(e.target.value)}
@@ -1711,42 +1846,92 @@ export default function CheckinPage({ params }: { params: Promise<{ token: strin
                 placeholder='z.B. "Anfängerkurs kommt gleich an Seilbahn A"'
                 maxLength={500}
                 rows={4}
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 text-white text-sm px-3 py-2.5 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60 resize-none"
+                className="py-2.5 resize-none"
               />
-              <div className="flex items-center justify-between text-xs text-slate-500">
-                <span>{announcementText.length}/500</span>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="tabular-nums">{announcementText.length}/500</span>
                 <span>⌘/Ctrl + Enter zum Senden</span>
               </div>
               {announcementError && (
-                <div className="rounded-lg bg-rose-950/40 border border-rose-900/60 px-3 py-2 text-xs text-rose-300">
-                  {announcementError}
-                </div>
+                <Notice tone="danger" compact title={announcementError} />
               )}
             </div>
-            <div className="flex items-center justify-end gap-2 border-t border-slate-800 px-5 py-3">
-              <button
+            {/* Tasten: Primärhandlung rechts, auf dem Handy volle Breite und oben. */}
+            <div className="flex flex-col-reverse gap-2 border-t border-border px-5 py-3 sm:flex-row sm:items-center sm:justify-end">
+              <Button
+                variant="ghost"
                 onClick={() => setAnnouncementOpen(false)}
                 disabled={announcementSending}
-                className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50"
+                className="h-11 font-semibold sm:h-14"
               >
                 Abbrechen
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleSendAnnouncement}
                 disabled={announcementSending || !announcementText.trim()}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-white transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-11 font-semibold sm:h-14"
               >
                 {announcementSending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="animate-spin" />
                 ) : (
-                  <Send className="h-4 w-4" />
+                  <Send />
                 )}
                 Senden
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Rückfrage vor dem Sperren/Aufheben eines Slots: AlertDialog mit
+          destruktiver Taste (docs/design-regeln.md, Abschnitt 18). Er portalt
+          aus dem dunklen Rahmen heraus, daher `dark` am Inhalt. Schlägt der
+          Aufruf fehl, bleibt er offen und zeigt den Fehler (Abschnitt 19). */}
+      <AlertDialog
+        open={slotBlockOpen}
+        onOpenChange={(open) => { if (!open && !blockBusyKey) setSlotBlockOpen(false); }}
+      >
+        <AlertDialogContent
+          className="dark [color-scheme:dark]"
+          {...(slotBlockRequest?.kind === "block" ? {} : { "aria-describedby": undefined })}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {slotBlockRequest?.kind === "block"
+                ? `Slot ${slotBlockRequest.slot.startTime}–${slotBlockRequest.slot.endTime} sperren?`
+                : "Sperre aufheben und ANNY-Buchung stornieren?"}
+            </AlertDialogTitle>
+            {slotBlockRequest?.kind === "block" && (
+              <AlertDialogDescription>
+                Die freie Kapazität wird auch in ANNY belegt, sodass dort niemand mehr buchen kann.
+              </AlertDialogDescription>
+            )}
+          </AlertDialogHeader>
+          {slotBlockError && <Notice tone="danger" compact title={slotBlockError} />}
+          <AlertDialogFooter>
+            {/* Kiosk-Touch-Ziele: 44 px auf dem Handy, 56 px ab sm. `min-h`, weil die
+                Tasten per Slot gemischt werden und `h-9` dort nicht ersetzt wird. */}
+            <AlertDialogCancel disabled={blockBusyKey !== null} className="min-h-11 sm:min-h-14">Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={blockBusyKey !== null}
+              className="min-h-11 sm:min-h-14"
+              onClick={(e) => {
+                // Offen lassen, bis der Aufruf durch ist.
+                e.preventDefault();
+                void confirmSlotBlock();
+              }}
+            >
+              {blockBusyKey !== null && <Loader2 className="animate-spin" />}
+              {slotBlockError
+                ? "Erneut versuchen"
+                : slotBlockRequest?.kind === "block"
+                  ? "Slot sperren"
+                  : "Sperre aufheben"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Scan overlay */}
       {scanMode && (

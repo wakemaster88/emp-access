@@ -8,6 +8,9 @@ import { useEffect, useState, useMemo, createContext, useContext } from "react";
 import { Clock, Ticket, Loader2, Mountain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Lock, LockOpen } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { SectionHeading } from "@/components/ui/section-heading";
 import type { SlotOverviewData, SlotOverviewPickPayload, SlotOverviewService, SlotOverviewSlot, SlotOverviewUIState, TimeRange } from "./checkin-types";
 import { annyReasonLabel, computeGlobalRange, groupByResource, groupOverviewServices, minutesToTimeString, splitServiceLabel, timeStringToMinutes } from "./checkin-utils";
 
@@ -62,15 +65,16 @@ export function SlotTimeline({
   range,
   children,
   empty,
-  heightPx = 28,
+  heightPx,
 }: {
   range: TimeRange;
   children?: React.ReactNode;
   /** Optionaler Empty-State-Text fuer Services ohne Slots. */
   empty?: string;
-  /** Hoehe des Timeline-Containers in Pixel (Default 28). Bei Combined-Rows
-   *  mit gestackten Stripes wird die Hoehe hochgesetzt, damit die Stripes
-   *  nicht ueberlappen. */
+  /** Hoehe des Timeline-Containers in Pixel. Ohne Angabe 44 px, am Kiosk ab sm
+   *  56 px, damit die Pills Touch-Ziele sind (docs/design-regeln.md, Abschnitt 20).
+   *  Bei Combined-Rows mit gestackten Stripes wird die Hoehe hochgesetzt, damit
+   *  die Stripes nicht ueberlappen. */
   heightPx?: number;
 }) {
   const { nowMin, hoverMin } = useContext(SlotOverviewUIContext);
@@ -83,7 +87,10 @@ export function SlotTimeline({
   const nowVisible = nowMin != null && nowMin >= range.startMin && nowMin <= range.endMin;
   const hoverVisible = hoverMin != null && hoverMin >= range.startMin && hoverMin <= range.endMin;
   return (
-    <div className="relative" style={{ height: `${heightPx}px` }}>
+    <div
+      className={cn("relative", heightPx == null && "h-11 sm:h-14")}
+      style={heightPx != null ? { height: `${heightPx}px` } : undefined}
+    >
       <div className="absolute inset-0 pointer-events-none">
         {ticks.map((t) => {
           const left = ((t - range.startMin) / total) * 100;
@@ -93,7 +100,7 @@ export function SlotTimeline({
               key={t}
               className={cn(
                 "absolute top-0 bottom-0 border-l",
-                isStrong ? "border-slate-700/60" : "border-slate-800/40",
+                isStrong ? "border-border" : "border-border/50",
               )}
               style={{ left: `${left}%` }}
             />
@@ -101,19 +108,20 @@ export function SlotTimeline({
         })}
         {hoverVisible && (
           <span
-            className="absolute top-0 bottom-0 border-l-2 border-sky-400/60"
+            className="absolute top-0 bottom-0 border-l-2 border-primary/60"
             style={{ left: `${((hoverMin! - range.startMin) / total) * 100}%` }}
           />
         )}
         {nowVisible && (
+          // Jetzt-Marke als gestrichelte Linie (docs/design-regeln.md, Abschnitt 8).
           <span
-            className="absolute top-0 bottom-0 border-l-2 border-rose-500/80"
+            className="absolute top-0 bottom-0 border-l-2 border-dashed border-foreground/70"
             style={{ left: `${((nowMin! - range.startMin) / total) * 100}%` }}
           />
         )}
       </div>
       {empty ? (
-        <p className="absolute inset-0 flex items-center text-[11px] text-slate-500 px-1">
+        <p className="absolute inset-0 flex items-center text-[11px] text-muted-foreground px-1">
           {empty}
         </p>
       ) : (
@@ -181,7 +189,10 @@ export function TimelineAxis({ range }: { range: TimeRange }) {
             key={t}
             className={cn(
               "absolute top-0 -translate-x-1/2 text-[10px] font-mono tabular-nums",
-              isStrong ? "text-slate-400 font-semibold" : "text-slate-600",
+              isStrong ? "text-foreground/80 font-semibold" : "text-muted-foreground",
+              // Auf dem Handy ist eine Stunde schmaler als die Beschriftung:
+              // dort nur jede zweite Stunde beschriften, sonst überlappen sie.
+              !isStrong && "max-sm:hidden",
             )}
             style={{ left: `${left}%` }}
           >
@@ -191,7 +202,7 @@ export function TimelineAxis({ range }: { range: TimeRange }) {
       })}
       {nowVisible && (
         <span
-          className="absolute -top-0.5 -translate-x-1/2 text-[9px] font-mono tabular-nums bg-rose-500/90 text-white px-1 rounded-sm shadow"
+          className="absolute -top-0.5 -translate-x-1/2 text-[9px] font-mono tabular-nums bg-foreground text-background px-1 rounded-sm"
           style={{ left: `${((nowMin! - range.startMin) / total) * 100}%` }}
         >
           {minutesToTimeString(nowMin!)}
@@ -261,42 +272,45 @@ export function SlotOverviewSection({
   });
   const anyHeader = groupedPerResource.some((rg) => rg.showHeader);
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <Clock className="h-4 w-4 text-sky-400" />
-        <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400">
-          Slot-Auslastung
-        </h2>
-        <div className="ml-auto flex items-center gap-1.5 text-[11px] font-mono tabular-nums">
-          {summary.totalSlots > 0 && (
-            <>
-              <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-1.5 py-0.5">
+    <div className="space-y-2">
+      <SectionHeading
+        title="Slot-Auslastung"
+        icon={Clock}
+        aside={
+          summary.totalSlots > 0 && (
+            // Zusammenfassung in den festen Zustandsfarben: frei, teils, voll.
+            <div className="flex items-center gap-1.5">
+              <Badge variant="success" className="tabular-nums">
                 {summary.freeSlots} frei
-              </span>
+              </Badge>
               {summary.partialSlots > 0 && (
-                <span className="text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-1.5 py-0.5">
+                <Badge variant="warning" className="tabular-nums">
                   {summary.partialSlots} teils
-                </span>
+                </Badge>
               )}
               {summary.fullSlots > 0 && (
-                <span className="text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-md px-1.5 py-0.5">
+                <Badge variant="danger" className="tabular-nums">
                   {summary.fullSlots} voll
-                </span>
+                </Badge>
               )}
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+          )
+        }
+      />
       <SlotOverviewUIContext.Provider value={uiState}>
-      <div
+      <Card
         className={cn(
-          "rounded-xl border border-slate-800/70 bg-slate-900/40 p-3",
-          anyHeader ? "space-y-4" : "space-y-3",
+          "px-4 py-4 sm:py-4",
+          anyHeader ? "gap-4" : "gap-3",
         )}
       >
-        <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-sm -mx-3 -mt-3 px-3 pt-3 pb-1 border-b border-slate-800/40">
+        {/* Klebende Zeitachse als deckende Leiste ohne Weichzeichner (in Karten kein
+            Blur, docs/design-regeln.md, Abschnitt 22); z-20 hält sie über den
+            Sperr-Tasten der Pills. */}
+        <div className="sticky top-0 z-20 bg-popover/90 rounded-t-card -mx-4 -mt-4 px-4 pt-4 pb-1 border-b border-border">
           <div className="flex items-stretch gap-2 text-[11px]">
-            <div className="shrink-0 w-[130px]" />
+            {/* Leere linke Spalte nur ab sm: auf dem Handy bekommt die Zeitleiste die volle Breite. */}
+            <div className="hidden sm:block shrink-0 w-[130px]" />
             <div className="flex-1 min-w-0">
               <TimelineAxis range={range} />
             </div>
@@ -306,10 +320,10 @@ export function SlotOverviewSection({
           ({ resourceId, resourceName, services: resSvcs, serviceGroups, showHeader }) => (
             <div key={resourceId ?? "__none__"} className="space-y-3">
               {showHeader && (
-                <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider text-sky-300/90 border-b border-sky-500/20 pb-1">
-                  <Mountain className="h-3.5 w-3.5 shrink-0 text-sky-400" />
-                  <span>{resourceName}</span>
-                  <span className="text-[10px] font-normal normal-case tracking-normal text-slate-500">
+                <div className="flex items-center gap-2 border-b border-border pb-1">
+                  <Mountain className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="text-label text-foreground">{resourceName}</span>
+                  <span className="text-[11px] text-muted-foreground">
                     · {resSvcs.length} {resSvcs.length === 1 ? "Service" : "Services"}
                   </span>
                 </div>
@@ -329,7 +343,7 @@ export function SlotOverviewSection({
             </div>
           ),
         )}
-      </div>
+      </Card>
       </SlotOverviewUIContext.Provider>
     </div>
   );
@@ -370,8 +384,8 @@ export function SlotOverviewGroup({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-        <Ticket className="h-3 w-3 shrink-0 text-sky-400" />
+      <div className="flex items-center gap-2 text-label">
+        <Ticket className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="font-semibold truncate shrink-0">{group}</span>
         {/* Varianten-Namen explizit listen statt nur "· N Varianten" - so
             sieht der User auf einen Blick welche Tickets in der Gruppe
@@ -379,14 +393,14 @@ export function SlotOverviewGroup({
             Service-Zeilen unten ist die linke Spalte deshalb leer, damit
             das Label nicht doppelt erscheint. */}
         {variantLabels.some((v) => v) && (
-          <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal truncate">
+          <span className="text-[11px] text-muted-foreground font-normal normal-case tracking-normal truncate">
             · {variantLabels.join(" · ")}
           </span>
         )}
         {totalEmp > 0 && (
-          <span className="text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded ml-auto shrink-0">
+          <Badge variant="secondary" className="ml-auto normal-case tracking-normal tabular-nums">
             {totalEmp} verkauft
-          </span>
+          </Badge>
         )}
       </div>
       {/* Kein zusaetzlicher Indent bei Multi-Gruppen - die Timelines bleiben
@@ -445,7 +459,7 @@ export function SlotOverviewServiceRow({
     <div className="flex items-stretch gap-2 text-[11px]">
       {/* Linke Spalte ist leer (Spacer fuer Axis-Alignment) - die Variant-
           Namen stehen oben im Group-Header. */}
-      <div className="shrink-0 w-[130px]" aria-hidden />
+      <div className="hidden sm:block shrink-0 w-[130px]" aria-hidden />
       <div className="flex-1 min-w-0">
         <SlotOverviewServiceBody
           sv={sv}
@@ -579,7 +593,7 @@ export function CombinedDayPassRow({
       <div className="flex items-stretch gap-2 text-[11px]">
         {/* Linke Spalte: leer (Spacer). Variant-Namen stehen oben im
             Group-Header, hier wuerde sie sonst doppelt erscheinen. */}
-        <div className="shrink-0 w-[130px]" aria-hidden />
+        <div className="hidden sm:block shrink-0 w-[130px]" aria-hidden />
         <div className="flex-1 min-w-0">
           <SlotTimeline range={range}>
             {periods.map((oh, pidx) => {
@@ -631,7 +645,7 @@ export function CombinedDayPassRow({
       .join(" | ");
     return (
       <div className="flex items-stretch gap-2 text-[11px]">
-        <div className="shrink-0 w-[130px]" aria-hidden />
+        <div className="hidden sm:block shrink-0 w-[130px]" aria-hidden />
         <div className="flex-1 min-w-0">
           <SlotTimeline range={range}>
             <TimelineSlot
@@ -660,11 +674,12 @@ export function CombinedDayPassRow({
 
   // Letzter Fallback: disjoint Ranges (sehr selten). Ueberlagernde Pills,
   // laengster Pill im Hintergrund (z=0), kuerzere darueber.
+  // Varianten in abgestufter Akzentfarbe statt Dekorfarben; die Zeit steht im Pill.
   const variantStyles = [
-    "border-sky-500/50 text-sky-100 bg-sky-500/15",
-    "border-emerald-500/60 text-emerald-100 bg-emerald-500/25",
-    "border-violet-500/60 text-violet-100 bg-violet-500/25",
-    "border-amber-500/60 text-amber-100 bg-amber-500/25",
+    "border-primary/40 text-foreground bg-primary/10",
+    "border-primary/55 text-foreground bg-primary/20",
+    "border-primary/70 text-foreground bg-primary/30",
+    "border-primary/85 text-foreground bg-primary/40",
   ];
 
   return (
@@ -672,7 +687,7 @@ export function CombinedDayPassRow({
       {/* Linke Spalte: leer (Spacer). Die Variant-Namen stehen oben im
           Group-Header; die Pills tragen Variante + Zeit als Tooltip und
           Farbcode visuell. */}
-      <div className="shrink-0 w-[130px]" aria-hidden />
+      <div className="hidden sm:block shrink-0 w-[130px]" aria-hidden />
       <div className="flex-1 min-w-0">
         <SlotTimeline range={range}>
           {sorted.flatMap((sv, idx) => {
@@ -732,9 +747,9 @@ export function CombinedDayPassRow({
 
 /**
  * Pill fuer "alle Varianten haben dieselbe Range"-Fall. Look-and-feel der
- * normalen Slot-Pills (rounded-lg border, full height), aber in sky-color
- * statt rose/amber/emerald, weil es kein Slot-Status sondern eine reine
- * Oeffnungszeit-Anzeige ist.
+ * normalen Slot-Pills (rounded-lg border, full height), aber in der
+ * Akzentfarbe statt in Zustandsfarben, weil es kein Slot-Status sondern eine
+ * reine Oeffnungszeit-Anzeige ist.
  */
 export function CombinedPill({
   startLabel,
@@ -762,7 +777,7 @@ export function CombinedPill({
       title={tooltip}
       className={cn(
         "relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
-        "border-sky-500/40 text-sky-100 bg-sky-500/10",
+        "border-primary/40 text-foreground bg-primary/10",
         disabled
           ? "opacity-50 cursor-not-allowed"
           : "hover:brightness-125 active:scale-95 transition-all",
@@ -773,7 +788,7 @@ export function CombinedPill({
         <span className="font-bold shrink-0">{startLabel}-{endLabel}</span>
         {bookingCount != null && bookingCount > 0 && (
           <span
-            className="shrink-0 inline-flex items-center rounded-sm bg-sky-500/40 text-sky-50 px-1 text-[10px] font-bold leading-tight tabular-nums"
+            className="shrink-0 inline-flex items-center rounded-sm bg-info text-info-foreground px-1 text-[10px] font-bold leading-tight tabular-nums"
             title={`${bookingCount} EMP-Ticket(s)`}
           >
             {bookingCount}
@@ -805,8 +820,9 @@ export function SlotOverviewServiceBody({
 }) {
   if (sv.note) {
     return (
-      <SlotTimeline range={range}>
-        <p className="absolute inset-0 flex items-center text-[11px] text-amber-400/80 px-1 truncate">
+      // Nur Text, keine Touch-Ziele: bleibt in der kompakten Höhe.
+      <SlotTimeline range={range} heightPx={28}>
+        <p className="absolute inset-0 flex items-center text-[11px] text-warning px-1 truncate">
           {sv.note}
         </p>
       </SlotTimeline>
@@ -831,7 +847,7 @@ export function SlotOverviewServiceBody({
             ]
           : [];
     if (periods.length === 0) {
-      return <SlotTimeline range={range} empty="Heute nicht verfügbar." />;
+      return <SlotTimeline range={range} empty="Heute nicht verfügbar." heightPx={28} />;
     }
     const isFallback = sv.openingHours.length === 0;
     return (
@@ -947,15 +963,15 @@ export function SlotOverviewPill({
         ? Math.max(0, Math.min(100, (used / slot.capacity) * 100))
         : null;
   const baseColor = isFull
-    ? "border-rose-500/50 text-rose-100 bg-rose-500/15"
+    ? "border-destructive/50 text-foreground bg-destructive/15"
     : isPartial
-      ? "border-amber-500/50 text-amber-100 bg-amber-500/15"
-      : "border-emerald-500/50 text-emerald-100 bg-emerald-500/15";
+      ? "border-warning/50 text-foreground bg-warning/15"
+      : "border-success/50 text-foreground bg-success/15";
   const fillColor = isFull
-    ? "bg-rose-500/30"
+    ? "bg-destructive/30"
     : isPartial
-      ? "bg-amber-500/30"
-      : "bg-emerald-500/25";
+      ? "bg-warning/30"
+      : "bg-success/25";
   // Konsistent immer "X frei" zeigen (statt mehrdeutigem "1/10" das wie
   // "1 verkauft" gelesen wird). Bei 0 oder blockiert: "voll".
   const label = isManuallyBlocked
@@ -1003,9 +1019,9 @@ export function SlotOverviewPill({
         return lines.join("\n");
       })()}
       className={cn(
-        "relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
+        "@container relative overflow-hidden rounded-lg border h-full w-full px-1.5 py-1 text-[11px] font-mono tabular-nums leading-tight",
         "hover:brightness-125 active:scale-95 transition-all",
-        canToggleBlock && "pr-5",
+        canToggleBlock && "pl-1 pr-6 sm:pl-1.5 sm:pr-11",
         baseColor,
       )}
     >
@@ -1016,20 +1032,27 @@ export function SlotOverviewPill({
           style={{ width: `${pct}%` }}
         />
       )}
-      <span className="relative flex items-center justify-center gap-1 h-full">
+      {/* Schmale Pills (Handy, Hochformat) stapeln Uhrzeit und Zusatz in zwei
+          Zeilen; `-safe` hält die Uhrzeit sichtbar, statt sie links abzuschneiden. */}
+      <span className="relative flex h-full items-center justify-center-safe gap-1 @max-[6rem]:flex-col @max-[6rem]:items-center-safe @max-[6rem]:justify-center @max-[6rem]:gap-0">
         <span className="font-bold shrink-0">{slot.startTime}</span>
-        {label && <span className="opacity-90 truncate min-w-0">{label}</span>}
-        {slot.empBookings > 0 && (
-          <span
-            className={cn(
-              "shrink-0 inline-flex items-center rounded-sm px-1 text-[10px] font-bold leading-tight tabular-nums",
-              overbookHint
-                ? "bg-rose-500/50 text-white"
-                : "bg-sky-500/40 text-sky-50",
+        {(label || slot.empBookings > 0) && (
+          <span className="flex min-w-0 max-w-full items-center gap-1">
+            {label && <span className="opacity-90 truncate min-w-0">{label}</span>}
+            {slot.empBookings > 0 && (
+              <span
+                className={cn(
+                  "shrink-0 inline-flex items-center rounded-sm px-1 text-[10px] font-bold leading-tight tabular-nums",
+                  // Mehr EMP-Tickets als ANNY kennt: Achtung-Farbe, sonst Info.
+                  overbookHint
+                    ? "bg-warning text-warning-foreground"
+                    : "bg-info text-info-foreground",
+                )}
+                title={`${slot.empBookings} EMP-Ticket(s) in diesem Slot`}
+              >
+                {slot.empBookings}
+              </span>
             )}
-            title={`${slot.empBookings} EMP-Ticket(s) in diesem Slot`}
-          >
-            {slot.empBookings}
           </span>
         )}
       </span>
@@ -1048,12 +1071,16 @@ export function SlotOverviewPill({
           }}
           disabled={busy}
           title={isManuallyBlocked ? "Sperre aufheben" : "Slot sperren"}
+          aria-label={isManuallyBlocked ? "Sperre aufheben" : "Slot sperren"}
           className={cn(
-            "absolute top-0.5 right-0.5 z-10 inline-flex items-center justify-center rounded-md p-0.5",
+            // Ganze Pill-Höhe am rechten Rand statt 16 px in der Ecke: Touch-Ziel
+            // 24 × 44 px auf dem Handy (mehr lässt ein 2-Stunden-Slot dort nicht zu),
+            // 44 × 56 px am Kiosk.
+            "absolute inset-y-0 right-0 z-10 inline-flex w-6 items-center justify-center rounded-r-lg sm:w-11",
             "transition-colors disabled:opacity-60",
             isManuallyBlocked
-              ? "text-rose-300 hover:text-rose-100 hover:bg-rose-500/30"
-              : "text-slate-400 hover:text-rose-200 hover:bg-rose-500/20",
+              ? "text-destructive hover:text-foreground hover:bg-destructive/30"
+              : "text-muted-foreground hover:text-destructive hover:bg-destructive/20",
           )}
         >
           {busy ? (
