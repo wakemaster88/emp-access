@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -64,17 +65,14 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
     return (
       <div className="flex flex-wrap gap-1">
         {show.map((d) => (
-          <span
-            key={d.id}
-            className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground/80"
-          >
+          <Badge key={d.id} variant="secondary" className="font-medium">
             {d.name}
-          </span>
+          </Badge>
         ))}
         {rest > 0 && (
-          <span className="inline-flex items-center rounded-md bg-border dark:bg-accent px-2 py-0.5 text-xs text-muted-foreground">
+          <Badge variant="neutral" className="tabular-nums">
             +{rest}
-          </span>
+          </Badge>
         )}
       </div>
     );
@@ -86,7 +84,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
         <div className="flex justify-end mb-4">
           <Button
             onClick={() => setAddOpen(true)}
-            className="bg-primary hover:bg-primary/90 gap-2 shadow-sm"
+            className="max-sm:h-11"
           >
             <Plus className="h-4 w-4" />
             Resource anlegen
@@ -94,48 +92,49 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
         </div>
       )}
 
-      <div className="rounded-lg border border-border overflow-x-auto">
+      {/* Bis an den Kartenrand; erste und letzte Spalte rücken auf den Innenabstand der Karte ein. */}
+      <div className="-mx-4 sm:-mx-[18px]">
         <Table>
           <TableHeader>
-            <TableRow className="border-border hover:bg-transparent bg-muted/40">
-              <TableHead className="hidden sm:table-cell w-10 text-muted-foreground font-medium">#</TableHead>
-              <TableHead className="text-muted-foreground font-medium">
+            <TableRow>
+              <TableHead className="hidden sm:table-cell w-10 pl-[18px]">#</TableHead>
+              <TableHead className="pl-4 sm:pl-2">
                 <span className="inline-flex items-center gap-1.5">
                   <MapPin className="h-4 w-4 text-muted-foreground/70" />
                   Name
                 </span>
               </TableHead>
-              <TableHead className="hidden lg:table-cell text-muted-foreground font-medium">
+              <TableHead className="hidden lg:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   <FolderTree className="h-4 w-4 text-muted-foreground/70" />
                   In Resource
                 </span>
               </TableHead>
-              <TableHead className="hidden md:table-cell text-muted-foreground font-medium">
+              <TableHead className="hidden md:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   <LogIn className="h-4 w-4 text-muted-foreground/70" />
                   Geräte Einlass
                 </span>
               </TableHead>
-              <TableHead className="hidden md:table-cell text-muted-foreground font-medium">
+              <TableHead className="hidden md:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   <LogOut className="h-4 w-4 text-muted-foreground/70" />
                   Geräte Auslass
                 </span>
               </TableHead>
-              <TableHead className="hidden sm:table-cell text-muted-foreground font-medium">
+              <TableHead className="hidden sm:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   <Repeat className="h-4 w-4 text-muted-foreground/70" />
                   Wiedereinlass
                 </span>
               </TableHead>
-              <TableHead className="hidden sm:table-cell text-muted-foreground font-medium">
+              <TableHead className="hidden sm:table-cell">
                 <span className="inline-flex items-center gap-1.5">
                   <Users className="h-4 w-4 text-muted-foreground/70" />
                   Limit
                 </span>
               </TableHead>
-              <TableHead className="text-right text-muted-foreground font-medium">
+              <TableHead className="text-right pr-4 sm:pr-[18px]">
                 <span className="inline-flex items-center justify-end gap-1.5">
                   <Ticket className="h-4 w-4 text-muted-foreground/70" />
                   Tickets
@@ -146,21 +145,19 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
           <TableBody>
             {areas.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                    <MapPin className="h-12 w-12 text-slate-300 dark:text-slate-600" />
-                    <p className="font-medium text-muted-foreground">Noch keine Resourcen angelegt</p>
-                    <p className="text-sm">Lege eine Resource an, um Ein- und Auslass zu verwalten.</p>
-                  </div>
+                <TableCell colSpan={8} className="p-0 whitespace-normal">
+                  <EmptyState
+                    icon={MapPin}
+                    title="Noch keine Resourcen angelegt"
+                    description="Lege eine Resource an, um Ein- und Auslass zu verwalten."
+                  />
                 </TableCell>
               </TableRow>
             )}
             {areas.map((area, i) => (
               <TableRow
                 key={area.id}
-                className={`border-border transition-colors ${
-                  readonly ? "hover:bg-muted/40" : "cursor-pointer hover:bg-primary/10 "
-                }`}
+                className={`max-sm:h-11 ${readonly ? "" : "cursor-pointer"}`}
                 onClick={() => !readonly && setSelected({
                   id: area.id,
                   name: area.name,
@@ -172,8 +169,8 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   openingHours: area.openingHours,
                 })}
               >
-                <TableCell className="hidden sm:table-cell text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
-                <TableCell>
+                <TableCell className="hidden sm:table-cell pl-[18px] text-muted-foreground/70 text-sm tabular-nums">{i + 1}</TableCell>
+                <TableCell className="pl-4 sm:pl-2">
                   <div className="min-w-0">
                     <span className="inline-flex items-center gap-2 font-medium text-foreground">
                       <MapPin className="h-4 w-4 text-primary shrink-0" />
@@ -201,13 +198,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                   <DeviceBadges devices={area.devicesOut} />
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
-                  <Badge
-                    className={
-                      area.allowReentry
-                        ? "bg-success/12 text-success font-normal"
-                        : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground font-normal"
-                    }
-                  >
+                  <Badge variant={area.allowReentry ? "success" : "neutral"} className="font-normal">
                     {area.allowReentry ? "Ja" : "Nein"}
                   </Badge>
                   {!!area.scanLockSeconds && area.scanLockSeconds > 0 && (
@@ -227,7 +218,7 @@ export function AreasTable({ areas, readonly, annyResources, annyServices, annyM
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right pr-4 sm:pr-[18px]">
                   {area._count.tickets > 0 ? (
                     <Link
                       href={`/tickets?area=${area.id}`}

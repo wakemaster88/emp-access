@@ -108,14 +108,15 @@
   --accent: oklch(0.95 0.012 262);
   --accent-foreground: oklch(0.2 0.03 262);
 
-  --destructive: oklch(0.586 0.253 17.585);
+  /* Zustandsfarben hell: so dunkel, dass Text auf Glas und getönten Badges
+     mindestens 4,5:1 erreicht; als Fläche tragen sie weiße Schrift. */
+  --destructive: oklch(0.55 0.24 18);
   --destructive-foreground: oklch(0.99 0 0);
-  /* Als Textfarbe auf heller Fläche lesbar (Kontrast ≥ 4:1), als Fläche kräftig genug. */
-  --success: oklch(0.55 0.135 163);
+  --success: oklch(0.51 0.13 163);
   --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.6 0.165 55);
+  --warning: oklch(0.55 0.165 55);
   --warning-foreground: oklch(0.99 0 0);
-  --info: oklch(0.55 0.15 242);
+  --info: oklch(0.52 0.15 242);
   --info-foreground: oklch(0.99 0 0);
 
   --border: oklch(0.2 0.03 262 / 9%);
@@ -152,6 +153,14 @@
   --glass-shadow: 0 20px 50px -28px oklch(0.25 0.04 262 / 45%);
   --glass-blur: 28px;
   --glass-pill: oklch(1 0 0 / 92%);
+  /* Glas auf deckenden Ebenen (Dialog, Sheet): leicht getönt statt weiß, wie
+     gruppierte Zellen in iOS-Sheets – weißes Glas verschwindet auf Weiß. */
+  --layer-glass-bg: oklch(0.2 0.03 262 / 4%);
+  --layer-glass-bg-strong: oklch(0.2 0.03 262 / 7%);
+  --layer-glass-tile: oklch(0.2 0.03 262 / 4.5%);
+  --layer-glass-border: oklch(0.2 0.03 262 / 10%);
+  --layer-glass-highlight: oklch(1 0 0 / 70%);
+  --layer-glass-pill: oklch(1 0 0);
   --ambient-1: oklch(0.6 0.2 276 / 22%);
   --ambient-2: oklch(0.72 0.14 232 / 18%);
   --ambient-3: oklch(0.75 0.14 300 / 16%);
@@ -216,6 +225,13 @@
   --glass-shadow: 0 24px 60px -30px oklch(0 0 0 / 75%);
   --glass-blur: 28px;
   --glass-pill: oklch(1 0 0 / 16%);
+  /* Im Dunkeln trägt das weiße Glas auch auf deckenden Ebenen. */
+  --layer-glass-bg: oklch(1 0 0 / 5.5%);
+  --layer-glass-bg-strong: oklch(1 0 0 / 9%);
+  --layer-glass-tile: oklch(1 0 0 / 8%);
+  --layer-glass-border: oklch(1 0 0 / 16%);
+  --layer-glass-highlight: oklch(1 0 0 / 22%);
+  --layer-glass-pill: oklch(1 0 0 / 16%);
   --ambient-1: oklch(0.55 0.22 276 / 42%);
   --ambient-2: oklch(0.7 0.15 232 / 26%);
   --ambient-3: oklch(0.8 0.12 300 / 22%);
@@ -453,6 +469,37 @@
   transition-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
   &:active:not(:disabled) {
     transform: scale(0.97);
+  }
+}
+
+/*
+ * Deckende Ebenen (docs/design-regeln.md, Abschnitt 18)
+ * -----------------------------------------------------
+ * Dialog, AlertDialog und Sheet sind deckend. Glasflächen darin (Kacheln,
+ * Kapseln, Glas-Tasten, Badges) nehmen die getönten Ebenen-Werte, damit sie im
+ * Hellen sichtbar bleiben. Die Werte hängen am Element selbst, so greift auch
+ * ein Dialog mit eigener Klasse `dark` (Kiosk, Wandmonitor).
+ */
+:where([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
+  --glass-bg: var(--layer-glass-bg);
+  --glass-bg-strong: var(--layer-glass-bg-strong);
+  --glass-tile: var(--layer-glass-tile);
+  --glass-border: var(--layer-glass-border);
+  --glass-highlight: var(--layer-glass-highlight);
+  --glass-pill: var(--layer-glass-pill);
+}
+
+/* Auf dem Handy sind Felder und Tasten in Ebenen 44 px hoch (Abschnitt 16). */
+@media (max-width: 639.98px) {
+  :where([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"])
+    :where(
+      [data-slot="input"],
+      [data-slot="select-trigger"],
+      [data-slot="button"]:not([data-size^="icon"]):not([data-size="xs"]):not([data-variant="link"]),
+      [data-slot="alert-dialog-action"]:not([data-size^="icon"]),
+      [data-slot="alert-dialog-cancel"]:not([data-size^="icon"])
+    ) {
+    min-height: 2.75rem;
   }
 }
 

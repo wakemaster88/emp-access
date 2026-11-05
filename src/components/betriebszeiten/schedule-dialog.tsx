@@ -4,11 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ErrorLine, apiRequest } from "@/components/raeume/shared";
+import { apiRequest } from "@/components/raeume/shared";
 import { ExceptionEditor } from "@/components/betriebszeiten/exception-editor";
 import { SeasonEditor } from "@/components/betriebszeiten/season-editor";
 import type { ExceptionSpec, ScheduleRow, SeasonSpec } from "@/components/betriebszeiten/types";
@@ -96,7 +98,7 @@ export function ScheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-base">
             {schedule ? `Betriebszeit: ${schedule.name}` : "Neue Betriebszeit"}
@@ -106,53 +108,56 @@ export function ScheduleDialog({
         <div className="space-y-3">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-40 flex-1 space-y-1">
-              <Label className="text-xs">Name</Label>
+              <Label>Name</Label>
               <Input
                 value={name}
                 disabled={disabled}
                 placeholder="z.B. Strandbad"
-                className="h-8 text-xs"
+                className="max-sm:h-11"
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
             <div className="min-w-40 flex-[2] space-y-1">
-              <Label className="text-xs">Beschreibung</Label>
+              <Label>Beschreibung</Label>
               <Input
                 value={description}
                 disabled={disabled}
                 placeholder="optional"
-                className="h-8 text-xs"
+                className="max-sm:h-11"
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
           </div>
 
-          <label className="flex items-center gap-1.5 text-xs">
-            <input
-              type="checkbox"
+          {/* Ja/Nein als Schalterzeile in einer Glas-Kachel wie in den Resource- und Service-Dialogen (docs/design-regeln.md, Abschnitte 14 und 18). */}
+          <div className="glass-tile flex items-center justify-between gap-3 p-2.5">
+            <Label htmlFor="sched-default">Vorbelegung für neue Räume</Label>
+            <Switch
+              id="sched-default"
               checked={isDefault}
               disabled={disabled}
-              className="h-3.5 w-3.5"
-              onChange={(e) => setIsDefault(e.target.checked)}
+              onCheckedChange={setIsDefault}
             />
-            Vorbelegung für neue Räume
-          </label>
+          </div>
 
           <Tabs defaultValue="seasons">
-            <TabsList className="h-8">
-              <TabsTrigger value="seasons" className="text-xs">
+            {/* Glas-Kapsel, in der Ebene automatisch getönt (docs/design-regeln.md, Abschnitt 18). */}
+            <TabsList>
+              <TabsTrigger value="seasons">
                 Saisons ({seasons.length})
               </TabsTrigger>
-              <TabsTrigger value="exceptions" className="text-xs">
+              <TabsTrigger value="exceptions">
                 Ausnahmetage ({exceptions.length})
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="seasons" className="mt-2 space-y-2">
               {seasons.length === 0 && (
-                <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
-                  Ohne Saison gilt dieses Profil als dauerhaft geschlossen.
-                </p>
+                <Notice
+                  tone="warning"
+                  compact
+                  title="Ohne Saison gilt dieses Profil als dauerhaft geschlossen."
+                />
               )}
               {seasons.map((season, index) => (
                 <SeasonEditor
@@ -167,14 +172,14 @@ export function ScheduleDialog({
                 variant="outline"
                 size="sm"
                 disabled={disabled}
-                className="h-8 text-xs"
+                className="h-8 text-xs max-sm:h-11"
                 onClick={() => setSeasons([...seasons, defaultSeason()])}
               >
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Saison
               </Button>
               {seasons.length > 1 && (
-                <p className="text-[11px] text-neutral-500">
+                <p className="text-[11px] text-muted-foreground">
                   Überschneiden sich zwei Saisons, gewinnt die obere.
                 </p>
               )}
@@ -189,29 +194,30 @@ export function ScheduleDialog({
             </TabsContent>
           </Tabs>
 
-          <ErrorLine message={error} />
+          {error && <Notice tone="danger" compact title={error} />}
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving} className="h-8">
+        {/* Handy: Tasten volle Breite, Primärtaste oben (docs/design-regeln.md, Abschnitt 16).
+            Tasten 36 px wie in der Lösch-Rückfrage (Abschnitt 5: 34 bis 44 px). */}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving} className="max-sm:h-11">
             Abbrechen
           </Button>
           <Button
-            size="sm"
             onClick={save}
             disabled={saving || disabled}
-            className="h-8 min-w-24"
+            className="min-w-24 max-sm:h-11"
           >
             {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <>
-                <Save className="mr-1 h-3.5 w-3.5" />
+                <Save className="h-4 w-4" />
                 Speichern
               </>
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -3,10 +3,30 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarOff, DoorClosed, DoorOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { ErrorLine, apiRequest } from "@/components/raeume/shared";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Notice } from "@/components/ui/notice";
+import { apiRequest } from "@/components/raeume/shared";
 import { useNow } from "@/components/raeume/status";
 import { ScheduleDialog } from "@/components/betriebszeiten/schedule-dialog";
 import type { BetriebszeitenData, ScheduleRow } from "@/components/betriebszeiten/types";
@@ -65,42 +85,38 @@ function ScheduleCard({
   ].find((b) => b.at.getTime() > nowMs);
 
   return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="truncate text-sm font-semibold">{schedule.name}</h3>
-            {schedule.isDefault && (
-              <Badge variant="secondary" className="h-5 text-[10px]">
-                Vorbelegung
-              </Badge>
-            )}
-            <Badge
-              className={
-                open
-                  ? "h-5 border-0 bg-success/10 text-[10px] text-success "
-                  : "h-5 border-0 bg-neutral-100 text-[10px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-              }
-            >
-              {open ? (
-                <DoorOpen className="mr-1 h-3 w-3" />
-              ) : (
-                <DoorClosed className="mr-1 h-3 w-3" />
-              )}
-              {open ? "geöffnet" : "geschlossen"}
+    <Card>
+      <CardHeader>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <CardTitle className="min-w-0">
+            <h3 className="truncate">{schedule.name}</h3>
+          </CardTitle>
+          {schedule.isDefault && (
+            <Badge variant="secondary">
+              Vorbelegung
             </Badge>
-          </div>
-          {schedule.description && (
-            <p className="mt-0.5 truncate text-xs text-neutral-500">{schedule.description}</p>
           )}
+          {/* Zustand als Farbe: geöffnet grün, geschlossen grau (docs/design-regeln.md, Abschnitt 3). */}
+          <Badge variant={open ? "success" : "neutral"}>
+            {open ? (
+              <DoorOpen />
+            ) : (
+              <DoorClosed />
+            )}
+            {open ? "geöffnet" : "geschlossen"}
+          </Badge>
         </div>
+        {/* Zwei Zeilen statt hart abschneiden: neben den Tasten ist auf dem Handy nur eine schmale Spalte frei. */}
+        {schedule.description && (
+          <CardDescription className="line-clamp-2 text-xs">{schedule.description}</CardDescription>
+        )}
 
         {!readonly && (
-          <div className="flex gap-1">
+          <CardAction className="flex gap-1">
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground max-sm:size-11"
               onClick={onEdit}
               title="Bearbeiten"
             >
@@ -108,62 +124,65 @@ function ScheduleCard({
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-neutral-400 hover:text-destructive"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-destructive max-sm:size-11"
               onClick={onDelete}
               title="Löschen"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
-          </div>
+          </CardAction>
         )}
-      </div>
+      </CardHeader>
 
-      <dl className="mt-3 space-y-1 text-xs">
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-neutral-500">Heute</dt>
-          <dd className="font-medium">
-            {describeDay(today)}
-            {today.source === "exception" && (
-              <span className="ml-1.5 font-normal text-warning">
-                Ausnahme{today.label ? `: ${today.label}` : ""}
-              </span>
-            )}
-          </dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-neutral-500">Morgen</dt>
-          <dd>{describeDay(tomorrow)}</dd>
-        </div>
-        {nextBoundary && (
+      {/* Inhalt füllt die Karte, damit der Fuß in einer Rasterzeile bei allen Karten unten steht. */}
+      <CardContent className="flex-1">
+        <dl className="space-y-1 text-xs">
           <div className="flex gap-2">
-            <dt className="w-16 shrink-0 text-neutral-500">Nächster</dt>
-            <dd>
-              {nextBoundary.kind === "open" ? "Betriebsbeginn" : "Betriebsende"}{" "}
-              <span className="text-neutral-500">{untilLabel(nextBoundary.at, nowMs)}</span>
+            <dt className="w-16 shrink-0 text-muted-foreground">Heute</dt>
+            <dd className="font-medium">
+              {describeDay(today)}
+              {today.source === "exception" && (
+                <span className="ml-1.5 font-normal text-warning">
+                  Ausnahme{today.label ? `: ${today.label}` : ""}
+                </span>
+              )}
             </dd>
           </div>
-        )}
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-neutral-500">Saison</dt>
-          <dd>
-            {season ? (
-              <>
-                {season.name}{" "}
-                <span className="text-neutral-500">
-                  ({describeSeasonRange(season.startMmDd, season.endMmDd)})
+          <div className="flex gap-2">
+            <dt className="w-16 shrink-0 text-muted-foreground">Morgen</dt>
+            <dd>{describeDay(tomorrow)}</dd>
+          </div>
+          {nextBoundary && (
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-muted-foreground">Nächster</dt>
+              <dd>
+                {nextBoundary.kind === "open" ? "Betriebsbeginn" : "Betriebsende"}{" "}
+                <span className="text-muted-foreground">{untilLabel(nextBoundary.at, nowMs)}</span>
+              </dd>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <dt className="w-16 shrink-0 text-muted-foreground">Saison</dt>
+            <dd>
+              {season ? (
+                <>
+                  {season.name}{" "}
+                  <span className="text-muted-foreground">
+                    ({describeSeasonRange(season.startMmDd, season.endMmDd)})
+                  </span>
+                </>
+              ) : (
+                <span className="text-muted-foreground">
+                  heute keine Saison hinterlegt – gilt als geschlossen
                 </span>
-              </>
-            ) : (
-              <span className="text-neutral-500">
-                heute keine Saison hinterlegt – gilt als geschlossen
-              </span>
-            )}
-          </dd>
-        </div>
-      </dl>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </CardContent>
 
-      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-neutral-100 pt-2 text-[11px] text-neutral-500 dark:border-neutral-800">
+      <CardFooter className="flex-wrap gap-1.5 border-t text-[11px] text-muted-foreground tabular-nums">
         <span>
           {schedule.seasons.length} {schedule.seasons.length === 1 ? "Saison" : "Saisons"}
         </span>
@@ -176,7 +195,7 @@ function ScheduleCard({
         <span>
           {schedule.roomCount} {schedule.roomCount === 1 ? "Raum" : "Räume"}
         </span>
-      </div>
+      </CardFooter>
     </Card>
   );
 }
@@ -186,6 +205,9 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
   const nowMs = useNow(new Date(data.renderedAt).getTime());
   const [editing, setEditing] = useState<ScheduleRow | null>(null);
   const [creating, setCreating] = useState(false);
+  // Rückfrage vor dem Löschen; das Profil bleibt gesetzt, solange der Dialog ausblendet.
+  const [toDelete, setToDelete] = useState<ScheduleRow | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
 
   const openCount = useMemo(
@@ -194,13 +216,12 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
     [data.schedules, data.timezone, nowMs],
   );
 
-  async function remove(schedule: ScheduleRow) {
-    const hint =
-      schedule.roomCount > 0
-        ? `\n\n${schedule.roomCount} ${schedule.roomCount === 1 ? "Raum verliert" : "Räume verlieren"} damit die Betriebszeit und ${schedule.roomCount === 1 ? "gilt" : "gelten"} als dauerhaft verfügbar.`
-        : "";
-    if (!confirm(`Betriebszeit „${schedule.name}“ löschen?${hint}`)) return;
+  function askRemove(schedule: ScheduleRow) {
+    setToDelete(schedule);
+    setConfirmOpen(true);
+  }
 
+  async function remove(schedule: ScheduleRow) {
     setError("");
     const res = await apiRequest(`/api/betriebszeiten/${schedule.id}`, "DELETE");
     if (!res.ok) {
@@ -211,12 +232,12 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <div className="page-content space-y-4 sm:space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-neutral-500">
-          {data.schedules.length === 0
-            ? "Noch keine Betriebszeit angelegt."
-            : `${openCount} von ${data.schedules.length} ${data.schedules.length === 1 ? "Profil" : "Profilen"} gerade geöffnet.`}
+        {/* Ohne Profil sagt das der leere Zustand darunter; hier steht es nicht ein zweites Mal (docs/design-regeln.md, Abschnitt 1). */}
+        <p className="text-xs text-muted-foreground">
+          {data.schedules.length > 0 &&
+            `${openCount} von ${data.schedules.length} ${data.schedules.length === 1 ? "Profil" : "Profilen"} gerade geöffnet.`}
           {data.roomsWithoutSchedule > 0 && (
             <>
               {" "}
@@ -227,31 +248,25 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
           )}
         </p>
         {!data.readonly && (
-          <Button
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setCreating(true)}
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
+          <Button className="max-sm:h-11" onClick={() => setCreating(true)}>
+            <Plus className="h-4 w-4" />
             Betriebszeit
           </Button>
         )}
       </div>
 
-      <ErrorLine message={error} />
+      {error && <Notice tone="danger" compact title={error} />}
 
       {data.schedules.length === 0 ? (
-        <Card className="flex flex-col items-center gap-2 p-8 text-center">
-          <CalendarOff className="h-8 w-8 text-neutral-300" />
-          <p className="text-sm font-medium">Keine Betriebszeit hinterlegt</p>
-          <p className="max-w-md text-xs text-neutral-500">
-            Ein Profil je Betriebsteil – etwa Strandbad, Gastronomie oder Seilbahn. Räume greifen
-            darauf zu, und Automationen können dann „bei Betriebsbeginn“ oder „außerhalb der
-            Betriebszeit“ auslösen.
-          </p>
+        <Card className="py-0 sm:py-0">
+          <EmptyState
+            icon={CalendarOff}
+            title="Keine Betriebszeit hinterlegt"
+            description="Ein Profil je Betriebsteil – etwa Strandbad, Gastronomie oder Seilbahn. Räume greifen darauf zu, und Automationen können dann „bei Betriebsbeginn“ oder „außerhalb der Betriebszeit“ auslösen."
+          />
         </Card>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
           {data.schedules.map((schedule) => (
             <ScheduleCard
               key={schedule.id}
@@ -260,11 +275,38 @@ export function BetriebszeitenClient({ data }: { data: BetriebszeitenData }) {
               nowMs={nowMs}
               readonly={data.readonly}
               onEdit={() => setEditing(schedule)}
-              onDelete={() => remove(schedule)}
+              onDelete={() => askRemove(schedule)}
             />
           ))}
         </div>
       )}
+
+      {/* Löschen immer mit AlertDialog und destructive-Taste (docs/design-regeln.md, Abschnitt 18). */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Betriebszeit „{toDelete?.name}“ löschen?</AlertDialogTitle>
+            {/* Immer vorhanden (Radix verlangt eine Beschreibung); Text nur, wenn Räume betroffen sind. */}
+            <AlertDialogDescription>
+              {toDelete && toDelete.roomCount > 0 &&
+                `${toDelete.roomCount} ${toDelete.roomCount === 1 ? "Raum verliert" : "Räume verlieren"} damit die Betriebszeit und ${toDelete.roomCount === 1 ? "gilt" : "gelten"} als dauerhaft verfügbar.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {/* 44 px auf dem Handy: die Ebenen-Regel in globals.css erfasst AlertDialog-Tasten nicht (data-slot wird überschrieben). */}
+          <AlertDialogFooter>
+            <AlertDialogCancel className="max-sm:h-11">Abbrechen</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              className="max-sm:h-11"
+              onClick={() => {
+                if (toDelete) void remove(toDelete);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {creating && (
         <ScheduleDialog schedule={null} open onClose={() => setCreating(false)} />

@@ -163,7 +163,7 @@ Jede Seite baut aus diesen Teilen. Ein Muster, das hier fehlt, kommt als Baustei
 | `Segmented` | `ui/segmented.tsx` | Filter, Zeitraum, Ansicht (ohne eigenen Inhaltsbereich). Gleiche Optik wie Tabs. |
 | `Button` | `ui/button.tsx` | `default` Primär (eine je Bereich), `secondary` Glas, `outline` Glas mit Rand, `ghost`, `destructive`, `link`. |
 | `Badge` | `ui/badge.tsx` | Pille für Zustand und Anzahl: `success`, `warning`, `danger`, `info`, `neutral`, `secondary`, `outline`, `mono`. |
-| `Input`, `Textarea`, `Select`, `Switch`, `Label` | `ui/…` | Formulare. Felder sind `glass-field` (getönt, Radius 14 px). Schalter an = grün. |
+| `Input`, `Textarea`, `Select`, `Switch`, `Checkbox`, `Label` | `ui/…` | Formulare. Felder sind `glass-field` (getönt, Radius 14 px). Schalter an = grün (wirkt sofort), Kästchen für Auswahl und Bestätigung. |
 | `Dialog`, `AlertDialog`, `Sheet` | `ui/…` | Ebene über der Seite: deckend, Radius 24 px, auf dem Handy von unten. |
 | `DropdownMenu`, `Select`-Liste, `Tooltip` | `ui/…` | Schwebende Ebenen aus dichtem Glas (`glass-surface`). |
 | `Table` | `ui/table.tsx` | Tabellen in einer Karte, Haarlinien, Kopf 11 px Versalien. |
@@ -208,6 +208,8 @@ und `bg-field` bereit.
 - Kurze Listen (bis etwa 12 Einträge, gemischter Inhalt): Zeilen als `glass-tile` oder als
   Zeilen mit Haarlinie in einer Karte, links `IconChip`, rechts Zustand und Handlung.
 - Lange Listen und Daten mit Spalten: `Table` in einer `Card` (`py-0`, Tabelle bis an den Rand).
+  Trennlinien in Karten und Tabellen sind `border-border` (im Hellen dunkle Haarlinie), nicht
+  `border-glass-border` – das ist die helle Lichtkante der Glasfläche selbst.
   Zeilenhöhe mindestens 44 px auf dem Handy. Gruppenzeilen als `text-label` auf `bg-glass-tile`.
 - Breite Tabellen scrollen in ihrem Container waagerecht, nie die Seite.
 - Auswahl: `bg-primary/10`, Darüberfahren: `bg-glass-tile`.
@@ -218,6 +220,9 @@ und `bg-field` bereit.
   Schritte im selben Dialog oder eine eigene Seite.
 - Dialoge sind deckend (`bg-popover`), Radius 24 px, Schließen-Taste als runde Glas-Taste.
   Auf dem Handy kommen sie als Blatt von unten mit Griff.
+- Glas in Dialog, AlertDialog und Sheet ist im Hellen leicht getönt statt weiß (`--layer-glass-…`),
+  wie gruppierte Zellen in iOS-Sheets. Das passiert automatisch; Kacheln, Kapseln und Glas-Tasten
+  brauchen dort keine eigenen Klassen. Felder und Tasten sind darin auf dem Handy 44 px hoch.
 - Löschen und Sperren immer mit `AlertDialog` und `destructive`-Taste.
 - Menüs und Auswahllisten sind dichtes Glas (`glass-surface`), Einträge 36 px, aktiv
   `bg-primary/12`.

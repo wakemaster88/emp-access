@@ -59,7 +59,7 @@ export function Header({ title, accountName, badge, children, className }: Heade
   return (
     <header
       className={cn(
-        "sticky top-0 z-30 glass-bar border-b border-glass-border/60 dark:border-white/[0.08]",
+        "sticky top-0 z-30 glass-bar border-b border-border/60 dark:border-white/[0.08]",
         "pt-[env(safe-area-inset-top)]",
         className,
       )}

@@ -4,6 +4,7 @@ import { CopyPlus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { weekdayName } from "@/lib/operating-hours";
 import type { PeriodSpec, SeasonSpec } from "@/components/betriebszeiten/types";
 
@@ -48,8 +49,9 @@ function MmDdPicker({
   disabled?: boolean;
 }) {
   const { month, day } = splitMmDd(value);
+  // Eigene Auswahlfelder wie Eingabefelder: glass-field, 16 px Schrift auf dem Handy (Abschnitt 16).
   const selectClass =
-    "h-8 rounded-md border border-neutral-200 bg-white px-2 text-xs disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900";
+    "glass-field h-9 px-2 text-base text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-50 max-sm:h-11 md:text-sm";
 
   return (
     <div className="flex gap-1.5">
@@ -103,22 +105,21 @@ function DayRow({
   const open = periods.length > 0;
 
   return (
-    <div className="flex flex-wrap items-start gap-2 border-b border-neutral-100 py-1.5 last:border-0 dark:border-neutral-800">
-      <label className="flex w-24 shrink-0 items-center gap-1.5 pt-1.5 text-xs">
-        <input
-          type="checkbox"
+    <div className="flex flex-wrap items-start gap-2 border-b border-border py-1.5 last:border-0">
+      {/* Geöffnet als Schalter, an = grün (docs/design-regeln.md, Abschnitte 3 und 14). */}
+      <label className="flex h-9 w-24 shrink-0 items-center gap-2 text-xs max-sm:h-11">
+        <Switch
           checked={open}
           disabled={disabled}
-          onChange={(e) =>
-            onChange(e.target.checked ? [{ weekday, opensAt: "10:00", closesAt: "18:00" }] : [])
+          onCheckedChange={(checked) =>
+            onChange(checked ? [{ weekday, opensAt: "10:00", closesAt: "18:00" }] : [])
           }
-          className="h-3.5 w-3.5"
         />
-        <span className={open ? "font-medium" : "text-neutral-400"}>{weekdayName(weekday)}</span>
+        <span className={open ? "font-medium" : "text-muted-foreground"}>{weekdayName(weekday)}</span>
       </label>
 
       {!open ? (
-        <span className="pt-1.5 text-xs text-neutral-400">geschlossen</span>
+        <span className="flex h-9 items-center text-xs text-muted-foreground max-sm:h-11">geschlossen</span>
       ) : (
         <div className="flex flex-1 flex-col gap-1.5">
           {periods.map((period, index) => (
@@ -127,19 +128,19 @@ function DayRow({
                 type="time"
                 value={period.opensAt}
                 disabled={disabled}
-                className="h-8 w-[6.5rem] text-xs"
+                className="w-[6.5rem] max-sm:h-11"
                 onChange={(e) =>
                   onChange(
                     periods.map((p, i) => (i === index ? { ...p, opensAt: e.target.value } : p)),
                   )
                 }
               />
-              <span className="text-xs text-neutral-400">bis</span>
+              <span className="text-xs text-muted-foreground">bis</span>
               <Input
                 type="time"
                 value={period.closesAt}
                 disabled={disabled}
-                className="h-8 w-[6.5rem] text-xs"
+                className="w-[6.5rem] max-sm:h-11"
                 onChange={(e) =>
                   onChange(
                     periods.map((p, i) => (i === index ? { ...p, closesAt: e.target.value } : p)),
@@ -154,9 +155,9 @@ function DayRow({
               {periods.length > 1 && (
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="icon-sm"
                   disabled={disabled}
-                  className="h-7 w-7 p-0 text-neutral-400 hover:text-destructive"
+                  className="text-muted-foreground hover:text-destructive max-sm:size-11"
                   onClick={() => onChange(periods.filter((_, i) => i !== index))}
                   title="Zeitraum entfernen"
                 >
@@ -171,21 +172,21 @@ function DayRow({
               variant="ghost"
               size="sm"
               disabled={disabled}
-              className="h-7 px-1.5 text-[11px] text-neutral-500"
+              className="h-7 px-1.5 text-[11px] text-muted-foreground max-sm:h-11"
               onClick={() => onChange([...periods, { weekday, opensAt: "17:00", closesAt: "22:00" }])}
             >
-              <Plus className="mr-0.5 h-3 w-3" />
+              <Plus className="mr-0.5 size-3" />
               Zeitraum
             </Button>
             <Button
               variant="ghost"
               size="sm"
               disabled={disabled}
-              className="h-7 px-1.5 text-[11px] text-neutral-500"
+              className="h-7 px-1.5 text-[11px] text-muted-foreground max-sm:h-11"
               onClick={onCopyToAll}
               title="Diese Zeiten auf alle Wochentage übertragen"
             >
-              <CopyPlus className="mr-0.5 h-3 w-3" />
+              <CopyPlus className="mr-0.5 size-3" />
               auf alle Tage
             </Button>
           </div>
@@ -230,20 +231,21 @@ export function SeasonEditor({
   const wrapsYear = season.startMmDd > season.endMmDd;
 
   return (
-    <div className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+    // Gruppe im Dialog als Glas-Kachel; in der Ebene getönt (docs/design-regeln.md, Abschnitt 18).
+    <div className="glass-tile p-3">
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-32 flex-1 space-y-1">
-          <Label className="text-xs">Saison</Label>
+          <Label>Saison</Label>
           <Input
             value={season.name}
             disabled={disabled}
             placeholder="z.B. Sommer"
-            className="h-8 text-xs"
+            className="max-sm:h-11"
             onChange={(e) => onChange({ ...season, name: e.target.value })}
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">von</Label>
+          <Label>von</Label>
           <MmDdPicker
             value={season.startMmDd}
             disabled={disabled}
@@ -251,7 +253,7 @@ export function SeasonEditor({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">bis</Label>
+          <Label>bis</Label>
           <MmDdPicker
             value={season.endMmDd}
             disabled={disabled}
@@ -260,9 +262,9 @@ export function SeasonEditor({
         </div>
         <Button
           variant="ghost"
-          size="sm"
+          size="icon"
           disabled={disabled}
-          className="h-8 w-8 p-0 text-neutral-400 hover:text-destructive"
+          className="text-muted-foreground hover:text-destructive max-sm:size-11"
           onClick={onRemove}
           title="Saison entfernen"
         >
@@ -271,7 +273,7 @@ export function SeasonEditor({
       </div>
 
       {wrapsYear && (
-        <p className="mt-1.5 text-[11px] text-neutral-500">
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
           Läuft über den Jahreswechsel und gilt jedes Jahr erneut.
         </p>
       )}

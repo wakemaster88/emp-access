@@ -18,11 +18,11 @@ const badgeVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
         secondary:
-          "bg-glass-tile text-foreground ring-1 ring-inset ring-glass-border [a&]:hover:bg-glass-strong",
+          "bg-glass-tile text-foreground ring-1 ring-inset ring-border dark:ring-glass-border [a&]:hover:bg-glass-strong",
         destructive:
           "bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
-          "border-glass-border text-foreground [a&]:hover:bg-glass-tile",
+          "border-border text-foreground dark:border-glass-border [a&]:hover:bg-glass-tile",
         ghost: "[a&]:hover:bg-glass-tile",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
         success: "bg-success/12 text-success dark:bg-success/16 [a&]:hover:bg-success/20",
@@ -30,7 +30,7 @@ const badgeVariants = cva(
         danger: "bg-destructive/12 text-destructive dark:bg-destructive/16 [a&]:hover:bg-destructive/20",
         info: "bg-info/12 text-info dark:bg-info/16 [a&]:hover:bg-info/20",
         neutral: "bg-foreground/[0.06] text-muted-foreground dark:bg-white/[0.08] [a&]:hover:bg-foreground/10",
-        mono: "rounded-md border-glass-border bg-glass-tile font-mono text-[11px] font-medium tracking-tight text-foreground/80",
+        mono: "rounded-md border-border bg-glass-tile dark:border-glass-border font-mono text-[11px] font-medium tracking-tight text-foreground/80",
       },
     },
     defaultVariants: {

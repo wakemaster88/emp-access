@@ -79,7 +79,7 @@ export function Notice({
     <div
       role={role ?? (tone === "danger" ? "alert" : "status")}
       className={cn(
-        "flex min-w-0 items-start gap-3 rounded-tile border",
+        "flex min-w-0 flex-wrap items-start gap-3 rounded-tile border sm:flex-nowrap",
         compact ? "px-3 py-2.5" : "px-3.5 py-3",
         t.box,
         className,
@@ -105,7 +105,9 @@ export function Notice({
           </div>
         )}
       </div>
-      {action && <div className="flex shrink-0 items-center gap-2 self-center">{action}</div>}
+      {action && (
+        <div className="flex shrink-0 items-center justify-end gap-2 self-center max-sm:basis-full">{action}</div>
+      )}
     </div>
   );
 }

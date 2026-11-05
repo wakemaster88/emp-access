@@ -70,9 +70,10 @@ export default async function AreasPage() {
     <>
       <Header title="Ressourcen" accountName={session.user.accountName} />
       <div className="page-content">
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-xl">Alle Ressourcen ({areas.length})</CardTitle>
+        {/* Tabelle läuft unten bis an den Kartenrand (docs/design-regeln.md, Abschnitt 17). */}
+        <Card className="overflow-hidden pb-0 sm:pb-0">
+          <CardHeader>
+            <CardTitle>Alle Ressourcen ({areas.length})</CardTitle>
             <CardDescription>
               Resourcen definieren Zugangsbereiche. <Link href="/services" className="text-primary hover:underline">Services</Link> und <Link href="/subscriptions" className="text-primary hover:underline">Abos</Link> verknüpfen Resourcen mit <Link href="/tickets" className="text-primary hover:underline">Tickets</Link>.
             </CardDescription>
