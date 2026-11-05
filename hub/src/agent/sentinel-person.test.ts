@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { decidePerson, parsePersonLook } from "./sentinel-rules.js";
 
 const look = (o: Partial<ReturnType<typeof parsePersonLook>> = {}) => ({
-  personen: 1, arbeitskleidung: false, mitarbeiter: false, verdaechtig: false, was: "", ...o,
+  personen: 1, arbeitskleidung: false, mitarbeiter: false, verdaechtig: false, was: "", kleidung: [], bekannt: [], unbekannt: 1, ...o,
 });
 
 test("Nahaufnahme-JSON robust lesen", () => {
@@ -39,4 +39,18 @@ test("Gesicht Whitelist reicht, Blacklist und verdächtig immer Alarm", () => {
 test("Niemand eingestempelt oder keine Daten: Alarm", () => {
   assert.equal(decidePerson({ face: null, staff: [], look: look({ mitarbeiter: true }), hour: 14 }).alarm, true);
   assert.equal(decidePerson({ face: null, staff: null, look: look(), hour: 14 }).alarm, true);
+});
+
+test("Wiedererkennung über Kameras: alle bekannt → kein Alarm, ein Neuer → Alarm", () => {
+  const known = ["Jakob (Übungslift 14:30)", "Zar (Übungslift 14:30)"];
+  const l = parsePersonLook('{"personen":2,"kleidung":["blaue Jacke","rote Mütze"],"bekannt":[1,2],"unbekannt":0,"was":"Zwei Personen"}');
+  assert.deepEqual(l.bekannt, [1, 2]);
+  const d = decidePerson({ face: null, staff: null, look: l, hour: 23, known });
+  assert.equal(d.alarm, false);
+  assert.match(d.reason, /Jakob.*Zar/);
+  const l2 = parsePersonLook('{"personen":3,"bekannt":[1,2],"was":""}');
+  assert.equal(l2.unbekannt, 1);
+  assert.equal(decidePerson({ face: null, staff: null, look: l2, hour: 23, known }).alarm, true);
+  // Nummer ausserhalb der Liste zählt nicht.
+  assert.equal(decidePerson({ face: null, staff: null, look: { ...l, bekannt: [5] }, hour: 23, known }).alarm, true);
 });

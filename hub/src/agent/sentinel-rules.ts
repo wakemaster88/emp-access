@@ -82,6 +82,12 @@ export interface PersonLook {
   mitarbeiter: boolean;
   verdaechtig: boolean;
   was: string;
+  /** Kurzbeschreibung je Person (Kleidung, Statur) fuer die Wiedererkennung. */
+  kleidung: string[];
+  /** Nummern der schon bekannten Personen (aus der Liste im Prompt), die wieder zu sehen sind. */
+  bekannt: number[];
+  /** Personen im Bild, die keiner bekannten entsprechen. */
+  unbekannt: number;
 }
 
 export function parsePersonLook(raw: string): PersonLook {
@@ -96,8 +102,21 @@ export function parsePersonLook(raw: string): PersonLook {
   }
   const yes = (v: unknown) => v === true || v === "true" || v === "ja";
   const n = Math.round(Number(obj.personen));
+  const personen = Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 1;
+  const kleidung = (Array.isArray(obj.kleidung) ? obj.kleidung : typeof obj.kleidung === "string" ? [obj.kleidung] : [])
+    .map((k) => String(k).replace(/\s+/g, " ").trim().slice(0, 160))
+    .filter(Boolean)
+    .slice(0, 10);
+  const bekannt = (Array.isArray(obj.bekannt) ? obj.bekannt : [])
+    .map((b) => Math.round(Number(b)))
+    .filter((b, i, a) => Number.isInteger(b) && b > 0 && a.indexOf(b) === i);
+  const u = Math.round(Number(obj.unbekannt));
+  const unbekannt = Number.isFinite(u) && u >= 0 ? u : Math.max(0, personen - bekannt.length);
   return {
-    personen: Number.isFinite(n) && n >= 0 ? Math.min(n, 50) : 1,
+    personen,
+    kleidung,
+    bekannt,
+    unbekannt,
     arbeitskleidung: yes(obj.arbeitskleidung),
     mitarbeiter: yes(obj.mitarbeiter ?? obj.wirkt_wie_mitarbeiter),
     verdaechtig: yes(obj.verdaechtig ?? obj.verdächtig),
@@ -112,6 +131,8 @@ export interface PersonContext {
   staff: string[] | null;
   look: PersonLook | null;
   hour: number;
+  /** Namen/Beschreibungen der bekannten Personen in Listen-Reihenfolge (1-basiert in look.bekannt). */
+  known?: string[];
 }
 
 export interface PersonDecision {
@@ -133,6 +154,12 @@ export function decidePerson(ctx: PersonContext): PersonDecision {
   if (ctx.face?.list === "BLACKLIST") return { alarm: true, reason: `Gesperrte Person erkannt: ${ctx.face.name}` };
   if (ctx.look?.verdaechtig) return { alarm: true, reason: "Verhalten wirkt verdächtig" };
   if (ctx.face?.list === "WHITELIST") return { alarm: false, reason: `Gesicht erkannt: ${ctx.face.name}` };
+  // Schon an einer anderen Kamera als unbedenklich eingestuft (gleiche Kleidung).
+  const known = ctx.known ?? [];
+  const seen = (ctx.look?.bekannt ?? []).filter((b) => b <= known.length);
+  if (ctx.look && seen.length > 0 && ctx.look.unbekannt === 0) {
+    return { alarm: false, reason: `Schon gesehen: ${seen.map((b) => known[b - 1]).join(", ")}` };
+  }
   const staff = ctx.staff ?? [];
   if (staff.length > 0) {
     const count = ctx.look?.personen ?? 1;

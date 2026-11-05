@@ -19,6 +19,7 @@ import { recordHubEvent } from "../state.js";
 import { LLM, LLM_LOADED, VISION, askVision, chat, ensureOllama, refreshLoadedModel, type ChatMessage } from "./ollama.js";
 import { SENTINEL, startSentinel } from "./sentinel.js";
 import { answerVehicle } from "./vehicles.js";
+import { answerPersonOk } from "./people.js";
 import { stripThinking } from "./think.js";
 import {
   answerCallback,
@@ -281,12 +282,19 @@ async function handleMessage(chatId: string, text: string): Promise<void> {
 async function handleCallback(cb: NonNullable<TgUpdate["callback_query"]>): Promise<void> {
   const chatId = String(cb.message?.chat.id ?? "");
   const veh = (cb.data ?? "").match(/^v(ok|no):([A-Z0-9ÄÖÜ]{4,12})$/);
+  const pok = (cb.data ?? "").match(/^pok:([0-9a-f]{8})$/);
   const m = (cb.data ?? "").match(/^(ok|no):([0-9a-f]{12})$/);
-  if (!chatId || !isPaired(pairing, chatId, ENV_CHAT_IDS) || (!m && !veh)) {
+  if (!chatId || !isPaired(pairing, chatId, ENV_CHAT_IDS) || (!m && !veh && !pok)) {
     await answerCallback(cb.id, "Nicht berechtigt.");
     return;
   }
   const msgId = cb.message?.message_id;
+  if (pok) {
+    await answerCallback(cb.id, "Gemerkt");
+    const line = await answerPersonOk(pok[1]).catch((e) => `Fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+    if (msgId) await sendText(chatId, line).catch(() => undefined);
+    return;
+  }
   if (veh) {
     await answerCallback(cb.id, veh[1] === "ok" ? "Wird genehmigt …" : "Ok");
     const line = await answerVehicle(veh[1] === "ok", veh[2]).catch((e) => `Fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
