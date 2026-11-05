@@ -821,8 +821,13 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
   let timer = null;
   let attempts = 0;
   let watch = null;
-  let late = 0;
   let prevStats = null;
+  let lateSince = 0;
+  let lastResync = 0;
+  let isLive = false;
+  let lastFrames = 0;
+  let lastFrameAt = 0;
+  let lastTime = 0;
 
   /*
    * Gleiche, kleine Verzoegerung fuer alle Kacheln: Der Browser puffert
@@ -842,6 +847,16 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
       }
     }
   };
+  /*
+   * Waechter je Verbindung (alle 2 s):
+   *  - "live" erst melden, wenn wirklich Bilder dekodiert werden (vorher
+   *    bleibt der Hinweis "Verbindung wird aufgebaut").
+   *  - Kommen 12 s lang keine neuen Bilder (Kamera haengt, Keyframe fehlt),
+   *    neu verbinden.
+   *  - Waechst die Verzoegerung 10 s am Stueck ueber 2 s, einmal neu
+   *    synchronisieren, hoechstens einmal pro Minute. Kurze Spitzen durch
+   *    unregelmaessige Zeitstempel einzelner Kameras loesen nichts aus.
+   */
   const checkDelay = async () => {
     if (!pc || pc.connectionState !== "connected") return;
     // Ein im Hintergrund angehaltenes Video wieder anwerfen.
@@ -854,15 +869,35 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     }
     let cur = null;
     stats.forEach((r) => {
-      if (r.type === "inbound-rtp" && r.kind === "video") cur = { d: r.jitterBufferDelay || 0, n: r.jitterBufferEmittedCount || 0 };
+      if (r.type === "inbound-rtp" && r.kind === "video") {
+        cur = { d: r.jitterBufferDelay || 0, n: r.jitterBufferEmittedCount || 0, f: r.framesDecoded || 0 };
+      }
     });
+    const now = Date.now();
+    // Fortschritt: neue dekodierte Bilder laut Statistik, oder (falls der
+    // Browser die nicht liefert) die Abspielzeit des Videos laeuft weiter.
+    const frames = cur ? cur.f : 0;
+    const t = video.currentTime || 0;
+    if (frames > lastFrames || (t > lastTime && video.videoWidth > 0)) {
+      lastFrames = Math.max(lastFrames, frames);
+      lastTime = t;
+      lastFrameAt = now;
+      if (!isLive) {
+        isLive = true;
+        attempts = 0;
+        onState("live");
+      }
+    } else if (now - lastFrameAt > 12000) {
+      retry();
+      return;
+    }
     if (!cur) return;
     if (prevStats && cur.n > prevStats.n) {
       const delay = (cur.d - prevStats.d) / (cur.n - prevStats.n);
-      late = delay > 1 ? late + 1 : 0;
-      if (late >= 2) {
-        late = 0;
-        prevStats = null;
+      if (delay <= 2) lateSince = 0;
+      else if (!lateSince) lateSince = now;
+      else if (now - lateSince > 10000 && now - lastResync > 60000) {
+        lastResync = now;
         retry(true);
         return;
       }
@@ -874,7 +909,10 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
     clearInterval(watch);
     watch = null;
     prevStats = null;
-    late = 0;
+    lateSince = 0;
+    isLive = false;
+    lastFrames = 0;
+    lastTime = 0;
     if (!pc) return;
     pc.ontrack = null;
     pc.onconnectionstatechange = null;
@@ -919,11 +957,11 @@ function startRtc(video, src, onState, { maxAttempts = 0 } = {}) {
         if (!pc) return;
         const st = pc.connectionState;
         if (st === "connected") {
-          attempts = 0;
           lowLatency();
           clearInterval(watch);
-          watch = setInterval(checkDelay, 4000);
-          onState("live");
+          lastFrameAt = Date.now();
+          watch = setInterval(checkDelay, 2000);
+          checkDelay();
         } else if (st === "disconnected") {
           // Oft nur ein kurzer Aussetzer (WLAN): ICE erholt sich meist von
           // selbst. Erst nach 8 s ohne Erholung neu verbinden.
