@@ -79,7 +79,9 @@ export default async function TicketsPage({ searchParams }: Props) {
 
   const [tickets, areas, subscriptions, services, vereine, inactiveCount] = await Promise.all([
     db.ticket.findMany({
-      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, ...codeFilter, ...sourceFilter },
+      // Code- und Quellenfilter bringen beide ein OR mit; als AND-Liste
+      // überschreibt der Quellenfilter die Code-Suche nicht mehr.
+      where: { ...baseWhere, ...statusFilter, ...areaFilter, ...subFilter, ...svcFilter, AND: [codeFilter, sourceFilter] },
       include: {
         accessArea: true,
         subscription: true,
