@@ -768,3 +768,37 @@ Nicht übernommen:
 
 - `icons/icon.svg` und die PNGs (192, 512, maskierbar 512, Apple 180) im Akzent-Indigo der Cloud statt Cyan→Violett: Verlauf `#5b86ff` → `#514bf2` → `#7c42ee`, weicher Lichtfleck oben links, bei den abgerundeten Varianten (SVG, 192, 512) eine helle Glaskante wie bei den Glaskacheln. Blitz, Form und Radius unverändert. Maskierbar und Apple sind vollflächig (das System rundet selbst), der Blitz liegt dort in der sicheren Zone (80 %).
 - Der Service Worker lädt `/icons/` zuerst aus dem Netz, Browser-Tab und Manifest zeigen das neue Icon nach dem nächsten Laden. Auf dem iPhone behält der Home-Bildschirm das alte Icon, bis man die App dort einmal entfernt und neu hinzufügt.
+
+### Nachtrag: Handy ohne Querscrollen
+
+Aaron (05.11.): Auf dem Handy darf nichts seitlich scrollen, Köpfe und Filter aufräumen. Geprüft im Hub-Mock mit Touch bei 390 und 360 px: 13 Bereiche, Mehr-Sheet und fünf Dialoge, hell und dunkel.
+
+Vorher:
+
+- Die Seite war nie breiter als das Fenster, aber drei Segment-Leisten wischten seitlich (bei 360 px): Geräte 622 px Inhalt in 326 px, Netzwerk-VLANs 834 px, Ereignisse 1017 px. Ein Teil der Filter war ohne Wischen nicht zu sehen.
+- Dock bei 360 px: „Ereigni…“ statt „Ereignisse“.
+- Köpfe: Die Taste des Bereichs stand in einer eigenen Zeile unter dem Untertitel, im Netzwerk zwei Tasten untereinander (Kopf 175 px hoch). „Fahrzeug hinzufügen“ stand links unter dem Hinweis.
+
+Änderungen (`dashboard.css`, drei Tasten in `dashboard.html`):
+
+- Segment-Leisten brechen auch auf Touch um, die Einträge füllen jede Zeile. Radius = halbe Zeilenhöhe (22 px, auf Touch 25 px). Das ersetzt „auf Touch wischt man weiter“ im Nachtrag oben.
+- Dock: Einträge gleich breit, aber nie schmaler als ihr Label. Ab 320 px passen alle sechs ungekürzt; schmaler (Zoom) kürzen die Labels wie bisher, damit „Mehr“ im Dock bleibt.
+- Kopf unter 640 px: Titel links, Taste oben rechts daneben, Untertitel darunter über die volle Breite, „Switches abfragen“ als zweite Taste darunter. Zentrale: Spaltenwahl und Vollbild (nur Symbol) neben dem Titel.
+- Fahrzeuge: „+ Fahrzeug“ oben rechts neben dem Hinweis. Gekürzte Texte sind nur ausgeblendet, VoiceOver liest weiter „Vollbild“ und „Fahrzeug hinzufügen“.
+- Suche: Der Hinweis „/“ fällt auf dem Telefon weg, der Text bekommt die Breite.
+
+Gemessen:
+
+- 76 Aufnahmen (390/360 px, hell/dunkel, 13 Bereiche plus 6 Extras): kein innerer Scroller, nichts über den Rand (außer dem Skip-Link), kein gekürztes Dock-Label. Ebenso 57 Aufnahmen bei 320, 375 und 430 px und die Zustände Notbetrieb, leer, Mäher-Einrichtung und ruhig.
+- Kopfhöhe bei 360 px vorher → nachher: Zentrale 129 → 92, Räume und Regeln 119 → 82, Geräte und Mäher 138 → 101, Netzwerk 175 → 140. Bei 390 px wächst nur der Netzwerk-Kopf (123 → 140), weil „Switches abfragen“ jetzt unter dem Untertitel steht.
+- Filterzeilen bei 390/360 px: Geräte 2/2, Räume 1/2, Netzwerk-VLANs 3/4, Ereignisse 4/4.
+- Tabellen (Netzwerk, Freigegebene Fahrzeuge, Aufgaben-Historie) sind unter 720 px gestapelt: 326 von 326 px.
+- Desktop 1440 px hell und dunkel pixelgleich bis auf die Uhrzeiten. Bei 1024 px füllen umbrochene Filter ihre Zeilen.
+- `node --check hub/src/ui/dashboard.js`, `npm test` 197/197.
+
+Offen:
+
+- Auf dem iPhone ansehen: Titel neben der Taste, vier Zeilen Ereignis-Filter, „Halle“ allein in der zweiten Zeile des Raum-Filters bei 360 px.
+- Gestapelte Tabellen sind lang (Netzwerk mit 47 Geräten gut 10 000 px).
+- Netzwerk-Kopf: Sichtbar steht der Scan oben rechts, beim Tabben kommt „Switches abfragen“ zuerst.
+- Bei 1024 px scrollt die Netzwerk-Tabelle in ihrer Karte weiter 31 px seitlich (wie vorher).
